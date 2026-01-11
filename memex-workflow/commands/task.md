@@ -1,0 +1,221 @@
+---
+description: Capture or continue work on a task
+argument-hint: [task-name-or-topic]
+disable-model-invocation: true
+---
+
+Capture or continue work on a task.
+
+Arguments: `$ARGUMENTS`
+
+## What Tasks Are
+
+Tasks capture intent, not implementation state. The code is the implementation state. Git is the history.
+
+A task file contains:
+- **Intent/Purpose** — What the user wants and why
+- **Assumptions** — Explicit and surfaced
+- **Considered & Rejected** — Approaches explored but dropped
+- **Discussion History** — Clarifications, mental model evolution
+- **Sources** — Wiki-links to knowledge files + external docs (MUST READ / Reference)
+
+Tasks are NOT:
+- Implementation logs (that's git)
+- Code snippets (that's the code)
+- Gotchas for future reuse (that's knowledge files)
+
+## Process
+
+### 1. Determine the Task
+
+If a task file or topic was specified in arguments:
+- Find or create it in `agent/tasks/`
+- New files use date prefix: `YYYY-MM-DD-<slug>.md`
+
+If no arguments:
+- Search memex for active tasks: `grep "^status: active" agent/tasks/*.md`
+- Ask what to work on or capture
+
+### 2. Search for Context
+
+Before starting work, use memex to find related context:
+- Previous tasks on similar problems
+- Related knowledge files
+- Use `explore` to follow wiki-links from discovered files
+
+Briefly report what you found.
+
+### 3. Understand the Intent
+
+If continuing an existing task:
+- Read the task file
+- Read any MUST READ sources listed
+- Read linked knowledge files
+
+If creating a new task, do the thinking first — then clarify:
+
+**You do 90% of the work.** Don't lazily offload questions to the user. Your job is to:
+
+1. **Deeply analyze** — What does their request imply? What are the realistic approaches? What constraints exist in the codebase? What trade-offs matter?
+
+2. **Think through each option** — For each viable approach:
+   - What are the pros and cons?
+   - What does it require (dependencies, migrations, API changes)?
+   - What are the risks and edge cases?
+   - How does it fit with existing patterns?
+
+3. **Form a recommendation** — Based on your analysis, which approach makes most sense? Why? Be opinionated.
+
+4. **Present the full analysis** — Write it out. Show your reasoning. The user should see you've genuinely thought through the problem.
+
+5. **Then ask what you actually need to know** — After all that analysis, what decisions genuinely require user input? These might be:
+   - Preference questions where trade-offs are clear but choice is subjective
+   - Scope decisions (MVP vs full feature)
+   - Constraints you couldn't infer (timeline, must-haves)
+   - Validation of your recommendation
+
+**Use AskUserQuestion for structured input** when you have specific options to choose between. But the questions should emerge FROM your analysis — they're the genuine decision points you identified, not generic "what do you want?" prompts.
+
+**The pitfall to avoid:** Using AskUserQuestion as a substitute for thinking. If you haven't done the analysis, you haven't earned the right to ask questions.
+
+### 4. Capture or Update
+
+For new tasks, create the file with this structure:
+
+```markdown
+---
+status: active
+started: YYYY-MM-DD
+---
+
+# Task: <Descriptive Title>
+
+## Intent
+
+What user wants. Their mental model. Why this matters.
+
+## Assumptions
+
+What we're taking for granted. Surface these explicitly.
+
+## Sources
+
+**Knowledge files:**
+- [[knowledge-file]] — why relevant
+
+**External docs (from research):**
+- MUST READ: [Doc title](url) — critical context
+- Reference: [Doc title](url) — shows that X works like Y
+
+## Done When
+
+(What does success look like? Checklist of acceptance criteria if helpful.)
+
+## Considered & Rejected
+
+(Fill as approaches are explored and dropped)
+
+## Discussion
+
+(Capture clarifications, mental model corrections, key decisions)
+```
+
+For existing tasks:
+- Refine Intent if understanding has deepened (rewrite, don't append)
+- Add to Assumptions as they're surfaced
+- Add to Considered & Rejected as approaches are explored
+- Update Discussion with significant clarifications
+
+### 5. Work
+
+With intent clear, proceed with the work. The task file is your north star.
+
+**Update the task file when understanding changes:**
+- User clarifies intent or corrects your mental model
+- Assumption gets validated (was implicit, now confirmed)
+- Decision made on approach (and why)
+- Research finding changes constraints
+- Haiku hook surfaces something, you resolve it with user
+
+**Don't update for:**
+- Implementation progress (that's git)
+- Status updates ("did X, now doing Y")
+- Work diary entries
+
+The distinction: capture what matters for **intent**, not what you're **doing**.
+
+When you discover gotchas or reusable patterns, note them for later extraction to knowledge files (via /distill or /learnings).
+
+## The USE Principle
+
+When updating task files, don't write:
+- **U**nimportant — things that don't matter for continuing the work
+- **S**elf-explanatory — obvious from code, context, or common knowledge
+- **E**asy to find — documented elsewhere (link instead of duplicating)
+
+Task files capture what matters for **intent and decision-making**, not everything that happened.
+
+## Task Types
+
+### Regular Tasks
+Single-focus work items. Most tasks are this.
+
+### Tracking Tasks
+Meta-tasks that collect context for larger undertakings (like GitHub tracking issues).
+
+**Use descriptive filenames** — include "-tracking" or similar in the name:
+- `2026-01-10-auth-migration-tracking.md`
+- `2026-01-08-gemini-integration-tracking.md`
+
+**Structure:**
+- High-level intent and goals
+- Links to subtasks via wiki-links
+- Collected documentation sources
+- High-level decisions (detail in linked files)
+- Gotchas that apply to ALL subtasks
+
+**Example hierarchy:**
+```
+[[auth-migration-tracking]]
+├── [[auth-migration-research-jwt-vs-sessions]]
+├── [[auth-migration-backend-implementation]]
+└── [[auth-migration-frontend-token-handling]]
+```
+
+Each subtask links back to the tracking task. Agents working on subtasks read the tracking task first for full context.
+
+### Subtasks
+
+Create a subtask when work can be **delegated** — isolated enough to spec out, substantial enough that fresh context helps.
+
+**Good candidates:**
+- Isolated implementation (backend while you hold frontend context)
+- Research/investigation that would consume context
+- Prerequisites that block but don't need big-picture context
+
+**The test:** Is speccing it out less work than just doing it? If explaining the task is as much work as doing it, just do it yourself.
+
+**When to split (same principle as knowledge files):**
+- Has its own isolated set of concerns/links
+- Can be understood independently
+- Another agent could work on it without your full context
+- Reduces complexity of the parent task
+
+## Filename Guidelines
+
+Use date prefix + descriptive keywords:
+- `YYYY-MM-DD-<keywords-separated-by-dashes>.md`
+- Include all major topics — more detail is better for differentiating
+- If it's a subtask, you can reference the parent in the name
+- Examples:
+  - `2026-01-10-workflow-overhaul-commands-implementation.md`
+  - `2026-01-09-gemini-extraction-prompt-latex-handling.md`
+  - `2026-01-08-mobile-playback-safari-audio-context-fix.md`
+
+## Notes
+
+- Tasks can link to parent/tracking tasks via wiki-links
+- Task files link TO knowledge (bottom-up), not vice versa (unless knowledge needs to reference historical reasoning)
+- Don't update continuously — sync at natural stopping points or when context is high
+- For handoffs, use /handoff, not task file updates
+- Completed tasks are historical records of thought processes — keep for reference

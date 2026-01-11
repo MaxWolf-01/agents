@@ -1,0 +1,13 @@
+{
+  "name": "MaxWolf-01",
+  "owner": {
+    "name": "Max Wolf"
+  },
+  "plugins": [
+    {
+      "name": "mx",
+      "source": "./memex-workflow",
+      "description": "Multi-session workflow for autonomous, long-term work. Intent tracking, knowledge persistence, session continuity, and alignment verification."
+    }
+  ]
+}
