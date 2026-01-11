@@ -112,6 +112,8 @@ Make targeted, factual updates:
 
 **Secrets:** Knowledge with private/secret information goes in `agent/knowledge/private/`.
 
+**Task files:** Use a subagent to grep for active task files and present you with a one paragaph summary for each. Those task files that are completed shall be marked with "status: done", and commited together with the knowledge files.
+
 ## Commit
 
 Stage agent files:

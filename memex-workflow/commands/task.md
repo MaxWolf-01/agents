@@ -1,7 +1,6 @@
 ---
 description: Capture or continue work on a task
 argument-hint: [task-name-or-topic]
-disable-model-invocation: true
 ---
 
 Capture or continue work on a task.
