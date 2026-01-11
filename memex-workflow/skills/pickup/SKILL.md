@@ -1,18 +1,19 @@
 ---
-description: Resume work from a previous handoff
-argument-hint: [handoff-slug]
-disable-model-invocation: true
+name: pickup
+description: This skill should be used when resuming work from a handoff file. Invoked when /task is called with a handoff path (agent/handoffs/...) or when continuing from a previous session's handoff.
 ---
 
-Resumes work from a previous handoff session stored in `agent/handoffs/`.
+# Pickup
 
-Requested handoff: `$ARGUMENTS`
+Resume work from a previous handoff session stored in `agent/handoffs/`.
 
 ## Process
 
 ### 1. Find the Handoff
 
-If no handoff was specified, list unconsumed ones:
+If the handoff path was provided, use it directly.
+
+If no specific handoff was given but continuation is needed, list unconsumed ones:
 
 ```bash
 echo "## Available Handoffs"
@@ -23,12 +24,11 @@ grep -l "consumed: false" agent/handoffs/*.md 2>/dev/null | while read file; do
   echo "* \`$basename\`: $title"
 done
 echo ""
-echo "To pickup: /pickup <name>"
+echo "To continue: /task agent/handoffs/<name>.md"
 ```
 
 ### 2. Load the Handoff
 
-If a handoff was specified:
 1. Look for it in `agent/handoffs/`
 2. The user might have given a partial name or just the slug — find the best match
 3. If multiple matches, ask which one to continue
@@ -36,11 +36,11 @@ If a handoff was specified:
 ### 3. Read and Continue
 
 Read the handoff file. It contains:
-- **Purpose** — What you need to accomplish
+- **Purpose** — What to accomplish
 - **Intent & Context** — User's goals and mental model
 - **Technical State** — Where things stand
 - **Gotchas** — Things to avoid re-learning
-- **What's Next** — Your starting point
+- **What's Next** — Starting point
 - **Relevant Links** — Task files and knowledge to read
 
 ### 4. Load Context
@@ -48,15 +48,15 @@ Read the handoff file. It contains:
 Before starting work:
 1. Read any linked task files (`[[task-name]]`)
 2. Read any linked knowledge files (`[[knowledge-file]]`)
-3. Fetch any external docs listed
+3. Fetch any external docs listed as MUST READ
 
 ### 5. Confirm and Proceed
 
 Briefly summarize:
-- What you understand the purpose to be
-- What you're about to do (the "What's Next" from handoff)
+- What the purpose is understood to be
+- What's about to be done (the "What's Next" from handoff)
 
-Then ask the user to confirm before proceeding, or clarify if something seems off.
+Ask the user to confirm before proceeding, or clarify if something seems off.
 
 ### 6. Mark as Consumed
 
@@ -66,7 +66,7 @@ After loading successfully, update the handoff frontmatter:
 consumed: true
 ```
 
-This prevents it from showing in future `/pickup` listings.
+This prevents it from showing in future listings.
 
 ## Notes
 

@@ -67,6 +67,20 @@ Knowledge files describe **what IS** — grounded in code truth, not aspirationa
    - **S**elf-explanatory — obvious from code or basic knowledge
    - **E**asy to find — documented elsewhere (link instead)
 
+**Don't**
+
+- Don't create knowledge for one-off issues unlikely to recur
+- Don't duplicate what's already documented
+- Don't add speculative content
+- Don't create files for trivial learnings
+- Don't add code snippets when you could point to code files/scripts instead
+- Don't add speculative content (only facts from code)
+- Don't create orphan files (always link from somewhere)
+- Don't write things that won't be helpful for future work
+- Don't capture (true) one-off issues 
+- Don't write capture knowledge that amounts to "extended code comments/docstrings"
+- Don't explain trivial things/things that are obvious from reading the code
+
 **When to create a new file vs keep inline:**
 
 Split into a separate file when:
@@ -113,6 +127,8 @@ Make targeted, factual updates:
 **Secrets:** Knowledge with private/secret information goes in `agent/knowledge/private/`.
 
 **Task files:** Use a subagent to grep for active task files and present you with a one paragaph summary for each. Those task files that are completed shall be marked with "status: done", and commited together with the knowledge files.
+
+Use the memex mcp's explore and rename functionality to help you navigate and update files in the agent/ vault.
 
 ## Commit
 

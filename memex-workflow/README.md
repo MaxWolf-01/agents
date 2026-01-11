@@ -14,7 +14,7 @@ Multi-session workflow for autonomous, long-term work on projects. Maintains int
 
 **Analysis before questions:** When using AskUserQuestion, do 90% of the thinking first. Analyze options, evaluate trade-offs, form a recommendation. Present full reasoning. Only then ask what you genuinely need to know. Questions should emerge from analysis, not replace it.
 
-**Trust but verify:** The goal is autonomous agents with lightweight verification. The Stop hook catches drift automatically. `/align` is for when you want deeper verification.
+**Trust but verify:** The goal is autonomous agents with lightweight verification. `/align` is for when you want deeper verification.
 
 ## The Three-Way Split
 
@@ -26,7 +26,7 @@ Multi-session workflow for autonomous, long-term work on projects. Maintains int
 
 **Tasks** capture what the user wants, not what was implemented. Code is the implementation. Git is the history.
 
-**Handoffs** capture session state for another agent to continue. Created at end of session via `/handoff`. Marked `consumed: true` after pickup.
+**Handoffs** capture session state for another agent to continue. Created via the **handoff skill**. Marked `consumed: true` after pickup.
 
 **Knowledge** documents how things work. Updated via periodic `/distill`, not per-session. Based on code ground truth.
 
@@ -37,8 +37,6 @@ Both handoffs and tasks are still kept for historical reasoning trails, but know
 | Command | Purpose | Context | When to use |
 |---------|---------|---------|-------------|
 | `/task [name]` | Capture/continue work on intent | Current session | Starting work, capturing thoughts/TODOs |
-| `/handoff [purpose]` | Create session continuation | Current session | End of session when work continues |
-| `/pickup [slug]` | Resume from handoff | Current session | Starting session to continue prior work |
 | `/distill [scope]` | Periodic knowledge update from code | Fresh session | Periodically (every 3-10 commits) |
 | `/learnings [session]` | Extract learnings from a session | Fresh session | After sessions with discoveries/gotchas/workflow patterns |
 | `/align [session]` | Deep intent verification | Fresh session | Before major decisions, when uncertain |
@@ -46,23 +44,25 @@ Both handoffs and tasks are still kept for historical reasoning trails, but know
 
 **Session-dependent:** `/align` and `/learnings` require a named session (use `/session-name` + `/rename` first).
 
-### Command Visibility
+## Skills
 
-Most commands have `disable-model-invocation: true`—user-orchestrated, not auto-invoked by agents.
+Skills are invoked by the model autonomously when appropriate, or manually by the user.
 
-**Exception:** `/handoff` is agent-visible. An agent can decide "I should hand off now."
+| Skill | Purpose | When used |
+|-------|---------|-----------|
+| **handoff** | Create session continuation | End of session when work continues |
+| **pickup** | Resume from handoff | When `/task` is given a handoff path, or user wants to continue |
+| **implement** | Mindset for coding | When moving from planning to implementation |
 
-## Hooks
-
-**Stop hook:** Alignment check after agent responses. Uses a fresh Claude instance (via `claude -p` headless mode) to avoid sunk-cost bias. Fires every N stops to limit overhead. Blocks with clarifying questions if drift detected.
+`/task` orchestrates the workflow and instructs the model when to use each skill.
 
 ## When to Use What
 
 **Starting new work:** `/task` to capture intent, then implement.
 
-**Ending a session:** `/handoff` if work continues, otherwise just stop.
+**Ending a session:** Invoke the **handoff skill** if work continues, otherwise just stop.
 
-**Resuming work:** `/pickup` to continue from handoff.
+**Resuming work:** `/task agent/handoffs/<slug>.md` — the **pickup skill** handles the rest.
 
 **Periodic maintenance:** `/distill` every 5-10 commits to sync knowledge with code.
 
@@ -149,3 +149,12 @@ With headless mode (`claude -p`) and session IDs (`--resume`), an orchestrating 
 - Coordinate handoffs between sessions
 
 The commands work the same whether invoked by human or orchestrator.
+
+---
+
+**Local development:** Symlink your source to the cache so changes reflect without pushing:
+```bash
+rm -rf ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
+ln -s /path/to/memex-workflow ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
+```
+`claude plugin update mx@MaxWolf-01` replaces the symlink with a fresh download.

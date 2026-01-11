@@ -7,6 +7,20 @@ Capture or continue work on a task.
 
 Arguments: `$ARGUMENTS`
 
+## First: Check What Kind of Entry This Is
+
+**If the argument is a handoff path** (e.g., `agent/handoffs/2026-01-10-workflow-design.md`):
+→ Use the **pickup skill** to resume from that handoff.
+
+**If the user wants to continue from a handoff but doesn't have the path**:
+→ Use the **pickup skill** — it has instructions for listing available handoffs.
+
+**If the argument is a task file or topic** (e.g., `agent/tasks/...` or a topic name):
+→ Continue with the process below.
+
+**If no argument or just discussing an idea**:
+→ Ask the user what they want to work on. Don't immediately create a task file — first discuss, think through the idea, then ask if a task file should be created before proceeding with the full process.
+
 ## What Tasks Are
 
 Tasks capture intent, not implementation state. The code is the implementation state. Git is the history.
@@ -129,12 +143,13 @@ For existing tasks:
 
 With intent clear, proceed with the work. The task file is your north star.
 
+**When moving to implementation** — once planning is complete, assumptions are validated, and you're ready to write code — use the **implement skill**. It provides the mindset and practices for coding.
+
 **Update the task file when understanding changes:**
 - User clarifies intent or corrects your mental model
 - Assumption gets validated (was implicit, now confirmed)
 - Decision made on approach (and why)
 - Research finding changes constraints
-- Haiku hook surfaces something, you resolve it with user
 
 **Don't update for:**
 - Implementation progress (that's git)
@@ -216,5 +231,5 @@ Use date prefix + descriptive keywords:
 - Tasks can link to parent/tracking tasks via wiki-links
 - Task files link TO knowledge (bottom-up), not vice versa (unless knowledge needs to reference historical reasoning)
 - Don't update continuously — sync at natural stopping points or when context is high
-- For handoffs, use /handoff, not task file updates
+- For handoffs, use the **handoff skill**, not task file updates
 - Completed tasks are historical records of thought processes — keep for reference

@@ -61,6 +61,8 @@ Before creating new files, explore what already exists:
 
 ## Update or Create Knowledge
 
+Write wtih the perspective of future agents working on the project in mind.
+
 For each significant learning:
 
 **If updating existing file:**
@@ -70,8 +72,7 @@ For each significant learning:
 
 **If creating new file:**
 - Use descriptive name: `agent/knowledge/<topic>.md`
-- Keep it focused — one topic per file
-- Add wikilinks to related knowledge files
+- Keep it focused, separate concerns, cross-reference deliberately
 - Link FROM relevant existing files TO the new file (bidirectional linking)
 
 **Content guidelines:**
@@ -79,6 +80,8 @@ For each significant learning:
 - Link to code files, don't embed snippets
 - Include the "why" not just the "what"
 - If a gotcha has a workaround, include it
+- Capture learnings with long-term value 
+- Point agents to code files and resources they should read
 
 ## Report
 
@@ -94,3 +97,12 @@ Tell the user:
 - Don't duplicate what's already documented
 - Don't add speculative content
 - Don't create files for trivial learnings
+- Don't add code snippets when you could point to code files/scripts instead
+- Don't add speculative content (only facts from code)
+- Don't rewrite sections unnecessarily
+- Don't create orphan files (always link from somewhere)
+- Don't write things that won't be helpful for future work
+- Don't capture (true) one-off issues 
+- Don't write capture knowledge that amounts to "extended code comments/docstrings"
+- Don't explain trivial things/things that are obvious from reading the code
+
