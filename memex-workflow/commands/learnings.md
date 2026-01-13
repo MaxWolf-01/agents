@@ -3,16 +3,15 @@ description: Extract learnings from a session into knowledge files
 argument-hint: [session-name]
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash(node:*), Bash(grep:*)
 model: opus
-disable-model-invocation: true
 ---
 
 Extract learnings from a session and update or create knowledge files.
 
-Session to analyze: `$ARGUMENTS`
+Arguments: `$ARGUMENTS`
 
-**IMPORTANT:** Run this in a fresh session to avoid bias. You're extracting lessons from someone else's work.
+## Determine Mode
 
-## Get the Session Transcript
+**If a session name was provided:** Extract transcript from that session (external analysis).
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/extract-session.js --name "$ARGUMENTS" > /tmp/session-transcript.txt
@@ -20,9 +19,13 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/extract-session.js --name "$ARGUMENTS" > /tmp
 
 If this fails, tell the user they need to name the session first with `/rename`.
 
-**Note:** If the user mentions the transcript is too long or wants to limit it, use `--max-messages N` to restrict to the last N messages.
+Use `--max-messages N` to limit to the last N messages if the full transcript isn't needed.
 
 Read the transcript from `/tmp/session-transcript.txt`.
+
+**Note:** For external analysis, running in a fresh session avoids "I just wrote this" bias.
+
+**If no argument, or it's clear from context that this session's learnings should be captured:** Reflect on current session's work directly. You have full context — no transcript extraction needed.
 
 ## Analyze the Session
 

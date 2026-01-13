@@ -116,5 +116,5 @@ Then tell the user:
 ```
 Handoff written to agent/handoffs/YYYY-MM-DD-<slug>.md
 
-To continue: /task agent/handoffs/YYYY-MM-DD-<slug>.md
+To continue: /mx:task agent/handoffs/YYYY-MM-DD-<slug>.md
 ```

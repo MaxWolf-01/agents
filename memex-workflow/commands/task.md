@@ -91,6 +91,10 @@ If creating a new task, do the thinking first — then clarify:
 
 **The pitfall to avoid:** Using AskUserQuestion as a substitute for thinking. If you haven't done the analysis, you haven't earned the right to ask questions.
 
+**Don't use phases to defer complexity.** If something needs refactoring, refactor it. If something needs clarification, ask. "Phase 1: do it the old way, Phase 2: migrate" is usually avoidance — do it right once instead of twice.
+
+**Don't default to "pragmatic" just "because it's already there."** Agents overestimate implementation cost — a ~1h human task is ~10min for an agent. "Keep the old thing because it works" is often false economy. If doing it properly is better long-term without overengineering, just do it.
+
 ### 4. Capture or Update
 
 For new tasks, create the file with this structure:
@@ -233,3 +237,9 @@ Use date prefix + descriptive keywords:
 - Don't update continuously — sync at natural stopping points or when context is high
 - For handoffs, use the **handoff skill**, not task file updates
 - Completed tasks are historical records of thought processes — keep for reference
+
+- Task file = spec + decisions + rationale. Contains the "what" and "why" — goals, constraints, key decisions with reasoning, sources that informed those decisions. Should be readable in 3 months and still make sense. External docs belong here if they informed a decision.
+- Task file ≠ implementation plan. Grand implementation checklists don't survive first contact with code. The detailed steps live in the handoff or emerge during implementation.
+- Handoff = continuation context. What the next agent needs to pick up this specific work — which files matter, what was tried, what failed, what's the immediate next step. Can duplicate sources from task file but emphasizes urgency ("MUST READ before coding"), can include more detailed implementation notes.
+- The split: Task file captures understanding that persists. Handoff captures momentum that transfers. If the handoff gets stale (work takes a different direction), the task file should still be accurate.
+

@@ -41,6 +41,42 @@ If there are uncommitted changes, ask whether to include them (might be WIP from
 
 Read task files that were touched (since the last refine-knowledge commit) — they provide context on what was being worked on, what's still brainstorming vs implemented.
 
+## Take Your Time
+
+This is a dedicated distillation task. You have plenty of context to work with. You can:
+- ultrathink about connections (which ones to make and which ones NOT to)
+- Search the vault thoroughly (use memex)
+- Really consider what already exists before creating new notes
+- Plan the knowledge structure carefully
+
+No need to rush. Getting it right matters more than speed.
+
+## You Can Refactor
+
+You're not just adding - you can also:
+- Move content between notes
+- Update existing notes with new insights
+- Delete stale content that's no longer accurate
+- Add links to existing notes that should connect
+- Restructure if the current organization isn't working
+
+Like refactoring code: you extract a function when the same logic appears in multiple places, you move code to where it logically belongs, you rename things to match what they've become, you delete dead code. Same principles apply to knowledge. If an insight about auth patterns ended up in a debugging session note but really deserves its own place that other notes can reference - move it. If scattered notes cover variations of the same concept - maybe consolidate. If old information would mislead future agents - delete it.
+
+**When to create a new note**: If you keep wanting to link to something that doesn't exist, or if the same insight appears scattered across multiple places, that's a sign to extract it.
+
+## Consider Note Type
+
+Before writing, ask: what kind of note is this? Common patterns:
+
+- **Stub / link target**: Just needs to exist so other notes can link to it.
+- **Reference doc / skill**: How-to, commands, patterns, procedures.
+- **Topic hub**: Entry point linking related knowledge + historical tasks.
+- **Convention**: How things are done in this codebase, naming patterns.
+
+Architecture decisions and insights are usually sections within a topical note, linking to the task where explored in detail.
+
+These aren't rigid categories. The right structure emerges from the content — just avoid forcing everything into one template.
+
 ## What Knowledge Files Are
 
 Knowledge files describe **what IS** — grounded in code truth, not aspirational. They're the persistent reference that outlives individual tasks and sessions.
