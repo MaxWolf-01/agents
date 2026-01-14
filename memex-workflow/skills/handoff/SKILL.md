@@ -15,7 +15,7 @@ Create a detailed summary capturing technical details, code patterns, and archit
 
 ## Process
 
-Before writing the final plan, wrap analysis in `<analysis>` tags:
+The handoff file includes an `<analysis>` section (written to the file, not chat) where you:
 
 1. Chronologically analyze the ENTIRE conversation with proper weight. Don't compress early discussion while elaborating recent work. For each significant section identify:
    - The user's explicit requests and evolving intent
@@ -98,12 +98,18 @@ consumed: false
 ## 8. Sources
 
 **Task/Knowledge:**
-- [[task-file-name]] — the task being worked on (in rare cases multiple)
+- [[task-file-name]] — the task being worked on (can be multiple if session grouped related work)
 - [[knowledge-file-name]] — relevant knowledge
 
 **External docs:**
-- MUST READ: [Doc title](url) — next agent needs this
+- MUST READ: [Doc title](url) — next agent needs this before working
 - Reference: [Doc title](url) — consulted, key finding was X
+
+**Key code files:**
+- MUST READ: `path/to/file.py` — why this file matters
+- Reference: `path/to/other.py` — related context
+
+Bias toward MUST READ. You have context that shaped your thinking — the next agent doesn't. When in doubt, mark it MUST READ.
 
 </plan>
 ```

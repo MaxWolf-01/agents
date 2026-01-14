@@ -1,11 +1,12 @@
 ---
 name: implement
-description: This skill should be used when moving from planning to coding, when the user approves implementation ('proceed', 'go ahead', 'yes', 'do it', 'implement', 'code this'). Contains a pre-implementation checklist.
+description: Invoke this skill when you're ready to write code — after exploration and planning. Contains a pre-implementation checklist that prevents common mistakes.
 ---
 
 # Implement
 
 The task file is clear. Intent is understood. Now write code.
+[If that's not the case, STOP, clarify with the user, get their explicit approval on the concrete plan before proceeding.]
 
 Planning mode explores possibilities. Implementation mode commits to one, but escalates issues discovered during coding to the user before resorting to hacks, "quick fixes", breaking assumptions, or deviating from intent.
 

@@ -5,7 +5,7 @@ description: This skill should be used when resuming work from a handoff file. I
 
 # Pickup
 
-Resume work from a previous handoff session stored in `agent/handoffs/`.
+Resume work by reading a handoff file from a previous session.
 
 ## Process
 
@@ -17,7 +17,6 @@ If no specific handoff was given but continuation is needed, list unconsumed one
 
 ```bash
 echo "## Available Handoffs"
-echo ""
 grep -l "consumed: false" agent/handoffs/*.md 2>/dev/null | while read file; do
   title=$(grep -m 1 "^# " "$file" | sed 's/^# //')
   basename=$(basename "$file" .md)
@@ -27,38 +26,41 @@ echo ""
 echo "To continue: /task agent/handoffs/<name>.md"
 ```
 
-### 2. Load the Handoff
-
-1. Look for it in `agent/handoffs/`
-2. The user might have given a partial name or just the slug — find the best match
-3. If multiple matches, ask which one to continue
-
-### 3. Read and Continue
+### 2. Read the Handoff
 
 Read the handoff file. It contains:
 - **Purpose** — What to accomplish
-- **Intent & Context** — User's goals and mental model
-- **Technical State** — Where things stand
-- **Gotchas** — Things to avoid re-learning
-- **What's Next** — Starting point
-- **Relevant Links** — Task files and knowledge to read
+- **Context** — User's goals, mental model, technical state
+- **What's Next** — Where to start
+- **Sources** — Task files, knowledge files, code files, external docs
 
-### 4. Load Context
+### 3. Explore the Knowledge Base
 
-Before starting work:
-1. Read any linked task files (`[[task-name]]`)
-2. Read any linked knowledge files (`[[knowledge-file]]`)
-3. Fetch any external docs listed as MUST READ
+**This is non-negotiable.** Before doing any work:
 
-### 5. Confirm and Proceed
+- [ ] **Read `overview.md`** — the entry point to project knowledge, always
+- [ ] **Read the linked task file** — understand the intent you're continuing
+- [ ] **Read relevant knowledge files** — follow wikilinks from overview that relate to your task
+- [ ] **Read project context files** — dev setup, conventions, things needed to work effectively in this codebase
+- [ ] **Read MUST READ sources** from the handoff — external docs and code files the previous agent marked as essential
+- [ ] **Read Key Files** from the handoff — code files identified as important for this work
+
+Continue until you feel confident about the codebase structure and task context.
+
+Don't skim. The knowledge, pointers, and bigger picture help you build an accurate mental representation — the foundation for effective work. Documented gotchas help you avoid repeating past mistakes.
+
+**See the task command for what good exploration looks like** — the concrete example there shows how to navigate from overview through wikilinks to the files you need.
+
+### 4. Confirm Understanding
 
 Briefly summarize:
-- What the purpose is understood to be
-- What's about to be done (the "What's Next" from handoff)
+- What the purpose is (from handoff)
+- What you're about to do (the "What's Next")
+- Any clarifications needed
 
-Ask the user to confirm before proceeding, or clarify if something seems off.
+Ask the user to confirm, or clarify if something seems off.
 
-### 6. Mark as Consumed
+### 5. Mark as Consumed
 
 After loading successfully, update the handoff frontmatter:
 
@@ -66,9 +68,17 @@ After loading successfully, update the handoff frontmatter:
 consumed: true
 ```
 
-This prevents it from showing in future listings.
+### 6. Ready to Implement
+
+When you understand the task and are ready to write code:
+
+**→ Invoke the implement skill**
+
+Do not write code without completing the implement checklist.
+
+This applies even for seemingly trivial changes — they often have cross-cutting concerns you'll miss without the checklist.
 
 ## Notes
 
-- If the handoff references a task file, that task file is the source of truth for intent
+- The task file is the source of truth for intent
 - The handoff captures session-specific context the task file doesn't have

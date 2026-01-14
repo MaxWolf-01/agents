@@ -49,14 +49,38 @@ If no arguments:
 - Search memex for active tasks: `grep "^status: active" agent/tasks/*.md`
 - Ask what to work on or capture
 
-### 2. Search for Context
+### 2. Explore the Knowledge Base
 
-Before starting work, use memex to find related context:
-- Previous tasks on similar problems
-- Related knowledge files
-- Use `explore` to follow wiki-links from discovered files
+**This is non-negotiable.** Before doing any significant work — including brainstorming and discussion:
 
-Briefly report what you found.
+- [ ] **Read `overview.md`** — the entry point to project knowledge, always
+- [ ] **Read relevant knowledge files** — follow wikilinks from overview that relate to your task
+- [ ] **Read project context files** — dev setup, conventions, things needed to work effectively
+- [ ] **Search for related tasks** — previous work on similar problems
+- [ ] **Read MUST READ sources** from the task file if continuing existing work
+- [ ] **Read key code files** when the task requires understanding implementation
+
+Use memex `explore` to follow wikilinks — it shows outlinks (what a note references) and backlinks (what references it).
+
+Continue until you feel confident about the project structure and task context.
+
+**What good exploration looks like:** (simplified example)
+
+> Task: "Fix a bug where audio doesn't play for some documents"
+>
+> 1. Read `overview.md` → see Core section links to [[tts-flow]] and [[document-processing]]
+> 2. Read both — the bug could be in either pipeline
+> 3. Notice tts-flow has a "Voice change race condition" gotcha — could this be it?
+> 4. Follow cross-references — tts-flow links to [[audio-playback]], which has a gotcha about WebSocket timing issues
+> 5. Read related task [[2025-12-15-audio-websocket-fix]] — see they fixed a similar issue by [...]
+> 6. Read the Key Files — now you know which source files to examine
+> 7. The bug is still unclear? Maybe it's a frontend issue? -> Explore [[frontend]] to get up to speed on client-side audio handling.
+
+This takes ~30 seconds. Without it, you'd grep around, miss the gotcha, and waste time rediscovering known issues.
+
+**Bad exploration:** Read overview, skim one file, skip cross-references and gotchas. Miss critical context.
+
+The knowledge, pointers, and bigger picture help you build an accurate mental representation — the foundation for effective problem-solving. Documented gotchas help you avoid repeating past mistakes.
 
 ### 3. Understand the Intent
 
@@ -120,9 +144,17 @@ What we're taking for granted. Surface these explicitly.
 **Knowledge files:**
 - [[knowledge-file]] — why relevant
 
-**External docs (from research):**
-- MUST READ: [Doc title](url) — critical context
-- Reference: [Doc title](url) — shows that X works like Y
+**External docs:**
+- MUST READ: [Doc title](url) — next agent needs this before working
+- Reference: [Doc title](url) — consulted, key finding was X
+
+**Key code files:**
+- MUST READ: `path/to/file.py` — why this file matters
+- Reference: `path/to/other.py` — related context
+
+Use MUST READ for anything the next agent genuinely needs to read from scratch. Use Reference when you've distilled the key insight and they can skip unless diving deeper. Don't just list files — explain why each matters.
+
+**Bias toward MUST READ.** You have context that shaped your thinking — the next agent doesn't. They need the big picture, not just the immediate task. When in doubt, mark it MUST READ. A 10-file MUST READ list is fine if those files genuinely matter.
 
 ## Done When
 
