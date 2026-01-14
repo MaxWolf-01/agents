@@ -8,6 +8,7 @@ Skills: `handoff`, `pickup`, `implement`
 Uses [memex MCP](https://github.com/MaxWolf-01/memex) for knowledge base navigation.
 
 See [memex-workflow/README.md](./memex-workflow/README.md) for details.
+Note: This let's you turn off the 40%?! auto-compaction buffer since it's handled by `handoff` + `pickup` which works much, much, much better from many perspectives in my experience.
 
 **Installation**
 
@@ -34,9 +35,6 @@ Or, in project's `.claude/settings.json`:
   }
 }
 ```
-
-**Tip:** I recommend turning of auto-compaction when using ths workflow (saves soo much context; and is replaced by a better `/handoff` anyways).
-
 
 ### References
 

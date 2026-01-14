@@ -1,160 +1,77 @@
 # Memex Workflow
 
-Multi-session workflow for autonomous, long-term work on projects. Maintains intent clarity, knowledge persistence, and session continuity across days/weeks/months.
+Task files, handoffs, and a persistent knowledge base for multi-session work.
 
-## Philosophy
+## Core Concepts
 
-**Division of labor:** Each agent focuses on its task. Meta-concerns (knowledge updates, alignment checks, session continuity) are handled by dedicated mechanisms.
+**Tasks** (`agent/tasks/`) — Capture user intent, goals, assumptions. Not implementation logs.
 
-**Fresh context for meta-analysis:** Agents analyzing work (`/align`, `/explain`, `/distill`, `/learnings`) run in fresh sessions. This avoids "I just wrote this" bias and sunk-cost thinking.
+**Handoffs** (`agent/handoffs/`) — Session continuation state. Created via **handoff skill**, resumed via `/task <handoff-path>`.
 
-**Separate sessions, not sub-agents:** Workflow commands run in separate Claude Code sessions. While subagents could technically work (they have session IDs, can be resumed), separate sessions are more ergonomic for human orchestration—you can directly interact, rename, access transcripts, ask follow-ups. Currently orchestration is human; future AI orchestrators would likely also use separate sessions for similar reasons.
+**Knowledge** (`agent/knowledge/`) — Persistent reference docs. Updated via `/distill` (code-grounded) or `/learnings` (session-grounded).
 
-**Wiki-links over folders:** Hierarchy comes from intentional links, not filesystem structure. Enables small-world navigation and *progressive disclosure*.
-
-**Analysis before questions:** When using AskUserQuestion, do 90% of the thinking first. Analyze options, evaluate trade-offs, form a recommendation. Present full reasoning. Only then ask what you genuinely need to know. Questions should emerge from analysis, not replace it.
-
-**Trust but verify:** The goal is autonomous agents with lightweight verification. `/align` is for when you want deeper verification.
-
-## The Three-Way Split
-
-| Type | Location | Purpose | Lifetime |
-|------|----------|---------|----------|
-| **Tasks** | `agent/tasks/` | Intent, goals, assumptions, decisions | ~Days |
-| **Handoffs** | `agent/handoffs/` | Session continuation state | Hours to a day |
-| **Knowledge** | `agent/knowledge/` | Persistent docs, references, workflows, ... | Ongoing |
-
-**Tasks** capture what the user wants, not what was implemented. Code is the implementation. Git is the history.
-
-**Handoffs** capture session state for another agent to continue. Created via the **handoff skill**. Marked `consumed: true` after pickup.
-
-**Knowledge** documents how things work. Updated via periodic `/distill`, not per-session. Based on code ground truth.
-
-Both handoffs and tasks are still kept for historical reasoning trails, but knowledge is the continually refined long-term reference on project architecture, decisions, patterns, workflows, etc.
+Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 
 ## Commands
 
-| Command | Purpose | Context | When to use |
-|---------|---------|---------|-------------|
-| `/task [name]` | Capture/continue work on intent | Current session | Starting work, capturing thoughts/TODOs |
-| `/distill [scope]` | Periodic knowledge update from code | Fresh session | Periodically (every 3-10 commits) |
-| `/learnings [session]` | Extract learnings from a session | Fresh session | After sessions with discoveries/gotchas/workflow patterns |
-| `/align [session]` | Deep intent verification | Fresh session | Before major decisions, when uncertain |
-| `/explain [scope]` | Code change explanation | Fresh session | Understanding changes you didn't write |
+| Command | Purpose |
+|---------|---------|
+| `/task [name]` | Start/continue work, capture intent |
+| `/distill [scope]` | Sync knowledge with code (run every 5-10 commits) |
+| `/learnings [session]` | Extract gotchas/patterns from a session |
+| `/align [session]` | Deep intent verification |
+| `/explain [scope]` | Understand code changes |
 
-**Session-dependent:** `/align` and `/learnings` require a named session (use `/session-name` + `/rename` first).
+`/align` and `/learnings` need a named session (`/session-name` + `/rename` first).
 
 ## Skills
 
-Skills are invoked by the model autonomously when appropriate, or manually by the user.
+| Skill | When used |
+|-------|-----------|
+| **handoff** | End of session when work continues |
+| **pickup** | When `/task` is given a handoff path |
+| **implement** | Moving from planning to coding |
 
-| Skill | Purpose | When used |
-|-------|---------|-----------|
-| **handoff** | Create session continuation | End of session when work continues |
-| **pickup** | Resume from handoff | When `/task` is given a handoff path, or user wants to continue |
-| **implement** | Mindset for coding | When moving from planning to implementation |
+`/task` orchestrates and tells the model when to use each skill.
 
-`/task` orchestrates the workflow and instructs the model when to use each skill.
+## Typical Flow
 
-## When to Use What
+1. `/task` to capture intent or pick up from handoff
+2. Explore knowledge base (always start from `overview`)
+3. Work on the task
+4. **handoff skill** when ending session mid-work
+5. `/distill` periodically to sync knowledge
 
-**Starting new work:** `/task` to capture intent, then implement.
+## Fresh Context for Meta-Analysis
 
-**Ending a session:** Invoke the **handoff skill** if work continues, otherwise just stop.
+`/align`, `/explain`, `/distill`, `/learnings` should run in fresh sessions. The working agent has sunk-cost bias and tunnel vision. Fresh agents can challenge assumptions objectively.
 
-**Resuming work:** `/task agent/handoffs/<slug>.md` — the **pickup skill** handles the rest.
+## Knowledge Structure
 
-**Periodic maintenance:** `/distill` every 5-10 commits to sync knowledge with code.
-
-**After productive sessions:** `/learnings` to extract gotchas, patterns, discoveries.
-
-**Uncertain about direction:** `/align` for thorough intent verification.
-
-**Understanding changes:** `/explain` when reviewing code you didn't write.
-
-## Why Fresh Context Matters
-
-The working agent has:
-- Sunk cost in their approach
-- "I just wrote this" bias
-- Tunnel vision from deep focus
-
-Fresh agents can:
-- Challenge assumptions objectively
-- Spot drift from original intent
-- Evaluate code without defending it
-
-This is why `/align`, `/explain`, `/distill`, and `/learnings` should run in fresh sessions.
-
-## Distill Frequency
-
-Run `/distill` regularly — every 5-10 commits depending on size. Benefits of batching:
-- Averages out noise from individual commits
-- More holistic view of changes
-- Prevents overfitting knowledge to transient WIP
-
-Don't sweep too frequently (per-session) or too rarely (knowledge drifts from code; difficult to update).
-
-## Wiki-Link Structure
-
-Example structure (not a tree — a graph with cross-links):
-
-```mermaid
-graph TD
-    overview[overview]
-
-    overview --> backend[backend]
-    overview --> frontend[frontend]
-    overview --> billing[billing]
-
-    frontend --> playback[playback]
-    frontend --> ui[ui-patterns]
-
-    backend --> tts[tts-flow]
-    backend --> docs[document-flow]
-    backend --> migrations[migrations]
-
-    billing --> stripe[stripe]
-    stripe --> cli[stripe-cli-ops]
-    stripe --> webhooks[stripe-webhooks]
-
-    %% Cross-links
-    playback -.-> tts
-    docs -.-> tts
-    webhooks -.-> billing
-
-    %% Tasks link to knowledge
-    task1[task: gemini-integration] --> docs
-
-    %% Handoffs link to tasks
-    handoff1[handoff: gemini-prompt-testing] --> task1
+Flat file structure with wiki-links:
+```
+overview
+├── domain-topics (tts-flow, auth, billing, ...)
+│   ├── gotchas, key files, cross-references
+│   └── links to code + external docs
+└── operations (migrations, infrastructure, ...)
 ```
 
-**Link directions:**
-- Tasks → Knowledge (bottom-up: task references what it needs)
-- Handoffs → Tasks (handoff belongs to a task)
-- Knowledge ↔ Knowledge (cross-links create small-world topology)
-- Knowledge → Tasks (for historical reasoning trails, important brainstorming/planning/decision-heavy tasks)
+Knowledge files point to sources — they don't duplicate code or external docs or code.
+Hubs create a small-world network for efficient navigation.
 
-Files can be reached from multiple paths. That's the point — not rigid hierarchy.
+## Orchestration
 
-## Future: Agent Orchestration
+Currently human. You decide when to `/align`, when to handoff, when to spawn parallel sessions.
 
-Currently, orchestration is human. You decide when to `/align`, when to `/handoff`, when to spawn parallel sessions.
-
-With headless mode (`claude -p`) and session IDs (`--resume`), an orchestrating agent could manage sessions like a human does:
-- Launch work sessions with specific tasks
-- Monitor progress via session transcripts
-- Invoke alignment checks
-- Coordinate handoffs between sessions
-
-The commands work the same whether invoked by human or orchestrator.
+With headless mode (`claude -p`) and session resumption (`--resume`), an orchestrating agent could manage sessions the same way — launch tasks, monitor via transcripts, invoke alignment checks, coordinate handoffs.
 
 ---
 
-**Local development:** Symlink your source to the cache so changes reflect without pushing:
+**Local development:**
 ```bash
 rm -rf ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
 ln -s /path/to/memex-workflow ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
 ```
-`claude plugin update mx@MaxWolf-01` replaces the symlink with a fresh download.
+`claude plugin update mx@MaxWolf-01` replaces the symlink.
+
