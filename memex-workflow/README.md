@@ -18,11 +18,15 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 |---------|---------|
 | `/task [name]` | Start/continue work, capture intent |
 | `/distill [scope]` | Sync knowledge with code (run every 5-10 commits) |
-| `/learnings [session]` | Extract gotchas/patterns from a session |
+| `/learnings [session]` | Extract gotchas/patterns from a session (works in current session too) |
 | `/align [session]` | Deep intent verification |
 | `/explain [scope]` | Understand code changes |
+| `/recap` | Status report surfacing decisions and open questions |
+| `/session-name` | Generate descriptive session name for `/rename` |
 
-`/align` and `/learnings` need a named session (`/session-name` + `/rename` first).
+**Transcript extraction:** `/align` and `/explain` need a named session to extract transcripts. Use `/session-name` to generate a name, then `/rename <name>`.
+
+**Note:** `/align` and `/explain` are currently underused — need to be updated to integrate better with the rest of the workflow + within-session variants for lower friction.
 
 ## Skills
 
@@ -44,7 +48,7 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 
 ## Fresh Context for Meta-Analysis
 
-`/align`, `/explain`, `/distill`, `/learnings` should run in fresh sessions. The working agent has sunk-cost bias and tunnel vision. Fresh agents can challenge assumptions objectively.
+`/align`, `/explain`, `/distill`, should run in fresh sessions. The working agent has sunk-cost bias and tunnel vision. Fresh agents can challenge assumptions objectively.
 
 ## Knowledge Structure
 

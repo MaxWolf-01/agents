@@ -1,7 +1,7 @@
 
 ### [Memex Workflow](https://github.com/MaxWolf-01/agents/tree/master/memex-workflow) Plugin
 
-Commands: `/mx:task`, `/mx:distill`, `/mx:learnings`, `/mx:align`, `/mx:explain`
+Commands: `/mx:task`, `/mx:distill`, `/mx:learnings`, `/mx:align`, `/mx:explain`, `/mx:recap`, `/mx:session-name`
 
 Skills: `handoff`, `pickup`, `implement`
 
@@ -38,5 +38,5 @@ Or, in project's `.claude/settings.json`:
 
 ### References
 
-A few things are yoinked and adapted from: https://github.com/mitsuhiko/agent-stuff
+Inspiration from: https://github.com/mitsuhiko/agent-stuff
 
