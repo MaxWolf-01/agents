@@ -1,7 +1,7 @@
 ---
 description: Extract learnings from a session into knowledge files
 argument-hint: [session-name]
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash(node:*), Bash(grep:*)
+allowed-tools: Read, Grep, Glob, Bash(node:*), Bash(grep:*)
 model: opus
 ---
 

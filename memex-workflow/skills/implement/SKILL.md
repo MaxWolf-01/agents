@@ -1,6 +1,6 @@
 ---
 name: implement
-description: This skill should be used when moving from planning to coding, when the user says "implement", "code this", "build it", or when the task file is clear and it's time to execute. Provides the mindset and practices for writing code.
+description: This skill should be used when moving from planning to coding, when the user approves implementation ('proceed', 'go ahead', 'yes', 'do it', 'implement', 'code this'). Contains a pre-implementation checklist.
 ---
 
 # Implement
@@ -33,4 +33,7 @@ Bound the scope:
 - Produce code you wouldn't want to debug at 3am
 - Create abstractions for one-time operations
 - Design for hypothetical future requirements
+- Push through an implementation even though unexpected issues arose
+- Write useless code comments
+- Not writing useful code comments
 

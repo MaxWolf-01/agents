@@ -148,6 +148,7 @@ For existing tasks:
 With intent clear, proceed with the work. The task file is your north star.
 
 **When moving to implementation** — once planning is complete, assumptions are validated, and you're ready to write code — use the **implement skill**. It provides the mindset and practices for coding.
+You MUST invoke the **implement skill** before writing ANY code, regardless of task size
 
 **Update the task file when understanding changes:**
 - User clarifies intent or corrects your mental model
