@@ -28,11 +28,9 @@ echo "To continue: /task agent/handoffs/<name>.md"
 
 ### 2. Read the Handoff
 
-Read the handoff file. It contains:
-- **Purpose** — What to accomplish
-- **Context** — User's goals, mental model, technical state
-- **What's Next** — Where to start
-- **Sources** — Task files, knowledge files, code files, external docs
+**Curated handoffs** (markdown with frontmatter) have explicit sections — Purpose, Context, What's Next, Sources.
+
+**Session exports** (`<session-export>` format) are raw conversation from a previous session. As you read, track all files mentioned (code, docs, knowledge files) — you'll read these in step 3.
 
 ### 3. Explore the Knowledge Base
 
@@ -42,8 +40,7 @@ Read the handoff file. It contains:
 - [ ] **Read the linked task file** — understand the intent you're continuing
 - [ ] **Read relevant knowledge files** — follow wikilinks from overview that relate to your task
 - [ ] **Read project context files** — dev setup, conventions, things needed to work effectively in this codebase
-- [ ] **Read MUST READ sources** from the handoff — external docs and code files the previous agent marked as essential
-- [ ] **Read Key Files** from the handoff — code files identified as important for this work
+- [ ] **Read files from the previous session** — MUST READ sources from curated handoffs, or all files referenced throughout a session export
 
 Continue until you feel confident about the codebase structure and task context.
 

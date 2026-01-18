@@ -9,8 +9,8 @@ Arguments: `$ARGUMENTS`
 
 ## First: Check What Kind of Entry This Is
 
-**If the argument is a handoff path** (e.g., `agent/handoffs/2026-01-10-workflow-design.md`):
-→ Use the **pickup skill** to resume from that handoff.
+**If the argument is a handoff or session export** (e.g., `agent/handoffs/2026-01-10-workflow-design.md` or `abc123.txt`):
+→ Use the **pickup skill** to resume. It handles both curated handoffs and session exports.
 
 **If the user wants to continue from a handoff but doesn't have the path**:
 → Use the **pickup skill** — it has instructions for listing available handoffs.
