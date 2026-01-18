@@ -151,10 +151,15 @@ What we're taking for granted. Surface these explicitly.
 **Key code files:**
 - MUST READ: `path/to/file.py` — why this file matters
 - Reference: `path/to/other.py` — related context
+```
 
 Use MUST READ for anything the next agent genuinely needs to read from scratch. Use Reference when you've distilled the key insight and they can skip unless diving deeper. Don't just list files — explain why each matters.
 
 **Bias toward MUST READ.** You have context that shaped your thinking — the next agent doesn't. They need the big picture, not just the immediate task. When in doubt, mark it MUST READ. A 10-file MUST READ list is fine if those files genuinely matter.
+
+**DO NOT** write task files before exploration/brainstorming/clarifying with the user.
+Recommendations, ideas, etc. are discussed in chat first, the distilled versions/options/understanding goes into the task file.
+Task files capture decisions and findings, not pre-discussion brainstorming
 
 ## Done When
 
