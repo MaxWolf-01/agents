@@ -1,6 +1,6 @@
 ---
 description: Extract learnings from a session into knowledge files
-argument-hint: [session-name]
+argument-hint: [session-export-or-name]
 allowed-tools: Read, Grep, Glob, Bash(node:*), Bash(grep:*)
 model: opus
 ---
@@ -9,23 +9,20 @@ Extract learnings from a session and update or create knowledge files.
 
 Arguments: `$ARGUMENTS`
 
-## Determine Mode
+## Get the Session
 
-**If a session name was provided:** Extract transcript from that session (external analysis).
+**If the argument is a file path:**
+→ Read it directly.
 
+**If the argument is a session name:**
+→ Extract using the script:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/extract-session.js --name "$ARGUMENTS" > /tmp/session-transcript.txt
 ```
+Then read `/tmp/session-transcript.txt`.
 
-If this fails, tell the user they need to name the session first with `/rename`.
-
-Use `--max-messages N` to limit to the last N messages if the full transcript isn't needed.
-
-Read the transcript from `/tmp/session-transcript.txt`.
-
-**Note:** For external analysis, running in a fresh session avoids "I just wrote this" bias.
-
-**If no argument, or it's clear from context that this session's learnings should be captured:** Reflect on current session's work directly. You have full context — no transcript extraction needed.
+**If no argument:**
+→ Reflect on current session's work directly — you have full context.
 
 ## Analyze the Session
 
@@ -64,7 +61,7 @@ Before creating new files, explore what already exists:
 
 ## Update or Create Knowledge
 
-Write wtih the perspective of future agents working on the project in mind.
+Write with the perspective of future agents working on the project in mind.
 
 For each significant learning:
 
@@ -98,14 +95,13 @@ Tell the user:
 
 - Don't create knowledge for one-off issues unlikely to recur
 - Don't duplicate what's already documented
-- Don't add speculative content
+- Don't add speculative content (only facts from code)
 - Don't create files for trivial learnings
 - Don't add code snippets when you could point to code files/scripts instead
-- Don't add speculative content (only facts from code)
 - Don't rewrite sections unnecessarily
 - Don't create orphan files (always link from somewhere)
 - Don't write things that won't be helpful for future work
 - Don't capture (true) one-off issues 
-- Don't write capture knowledge that amounts to "extended code comments/docstrings"
+- Don't capture knowledge that amounts to "extended code comments/docstrings"
 - Don't explain trivial things/things that are obvious from reading the code
 

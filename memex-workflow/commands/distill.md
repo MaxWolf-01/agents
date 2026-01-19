@@ -2,7 +2,12 @@
 description: Distill knowledge from recent code changes
 argument-hint: [scope-or-instructions]
 disable-model-invocation: true
+allowed-tools: Bash(cat:*)
 ---
+
+<project-overview>
+!`cat agent/knowledge/overview.md 2>/dev/null`
+</project-overview>
 
 You are updating knowledge files to match the current state of the codebase.
 

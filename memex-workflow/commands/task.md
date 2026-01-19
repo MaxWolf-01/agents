@@ -1,7 +1,12 @@
 ---
 description: Capture or continue work on a task
 argument-hint: [task-name-or-topic]
+allowed-tools: Bash(cat:*)
 ---
+
+<project-overview>
+!`cat agent/knowledge/overview.md 2>/dev/null`
+</project-overview>
 
 Capture or continue work on a task.
 
@@ -53,8 +58,7 @@ If no arguments:
 
 **This is non-negotiable.** Before doing any significant work — including brainstorming and discussion:
 
-- [ ] **Read `overview.md`** — the entry point to project knowledge, always
-- [ ] **Read relevant knowledge files** — follow wikilinks from overview that relate to your task
+- [ ] **Follow wikilinks from overview** — read knowledge files that relate to your task
 - [ ] **Read project context files** — dev setup, conventions, things needed to work effectively
 - [ ] **Search for related tasks** — previous work on similar problems
 - [ ] **Read MUST READ sources** from the task file if continuing existing work
@@ -68,7 +72,7 @@ Continue until you feel confident about the project structure and task context.
 
 > Task: "Fix a bug where audio doesn't play for some documents"
 >
-> 1. Read `overview.md` → see Core section links to [[tts-flow]] and [[document-processing]]
+> 1. Overview shows Core section links to [[tts-flow]] and [[document-processing]]
 > 2. Read both — the bug could be in either pipeline
 > 3. Notice tts-flow has a "Voice change race condition" gotcha — could this be it?
 > 4. Follow cross-references — tts-flow links to [[audio-playback]], which has a gotcha about WebSocket timing issues

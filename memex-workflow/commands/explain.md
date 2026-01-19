@@ -1,9 +1,13 @@
 ---
 description: Explain code changes with fresh eyes
 argument-hint: [scope]
-allowed-tools: Read, Grep, Glob, Bash(git:*), Bash(tre:*)
+allowed-tools: Read, Grep, Glob, Bash(git:*), Bash(tre:*), Bash(cat:*)
 disable-model-invocation: true
 ---
+
+<project-overview>
+!`cat agent/knowledge/overview.md 2>/dev/null`
+</project-overview>
 
 You are explaining code changes to someone who didn't write them.
 

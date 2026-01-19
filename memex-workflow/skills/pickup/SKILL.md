@@ -36,9 +36,8 @@ echo "To continue: /task agent/handoffs/<name>.md"
 
 **This is non-negotiable.** Before doing any work:
 
-- [ ] **Read `overview.md`** — the entry point to project knowledge, always
+- [ ] **Follow wikilinks from overview** — read knowledge files that relate to your work
 - [ ] **Read the linked task file** — understand the intent you're continuing
-- [ ] **Read relevant knowledge files** — follow wikilinks from overview that relate to your task
 - [ ] **Read project context files** — dev setup, conventions, things needed to work effectively in this codebase
 - [ ] **Read files from the previous session** — MUST READ sources from curated handoffs, or all files referenced throughout a session export
 

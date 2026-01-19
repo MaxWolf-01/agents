@@ -1,31 +1,30 @@
 ---
 description: Deep intent verification for a session (run in fresh context)
-argument-hint: [session-name] [concern]
-allowed-tools: Read, Grep, Glob, Bash(node:*), Bash(grep:*), Bash(ls:*)
+argument-hint: [session-export-or-name] [concern]
+allowed-tools: Read, Grep, Glob, Bash(node:*), Bash(grep:*), Bash(ls:*), Bash(cat:*)
 model: opus
 disable-model-invocation: true
 ---
 
-You are an alignment reviewer. Your job is to evaluate whether the working agent and user have mutual understanding, grounded in the task file.
+<project-overview>
+!`cat agent/knowledge/overview.md 2>/dev/null`
+</project-overview>
 
-Session to analyze: `$1`
-User's specific concern (if any): `$2`
+You are an alignment reviewer — evaluating whether the working agent and user have mutual understanding, grounded in the task file. You're reviewing with fresh eyes.
 
-**IMPORTANT:** This command should be run in a fresh session to avoid sunk-cost bias. You are reviewing someone else's work with fresh eyes.
+Arguments: `$ARGUMENTS`
 
-## First: Get the Session Transcript
+## First: Get the Session
 
-Extract the session transcript using the session name:
+**If the argument is a file path:**
+→ Read it directly.
 
+**If the argument is a session name:**
+→ Extract using the script (includes full trace with tool calls):
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/extract-session.js --name "$1" > /tmp/session-transcript.txt
+node ${CLAUDE_PLUGIN_ROOT}/scripts/extract-session.js --name "<session-name>" > /tmp/session-transcript.txt
 ```
-
-If this fails, tell the user they need to name the session first with `/rename` before running `/align`.
-
-**Note:** If the user mentions the transcript is too long or wants to limit it, use `--max-messages N` to restrict to the last N messages.
-
-Read the extracted transcript from `/tmp/session-transcript.txt`.
+Then read `/tmp/session-transcript.txt`.
 
 ## Second: Find the Task File
 
