@@ -1,4 +1,7 @@
-# Session Name
+---
+name: session-name
+description: Generate a descriptive session name for /rename
+---
 
 Generate a descriptive name for this session based on what was discussed/accomplished.
 

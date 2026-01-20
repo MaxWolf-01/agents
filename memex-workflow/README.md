@@ -1,12 +1,14 @@
 # Memex Workflow
 
-Task files, handoffs, and a persistent knowledge base for multi-session work.
+Task files, session continuity, and a persistent knowledge base for multi-session work.
 
 ## Core Concepts
 
 **Tasks** (`agent/tasks/`) — Capture user intent, goals, assumptions. Not implementation logs.
 
-**Handoffs** (`agent/handoffs/`) — Session continuation state. Created via **handoff skill**, resumed via `/task <handoff-path>`.
+**Transcripts** (`agent/transcripts/`) — Raw session exports for continuation. Created via `/transcript`, resumed via `/task <path>`. High fidelity, no "handoff slop".
+
+**Handoffs** (`agent/handoffs/`) — Curated session summaries. Use when transcripts are too long or unfocused, or when targeted continuation is needed.
 
 **Knowledge** (`agent/knowledge/`) — Persistent reference docs. Updated via `/distill` (code-grounded) or `/learnings` (session-grounded).
 
@@ -17,6 +19,7 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 | Command | Purpose |
 |---------|---------|
 | `/task [name]` | Start/continue work, capture intent |
+| `/transcript <session-id>` | Save session transcript for later pickup |
 | `/distill [scope]` | Sync knowledge with code (run every 5-10 commits) |
 | `/learnings [session]` | Extract gotchas/patterns from a session (works in current session too) |
 | `/align [session]` | Deep intent verification |
@@ -24,26 +27,25 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 | `/recap` | Status report surfacing decisions and open questions |
 | `/session-name` | Generate descriptive session name for `/rename` |
 
-**Transcript extraction:** `/align` and `/explain` need a named session to extract transcripts. Use `/session-name` to generate a name, then `/rename <name>`.
-
-**Note:** `/align` and `/explain` are currently underused — need to be updated to integrate better with the rest of the workflow + within-session variants for lower friction.
+`/align` and `/learnings` accept either a session export file path or a session name.
 
 ## Skills
 
 | Skill | When used |
 |-------|-----------|
-| **handoff** | End of session when work continues |
-| **pickup** | When `/task` is given a handoff path |
+| **handoff** | End of session when curated summary needed |
+| **pickup** | When `/task` is given a handoff or transcript path |
 | **implement** | Moving from planning to coding |
+| **session-name** | Generate descriptive session name |
 
 `/task` orchestrates and tells the model when to use each skill.
 
 ## Typical Flow
 
-1. `/task` to capture intent or pick up from handoff
-2. Explore knowledge base (always start from `overview`)
+1. `/task` to capture intent or pick up from transcript/handoff
+2. Explore knowledge base (overview is auto-injected, follow wikilinks)
 3. Work on the task
-4. **handoff skill** when ending session mid-work
+4. `/transcript` when ending session mid-work (or **handoff skill** for curated summary)
 5. `/distill` periodically to sync knowledge
 
 ## Fresh Context for Meta-Analysis

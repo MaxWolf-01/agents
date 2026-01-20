@@ -1,9 +1,9 @@
 
 ### [Memex Workflow](https://github.com/MaxWolf-01/agents/tree/master/memex-workflow) Plugin
 
-Commands: `/mx:task`, `/mx:distill`, `/mx:learnings`, `/mx:align`, `/mx:explain`, `/mx:recap`, `/mx:session-name`
+Commands: `/mx:task`, `/mx:transcript`, `/mx:distill`, `/mx:learnings`, `/mx:align`, `/mx:explain`, `/mx:recap`
 
-Skills: `handoff`, `pickup`, `implement`
+Skills: `handoff`, `pickup`, `implement`, `session-name`
 
 Uses [memex MCP](https://github.com/MaxWolf-01/memex) for knowledge base navigation.
 
