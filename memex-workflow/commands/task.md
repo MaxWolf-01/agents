@@ -5,12 +5,16 @@ allowed-tools: Bash(cat:*)
 ---
 
 <project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null`
+!`cat agent/knowledge/overview.md 2>/dev/null || true`
 </project-overview>
 
 Capture or continue work on a task.
 
 Arguments: `$ARGUMENTS`
+
+## Note on Task Systems
+
+This workflow uses markdown task files in `agent/tasks/`. The harness's TaskCreate/TaskList/TaskUpdate tools are separate — use those for sub-step progress visibility during implementation, not as the primary task tracking.
 
 ## First: Check What Kind of Entry This Is
 
@@ -126,6 +130,8 @@ If creating a new task, do the thinking first — then clarify:
 ### 4. Capture or Update
 
 For new tasks, create the file with this structure:
+
+Task files are like GitHub issues — always have a status, either `active` or `done`.
 
 ```markdown
 ---

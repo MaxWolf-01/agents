@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 <project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null`
+!`cat agent/knowledge/overview.md 2>/dev/null || true`
 </project-overview>
 
 You are explaining code changes to someone who didn't write them.

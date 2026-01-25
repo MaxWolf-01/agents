@@ -36,6 +36,30 @@ Or, in project's `.claude/settings.json`:
 }
 ```
 
+**Rule file (recommended)**
+
+The plugin includes `memex-workflow/rules/memex.md` with basic workflow context. Symlink it globally:
+
+```bash
+mkdir -p ~/.claude/rules
+ln -s /path/to/agents/memex-workflow/rules/memex.md ~/.claude/rules/memex.md
+```
+
+**Per-project MCP config (optional)**
+
+The workflow works without memex MCP — you just lose wikilink navigation (`explore`, `search`, `rename`) and optional semantic search.
+```json
+{
+  "mcpServers": {
+    "memex": {
+      "command": "uvx",
+      "args": ["memex-md-mcp@latest"],
+      "env": { "MEMEX_VAULTS": "./agent" }
+    }
+  }
+}
+```
+
 ### References
 
 Inspiration from: https://github.com/mitsuhiko/agent-stuff

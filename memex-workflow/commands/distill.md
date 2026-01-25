@@ -6,7 +6,7 @@ allowed-tools: Bash(cat:*)
 ---
 
 <project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null`
+!`cat agent/knowledge/overview.md 2>/dev/null || true`
 </project-overview>
 
 You are updating knowledge files to match the current state of the codebase.

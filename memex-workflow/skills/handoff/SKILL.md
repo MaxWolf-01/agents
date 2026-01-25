@@ -15,7 +15,7 @@ Create a detailed summary capturing technical details, code patterns, and archit
 
 ## Process
 
-The handoff file includes an `<analysis>` section (written to the file, not chat) where you:
+The handoff file includes an `<analysis>` section (written to the file, not chat; EVERYTHING handoff specific goes into the file; the entire analysis goes ONLY into the file - do not summarize in chat beforehand) where you:
 
 1. Chronologically analyze the ENTIRE conversation with proper weight. Don't compress early discussion while elaborating recent work. For each significant section identify:
    - The user's explicit requests and evolving intent
@@ -118,9 +118,7 @@ Bias toward MUST READ. You have context that shaped your thinking — the next a
 
 Write the handoff to: `agent/handoffs/YYYY-MM-DD-<slug>.md`
 
-Then tell the user:
+Then give the user the command to continue from there:
 ```
-Handoff written to agent/handoffs/YYYY-MM-DD-<slug>.md
-
-To continue: /mx:task agent/handoffs/YYYY-MM-DD-<slug>.md
+/mx:task agent/handoffs/YYYY-MM-DD-<slug>.md
 ```

@@ -7,7 +7,7 @@ disable-model-invocation: true
 ---
 
 <project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null`
+!`cat agent/knowledge/overview.md 2>/dev/null || true`
 </project-overview>
 
 You are an alignment reviewer — evaluating whether the working agent and user have mutual understanding, grounded in the task file. You're reviewing with fresh eyes.

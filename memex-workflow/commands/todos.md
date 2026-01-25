@@ -1,47 +1,66 @@
 ---
 description: Grouped overview of active task files
+argument-hint: [what you're interested in]
+allowed-tools: Bash(cat:*)
 ---
+
+<project-overview>
+!`cat agent/knowledge/overview.md 2>/dev/null || true`
+</project-overview>
 
 # Task Overview
 
-Generate a grouped overview of active task files with size hints and staleness flags.
+Generate a useful overview of active tasks — their relationships, how they fit in the project, and what state they're in.
 
-## Process
+**User asked:** `$ARGUMENTS`
 
-1. Find active tasks via Grep tool (not bash):
+## Gather Context
+
+1. **Explore the project structure** — follow wikilinks from the overview to understand the main areas. This informs how you group and contextualize tasks.
+
+2. **Find active tasks:**
    ```
    Grep: pattern="^status: active", path="agent/tasks", output_mode="files_with_matches"
    ```
 
-2. Read task files using parallel Read tool calls (not bash for loops) — title + first ~40 lines each
+   If there are "**/TODO{.md}" files, look at those too.
 
-3. Group by category — infer from task content, use whatever groupings make sense for this project (typically 4-8 categories)
+3. **Read task files** in parallel — enough to understand intent, relationships, and current state (~60 lines each)
 
-4. Assign size: `[S]` small, `[M]` medium, `[L]` large
+4. **Build context:**
+   - Follow wikilinks between tasks to understand parent/child/sibling relationships
+   - Check what tasks link to what — tracking tasks aggregate subtasks, subtasks reference parents
+   - Note cross-references to knowledge files for thematic grouping
+   - If the user's prompt suggests a focus area, prioritize accordingly
 
-5. Flag issues:
-   - `⚠️ done?` — task content suggests completion ("done", "complete", "merged", checklist all ticked)
-   - `⏸️ stale?` — started 2+ weeks ago, might need review
+5. **Understand project state** (if helpful):
+   - Recent commits (`git log --oneline -20`) — what's actively being worked on?
+   - This helps contextualize which tasks are "hot" vs backgrounded
 
-## Output Format
+## Output
 
-```
-## Category Name
-- task-name [S]
-- other-task [M] ⚠️ done?
-- old-task [L] ⏸️ stale?
+Present the tasks in a way that answers what the user asked. If they asked about a specific area, focus there. If they want a general overview, show the landscape.
 
-## Another Category
-...
+**Always include:**
+- Task relationships (what depends on what, what's a subtask of what)
+- Brief description of each task's purpose
+- Size/complexity hint (`[S]`/`[M]`/`[L]`)
+- Started date for temporal context
 
----
-⚠️ X tasks potentially done
-⏸️ Y tasks potentially stale
-```
+**Grouping:**
+- By area/theme when showing the full landscape
+- By relationship (parent → children) when there's clear hierarchy
+- Use whatever structure makes the tasks easiest to understand
 
-## Guidelines
+**Relationships to surface:**
+- Parent/tracking tasks with their subtasks indented
+- Dependencies between active tasks
+- Clusters of related work
 
-- One line per task, keep it scannable
-- Size is gut estimate from scope, not hours
-- Don't prioritize or suggest order — just report
-- If very few tasks, skip empty categories
+**What NOT to do:**
+- Don't mechanically flag everything over X days as "stale"
+- Don't add warnings unless something is genuinely worth calling out
+- Don't ignore the user's focus if they specified one
+- Don't show done/inactive tasks unless specifically asked
+
+The goal is helping the user understand their task landscape — what's there, how it fits together, where they might jump in.

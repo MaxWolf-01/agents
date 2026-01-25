@@ -49,6 +49,11 @@ Read through the entire transcript looking for:
 - What was chosen and why?
 - What was explicitly rejected?
 
+### 5. What Was Missing?
+- What context or clarifications would have been useful upfront?
+- What tools, scripts, or setup would have helped?
+- What CLAUDE.md rules or knowledge files would have prevented confusion?
+
 ## Check Existing Knowledge
 
 Before creating new files, explore what already exists:
@@ -82,6 +87,15 @@ For each significant learning:
 - If a gotcha has a workaround, include it
 - Capture learnings with long-term value 
 - Point agents to code files and resources they should read
+
+## The USE Principle
+
+Don't write:
+- **U**nimportant — things that won't matter for future work
+- **S**elf-explanatory — obvious from code or common knowledge
+- **E**asy to find — documented elsewhere (link instead)
+
+Apply 80/20: a session might have 10 interesting moments but only 2 worth persisting.
 
 ## Report
 
