@@ -285,6 +285,7 @@ Use date prefix + descriptive keywords:
 - Don't update continuously — sync at natural stopping points or when context is high
 - For handoffs, use the **handoff skill**, not task file updates
 - Completed tasks are historical records of thought processes — keep for reference
+- When marking a task as done, link to the PR/commit(s) in the yaml frontmatter if applicable, comma separated if multiple: `refs: abc123,#123,def456`
 
 - Task file = spec + decisions + rationale. Contains the "what" and "why" — goals, constraints, key decisions with reasoning, sources that informed those decisions. Should be readable in 3 months and still make sense. External docs belong here if they informed a decision.
 - Task file ≠ implementation plan. Grand implementation checklists don't survive first contact with code. The detailed steps live in the handoff or emerge during implementation.

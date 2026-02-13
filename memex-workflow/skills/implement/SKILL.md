@@ -19,11 +19,6 @@ State assumptions explicitly:
 - What would a malicious caller do?
 - What would a tired maintainer misunderstand?
 
-Bound the scope:
-- This handles X
-- This does NOT handle Y
-- Outside these conditions, behavior is undefined
-
 ## What NOT To Do
 
 - Write code before stating assumptions
