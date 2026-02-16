@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: This skill should be used when the user asks to "hand off", "create a handoff", "end session", "save progress for later", or when the agent decides to create session continuation for another agent to pick up.
+description: Create a curated session summary for continuation. Use when the user asks to "hand off" or "create a handoff".
 ---
 
 # Handoff
@@ -8,10 +8,6 @@ description: This skill should be used when the user asks to "hand off", "create
 Create a detailed handoff summary of the conversation for continuing work in a new session.
 
 A handoff requires a **purpose** — what the next agent should do. If no purpose is clear, ask the user before proceeding.
-
-## Goal
-
-Create a detailed summary capturing technical details, code patterns, and architectural decisions essential for continuing development without losing context.
 
 ## Process
 

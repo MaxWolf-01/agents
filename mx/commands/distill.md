@@ -5,10 +5,6 @@ disable-model-invocation: true
 allowed-tools: Bash(cat:*)
 ---
 
-<project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null || true`
-</project-overview>
-
 You are updating knowledge files to match the current state of the codebase.
 
 User's instructions: `$ARGUMENTS`
@@ -61,77 +57,49 @@ If there are uncommitted changes, ask whether to include them (might be WIP from
 - Read task files **committed since last distill** (check the diff for `agent/tasks/` changes) — regardless of their status. These provide context on what was worked on.
 - Read **uncommitted task files** too — these should be committed as part of the distill.
 - Do NOT read all active task files — only those touched since last distill, plus any active ones you suspect are now done after reviewing the changes.
-- Mark task files as `status: done` when appropriate, and commit them with the knowledge updates.
+- Mark task files as `status: done` when appropriate, add `refs:` to frontmatter linking relevant commits/PRs. Commit with the knowledge updates if the project tracks task files in git.
+
+**Research artefacts** (`agent/research/`):
+- Skim recent artefacts — findings worth keeping long-term should be promoted to knowledge.
 
 **Private files** (not committed) — check for modifications since last distill:
 ```bash
-find agent/tasks/private agent/knowledge/private -type f -newermt "$(git show -s --format=%ci <last-distill-hash>)" 2>/dev/null
+fd -t f --newer "$(git show -s --format=%ci <last-distill-hash>)" agent/tasks/private agent/knowledge/private 2>/dev/null
 ```
 Read and update these as needed. They won't be part of the distill commit but should still be kept in sync.
 
-## Take Your Time
+## Approach
 
-This is a dedicated distillation task. You have plenty of context to work with. You can:
-- ultrathink about connections (which ones to make and which ones NOT to)
-- Search the vault thoroughly (use memex)
-- Really consider what already exists before creating new notes
-- Plan the knowledge structure carefully
+This is a dedicated distillation task. Don't rush — getting the knowledge right matters more than speed. Think carefully about connections (which ones to make and which ones NOT to), search the vault thoroughly (`mx explore`, `mx search`), and consider what already exists before creating new notes.
 
-No need to rush. Getting it right matters more than speed.
+You're not just adding — you can move content between notes, update, delete stale content, restructure. Like refactoring code: extract when logic repeats, move to where it belongs, rename to match what things became, delete dead code.
 
-## You Can Refactor
+The project's CLAUDE.md is also in your scope — the overview / navigation map there should stay accurate.
 
-You're not just adding - you can also:
-- Move content between notes
-- Update existing notes with new insights
-- Delete stale content that's no longer accurate
-- Add links to existing notes that should connect
-- Restructure if the current organization isn't working
-
-Like refactoring code: you extract a function when the same logic appears in multiple places, you move code to where it logically belongs, you rename things to match what they've become, you delete dead code. Same principles apply to knowledge. If an insight about auth patterns ended up in a debugging session note but really deserves its own place that other notes can reference - move it. If scattered notes cover variations of the same concept - maybe consolidate. If old information would mislead future agents - delete it.
+**The goal is a well-connected, navigable knowledge graph.** This means **contextualized wikilinks** — not bare `[[topic]]` but `[[topic]] — what it covers, when to read it`. Without context at the link site, agents won't follow links they should. Keep link descriptions up to date — stale context is worse than no context.
 
 **When to create a new note**: If you keep wanting to link to something that doesn't exist, or if the same insight appears scattered across multiple places, that's a sign to extract it.
-
-## Consider Note Type
-
-Before writing, ask: what kind of note is this? Common patterns:
-
-- **Stub / link target**: Just needs to exist so other notes can link to it.
-- **Reference doc / skill**: How-to, commands, patterns, procedures.
-- **Topic hub**: Entry point linking related knowledge + historical tasks.
-- **Convention**: How things are done in this codebase, naming patterns.
-
-Architecture decisions and insights are usually sections within a topical note, linking to the task where explored in detail.
-
-These aren't rigid categories. The right structure emerges from the content — just avoid forcing everything into one template.
-
-## Cross-Cutting Concerns & Hubs
-
-Some topics span multiple domains and don't fit into a single technical doc. For these:
-- **Create or use a hub** — A note that links to related knowledge files and/or task files with brief descriptions. Overview is a hub. Domain-specific entry points are hubs. Create new hubs when a topic area needs one.
-- **Summarize + link** — Sometimes a 1-3 sentence summary with a link to a done task file is better than duplicating content. But if the task file is big/noisy, a clean summary in knowledge may be more useful than forcing agents to read the whole task.
-- **Dedicated knowledge file** — When complex enough to warrant its own doc.
-
-**Discoverability is crucial.** Even when something is linked from a hub, agents need enough reason to follow links. Clear descriptions *at the link site* (not just within the target file) help agents decide if exploring further is worth it. A bare `[[some-file]]` link with no context is nearly useless.
 
 ## What Knowledge Files Are
 
 Knowledge files describe **what IS** — grounded in code truth, not aspirational. They're the persistent reference that outlives individual tasks and sessions.
 
-**Examples of knowledge files:**
-- **Architecture docs** — how the TTS pipeline works, how documents flow through the system
-- **Procedures/skills** — how to test Stripe locally, how to debug processor issues
-- **Design principles** — frontend aesthetics, coding conventions
-- **Tracking nodes** — `stripe-integration` linking to related subtopics and tasks
-- **Decisions with rationale** — why we chose X over Y (when it needs space)
+Before writing, ask: what kind of note is this?
+
+- **Stub / link target**: Just needs to exist so other notes can link to it.
+- **Reference doc**: How-to, commands, patterns, procedures.
+- **Topic hub**: Entry point linking related knowledge and tasks. Create new hubs when a topic area needs one.
+- **Convention**: How things are done in this codebase, naming patterns.
+
+Architecture decisions and insights are usually sections within a topical note, not standalone files. These aren't rigid categories — the right structure emerges from the content.
 
 **Core principles:**
 
-1. **Sources section** — Same pattern as tasks. Link to code files, external docs, related knowledge. Mark MUST READ vs Reference.
+1. **Describe what IS** — Not what was planned, not speculation. Task files are future-oriented; knowledge files are present-tense ground truth.
 
-2. **Wiki-links are mandatory** — Every knowledge file should link to related files. Orphan files are anti-pattern. The graph structure IS the value.
+2. **Wiki-links are mandatory** — Orphan files are anti-pattern. The graph structure IS the value.
 
-3. **Describe what IS** — Not what was planned, not speculation. Task files are future-oriented; knowledge files are present-tense ground truth.
+3. **Link direction** — Knowledge links to other knowledge. Tasks and research link to knowledge, not the other way around. Knowledge stays stable and doesn't accumulate references to ephemeral work. Memex backlinks give you reverse navigation for free.
 
 4. **Link, don't duplicate** — Link to code files, don't embed snippets. Link to external docs, don't copy content. Future agents can fetch fresh.
 
@@ -139,20 +107,6 @@ Knowledge files describe **what IS** — grounded in code truth, not aspirationa
    - **U**nimportant — things that don't matter for future work or understanding
    - **S**elf-explanatory — obvious from code or basic knowledge
    - **E**asy to find — documented elsewhere (link instead)
-
-**Don't**
-
-- Don't create knowledge for one-off issues unlikely to recur
-- Don't duplicate what's already documented
-- Don't add speculative content
-- Don't create files for trivial learnings
-- Don't add code snippets when you could point to code files/scripts instead
-- Don't add speculative content (only facts from code)
-- Don't create orphan files (always link from somewhere)
-- Don't write things that won't be helpful for future work
-- Don't capture (true) one-off issues 
-- Don't write capture knowledge that amounts to "extended code comments/docstrings"
-- Don't explain trivial things/things that are obvious from reading the code
 
 **When to create a new file vs keep inline:**
 
@@ -179,35 +133,25 @@ For each file in `agent/knowledge/`:
 4. Look for new gotchas in commit messages or code comments
 5. Add new relevant links, remove stale references, ...
 
-Base all updates on the **code ground truth**. Task files provide context (intent, what was explored) but knowledge files describe what IS, not what was planned.
-
 Make targeted, factual updates:
 - Fix file paths that moved/renamed
 - Update pattern descriptions if implementation changed
 - Add gotchas discovered from commits/code
 - Remove references to deleted code
-- Add Sources section if missing
 - Ensure wiki-links connect to related files
-
-**Do NOT:**
-- Add code snippets (link to files instead)
-- Add speculative content (only facts from code)
-- Rewrite sections unnecessarily
-- Create orphan files (always link from somewhere)
 
 **Ambiguities:** If something is unclear — conflicting information, can't tell if code is intentional or WIP, etc. — use AskUserQuestion. Don't guess.
 
 **Secrets:** Knowledge with private/secret information goes in `agent/knowledge/private/`.
 
-**Task files:** Grep for active task files. Those task files that are completed shall be marked with "status: done", and commited together with the knowledge files.
-
-Use the memex mcp's explore and rename functionality to help you navigate and update files in the agent/ vault.
+Use `mx explore` and `mx rename` to navigate and update files in the vault.
 
 ## Commit
 
-Stage agent files:
+Stage knowledge files (and any task status updates):
 ```bash
-git add agent/
+git add agent/knowledge/
+git add agent/tasks/
 ```
 
 Commit with distill prefix:

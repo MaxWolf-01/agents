@@ -1,7 +1,7 @@
 {
   "name": "mx",
   "version": "0.1.0",
-  "description": "Multi-session workflow for autonomous, long-term work. Intent tracking, knowledge persistence, session continuity, and alignment verification.",
+  "description": "Agent workflow for multi-session work. Decision records, research artefacts, knowledge persistence, session continuity.",
   "author": {"name": "MaxWolf-01"},
   "repository": "https://github.com/MaxWolf-01/agents"
 }

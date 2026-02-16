@@ -4,10 +4,6 @@ argument-hint: [what you're interested in]
 allowed-tools: Bash(cat:*)
 ---
 
-<project-overview>
-!`cat agent/knowledge/overview.md 2>/dev/null || true`
-</project-overview>
-
 # Task Overview
 
 Generate a useful overview of active tasks — their relationships, how they fit in the project, and what state they're in.
@@ -16,7 +12,7 @@ Generate a useful overview of active tasks — their relationships, how they fit
 
 ## Gather Context
 
-1. **Explore the project structure** — follow wikilinks from the overview to understand the main areas. This informs how you group and contextualize tasks.
+1. **Explore the project structure** — follow wikilinks in knowledge files to understand the main areas. This informs how you group and contextualize tasks.
 
 2. **Find active tasks:**
    ```
