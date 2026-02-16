@@ -1,16 +1,18 @@
-# Memex Workflow
+# mx — Agent Workflow Plugin
 
-Task files, session continuity, and a persistent knowledge base for multi-session work.
+Markdown-based issue tracking, research artefacts, knowledge persistence, and session continuity for multi-session work.
 
 ## Core Concepts
 
-**Tasks** (`agent/tasks/`) — Capture user intent, goals, assumptions. Not implementation logs.
+**Tasks** (`agent/tasks/`) — Markdown issue tracking: intent, assumptions, done-when. Not session logs. Committed to project repo.
 
-**Transcripts** (`agent/transcripts/`) — Raw session exports for continuation. Created via `/transcript`, resumed via `/task <path>`. High fidelity, no "handoff slop".
+**Research** (`agent/research/`) — Point-in-time investigation snapshots. Linked from tasks. Gitignored.
 
-**Handoffs** (`agent/handoffs/`) — Curated session summaries. Use when transcripts are too long or unfocused, or when targeted continuation is needed.
+**Knowledge** (`agent/knowledge/`) — Persistent reference. Updated via `/distill` (code-grounded) or `/learnings` (session-grounded). Committed.
 
-**Knowledge** (`agent/knowledge/`) — Persistent reference docs. Updated via `/distill` (code-grounded) or `/learnings` (session-grounded).
+**Transcripts** (`agent/transcripts/`) — Exported sessions, tool calls and thinking stripped. Gitignored.
+
+**Handoffs** (`agent/handoffs/`) — Curated session summaries for targeted continuation. Rare. Gitignored.
 
 Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 
@@ -18,66 +20,38 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 
 | Command | Purpose |
 |---------|---------|
-| `/task [name]` | Start/continue work, capture intent |
-| `/transcript <session-id>` | Save session transcript for later pickup |
-| `/distill [scope]` | Sync knowledge with code (run every 5-10 commits) |
-| `/learnings [session]` | Extract gotchas/patterns from a session (works in current session too) |
-| `/align [session]` | Deep intent verification |
-| `/explain [scope]` | Understand code changes |
+| `/task [name]` | Create or pick up a decision record |
+| `/research [topic]` | Investigate a question, produce a research artefact |
+| `/transcript` | Save session transcript for later pickup |
+| `/distill [scope]` | Sync knowledge with code (run periodically) |
+| `/learnings [session]` | Extract gotchas/patterns into knowledge |
+| `/explain [scope]` | Explain code changes with fresh eyes |
 | `/recap` | Status report surfacing decisions and open questions |
-| `/session-name` | Generate descriptive session name for `/rename` |
-
-`/align` and `/learnings` accept either a session export file path or a session name.
+| `/todos` | Overview of active task files |
 
 ## Skills
 
 | Skill | When used |
 |-------|-----------|
-| **handoff** | End of session when curated summary needed |
-| **pickup** | When `/task` is given a handoff or transcript path |
-| **implement** | Moving from planning to coding |
+| **handoff** | Curated session summary for continuation |
+| **implement** | Pre-coding readiness gate + coding guidelines |
 | **session-name** | Generate descriptive session name |
-
-`/task` orchestrates and tells the model when to use each skill.
-
-## Typical Flow
-
-1. `/task` to capture intent or pick up from transcript/handoff
-2. Explore knowledge base (overview is auto-injected, follow wikilinks)
-3. Work on the task
-4. `/transcript` when ending session mid-work (or **handoff skill** for curated summary)
-5. `/distill` periodically to sync knowledge
-
-## Fresh Context for Meta-Analysis
-
-`/align`, `/explain`, `/distill`, should run in fresh sessions. The working agent has sunk-cost bias and tunnel vision. Fresh agents can challenge assumptions objectively.
+| **restore-sessions** | Find unfinished sessions |
+| **tyro-cli** | Scaffold a CLI script with tyro |
 
 ## Knowledge Structure
 
-Flat file structure with wiki-links:
-```
-overview
-├── domain-topics (tts-flow, auth, billing, ...)
-│   ├── gotchas, key files, cross-references
-│   └── links to code + external docs
-└── operations (migrations, infrastructure, ...)
-```
+Flat files connected by wiki-links. Hubs (project overview in CLAUDE.md, domain entry points) create short paths to any topic. Knowledge files describe what IS — grounded in code, not aspirational.
 
-Knowledge files point to sources — they don't duplicate code or external docs or code.
-Hubs create a small-world network for efficient navigation.
+## Fresh Context for Meta-Analysis
 
-## Orchestration
-
-Currently human. You decide when to `/align`, when to handoff, when to spawn parallel sessions.
-
-With headless mode (`claude -p`) and session resumption (`--resume`), an orchestrating agent could manage sessions the same way — launch tasks, monitor via transcripts, invoke alignment checks, coordinate handoffs.
+`/explain`, `/distill`, `/learnings` benefit from fresh sessions. The working agent has sunk-cost bias and tunnel vision.
 
 ---
 
 **Local development:**
 ```bash
 rm -rf ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
-ln -s /path/to/memex-workflow ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
+ln -s /path/to/mx ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
 ```
 `claude plugin update mx@MaxWolf-01` replaces the symlink.
-

@@ -1,7 +1,7 @@
 {
   "name": "mx",
   "version": "0.1.0",
-  "description": "Agent workflow for multi-session work. Decision records, research artefacts, knowledge persistence, session continuity.",
+  "description": "Agent workflow for multi-session work. Markdown-based issue tracking, research artefacts, knowledge persistence, session continuity.",
   "author": {"name": "MaxWolf-01"},
   "repository": "https://github.com/MaxWolf-01/agents"
 }

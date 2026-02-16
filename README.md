@@ -1,11 +1,7 @@
 
 ### [mx](https://github.com/MaxWolf-01/agents/tree/master/mx) — Agent Workflow Plugin
 
-Commands: `/mx:task`, `/mx:transcript`, `/mx:distill`, `/mx:learnings`, `/mx:explain`, `/mx:recap`
-
-Skills: `handoff`, `implement`, `session-name`
-
-Uses [memex CLI](https://github.com/MaxWolf-01/memex) for knowledge base navigation (optional — workflow works without it).
+Markdown-based issue tracking, research artefacts, knowledge persistence, and session continuity for multi-session agent work. Uses [memex CLI](https://github.com/MaxWolf-01/memex) for wikilink + semantic knowledge base navigation.
 
 See [mx/README.md](./mx/README.md) for details.
 
