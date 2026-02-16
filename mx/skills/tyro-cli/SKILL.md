@@ -194,6 +194,10 @@ verbose: bool
 verbose: bool = False
 ```
 
+### Optional Args Display
+
+`str | None = None` shows as `{None}|STR` in help, which is ugly. No built-in fix — use `metavar=` via `tyro.conf.arg(metavar="VALUE")` to override, or provide a default string value instead of None where possible.
+
 ### Subcommand Argument Ordering
 
 Arguments before the subcommand selector go to the parent parser. Arguments after go to the subcommand. Use `tyro.conf.CascadeSubcommandArgs` to relax this constraint if mixing shared args with subcommands.
@@ -234,7 +238,9 @@ When passing `default=Config(...)` to `tyro.cli()`, `__post_init__` is called tw
 | Feature | Usage | When |
 |---|---|---|
 | Positional args | `Annotated[str, tyro.conf.Positional]` | Natural positional CLI args (paths, names) |
+| Variadic positional | `Annotated[list[str], tyro.conf.Positional]` | Multiple positional args (`script.py a b c`) |
 | Short aliases | `Annotated[str, tyro.conf.arg(aliases=["-v"])]` | Common flags that deserve short forms |
+| Custom arg config | `tyro.conf.arg(name=, help=, metavar=, aliases=)` | Fine-grained control over a single argument |
 | Choices | `Literal["a", "b", "c"]` | Constrained string values |
 | Enum choices | `MyEnum` (name-based) or `tyro.conf.EnumChoicesFromValues[MyEnum]` (value-based) | When enum objects are needed downstream |
 | Omit prefixes | `tyro.cli(Args, config=(tyro.conf.OmitArgPrefixes,))` | Single flat dataclass, avoid `--args.field` |
