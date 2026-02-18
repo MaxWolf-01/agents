@@ -14,10 +14,11 @@ Generate a useful overview of active tasks — their relationships, how they fit
 
 1. **Explore the project structure** — follow wikilinks in knowledge files to understand the main areas. This informs how you group and contextualize tasks.
 
-2. **Find active tasks:**
+2. **Find open tasks:**
    ```
-   Grep: pattern="^status: active", path="agent/tasks", output_mode="files_with_matches"
+   Grep: pattern="^status: (active|backlog)", path="agent/tasks", output_mode="files_with_matches"
    ```
+   By default show all non-done tasks. Respect explicit filters if the user asks.
 
    If there are "**/TODO{.md}" files, look at those too.
 
@@ -60,3 +61,10 @@ Present the tasks in a way that answers what the user asked. If they asked about
 - Don't show done/inactive tasks unless specifically asked
 
 The goal is helping the user understand their task landscape — what's there, how it fits together, where they might jump in.
+
+## Updating Tasks
+
+When the user asks to close a task or references commits/PRs:
+
+- Set `status: done` when appropriate
+- Add relevant commits and PRs to `refs:` in frontmatter — short hash for commits, `#N` for PRs: `refs: [abc1234, #42]`

@@ -51,10 +51,6 @@ Bad examples (too vague):
 ## Output Structure
 
 ```markdown
----
-consumed: false
----
-
 # <Readable Summary>
 
 <analysis>

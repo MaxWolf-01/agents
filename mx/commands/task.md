@@ -7,17 +7,7 @@ Create or pick up a task.
 
 Arguments: `$ARGUMENTS`
 
-## Entry Routing
-
-**Handoff or transcript path** (e.g., `agent/handoffs/...` or a session export):
-→ Read it. Read the linked task file. Summarize what you're picking up and confirm with the user before proceeding.
-→ For handoffs, mark `consumed: true` in frontmatter after loading.
-
-**Existing task file or topic** (e.g., `agent/tasks/...` or a keyword):
-→ Find the task file, read it, continue.
-
-**No argument / new idea**:
-→ Discuss first. Don't create a file until intent is clear.
+Read provided files, handoffs, or transcripts in full before proceeding.
 
 ## What Tasks Are
 
@@ -50,9 +40,15 @@ Don't default to "pragmatic" just because something exists. Agents overestimate 
 
 ## Task File Structure
 
+Statuses:
+- `active` — we intend to work on this. Default when creating a new task.
+- `backlog` — idea captured, not pursuing soon. Use for things explicitly parked.
+- `done` — completed.
+
 ```markdown
 ---
 status: active
+refs: []
 ---
 
 # <Descriptive Title>

@@ -9,10 +9,7 @@ Extract learnings from a session and update or create knowledge files.
 
 Arguments: `$ARGUMENTS`
 
-## Get the Session
-
-**File path** → read it directly.
-**No argument** → reflect on current session's work — you have full context.
+Read provided files or session transcripts in full before analyzing.
 
 ## Analyze
 
