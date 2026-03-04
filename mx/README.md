@@ -22,6 +22,8 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 |---------|---------|
 | `/task [name]` | Create or pick up a decision record |
 | `/research [topic]` | Investigate a question, produce a research artefact |
+| `/reflect` | Post-implementation within-session reflection — friction, assumptions, what you'd do differently |
+| `/roast` | Bird's-eye critical review of codebase architecture, coupling, code smells, structural debt |
 | `/distill [scope]` | Sync knowledge with code reality (always in a fresh session) |
 | `/learnings` | Extract gotchas/patterns into knowledge (within session) |
 | `/transcript` | Save session transcript for later pickup |
@@ -33,6 +35,7 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 | Skill | Purpose |
 |-------|---------|
 | **implement** | Loads coding best practices and principles. For the mechanical part — translating an idea into clean code. Not always-on; loaded when it's time to write code. |
+| **codex** | Second opinion from a different model (OpenAI Codex). Packages context and gets an independent critique. Usable standalone or layered into other commands (e.g., /roast fans out codex sub-agents for diverse review). |
 | **handoff** | Curated session summary for continuation in a new session |
 | **session-name** | Generate long, descriptive, searchable session names for `/rename` |
 | **restore-sessions** | Recover old sessions after crashes or when tmux history is lost |
@@ -42,9 +45,6 @@ Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
 
 | Name | Type | Purpose |
 |------|------|---------|
-| **reflect** | command | Within-session post-implementation reflection. "Now that you've experienced the implementation, where was the friction? What assumptions broke? Where is the architecture fighting the feature? What would you redesign?" |
-| **roast** | command | Standalone bird's-eye critical review of codebase or module. Architecture, coupling, code smells, structural debt. Heavier than reflect — needs to actually read and understand the code. |
-| **codex** | skill | Second opinion from a different model (OpenAI Codex). Packages context (transcript, CLAUDE.md, code) and gets an independent critique. Usable standalone, but also layered into other commands — e.g., /roast fans out codex sub-agents alongside its own analysis for a more diverse review. Also useful for /recap or as a general "get a second perspective" tool. |
 | **init-knowledge** | command | Bootstrap a knowledge base for an existing project from scratch. Sequential, not parallel — writing good knowledge requires deep understanding. Planned after distill improvements. |
 
 ## How This Gets Used
