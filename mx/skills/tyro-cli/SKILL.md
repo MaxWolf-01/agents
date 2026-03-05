@@ -1,6 +1,6 @@
 ---
 name: tyro-cli
-description: This skill should be used when the user asks to "create a CLI", "write a script", "add CLI arguments", "convert argparse to tyro", "improve script --help", "make a command-line tool", or when creating/modifying any Python script that accepts command-line arguments.
+description: Must read guide on creating/editing CLIs or any Python script that accepts command-line arguments.
 ---
 
 # CLI Scripts with tyro
@@ -222,6 +222,17 @@ weight_decay: float = 1e-2
 ### `__post_init__` with `default=`
 
 When passing `default=Config(...)` to `tyro.cli()`, `__post_init__` is called twice (once for the default, once for the parsed result). Avoid side effects in `__post_init__`; use `@property` for derived fields.
+
+## LLM-Consumable Output
+
+If the script's output may be consumed by LLMs (piped into prompts, used as tool output, etc.), always include a `--plain` flag that strips decorative formatting (progress bars, unicode boxes, color codes) and emits compact, structured text (TSV, JSON lines, plain prose).
+
+```python
+plain: bool = False
+"""Machine-friendly output — no bars, no unicode, compact TSV-like format. Ideal for piping to LLMs."""
+```
+
+Make `--plain` affect all output paths — tables, progress indicators, summaries. The default (rich/human-friendly) stays unchanged.
 
 ## Anti-Patterns
 
