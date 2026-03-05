@@ -86,7 +86,13 @@ Insert new entries in the appropriate section of the JSON, maintaining the exist
 
 Format: `"Bash(<command_pattern> *)"` — the `*` at end matches any trailing arguments.
 
-For SSH remote commands: `"Bash(ssh * <command> *)"` — the first `*` matches the hostname.
+**Gotcha — trailing `*` requires at least one argument.** `"Bash(git status *)"` matches `git status -s` but NOT bare `git status`. For commands that are commonly called without arguments, add BOTH the bare and `*` variants:
+```json
+"Bash(git status)",
+"Bash(git status *)",
+```
+
+For SSH remote commands: `"Bash(ssh * <command> *)"` — the first `*` matches the hostname. Same trailing-`*` caveat applies: `"Bash(ssh * nvidia-smi)"` is needed alongside the `*` variant for bare invocations.
 
 ### 5. Commit
 
