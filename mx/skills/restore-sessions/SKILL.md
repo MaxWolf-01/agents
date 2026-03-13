@@ -29,12 +29,15 @@ Determine the correct project path from the current working directory. The path 
 ### 1. Run the scanner script
 
 ```bash
-uv run python <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N>
+uv run python <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N> --exclude <current_session_id>
 ```
+
+**IMPORTANT: Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl — matching it is useless and confusing. To get the current session ID, use the most recently modified `.jsonl` file in the sessions directory: `ls -t <sessions_dir>/*.jsonl | head -1` and extract the stem. The current (active) session is always the most recently written file.
 
 Arguments:
 - `--days N` — only sessions modified within the last N days
 - `--sessions N` — only the N most recent sessions (by modification time)
+- `--exclude ID` — exclude a session by ID (repeatable). Always exclude the current session.
 
 Both filters can be combined. If the user specifies "last 100 sessions or last 10 days, whichever is greater," run with `--days 10` first, then check if the count is under 100 — if so, run again with `--sessions 100`.
 

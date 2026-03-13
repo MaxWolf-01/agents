@@ -205,6 +205,8 @@ def main():
     for f in sessions_dir.glob("*.jsonl"):
         if f.name.endswith(".wakatime"):
             continue
+        if f.stem in exclude_ids:
+            continue
         candidates.append(f)
 
     # Sort by modification time, newest first
