@@ -46,8 +46,3 @@ Codex has **zero context** from your session. Everything it needs must be in the
 - Not: "What do you think?"
 
 **GPT-5 is sensitive to contradictory instructions** — more so than other models. Keep prompts clean and unambiguous.
-
-## Maintenance
-
-- **Update CLI**: `bun install -g @openai/codex`
-- **Models last checked**: 2026-02-12. Default: `gpt-5.3-codex` (ChatGPT account). Auth is ChatGPT-based, not API key.

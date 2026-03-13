@@ -2,7 +2,7 @@
 """Scan Claude Code session files and extract summary info for triage.
 
 Usage:
-    uv run python scan_sessions.py <sessions_dir> [--days N] [--sessions N]
+    uv run python scan_sessions.py <sessions_dir> [--days N] [--sessions N] [--exclude ID]
 
 Output: One JSON object per session (non-subagent only), sorted newest-first.
 Sessions smaller than 3KB are excluded (empty/trivial).
@@ -183,6 +183,7 @@ def main():
     sessions_dir = Path(sys.argv[1])
     max_days = None
     max_sessions = None
+    exclude_ids: set[str] = set()
 
     args = sys.argv[2:]
     i = 0
@@ -192,6 +193,9 @@ def main():
             i += 2
         elif args[i] == "--sessions" and i + 1 < len(args):
             max_sessions = int(args[i + 1])
+            i += 2
+        elif args[i] == "--exclude" and i + 1 < len(args):
+            exclude_ids.add(args[i + 1])
             i += 2
         else:
             i += 1

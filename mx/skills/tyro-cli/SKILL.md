@@ -57,9 +57,38 @@ if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
 ```
 
-### Pattern 2: Union Subcommands (multi-command tools)
+### Pattern 2a: Decorator Subcommands (preferred for extensible CLIs)
 
-When a script has distinct modes with different arguments.
+`tyro.extras.SubcommandApp` — click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
+
+```python
+import tyro
+from tyro.extras import SubcommandApp
+
+app = SubcommandApp()
+
+@app.command(name="train")
+def train(args: TrainArgs) -> None:
+    """Train a model."""
+    ...
+
+@app.command(name="eval")
+def eval(args: EvalArgs) -> None:
+    """Evaluate a checkpoint."""
+    ...
+
+if __name__ == "__main__":
+    app.cli(description=__doc__, config=(tyro.conf.OmitArgPrefixes,))
+```
+
+- `description` goes on `.cli()`, not `SubcommandApp()`.
+- `OmitArgPrefixes` avoids `--args.` prefix from the function parameter name.
+
+### Pattern 2b: Union Subcommands (static multi-command tools)
+
+When subcommands are known at type-definition time and you want pure type-based dispatch.
+
+**Limitation:** Python collapses `Union[X]` to `X`, so this requires 2+ variants. For a single subcommand, use Pattern 2a instead.
 
 ```python
 from dataclasses import dataclass
