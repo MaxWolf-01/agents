@@ -1,0 +1,17 @@
+{
+  "description": "Block dangerous docker operations tunneled through SSH",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/ssh-docker-guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

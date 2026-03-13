@@ -81,6 +81,7 @@ Present results in a table, grouped by safety:
 Split additions:
 - **Global** (`~/.dotfiles/claude/settings.json` or wherever the canonical source is): universal RO commands useful across all projects.
 - **Project-local** (`<project>/.claude/settings.json`): project-specific make targets, domain tools.
+- **Clean up local**: remove local entries already covered by global, and promote local entries that are clearly project-agnostic.
 
 Insert new entries in the appropriate section of the JSON, maintaining the existing grouping style (basic commands, search tools, nix, system, dev tooling, git, gh, ssh, docker).
 
@@ -93,6 +94,10 @@ Format: `"Bash(<command_pattern> *)"` — the `*` at end matches any trailing ar
 ```
 
 For SSH remote commands: `"Bash(ssh * <command> *)"` — the first `*` matches the hostname. Same trailing-`*` caveat applies: `"Bash(ssh * nvidia-smi)"` is needed alongside the `*` variant for bare invocations.
+
+**Gotcha — SSH glob patterns are inherently over-broad.** `ssh * docker ps *` matches ANY SSH command containing "docker ps" anywhere in the string, including `ssh host docker exec $(docker ps -q) evil-cmd`. The `*` wildcards match across the full command, not just individual arguments. This means "read-only" SSH docker patterns can be exploited to run `docker exec/run/stop/rm` over SSH without approval.
+
+Mitigation: the mx plugin includes a `PreToolUse` hook (`hooks/ssh-docker-guard.sh`) that acts as a deny-list — it blocks SSH commands containing dangerous docker subcommands (`exec`, `run`, `stop`, `rm`, `kill`, `build`, `push`, `pull`, `restart`, `update`, `create`) regardless of what the glob allowlist permits. If reviewing SSH docker patterns, verify this hook is active rather than trying to fix it at the glob level.
 
 ### 5. Commit
 
