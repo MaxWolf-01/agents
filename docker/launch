@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DOCKER_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage: launch [options] <repo-url> [-- claude args...]
+
+Options:
+  -p, --profile NAME   Profile to use (default: bare). See profiles/ dir.
+  -s, --slot NAME      Slot name (default: derived from repo name).
+  -h, --help           Show this help.
+
+Examples:
+  launch https://github.com/user/project
+  launch -p gsd https://github.com/user/project
+  launch -p gsd -s feat1 https://github.com/user/project -- -p 'fix the tests'
+EOF
+  exit 1
+}
+
+PROFILE="bare"
+SLOT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p|--profile) PROFILE="$2"; shift 2 ;;
+    -s|--slot)    SLOT="$2"; shift 2 ;;
+    -h|--help)    usage ;;
+    --)           shift; break ;;
+    -*)           echo "Unknown option: $1"; usage ;;
+    *)            break ;;
+  esac
+done
+
+[[ $# -lt 1 ]] && usage
+REPO_URL="$1"; shift
+
+# Consume -- if present
+[[ ${1:-} == "--" ]] && shift
+
+PROJECT=$(basename "$REPO_URL" .git)
+SLOT="${SLOT:-$PROJECT}"
+
+PROFILE_DIR="$DOCKER_DIR/profiles/$PROFILE"
+if [[ ! -d "$PROFILE_DIR" ]]; then
+  echo "Profile not found: $PROFILE"
+  echo "Available: $(ls "$DOCKER_DIR/profiles/")"
+  exit 1
+fi
+
+REPOS_DIR="$DOCKER_DIR/repos"
+REPO_DIR="$REPOS_DIR/$SLOT"
+CLAUDE_DIR="$DOCKER_DIR/run/$SLOT/.claude"
+
+# Clone if needed
+if [[ ! -d "$REPO_DIR" ]]; then
+  echo "Cloning $REPO_URL → $REPO_DIR"
+  mkdir -p "$REPOS_DIR"
+  git clone "$REPO_URL" "$REPO_DIR"
+fi
+
+# Build agent claude config for this slot (if not already set up)
+if [[ ! -f "$CLAUDE_DIR/CLAUDE.md" ]]; then
+  echo "Setting up profile: $PROFILE"
+  mkdir -p "$CLAUDE_DIR"
+
+  # Copy credentials from host
+  cp ~/.claude/.credentials.json "$CLAUDE_DIR/.credentials.json"
+
+  # Run profile setup
+  chmod +x "$PROFILE_DIR/setup"
+  "$PROFILE_DIR/setup" "$CLAUDE_DIR"
+fi
+
+# Build image if needed
+docker build -q -t claude-agent "$DOCKER_DIR" > /dev/null
+
+CONTAINER="agent-$SLOT"
+echo "Launching $CONTAINER (profile: $PROFILE)"
+
+# Env file is optional
+ENV_ARGS=()
+[[ -f "$DOCKER_DIR/env/github.env" ]] && ENV_ARGS=(--env-file "$DOCKER_DIR/env/github.env")
+
+docker run --rm -it \
+  --name "$CONTAINER" \
+  -v "$REPO_DIR":/work \
+  -v "$CLAUDE_DIR":/home/agent/.claude \
+  "${ENV_ARGS[@]}" \
+  claude-agent "$@"

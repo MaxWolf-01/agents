@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# GSD profile — installs Get Shit Done framework
+set -euo pipefail
+PROFILE_DIR="$(cd "$(dirname "$0")" && pwd)"
+TARGET="$1" # the claude config dir to populate
+
+cp "$PROFILE_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
+echo '{}' > "$TARGET/.claude.json"
+
+# Install GSD into the target claude dir
+# --local installs to ./.claude/ so we cd to the parent
+PARENT="$(dirname "$TARGET")"
+cd "$PARENT"
+npx get-shit-done-cc@latest --claude --local
+
+echo "gsd profile ready"
