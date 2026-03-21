@@ -70,7 +70,7 @@ agents launch, l    launch an agent (-d for detached, -p for profile, -s for slo
 agents attach, a    attach to a detached agent's tmux session
 agents ls           list all slots (profile, status, repo path)
 agents rm <slot>    remove slot (warns if unpushed work)
-agents clean        remove all stopped slots
+agents clean        remove all stopped slots (skips slots with unpushed work)
 agents logs <slot>  show container logs
 ```
 
