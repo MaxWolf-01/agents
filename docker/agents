@@ -22,10 +22,11 @@ case "$cmd" in
       name=$(basename "$slot")
       profile="bare"
       [ -d "$slot/.claude/get-shit-done" ] && profile="gsd"
-      status=""
       if docker inspect "agent-$name" > /dev/null 2>&1; then
         status="running"
         tmux has-session -t "agent-$name" 2>/dev/null && status="detached"
+      else
+        status="stopped"
       fi
       repo="$DOCKER_DIR/repos/$name"
       printf "%-20s %-8s %-12s %s\n" "$name" "$profile" "$status" "$repo"
@@ -59,22 +60,24 @@ case "$cmd" in
     for slot in "$DOCKER_DIR/run"/*/; do
       [ -d "$slot" ] || continue
       name=$(basename "$slot")
-      if ! docker inspect "agent-$name" > /dev/null 2>&1; then
-        repo="$DOCKER_DIR/repos/$name"
-        if [ -d "$repo" ]; then
-          unpushed=$(git -C "$repo" log --oneline @{u}..HEAD 2>/dev/null | wc -l)
-          dirty=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l)
-          if [ "$dirty" -gt 0 ] || [ "$unpushed" -gt 0 ]; then
-            warn=""
-            [ "$dirty" -gt 0 ] && warn="$dirty uncommitted"
-            [ "$unpushed" -gt 0 ] && warn="${warn:+$warn + }$unpushed unpushed"
-            echo "  skipped $name ($warn)"
-            continue
-          fi
-        fi
-        rm -rf "$DOCKER_DIR/run/$name" "$DOCKER_DIR/repos/$name"
-        echo "  removed $name"
+      if docker inspect "agent-$name" > /dev/null 2>&1; then
+        echo "  skipped $name (running)"
+        continue
       fi
+      repo="$DOCKER_DIR/repos/$name"
+      if [ -d "$repo" ]; then
+        unpushed=$(git -C "$repo" log --oneline @{u}..HEAD 2>/dev/null | wc -l)
+        dirty=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l)
+        if [ "$dirty" -gt 0 ] || [ "$unpushed" -gt 0 ]; then
+          warn=""
+          [ "$dirty" -gt 0 ] && warn="$dirty uncommitted"
+          [ "$unpushed" -gt 0 ] && warn="${warn:+$warn + }$unpushed unpushed"
+          echo "  skipped $name ($warn)"
+          continue
+        fi
+      fi
+      rm -rf "$DOCKER_DIR/run/$name" "$DOCKER_DIR/repos/$name"
+      echo "  removed $name"
     done
     ;;
 
