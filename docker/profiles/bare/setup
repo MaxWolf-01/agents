@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Bare profile — no extensions, just CLAUDE.md
-set -euo pipefail
-PROFILE_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="$1"
-
-cp "$PROFILE_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
-cp "$PROFILE_DIR/settings.json" "$TARGET/settings.json"
-echo "bare profile ready"

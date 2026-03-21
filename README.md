@@ -31,9 +31,9 @@ Or, in project's `.claude/settings.json`:
 }
 ```
 
-### [docker](https://github.com/MaxWolf-01/agents/tree/master/docker) — Sandboxed Agent Fleet
+### [clankr](https://github.com/MaxWolf-01/clankr) — Sandboxed Agent Fleet
 
-Run Claude Code agents in isolated Docker containers with shared auth, per-slot repo clones, and tmux for detach/attach. See [docker/README.md](./docker/README.md).
+Run coding agents in isolated Docker containers. `uvx clankr` — see [clankr repo](https://github.com/MaxWolf-01/clankr).
 
 ### References
 
