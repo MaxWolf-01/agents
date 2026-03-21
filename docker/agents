@@ -35,9 +35,22 @@ case "$cmd" in
   rm)
     [ $# -lt 1 ] && { echo "usage: agents rm <slot>"; exit 1; }
     slot="$1"
+    repo="$DOCKER_DIR/repos/$slot"
+    if [ -d "$repo" ]; then
+      unpushed=$(git -C "$repo" log --oneline @{u}..HEAD 2>/dev/null | wc -l)
+      dirty=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l)
+      warn=""
+      [ "$dirty" -gt 0 ] && warn="$dirty uncommitted changes"
+      [ "$unpushed" -gt 0 ] && warn="${warn:+$warn + }$unpushed unpushed commits"
+      if [ -n "$warn" ]; then
+        printf "WARNING: %s has %s. Remove anyway? [y/N] " "$slot" "$warn"
+        read -r ans
+        [[ "$ans" =~ ^[yY] ]] || { echo "aborted"; exit 1; }
+      fi
+    fi
     tmux kill-session -t "agent-$slot" 2>/dev/null || true
     docker rm -f "agent-$slot" 2>/dev/null || true
-    rm -rf "$DOCKER_DIR/run/$slot" "$DOCKER_DIR/repos/$slot"
+    rm -rf "$DOCKER_DIR/run/$slot" "$repo"
     echo "removed $slot"
     ;;
 
