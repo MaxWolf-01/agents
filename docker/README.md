@@ -8,17 +8,18 @@ run claude code in isolated containers. auth from host, repos on host, agents ca
 git clone https://github.com/MaxWolf-01/agents
 cd agents
 
-# create a fine-grained PAT on the MaxWolf-01-clanker github account
-# permissions: contents + pull requests (read/write)
-# https://github.com/settings/personal-access-tokens/new
+# create a classic PAT on the MaxWolf-01-clanker github account
+# scope: repo (fine-grained PATs don't cover collaborator repos)
+# https://github.com/settings/tokens/new
 mkdir -p docker/env
-echo "GH_TOKEN=github_pat_..." > docker/env/github.env
+echo "GH_TOKEN=ghp_..." > docker/env/github.env
 
 # make sure claude is logged in on the host
 claude login
 
 # per repo: add clanker as collaborator + branch protection
-docker/setup-repo owner/repo
+# then accept the invitation (log in as clanker)
+docker/setup-repo MaxWolf-01/my-project
 ```
 
 ## usage

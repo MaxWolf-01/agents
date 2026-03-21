@@ -16,23 +16,20 @@ case "$cmd" in
       echo "no slots"
       exit 0
     fi
-    printf "%-30s %-8s %s\n" "SLOT" "PROFILE" "STATUS"
+    printf "%-20s %-8s %-12s %s\n" "SLOT" "PROFILE" "STATUS" "REPO"
     for slot in "$DOCKER_DIR/run"/*/; do
       [ -d "$slot" ] || continue
       name=$(basename "$slot")
-      profile="unknown"
-      [ -d "$slot/.claude/get-shit-done" ] && profile="gsd" || profile="bare"
-      running=""
+      profile="bare"
+      [ -d "$slot/.claude/get-shit-done" ] && profile="gsd"
+      status=""
       if docker inspect "agent-$name" > /dev/null 2>&1; then
-        running="[running]"
-        tmux has-session -t "agent-$name" 2>/dev/null && running="[detached]"
+        status="running"
+        tmux has-session -t "agent-$name" 2>/dev/null && status="detached"
       fi
-      printf "%-30s %-8s%s\n" "$name" "$profile" "$running"
+      repo="$DOCKER_DIR/repos/$name"
+      printf "%-20s %-8s %-12s %s\n" "$name" "$profile" "$status" "$repo"
     done
-    ;;
-
-  ps)
-    docker ps --filter "name=agent-" --format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}"
     ;;
 
   rm)
@@ -71,10 +68,9 @@ case "$cmd" in
 usage: agents <command> [args]
 
   launch, l    launch an agent (see launch --help)
-  list, ls     list all slots
-  ps           show running containers
+  ls           list all slots
   attach, a    attach to a detached agent's tmux session
-  rm <slot>    remove a slot (container + run dir + repo clone)
+  rm <slot>    remove slot (container + data + repo)
   clean        remove all stopped slots
   logs <slot>  show container logs
 EOF

@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOCKER_DIR="$(cd "$(dirname "$0")" && pwd)"
+DOCKER_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 usage() {
-  echo "Usage: setup-repo <owner/repo>"
-  echo ""
-  echo "Adds MaxWolf-01-clanker as collaborator and applies branch protection ruleset."
-  echo "Run once per repo you want agents to work on."
+  cat <<EOF
+Usage: setup-repo <owner/repo>
+
+Adds MaxWolf-01-clanker as collaborator and applies branch protection ruleset.
+Run once per repo you want agents to work on.
+
+After running, accept the invitation:
+  Log in as MaxWolf-01-clanker → https://github.com/notifications
+EOF
   exit 1
 }
 
@@ -22,4 +27,7 @@ echo "Applying branch protection ruleset to $REPO..."
 gh api -X POST "repos/$REPO/rulesets" \
   --input "$DOCKER_DIR/ruleset.json" 2>&1
 
-echo "Done. MaxWolf-01-clanker can push branches + create PRs. Main requires your approval."
+echo ""
+echo "Done."
+echo "  1. Accept the invitation: log in as MaxWolf-01-clanker at https://github.com/$REPO/invitations"
+echo "  2. Clanker can push branches + create PRs. Main requires your approval."
