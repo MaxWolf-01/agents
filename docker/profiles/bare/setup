@@ -5,5 +5,4 @@ PROFILE_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET="$1" # the claude config dir to populate
 
 cp "$PROFILE_DIR/CLAUDE.md" "$TARGET/CLAUDE.md"
-echo '{}' > "$TARGET/.claude.json"
 echo "bare profile ready"

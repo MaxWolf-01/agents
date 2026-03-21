@@ -66,12 +66,16 @@ if [[ ! -f "$CLAUDE_DIR/CLAUDE.md" ]]; then
   echo "Setting up profile: $PROFILE"
   mkdir -p "$CLAUDE_DIR"
 
-  # Copy credentials from host
+  # Copy fresh credentials from host
   cp ~/.claude/.credentials.json "$CLAUDE_DIR/.credentials.json"
+
+  # Seed .claude.json so TUI skips onboarding/login flow
+  echo '{"hasCompletedOnboarding":true,"installMethod":"npm","numStartups":5}' > "$CLAUDE_DIR/.claude.json"
 
   # Run profile setup
   chmod +x "$PROFILE_DIR/setup"
   "$PROFILE_DIR/setup" "$CLAUDE_DIR"
+
 fi
 
 # Build image if needed
@@ -84,9 +88,16 @@ echo "Launching $CONTAINER (profile: $PROFILE)"
 ENV_ARGS=()
 [[ -f "$DOCKER_DIR/env/github.env" ]] && ENV_ARGS=(--env-file "$DOCKER_DIR/env/github.env")
 
+COMMON_ARGS=(
+  -v "$REPO_DIR":/work
+  -v "$CLAUDE_DIR":/home/agent/.claude
+  "${ENV_ARGS[@]}"
+)
+
+# Refresh credentials before launch (token expires every ~8h, host refreshes it)
+cp ~/.claude/.credentials.json "$CLAUDE_DIR/.credentials.json"
+
 docker run --rm -it \
   --name "$CONTAINER" \
-  -v "$REPO_DIR":/work \
-  -v "$CLAUDE_DIR":/home/agent/.claude \
-  "${ENV_ARGS[@]}" \
+  "${COMMON_ARGS[@]}" \
   claude-agent "$@"

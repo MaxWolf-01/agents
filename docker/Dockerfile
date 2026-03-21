@@ -17,5 +17,6 @@ RUN usermod -d /home/agent -l agent node && mv /home/node /home/agent
 USER agent
 WORKDIR /work
 ENV HOME=/home/agent
+ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 
 ENTRYPOINT ["claude"]
