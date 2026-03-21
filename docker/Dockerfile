@@ -8,8 +8,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 RUN npm install -g @anthropic-ai/claude-code
 
-RUN git config --system user.name "MaxWolf-01-agent" \
-    && git config --system user.email "MaxWolf-01-agent@noreply" \
+RUN git config --system user.name "MaxWolf-01-clanker" \
+    && git config --system user.email "MaxWolf-01-clanker@noreply" \
     && git config --system credential.helper '!f() { echo "password=$GH_TOKEN"; }; f'
 
 # Use node user (uid 1000, matches host)

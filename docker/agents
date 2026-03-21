@@ -23,7 +23,10 @@ case "$cmd" in
       profile="unknown"
       [ -d "$slot/.claude/get-shit-done" ] && profile="gsd" || profile="bare"
       running=""
-      docker inspect "agent-$name" > /dev/null 2>&1 && running=" [running]"
+      if docker inspect "agent-$name" > /dev/null 2>&1; then
+        running="[running]"
+        tmux has-session -t "agent-$name" 2>/dev/null && running="[detached]"
+      fi
       printf "%-30s %-8s%s\n" "$name" "$profile" "$running"
     done
     ;;
@@ -35,6 +38,7 @@ case "$cmd" in
   rm)
     [ $# -lt 1 ] && { echo "usage: agents rm <slot>"; exit 1; }
     slot="$1"
+    tmux kill-session -t "agent-$slot" 2>/dev/null || true
     docker rm -f "agent-$slot" 2>/dev/null || true
     rm -rf "$DOCKER_DIR/run/$slot" "$DOCKER_DIR/repos/$slot"
     echo "removed $slot"
@@ -52,6 +56,11 @@ case "$cmd" in
     done
     ;;
 
+  attach|a)
+    [ $# -lt 1 ] && { echo "usage: agents attach <slot>"; exit 1; }
+    exec tmux attach -t "agent-$1"
+    ;;
+
   logs)
     [ $# -lt 1 ] && { echo "usage: agents logs <slot>"; exit 1; }
     docker logs "agent-$1" 2>&1
@@ -62,8 +71,9 @@ case "$cmd" in
 usage: agents <command> [args]
 
   launch, l    launch an agent (see launch --help)
-  list, ls     list all slots (profile, running status)
+  list, ls     list all slots
   ps           show running containers
+  attach, a    attach to a detached agent's tmux session
   rm <slot>    remove a slot (container + run dir + repo clone)
   clean        remove all stopped slots
   logs <slot>  show container logs

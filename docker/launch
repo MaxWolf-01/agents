@@ -10,23 +10,27 @@ Usage: launch [options] <repo-url> [-- claude args...]
 Options:
   -p, --profile NAME   Profile to use (default: bare). See profiles/ dir.
   -s, --slot NAME      Slot name (default: derived from repo name).
+  -d, --detach         Run in a tmux session (detached). Reattach with: agents attach <slot>
   -h, --help           Show this help.
 
 Examples:
   launch https://github.com/user/project
   launch -p gsd https://github.com/user/project
   launch -p gsd -s feat1 https://github.com/user/project -- -p 'fix the tests'
+  launch -p gsd -d https://github.com/user/project -- -p '/gsd:execute-phase 1'
 EOF
   exit 1
 }
 
 PROFILE="bare"
 SLOT=""
+DETACH=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -p|--profile) PROFILE="$2"; shift 2 ;;
     -s|--slot)    SLOT="$2"; shift 2 ;;
+    -d|--detach)  DETACH=true; shift ;;
     -h|--help)    usage ;;
     --)           shift; break ;;
     -*)           echo "Unknown option: $1"; usage ;;
@@ -97,7 +101,17 @@ COMMON_ARGS=(
 # Refresh credentials before launch (token expires every ~8h, host refreshes it)
 cp ~/.claude/.credentials.json "$CLAUDE_DIR/.credentials.json"
 
-docker run --rm -it \
-  --name "$CONTAINER" \
-  "${COMMON_ARGS[@]}" \
-  claude-agent "$@"
+if $DETACH; then
+  # Kill existing tmux session if present
+  tmux kill-session -t "$CONTAINER" 2>/dev/null || true
+  tmux new-session -d -s "$CONTAINER" -x "$(tput cols)" -y "$(tput lines)" \
+    "docker run --rm -it --name $CONTAINER ${COMMON_ARGS[*]} claude-agent $*"
+  echo "Detached: tmux session '$CONTAINER'"
+  echo "  attach:  agents attach $SLOT"
+  echo "  detach:  Ctrl+B D"
+else
+  docker run --rm -it \
+    --name "$CONTAINER" \
+    "${COMMON_ARGS[@]}" \
+    claude-agent "$@"
+fi
