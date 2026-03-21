@@ -49,15 +49,11 @@ docker/agents launch https://github.com/user/project
 ```
 
 ```
-$ docker/agents ls
-SLOT                           PROFILE  STATUS
-hello-world                    gsd      [detached]
-my-project-feat1               gsd      [running]
-my-project-feat2               bare
-
-$ docker/agents ps
-NAMES               STATUS         CREATED
-agent-hello-world   Up 3 minutes   3 minutes ago
+$ agents ls
+SLOT                 PROFILE  STATUS       REPO
+hello-world          gsd      detached     /home/max/.../repos/hello-world
+my-project-feat1     gsd      running      /home/max/.../repos/my-project-feat1
+my-project-feat2     bare                  /home/max/.../repos/my-project-feat2
 ```
 
 ## commands
@@ -65,9 +61,8 @@ agent-hello-world   Up 3 minutes   3 minutes ago
 ```
 agents launch, l    launch an agent (-d for detached, -p for profile, -s for slot)
 agents attach, a    attach to a detached agent's tmux session
-agents ls           list all slots (profile + status)
-agents ps           show running containers
-agents rm <slot>    remove slot (container + data + repo clone)
+agents ls           list all slots (profile, status, repo path)
+agents rm <slot>    remove slot (warns if unpushed work)
 agents clean        remove all stopped slots
 agents logs <slot>  show container logs
 ```
