@@ -5,7 +5,9 @@ DOCKER_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 usage() {
   cat <<EOF
-Usage: launch [options] <repo-url> [-- claude args...]
+Usage: launch [options] <repo> [-- claude args...]
+
+  <repo> can be: user/project, https://github.com/user/project, or /local/path
 
 Options:
   -p, --profile NAME   Profile to use (default: bare). See profiles/ dir.
@@ -14,10 +16,11 @@ Options:
   -h, --help           Show this help.
 
 Examples:
-  launch https://github.com/user/project
-  launch -p gsd https://github.com/user/project
-  launch -p gsd -s feat1 https://github.com/user/project -- -p 'fix the tests'
-  launch -p gsd -d https://github.com/user/project -- -p '/gsd:execute-phase 1'
+  launch user/project
+  launch -p gsd user/project
+  launch -d -p gsd user/project
+  launch -p gsd -s feat1 user/project -- -p 'fix the tests'
+  launch /path/to/local/repo
 EOF
   exit 1
 }
@@ -40,6 +43,9 @@ done
 
 [[ $# -lt 1 ]] && usage
 REPO_URL="$1"; shift
+
+# Expand shorthand: user/repo → https://github.com/user/repo
+[[ "$REPO_URL" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] && REPO_URL="https://github.com/$REPO_URL"
 
 # Consume -- if present
 [[ ${1:-} == "--" ]] && shift

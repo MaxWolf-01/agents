@@ -25,27 +25,34 @@ docker/setup-repo MaxWolf-01/my-project
 ## usage
 
 ```bash
-# bare (default) — plain claude code
-docker/agents launch https://github.com/user/project
+# bare (default)
+agents launch user/project
 
-# gsd — structured workflow framework
-docker/agents launch -p gsd https://github.com/user/project
+# gsd workflow
+agents launch -p gsd user/project
 
 # multiple agents on same repo (separate clones)
-docker/agents launch -p gsd -s feat1 https://github.com/user/project
-docker/agents launch -p gsd -s feat2 https://github.com/user/project
+agents launch -p gsd -s feat1 user/project
+agents launch -p gsd -s feat2 user/project
 
-# launch detached (runs in tmux, you can walk away)
-docker/agents launch -d -p gsd https://github.com/user/project
+# detached (runs in tmux, walk away)
+agents launch -d -p gsd user/project
 
-# launch detached with a task
-docker/agents launch -d -p gsd https://github.com/user/project -- -p '/gsd:execute-phase 1'
+# detached with a task
+agents launch -d -p gsd user/project -- -p '/gsd:execute-phase 1'
 
-# attach to a detached agent
-docker/agents attach hello-world  # Ctrl+B D to detach again
+# attach to a detached agent (Ctrl+B D to detach)
+agents attach hello-world
 
-# resume previous session — relaunch same slot, then /resume inside
-docker/agents launch https://github.com/user/project
+# local repo
+agents launch /path/to/local/repo
+
+# full URL also works
+agents launch https://github.com/user/project
+
+# resume previous session — relaunch same slot, /resume inside
+agents launch user/project           # default slot
+agents launch -s feat1 user/project  # named slot
 ```
 
 ```
@@ -72,7 +79,10 @@ agents logs <slot>  show container logs
 - `bare` — claude code, skip permissions, no extras
 - `gsd` — [get shit done](https://github.com/gsd-build/get-shit-done) workflow framework
 
-add your own: `profiles/<name>/` with `setup`, `CLAUDE.md`, `settings.json`.
+each profile is an isolated claude code config — its own system prompt, settings, hooks, and extensions. create `profiles/<name>/` with:
+- `CLAUDE.md` — system prompt / agent instructions
+- `settings.json` — hooks, statusline, permissions
+- `setup` — script that installs extensions (GSD, custom commands, etc.) into the slot's `.claude/` dir
 
 ## how it works
 
