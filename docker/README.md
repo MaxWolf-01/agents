@@ -5,42 +5,69 @@ run claude code in isolated containers. auth from host, repos on host, agents ca
 ## setup
 
 ```bash
-# github PAT (contents + pull requests, read/write)
+git clone https://github.com/MaxWolf-01/agents
+cd agents
+
+# create a fine-grained github PAT: contents + pull requests (read/write)
+# https://github.com/settings/personal-access-tokens/new
 mkdir -p docker/env
 echo "GH_TOKEN=github_pat_..." > docker/env/github.env
+
+# make sure claude is logged in on the host
+claude login
 ```
 
 ## usage
 
 ```bash
-# launch with default (bare) profile
-docker/launch https://github.com/user/project
+# launch agent on a repo (bare profile)
+docker/agents launch https://github.com/user/project
 
 # launch with GSD workflow
-docker/launch -p gsd https://github.com/user/project
+docker/agents launch -p gsd https://github.com/user/project
 
-# named slot (multiple agents on same repo)
-docker/launch -p gsd -s feat1 https://github.com/user/project
+# multiple agents on same repo (separate clones)
+docker/agents launch -p gsd -s feat1 https://github.com/user/project
+docker/agents launch -p gsd -s feat2 https://github.com/user/project
 
-# pass args to claude
-docker/launch -p gsd https://github.com/user/project -- -p "/gsd:new-project"
+# resume previous session — just relaunch same slot, then /resume inside
+docker/agents launch https://github.com/user/project
+```
 
-# resume previous session
-docker/launch https://github.com/user/project  # then type /resume inside
+```
+$ docker/agents ls
+SLOT                           PROFILE  STATUS
+hello-world                    gsd      [running]
+my-project-feat1               gsd
+my-project-feat2               bare
+
+$ docker/agents ps
+NAMES               STATUS         CREATED
+agent-hello-world   Up 3 minutes   3 minutes ago
+```
+
+## commands
+
+```
+agents launch, l    launch an agent (see launch --help)
+agents ls           list all slots
+agents ps           show running containers
+agents rm <slot>    remove slot (container + data + repo clone)
+agents clean        remove all stopped slots
+agents logs <slot>  show container logs
 ```
 
 ## profiles
 
-- `bare` — claude code, no extras
+- `bare` — claude code, skip permissions, no extras
 - `gsd` — [get shit done](https://github.com/gsd-build/get-shit-done) workflow framework
 
-add your own: create `profiles/<name>/setup` + `profiles/<name>/CLAUDE.md` + `profiles/<name>/settings.json`.
+add your own: `profiles/<name>/` with `setup`, `CLAUDE.md`, `settings.json`.
 
 ## how it works
 
-- `repos/<slot>/` — host-side clones, one per slot. use `-s` to run multiple agents on the same repo
-- `run/<slot>/.claude/` — per-slot claude config (credentials, settings, sessions)
-- credentials copied fresh from `~/.claude/.credentials.json` on each launch
+- each slot gets its own repo clone (`repos/<slot>/`) and claude config (`run/<slot>/.claude/`)
+- credentials copied fresh from host `~/.claude/.credentials.json` on each launch
 - `--dangerously-skip-permissions` baked into entrypoint
 - git identity: `MaxWolf-01-agent`
-- github auth via fine-grained PAT (scoped to contents + PRs only)
+- github auth via fine-grained PAT (contents + PRs only)
