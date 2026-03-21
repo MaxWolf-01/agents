@@ -19,4 +19,4 @@ WORKDIR /work
 ENV HOME=/home/agent
 ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 
-ENTRYPOINT ["claude"]
+ENTRYPOINT ["claude", "--dangerously-skip-permissions"]
