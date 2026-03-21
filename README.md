@@ -31,6 +31,10 @@ Or, in project's `.claude/settings.json`:
 }
 ```
 
+### [clankr](https://github.com/MaxWolf-01/clankr) — Sandboxed Agent Fleet
+
+Run coding agents in isolated Docker containers. `uvx clankr` — see [clankr repo](https://github.com/MaxWolf-01/clankr).
+
 ### References
 
 Inspiration from: https://github.com/mitsuhiko/agent-stuff
