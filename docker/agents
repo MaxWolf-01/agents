@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOCKER_DIR="$(cd "$(dirname "$0")" && pwd)"
+DOCKER_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 cmd="${1:-help}"
 shift 2>/dev/null || true
