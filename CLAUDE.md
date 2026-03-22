@@ -2,6 +2,15 @@
 This is my coding agent setup (mainly claude code).
 `mx` is a plugin for skills, commands, etc. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
 
+## clankr
+
+[clankr](https://github.com/MaxWolf-01/clankr) (`/home/max/repos/github/MaxWolf-01/clankr`) — run Claude Code in isolated Docker containers. `--dangerously-skip-permissions` without the danger.
+
+Profiles live in `clankr1/` (symlinked to `~/.config/clankr/profiles/clankr1/`). Each profile has:
+- `CLAUDE.md` — system prompt for the containerized agent
+- `settings.json` — claude code settings
+- `init` — runs inside the container before claude starts (plugin installs, extensions, etc.)
+
 Memex cli code loc: /home/max/repos/github/MaxWolf-01/memex
 When working on it read its readme & claude.md
 

@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+claude plugin marketplace add MaxWolf-01/agents
+claude plugin install mx@MaxWolf-01
