@@ -1,0 +1,7 @@
+ 
+ ty 0.0.26
+  Before: type: ignore[any-code] suppressed all errors on the line (codes were ignored).
+
+  After: type: ignore[code] where code doesn't have a ty: prefix is silently ignored. Only type:
+  ignore[ty:rule-name] or bare type: ignore (no codes) suppresses ty errors.
+
