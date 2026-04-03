@@ -35,6 +35,10 @@ Specifically:
 
 ### 3. Evaluate
 
+Two passes: correctness, then quality. Both matter.
+
+#### 3a. Correctness
+
 For each potential finding, ask yourself before writing it down:
 
 - **Is this actually a problem, or does it only look wrong because I'm reading a diff in isolation?** Check the surrounding code. Check existing patterns. Check callers.
@@ -46,6 +50,29 @@ Things that are almost never issues:
 - Missing validation for inputs that can't actually arrive
 - API semantics (PATCH, auth, error shapes) that match existing conventions
 - "What if someone does X" when X is prevented by the system
+
+#### 3b. Code quality
+
+Read the new/changed code line by line. Apply these lenses:
+
+- **Types**: Are types honest? Does the code lie to the type checker (`as any`, `!` non-null assertions on nullable values, arrays typed `T[]` that contain nulls)? Dishonest types hide bugs.
+- **Structure**: Unnecessary nesting? Missing early returns/continues? `found` flags where a function extraction or direct return would be cleaner?
+- **Naming**: Do names say what things are? Are abbreviations clear from context or cryptic?
+- **Dead weight**: Unnecessary variables, redundant conditions, code that does nothing? Comments that restate what the code does ("what comments"), meta-commentary, or fluff?
+- **Simplicity**: Could this be simpler without losing correctness? Fewer moving parts, less indirection, more direct expression of intent?
+
+**Watch for LLM anti-patterns** — patterns that AI-generated code tends to introduce. Flag these in the reviewed code, and do NOT suggest them in your review:
+- Wrapping things in try/except "just in case" — defensive error handling for failures that can't happen or that SHOULD be loud
+- Adding validation for inputs that are already guaranteed by the system
+- Over-abstracting: helpers/utilities/wrappers for one-time operations
+- Comments that restate the next line of code (`# set x to 5` / `x = 5`), narrate the obvious, or add meta-commentary
+
+**Zen of Python applies broadly** (not just Python):
+- Simple is better than complex
+- Flat is better than nested
+- Explicit is better than implicit
+- Readability counts
+- If the implementation is hard to explain, it's a bad idea
 
 ### 4. Report
 
@@ -61,8 +88,9 @@ Is the approach sound? Skip if straightforward.
 Incorrect behavior. Each with: scenario that breaks, where (file:line), fix.
 
 ### Code Quality
-Duplication, naming, missing abstraction — only when it concretely hurts
-readability or maintainability. "I'd write it differently" is not an issue.
+Type honesty, structure, naming, unnecessary complexity, dead weight.
+Each with: what's wrong, where (file:line), concrete fix.
+"I'd write it differently" is not an issue — name the actual cost.
 
 ### Considerations
 Non-blocking observations: trade-offs worth noting, things to watch for,
