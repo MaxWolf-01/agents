@@ -24,6 +24,16 @@ All Python CLI scripts use tyro for argument parsing — never argparse, click, 
 
 Place at the top of the file. The script is then runnable via `uv run script.py --help`.
 
+### Shebang for PEP 723 scripts
+
+**Always use `--script`** when the shebang invokes `uv run` on a file with inline metadata:
+
+```python
+#!/usr/bin/env -S uv run --script --quiet
+```
+
+Without `--script`, uv doesn't detect the inline metadata block and falls back to project resolution. If there's no project, it recurses infinitely (`uv run` invokes the script, which invokes `uv run` again via the shebang) and hits the 100-call recursion limit.
+
 ## Preferred Patterns
 
 ### Pattern 1: Simple Dataclass (default choice)
@@ -33,7 +43,7 @@ For scripts with a flat set of arguments (~5-30 flags).
 ```python
 """Process experiment data and generate reports.
 
-Examples::
+Examples:
 
     uv run process.py --input data.csv --output report.html
     uv run process.py --input data.csv --format json --verbose
@@ -147,7 +157,7 @@ The module docstring (or `description=__doc__`) becomes the top-level help text.
 
 1. One-line summary of what the script does
 2. Blank line, then details/context if needed
-3. `Examples::` section with concrete invocations (the `::` is reStructuredText convention, renders cleanly)
+3. `Examples:` section with concrete invocations. Don't use `::` (reST convention) — tyro renders it literally and it looks ugly in `--help` output.
 
 ```python
 """Stress test for the TTS synthesis pipeline.
@@ -155,7 +165,7 @@ The module docstring (or `description=__doc__`) becomes the top-level help text.
 Simulates concurrent users with realistic playback patterns.
 Auth: set PROD_TEST_EMAIL/PROD_TEST_PASSWORD in .env, or pass --token.
 
-Examples::
+Examples:
 
     uv run stress_test.py --users 5
     uv run stress_test.py --token TOKEN --users 10 --speed 2
@@ -285,11 +295,11 @@ For any command that supports `--json`, document the schema in its help text so 
 ```python
 """List available resources.
 
-JSON schema (--json)::
+JSON schema (--json):
 
     [{"id": "str", "name": "str", "status": "available|reserved", "region": "str"}]
 
-Examples::
+Examples:
 
     uv run tool.py list --json | jq '.[] | select(.status == "available")'
     uv run tool.py list --plain --region us-east
