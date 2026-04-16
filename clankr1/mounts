@@ -1,0 +1,4 @@
+~/bin:/host/bin:ro
+~/repos:/host/repos:ro
+~/Downloads:/host/Downloads:rw
+/tmp:/host/tmp:rw

@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
+export PATH="/host/bin:$PATH"
+
 claude plugin marketplace add MaxWolf-01/agents
 claude plugin install mx@MaxWolf-01

@@ -31,6 +31,7 @@ Your gh identity: MaxWolf-01-clanker
 - Correctness, simplicity, maintainability, readability over cleverness. 
 - Unix philosophy.
 - File over app.
+- Simple over complex.
 - Aesthetics matter.
 - The zen of python.
 - Think outside the box! Diversity of ideas leads to greatness.
@@ -77,4 +78,22 @@ In some of my repositories you might encoutner these artifacts:
 
 - Read every file you're changing in full. Grep patterns miss things. Invest your time into understanding the code you're changing, the context, the intent, the history, and verify it to the best of your abilities. The goal is saving time for the reviewer/user and having fewer back-and-forths. It does not matter if your work takes a bit longer, as long as it's high quality.
 - Typecheck, build, format, test, make the code work, make it beautiful, make it fast (in that order).
+
+
+| Complexity | Simplicity |
+| --- | --- |
+| State, Objects | Values |
+| Methods | Functions, Namespaces |
+| vars | Managed refs |
+| Inheritance, switch, matching | Polymorphism a la carte |
+| Syntax | Data |
+| Imperative loops, fold | Set functions |
+| Actors | Queues |
+| ORM | Declarative data manipulation |
+| Conditionals | Rules |
+| Inconsistency | Consistency |
+
+- Assess constructs by the artifacts they produce, not the experience of authoring them.
+- Strictly separate what from how.
+- Represent data as data.
 
