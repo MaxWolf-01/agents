@@ -5,3 +5,6 @@ export PATH="/host/bin:$PATH"
 
 claude plugin marketplace add MaxWolf-01/agents
 claude plugin install mx@MaxWolf-01
+
+uv pip install memex-md
+

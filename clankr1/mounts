@@ -1,4 +1,6 @@
 ~/bin:/host/bin:ro
 ~/repos:/host/repos:ro
+~/Documents/library:/host/library:ro
+~/Pictures/Screenshots:/host/screenshots:ro
 ~/Downloads:/host/Downloads:rw
 /tmp:/host/tmp:rw
