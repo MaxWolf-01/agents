@@ -5,8 +5,7 @@ description: Read for preferences on and best practices for setting up a Python 
 
 - Use uv throughout, including uv_build for building and publishing (if it's a package).
 - Read the latest docs for all uv features
-- Configure pre-commit with the latest ruff (verify which version is the latest)
-- Configure linting with ty
+- Configure latest pre-commit, ruff, ty (verify which version is the latest)
 - Makefile as per assets/Makefile
 - Latest released python version (check)
 - Latest compatible versions of dependencies (check), if specified

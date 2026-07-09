@@ -1,6 +1,8 @@
 ---
 name: handoff
-description: Create a curated session summary for continuation. Use when the user asks to "hand off" or "create a handoff".
+description: Create a curated session summary for continuation, for another agent to pick up.
+argument-hint: "What will the next session be used for?"
+disable-model-invocation: true
 ---
 
 # Handoff
@@ -103,6 +105,9 @@ Bad examples (too vague):
 
 Bias toward MUST READ. You have context that shaped your thinking — the next agent doesn't. When in doubt, mark it MUST READ.
 
+If relevant, include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
+
+Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 </plan>
 ```
 
