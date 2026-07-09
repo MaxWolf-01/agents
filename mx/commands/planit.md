@@ -10,4 +10,4 @@ Plan an approach, get it verified by a second model, then present for approval.
 4. **Codex review.** Load `/mx:codex` and have it critique the plan — missed edge cases, better alternatives, challenged assumptions.
 5. **Incorporate feedback.** Update the plan with what codex raised and how you responded — agreements, disagreements with reasoning. The user should see the full picture in the plan itself.
 6. **Exit plan mode.**
-7. If a task file exists, add the plan file path (not wikilinked) to it.
+7. If a spec or ticket exists for this work, add the plan file path to it under `## Comments`.

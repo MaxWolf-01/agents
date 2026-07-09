@@ -6,17 +6,17 @@ disable-model-invocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
+Publish per the `tracker` skill's conventions (or the tracker the project's CLAUDE.md declares).
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the vocabulary from `CONTEXT.md` throughout the spec, and respect any ADRs in `decisions/` in the area you're touching.
 
 2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the spec using the template below, then publish it to `agent/tasks/<feature-slug>/spec.md`. Decisions that pass the ADR gate belong in `decisions/` via `/mx:domain-modelling` — the spec references them, it doesn't restate them.
 
 <spec-template>
 
@@ -30,15 +30,13 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
+A numbered list of user stories covering every actor and aspect of the feature. Each user story should be in the format of:
 
 1. As an <actor>, I want a <feature>, so that <benefit>
 
 <user-story-example>
 1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
 </user-story-example>
-
-This list of user stories should be extremely extensive and cover all aspects of the feature.
 
 ## Implementation Decisions
 

@@ -1,6 +1,6 @@
 ---
 name: to-tickets
-description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in a local file, or native blocking links on a real tracker.
+description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions — ticket files with blocked-by edges, or native blocking links on a real tracker.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
+Publish per the `tracker` skill's conventions (or the tracker the project's CLAUDE.md declares).
 
 ## Process
 
@@ -18,7 +18,7 @@ Work from whatever is already in the conversation context. If the user passes a 
 
 ### 2. Explore the codebase (optional)
 
-If you have not already explored the codebase, do so to understand the current state of the code. Ticket titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+If you have not already explored the codebase, do so to understand the current state of the code. Ticket titles and descriptions should use the vocabulary from `CONTEXT.md`, and respect ADRs in `decisions/` in the area you're touching.
 
 Look for opportunities to prefactor the code to make the implementation easier. "Make the change easy, then make the easy change."
 
@@ -36,6 +36,8 @@ Break the work into **tracer bullet** tickets.
 </vertical-slice-rules>
 
 Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately.
+
+Only ticket what you can specify precisely now. If part of the work is still too foggy to state as a slice, leave it in the spec's Further Notes and ticket it when the frontier reaches it.
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket — green is promised only there.
 
@@ -55,43 +57,20 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish the tickets to the configured tracker
+### 5. Publish the tickets
 
-Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock-skills` configured — the tickets are the same either way, only the shape of the blocking edges changes:
+Publish per the `tracker` skill: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec.
 
-- **Local files** → write one `tickets.md` in the repo root, all tickets in dependency order (blockers first), each with its "Blocked by" listing the titles it depends on. Use the file template below.
-- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
+(On a repo whose CLAUDE.md declares a real tracker like GitHub Issues, publish one issue per ticket instead, using the platform's native blocking / sub-issue relationships.)
 
-Do NOT close or modify any parent issue.
+<ticket-template>
 
-<tickets-file-template>
+---
+status: open
+blocked-by: [NN] # omit when nothing blocks it
+---
 
-# Tickets: <short name of the work>
-
-A one-line summary of what these tickets build. Reference the source spec if there is one.
-
-Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
-
-## <Ticket title>
-
-**What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
-
-**Blocked by:** the titles of the tickets that gate this one, or "None — can start immediately".
-
-- [ ] Acceptance criterion 1
-- [ ] Acceptance criterion 2
-
-## <Ticket title>
-
-...
-
-</tickets-file-template>
-
-<issue-template>
-
-## Parent
-
-A reference to the parent issue on the tracker (if the source was an existing issue, otherwise omit this section).
+# <Ticket title>
 
 ## What to build
 
@@ -102,13 +81,8 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 - [ ] Criterion 1
 - [ ] Criterion 2
 
-## Blocked by
+</ticket-template>
 
-- A reference to each blocking ticket, or "None — can start immediately".
+Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-</issue-template>
-
-In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
-
-Work the frontier one ticket at a time with `/implement`, clearing context between tickets.
-</content>
+Work the frontier one ticket at a time with `/mx:implement`, clearing context between tickets. Independent frontier tickets can run in parallel across checkouts — claims coordinate via push (see the `tracker` skill).

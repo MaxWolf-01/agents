@@ -1,16 +1,16 @@
 ---
 name: codex
-description: "Second opinion from a different model (OpenAI Codex). Use when reviewing plans, code reviewing, debugging hard problems, or when the user wants a second perspective."
+description: "Second opinion from a different model (OpenAI Codex). Use when exploring different design choices (more diversity with heterogenous models), debugging hard problems, or when the user wants a second perspective, you want second perspective, are stuck, ..."
 ---
 
 # Codex — Second Opinion
 
 Run OpenAI's Codex CLI non-interactively from Claude Code. Different model family = different blind spots, different strengths.
 
-## When to Use
+## Example use cases
 
-- Code review or architecture critique (standalone or as part of `/roast`)
-- Second opinion on a plan or approach
+- To increase diversity of opinions when exploring design choices
+- Code review or architecture critique
 - Debugging when stuck — different model may see different patterns
 - User explicitly asks for a second perspective
 
@@ -33,7 +33,7 @@ Codex has **zero context** from your session. Everything it needs must be in the
 
 **Give it orientation first:**
 - Tell it to read `./CLAUDE.md` (project root) for project context, knowledge map, and conventions
-- Point it to `agent/knowledge/` and `agent/tasks/` when relevant — written records is more efficient than re-explaining what's already documented
+- Point it to `CONTEXT.md`, `decisions/`, and `agent/tasks/` when relevant — written records is more efficient than re-explaining what's already documented
 - Name the specific files and directories to review — it can read them, but won't know which ones matter unless told
 
 **Add session context it can't get from files:**

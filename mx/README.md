@@ -1,73 +1,52 @@
 # mx — Agent Workflow Plugin
 
-Markdown-based issue tracking, research artefacts, knowledge persistence, and session continuity for multi-session work.
+File-based specs and tickets, domain glossary + ADRs, research artefacts, and session continuity for multi-session work.
 
-## Core Concepts
+## Artefacts
 
-**Tasks** (`agent/tasks/`) — Markdown issue tracking: intent, assumptions, done-when. Not session logs. Committed to project repo.
+| Object     | Location                           | Lifecycle                           | Content                                             |
+| ---------- | ---------------------------------- | ----------------------------------- | ---------------------------------------------------- |
+| Glossary   | `CONTEXT.md` (repo root)           | durable, edited in place            | domain terminology — opinionated, with avoid-lists   |
+| ADR        | `decisions/NNNN-slug.md`           | durable, append-only                | one hard-to-reverse decision and why                  |
+| Spec       | `agent/tasks/<feature>/spec.md`    | committed; `git rm -r` when shipped | the work order for one feature                        |
+| Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges              |
+| Small task | `agent/tasks/<slug>.md`            | deleted when done                   | ticket-shaped, no spec                                |
+| Research   | `agent/research/NN-slug.md`        | gitignored, ephemeral               | one question, cited findings                          |
 
-**Research** (`agent/research/`) — Point-in-time investigation snapshots. Linked from tasks. Gitignored.
+The `tracker` skill defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
 
-**Knowledge** (`agent/knowledge/`) — Persistent reference. Updated via `/distill` (code-grounded) or `/learnings` (session-grounded). Committed.
+## The main flow: idea → ship
 
-**Transcripts** (`agent/transcripts/`) — Exported sessions, tool calls and thinking stripped. Gitignored.
+`/mx:grill-with-docs` (relentless interview; glossary terms and ADRs land as residue) → `/mx:to-spec` (thread → work order) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:implement` per ticket (tdd inside, code-review at the end), fresh context each.
 
-**Handoffs** (`agent/handoffs/`) — Curated session summaries for targeted continuation. Rare. Gitignored.
+**`/mx:orient` is the map** — the main flow, its on-ramps, and when to reach for what.
 
-Wiki-links (`[[name]]`) connect everything. Hierarchy from links, not folders.
+## Skills & commands
 
-## Commands
+| | |
+| --- | --- |
+| `/mx:orient` | the router — start here |
+| `/mx:grill-with-docs`, `/mx:grilling` | sharpen a plan by interview |
+| `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
+| `/mx:to-spec`, `/mx:to-tickets` | conversation → spec → tickets |
+| `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
+| `/mx:prototype` | throwaway code to answer a design question |
+| `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
+| `/mx:improve-codebase-architecture`, `/mx:roast`, `/mx:bloat-audit` | codebase health |
+| `/mx:research` | primary-source investigation → cited artefact |
+| `/mx:codex`, `/mx:planit` | second opinion from a different model; verified planning |
+| `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
+| `/mx:writing-skills` | reference for writing skills well |
 
-| Command | Purpose |
-|---------|---------|
-| `/task [name]` | Create or pick up a decision record |
-| `/research [topic]` | Investigate a question, produce a research artefact |
-| `/reflect` | Post-implementation within-session reflection — friction, assumptions, what you'd do differently |
-| `/roast` | Bird's-eye critical review of codebase architecture, coupling, code smells, structural debt |
-| `/distill [scope]` | Sync knowledge with code reality (always in a fresh session) |
-| `/learnings` | Extract gotchas/patterns into knowledge (within session) |
-| `/transcript` | Save session transcript for later pickup |
-| `/recap` | Status report surfacing decisions and open questions |
-| `/todos` | Overview of active task files |
-
-## Skills
-
-| Skill | Purpose |
-|-------|---------|
-| **implement** | Loads coding best practices and principles. For the mechanical part — translating an idea into clean code. Not always-on; loaded when it's time to write code. |
-| **codex** | Second opinion from a different model (OpenAI Codex). Packages context and gets an independent critique. Usable standalone or layered into other commands (e.g., /roast fans out codex sub-agents for diverse review). |
-| **handoff** | Curated session summary for continuation in a new session |
-| **session-name** | Generate long, descriptive, searchable session names for `/rename` |
-| **restore-sessions** | Recover old sessions after crashes or when tmux history is lost |
-| **tyro-cli** | Patterns and features for building CLIs with tyro — documentation for humans and LLMs, `--help` best practices |
-
-## Planned
-
-| Name | Type | Purpose |
-|------|------|---------|
-| **init-knowledge** | command | Bootstrap a knowledge base for an existing project from scratch. Sequential, not parallel — writing good knowledge requires deep understanding. Planned after distill improvements. |
-
-## How This Gets Used
-
-Most sessions don't need ceremony. You talk to the agent, work through a problem, ship it.
-
-**`/research` is the default entry point for non-trivial work.** It shifts the model into investigation mode instead of jumping to implementation. Research artefacts separate sources and findings from the task itself — "these sources → these conclusions" — keeping issues clean while preserving the evidence trail. They also serve as a searchable, compact audit trail over thoughts and resources, far more accessible than digging through session transcripts. Discussion of approaches, goals, and intent refinement happens in chat afterward.
-
-**`/task` is for things that need to survive context loss.** New features, multi-session work, complex problems that branch into multiple research questions. Most quick fixes and single-session bug fixes don't need a task file.
-
-**`/distill` is periodic maintenance** — always in a fresh session, since it needs to analyze the full change set plus broader knowledge context.
-
-**`/learnings` is within-session** — extract insights into knowledge while the context is still hot.
-
-## Knowledge Structure
-
-Flat files connected by wiki-links. Hubs (project overview in CLAUDE.md, domain entry points) create short paths to any topic. Knowledge files describe what IS — grounded in code, not aspirational.
+Plus assorted utilities: `mermaid`, `tyro-cli`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `changelog`, `dependabot-triage`.
 
 ---
 
 **Local development:**
+
 ```bash
 rm -rf ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
 ln -s /path/to/mx ~/.claude/plugins/cache/MaxWolf-01/mx/0.1.0
 ```
+
 `claude plugin update mx@MaxWolf-01` replaces the symlink.

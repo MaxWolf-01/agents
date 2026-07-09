@@ -1,30 +1,38 @@
-# Issue tracker: Local Markdown
+---
+name: tracker
+description: File-based issue tracker conventions — how specs, tickets, and small tasks live in agent/tasks/ and how to publish, fetch, claim, and retire them. Use when publishing or fetching a spec/ticket/task, picking work from the frontier, or when another skill says "publish to the issue tracker".
+---
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+# Tracker
 
-## Conventions
+Issues for this repo live as markdown files in `agent/tasks/`. These conventions are the default — if the project's CLAUDE.md declares a different tracker (e.g. GitHub Issues), follow that instead.
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+## Layout
 
-## When a skill says "publish to the issue tracker"
+- **Feature**: one directory per feature, `agent/tasks/<feature-slug>/`
+  - `spec.md` — the work order for the whole feature (written by `/mx:to-spec`)
+  - `NN-<slug>.md` — tickets, numbered from `01` (written by `/mx:to-tickets`)
+- **Small standalone task**: a single file `agent/tasks/<slug>.md` — ticket-shaped, no spec needed
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+## Ticket state
 
-## When a skill says "fetch the relevant ticket"
+Frontmatter:
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+```yaml
+status: open | claimed | done
+blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing blocks it
+```
 
-## Wayfinding operations
+- A ticket is **unblocked** when every ticket in `blocked-by` is `done`.
+- The **frontier**: open, unblocked, unclaimed tickets — what can be started right now.
+- `claimed` marks a ticket a session is actively working. Set it before any work. Across parallel checkouts a claim only coordinates once it's shared: commit the claim by itself and push to main before starting; if the push is rejected, pull — another session beat you to it — and pick the next frontier ticket. (With a single agent in a single checkout, claiming is optional.)
+- Notes and follow-up conversation append under a `## Comments` heading at the bottom of the file.
 
-Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
+## Publish / fetch
 
-- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+- "Publish to the issue tracker" → create the files above (creating the feature directory if needed).
+- "Fetch the ticket" → read the ticket file **and** the feature's `spec.md` — tickets don't repeat the feature context, the spec carries it.
+
+## Retire
+
+Set `status: done` when a ticket completes. When the whole feature has shipped, `git rm -r agent/tasks/<feature-slug>/` — git history preserves it (`git log --diff-filter=D -- agent/tasks` finds retired work). If the repo doesn't track `agent/tasks/`, plain delete.

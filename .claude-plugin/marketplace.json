@@ -7,7 +7,7 @@
     {
       "name": "mx",
       "source": "./mx",
-      "description": "Multi-session workflow for autonomous, long-term work. Intent tracking, knowledge persistence, session continuity, and alignment verification."
+      "description": "Multi-session agent workflow. File-based specs and tickets, domain glossary and ADRs, research artefacts, session continuity."
     }
   ]
 }
