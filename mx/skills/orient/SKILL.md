@@ -28,7 +28,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`.
 2. **Branch — does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back.
 3. **Branch — is this a multi-session build?**
-   - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**. Independent frontier tickets can run in parallel across checkouts — claims coordinate via push (see `tracker`).
+   - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**. Independent frontier tickets can run in parallel under a single orchestrating agent (see `tracker`).
    - **No** → `/mx:implement` right here, in the same context window.
 
    `/mx:implement` drives `/mx:tdd` internally — one red-green slice at a time — and closes with `/mx:code-review`. Reach for either on its own too.

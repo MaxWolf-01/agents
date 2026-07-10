@@ -5,7 +5,7 @@ argument-hint: [topic or question]
 
 Investigate a question. Write the findings to `agent/research/NN-<slug>.md` (numbered from the highest existing).
 
-Research artefacts are point-in-time snapshots that other sessions consume — findings, not essays.
+Research artefacts are point-in-time snapshots that other sessions consume. Be exhaustive on findings; skip the storytelling (no methodology recap, no intro/conclusion prose — every sentence a finding or a citation).
 
 1. Sharpen the question first if it's fuzzy.
 2. Investigate against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.

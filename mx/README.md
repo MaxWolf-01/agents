@@ -21,6 +21,17 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 
 **`/mx:orient` is the map** — the main flow, its on-ramps, and when to reach for what.
 
+## What's manual, what's AFK — and why
+
+- **Grilling is where alignment happens** — human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there.
+- **Don't review the spec.** After a real grilling session the spec is a summary of an understanding you already share — reading it only verifies the LLM's ability to summarize.
+- **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones — no feedback until the layers meet.
+- **Implementation is the AFK part.** Day shift plans and queues the backlog; night shift works the frontier, fresh context per ticket.
+- **QA is where you impose taste.** Manual, deliberately — automate the idea, the planning, *and* the QA and you get slop. QA findings become new tickets with blocking edges; the board absorbs them while agents keep working.
+- **Reviews run in fresh context.** A reviewer sharing the implementer's window reviews in the dumb zone; implement closes with code-review in clean context for a reason.
+- **Feedback loops are the ceiling.** Agent output quality tracks the quality of the repo's tests and typechecks. Bad output → improve the loops, not the prompt (`/mx:improve-codebase-architecture`; deep modules — design the interface, delegate the implementation).
+- **Done work gets deleted** (`git rm`). Closed tickets and specs left in the tree are doc rot steering future agents wrong; git history keeps them.
+
 ## Skills & commands
 
 | | |

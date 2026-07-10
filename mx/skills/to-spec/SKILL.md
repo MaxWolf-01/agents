@@ -30,7 +30,7 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A numbered list of user stories covering every actor and aspect of the feature. Each user story should be in the format of:
+A LONG, numbered list of user stories — extremely extensive, covering every actor and every aspect of the feature. No human reads this document, so exhaustiveness costs nothing; the stories carry the definition of done, and tickets are later sliced from and checked against them. Each user story should be in the format of:
 
 1. As an <actor>, I want a <feature>, so that <benefit>
 
