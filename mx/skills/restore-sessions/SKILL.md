@@ -1,6 +1,7 @@
 ---
 name: restore-sessions
-description: This skill should be used when the user asks to "find sessions", "find unfinished sessions", "recover sessions", "restore sessions", "what was I working on", "list recent sessions", "scan sessions", or needs to identify open/unfinished Claude Code sessions from a time range. Also triggered by session crashes, lost session IDs, or "restore my sessions".
+description: Scan recent Claude Code sessions and classify unfinished work for resuming
+disable-model-invocation: true
 ---
 
 # Restore Sessions

@@ -46,7 +46,6 @@ Keep steps 1–3 in **one unbroken context window** — don't compact or clear u
 Not feature work — upkeep.
 
 - **`/mx:improve-codebase-architecture`** — survey the codebase for **deepening opportunities**; picking one generates an idea to take into the main flow at `/mx:grill-with-docs`.
-- **`/mx:roast`** — bird's-eye critical review: architecture, coupling, smells, structural debt.
 - **`/mx:bloat-audit`** — over-engineering audit: a ranked list of what to delete, simplify, or replace with stdlib.
 
 ## Vocabulary underneath
@@ -65,8 +64,8 @@ Two model-invoked references that run _beneath_ the other skills — each the si
 ## Standalone
 
 - **`/mx:research`** — investigate a question against **primary sources**; leaves a cited artefact in `agent/research/`. Research feeds the thinking, it doesn't replace it.
-- **`/mx:planit`** — plan mode + codex verification, for within-session plans.
 - **`/mx:codex`** — second opinion from a different model.
+- **`/mx:review-pr`** — review an existing GitHub PR: fetches it, then drives `/mx:code-review` against its merge-base.
 - **`/mx:recap`** — structured status report: findings, decisions (explicit vs implicit), open questions.
 - **`/mx:todos`** — overview of `agent/tasks/`: what's open, what's on the frontier.
 - **`/mx:reflect`** — post-implementation self-critique, within session.

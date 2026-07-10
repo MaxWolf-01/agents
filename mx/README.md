@@ -32,9 +32,9 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
 | `/mx:prototype` | throwaway code to answer a design question |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
-| `/mx:improve-codebase-architecture`, `/mx:roast`, `/mx:bloat-audit` | codebase health |
+| `/mx:improve-codebase-architecture`, `/mx:bloat-audit` | codebase health |
 | `/mx:research` | primary-source investigation → cited artefact |
-| `/mx:codex`, `/mx:planit` | second opinion from a different model; verified planning |
+| `/mx:codex` | second opinion from a different model |
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
 | `/mx:writing-skills` | reference for writing skills well |
 

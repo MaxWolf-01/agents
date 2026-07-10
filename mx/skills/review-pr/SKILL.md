@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: "Review a GitHub PR with full codebase context. Use proactively: after creating a nontrivial PR, spawn a subagent with this skill for a fresh-eyes review before presenting to the user."
+description: "Review an existing GitHub PR with full codebase context — fetches the PR and drives code-review against its merge-base. Use when the user asks to review a PR (incoming, a collaborator's, or an already-pushed one)."
 argument-hint: <PR number or branch>
 ---
 

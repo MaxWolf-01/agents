@@ -37,4 +37,10 @@ Run coding agents in isolated Docker containers. `uvx clankr` — see [clankr re
 
 ### References
 
-Inspiration from: https://github.com/mitsuhiko/agent-stuff
+Inspiration from:
+- https://github.com/mattpocock/skills
+  - [Software Fundamentals Matter More Than Ever](https://youtu.be/v4F1gFy-hqg)
+  - [Full Walkthrough: Workflow for AI Coding — Matt Pocock](https://youtu.be/-QFHIoCo-Ko)
+- https://github.com/mitsuhiko/agent-stuff
+- [Simple Made Easy](https://mwolf.dev/library/simple-made-easy/simple-made-easy)
+
