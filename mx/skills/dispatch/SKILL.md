@@ -23,7 +23,7 @@ For each spawned worker whose `claude -p` has exited (see Mechanics), read the t
 
 - **Not `done`** → the worker stopped early. Diagnose from its scrollback. A permission denial is a first-class resumable event: add the allowlist entry it needed, or resume with guidance; otherwise resume with "continue".
 - **`done`** → the flip alone proves nothing. Merge the ticket branch into the feature branch and run the project's verification there:
-  - Clean merge, green → the ticket has **landed**: keep `status: done`, remove its worktree, kill its session.
+  - Clean merge, green → the ticket has **landed**: keep `status: done`, remove its worktree, kill its session — and **announce it to the user**: the ticket is demoable now (tracer bullet), so name what works and how to exercise it, straight from the ticket's "What to build" and acceptance criteria. QA runs per landed slice, concurrent with the remaining waves.
   - Conflict, or red after merge → abort the merge and send the conflict to the most-informed agent: resume the worker with "the feature branch moved — rebase onto it, resolve, re-verify, flip done again". Ticket branches are private; rebasing them is safe.
 - **Session unrecoverable** (wedged, context-exhausted, gone) → no special machinery: reset the ticket to `open`, delete its worktree and branch — ticket + spec carry everything a fresh worker needs, by construction.
 

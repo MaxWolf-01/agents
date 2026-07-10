@@ -28,7 +28,7 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 - **Don't review the spec.** After a real grilling session the spec is a summary of an understanding you already share — reading it only verifies the LLM's ability to summarize.
 - **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones — no feedback until the layers meet.
 - **Implementation is the AFK part.** Day shift plans and queues the backlog; night shift works the frontier, fresh context per ticket.
-- **QA is where you impose taste.** Manual, deliberately — automate the idea, the planning, *and* the QA and you get slop. QA findings become new tickets with blocking edges; the board absorbs them while agents keep working.
+- **QA is where you impose taste — per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands; the agent announces what works and how to exercise it (the ticket's What-to-build + acceptance criteria), you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
 - **Reviews run in fresh context.** A reviewer sharing the implementer's window reviews in the dumb zone; implement closes with code-review in clean context for a reason.
 - **Feedback loops are the ceiling.** Agent output quality tracks the quality of the repo's tests and typechecks. Bad output → improve the loops, not the prompt (`/mx:improve-codebase-architecture`; deep modules — design the interface, delegate the implementation).
 - **Done work gets deleted** (`git rm`). Closed tickets and specs left in the tree are doc rot steering future agents wrong; git history keeps them.
@@ -51,7 +51,7 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
 | `/mx:writing-skills` | reference for writing skills well |
 
-Plus assorted utilities: `mermaid`, `tyro-cli`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `changelog`, `dependabot-triage`.
 
 ---
 

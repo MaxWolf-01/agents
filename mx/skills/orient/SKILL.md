@@ -33,6 +33,8 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
    `/mx:implement` drives `/mx:tdd` internally — one red-green slice at a time — and closes with `/mx:code-review`. Reach for either on its own too.
 
+4. **QA — the human, per landed slice.** Every ticket is a tracer bullet, demoable the moment it lands: the agent announces what now works and how to exercise it (straight from the ticket's What-to-build and acceptance criteria), and the human drives it while the remaining frontier keeps running. Taste lands here — that's why there is no skill for it. Findings become new tickets with blocking edges; the frontier absorbs them.
+
 ### Context hygiene
 
 Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades past ~100k tokens regardless of the advertised window size (a 1M window is more retrieval room, not more reasoning room). If a session approaches it before to-tickets, don't push on degraded — `/mx:handoff` and continue in a fresh thread.
