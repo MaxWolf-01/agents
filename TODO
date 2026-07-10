@@ -1,3 +1,14 @@
 
-Let claude orchestrate agents and set up an endless loop of him exploring things, building his own obsidian vault while running experiments and searching the web, using [headless mode](https://code.claude.com/docs/en/headless)
+maybe surface the facts-vs-decisions framing (grilling skill: facts you gather autonomously, decisions are the user's) in global CLAUDE.md too? idk.
 
+===
+
+Let claude orchestrate agents and set up an endless loop of him exploring things, building his own obsidian vault while running experiments and searching the web.
+
+===
+
+refactor technique: delete any function only called once and inline it. Then look at the code and see if there's a better way to split it up. Works for messy 3rd party codebases as well as your own if things have shifted from the original design!
+
+===
+
+extract the tmux recipes block from global CLAUDE.md into a skill (deferred from the 2026-07-10 mx restructure; memex block was trimmed in place, LaTeX left as-is)
