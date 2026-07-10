@@ -59,7 +59,7 @@ For each session, assign one of these statuses:
 - Transcribed + last assistant shows transcript save
 - Handoff written + last assistant confirms
 - Health check / diagnostic agents (these are self-contained reports)
-- `/mx:todos`, `/mx:distill`, or other info-only commands that completed
+- `/mx:todos`, `/mx:recap`, or other info-only commands that completed
 
 **JUNK** — Not worth showing:
 - 0-1 substantive user messages with no real content

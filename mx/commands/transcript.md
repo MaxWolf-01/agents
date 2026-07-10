@@ -23,6 +23,6 @@ Assume the directory `agent/transcripts/` already exists. Do NOT preemtively use
 3. **Report** the session name and the path so user can use it for pickup:
 ```
 /rename <slug>
-/mx:task agent/transcripts/<filename>.txt
+Continue from agent/transcripts/<filename>.txt — read it in full first.
 ```
 

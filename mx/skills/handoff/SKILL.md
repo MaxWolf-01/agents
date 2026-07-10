@@ -115,7 +115,7 @@ Do not duplicate content already captured in other artifacts (specs, plans, ADRs
 
 Write the handoff to: `agent/handoffs/YYYY-MM-DD-<slug>.md`
 
-Then give the user the command to continue from there:
+Then give the user the prompt to continue from there in a fresh session:
 ```
-/mx:task agent/handoffs/YYYY-MM-DD-<slug>.md
+Continue from agent/handoffs/YYYY-MM-DD-<slug>.md — read it in full first.
 ```
