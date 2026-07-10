@@ -25,7 +25,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ## The main flow: idea → ship
 
-1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`.
+1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`. External inputs — a meeting transcript, a client brief, a bug report — feed in here too: grill through their unstated assumptions.
 2. **Branch — does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back.
 3. **Branch — is this a multi-session build?**
    - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**. Independent frontier tickets can run in parallel under a single orchestrating agent (see `tracker`).
@@ -35,7 +35,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ### Context hygiene
 
-Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. If the session degrades before to-tickets, `/mx:handoff` and continue in a fresh thread.
+Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades past ~100k tokens regardless of the advertised window size (a 1M window is more retrieval room, not more reasoning room). If a session approaches it before to-tickets, don't push on degraded — `/mx:handoff` and continue in a fresh thread.
 
 ## On-ramp
 

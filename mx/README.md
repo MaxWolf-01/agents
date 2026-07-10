@@ -23,7 +23,8 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 
 ## What's manual, what's AFK — and why
 
-- **Grilling is where alignment happens** — human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there.
+- **Grilling is where alignment happens** — human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
+- **Plan in one window, respect the smart zone.** Grilling → spec → tickets stays in one unbroken context window; but reasoning degrades regardless of advertised window size (1M is more retrieval room, not more reasoning room). Approaching the limit mid-planning → handoff to a fresh thread, don't push on degraded.
 - **Don't review the spec.** After a real grilling session the spec is a summary of an understanding you already share — reading it only verifies the LLM's ability to summarize.
 - **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones — no feedback until the layers meet.
 - **Implementation is the AFK part.** Day shift plans and queues the backlog; night shift works the frontier, fresh context per ticket.
