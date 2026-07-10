@@ -25,7 +25,7 @@ blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing bloc
 
 - A ticket is **unblocked** when every ticket in `blocked-by` is `done`.
 - The **frontier**: open, unblocked, unclaimed tickets — what can be started right now.
-- `claimed` marks a ticket a session is actively working. Set it before any work. Across parallel checkouts a claim only coordinates once it's shared: commit the claim by itself and push to main before starting; if the push is rejected, pull — another session beat you to it — and pick the next frontier ticket. (With a single agent in a single checkout, claiming is optional.)
+- `claimed` marks a ticket a session is actively working. Set it before any work. Across parallel checkouts a claim only coordinates once it's shared: commit the claim by itself and push — to the feature's integration branch, or main for standalone tasks — before starting; if the push is rejected, pull — another session beat you to it — and pick the next frontier ticket. (With a single agent in a single checkout, claiming is optional.)
 - Notes and follow-up conversation append under a `## Comments` heading at the bottom of the file.
 
 ## Publish / fetch
