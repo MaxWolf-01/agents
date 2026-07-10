@@ -42,6 +42,7 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
 | `/mx:to-spec`, `/mx:to-tickets` | conversation → spec → tickets |
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
+| `/mx:dispatch` | parallelize independent frontier tickets — one orchestrator, N implements |
 | `/mx:prototype` | throwaway code to answer a design question |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
 | `/mx:improve-codebase-architecture`, `/mx:bloat-audit` | codebase health |
