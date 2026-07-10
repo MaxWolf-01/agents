@@ -1,6 +1,7 @@
 ---
 name: permissions-review
-description: This skill should be used when the user asks to "review permissions", "update allowlist", "check unapproved commands", "what's getting prompted", "audit bash permissions", "reduce permission prompts", "fewer permission prompts", "permission audit", or wants to review and update Claude Code's auto-approved command allowlist based on recent usage.
+description: Review and update Claude Code's auto-approved command allowlist based on Bash commands that triggered permission prompts in recent sessions.
+disable-model-invocation: true
 ---
 
 # Permissions Review
