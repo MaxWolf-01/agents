@@ -19,7 +19,7 @@ Dispatch runs downstream of `/mx:to-tickets` — the `blocked-by` DAG is what ma
 
 ### 1. Integrate what landed
 
-For each spawned worker whose `claude -p` has exited (see Mechanics), read the ticket's frontmatter:
+For each spawned worker whose `claude -p` has exited (see Mechanics), read the ticket's frontmatter **from the worker's worktree** — the `done` flip lands on the ticket branch, so your feature-branch checkout still shows `claimed` until the merge:
 
 - **Not `done`** → the worker stopped early. Diagnose from its scrollback. A permission denial is a first-class resumable event: add the allowlist entry it needed, or resume with guidance; otherwise resume with "continue".
 - **`done`** → the flip alone proves nothing. Merge the ticket branch into the feature branch and run the project's verification there:
@@ -46,7 +46,7 @@ For each ticket in the wave:
 1. Set `status: claimed` and commit on the feature branch (you are the sole claim-writer).
 2. Cut its worktree + branch from the feature branch's current tip — a newly-unblocked ticket needs its blockers' landed code.
 3. Set up per-worktree environment where the project needs one (venv, node_modules — project-specific).
-4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and a cheaper model — implementation routes cheap; the judgment calls (wave planning, merges, verification) stay with you.
+4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and the implementer model — typically one tier below the orchestrator (e.g. Opus implements while Fable orchestrates); the judgment calls (wave planning, merges, verification) stay on the strongest model, with you.
 
 ### 5. Stop or sleep
 
@@ -69,10 +69,10 @@ The `done` flip as the *last* act is the done signal you read on exit; a worker 
 The spawn layer is deliberately thin — a tmux window running a CLI — so it stays swappable (`codex exec`, a container) without touching the rest.
 
 - **Worktree**: `git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug>`, run from the feature-branch checkout; worktrees live as its siblings, one branch per worktree, the checkout itself holding the feature branch.
-- **Spawn**: create the session with a shell so it survives worker exit, then send the command:
+- **Spawn**: write the worker prompt to `/tmp/dispatch-<feature>-<NN>.md` (multi-line text never survives quoting through send-keys — pass it via stdin), then create the session with a shell so it survives worker exit and send the command:
   ```
   tmux new-session -d -s dispatch-<feature>-<NN> -c <worktree-path>
-  tmux send-keys -t dispatch-<feature>-<NN> -l 'claude -p "<worker prompt>" --permission-mode auto --model <cheap>'
+  tmux send-keys -t dispatch-<feature>-<NN> -l 'claude -p --permission-mode auto --model <implementer> < /tmp/dispatch-<feature>-<NN>.md'
   tmux send-keys -t dispatch-<feature>-<NN> Enter
   ```
 - **Exit check**: `tmux list-panes -t dispatch-<feature>-<NN> -F '#{pane_current_command}'` prints the shell's name once the worker has exited.
