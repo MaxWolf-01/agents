@@ -1,11 +1,7 @@
 ---
 name: bloat-audit
-description: >
-  Whole-repo audit for over-engineering: a ranked list of what to delete,
-  simplify, or replace with stdlib/native equivalents. Use when the user says
-  "find bloat", "audit for over-engineering", "what can I delete from this
-  repo", or invokes /mx:bloat-audit. One-shot report; applying the cuts is a
-  separate, later decision.
+description: Whole-repo over-engineering audit — a ranked list of what to delete, simplify, or replace with stdlib. Report only; applying cuts is a separate decision.
+disable-model-invocation: true
 ---
 
 Audit the repo for code that shouldn't exist. Read the code, not the tree:

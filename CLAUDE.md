@@ -32,5 +32,5 @@ rushed <1d hackathon project, but had some good brainstorming for a scalable arc
 - Don't prompt with a list of dos and don't, but general principles. This helps agents ... generalize better to a range of scenarios. If they know what the motivation is, they can interpret it intelligently, rather than playing whack-a-mole with a list of specific instructions.
 - Skills, commands, any prompts you write, these are written for and read by other agents just like you. Empathise with their perspective.
 - Remember that agents sometimes take prompts quite literally, so be careful with wording. Again, aim for general principles rather than overspecifying edges cases.
-- Before upating or writing skills/commands/any prompt, consult the skill writing skill, and optionally the prompt-dev/plugin-dev skills
+- Before upating or writing skills/commands/any prompt, consult /mx:writing-skills
 

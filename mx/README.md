@@ -51,7 +51,7 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
 | `/mx:writing-skills` | reference for writing skills well |
 
-Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
 
 ---
 

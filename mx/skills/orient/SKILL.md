@@ -37,7 +37,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ### Context hygiene
 
-Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades past ~100k tokens regardless of the advertised window size (a 1M window is more retrieval room, not more reasoning room). If a session approaches it before to-tickets, don't push on degraded — `/mx:handoff` and continue in a fresh thread.
+Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades well before the window fills, and earlier than the advertised size suggests (a 1M window is more retrieval room, not more reasoning room; where the drop-off starts is model-dependent — watch for it rather than trusting a number). If a session degrades before to-tickets, don't push on — `/mx:handoff` and continue in a fresh thread.
 
 ## On-ramp
 

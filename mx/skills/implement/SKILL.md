@@ -14,4 +14,6 @@ If you find yourself making a design decision mid-ticket, or reaching for a hack
 
 Once done, use /mx:code-review to review the work.
 
+If something fought you — a missing feedback loop, a tooling gap, a slow or flaky suite — encode the fix rather than just enduring it: file it as a small task per the `tracker` skill, so the system improves for every later ticket.
+
 Commit your work to the current feature branch.
