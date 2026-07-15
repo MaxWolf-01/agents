@@ -1,6 +1,6 @@
 
 This is my coding agent setup (mainly claude code).
-`mx` is a plugin for skills, commands, etc. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
+`mx` is a plugin for skills, commands, etc. `claude/` is the global `~/.claude` config — symlinked live, edits apply everywhere. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
 
 ## clankr
 
