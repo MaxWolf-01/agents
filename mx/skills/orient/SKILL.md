@@ -59,9 +59,10 @@ Two model-invoked references that run _beneath_ the other skills — each the si
 
 ## Crossing sessions
 
-- **`/mx:handoff`** — compact the conversation into a file; open a **new session** referencing it. Forks.
+Sessions end by handoff and a fresh start — a deterministic reset beats accumulating summary sediment in one long thread (auto-compact is disabled for the same reason).
+
+- **`/mx:handoff`** — compact the conversation into a file; open a **new session** referencing it. Continuation, fork, or return — the skill scopes by purpose.
 - **`/mx:transcript`** — full session export, the lazy handoff.
-- **`/compact`** (built-in) — same conversation, earlier turns summarized. Continues. Don't compact mid-phase.
 
 ## Standalone
 
