@@ -89,6 +89,7 @@ Gather sufficient context, verify your assumptions and sources.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 - Always assume potential parallel work: The user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
   - Avoid `git add -A` or `git add .` - untracked files may exist that shouldn't be committed. Prefer explicit file lists or `git add -u` (tracked files only).
+  - Never `git commit -a`/`-am`: it commits the whole index, including files the user staged mid-flight for their own commit. Commit with explicit paths instead (`git commit -m msg -- file1 file2`).
   - Before history-rewriting (amend, rebase), check if the commit was pushed. When in doubt, make a new commit instead.
   - NEVER AMMEND A COMMIT WITHOUT CHECKING WETHER IT'S PUSHED ALREADY
 - Commit as you go without asking (one agent per checkout). Multi-commit features: feature branch + PR, squash on merge. Never push main unless asked; pushing feature branches is fine.
