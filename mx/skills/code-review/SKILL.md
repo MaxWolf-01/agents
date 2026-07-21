@@ -45,7 +45,7 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Duplicated Code** — the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
 - **Feature Envy** — a method that reaches into another object's data more than its own. → move the method onto the data it envies.
 - **Data Clumps** — the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
-- **Primitive Obsession** — a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
+- **Primitive Obsession** — a primitive or string standing in for a domain concept that deserves its own type, including flag `bool`s a two-constructor variant would make self-describing at call sites. → give the concept its own small type.
 - **Repeated Switches** — the same `switch`/`if`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
 - **Shotgun Surgery** — one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.
 - **Divergent Change** — one file or module is edited for several unrelated reasons. → split so each module changes for one reason.
@@ -56,6 +56,8 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Dishonest Types** — code lying to the type checker: `as any`, non-null assertions on nullables, `T[]` holding nulls. → make the type tell the truth; if it can't, the design is off.
 - **Defensive Padding** — try/except "just in case", or validation for inputs the system already guarantees. → delete it; let impossible failures be loud.
 - **Narrating Comments** — comments restating the next line, meta-commentary, fluff. → delete; comment only non-obvious behaviour, warnings, complex algorithms.
+- **Representable Illegal States** — the type permits states the domain forbids: fields that must co-occur but are individually optional, a status field plus booleans that can contradict it, a list that must never be empty. → encode the invariant in the type; make illegal states unrepresentable.
+- **Catch-all Match** — a `_`/default arm on a closed set of variants, so adding a variant compiles silently instead of erroring at every site that must handle it. → enumerate the cases; reserve the catch-all for genuinely open sets.
 
 ### 4. Spawn the sub-agents in parallel
 
