@@ -32,7 +32,7 @@ Look for the originating spec, in this order:
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`.
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. When the diff touches prose files (docs, READMEs), the `stop-slop` skill's rules are a standards source for those hunks — load it and pass its rules to the Standards sub-agent alongside the smell baseline.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of code smells (Fowler, _Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
