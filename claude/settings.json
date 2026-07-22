@@ -497,8 +497,7 @@
     ],
     "defaultMode": "default"
   },
-  "model": "claude-fable-5",
-  "outputStyle": "max",
+  "model": "opus",
   "skillOverrides": {
     "code-review": "off",
     "review": "off",
@@ -545,12 +544,17 @@
       }
     }
   },
+  "outputStyle": "max",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-ansi",
   "verbose": true,
