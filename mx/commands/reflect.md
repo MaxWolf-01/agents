@@ -1,5 +1,6 @@
 ---
 description: Post-implementation reflection within session
+disable-model-invocation: true
 ---
 
 Look back at what you just implemented. Be honest, be critical.

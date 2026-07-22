@@ -1,6 +1,7 @@
 ---
 description: Triage Dependabot alerts — assess real impact, dismiss noise
 allowed-tools: Bash(gh:*), Bash(npm:*), Bash(uv:*), Read, Grep, Glob
+disable-model-invocation: true
 ---
 
 Triage open Dependabot alerts for the current repository. The goal is distinguishing real vulnerabilities from noise — most Dependabot alerts on transitive dependencies are not exploitable.

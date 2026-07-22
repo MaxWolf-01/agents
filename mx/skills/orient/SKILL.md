@@ -1,7 +1,6 @@
 ---
 name: orient
 description: Which mx skill or flow fits the current situation — a router over the mx workflow.
-disable-model-invocation: true
 ---
 
 # Orient

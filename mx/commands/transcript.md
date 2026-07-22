@@ -1,6 +1,7 @@
 ---
 description: Save session transcript for later continuation
 allowed-tools: Bash(ccx:*), Skill(*)
+disable-model-invocation: true
 ---
 
 Save the current session's transcript to `agent/transcripts/` for later pickup.

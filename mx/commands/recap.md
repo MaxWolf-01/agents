@@ -1,6 +1,7 @@
 ---
 description: Get structured status report on current work
 argument-hint: [focus-area]
+disable-model-invocation: true
 ---
 
 # Status Report
