@@ -497,7 +497,8 @@
     ],
     "defaultMode": "default"
   },
-  "model": "fable",
+  "model": "claude-fable-5",
+  "outputStyle": "max",
   "skillOverrides": {
     "code-review": "off",
     "review": "off",
