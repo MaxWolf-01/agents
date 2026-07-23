@@ -1,4 +1,5 @@
 ---
+name: todos
 description: Overview of open tasks and the current frontier
 argument-hint: [what you're interested in]
 disable-model-invocation: true

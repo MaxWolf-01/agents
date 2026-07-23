@@ -1,4 +1,5 @@
 ---
+name: reflect
 description: Post-implementation reflection within session
 disable-model-invocation: true
 ---

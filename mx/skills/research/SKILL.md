@@ -1,4 +1,5 @@
 ---
+name: research
 description: Investigate a question and produce a research artefact
 argument-hint: [topic or question]
 ---

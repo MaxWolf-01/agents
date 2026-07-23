@@ -1,4 +1,5 @@
 ---
+name: bro
 description: "Please, speak as you might to a young child, or.. a golden retriever."
 disable-model-invocation: true
 ---

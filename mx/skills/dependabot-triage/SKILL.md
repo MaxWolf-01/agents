@@ -1,4 +1,5 @@
 ---
+name: dependabot-triage
 description: Triage Dependabot alerts — assess real impact, dismiss noise
 allowed-tools: Bash(gh:*), Bash(npm:*), Bash(uv:*), Read, Grep, Glob
 disable-model-invocation: true

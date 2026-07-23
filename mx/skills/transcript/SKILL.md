@@ -1,4 +1,5 @@
 ---
+name: transcript
 description: Save session transcript for later continuation
 allowed-tools: Bash(ccx:*), Skill(*)
 disable-model-invocation: true
