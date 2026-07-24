@@ -2,14 +2,15 @@
 name: handoff
 description: Compact the current conversation into a handoff document for another agent to pick up — continue the work, or fork a side-quest out of it.
 argument-hint: "What will the next session be used for?"
-disable-model-invocation: true
 ---
 
-Write a handoff document so a fresh agent can continue the work. A handoff requires a **purpose** — what the next session should do; if none is clear, ask before proceeding. The purpose sets the scope:
+Write a handoff document so a fresh agent can continue the work. A handoff requires a **purpose** — what the next session should do. The purpose sets the scope:
 
 - **Continuation** (this session is full or ending): the next agent inherits the thread. Walk the conversation start to end before writing — early decisions and corrections carry the same weight as the last few turns.
 - **Fork** (a side-quest surfaced — a bug, a refactor, an idea out of scope here): extract only the slice that pertains to the forked task, and note in this session that it's now out of scope — that sharpens the parent too.
 - **Return** (this session was a detour — a prototype, an investigation — reporting back to its parent): capture only what the produced artifacts don't already show: non-obvious learnings, dead ends, decisions.
+
+Before writing the file, put a short brief to the user — the purpose, the scope, and all the things only this conversation knows that you'd carry over. Their reply is the mandate: a purpose you inferred yourself is a proposal until they've confirmed it. The same discipline holds inside the document — the user's decisions are binding input; your proposals stay labeled as proposals.
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 
