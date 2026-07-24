@@ -26,7 +26,7 @@ _Avoid_: Client, buyer, account
 
 - **Be opinionated.** When multiple words exist for the same concept, pick the best one and list the others under `_Avoid_`.
 - **Keep definitions tight.** One or two sentences max. Define what it IS, not what it does.
-- **Only include terms specific to this project's context.** General programming concepts (timeouts, error types, utility patterns) don't belong even if the project uses them extensively. Before adding a term, ask: is this a concept unique to this context, or a general programming concept? Only the former belongs.
+- **Only ambiguous terms earn an entry.** A term belongs when it's newly coined or nonstandard, carries a non-obvious meaning in this context, or has competing words (pick one, list the rest under `_Avoid_`). A term whose common meaning already says everything stays out — even a domain-specific one, and especially general programming concepts. Coin as few terms as possible; the glossary is where the unavoidable ones are defined once and used everywhere.
 - **Group terms under subheadings** when natural clusters emerge. If all terms belong to a single cohesive area, a flat list is fine.
 
 ## Single vs multi-context repos
