@@ -18,7 +18,7 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-spec, to-tickets, implement, handoff.
+Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-spec, to-tickets, implement, handoff, wayfinder.
 
 Renamed:
 - orient ← ask-matt

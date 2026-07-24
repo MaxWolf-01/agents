@@ -18,15 +18,16 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Spec       | `agent/tasks/<feature>/spec.md` | committed; `git rm -r` when shipped | the work order for one feature                                 |
 | Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature      | one vertical slice: what to build, blocked-by, acceptance criteria |
 | Small task | `agent/tasks/<slug>.md`         | deleted when done                | ticket-shaped, no spec                                            |
+| Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far index, fog  |
 | Research   | `agent/research/NN-slug.md`     | gitignored, ephemeral            | one question, cited findings                                      |
-| Prototype  | `agent/prototypes/<slug>/`      | committed, kept                  | throwaway code that answered a design question, kept as primary source |
+| Prototype  | `agent/prototypes/<slug>/`      | committed, kept                  | throwaway code that answered a design question + `ANSWER.md` (question, verdicts), kept as primary source |
 
 Layout, state, and claiming: the `tracker` skill. A fact that fits none of these (a gotcha, a vendor quirk — knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
 
 ## The main flow: idea → ship
 
-1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`. External inputs — a meeting transcript, a client brief, a bug report — feed in here too: grill through their unstated assumptions.
-2. **Branch — does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back.
+1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`. External inputs — a meeting transcript, a client brief, a bug report — feed in here too: grill through their unstated assumptions. Too big and foggy for one session? **`/mx:wayfinder`** instead: chart the effort as a shared map of decision tickets on the tracker and resolve them across sessions — threads you can't pull now become tickets, never lost context — merging back onto the flow at `/mx:to-spec`.
+2. **Branch — does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back — the prototype's `ANSWER.md` carries the verdicts.
 3. **Branch — is this a multi-session build?**
    - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**. Independent frontier tickets can run in parallel — `/mx:dispatch` orchestrates the waves (one orchestrator, N implements).
    - **No** → `/mx:implement` right here, in the same context window.
@@ -37,7 +38,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ### Context hygiene
 
-Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades well before the window fills, and earlier than the advertised size suggests (a 1M window is more retrieval room, not more reasoning room; where the drop-off starts is model-dependent — watch for it rather than trusting a number). If a session degrades before to-tickets, don't push on — `/mx:handoff` and continue in a fresh thread.
+Keep steps 1–3 in **one unbroken context window** — no handoff until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades well before the window fills, and earlier than the advertised size suggests (a 1M window is more retrieval room, not more reasoning room; where the drop-off starts is model-dependent — watch for it rather than trusting a number). If a session degrades before to-tickets, don't push on — `/mx:handoff` and continue in a fresh thread. And when the planning itself can't fit one window, that's `/mx:wayfinder`'s job — the map, not the conversation, carries the thinking across resets.
 
 ## On-ramp
 
