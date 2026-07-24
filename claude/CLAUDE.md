@@ -149,7 +149,7 @@ Always invoke the relevant skill before doing the work it covers — don't skip 
 </workflow>
 
 <subagents>
-NEVER use subagents to do edits. They do have read only permissions.
+NEVER use subagents to edit code or docs you're responsible for — edits stay with the session that owns the mental model. A background agent writing its own self-contained artefact (e.g. a research note in agent/research/) is fine.
 NEVER use subagents to read source code files, documentation, or knowledge files, unless you need to plan across many different aspects in a huge codebase or need to research 2-3 isolated things in parallel.
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself, especially if there is existing documentation / it's easy to orient yourself. 
 </subagents>
