@@ -1,11 +1,9 @@
 ---
 name: orient
-description: Which mx skill or flow fits the current situation — a router over the mx workflow.
+description: Which mx skill or flow fits the current situation — a router over the mx workflow. Call it before starting nontrivial work in a project with an agent/ directory, and whenever unsure which skill or flow fits.
 ---
 
 # Orient
-
-You don't remember every skill, so ask.
 
 A **flow** is a path through the skills. Most work travels one **main flow**, with an on-ramp that merges onto it. Everything else is standalone, or a vocabulary layer that runs underneath.
 

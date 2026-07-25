@@ -9,4 +9,6 @@ Ask the questions one at a time, waiting for feedback on each question before co
 
 If a *fact* can be found by exploring the environment (filesystem, web, tools, etc.), look it up rather than asking the user. The *decisions*, though, are theirs — put each one to them and wait for their answer.
 
+Delegation keeps the interview moving and its context lean: a fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling (unless the current question blocks on it); a question only answerable — or better answered — by seeing or running something → propose a `/mx:prototype` detour, or ticket it if a wayfinder map is live.
+
 Do not act on it until the user confirms you have reached a shared understanding.
