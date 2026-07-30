@@ -44,6 +44,8 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
 | `/mx:dispatch` | parallelize independent frontier tickets — one orchestrator, N implements |
 | `/mx:prototype` | throwaway code to answer a design question |
+| `/mx:show` | show, don't tell — explain via artifact (diagram, comparison, demo, explainer page, …) |
+| `/mx:fork` | delegate to an agent that inherits the full conversation |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
 | `/mx:improve-codebase-architecture`, `/mx:bloat-audit` | codebase health |
 | `/mx:research` | primary-source investigation → cited artefact |
