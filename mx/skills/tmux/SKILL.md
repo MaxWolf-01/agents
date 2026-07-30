@@ -14,6 +14,10 @@ A command runs in tmux — never as a blocking one-shot Bash call — when any o
 - Send a command: `tmux send-keys -t <session> -l 'command'` then `tmux send-keys -t <session> Enter`
 - Read output: `tmux capture-pane -p -J -t <session> -S -50` (`-J` joins wrapped lines)
 
+## Long jobs
+
+Prefix anything that must run to completion with `nosleep` — `nosleep uv run train.py`. Idle suspend counts keyboard and mouse input, not CPU load, so a detached tmux pane crunching for an hour looks exactly as idle as an empty desk and gets suspended out from under you. `nosleep` holds a systemd inhibitor for the job's lifetime and releases it on exit, and is a no-op where there's nothing to inhibit.
+
 ## Remote (SSH)
 
 Always quote the full tmux command so spaces survive the remote shell:
