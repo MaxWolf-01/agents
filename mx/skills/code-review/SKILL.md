@@ -86,6 +86,10 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
+The review is one message, written after every axis has returned. Nothing about findings goes out before that — no per-axis narration as sub-agents land, no "Correctness came back clean, waiting on the others".
+
+That last message is the only one that reliably gets read: the reader skims to the end of the turn, copies the review to another agent to act on, or — when this skill runs as a sub-agent — receives only the final message. So it has to stand alone. Every finding, its reasoning, and the fixed point it was reviewed against belong in it; don't reference an earlier message as if it were read.
+
 Present the reports under `## Correctness`, `## Standards`, and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings — the axes are deliberately separate (see _Why separate axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes — that's the reranking the separation exists to prevent.
