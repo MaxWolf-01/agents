@@ -19,6 +19,7 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far index, fog  |
 | Research   | `agent/research/NN-slug.md`     | gitignored, ephemeral            | one question, cited findings                                      |
 | Prototype  | `agent/prototypes/<slug>/`      | committed, kept                  | throwaway code that answered a design question + `ANSWER.md` (question, verdicts), kept as primary source |
+| Show       | `agent/show/<slug>/`            | committed once approved or acted on | an explanation carried by an artefact — diagram, comparison, demo, explainer page |
 
 Layout, state, and claiming: the `tracker` skill. A fact that fits none of these (a gotcha, a vendor quirk — knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
 

@@ -20,10 +20,10 @@ Examples with delivery notes — an open set, not a menu; combining media is nor
 
 ## Produce and present
 
-- Artifacts go to `~/Downloads/show/<slug>/`. Move one into the repo only when the user wants to keep it.
+- Artifacts go to `agent/show/<slug>/`; commit once the user has approved the final version, or once a decision rests on it. Use `~/Downloads/show/<slug>/` instead when the user wants it throwaway, when there's no repo to keep it in, or when the repo is the wrong home for it. Never `/tmp`: the sandboxed browser can't read it.
 - Look at your own render before presenting — Read the PNG, run the demo, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
 - Present it opened (`xdg-open`), with one line on what it shows and the absolute path.
 
 ## Heavy artifacts fork
 
-A diagram, diff, or small demo is cheaper to produce here than to delegate. An artifact with a build loop — a manim video, a multi-section explainer, anything needing render–debug cycles — goes to a context-inheriting fork (invoke `mx:fork`), so the build noise stays out of this conversation. The directive: the artifact spec, its output path under `~/Downloads/show/<slug>/`, and nothing else.
+A diagram, diff, or small demo is cheaper to produce here than to delegate. An artifact with a build loop — a manim video, a multi-section explainer, anything needing render–debug cycles — goes to a context-inheriting fork (invoke `mx:fork`), so the build noise stays out of this conversation. The directive: the artifact spec, its output path, and nothing else.
