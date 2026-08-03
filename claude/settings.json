@@ -112,6 +112,7 @@
       "Bash(whoami)",
       "Bash(whoami *)",
       "Bash(xdg-mime query *)",
+      "Bash(xdg-open *)",
       "Bash(grep *)",
       "Bash(rg *)",
       "Bash(sg *)",
@@ -498,6 +499,7 @@
     ],
     "defaultMode": "default"
   },
+  "model": "opus",
   "skillOverrides": {
     "code-review": "off",
     "review": "off",
