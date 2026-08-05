@@ -25,10 +25,10 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ## The main flow: idea → ship
 
-1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). No codebase? Plain `/mx:grilling`. External inputs — a meeting transcript, a client brief, a bug report — feed in here too: grill through their unstated assumptions. Too big and foggy for one session? **`/mx:wayfinder`** instead: chart the effort as a shared map of decision tickets on the tracker and resolve them across sessions — threads you can't pull now become tickets, never lost context — merging back onto the flow at `/mx:to-spec`.
+1. **`/mx:grill-with-docs`** — sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). Not working in a repo? Plain `/mx:grilling`. External inputs — a meeting transcript, a client brief, a bug report — feed in here too: grill through their unstated assumptions. Too big and foggy for one session? **`/mx:wayfinder`** instead: chart the effort as a shared map of decision tickets on the tracker and resolve them across sessions — threads you can't pull now become tickets, never lost context — merging back onto the flow at `/mx:to-spec`.
 2. **Branch — does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back — the prototype's `ANSWER.md` carries the verdicts.
 3. **Branch — is this a multi-session build?**
-   - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**. Independent frontier tickets can run in parallel — `/mx:dispatch` orchestrates the waves (one orchestrator, N implements).
+   - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets** — each ticket is self-contained, so the last one's context is disposable. Independent frontier tickets can run in parallel — `/mx:dispatch` orchestrates the waves (one orchestrator, N implements).
    - **No** → `/mx:implement` right here, in the same context window.
 
    `/mx:implement` drives `/mx:tdd` internally — one red-green slice at a time — and closes with `/mx:code-review`. Reach for either on its own too.
@@ -37,7 +37,7 @@ Layout, state, and claiming: the `tracker` skill. A fact that fits none of these
 
 ### Context hygiene
 
-Keep steps 1–3 in **one unbroken context window** — no handoff until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: reasoning degrades well before the window fills, and earlier than the advertised size suggests (a 1M window is more retrieval room, not more reasoning room; where the drop-off starts is model-dependent — watch for it rather than trusting a number). If a session degrades before to-tickets, don't push on — `/mx:handoff` and continue in a fresh thread. And when the planning itself can't fit one window, that's `/mx:wayfinder`'s job — the map, not the conversation, carries the thinking across resets.
+Keep steps 1–3 in **one unbroken context window** — no handoff until after `/mx:to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/mx:implement` then starts fresh, working from ticket + spec. The limit is the **smart zone**: the stretch within which reasoning stays sharp — degradation becomes noticeable from roughly 30% of the window used (the advertised size is retrieval room, not reasoning room). If a session nears it before to-tickets, don't push on degraded — `/mx:handoff` and continue in a fresh thread. And when the planning itself can't fit one window, that's `/mx:wayfinder`'s job — the map, not the conversation, carries the thinking across resets.
 
 ## On-ramp
 
@@ -57,16 +57,24 @@ Two model-invoked references that run _beneath_ the other skills — each the si
 - **`/mx:domain-modelling`** — the project's _domain_ language: challenge a fuzzy term, resolve an overloaded word, record a hard-to-reverse decision as an ADR.
 - **`/mx:codebase-design`** — the deep-module vocabulary (module, interface, depth, seam, adapter, leverage) for designing a module's _shape_. `/mx:tdd` and `/mx:improve-codebase-architecture` speak it.
 
-## Crossing sessions
+## Phase boundaries
 
-Sessions end by handoff and a fresh start — a deterministic reset beats accumulating summary sediment in one long thread (auto-compact is disabled for the same reason).
+A **phase** is a chunk of work inside a session — the grilling, the implementation, the QA. At the **boundary** between two, decide what to do with the context you've built — four options, worked top to bottom ([PHASE-BOUNDARIES.md](PHASE-BOUNDARIES.md) has the ordered tree, the reasoning behind each branch, and the primary-source cost that makes Continue the one to rule out first):
 
-- **`/mx:handoff`** — compact the conversation into a file; open a **new session** referencing it. Continuation, fork, or return — the skill scopes by purpose.
-- **`/mx:transcript`** — full session export, the lazy handoff.
+- **Continue** — the only move that keeps the session a primary source. Rule it out before anything else.
+- **`/clear`** — when nothing here matters to what's next.
+- **Subagent** — a tightly-scoped AFK task in its own window: `/mx:fork` when it needs the current mental model, a fresh background agent with a brief when it doesn't.
+- **`/mx:handoff`** — compact the conversation into an inspectable file; open a fresh session on it. The terminal rung, and the move whenever work must travel (new harness, new directory, a colleague, a mid-phase side-quest). `/mx:transcript` is the full-export variant.
+
+No `/compact` on the ladder: a deterministic reset from a file you can proofread beats a summary you can't (auto-compact is disabled for the same reason). Decide **at** a boundary; mid-phase, continue or split the remainder into subagents.
 
 ## Standalone
 
+- **`/mx:grilling`** — the interview primitive itself: rounds, the frontier, facts are the agent's job and decisions are the user's. `/mx:grill-with-docs` wraps it with docs; `/mx:wayfinder` runs it inside tickets. Reach for it bare when the discussion has no repo under it.
 - **`/mx:research`** — investigate a question against **primary sources**; leaves a cited artefact in `agent/research/`. Research feeds the thinking, it doesn't replace it.
+- **`/mx:to-questionnaire`** — when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. The inverse of grilling: it interviews you about the **send** — who it's going to, what you need back — and aims the questions at the gap. What comes back is material for `/mx:grill-with-docs` or `/mx:to-spec`.
+- **`/mx:wizard`** — for the steps only a **human** can take: provisioning infrastructure, credentials and CI secrets, an unfamiliar third-party dashboard, a one-off migration. Generates an interactive bash script that opens each URL, captures each value, and writes it where it belongs. Model-invoked — the agent reaches for it when it hits a wall only you can pass; anything the agent can do itself, it should.
+- **`/mx:wait-what`** — the corrective for a message that didn't land: the agent re-pitches what it just said with the context you were missing, in plain language, using the `CONTEXT.md` vocabulary.
 - **`/mx:codex`** — second opinion from a different model.
 - **`/mx:review-pr`** — review an existing GitHub PR: fetches it, then drives `/mx:code-review` against its merge-base.
 - **`/mx:recap`** — structured status report: findings, decisions (explicit vs implicit), open questions.
