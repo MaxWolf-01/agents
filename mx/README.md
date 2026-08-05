@@ -44,6 +44,9 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
 | `/mx:dispatch` | parallelize independent frontier tickets — one orchestrator, N implements |
 | `/mx:prototype` | throwaway code to answer a design question |
+| `/mx:to-questionnaire` | turn a decision someone else must answer into a questionnaire for them |
+| `/mx:wizard` | bash wizard walking a human through steps only they can do (credentials, dashboards, migrations) |
+| `/mx:wait-what` | that didn't land — re-pitch it in plain language |
 | `/mx:show` | show, don't tell — explain via artifact (diagram, comparison, demo, explainer page, …) |
 | `/mx:fork` | delegate to an agent that inherits the full conversation |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |

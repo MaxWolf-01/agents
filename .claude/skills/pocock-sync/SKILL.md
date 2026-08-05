@@ -5,7 +5,7 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 # Sync with mattpocock/skills
 
-**Baseline** — last upstream commit reviewed: `ed37663` (2026-07-21). Every sync ends by moving this line forward; it is the single source of truth for "where we left off".
+**Baseline** — last upstream commit reviewed: `2ffb184` (2026-08-05). Every sync ends by moving this line forward; it is the single source of truth for "where we left off".
 
 ## Process
 
@@ -18,12 +18,11 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-spec, to-tickets, implement, handoff, wayfinder.
+Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-spec, to-tickets, implement, handoff, wayfinder, wait-what, to-questionnaire, wizard, writing-for-agents.
 
 Renamed:
 - orient ← ask-matt
 - domain-modelling ← domain-modeling
-- writing-skills ← writing-great-skills
 - tracker ← the one-file-per-ticket local tracker conventions (upstream folded these into setup-matt-pocock-skills)
 
 Everything else in mx is homegrown; everything else upstream is unadopted — flag interesting new skills, don't auto-adopt them.
