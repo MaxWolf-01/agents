@@ -51,7 +51,7 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 | `/mx:research` | primary-source investigation → cited artefact |
 | `/mx:codex` | second opinion from a different model |
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
-| `/mx:writing-skills` | reference for writing skills well |
+| `/mx:writing-for-agents` | reference for writing documents agents consume: skills, CLAUDE.md, pointed-at docs |
 
 Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
 

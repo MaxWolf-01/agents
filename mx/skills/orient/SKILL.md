@@ -72,4 +72,4 @@ Sessions end by handoff and a fresh start — a deterministic reset beats accumu
 - **`/mx:recap`** — structured status report: findings, decisions (explicit vs implicit), open questions.
 - **`/mx:todos`** — overview of `agent/tasks/`: what's open, what's on the frontier.
 - **`/mx:reflect`** — post-implementation self-critique, within session.
-- **`/mx:writing-skills`** — reference for writing and editing skills well.
+- **`/mx:writing-for-agents`** — reference for writing documents agents consume: skills, CLAUDE.md, pointed-at docs.
