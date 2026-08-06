@@ -146,6 +146,8 @@ Projects with an `agent/` directory use the mx workflow plugin — `/mx:orient` 
 Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Before significant work, read the glossary and the ADRs touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots, `agent/prototypes/` retired prototypes kept as primary sources, `agent/transcripts/` + `agent/handoffs/` session continuity (gitignored).
 
 Always invoke the relevant skill before doing the work it covers — don't skip it and wing the output. WHEN THE USER MENTIONS CODEX, CALL /mx:codex, NOT A SUBAGENT.
+
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, project CLAUDE.md) — a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 </workflow>
 
 <subagents>
