@@ -21,6 +21,8 @@ The map is a single issue on this repo's issue tracker — the canonical artifac
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
+It records current truth, not an audit trail. While a decision is still paper — nothing built on it yet — a later decision that overturns a closed ticket's answer **amends** it: edit the answer and its gist line in place, marking the changed claim inline (`(amended <date> — was <old>)`), and fix any other ticket repeating the old answer. Once something has been built on the answer, don't rewrite it — it is the reasoning behind code someone can now read. Open a new ticket that **supersedes** it, and leave a one-line forward pointer on the old one, without which the supersession is undiscoverable.
+
 **Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** Consult the `tracker` skill's "Wayfinding operations" section (or the tracker the project's CLAUDE.md or other context declares) for how _this_ repo expresses them.
 
 ### The map body
