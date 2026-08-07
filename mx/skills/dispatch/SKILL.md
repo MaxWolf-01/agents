@@ -74,11 +74,12 @@ The spawn layer is deliberately thin — a tmux window running a CLI — so it s
 - **Spawn**: write the worker prompt to `/tmp/dispatch-<feature>-<NN>.md` (multi-line text never survives quoting through send-keys — pass it via stdin), then create the session with a shell so it survives worker exit and send the command, trailed by a signal on a channel named for the session:
   ```
   tmux new-session -d -s dispatch-<feature>-<NN> -c <worktree-path>
-  tmux send-keys -t dispatch-<feature>-<NN> -l 'claude -p --permission-mode auto --model <implementer> < /tmp/dispatch-<feature>-<NN>.md; tmux wait-for -S dispatch-<feature>-<NN>'
+  tmux send-keys -t dispatch-<feature>-<NN> -l 'CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p --permission-mode auto --model <implementer> < /tmp/dispatch-<feature>-<NN>.md; tmux wait-for -S dispatch-<feature>-<NN>'
   tmux send-keys -t dispatch-<feature>-<NN> Enter
   ```
+  Print mode kills its own subagents after 600s unless that ceiling is lifted with `=0`, which silently truncates the code review closing `/mx:implement` — every worker runs one, so every spawn and resume carries the variable.
 - **Watcher**: right after spawning, arm one — a `run_in_background` Bash call of `tmux wait-for dispatch-<feature>-<NN>`, which blocks until that trailing signal fires. Background tasks are harness-tracked, so the watcher's own exit re-invokes you seconds after the worker finishes; you never poll for exits. A signal that fires before its watcher is armed is remembered, and exactly one waiter consumes it — so arming is race-free, and each worker run (including each resume) needs its own watcher. It exits with the worker; nothing to clean up.
 - **Exit check**: `tmux list-panes -t dispatch-<feature>-<NN> -F '#{pane_current_command}'` prints the shell's name once the worker has exited — the manual probe for a worker's state outside a watcher notification.
-- **Resume**: same send-keys shape with `claude -p --continue "<guidance>"; tmux wait-for -S dispatch-<feature>-<NN>` — the worktree cwd locates the worker's conversation — then arm a fresh watcher.
+- **Resume**: same send-keys shape with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p --continue "<guidance>"; tmux wait-for -S dispatch-<feature>-<NN>` — the worktree cwd locates the worker's conversation — then arm a fresh watcher.
 - **Observe**: `tmux capture-pane -p -J -t <session> -S -100`; the human can `tmux attach -t <session>` any time.
 - **Cleanup after landing**: `git worktree remove <path>`, `git branch -d ticket/<NN>-<slug>`, `tmux kill-session -t <session>`.
