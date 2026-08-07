@@ -208,6 +208,7 @@
       "Bash(tmux list-commands *)",
       "Bash(tmux display-message -p *)",
       "Bash(tmux capture-pane *)",
+      "Bash(tmux wait-for *)",
       "Bash(ruff check)",
       "Bash(ruff check *)",
       "Bash(ruff format)",

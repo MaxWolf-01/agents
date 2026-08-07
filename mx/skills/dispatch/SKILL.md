@@ -13,7 +13,7 @@ Dispatch runs downstream of `/mx:to-tickets` — the `blocked-by` DAG is what ma
 
 1. Fetch the spec and every ticket per the `tracker` skill.
 2. **The feature branch is the integration branch.** Check it out in the main checkout and hold it: ticket branches cut from it and merge back into it; main sees the feature only as one squashed PR when the spec ships.
-3. Run the tick loop under `/loop` with no interval (self-paced). Workers run in tmux between ticks — external state the harness can't watch — so size each wakeup to what the current wave is actually doing.
+3. Run the tick loop under `/loop` with no interval (self-paced). Worker exits drive the ticks, not a fixed cadence (step 5).
 
 ## The tick
 
@@ -50,7 +50,9 @@ For each ticket in the wave:
 
 ### 5. Stop or sleep
 
-Open or claimed tickets remain → schedule the next wakeup and end the tick. Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
+Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
+
+Otherwise the watchers are your wake signal: a worker's exit re-invokes you within seconds of it happening, so the scheduled wakeup is a long fallback heartbeat (1200s+), never a poll. It exists for what a watcher can't catch — a worker wedged short of exiting, a dead watcher, a human who interrupted the pane.
 
 ## Worker contract
 
@@ -69,13 +71,14 @@ The `done` flip as the *last* act is the done signal you read on exit; a worker 
 The spawn layer is deliberately thin — a tmux window running a CLI — so it stays swappable (`codex exec`, a container) without touching the rest.
 
 - **Worktree**: `git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug>`, run from the feature-branch checkout; worktrees live as its siblings, one branch per worktree, the checkout itself holding the feature branch.
-- **Spawn**: write the worker prompt to `/tmp/dispatch-<feature>-<NN>.md` (multi-line text never survives quoting through send-keys — pass it via stdin), then create the session with a shell so it survives worker exit and send the command:
+- **Spawn**: write the worker prompt to `/tmp/dispatch-<feature>-<NN>.md` (multi-line text never survives quoting through send-keys — pass it via stdin), then create the session with a shell so it survives worker exit and send the command, trailed by a signal on a channel named for the session:
   ```
   tmux new-session -d -s dispatch-<feature>-<NN> -c <worktree-path>
-  tmux send-keys -t dispatch-<feature>-<NN> -l 'claude -p --permission-mode auto --model <implementer> < /tmp/dispatch-<feature>-<NN>.md'
+  tmux send-keys -t dispatch-<feature>-<NN> -l 'claude -p --permission-mode auto --model <implementer> < /tmp/dispatch-<feature>-<NN>.md; tmux wait-for -S dispatch-<feature>-<NN>'
   tmux send-keys -t dispatch-<feature>-<NN> Enter
   ```
-- **Exit check**: `tmux list-panes -t dispatch-<feature>-<NN> -F '#{pane_current_command}'` prints the shell's name once the worker has exited.
-- **Resume**: same send-keys shape with `claude -p --continue "<guidance>"` — the worktree cwd locates the worker's conversation.
+- **Watcher**: right after spawning, arm one — a `run_in_background` Bash call of `tmux wait-for dispatch-<feature>-<NN>`, which blocks until that trailing signal fires. Background tasks are harness-tracked, so the watcher's own exit re-invokes you seconds after the worker finishes; you never poll for exits. A signal that fires before its watcher is armed is remembered, and exactly one waiter consumes it — so arming is race-free, and each worker run (including each resume) needs its own watcher. It exits with the worker; nothing to clean up.
+- **Exit check**: `tmux list-panes -t dispatch-<feature>-<NN> -F '#{pane_current_command}'` prints the shell's name once the worker has exited — the manual probe for a worker's state outside a watcher notification.
+- **Resume**: same send-keys shape with `claude -p --continue "<guidance>"; tmux wait-for -S dispatch-<feature>-<NN>` — the worktree cwd locates the worker's conversation — then arm a fresh watcher.
 - **Observe**: `tmux capture-pane -p -J -t <session> -S -100`; the human can `tmux attach -t <session>` any time.
 - **Cleanup after landing**: `git worktree remove <path>`, `git branch -d ticket/<NN>-<slug>`, `tmux kill-session -t <session>`.
