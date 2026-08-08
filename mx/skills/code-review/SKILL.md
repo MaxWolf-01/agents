@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes — Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel sub-agents and reports them side by side. Use when the user wants to review a branch, work-in-progress changes, or asks to "review since X".
+description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes — Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel reviewers and reports them side by side. Use when the user wants to review a branch, work-in-progress changes, or asks to "review since X".
 ---
 
 Three-axis review of the diff between `HEAD` and a fixed point:
@@ -9,7 +9,7 @@ Three-axis review of the diff between `HEAD` and a fixed point:
 - **Standards** — does it conform to the repo's documented standards and the smell baseline?
 - **Spec** — does it faithfully implement the originating task / issue / spec?
 
-The axes run as parallel sub-agents so they don't pollute each other's context; this skill aggregates their findings.
+The axes run as parallel reviewers so they don't pollute each other's context; this skill aggregates their findings.
 
 ## Process
 
@@ -19,7 +19,7 @@ Whatever the user said is the fixed point — a commit SHA, branch name, tag, `m
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside three parallel sub-agents.
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside three parallel reviewers.
 
 ### 2. Identify the spec source
 
@@ -28,11 +28,11 @@ Look for the originating spec, in this order:
 1. A path, URL, or text the user passed as an argument.
 2. Issue/PR references in the commit messages (`#123`, `Closes #45`) — fetch via `gh`.
 3. A task or spec file: `agent/tasks/`, `docs/`, `specs/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** reviewer will skip and report "no spec available".
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. When the diff touches prose files (docs, READMEs), the `stop-slop` skill's rules are a standards source for those hunks — load it and pass its rules to the Standards sub-agent alongside the smell baseline.
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. When the diff touches prose files (docs, READMEs), the `stop-slop` skill's rules are a standards source for those hunks — load it and pass its rules to the Standards reviewer alongside the smell baseline.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of code smells (Fowler, _Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
@@ -59,34 +59,42 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Representable Illegal States** — the type permits states the domain forbids: fields that must co-occur but are individually optional, a status field plus booleans that can contradict it, a list that must never be empty. → encode the invariant in the type; make illegal states unrepresentable.
 - **Catch-all Match** — a `_`/default arm on a closed set of variants, so adding a variant compiles silently instead of erroring at every site that must handle it. → enumerate the cases; reserve the catch-all for genuinely open sets.
 
-### 4. Spawn the sub-agents in parallel
+### 4. Spawn the reviewers in parallel
 
-Send a single message with three `Agent` tool calls. Use the `general-purpose` subagent for all three.
+Default runner is `codex exec` — a different model family reviews than the one that wrote the code, and the review spends codex's quota rather than the session's. Pick one run id for the whole review, then send a single message with three background Bash calls, one per axis:
+
+```sh
+codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -c 'model_reasoning_effort="xhigh"' -C <repo-root> -o "/tmp/codex-review-<runid>-<axis>.md" "<brief>" > "/tmp/codex-review-<runid>-<axis>-log.md" 2>&1
+```
+
+The briefs below go in verbatim — they are already self-contained, which is exactly what codex needs, having no view of this session. Read each axis's findings from its `-o` file.
+
+Each axis falls back on its own: when a run exits non-zero or leaves its output file empty, read its log for the cause — usage limits and codex outages are the usual ones — and rerun that one brief as a `general-purpose` `Agent` call. Run all three that way when the user asks for it.
 
 Every brief opens with the same discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
-**Correctness sub-agent prompt** — include:
+**Correctness brief** — include:
 
 - The full diff command and commit list.
 - The brief: "Trace the change end to end: touched files in full, callers of changed functions, changed types/protocols/contracts, related tests. Report only findings that survive three filters: (a) it's a real problem, not an artifact of reading the diff in isolation — check surrounding code and existing patterns first; (b) you can name the concrete consequence — bug, security hole, data loss, perf regression, maintenance trap; no nameable consequence, no finding; (c) the codebase doesn't already handle it. Not findings: style the change is internally consistent about, validation for inputs that can't arrive, API semantics that match existing conventions, 'what if X' where the system prevents X. Each finding: the scenario that breaks, file:line, fix. Under 400 words."
 
-**Standards sub-agent prompt** — include:
+**Standards brief** — include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3, **plus the smell baseline pasted in full** — the sub-agent has no other access to it.
+- The list of standards-source files you found in step 3, **plus the smell baseline pasted in full** — the reviewer has no other access to it.
 - The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
-**Spec sub-agent prompt** — include:
+**Spec brief** — include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
-If the spec is missing, skip the Spec sub-agent and note this in the final report.
+If the spec is missing, skip the Spec reviewer and note this in the final report.
 
 ### 5. Aggregate
 
-The review is one message, written after every axis has returned. Nothing about findings goes out before that — no per-axis narration as sub-agents land, no "Correctness came back clean, waiting on the others".
+The review is one message, written after every axis has returned. Nothing about findings goes out before that — no per-axis narration as reviewers land, no "Correctness came back clean, waiting on the others".
 
 That last message is the only one that reliably gets read: the reader skims to the end of the turn, copies the review to another agent to act on, or — when this skill runs as a sub-agent — receives only the final message. So it has to stand alone. Every finding, its reasoning, and the fixed point it was reviewed against belong in it; don't reference an earlier message as if it were read.
 
