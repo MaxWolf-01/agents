@@ -42,12 +42,7 @@ A LONG, numbered list of user stories — extremely extensive, covering every ac
 
 ## Properties
 
-What the app must *be*, where stories say what a user can *do* — the story format cannot express these, and a property with no story gets no ticket. One sentence each, in the project's ubiquitous language, checkable against a diff:
-
-- Every model- or user-authored string reaches the screen through the shared renderer.
-- No component exception takes the app down.
-
-Rendering, error containment, lifecycle/session models, copy discipline live here. A living list: it starts small and grows as the build surfaces new properties — discovering one mid-build means adding it here, not noting it in a ticket comment.
+What the app must *be*, where stories say what a user can *do* — the story format cannot express these, and a property with no story gets no ticket. One sentence each, in the project's ubiquitous language, phrased as an always/never that a reviewer can check a diff against. Rendering, error containment, lifecycle/session models, copy discipline live here. A living list: it starts small and grows as the build surfaces new properties — discovering one mid-build means adding it here, not noting it in a ticket comment.
 
 ## Implementation Decisions
 
