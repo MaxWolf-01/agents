@@ -32,6 +32,8 @@ This file has two layers and they do not bind equally.
       fill="none" stroke="{stroke}" stroke-width="1.2" marker-end="url(#arrow)"/>
 ```
 
+The exception is a radial layout. Spokes running from a ring of nodes into a shared center are *supposed* to be diagonal — the diagonal is what says "these all point at the same thing." Forcing them orthogonal destroys the shape. The rule is about arbitrary slants, not about geometry that carries meaning.
+
 **Pick the port that matches the direction of travel.** If the destination is mostly above or below, leave through the top or bottom edge and arrive at the top or bottom edge. An arrow arriving at a node's side after travelling vertically looks like it punctured the face rather than landing on it.
 
 **Crossings get a hop; shared edges get a fan.** Where two connectors must cross, bump the less important one over the other with a small arc — `a 8,8 0 0,1 16,0` on a horizontal path, which rises 8px and advances 16px. Never bump both. Where several connectors meet the same edge of a node, give each its own attach point at least 12px from its neighbours, spacing point *k* of *N* at `L·k/(N+1)` along the edge. Two arrows you cannot tell apart at a glance are a failed layout, not a styling problem.
