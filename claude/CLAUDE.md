@@ -125,6 +125,8 @@ LaTeX — full TeX Live is installed on workstations (via Home Manager): `pdflat
 - !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
 - Prefer this a million times over raw curl or the webfetch tool, when fetching content for your own consumption (the webfetch tool always slop-summarizes sites for you, which is great for super duper long and noisy pages, but not for 99.9% your use-cases). 
 
+Chrome extension (live browser driving) — disabled by default (context cost). When a task would genuinely benefit from it — interaction-heavy UI testing (drag/hover/multi-step), or ad-hoc driving/debugging of a running app in an interactive session — say so and ask max to enable it (`/chrome`). For static renders, stick with the headless-chromium screenshot loop.
+
 `memex` (alias `mx`) — markdown vault tool (a vault = named collection of directories). Capabilities: fuzzy note lookup by name/alias/path (`mx find query -v vault` — instant, no embeddings), semantic search (`mx search "1-3 sentence question, not keywords" -v vault`), wikilink graph exploration (`mx explore note_title vault` — outlinks + backlinks + similar), rename with wikilink updates (`mx rename old new vault`), vault management (`mx vault:list|info|add`). Prime uses: orienting in knowledge bases (esp. the Obsidian vault) — `find` when you roughly know the note, `search` for entry points you don't know exist, then explore the graph from there. Exact content terms → regular search tools instead. `mx --help` for full usage.
 
 If you find a tool that would help you accomplish your task more efficiently / effectively isn't installed, you have several options:
