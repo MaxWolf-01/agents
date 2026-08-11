@@ -28,6 +28,10 @@ blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing bloc
 - "Publish to the issue tracker" → create the files above (creating the feature directory if needed).
 - "Fetch the ticket" → read the ticket file **and** the feature's `spec.md` — tickets don't repeat the feature context, the spec carries it.
 
+## Supersede
+
+When a newer artefact replaces an older one — a spec supersedes a map, a new spec replaces the old — never leave the old file looking live: agents read whatever exists as current truth. Either **tombstone** it (one line at the very top: `> Historical artifact as of <date> — superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **delete** it — git history keeps it. A real tracker expresses this natively (closed state + cross-reference).
+
 ## Retire
 
 Set `status: done` when a ticket completes. When the whole feature has shipped, `git rm -r agent/tasks/<feature-slug>/` — git history preserves it (`git log --diff-filter=D -- agent/tasks` finds retired work). If the repo doesn't track `agent/tasks/`, plain delete.
@@ -40,4 +44,4 @@ Used by `/mx:wayfinder`. An effort's map lives where the feature's spec will lat
 - **Decision ticket**: `agent/tasks/<effort>/questions/NN-<slug>.md`, numbered from `01`, body `## Question`. Frontmatter: `status` and `blocked-by` as above, plus `type: research | prototype | grilling | task`.
 - **Resolve**: append the answer under an `## Answer` heading, set `status: done`, and add a one-line pointer (gist + link) to the map's Decisions so far.
 - **Frontier**: scan `questions/` for open, unblocked, unclaimed tickets; first by number wins.
-- When the map is done, `/mx:to-spec` writes `spec.md` beside it and build tickets land in the feature dir root per the layout above. Retire the whole effort directory when the feature ships — the decision trail stays readable until then.
+- When the map is done, `/mx:to-spec` writes `spec.md` beside it, **tombstones the map** (see Supersede), and build tickets land in the feature dir root per the layout above. Retire the whole effort directory when the feature ships — the decision trail stays readable until then.

@@ -9,6 +9,8 @@ You are the **single orchestrator** of one feature's ticket DAG: compute the fro
 
 Dispatch runs downstream of `/mx:to-tickets` — the `blocked-by` DAG is what makes independence explicit and human-approved. An unticketed task with two or more independent parts routes through to-tickets first.
 
+With a wave size of one, the same loop runs **serially** — the orchestrator role (frontier bookkeeping, integration, status, QA hand-offs) is worth keeping even without parallelism, and serial is the right mode for surface-heavy waves (see the coherence test below).
+
 ## Setup (once)
 
 1. Fetch the spec and every ticket per the `tracker` skill.
@@ -29,6 +31,8 @@ For each spawned worker whose `claude -p` has exited (see Mechanics), read the t
 
 Where a ticket's done-check is human (UI verification), "green" means whatever automated checks exist; the human pass happens in the QA lane below.
 
+**Punts get filed, never buried.** When a worker's closing comment punts a cross-cutting concern, defers to a ticket that hasn't started, or leaves an `Assumptions` block with a taste call in it — file it: a new ticket with blocking edges, or an entry on the feature's **needs-human queue** (decisions only the user can make; entry criterion "needs the human", never "is cheap to review"). A gap noted in a comment has an audience of zero; announce punts and queue growth in every status report.
+
 The tick's first half is complete when every exited worker is landed, resumed, or reset.
 
 ### 2. Re-evaluate the frontier
@@ -38,6 +42,8 @@ Re-read the ticket files: the frontier is open + unblocked + unclaimed (`tracker
 ### 3. Plan the wave
 
 Assess parallel-safety now, against the code as it stands — file overlap between two tickets depends on the current tree, so this judgment lives at dispatch time, not in to-tickets. Estimate which files each frontier ticket will touch; spawn together only tickets whose edits stay disjoint, and hold the rest for a later wave. When in doubt, serialize the doubtful pair.
+
+File overlap is the mechanical test; **coherence** is the deeper one. Tickets that share one *surface* — one UI, one document, one API façade — produce locally-passing, globally-incoherent work when built in isolation, even where their files barely overlap: give a shared surface to one serial worker. Parallelism is for tickets separated by real seams. Repeated conflicts on one hub file are this warning arriving as a merge statistic — treat it as a structure signal, not a scheduling problem.
 
 ### 4. Claim and spawn
 
@@ -49,6 +55,8 @@ For each ticket in the wave:
 4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and the implementer model — typically one tier below the orchestrator (e.g. Opus implements while Fable orchestrates); the judgment calls (wave planning, merges, verification) stay on the strongest model, with you.
 
 ### 5. Stop or sleep
+
+**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is a regenerated artifact — one HTML dashboard rendered from tracker state (ticket frontmatter, `git log`, the needs-human queue), never hand-written prose that can go stale. Regenerate after each integration; tell the user the path once.
 
 Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
 

@@ -34,11 +34,17 @@ Break the work into **tracer bullet** tickets.
 
 </vertical-slice-rules>
 
-Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately.
+Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately. Prefer orderings that make the feature **drivable early**: human QA is gated on demo cost, and every ticket that lands before a drivable surface exists accumulates unreviewed taste debt.
+
+**Dispose of every spec property.** Each entry in the spec's Properties section either becomes its own capability ticket or a named acceptance criterion stamped onto every ticket touching its area — no third option. A property left undisposed is a feature nobody builds.
+
+**Stamp floors.** A ticket building a surface with a promoted floor (see the spec's Implementation Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor — match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
 
 Only ticket what you can specify precisely now. If part of the work is still too foggy to state as a slice, leave it in the spec's Further Notes and ticket it when the frontier reaches it.
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket — green is promised only there.
+
+**Cross-cutting capabilities are the second exception.** A spec property usually needs one deliberately horizontal capability ticket — the shared renderer, the error boundary — that exists so every vertical slice after it can lean on it. Schedule it early and block the slices that need it on it. Greenfield is where these are most invisible: nothing exists yet to make their absence obvious.
 
 ### 4. Quiz the user
 

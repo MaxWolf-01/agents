@@ -11,6 +11,10 @@ The destination varies per effort, and naming it is the first act of charting �
 
 Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear — nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes** — carrying execution into the map itself — but absent that, produce decisions, not deliverables.
 
+## Consent
+
+Facts are the agent's job; decisions are the user's — and **silence is not agreement**. A recommendation the user never answered is unconfirmed: record it marked as such (`(agent judgment, unconfirmed)`) and re-surface it next round, rather than letting it harden into map lines, ADRs, or glossary entries. The recurring failure this guards against: agent recommends → the user's next message goes elsewhere → the recommendation gets committed as settled, and every later agent reads it as the user's decision. The same discipline binds audits: a finding about lost consent goes into the artefact directly, not through the user as a message to relay — relays drop findings.
+
 ## Refer by name
 
 Every map and ticket is an issue, so it has a **name** — its title. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, or slug. A wall of `#42, #43, #44` is illegible; names read at a glance. The id and URL don't vanish — a name wraps its link — but they ride *inside* the name, never stand in for it.
@@ -21,7 +25,7 @@ The map is a single issue on this repo's issue tracker — the canonical artifac
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-It records current truth, not an audit trail. While a decision is still paper — nothing built on it yet — a later decision that overturns a closed ticket's answer **amends** it: edit the answer and its gist line in place, marking the changed claim inline (`(amended <date> — was <old>)`), and fix any other ticket repeating the old answer. Once something has been built on the answer, don't rewrite it — it is the reasoning behind code someone can now read. Open a new ticket that **supersedes** it, and leave a one-line forward pointer on the old one, without which the supersession is undiscoverable.
+It records current truth, not an audit trail. While a decision is still paper — nothing built on it yet — a later decision that overturns a closed ticket's answer **amends** it: edit the answer and its gist line in place, marking the changed claim inline (`(amended <date> — was <old>)`). An amendment isn't done until the **same session sweeps it**: grep the retired term or claim across the map, tickets, spec, `CONTEXT.md` and `decisions/`, updating or superseding every hit — a copy left standing is what future agents will read as current truth. Once something has been built on the answer, don't rewrite it — it is the reasoning behind code someone can now read. Open a new ticket that **supersedes** it, and leave a one-line forward pointer on the old one, without which the supersession is undiscoverable.
 
 **Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** Consult the `tracker` skill's "Wayfinding operations" section (or the tracker the project's CLAUDE.md or other context declares) for how _this_ repo expresses them.
 
@@ -76,8 +80,8 @@ The answer isn't part of the body — it's recorded on resolution (see [Work thr
 Every ticket is either **HITL** — human in the loop, worked *with* a human who speaks for themselves — or **AFK**, driven by the agent alone. A HITL ticket only resolves through that live exchange; the agent never stands in for the human's side of it (a grilling agent that answers its own questions has broken this).
 
 - **Research** (AFK): Reading documentation, third-party APIs, or local resources like knowledge bases to surface a fact a decision waits on. Resolved by a background `/mx:research` agent: findings land as a research artefact (`agent/research/`), the ticket's answer gists and links it. Use when knowledge outside the current working directory is required.
-- **Prototype** (HITL): Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub, or UI/logic code via the `/mx:prototype` skill. Links the prototype and its `ANSWER.md` (the verdicts) as assets. Use when "how should it look" or "how should it behave" is the key question.
-- **Grilling** (HITL): Conversation. The default case. Always invoke the `/mx:grilling` and `/mx:domain-modelling` skills.
+- **Prototype** (HITL): Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub, or UI/logic code via the `/mx:prototype` skill. Links the prototype and its `ANSWER.md` (the verdicts) as assets. Use when "how should it look" or "how should it behave" is the key question — and default to it for anything user-visible: surface judgment is render-triggered, and a surface question doesn't sharpen when other decisions land, only against a built artifact.
+- **Grilling** (HITL): Conversation. The default case. Always invoke the `/mx:grilling` and `/mx:domain-modelling` skills. When the user is blank on a question, the question is usually posed backwards ("what goes in the sidebar?" assumes a sidebar) — convert the ticket to a prototype rather than extracting a conceptual answer that a render will overturn.
 - **Task** (HITL or AFK): Manual work that must happen before a *decision* can be made — nothing to decide, prototype, or research, but the discussion is blocked until it's done. Signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. This is the one type that *does* rather than decides — and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when the work is done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
 
 ## Fog of war
@@ -122,7 +126,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it**: assign it to yourself before any work.
-3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/mx:grilling` and `/mx:domain-modelling`.
+3. Resolve it — read the ticket's own Comments first (the answer, or the user's prior instinct about it, may already be sitting there), then **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/mx:grilling` and `/mx:domain-modelling`.
 4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
 5. Add newly-surfaced tickets (create-then-wire): a thread you can't pull in this session becomes a ticket, never a lost thread. Graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
 
@@ -130,4 +134,4 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 
 ### Reaching the destination
 
-When no open tickets remain and no fog is specifiable, the way is clear — the map is done. Hand off to `/mx:to-spec` in a fresh session: the spec links the decision tickets as context pointers, so implementation agents can walk back down to the reasoning. Retire the map per the tracker skill when the effort ships.
+When no open tickets remain and no fog is specifiable, the way is clear — the map is done. Hand off to `/mx:to-spec` in a fresh session: the spec links the decision tickets as context pointers, so implementation agents can walk back down to the reasoning. The spec then **supersedes** the map — to-spec tombstones it per the tracker skill, so no later agent reads its index as current truth. Retire the whole effort per the tracker skill when it ships.
