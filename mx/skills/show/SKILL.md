@@ -11,7 +11,7 @@ An explanation earns an artifact when prose stops carrying it. The craft is choo
 
 Examples with delivery notes — an open set, not a menu; combining media is normal, and anything that carries the explanation qualifies:
 
-- **Diagram** — structure, flow, dependencies, states. Mermaid (invoke `mx:mermaid` first), or the classic families: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
+- **Diagram** — structure, flow, dependencies, states. Mermaid (invoke `mx:mermaid` first) when layout should be solved for you; hand-placed SVG (read `SVG-FIGURES.md`) when the figure is the artifact and deserves the control. Either way the classic families apply: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
 - **Comparison** — show a difference instead of describing it: a code diff, a table, before/after, two rendered variants side by side.
 - **Runnable code** — the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
 - **HTML/JS page** — the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition — prose interleaved with figures the reader can poke at. Invoke `frontend-design` so it looks intentional.
