@@ -43,4 +43,5 @@ Inspiration from:
   - [Full Walkthrough: Workflow for AI Coding — Matt Pocock](https://youtu.be/-QFHIoCo-Ko)
 - https://github.com/mitsuhiko/agent-stuff
 - [Simple Made Easy](https://mwolf.dev/library/simple-made-easy/simple-made-easy)
+- https://github.com/cathrynlavery/diagram-design
 
