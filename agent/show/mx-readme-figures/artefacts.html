@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx — where knowledge lives</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f5f5; --paper2:#ececec; --node:#ffffff;
+  --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
+  --rule:rgba(45,49,66,.12);
+  --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#2d3142; --paper2:#393e53; --node:#393e53;
+    --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+    --rule:rgba(245,245,245,.12);
+    --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  }
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:680px; line-height:1.5; margin:0 0 24px;}
+svg{display:block; max-width:1200px;}
+.mask{fill:var(--paper);}
+.zone{fill:rgba(45,49,66,.02); stroke:var(--rule); stroke-width:1;}
+@media (prefers-color-scheme: dark){ .zone{fill:rgba(245,245,245,.03);} }
+.rule{stroke:var(--rule); stroke-width:1;}
+.node{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.node-ghost{fill:var(--paper2); stroke:var(--rule); stroke-width:1;}
+.node-dashed{fill:rgba(45,49,66,.02); stroke:rgba(45,49,66,.25); stroke-width:1; stroke-dasharray:4 3;}
+@media (prefers-color-scheme: dark){ .node-dashed{fill:rgba(245,245,245,.02); stroke:rgba(245,245,245,.3);} }
+.store{fill:rgba(45,49,66,.05); stroke:var(--muted); stroke-width:1;}
+@media (prefers-color-scheme: dark){ .store{fill:rgba(245,245,245,.05);} }
+.flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2;}
+.m-accent{fill:var(--accent);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.path{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.eb{font:500 8px 'Geist Mono',monospace; letter-spacing:.18em; fill:var(--muted);}
+.al{font:500 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--accent);}
+.aside{font:italic 14px 'Instrument Serif',serif; fill:var(--soft);}
+.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+</style>
+</head>
+<body>
+<p class="eyebrow">mx artefacts &middot; lifecycle</p>
+<h1>Where knowledge lives — and when it leaves.</h1>
+<p class="dek">Three lifecycles, not one. Durable docs are what every future session reads first; work items are
+committed but deleted the moment they ship; scratch never enters git at all. The deletion is the point:
+the tree holds only live work, history holds the rest.</p>
+
+<svg viewBox="0 0 1200 556" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-accent"/>
+    </marker>
+  </defs>
+
+  <!-- zones -->
+  <rect class="zone" x="64" y="64" width="344" height="336" rx="8"/>
+  <rect class="zone" x="440" y="64" width="344" height="336" rx="8"/>
+  <rect class="zone" x="816" y="64" width="344" height="264" rx="8"/>
+
+  <!-- connectors -->
+  <path class="flow-accent" d="M 612,400 V 450" marker-end="url(#arrow-accent)"/>
+
+  <!-- nodes: kept -->
+  <rect class="node" x="88" y="104" width="296" height="56" rx="6"/>
+  <rect class="node" x="88" y="176" width="296" height="56" rx="6"/>
+  <rect class="node" x="88" y="248" width="296" height="56" rx="6"/>
+  <rect class="node" x="88" y="320" width="296" height="56" rx="6"/>
+
+  <!-- nodes: retired -->
+  <rect class="node" x="464" y="104" width="296" height="56" rx="6"/>
+  <rect class="node-ghost" x="472" y="168" width="296" height="56" rx="6"/>
+  <rect class="node" x="464" y="176" width="296" height="56" rx="6"/>
+  <rect class="node" x="464" y="248" width="296" height="56" rx="6"/>
+  <rect class="node" x="464" y="320" width="296" height="56" rx="6"/>
+
+  <!-- nodes: ephemeral -->
+  <rect class="node-dashed" x="840" y="104" width="296" height="56" rx="6"/>
+  <rect class="node-dashed" x="840" y="176" width="296" height="56" rx="6"/>
+  <rect class="node-dashed" x="840" y="248" width="296" height="56" rx="6"/>
+
+  <!-- store -->
+  <rect class="store" x="528" y="456" width="168" height="48" rx="6"/>
+
+  <!-- zone labels (masked, on top edge) -->
+  <rect class="mask" x="80" y="56" width="120" height="16"/>
+  <text class="eb" x="88" y="68">KEPT — DURABLE</text>
+  <rect class="mask" x="456" y="56" width="216" height="16"/>
+  <text class="eb" x="464" y="68">RETIRED WITH THE FEATURE</text>
+  <rect class="mask" x="832" y="56" width="104" height="16"/>
+  <text class="eb" x="840" y="68">GITIGNORED</text>
+
+  <!-- kept labels -->
+  <text class="name" x="104" y="126">CONTEXT.md</text>
+  <text class="note" x="104" y="144">domain glossary — edited in place</text>
+  <text class="path" x="376" y="126" text-anchor="end"></text>
+  <text class="name" x="104" y="198">decisions/</text>
+  <text class="note" x="104" y="216">one ADR per hard-to-reverse decision — append-only</text>
+  <text class="name" x="104" y="270">agent/prototypes/</text>
+  <text class="note" x="104" y="288">throwaway code + ANSWER.md, kept as primary source</text>
+  <text class="name" x="104" y="342">agent/show/</text>
+  <text class="note" x="104" y="360">explanations that needed an artifact</text>
+
+  <!-- retired labels -->
+  <text class="name" x="480" y="126">spec.md</text>
+  <text class="note" x="480" y="144">the work order for one feature</text>
+  <text class="path" x="744" y="126" text-anchor="end">agent/tasks/&lt;feature&gt;/</text>
+  <text class="name" x="480" y="198">NN-slug.md ×N</text>
+  <text class="note" x="480" y="216">tracer-bullet tickets with blocked-by edges</text>
+  <text class="name" x="480" y="270">map.md + questions/</text>
+  <text class="note" x="480" y="288">wayfinder map — tombstoned when the spec supersedes it</text>
+  <text class="name" x="480" y="342">&lt;slug&gt;.md</text>
+  <text class="note" x="480" y="360">small task — ticket-shaped, no spec</text>
+
+  <!-- ephemeral labels -->
+  <text class="name" x="856" y="126">agent/research/</text>
+  <text class="note" x="856" y="144">one question, cited findings</text>
+  <text class="name" x="856" y="198">agent/handoffs/</text>
+  <text class="note" x="856" y="216">compacted sessions, proofread before reuse</text>
+  <text class="name" x="856" y="270">agent/transcripts/</text>
+  <text class="note" x="856" y="288">full session exports</text>
+
+  <!-- store + arrow labels -->
+  <rect class="mask" x="624" y="414" width="52" height="16" rx="4"/>
+  <text class="al" x="628" y="425">GIT RM</text>
+  <text class="name" x="612" y="478" text-anchor="middle">git history</text>
+  <text class="note" x="612" y="494" text-anchor="middle">closed work stays queryable</text>
+
+  <!-- aside -->
+  <text class="aside" x="840" y="380">done work gets deleted — a closed ticket</text>
+  <text class="aside" x="840" y="398">left in the tree steers the next agent wrong.</text>
+
+  <!-- legend -->
+  <line class="rule" x1="64" y1="524" x2="1160" y2="524"/>
+  <rect class="node" x="64" y="540" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="96" y="549">committed</text>
+  <rect class="node-dashed" x="184" y="540" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="216" y="549">never committed</text>
+  <line class="flow-accent" x1="352" y1="546" x2="392" y2="546"/>
+  <text class="legend-text" x="400" y="549">deletion path — git history keeps it</text>
+</svg>
+</body>
+</html>

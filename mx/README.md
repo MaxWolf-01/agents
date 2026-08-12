@@ -2,6 +2,11 @@
 
 File-based specs and tickets, domain glossary + ADRs, research artefacts, and session continuity for multi-session work.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
+  <img alt="The full mx cycle: sharpen the idea, spec, tickets, build the frontier, drive each landed slice, review session — with feedback rails returning new tickets, reopened decisions, and new ideas, over the durable docs" src="assets/full-cycle-light.png">
+</picture>
+
 ## Artefacts
 
 | Object     | Location                           | Lifecycle                           | Content                                             |
@@ -20,6 +25,13 @@ The `tracker` skill defines the file conventions (status, blocked-by, frontier, 
 `/mx:grill-with-docs` (relentless interview; glossary terms and ADRs land as residue) → `/mx:to-spec` (thread → work order) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:implement` per ticket (tdd inside, code-review at the end), fresh context each.
 
 **`/mx:orient` is the map** — the main flow, its on-ramps, and when to reach for what.
+
+When the planning itself is too big for one session, `/mx:wayfinder` charts it as a shared map of decision tickets, resolved one fresh session at a time:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/wayfinder-loop.png">
+  <img alt="The wayfinder loop: chart the map, then per session pick and claim a decision ticket, resolve it, record it on the map, graduate the fog — until the frontier is empty and the spec supersedes the map" src="assets/wayfinder-loop-light.png">
+</picture>
 
 ## What's manual, what's AFK — and why
 

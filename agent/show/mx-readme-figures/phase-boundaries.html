@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx — the phase-boundary ladder</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f5f5; --paper2:#ececec; --node:#ffffff;
+  --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
+  --rule:rgba(45,49,66,.12);
+  --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#2d3142; --paper2:#393e53; --node:#393e53;
+    --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+    --rule:rgba(245,245,245,.12);
+    --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  }
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:620px; line-height:1.5; margin:0 0 24px;}
+svg{display:block; max-width:960px;}
+.mask{fill:var(--paper);}
+.diamond{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.card-focal{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
+.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.m-muted{fill:var(--muted);}
+.dot{fill:var(--ink);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.qtext{font:500 12px 'Geist',sans-serif;}
+.cmd{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.al{font:500 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
+.aside{font:italic 14px 'Instrument Serif',serif; fill:var(--soft);}
+.rule{stroke:var(--rule); stroke-width:1;}
+</style>
+</head>
+<body>
+<p class="eyebrow">mx &middot; phase boundaries</p>
+<h1>Four moves at the end of a phase. The first yes wins.</h1>
+<p class="dek">A phase ends when you think "ok, done with that". At that boundary — never mid-phase — work the
+ladder top to bottom. Every move except Continue trades the session (a primary source) for a summary of it,
+so Continue gets ruled out first.</p>
+
+<svg viewBox="0 0 960 616" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
+    </marker>
+  </defs>
+
+  <!-- connectors -->
+  <line class="flow" x1="240" y1="62" x2="240" y2="96" marker-end="url(#arrow)"/>
+  <line class="flow" x1="380" y1="152" x2="556" y2="152" marker-end="url(#arrow)"/>
+  <line class="flow" x1="240" y1="204" x2="240" y2="232" marker-end="url(#arrow)"/>
+  <line class="flow" x1="380" y1="288" x2="556" y2="288" marker-end="url(#arrow)"/>
+  <line class="flow" x1="240" y1="340" x2="240" y2="368" marker-end="url(#arrow)"/>
+  <line class="flow" x1="380" y1="424" x2="556" y2="424" marker-end="url(#arrow)"/>
+  <line class="flow" x1="240" y1="476" x2="240" y2="504" marker-end="url(#arrow)"/>
+
+  <!-- nodes -->
+  <circle class="dot" cx="240" cy="52" r="6"/>
+  <polygon class="diamond" points="100,152 240,100 380,152 240,204"/>
+  <polygon class="diamond" points="100,288 240,236 380,288 240,340"/>
+  <polygon class="diamond" points="100,424 240,372 380,424 240,476"/>
+  <rect class="card-focal" x="556" y="120" width="196" height="64" rx="6"/>
+  <rect class="card" x="556" y="256" width="196" height="64" rx="6"/>
+  <rect class="card" x="556" y="392" width="196" height="64" rx="6"/>
+  <rect class="card" x="142" y="508" width="196" height="64" rx="6"/>
+
+  <!-- labels -->
+  <text class="note" x="256" y="56">a phase ends</text>
+
+  <text class="qtext" x="240" y="148" text-anchor="middle">primary source needed,</text>
+  <text class="qtext" x="240" y="164" text-anchor="middle">or smart zone left?</text>
+
+  <text class="qtext" x="240" y="284" text-anchor="middle">is this context</text>
+  <text class="qtext" x="240" y="300" text-anchor="middle">disposable?</text>
+
+  <text class="qtext" x="240" y="420" text-anchor="middle">scoped to run AFK,</text>
+  <text class="qtext" x="240" y="436" text-anchor="middle">no steering?</text>
+
+  <rect class="mask" x="444" y="128" width="28" height="16" rx="4"/>
+  <text class="al" x="458" y="139" text-anchor="middle">YES</text>
+  <rect class="mask" x="444" y="264" width="28" height="16" rx="4"/>
+  <text class="al" x="458" y="275" text-anchor="middle">YES</text>
+  <rect class="mask" x="444" y="400" width="28" height="16" rx="4"/>
+  <text class="al" x="458" y="411" text-anchor="middle">YES</text>
+  <text class="al" x="252" y="222">NO</text>
+  <text class="al" x="252" y="358">NO</text>
+  <text class="al" x="252" y="494">NO</text>
+
+  <text class="name" x="572" y="144">Continue</text>
+  <text class="note" x="572" y="162">costs nothing, loses nothing —</text>
+  <text class="note" x="572" y="174">keeps the primary source</text>
+
+  <text class="name" x="572" y="280">/clear</text>
+  <text class="note" x="572" y="298">cheapest move on the board;</text>
+  <text class="note" x="572" y="310">the old session stays resumable</text>
+
+  <text class="name" x="572" y="416">Subagent</text>
+  <text class="note" x="572" y="434">/mx:fork — needs this mental model</text>
+  <text class="note" x="572" y="446">fresh agent — a brief is enough</text>
+
+  <text class="name" x="158" y="532">/mx:handoff</text>
+  <text class="note" x="158" y="550">compact into a file, proofread it,</text>
+  <text class="note" x="158" y="562">seed a fresh session</text>
+
+  <text class="note" x="556" y="208">smart zone: reasoning degrades noticeably</text>
+  <text class="note" x="556" y="220">from ~30% of the window used</text>
+
+  <text class="aside" x="440" y="540">/compact is not on the ladder — a summary</text>
+  <text class="aside" x="440" y="558">you can't proofread is a black box.</text>
+</svg>
+</body>
+</html>

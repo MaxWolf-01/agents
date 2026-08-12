@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx — idea to ship</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f5f5; --paper2:#ececec; --node:#ffffff;
+  --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
+  --rule:rgba(45,49,66,.12);
+  --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+  --sage:#7c8f6f; --blue:#5e7a9b; --mustard:#b8915a; --rust:#9c6b50;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#2d3142; --paper2:#393e53; --node:#393e53;
+    --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+    --rule:rgba(245,245,245,.12);
+    --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  }
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:660px; line-height:1.5; margin:0 0 24px;}
+svg{display:block; max-width:1200px;}
+.mask{fill:var(--paper);}
+.chev1{fill:rgba(45,49,66,.05);} .chev2{fill:rgba(45,49,66,.09);} .chev3{fill:rgba(45,49,66,.13);}
+@media (prefers-color-scheme: dark){ .chev1{fill:rgba(245,245,245,.06);} .chev2{fill:rgba(245,245,245,.10);} .chev3{fill:rgba(245,245,245,.14);} }
+.lane-wash{fill:rgba(45,49,66,.03);}
+@media (prefers-color-scheme: dark){ .lane-wash{fill:rgba(245,245,245,.04);} }
+.rule{stroke:var(--rule); stroke-width:1;}
+.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.card-focal{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
+.card-ghost{fill:var(--paper2); stroke:var(--rule); stroke-width:1;}
+.bar{fill:rgba(45,49,66,.05); stroke:var(--muted); stroke-width:.8;}
+@media (prefers-color-scheme: dark){ .bar{fill:rgba(245,245,245,.05);} }
+.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2; stroke-dasharray:5 4;}
+.m-muted{fill:var(--muted);} .m-accent{fill:var(--accent);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.cmd{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.eb{font:500 8px 'Geist Mono',monospace; letter-spacing:.18em; fill:var(--muted);}
+.al{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
+.chiptext{font:500 7px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--ink);}
+.aside{font:italic 14px 'Instrument Serif',serif; fill:var(--soft);}
+.chip-sage{fill:rgba(124,143,111,.18); stroke:#7c8f6f; stroke-width:.8;}
+.chip-blue{fill:rgba(94,122,155,.18); stroke:#5e7a9b; stroke-width:.8;}
+.chip-mustard{fill:rgba(184,145,90,.20); stroke:#b8915a; stroke-width:.8;}
+.chip-rust{fill:rgba(156,107,80,.18); stroke:#9c6b50; stroke-width:.8;}
+.chip-grey{fill:rgba(45,49,66,.06); stroke:var(--rule); stroke-width:.8;}
+.sw-sage{fill:rgba(124,143,111,.18); stroke:#7c8f6f; stroke-width:.8;}
+.sw-blue{fill:rgba(94,122,155,.18); stroke:#5e7a9b; stroke-width:.8;}
+.sw-mustard{fill:rgba(184,145,90,.20); stroke:#b8915a; stroke-width:.8;}
+.sw-rust{fill:rgba(156,107,80,.18); stroke:#9c6b50; stroke-width:.8;}
+.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+</style>
+</head>
+<body>
+<p class="eyebrow">mx workflow &middot; idea &rarr; ship</p>
+<h1>Plan together, build AFK.</h1>
+<p class="dek">Alignment is built once, by interview, with the human in the loop. Everything downstream trades
+on it: the spec summarizes it, tickets slice it, implementation runs unattended on it — and taste comes back
+in when a slice lands.</p>
+
+<svg viewBox="0 0 1200 656" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
+    </marker>
+    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-accent"/>
+    </marker>
+  </defs>
+
+  <!-- phase banner -->
+  <polygon class="chev1" points="64,4 704,4 716,18 704,32 64,32"/>
+  <polygon class="chev2" points="724,4 952,4 964,18 952,32 724,32 736,18"/>
+  <polygon class="chev3" points="972,4 1164,4 1176,18 1164,32 972,32 984,18"/>
+
+  <!-- lanes -->
+  <rect class="lane-wash" x="64" y="256" width="1100" height="200"/>
+  <line class="rule" x1="64" y1="56" x2="1164" y2="56"/>
+  <line class="rule" x1="64" y1="256" x2="1164" y2="256"/>
+  <line class="rule" x1="64" y1="456" x2="1164" y2="456"/>
+
+  <!-- connectors -->
+  <path class="flow" d="M 184,216 V 356 Q 184,364 192,364 H 308" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 400,316 V 176 Q 400,168 408,168 H 524" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 616,216 V 356 Q 616,364 624,364 H 756" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 848,300 V 176 Q 848,168 856,168 H 984" marker-end="url(#arrow)"/>
+  <path class="flow-accent" d="M 1076,120 V 96 Q 1076,88 1068,88 H 624 Q 616,88 616,96 V 116" marker-end="url(#arrow-accent)"/>
+
+  <!-- nodes -->
+  <rect class="card-focal" x="96" y="120" width="176" height="96" rx="6"/>
+  <rect class="card" x="312" y="316" width="176" height="96" rx="6"/>
+  <rect class="card" x="528" y="120" width="176" height="96" rx="6"/>
+  <rect class="card-ghost" x="776" y="300" width="176" height="96" rx="6"/>
+  <rect class="card-ghost" x="768" y="308" width="176" height="96" rx="6"/>
+  <rect class="card" x="760" y="316" width="176" height="96" rx="6"/>
+  <rect class="card" x="988" y="120" width="176" height="96" rx="6"/>
+
+  <!-- context-window bar -->
+  <rect class="bar" x="96" y="480" width="608" height="32" rx="4"/>
+  <rect class="bar" x="760" y="480" width="52" height="32" rx="4"/>
+  <rect class="bar" x="820" y="480" width="52" height="32" rx="4"/>
+  <rect class="bar" x="880" y="480" width="52" height="32" rx="4"/>
+
+  <!-- labels -->
+  <text class="eb" x="390" y="22" text-anchor="middle">PLAN</text>
+  <text class="eb" x="844" y="22" text-anchor="middle">BUILD</text>
+  <text class="eb" x="1070" y="22" text-anchor="middle">QA</text>
+
+  <text class="eb" x="76" y="76">HUMAN IN THE LOOP</text>
+  <text class="eb" x="76" y="276">AFK — AGENT ALONE</text>
+
+  <!-- card: grill -->
+  <text class="name" x="108" y="144">Grill the idea</text>
+  <text class="cmd" x="108" y="162">/mx:grill-with-docs</text>
+  <text class="note" x="108" y="180">where alignment happens</text>
+  <!-- card: spec -->
+  <text class="name" x="324" y="340">Write the spec</text>
+  <text class="cmd" x="324" y="358">/mx:to-spec</text>
+  <text class="note" x="324" y="376">don't review it — you were there</text>
+  <!-- card: tickets -->
+  <text class="name" x="540" y="144">Cut tickets</text>
+  <text class="cmd" x="540" y="162">/mx:to-tickets</text>
+  <text class="note" x="540" y="180">vertical slices — review the cut</text>
+  <!-- card: implement -->
+  <text class="name" x="772" y="340">Implement</text>
+  <text class="cmd" x="772" y="358">/mx:implement &middot; per ticket</text>
+  <text class="note" x="772" y="376">tdd inside, review at the end</text>
+  <!-- card: qa -->
+  <text class="name" x="1000" y="144">Drive the demo</text>
+  <text class="cmd" x="1000" y="162">(no skill)</text>
+  <text class="note" x="1000" y="180">taste is manual on purpose</text>
+  <text class="note" x="1000" y="194">agent evidence until drivable</text>
+  <text class="note" x="1076" y="352" text-anchor="middle">meanwhile, the remaining</text>
+  <text class="note" x="1076" y="366" text-anchor="middle">frontier keeps running</text>
+
+  <!-- chips -->
+  <rect class="mask" x="104" y="208" width="56" height="16" rx="4"/>
+  <rect class="chip-grey" x="104" y="208" width="56" height="16" rx="4"/>
+  <text class="chiptext" x="132" y="219" text-anchor="middle">RAW IDEA</text>
+
+  <rect class="mask" x="188" y="208" width="76" height="16" rx="4"/>
+  <rect class="chip-sage" x="188" y="208" width="76" height="16" rx="4"/>
+  <text class="chiptext" x="226" y="219" text-anchor="middle">CONTEXT+ADR</text>
+
+  <rect class="mask" x="424" y="404" width="56" height="16" rx="4"/>
+  <rect class="chip-blue" x="424" y="404" width="56" height="16" rx="4"/>
+  <text class="chiptext" x="452" y="415" text-anchor="middle">SPEC.MD</text>
+
+  <rect class="mask" x="628" y="208" width="68" height="16" rx="4"/>
+  <rect class="chip-mustard" x="628" y="208" width="68" height="16" rx="4"/>
+  <text class="chiptext" x="662" y="219" text-anchor="middle">TICKETS ×N</text>
+
+  <rect class="mask" x="768" y="404" width="48" height="16" rx="4"/>
+  <rect class="chip-mustard" x="768" y="404" width="48" height="16" rx="4"/>
+  <text class="chiptext" x="792" y="415" text-anchor="middle">TICKET</text>
+
+  <rect class="mask" x="860" y="404" width="68" height="16" rx="4"/>
+  <rect class="chip-rust" x="860" y="404" width="68" height="16" rx="4"/>
+  <text class="chiptext" x="894" y="415" text-anchor="middle">CODE+TESTS</text>
+
+  <rect class="mask" x="996" y="208" width="84" height="16" rx="4"/>
+  <rect class="chip-rust" x="996" y="208" width="84" height="16" rx="4"/>
+  <text class="chiptext" x="1038" y="219" text-anchor="middle">TRACER BULLET</text>
+
+  <!-- arrow label on return edge -->
+  <rect class="mask" x="806" y="64" width="80" height="18" rx="4"/>
+  <text class="al" x="846" y="76" text-anchor="middle">NEW TICKETS</text>
+
+  <!-- context bar labels -->
+  <text class="al" x="400" y="500" text-anchor="middle">ONE UNBROKEN CONTEXT WINDOW</text>
+  <text class="note" x="400" y="532" text-anchor="middle">grill &rarr; spec &rarr; tickets, same thinking end to end</text>
+  <text class="al" x="846" y="532" text-anchor="middle">FRESH WINDOW PER TICKET</text>
+  <text class="note" x="846" y="548" text-anchor="middle">parallel when independent — /mx:dispatch</text>
+
+  <!-- legend -->
+  <line class="rule" x1="64" y1="584" x2="1164" y2="584"/>
+  <rect class="sw-sage" x="64" y="608" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="96" y="618">durable docs (CONTEXT.md, ADRs)</text>
+  <rect class="sw-blue" x="296" y="608" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="328" y="618">spec</text>
+  <rect class="sw-mustard" x="392" y="608" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="424" y="618">tickets</text>
+  <rect class="sw-rust" x="504" y="608" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="536" y="618">code, running slices</text>
+  <line class="flow-accent" x1="688" y1="614" x2="728" y2="614"/>
+  <text class="legend-text" x="736" y="618">QA findings feed the board</text>
+  <rect class="card-ghost" x="928" y="606" width="20" height="14" rx="3"/>
+  <rect class="card" x="924" y="610" width="20" height="14" rx="3"/>
+  <text class="legend-text" x="956" y="618">one context window per ticket</text>
+</svg>
+</body>
+</html>
