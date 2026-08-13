@@ -33,6 +33,8 @@ blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing bloc
 
 When a newer artefact replaces an older one — a spec supersedes a map, a new spec replaces the old — never leave the old file looking live: agents read whatever exists as current truth. Either **tombstone** it (one line at the very top: `> Historical artifact as of <date> — superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **delete** it — git history keeps it. A real tracker expresses this natively (closed state + cross-reference).
 
+The same duty applies partially: a resolved decision that contradicts a live spec includes the **spec sweep** — rewrite the affected spec sections in the same session, or file a ticket for the sweep with a blocking edge. A spec left teaching a superseded design is current truth to every later reader.
+
 ## Retire
 
 Set `status: done` when a ticket completes. When the whole feature has shipped, `git rm -r agent/tasks/<feature-slug>/` — git history preserves it (`git log --diff-filter=D -- agent/tasks` finds retired work). If the repo doesn't track `agent/tasks/`, plain delete.
