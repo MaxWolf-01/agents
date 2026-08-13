@@ -82,4 +82,5 @@ No `/compact` on the ladder: a deterministic reset from a file you can proofread
 - **`/mx:recap`** — structured status report: findings, decisions (explicit vs implicit), open questions.
 - **`/mx:todos`** — overview of `agent/tasks/`: what's open, what's on the frontier.
 - **`/mx:reflect`** — post-implementation self-critique, within session.
-- **`/mx:writing-for-agents`** — reference for writing documents agents consume: skills, CLAUDE.md, pointed-at docs.
+- **`/mx:writing-for-agents`** — reference for writing any document agents consume: skills, CLAUDE.md, specs, tickets, reusable prompts.
+- **`/mx:writing-for-humans`** — its counterpart for text read cold by whoever finds it: docs, comments, UI copy, ticket prose. Also the cheap standalone de-slop pass on a file (`/mx:code-review` carries its rules on every diff).

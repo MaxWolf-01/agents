@@ -16,7 +16,10 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Spec       | `agent/tasks/<feature>/spec.md`    | committed; `git rm -r` when shipped | the work order for one feature                        |
 | Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges              |
 | Small task | `agent/tasks/<slug>.md`            | deleted when done                   | ticket-shaped, no spec                                |
+| Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far, fog |
 | Research   | `agent/research/NN-slug.md`        | gitignored, ephemeral               | one question, cited findings                          |
+| Prototype  | `agent/prototypes/<slug>/`         | committed, kept                     | code that answered a design question + `ANSWER.md`    |
+| Show       | `agent/show/<slug>/`               | committed once approved             | an explanation carried by an artefact                 |
 
 The `tracker` skill defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
 
@@ -66,9 +69,9 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 | `/mx:research` | primary-source investigation → cited artefact |
 | `/mx:codex` | second opinion from a different model |
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
-| `/mx:writing-for-agents` | reference for writing documents agents consume: skills, CLAUDE.md, pointed-at docs |
+| `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, CLAUDE.md, specs, tickets) / artifact text read cold (docs, comments, UI copy) |
 
-Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `writing-for-humans`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
 
 ---
 
