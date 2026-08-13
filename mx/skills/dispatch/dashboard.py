@@ -130,7 +130,8 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
 <meta http-equiv="refresh" content="30">
 <title>dispatch — {html.escape(feature)}</title>
 <style>
-  body {{ font: 15px/1.5 system-ui, sans-serif; color: #1f2937; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }}
+  :root {{ color-scheme: light dark; }}
+  body {{ font: 15px/1.5 system-ui, sans-serif; background: #ffffff; color: #1f2937; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }}
   h1 {{ font-size: 1.3rem; }} h2 {{ font-size: 1.05rem; margin-top: 2rem; }}
   .meta {{ color: #6b7280; font-size: 0.85rem; }}
   table {{ border-collapse: collapse; width: 100%; }}
@@ -144,6 +145,17 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
   .needs-human li {{ background: #fef2f2; border-left: 3px solid #dc2626; padding: 0.3rem 0.6rem; margin: 0.3rem 0; list-style: none; }}
   .needs-human {{ padding: 0; }}
   pre {{ background: #f9fafb; padding: 0.75rem; overflow-x: auto; font-size: 0.85rem; }}
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #111827; color: #e5e7eb; }}
+    .meta, th {{ color: #9ca3af; }}
+    th, td {{ border-bottom-color: #374151; }}
+    .badge.done {{ background: #14532d; color: #bbf7d0; }}
+    .badge.claimed {{ background: #78350f; color: #fde68a; }}
+    .badge.open {{ background: #0c4a6e; color: #bae6fd; }}
+    .badge.blocked {{ background: #374151; color: #9ca3af; }}
+    .needs-human li {{ background: #450a0a; border-left-color: #ef4444; }}
+    pre {{ background: #1f2937; }}
+  }}
 </style>
 </head>
 <body>
@@ -162,7 +174,23 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
 <pre>{html.escape(log)}</pre>
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-  mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
+  // Mermaid bakes colors into the SVG, so the scheme is picked here, not in CSS.
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const classDefs = dark
+    ? `
+  classDef done fill:#14532d,stroke:#22c55e,color:#bbf7d0
+  classDef claimed fill:#78350f,stroke:#f59e0b,color:#fde68a
+  classDef open fill:#0c4a6e,stroke:#38bdf8,color:#bae6fd
+  classDef blocked fill:#1f2937,stroke:#4b5563,color:#9ca3af`
+    : `
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#166534
+  classDef claimed fill:#fef3c7,stroke:#d97706,color:#92400e
+  classDef open fill:#e0f2fe,stroke:#0284c7,color:#075985
+  classDef blocked fill:#f3f4f6,stroke:#9ca3af,color:#6b7280`;
+  const el = document.querySelector(".mermaid");
+  el.textContent += classDefs;
+  mermaid.initialize({{ startOnLoad: false, theme: dark ? "dark" : "neutral" }});
+  mermaid.run({{ nodes: [el] }});
 </script>
 </body>
 </html>
@@ -176,12 +204,7 @@ def mermaid_dag(tickets: list[Ticket]) -> str:
         lines.append(f'  T{t.num}["{STATUS_SYMBOL[t.status]} {label}"]:::{t.status}')
     for t in tickets:
         lines.extend(f"  T{b} --> T{t.num}" for b in t.blocked_by)
-    lines += [
-        "  classDef done fill:#dcfce7,stroke:#16a34a,color:#166534",
-        "  classDef claimed fill:#fef3c7,stroke:#d97706,color:#92400e",
-        "  classDef open fill:#e0f2fe,stroke:#0284c7,color:#075985",
-        "  classDef blocked fill:#f3f4f6,stroke:#9ca3af,color:#6b7280",
-    ]
+    # classDefs are appended in the page's JS — the palette depends on the color scheme.
     return "\n".join(lines)
 
 
