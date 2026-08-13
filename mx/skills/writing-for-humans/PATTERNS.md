@@ -186,3 +186,53 @@ Giving inanimate things human verbs. AI loves this because it avoids naming the 
 **Before:** "What if I told you that the best teams don't optimize for productivity? Here's what I mean: they optimize for learning. Think about it."
 
 **After:** "The best teams optimize for learning, not productivity."
+
+---
+
+## Wikipedia's signs of AI writing, distilled
+
+Source: [Wikipedia:Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) — the Wikipedia editors' field catalogue, minus the wiki-specific parts. One match may be coincidence; several co-occurring is the tell.
+
+### Significance inflation
+
+Puffing up importance instead of stating the fact: *stands as a testament*, *pivotal moment*, *underscores its importance*, *reflects broader trends*, *key turning point*, *enduring legacy*, *evolving landscape*, *marking a shift*. State the fact; the reader judges its significance.
+
+### Trailing "-ing" analysis
+
+A present-participle clause bolted onto a factual sentence to append unearned analysis: "..., highlighting the collaborative nature", "..., ensuring reliability", "..., fostering innovation". End the sentence at the fact. Analysis that matters gets its own sentence with its own support.
+
+### Copula avoidance
+
+*serves as*, *functions as*, *represents*, *boasts*, *features*, *offers*, *refers to* — where *is*, *are*, *has* say it plainly. Use the plain copula.
+
+### Promotional register
+
+*vibrant*, *rich*, *nestled*, *renowned*, *groundbreaking*, *seamlessly*, *commitment to*, *diverse array* — travel-guide and press-release tone leaking into neutral text. Neutral verbs, concrete facts.
+
+### Vague attribution
+
+*Experts argue*, *observers have cited*, *industry reports*, *widely regarded* — opinions inflated onto an unnamed authority, or one source presented as many. Name the source or drop the claim.
+
+### AI vocabulary density
+
+*delve*, *crucial*, *pivotal*, *robust*, *intricate*, *meticulous*, *landscape*/*tapestry* (abstract), *leverage*, *underscore*, *showcase*, *foster*, *garner*, *interplay*, sentence-initial *Additionally,*. Each is fine alone; a cluster is the fingerprint.
+
+### Not only X, but also Y
+
+The expanded cousin of the "not X, but Y" contrast: *not only... but also...*, *doesn't just..., it...*. State what it does.
+
+### Elegant variation
+
+Synonym-rotating one referent to dodge repetition ("the constraints of socialist realism" → "state-imposed artistic norms" → "the artistic norms"). Same word for the same thing, every time.
+
+### Formatting tells
+
+Title-Case Headings; mechanical **boldface** on every key term; lists of `**Bold Label**: sentence.` items where prose or a plain list would do; emoji as bullets or section markers; a table for what three sentences carry.
+
+### Formulaic wrap-ups
+
+The rigid closer: a "Challenges" paragraph opening "Despite its..., X faces several challenges", a "Future Prospects" section, "In summary," paragraphs restating the section above. Cut them; end where the content ends.
+
+### Chat residue
+
+Assistant-turn text left in the artifact: "I hope this helps", "Certainly!", "Would you like me to...", knowledge-cutoff disclaimers ("As of my last update"). Delete on sight.

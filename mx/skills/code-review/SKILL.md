@@ -32,10 +32,10 @@ Look for the originating spec, in this order:
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Two skills join these as standards sources:
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Two skills join these as standards sources — pass each as its `SKILL.md`'s absolute path (a codex reviewer reads it from disk; an `Agent` fallback reviewer invokes the skill instead):
 
-- `writing-for-humans` — for **every** diff: its rules bind all artifact text, wherever it lives — code comments, docstrings, UI strings, help text, docs, READMEs. Load it and pass its rules alongside the smell baseline.
-- `writing-for-agents` — when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks; pass its rules the same way.
+- `writing-for-humans` — for **every** diff: its rules bind all artifact text, wherever it lives — code comments, docstrings, UI strings, help text, docs, READMEs.
+- `writing-for-agents` — when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of code smells (Fowler, _Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
@@ -84,7 +84,7 @@ Every brief opens with the same discipline line: *"Read every touched file in fu
 **Standards brief** — include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3, **plus the smell baseline and the step-3 skill rules pasted in full** — the reviewer has no other access to them.
+- The list of standards-source files you found in step 3 — repo docs and skill files by absolute path — **plus the smell baseline pasted in full**: it lives inside this skill's process text, not in a file the reviewer can be pointed at.
 - The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
 **Spec brief** — include:
