@@ -3,22 +3,15 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro", "pyyaml", "markdown"]
 # ///
-"""Render the dispatch status dashboard for a feature's ticket DAG.
+"""PROTOTYPE — throwaway variant explorer for the dispatch dashboard. Not the real renderer.
 
-Reads ticket files (NN-<slug>.md with status/blocked-by frontmatter) from a
-feature's tasks directory and writes a self-contained HTML page. The overview
-cycles through three views (floating bar or arrow keys): the frontier DAG
-(undone tickets plus their direct blockers — the default), the full DAG, and
-wave lanes (remaining tickets by topological depth). Ticket rows expand to the
-rendered ticket body; done tickets sit in one collapsed fold; graph nodes,
-strip cells, and dep chips all link to their ticket row. The page reloads
-every 30s, preserving view state, so one open tab stays current across renders.
+Three overview variants on one page, switchable via ?variant= and a floating bar:
+  a — full DAG (ELK orthogonal), done tickets ghosted
+  b — frontier DAG: undone tickets + their direct blockers only
+  c — wave lanes: no graph, remaining tickets in topological lanes
 
-Examples:
-
-    uv run dashboard.py agent/tasks/my-feature
-    uv run dashboard.py agent/tasks/my-feature --needs-human "ticket 03: design call on retry semantics"
-    uv run dashboard.py agent/tasks/my-feature --out /tmp/dash.html --open never
+Shared in all variants: expandable ticket bodies, collapsed done fold, and
+anchor links from graph nodes / strip cells / dep chips to the ticket row.
 """
 
 import datetime
@@ -29,7 +22,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Annotated, Literal
+from typing import Annotated
 
 import markdown
 import tyro
@@ -43,27 +36,21 @@ class Args:
     tasks_dir: Annotated[Path, tyro.conf.Positional]
     """Feature tasks directory, e.g. agent/tasks/<feature>."""
     out: Path | None = None
-    """Output HTML path. Default: ~/Downloads/dispatch-<feature>.html."""
+    """Output HTML path. Default: ~/Downloads/dispatch-proto-<feature>.html."""
     repo: Path | None = None
     """Repo for the commit log. Default: three levels above tasks_dir."""
     needs_human: Annotated[list[str], tyro.conf.UseAppendAction] = field(default_factory=list)
     """Needs-human queue entry; repeat the flag for multiple entries."""
-    open: Literal["auto", "always", "never"] = "auto"
-    """xdg-open the result: auto = only when the output file is new."""
 
 
 def main(args: Args) -> None:
     feature = args.tasks_dir.name
-    out = args.out or Path.home() / "Downloads" / f"dispatch-{feature}.html"
+    out = args.out or Path.home() / "Downloads" / f"dispatch-proto-{feature}.html"
     repo = args.repo or args.tasks_dir.parent.parent.parent
     tickets = load_tickets(args.tasks_dir)
     assert tickets, f"no NN-<slug>.md tickets in {args.tasks_dir}"
-    page = render_page(feature, tickets, args.needs_human, git_log(repo))
-    existed = out.exists()
-    out.write_text(page)
+    out.write_text(render_page(feature, tickets, args.needs_human, git_log(repo)))
     print(out)
-    if args.open == "always" or (args.open == "auto" and not existed):
-        subprocess.Popen(["xdg-open", str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 @dataclass
@@ -111,7 +98,6 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
 
 
 def normalize_num(n: object) -> str:
-    # YAML reads `01` as int 1; ticket ids are two-digit strings.
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
@@ -123,7 +109,7 @@ def git_log(repo: Path) -> str:
     return result.stdout
 
 
-# ---- overview views -------------------------------------------------------
+# ---- overview variants ----------------------------------------------------
 
 
 def mermaid_dag(tickets: list[Ticket], include: set[str], ghost: set[str]) -> str:
@@ -144,20 +130,20 @@ def mermaid_dag(tickets: list[Ticket], include: set[str], ghost: set[str]) -> st
     return "\n".join(lines)
 
 
-def dag_full(tickets: list[Ticket]) -> str:
+def variant_full(tickets: list[Ticket]) -> str:
     nums = {t.num for t in tickets}
     ghost = {t.num for t in tickets if t.status == "done"}
     return mermaid_dag(tickets, nums, ghost)
 
 
-def dag_frontier(tickets: list[Ticket]) -> str:
+def variant_frontier(tickets: list[Ticket]) -> str:
     live = {t.num for t in tickets if t.status != "done"}
     by_num = {t.num: t for t in tickets}
     ghost = {b for t in tickets if t.num in live for b in t.blocked_by if by_num[b].status == "done"}
     return mermaid_dag(tickets, live | ghost, ghost)
 
 
-def wave_lanes(tickets: list[Ticket]) -> str:
+def variant_lanes(tickets: list[Ticket]) -> str:
     by_num = {t.num: t for t in tickets}
     live = [t for t in tickets if t.status != "done"]
     depth: dict[str, int] = {}
@@ -206,7 +192,7 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
             meta += f" · {counts[status]} {status}"
     if needs_human:
         meta += f' · <a href="#needs-human">● {len(needs_human)} need human</a>'
-    meta += f" · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · auto-refresh 30s"
+    meta += f" · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
 
     strip = "".join(
         f'<a class="cell {t.status}" href="#t{t.num}" title="{html.escape(t.num + " " + t.title)} — {t.status}">{t.num}</a>'
@@ -231,7 +217,7 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
     active_rows = "".join(row(t) for t in active)
     done_rows = "".join(row(t) for t in tickets if t.status == "done")
     done_fold = (
-        f'<details class="done-fold" id="done-fold"><summary>{counts["done"]} done tickets</summary>{done_rows}</details>'
+        f'<details class="done-fold"><summary>{counts["done"]} done tickets</summary>{done_rows}</details>'
         if done_rows else ""
     )
 
@@ -249,8 +235,8 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
     return PAGE.substitute(
         feature=html.escape(feature), meta=meta, strip=strip,
         active_rows=active_rows, done_fold=done_fold, needs=needs, log=log_html,
-        dag_full=dag_full(tickets), dag_frontier=dag_frontier(tickets),
-        lanes=wave_lanes(tickets),
+        dag_full=variant_full(tickets), dag_frontier=variant_frontier(tickets),
+        lanes=variant_lanes(tickets),
     )
 
 
@@ -259,7 +245,7 @@ PAGE = Template("""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dispatch — ${feature}</title>
+<title>dispatch proto — ${feature}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
@@ -299,7 +285,7 @@ PAGE = Template("""<!doctype html>
   .cell { min-width: 2em; text-align: center; font-size: .68rem; padding: .18rem .2rem; border: 1px solid; border-radius: 4px; text-decoration: none; }
   .meta { color: var(--muted); font-size: .74rem; margin: .6rem 0 0; }
   .meta a { color: var(--human); font-weight: 600; text-decoration: none; }
-  .meta a:focus-visible, .meta a:hover { text-decoration: underline; }
+  .meta a:hover { text-decoration: underline; }
 
   h2 {
     text-transform: uppercase; letter-spacing: .2em; font-size: .7rem; font-weight: 500;
@@ -310,15 +296,15 @@ PAGE = Template("""<!doctype html>
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
   .board { padding: 1rem; overflow-x: auto; }
   .mermaid { margin: 0; display: flex; justify-content: center; color: var(--muted); }
-  .view { display: none; }
-  .view.active { display: block; }
+  .variant { display: none; }
+  .variant.active { display: block; }
 
   .done { background: var(--done-bg); border-color: var(--done-br); color: var(--done-tx); }
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
 
-  /* wave lanes */
+  /* lanes (variant c) */
   .lane { display: flex; gap: 1rem; padding: .7rem 0; border-bottom: 1px dashed var(--line); align-items: baseline; }
   .lane:last-child { border-bottom: 0; }
   .lanelabel { flex: 0 0 9.5rem; text-transform: uppercase; letter-spacing: .14em; font-size: .64rem; color: var(--muted); padding-top: .5rem; }
@@ -376,7 +362,7 @@ PAGE = Template("""<!doctype html>
 </head>
 <body>
 <header>
-  <p class="eyebrow">dispatch · wave board</p>
+  <p class="eyebrow">dispatch · wave board · PROTOTYPE</p>
   <div class="masthead">
     <h1>${feature}</h1>
     <div class="strip">${strip}</div>
@@ -384,15 +370,15 @@ PAGE = Template("""<!doctype html>
   <p class="meta">${meta}</p>
 </header>
 
-<section class="view" data-view="frontier">
-  <h2>Dependency graph — frontier</h2>
-  <div class="panel board"><pre class="mermaid">${dag_frontier}</pre></div>
-</section>
-<section class="view" data-view="full">
+<section class="variant" data-variant="a">
   <h2>Dependency graph — full</h2>
   <div class="panel board"><pre class="mermaid">${dag_full}</pre></div>
 </section>
-<section class="view" data-view="lanes">
+<section class="variant" data-variant="b">
+  <h2>Dependency graph — frontier</h2>
+  <div class="panel board"><pre class="mermaid">${dag_frontier}</pre></div>
+</section>
+<section class="variant" data-variant="c">
   <h2>Waves</h2>
   <div class="panel board">${lanes}</div>
 </section>
@@ -413,9 +399,9 @@ ${needs}
 </section>
 
 <div id="switcher">
-  <button id="prev" title="previous view (←)">◀</button>
+  <button id="prev">◀</button>
   <span id="vlabel"></span>
-  <button id="next" title="next view (→)">▶</button>
+  <button id="next">▶</button>
 </div>
 
 <script type="module">
@@ -425,7 +411,6 @@ ${needs}
 
   const css = getComputedStyle(document.body);
   const v = (name) => css.getPropertyValue(name).trim();
-  // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
   const classDefs = ["done", "claimed", "open", "blocked", "ghost"].map((s) =>
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
   ).join("\\n") + "\\n  classDef ghost stroke-dasharray:4 3";
@@ -449,22 +434,21 @@ ${needs}
     }
   }
 
-  const views = [["frontier", "frontier graph"], ["full", "full graph"], ["lanes", "wave lanes"]];
-  const saved = (() => { try { return JSON.parse(sessionStorage.getItem("dispatch-view") ?? "null"); } catch { return null; } })();
-  // saved state wins over the URL: the auto-reload keeps a stale ?view= around
-  let current = saved?.view ?? new URLSearchParams(location.search).get("view") ?? "frontier";
-  if (!views.some(([k]) => k === current)) current = "frontier";
-
+  const variants = [["a", "full graph"], ["b", "frontier graph"], ["c", "wave lanes"]];
+  let current = new URLSearchParams(location.search).get("variant") ?? "b";
+  if (!variants.some(([k]) => k === current)) current = "b";
   async function activate(key) {
     current = key;
-    for (const s of document.querySelectorAll(".view"))
-      s.classList.toggle("active", s.dataset.view === key);
-    document.getElementById("vlabel").textContent = views.find(([k]) => k === key)[1];
-    await renderGraphs(document.querySelector('.view[data-view="' + key + '"]'));
+    for (const s of document.querySelectorAll(".variant"))
+      s.classList.toggle("active", s.dataset.variant === key);
+    const section = document.querySelector('.variant[data-variant="' + key + '"]');
+    document.getElementById("vlabel").textContent = key + " — " + variants.find(([k]) => k === key)[1];
+    try { history.replaceState(null, "", "?variant=" + key + location.hash); } catch {}
+    await renderGraphs(section);
   }
   function cycle(delta) {
-    const i = views.findIndex(([k]) => k === current);
-    activate(views[(i + delta + views.length) % views.length][0]);
+    const i = variants.findIndex(([k]) => k === current);
+    activate(variants[(i + delta + variants.length) % variants.length][0]);
   }
   document.getElementById("prev").addEventListener("click", () => cycle(-1));
   document.getElementById("next").addEventListener("click", () => cycle(1));
@@ -473,6 +457,7 @@ ${needs}
     if (e.key === "ArrowLeft") cycle(-1);
     if (e.key === "ArrowRight") cycle(1);
   });
+  activate(current);
 
   // anchor navigation: open the target ticket (and any enclosing fold), flash it
   function openTarget() {
@@ -484,27 +469,7 @@ ${needs}
     setTimeout(() => el.classList.remove("flash"), 1200);
   }
   window.addEventListener("hashchange", openTarget);
-
-  // auto-refresh that survives with view state intact (a meta refresh would
-  // collapse every open ticket and reset the view)
-  function saveState() {
-    try {
-      sessionStorage.setItem("dispatch-view", JSON.stringify({
-        view: current,
-        open: [...document.querySelectorAll("details[open]")].map((d) => d.id).filter(Boolean),
-        scroll: scrollY,
-      }));
-    } catch {}
-  }
-  setTimeout(() => { saveState(); location.reload(); }, 30_000);
-
-  await activate(current);
-  if (saved) {
-    for (const id of saved.open ?? []) document.getElementById(id)?.setAttribute("open", "");
-    scrollTo(0, saved.scroll ?? 0);
-  } else if (location.hash) {
-    openTarget();
-  }
+  if (location.hash) openTarget();
 </script>
 </body>
 </html>
