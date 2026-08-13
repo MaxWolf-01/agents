@@ -271,7 +271,6 @@ PAGE = Template("""<!doctype html>
     --claimed-bg: #fdf0d5; --claimed-br: #c08a1e; --claimed-tx: #7d5a11;
     --open-bg: #e2f0fb; --open-br: #2e79b5; --open-tx: #1d5c8f;
     --blocked-bg: #edf0f4; --blocked-br: #97a2b1; --blocked-tx: #5d6a7d;
-    --ghost-bg: #f7f8fa; --ghost-br: #d4dae3; --ghost-tx: #9aa5b4;
     --human: #c03535; --human-bg: #fbe9e9; --flash: #fdf0d5;
   }
   @media (prefers-color-scheme: dark) {
@@ -281,7 +280,6 @@ PAGE = Template("""<!doctype html>
       --claimed-bg: #3a2a10; --claimed-br: #c9932e; --claimed-tx: #f0c46a;
       --open-bg: #10293c; --open-br: #3e87c2; --open-tx: #86c5ee;
       --blocked-bg: #1b2230; --blocked-br: #3a4453; --blocked-tx: #7a8698;
-      --ghost-bg: #131a27; --ghost-br: #26324a; --ghost-tx: #55617a;
       --human: #e25b5b; --human-bg: #3a1414; --flash: #3a2a10;
     }
   }
@@ -310,6 +308,7 @@ PAGE = Template("""<!doctype html>
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
   .board { padding: 1rem; overflow-x: auto; }
   .mermaid { margin: 0; display: flex; justify-content: center; color: var(--muted); }
+  .mermaid:not(:has(svg)) { visibility: hidden; }
   .view { display: none; }
   .view.active { display: block; }
 
@@ -397,6 +396,19 @@ PAGE = Template("""<!doctype html>
   <div class="panel board">${lanes}</div>
 </section>
 
+<script>
+  // Re-inject SVGs cached by the pre-reload saveState, synchronously during parse:
+  // an unchanged graph paints instantly instead of re-running mermaid (reload flicker).
+  try {
+    const cache = JSON.parse(sessionStorage.getItem("dispatch-svg") ?? "{}");
+    for (const sec of document.querySelectorAll(".view")) {
+      const el = sec.querySelector(".mermaid");
+      const hit = el && cache[sec.dataset.view];
+      if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
+    }
+  } catch {}
+</script>
+
 ${needs}
 
 <section>
@@ -426,9 +438,11 @@ ${needs}
   const css = getComputedStyle(document.body);
   const v = (name) => css.getPropertyValue(name).trim();
   // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
-  const classDefs = ["done", "claimed", "open", "blocked", "ghost"].map((s) =>
+  // ghost = done ticket shown as context: done palette (so it never reads as
+  // blocked-grey), dashed border marking it inactive
+  const classDefs = ["done", "claimed", "open", "blocked"].map((s) =>
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
-  ).join("\\n") + "\\n  classDef ghost stroke-dasharray:4 3";
+  ).join("\\n") + "\\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
   mermaid.initialize({
     startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base",
     elk: { mergeEdges: false },
@@ -439,11 +453,10 @@ ${needs}
     },
   });
 
-  const rendered = new Set();
   async function renderGraphs(section) {
     for (const el of section.querySelectorAll(".mermaid")) {
-      if (rendered.has(el)) continue;
-      rendered.add(el);
+      if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
+      el.dataset.src = el.textContent;
       el.textContent += "\\n" + classDefs;
       await mermaid.run({ nodes: [el] });
     }
@@ -494,6 +507,12 @@ ${needs}
         open: [...document.querySelectorAll("details[open]")].map((d) => d.id).filter(Boolean),
         scroll: scrollY,
       }));
+      const svgs = {};
+      for (const sec of document.querySelectorAll(".view")) {
+        const el = sec.querySelector(".mermaid");
+        if (el?.querySelector("svg")) svgs[sec.dataset.view] = { src: el.dataset.src, svg: el.innerHTML };
+      }
+      sessionStorage.setItem("dispatch-svg", JSON.stringify(svgs));
     } catch {}
   }
   setTimeout(() => { saveState(); location.reload(); }, 30_000);
