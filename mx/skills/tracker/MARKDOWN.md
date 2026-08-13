@@ -8,6 +8,7 @@ Issues for this repo live as markdown files in `agent/tasks/`.
   - `spec.md` — the work order for the whole feature (written by `/mx:to-spec`)
   - `NN-<slug>.md` — tickets, numbered from `01` (written by `/mx:to-tickets`)
 - **Small standalone task**: a single file `agent/tasks/<slug>.md` — ticket-shaped, no spec needed
+- **Numbering**: `NN` is an id, unique within its directory. Assign the next one by scanning the directory for the highest existing number and incrementing — never from an in-context picture of the board, which parallel sessions leave stale.
 
 ## Ticket state
 

@@ -52,7 +52,7 @@ For each ticket in the wave:
 1. Set `status: claimed` and commit on the feature branch (you are the sole claim-writer).
 2. Cut its worktree + branch from the feature branch's current tip — a newly-unblocked ticket needs its blockers' landed code.
 3. Set up per-worktree environment where the project needs one (venv, node_modules — project-specific).
-4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and the implementer model — typically one tier below the orchestrator (e.g. Opus implements while Fable orchestrates); the judgment calls (wave planning, merges, verification) stay on the strongest model, with you.
+4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and the implementer model settled with the user at setup — Opus by default, Fable when the tickets warrant it (per the users directive -- heavily depends on current plan limits which you can't know and shouldn't guess), never lower; the judgment calls (wave planning, merges, verification) stay with you.
 
 ### 5. Stop or sleep
 
