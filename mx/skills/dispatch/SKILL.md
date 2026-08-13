@@ -56,7 +56,7 @@ For each ticket in the wave:
 
 ### 5. Stop or sleep
 
-**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is a regenerated artifact — one HTML dashboard rendered from tracker state (ticket frontmatter, `git log`, the needs-human queue), never hand-written prose that can go stale. Regenerate after each integration; tell the user the path once.
+**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is `dashboard.py` beside this skill (`--help` for usage): `uv run <skill-dir>/dashboard.py agent/tasks/<feature>` deterministically renders tracker state — the ticket DAG as a diagram (number + title, status-colored), a ticket table, the needs-human queue, recent commits — to `~/Downloads` and opens the first render in the browser (the open tab then refreshes itself). Rerun after each integration, passing current `--needs-human` entries; never hand-write status prose that can go stale.
 
 Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
 
