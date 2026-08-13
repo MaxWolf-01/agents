@@ -43,7 +43,7 @@ Anything in the repo that documents how code should be written: `CLAUDE.md`, `CO
 Default runner is `codex exec` — a different model family reviews than the one that wrote the code, and the review spends codex's quota rather than the session's. Pick one run id for the whole review, then send a single message with three background Bash calls, one per axis:
 
 ```sh
-codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -c 'model_reasoning_effort="xhigh"' -C <repo-root> -o "/tmp/codex-review-<runid>-<axis>.md" "<brief>" > "/tmp/codex-review-<runid>-<axis>-log.md" 2>&1
+codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -C <repo-root> -o "/tmp/codex-review-<runid>-<axis>.md" "<brief>" > "/tmp/codex-review-<runid>-<axis>-log.md" 2>&1
 ```
 
 The briefs below go in verbatim — they are already self-contained, which is exactly what codex needs, having no view of this session. Read each axis's findings from its `-o` file.

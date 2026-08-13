@@ -17,12 +17,12 @@ Run OpenAI's Codex CLI non-interactively from Claude Code. Different model famil
 ## Command
 
 ```sh
-_id=$(date +%s%N); codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -c 'model_reasoning_effort="xhigh"' -o "/tmp/codex-${_id}.md" "<prompt>" > "/tmp/codex-${_id}-log.md" 2>&1
+_id=$(date +%s%N); codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -o "/tmp/codex-${_id}.md" "<prompt>" > "/tmp/codex-${_id}-log.md" 2>&1
 ```
 
 - `-s read-only` + `disk-full-read-access` — can read any file on disk, not write (no codebase conflicts)
 - `-o` — final answer to file. `_id` = epoch-nanosecond timestamp
-- `-c 'model_reasoning_effort="xhigh"'` — always `xhigh`
+- Model and reasoning effort ride the codex config defaults. Add `-c 'model_reasoning_effort="high"'` (or `"xhigh"`) only for especially reasoning-intensive tasks — a hard bug, a subtle design question.
 - `-C <dir>` — working directory (defaults to cwd, set when reviewing a different project)
 
 Run via Bash with `run_in_background: true`. You already have `_id` from the command — read `/tmp/codex-${_id}.md` directly. Log at `/tmp/codex-${_id}-log.md` if debugging.
