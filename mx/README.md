@@ -68,7 +68,7 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
 | `/mx:writing-for-agents` | reference for writing documents agents consume: skills, CLAUDE.md, pointed-at docs |
 
-Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `stop-slop`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `python-project-setup`, `writing-for-humans`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.
 
 ---
 
