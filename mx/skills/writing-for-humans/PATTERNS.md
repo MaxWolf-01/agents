@@ -235,4 +235,16 @@ The rigid closer: a "Challenges" paragraph opening "Despite its..., X faces seve
 
 ### Chat residue
 
-Assistant-turn text left in the artifact: "I hope this helps", "Certainly!", "Would you like me to...", knowledge-cutoff disclaimers ("As of my last update"). Delete on sight.
+Assistant-turn text left in the artifact: "I hope this helps", "Certainly!", "You're absolutely right!", "Would you like me to...", knowledge-cutoff disclaimers ("As of my last update"). Delete on sight.
+
+### Source-gap speculation
+
+"While specific details are not widely documented...", "based on available information", followed by what the missing facts "likely" are. The gap claim is itself unverified, and the filler after it is fabrication. State what the sources say; stop where they stop.
+
+### Didactic disclaimers
+
+"It's important to note...", "It is crucial to remember...", "may vary" — advice to an imagined reader wrapped around a fact. Drop the wrapper; keep the fact if it earns its place.
+
+### Unfilled placeholders
+
+"[Your Name]", "2025-XX-XX", "PASTE_URL_HERE" — template blanks that shipped. Sweep for brackets and XX before delivering.
