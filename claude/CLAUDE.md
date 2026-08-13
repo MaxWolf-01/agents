@@ -62,6 +62,9 @@ MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a
 - Don't explain your changes with code comments. Clarification should always happen BEFORE implementation, meta-commentary can be added to the commit, things that can not be figured out from the code alone/would save significant time/context go into `decisions/` (ADRs) or docs.
 - When to comment: non-obvious behavior, important warnings, complex algorithms.
 
+- Artifact text (docs, docstrings, UI copy, --help, ticket prose) is read cold — by someone without this conversation. Decisions-against ("never X") and change narration ("now uses Z") go in the commit message, the spec's out-of-scope section, or an ADR; the artifact states only what is.
+- One home per fact: what code, config, or --help already states, don't restate in prose — point or derive instead. A copy is a cache that goes stale; make one only when the lookup is expensive.
+
 - Don't suppress stderr when you're exploring or debugging. stderr is how you learn what went wrong. Only suppress it when you know the output is noise.
 
 - Don't write tests that just repeat the implementation. Tests should verify behavior, not mirror the code structure. Focus on edge cases, expected inputs/outputs, ...
@@ -85,10 +88,11 @@ MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a
 - Don't chain shell commands (`&&`, `||`, `;`) — every chained command requires manual approval, which blocks async execution and stalls the agent. One command per Bash call is the default.
   - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C` (at the end, so it doesnt bust permission rules), `npm --prefix`) instead.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
-- SSH/remote commands: never embed subshells. A quoted remote command like `ssh host 'cmd_a $(cmd_b) ...'` is a single string from the permission system's perspective — it sees `ssh *` and matches the first token, so `cmd_a` never gets its own permission check. If you need the output of one remote command to run another, run them as separate Bash calls: get the result locally, then use it in the next call.
+- `ssh` commands: the permission system matches the remote command as tokens of the local command, which breaks two ways:
+  - NEVER quote the remote command unless actually needed (spaces/metacharacters in arguments). Quotes are literal in the command string — `ssh host "cmd arg"` doesn't match the glob `ssh * cmd *` because `"cmd arg"` is one token. Always `ssh host cmd arg`. Exception: tmux commands with `-l` need quoting to preserve spaces — `ssh host "tmux send-keys -t sess -l 'text with spaces'"` — these will prompt for permission.
+  - Never embed subshells: in `ssh host 'cmd_a $(cmd_b) ...'` the permission system sees `ssh *` and matches the first token, so `cmd_a` never gets its own check. If you need the output of one remote command to run another, run them as separate Bash calls: get the result locally, then use it in the next call.
 - Read-only commands are auto-approved in ~/.claude/settings.json.
 - For `gh api`: Always use `-X GET` explicitly (e.g., `gh api -X GET repos/owner/repo`) — this is the only form that's auto-approved. POST/PUT/DELETE will prompt.
-- For `ssh` commands: NEVER quote the remote command unless actually needed (spaces/metacharacters in arguments). Quotes are literal in the command string — `ssh host "cmd arg"` doesn't match the glob `ssh * cmd *` because `"cmd arg"` is one token. Always `ssh host cmd arg`. Exception: tmux commands with `-l` need quoting to preserve spaces — `ssh host "tmux send-keys -t sess -l 'text with spaces'"` — these will prompt for permission.
 - ALWAYS prefer `fd` over `find` — unless it is not powerful enough, e.g. you actually want to delete something 
 
 Understanding this will allow you to go faster (when it's time to implement, experiment, or gather information).
@@ -113,14 +117,13 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 LaTeX — full TeX Live is installed on workstations (via Home Manager): `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
 
 `uv` — the only tool you need for Python projects:
-- NEVER USE `python ...` ALWAYS USE `uv run (--with ...) (python) ...`, where `--with` is not necessary if the deps are already in the venv, and `python` is only needed if you e.g. want to run `python -c` or similar.
+- NEVER USE `python ...` or `python3 ...` — ALWAYS `uv run (--with ...) (python) ...` (auto-approved), where `--with` is not necessary if the deps are already in the venv, and `python` is only needed if you e.g. want to run `python -c` or similar.
 - You will NEVER need `source .venv/bin/activate` to activate the virtual environment. Simply `uv run app.py` is *always* sufficient.
 - When working in projects with pyproject.toml ONLY add / update deps via `uv add` / `uv remove`.
 - To install the deps run `uv sync` (with the required optional deps if any, or sometimes `--all-extras`).
 - To type check, run `cd /path/to/check check`, short for `uvx ty@latest check`, or - preferrably - use `make check` if available (I often use Makefiles to streamline and standardize common commands, read those files when doing dev work like testing, type checking, starting servers, etc.!)
 - For Python CLIs, always use tyro (never argparse/click/fire). **ALWAYS load `/mx:tyro-cli` before writing any CLI** — it contains critical gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong.
  - Prefer creating CLIs/scripts with tyro, for anything you might want to run more than once or that has flags you want to ablate. Save time and attention by creating proper infrastructure for your investigations, visualizations, experiments, etc.
-- Do NOT use `python3` to run python code or scripts. Always use `uv run {python {-c}}`, those are auto-approved.
 
 - !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
 - Prefer this a million times over raw curl or the webfetch tool, when fetching content for your own consumption (the webfetch tool always slop-summarizes sites for you, which is great for super duper long and noisy pages, but not for 99.9% your use-cases). 
