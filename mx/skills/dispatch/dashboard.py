@@ -47,7 +47,10 @@ class Args:
     repo: Path | None = None
     """Repo for the commit log. Default: three levels above tasks_dir."""
     needs_human: Annotated[list[str], tyro.conf.UseAppendAction] = field(default_factory=list)
-    """Needs-human queue entry; repeat the flag for multiple entries."""
+    """Needs-human queue entry; repeat the flag for multiple entries. A ' :: '
+    splits an entry into summary and markdown detail, rendered as an expandable
+    fold — room for the full context of a decision, or the kickoff prompt of a
+    session only the human can start."""
     open: Literal["auto", "always", "never"] = "auto"
     """xdg-open the result: auto = only when the output file is new."""
 
@@ -235,9 +238,19 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
         if done_rows else ""
     )
 
+    def needs_item(item: str) -> str:
+        summary, sep, detail = item.partition(" :: ")
+        if not sep:
+            return f"<li>{html.escape(item)}</li>"
+        return (
+            f"<li><details><summary>{html.escape(summary)}</summary>"
+            f'<div class="needs-detail">{markdown.markdown(detail, extensions=["fenced_code"])}</div>'
+            "</details></li>"
+        )
+
     needs = (
         '<section id="needs-human"><h2>Needs human</h2><ul class="needs-human">'
-        + "".join(f"<li>{html.escape(item)}</li>" for item in needs_human)
+        + "".join(needs_item(item) for item in needs_human)
         + "</ul></section>"
         if needs_human
         else ""
@@ -367,6 +380,12 @@ PAGE = Template("""<!doctype html>
   .needs-human li {
     list-style: none; background: var(--human-bg); border-left: 3px solid var(--human);
     border-radius: 0 6px 6px 0; padding: .45rem .8rem; margin: .4rem 0; font-size: .9rem;
+  }
+  .needs-human summary { cursor: pointer; }
+  .needs-detail { padding: .3rem .2rem 0; font-size: .875rem; line-height: 1.55; }
+  .needs-detail pre {
+    background: var(--bg); border-radius: 6px; padding: .6rem .8rem;
+    overflow-x: auto; font-size: .8rem; line-height: 1.5; white-space: pre-wrap;
   }
   .log { padding: .9rem 1.1rem; margin: 0; font-size: .8rem; line-height: 1.75; overflow-x: auto; }
   .hash { color: var(--claimed-br); }
