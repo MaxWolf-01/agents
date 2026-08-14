@@ -304,6 +304,12 @@ PAGE = Template("""<!doctype html>
     color: var(--muted); margin: 2.4rem 0 .8rem; display: flex; align-items: center; gap: .8rem;
   }
   h2::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  h2 button {
+    font: inherit; font-family: "IBM Plex Mono", monospace; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 4px;
+    padding: .05rem .5rem; cursor: pointer;
+  }
+  h2 button:hover { color: var(--ink); border-color: var(--muted); }
 
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
   .board { padding: 1rem; overflow-x: auto; }
@@ -396,23 +402,11 @@ PAGE = Template("""<!doctype html>
   <div class="panel board">${lanes}</div>
 </section>
 
-<script>
-  // Re-inject SVGs cached by the pre-reload saveState, synchronously during parse:
-  // an unchanged graph paints instantly instead of re-running mermaid (reload flicker).
-  try {
-    const cache = JSON.parse(sessionStorage.getItem("dispatch-svg") ?? "{}");
-    for (const sec of document.querySelectorAll(".view")) {
-      const el = sec.querySelector(".mermaid");
-      const hit = el && cache[sec.dataset.view];
-      if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
-    }
-  } catch {}
-</script>
 
 ${needs}
 
 <section>
-  <h2>Tickets</h2>
+  <h2>Tickets <button id="collapse-all">collapse all</button></h2>
   <div class="tickets">
   ${active_rows}
   ${done_fold}
@@ -429,6 +423,35 @@ ${needs}
   <span id="vlabel"></span>
   <button id="next" title="next view (→)">▶</button>
 </div>
+
+<script>
+  // Synchronous state restore, before first paint. The module below waits on the
+  // mermaid import; doing any of this there makes every 30s reload visibly
+  // collapse the overview and drop expanded tickets for a beat.
+  (() => {
+    const views = [["frontier", "frontier graph"], ["full", "full graph"], ["lanes", "wave lanes"]];
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem("dispatch-view") ?? "null"); } catch {}
+    // saved state wins over the URL: the auto-reload keeps a stale ?view= around
+    let view = saved?.view ?? new URLSearchParams(location.search).get("view") ?? "frontier";
+    if (!views.some(([k]) => k === view)) view = "frontier";
+    for (const s of document.querySelectorAll(".view")) s.classList.toggle("active", s.dataset.view === view);
+    document.getElementById("vlabel").textContent = views.find(([k]) => k === view)[1];
+    try {
+      // re-inject SVGs cached by the pre-reload saveState: an unchanged graph
+      // paints instantly instead of re-running mermaid
+      const cache = JSON.parse(sessionStorage.getItem("dispatch-svg") ?? "{}");
+      for (const sec of document.querySelectorAll(".view")) {
+        const el = sec.querySelector(".mermaid");
+        const hit = el && cache[sec.dataset.view];
+        if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
+      }
+    } catch {}
+    for (const id of saved?.open ?? []) document.getElementById(id)?.setAttribute("open", "");
+    if (saved) scrollTo(0, saved.scroll ?? 0);
+    window.dispatchView = { views, view, saved };
+  })();
+</script>
 
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
@@ -462,11 +485,8 @@ ${needs}
     }
   }
 
-  const views = [["frontier", "frontier graph"], ["full", "full graph"], ["lanes", "wave lanes"]];
-  const saved = (() => { try { return JSON.parse(sessionStorage.getItem("dispatch-view") ?? "null"); } catch { return null; } })();
-  // saved state wins over the URL: the auto-reload keeps a stale ?view= around
-  let current = saved?.view ?? new URLSearchParams(location.search).get("view") ?? "frontier";
-  if (!views.some(([k]) => k === current)) current = "frontier";
+  const { views, saved } = window.dispatchView;
+  let current = window.dispatchView.view;
 
   async function activate(key) {
     current = key;
@@ -481,6 +501,9 @@ ${needs}
   }
   document.getElementById("prev").addEventListener("click", () => cycle(-1));
   document.getElementById("next").addEventListener("click", () => cycle(1));
+  document.getElementById("collapse-all").addEventListener("click", () => {
+    for (const d of document.querySelectorAll(".tickets details[open]")) d.removeAttribute("open");
+  });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable]")) return;
     if (e.key === "ArrowLeft") cycle(-1);
@@ -517,13 +540,8 @@ ${needs}
   }
   setTimeout(() => { saveState(); location.reload(); }, 30_000);
 
-  await activate(current);
-  if (saved) {
-    for (const id of saved.open ?? []) document.getElementById(id)?.setAttribute("open", "");
-    scrollTo(0, saved.scroll ?? 0);
-  } else if (location.hash) {
-    openTarget();
-  }
+  await renderGraphs(document.querySelector(".view.active"));
+  if (!saved && location.hash) openTarget();
 </script>
 </body>
 </html>
