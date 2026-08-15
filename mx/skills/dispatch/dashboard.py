@@ -11,8 +11,10 @@ cycles through three views (floating bar or arrow keys): the frontier DAG
 (undone tickets plus their direct blockers — the default), the full DAG, and
 wave lanes (remaining tickets by topological depth). Ticket rows expand to the
 rendered ticket body; done tickets sit in one collapsed fold; graph nodes,
-strip cells, and dep chips all link to their ticket row. The page reloads
-every 30s, preserving view state, so one open tab stays current across renders.
+strip cells, and dep chips all link to their ticket row. The page polls a
+sidecar stamp file (written beside the HTML) every 30s and reloads, preserving
+view state, only when the content actually changed — one open tab stays
+current across renders without flicker.
 
 Examples:
 
@@ -22,6 +24,7 @@ Examples:
 """
 
 import datetime
+import hashlib
 import html
 import re
 import subprocess
@@ -61,9 +64,12 @@ def main(args: Args) -> None:
     repo = args.repo or args.tasks_dir.parent.parent.parent
     tickets = load_tickets(args.tasks_dir)
     assert tickets, f"no NN-<slug>.md tickets in {args.tasks_dir}"
-    page = render_page(feature, tickets, args.needs_human, git_log(repo))
+    log = git_log(repo)
+    stamp = content_stamp(feature, tickets, args.needs_human, log)
+    page = render_page(feature, tickets, args.needs_human, log, stamp, out.name + ".stamp.js")
     existed = out.exists()
     out.write_text(page)
+    Path(str(out) + ".stamp.js").write_text(f'window.__dispatchStamp = "{stamp}";\n')
     print(out)
     if args.open == "always" or (args.open == "auto" and not existed):
         subprocess.Popen(["xdg-open", str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -116,6 +122,13 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
 def normalize_num(n: object) -> str:
     # YAML reads `01` as int 1; ticket ids are two-digit strings.
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
+
+
+def content_stamp(feature: str, tickets: list[Ticket], needs_human: list[str], log: str) -> str:
+    # everything the page shows except the render timestamp: an unchanged board
+    # keeps its stamp, so the open tab knows not to reload
+    key = repr((feature, [(t.num, t.title, t.status, t.blocked_by, t.body_html) for t in tickets], needs_human, log))
+    return hashlib.sha1(key.encode()).hexdigest()[:16]
 
 
 def git_log(repo: Path) -> str:
@@ -200,7 +213,9 @@ def wave_lanes(tickets: list[Ticket]) -> str:
 # ---- page -----------------------------------------------------------------
 
 
-def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log: str) -> str:
+def render_page(
+    feature: str, tickets: list[Ticket], needs_human: list[str], log: str, stamp: str, stamp_src: str
+) -> str:
     by_num = {t.num: t for t in tickets}
     counts = Counter(t.status for t in tickets)
     meta = f"{counts['done']}/{len(tickets)} done"
@@ -209,7 +224,7 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
             meta += f" · {counts[status]} {status}"
     if needs_human:
         meta += f' · <a href="#needs-human">● {len(needs_human)} need human</a>'
-    meta += f" · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · auto-refresh 30s"
+    meta += f" · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
 
     strip = "".join(
         f'<a class="cell {t.status}" href="#t{t.num}" title="{html.escape(t.num + " " + t.title)} — {t.status}">{t.num}</a>'
@@ -263,7 +278,7 @@ def render_page(feature: str, tickets: list[Ticket], needs_human: list[str], log
         feature=html.escape(feature), meta=meta, strip=strip,
         active_rows=active_rows, done_fold=done_fold, needs=needs, log=log_html,
         dag_full=dag_full(tickets), dag_frontier=dag_frontier(tickets),
-        lanes=wave_lanes(tickets),
+        lanes=wave_lanes(tickets), stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
 
@@ -398,7 +413,7 @@ PAGE = Template("""<!doctype html>
   #switcher button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0 .2rem; }
 </style>
 </head>
-<body>
+<body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
 <header>
   <p class="eyebrow">dispatch · wave board</p>
   <div class="masthead">
@@ -449,23 +464,27 @@ ${needs}
   // collapse the overview and drop expanded tickets for a beat.
   (() => {
     const views = [["frontier", "frontier graph"], ["full", "full graph"], ["lanes", "wave lanes"]];
-    let saved = null;
-    try { saved = JSON.parse(sessionStorage.getItem("dispatch-view") ?? "null"); } catch {}
-    // saved state wins over the URL: the auto-reload keeps a stale ?view= around
+    // state saved by the pre-reload saveState: sessionStorage, with window.name
+    // (which survives navigation in every browser) as the fallback carrier
+    let saved = null, cache = {};
+    try {
+      saved = JSON.parse(sessionStorage.getItem("dispatch-view") ?? "null");
+      cache = JSON.parse(sessionStorage.getItem("dispatch-svg") ?? "{}");
+    } catch {}
+    if (!saved && window.name.startsWith("dispatch:")) {
+      try { ({ saved = null, cache = {} } = JSON.parse(window.name.slice(9))); } catch {}
+    }
+    // saved state wins over the URL: the reload keeps a stale ?view= around
     let view = saved?.view ?? new URLSearchParams(location.search).get("view") ?? "frontier";
     if (!views.some(([k]) => k === view)) view = "frontier";
     for (const s of document.querySelectorAll(".view")) s.classList.toggle("active", s.dataset.view === view);
     document.getElementById("vlabel").textContent = views.find(([k]) => k === view)[1];
-    try {
-      // re-inject SVGs cached by the pre-reload saveState: an unchanged graph
-      // paints instantly instead of re-running mermaid
-      const cache = JSON.parse(sessionStorage.getItem("dispatch-svg") ?? "{}");
-      for (const sec of document.querySelectorAll(".view")) {
-        const el = sec.querySelector(".mermaid");
-        const hit = el && cache[sec.dataset.view];
-        if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
-      }
-    } catch {}
+    // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid
+    for (const sec of document.querySelectorAll(".view")) {
+      const el = sec.querySelector(".mermaid");
+      const hit = el && cache[sec.dataset.view];
+      if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
+    }
     for (const id of saved?.open ?? []) document.getElementById(id)?.setAttribute("open", "");
     if (saved) scrollTo(0, saved.scroll ?? 0);
     window.dispatchView = { views, view, saved };
@@ -540,24 +559,39 @@ ${needs}
   }
   window.addEventListener("hashchange", openTarget);
 
-  // auto-refresh that survives with view state intact (a meta refresh would
-  // collapse every open ticket and reset the view)
   function saveState() {
+    const state = {
+      view: current,
+      open: [...document.querySelectorAll("details[open]")].map((d) => d.id).filter(Boolean),
+      scroll: scrollY,
+    };
+    const svgs = {};
+    for (const sec of document.querySelectorAll(".view")) {
+      const el = sec.querySelector(".mermaid");
+      if (el?.querySelector("svg")) svgs[sec.dataset.view] = { src: el.dataset.src, svg: el.innerHTML };
+    }
     try {
-      sessionStorage.setItem("dispatch-view", JSON.stringify({
-        view: current,
-        open: [...document.querySelectorAll("details[open]")].map((d) => d.id).filter(Boolean),
-        scroll: scrollY,
-      }));
-      const svgs = {};
-      for (const sec of document.querySelectorAll(".view")) {
-        const el = sec.querySelector(".mermaid");
-        if (el?.querySelector("svg")) svgs[sec.dataset.view] = { src: el.dataset.src, svg: el.innerHTML };
-      }
+      sessionStorage.setItem("dispatch-view", JSON.stringify(state));
       sessionStorage.setItem("dispatch-svg", JSON.stringify(svgs));
     } catch {}
+    try { window.name = "dispatch:" + JSON.stringify({ saved: state, cache: svgs }); } catch {}
   }
-  setTimeout(() => { saveState(); location.reload(); }, 30_000);
+
+  // Reload only when the renderer wrote different content. fetch() is blocked on
+  // file://, but a classic script tag isn't — so poll the sidecar stamp file the
+  // renderer writes beside this page.
+  function poll() {
+    const s = document.createElement("script");
+    s.src = document.body.dataset.stampSrc + "?" + Date.now();
+    s.onload = () => {
+      s.remove();
+      if (window.__dispatchStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
+      else setTimeout(poll, 30_000);
+    };
+    s.onerror = () => { saveState(); location.reload(); };  // no sidecar: stay current the blunt way
+    document.head.append(s);
+  }
+  setTimeout(poll, 30_000);
 
   await renderGraphs(document.querySelector(".view.active"));
   if (!saved && location.hash) openTarget();
