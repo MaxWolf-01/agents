@@ -33,4 +33,4 @@ Present the tasks in a way that answers what the user asked. If they asked about
 
 ## Updating
 
-When the user closes work: set `status: done`; note relevant commits/PRs under `## Comments`. Retire shipped features per the `tracker` skill (`git rm -r`).
+When the user closes work: set `status: done`; note relevant commits/PRs under `## Comments`. Retire shipped work per the `tracker` skill.

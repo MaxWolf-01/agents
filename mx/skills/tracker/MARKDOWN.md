@@ -37,7 +37,12 @@ The same duty applies partially: a resolved decision that contradicts a live spe
 
 ## Retire
 
-Set `status: done` when a ticket completes. When the whole feature has shipped, `git rm -r agent/tasks/<feature-slug>/` — git history preserves it (`git log --diff-filter=D -- agent/tasks` finds retired work). If the repo doesn't track `agent/tasks/`, plain delete.
+Set `status: done` when a ticket completes. Retire the files once the work has shipped:
+
+- **Standalone task**: `git rm agent/tasks/<slug>.md`, in the same commit as the work it describes.
+- **Feature**: `git rm -r agent/tasks/<feature-slug>/`, once the whole feature has shipped.
+
+Git history preserves both — `git log --diff-filter=D -- agent/tasks` finds retired work. When the repo doesn't track `agent/tasks/`, git has nothing to recover from: move the file into `agent/tasks/done/` instead.
 
 ## Wayfinding operations
 
