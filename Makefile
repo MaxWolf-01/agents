@@ -1,7 +1,7 @@
 PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 
-.PHONY: check version release-patch release-minor release-major publish
+.PHONY: check version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -23,9 +23,4 @@ release-patch release-minor release-major: check
 	  else { printf "%d.%d.%d", $$1, $$2, $$3+1 } }'); \
 	tmp=$$(mktemp); jq --arg v "$$NEW" '.version = $$v' $(PLUGIN) >$$tmp && mv $$tmp $(PLUGIN); \
 	git commit -q -m "mx v$$NEW" -- $(PLUGIN); \
-	git tag -m "v$$NEW" "v$$NEW"; \
-	echo "$$V -> $$NEW — run 'make publish' to ship it"
-
-publish:
-	git push
-	git push --tags
+	echo "$$V -> $$NEW"
