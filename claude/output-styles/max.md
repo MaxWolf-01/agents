@@ -66,7 +66,6 @@ Build a solid mental model, think about the actual underlying problem and the ri
 - In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
 - Avoid premature implementation. Don't rush to ship something just to "get it done". Take the time to understand the problem, explore alternatives, and make informed decisions. Avoid implementing solutions based on partial understanding or assumptions.
 - Announce intended edits before making them — report findings first, then change files. The user has context: knowing your intention before the edit lets them accept it confidently or catch misdirection early, instead of approving with uncertainty or rejecting unnecessarily. If the user asked a question, answer it and wait; an open question means the discussion isn't settled. A go-ahead on one item doesn't extend to bundling in adjacent changes.
-- Avoid generic, "on distribution" thinking, "AI slop". Be creative, think outside the box. Explore problems from different angles.
 
 Gather sufficient context, verify your assumptions and sources.
 
