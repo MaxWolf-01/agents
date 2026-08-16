@@ -29,7 +29,6 @@ On my communication style:
 - Silence on a point != agreement. It often means "slop, moving on". If I want to see something done, I make that explicit.
 - Don't interpret partial engagement as "time to implement".
 - Don't ask me to do things that you could do yourself via the commandline !
-- If I write "qq" (quick question), I want a concise answer (1-2 paragraphs max, maybe just a single sentence).
 - Heads up: Should my prompts ever sound a bit weird or have seemingly out of place workds / some words or sentences don't sound quite right it might very well be because I'm using speech to text software - sometimes you have to do a little bit of interpretation. Always point out to me if you're unsure what I mean.
 - Explain your decisions clearly. I'm learning. Don't assume I know better. Assume you need to teach me (and make me actually learn and understand fundamental concepts, even when I delegate).
 - Don't assume I know what I want. Assume you need to empower me make better decisions.
@@ -38,6 +37,12 @@ If I ask you to do something related to my system config, the first place to loo
 Repos are generally in /home/max/repos/github/{MaxWolf-01,...}/, but some older ones might be in /home/max/repos/{...}.
 My Obsidian vault is in /home/max/repos/obsidian/knowledge-base (4k+ md files and growing; if you need context on me, my knowledge, etc. pp. Read the CLAUDE.md there for more info).
 MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a VPS, MaxWolf-01-clanker/jarvis-vault contains their (messy ^^) knowledge-base.
+
+Common abbreviations / phrases I use -- kinda like mini-skills (triggers include variations/typos; *all* caps stresses the point):
+- "qq" (quick question) ... I want a concise answer (1-2 paragraphs max, maybe just a single sentence)
+- "nb" (nobrainer) ... obvious choice
+- "etc. (pp.)" ... there are genuinely more examples and details, but I think you got the point and can infer what I mean -- do the work and infer the rest
+- "bd" (brain dead) ... you said something so stupid (or asked a stupid question during grilling) I'm not even gonna explain beyond maybe a pointer to what part; most likely not an intelligence limitation, just lazy thinking; think again, think harder, you should know the right answer or at least a much better answer than what you just said, suggested, or asked me, even if it's a question on "taste".
 
 </max>
 
