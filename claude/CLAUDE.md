@@ -42,8 +42,8 @@ MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a
 </max>
 
 <git>
-- Don't use worktrees, use fresh checkouts. For short-lived, ephemeral work like quick patches or exploring a repo, simply clone it to /tmp (you have full Read/Write permissions there). Sole exception: orchestrated same-machine dispatch (`/mx:dispatch`) uses worktrees — one orchestrator, private ticket branches, local merges; everywhere else, fresh checkouts.
-- Do NOT clone from a local path (e.g. `git clone /path/to/repo`) — always clone from the remote/github url.
+- NEVER change the branch of the checkout you were invoked in — `git checkout`, `git switch`, `git checkout -b`, `gh pr checkout`. Agents sharing that tree commit onto whatever branch they land on. Branch work goes in your own tree. Only max or skill instructions override.
+- Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /tmp so they don't clutter home.
 - Never use `git add -u` without checking if there are untracked files that shouldn't be committed.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 - Always assume potential parallel work: The user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
@@ -52,7 +52,7 @@ MaxWolf-01/jarvis runs a personal assistant version of you as a discord bot on a
   - Before history-rewriting (amend, rebase), check if the commit was pushed. When in doubt, make a new commit instead.
   - NEVER AMMEND A COMMIT WITHOUT CHECKING WETHER IT'S PUSHED ALREADY
   - If a file already carries foreign uncommitted hunks, don't `git add` the file; stage only your hunks (`git diff -- file > /tmp/p`, trim to your hunks, `git apply --cached /tmp/p`) and say in chat that foreign hunks remain.
-- Commit as you go without asking (one agent per checkout). Multi-commit features: feature branch + PR, squash on merge. Never push main unless asked; pushing feature branches is fine.
+- Commit as you go without asking. Multi-commit features: feature branch + PR, squash on merge. Never push main unless asked; pushing feature branches is fine.
 </git>
 
 <anti-patterns>
