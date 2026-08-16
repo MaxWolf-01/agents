@@ -2,6 +2,10 @@
 This is my coding agent setup (mainly claude code).
 `mx` is a plugin for skills, commands, etc. `claude/` is the global `~/.claude` config — symlinked live, edits apply everywhere. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
 
+# Releasing mx
+
+On this machine `ccupdate` rsyncs the `mx/` working copy straight into the plugin cache, so an edit here applies without a release. Every other machine installs `mx` from the marketplace, and `claude plugin update` is version-gated: it re-copies only when `mx/.claude-plugin/plugin.json` carries a version it doesn't have yet. `make release-patch` bumps that version, `make publish` pushes, and a pre-push hook (`~/.dotfiles/git/hooks/mx-plugin-update-pre-push`) updates the plugin on `pc`, where dispatch workers run.
+
 # Resources
 
 Some resources that might be useful to consult when brainstorming architectural / design decisions around the workflow etc.
