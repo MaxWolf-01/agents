@@ -15,16 +15,16 @@ With a wave size of one, the same loop runs **serially** — the orchestrator ro
 
 1. Fetch the spec and every ticket per `/mx:tracker`.
 2. **The feature branch is the integration branch.** Check it out in the main checkout and hold it: ticket branches cut from it and merge back into it; main sees the feature only as one squashed PR when the spec ships.
-3. **Pick the worker host.** Workers belong wherever they can run unattended — every worker on a laptop dies when it suspends, mid-ticket. Default to `pc` (`ssh -o ConnectTimeout=3 pc true`), fall back to local, and name the choice in the first status line. Remote needs four things, checked once: `claude` authenticated there, the `mx` plugin installed, the repo's bare clone and `pc` remote in place (Mechanics), and the project's setup target green there. Anything missing → say which, and run local.
+3. **Pick the worker host.** Workers belong on a machine that stays awake — a laptop that suspends kills every worker on it, mid-ticket. `$MX_WORKER_HOST` names that machine where the environment sets one; confirm it with the user, reachability included (`ssh -o ConnectTimeout=3 <host> true`), and run workers here when it doesn't. A remote host needs four things, checked once: `claude` authenticated there, the `mx` plugin installed, the repo's bare clone and its remote in place (Mechanics), and the project's setup target green there. Anything missing → name it and run local. The answer rides on `dashboard.py --worker-host` from the first render on.
 4. Run the tick loop under `/loop` with no interval (self-paced). Worker exits drive the ticks, not a fixed cadence (step 5).
 
 ## The tick
 
 ### 1. Integrate what landed
 
-Open the tick with the **state probe** (Mechanics): one command names every worker session and whether its worker still runs. The probe decides who exited, not the watcher — a watcher dies with its ssh connection when the laptop suspends, and can take the exit signal with it.
+Open the tick with the **state probe** (Mechanics): it decides who exited.
 
-For each worker that has exited, bring its ticket branch into your checkout — a local worker shares your `.git` and is already there; a remote one needs `git fetch pc ticket/<NN>-<slug>:ticket/<NN>-<slug>` — then read the ticket's frontmatter **from that branch**: the `done` flip lands on the ticket branch, so your feature-branch checkout still shows `claimed` until the merge:
+For each worker that has exited, bring its ticket branch into your checkout — a local worker shares your `.git` and is already there; a remote one needs `git fetch <host> ticket/<NN>-<slug>:ticket/<NN>-<slug>` — then read the ticket's frontmatter **from that branch**: the `done` flip lands on the ticket branch, so your feature-branch checkout still shows `claimed` until the merge:
 
 - **Not `done`** → the worker stopped early. Diagnose from its scrollback. A permission denial or a spent usage limit is a first-class resumable event: clear the blocker — add the allowlist entry it needed, wait out the reset — and resume with "continue".
 - **`done`** → the flip alone proves nothing. Merge the ticket branch into the feature branch and run the project's verification there:
@@ -63,7 +63,7 @@ For each ticket in the wave:
 
 Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
 
-Otherwise the watchers are your wake signal: a worker's exit re-invokes you within seconds of it happening, so the scheduled wakeup is a long fallback heartbeat (1200s+), never a poll. It exists for what a watcher can't catch — a worker wedged short of exiting, a dead watcher, a human who interrupted the pane. Whatever wakes you, the tick opens the same way: probe, then act on what the probe says.
+Otherwise the watchers are your wake signal: a worker's exit re-invokes you within seconds of it happening, so the scheduled wakeup is a long fallback heartbeat (1200s+), never a poll. It exists for what a watcher can't catch — a worker wedged short of exiting, a dead watcher, a human who interrupted the pane.
 
 ## Worker contract
 
@@ -81,10 +81,10 @@ The `done` flip as the *last* act is the done signal you read on exit; a worker 
 
 The spawn layer is deliberately thin — a tmux window running a CLI — so it stays swappable (`codex exec`, a container) without touching the rest.
 
-Every command below runs **on the worker host**: as written when that's local, prefixed with `ssh pc` when it's remote. One command per ssh call, never a chain — a chained remote command that starts the tmux server inherits the connection's stdout and holds it open until the call times out.
+Every command below runs **on the worker host**: as written when that's this machine, prefixed with `ssh <host>` when it's another. One command per ssh call, never a chain — a chained remote command that starts the tmux server inherits the connection's stdout and holds it open until the call times out.
 
-- **Remote setup (once per repo)**: `ssh pc git clone --bare <github-url> ~/repos/dispatch/<repo>.git`, then here `git remote add pc ssh://pc/home/max/repos/dispatch/<repo>.git`. Bare on purpose — nothing is checked out there, so you can push any branch to it, and worktrees hang off it as siblings. Ticket-branch churn stays off GitHub, where branch pushes would fire CI.
-- **Worktree**: local — `git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug>`, run from the feature-branch checkout; worktrees live as its siblings, one branch per worktree, the checkout itself holding the feature branch. Remote — `git push pc <feature-branch>` so the tip exists there, then `ssh pc git -C ~/repos/dispatch/<repo>.git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug> <feature-branch>`.
+- **Remote setup (once per repo)**: `ssh <host> git clone --bare <github-url> repos/dispatch/<repo>.git`, then here `git remote add <host> <host>:repos/dispatch/<repo>.git`. Bare on purpose — nothing is checked out there, so you can push any branch to it, and worktrees hang off it as siblings. Ticket-branch churn stays off GitHub, where branch pushes would fire CI.
+- **Worktree**: local — `git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug>`, run from the feature-branch checkout; worktrees live as its siblings, one branch per worktree, the checkout itself holding the feature branch. Remote — `git push <host> <feature-branch>` so the tip exists there, then `ssh <host> git -C repos/dispatch/<repo>.git worktree add ../<repo>-<NN>-<slug> -b ticket/<NN>-<slug> <feature-branch>`.
 - **Spawn**: write the worker prompt to `/tmp/dispatch-<feature>-<NN>.md` (multi-line text never survives quoting through send-keys — pass it via stdin), `scp` it to the worker host when remote, then create the session with a shell so it survives worker exit and send the command, trailed by a signal on a channel named for the session:
   ```
   tmux new-session -d -s dispatch-<feature>-<NN> -c <worktree-path>
@@ -93,9 +93,9 @@ Every command below runs **on the worker host**: as written when that's local, p
   ```
   Print mode kills its own subagents after 600s unless that ceiling is lifted with `=0`, which silently truncates the code review closing `/mx:implement` — every worker runs one, so every spawn and resume carries the variable.
 - **Watcher**: right after spawning, arm one — a `run_in_background` Bash call of `tmux wait-for dispatch-<feature>-<NN>`, which blocks until that trailing signal fires. Background tasks are harness-tracked, so the watcher's own exit re-invokes you seconds after the worker finishes; you never poll for exits. A signal that fires with no waiter armed is remembered, so arming is race-free, and each worker run (including each resume) needs its own watcher. It exits with the worker; nothing to clean up.
-  Remote, add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` so a dead connection collapses in ~30s. A remote watcher is a hint, never proof: a suspended laptop kills the ssh call while its `tmux wait-for` lives on at the far end, and a signal that fires into that orphan is delivered to nobody and remembered for nobody. Treat every watcher exit as "go probe", and re-arm if the worker is still running.
-- **State probe**: `tmux list-panes -a -F '#{session_name}:#{pane_current_command}'` names every session and what it is running; a shell name means that worker has exited. One call covers the whole wave, and it is the only authority on who is done. The format string stays space-free so it survives an unquoted `ssh pc …`.
+  A remote watcher rides its ssh connection and dies with it: a suspended laptop leaves the far-end `tmux wait-for` orphaned, and the signal it eventually catches is delivered to nobody and remembered for nobody. Arm it with `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` so a dead connection collapses in ~30s, and re-arm whenever the probe says the worker is still running.
+- **State probe**: `tmux list-panes -a -F '#{session_name}:#{pane_current_command}'` names every session and what it is running; a shell name means that worker has exited. One call covers the whole wave, and it is the sole authority on who is done — a watcher only decides how fast you hear about it. The format string stays space-free so it survives an unquoted `ssh <host> …`.
 - **Resume**: same send-keys shape with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p --continue "<guidance>"; tmux wait-for -S dispatch-<feature>-<NN>` — the worktree cwd locates the worker's conversation — then arm a fresh watcher.
   `--continue` restores that whole conversation, so the worker holds its own commits, edits, and stopping point in far more detail than your reading of its scrollback gives you — and it can read anything in the repo, the feature branch included, for itself. What it lacks is a reason to look. So guidance is an instruction to act on something that shifted while it was stopped ("the feature branch moved — rebase onto it"), and `"continue"` is the entire message whenever nothing did. Recapping the worker's own state to it overwrites better knowledge with worse.
-- **Observe**: `tmux capture-pane -p -J -t <session> -S -100`; the human can attach any time — `tmux attach -t <session>`, or `ssh pc -t tmux attach -t <session>`.
+- **Observe**: `tmux capture-pane -p -J -t <session> -S -100`; the human can attach any time — `tmux attach -t <session>`, or `ssh <host> -t tmux attach -t <session>`.
 - **Cleanup after landing**: `git worktree remove <path>`, `git branch -d ticket/<NN>-<slug>`, `tmux kill-session -t <session>` — on the worker host, plus the ticket branch you fetched into your own checkout.

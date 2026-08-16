@@ -54,6 +54,8 @@ class Args:
     splits an entry into summary and markdown detail, rendered as an expandable
     fold — room for the full context of a decision, or the kickoff prompt of a
     session only the human can start."""
+    worker_host: str = "local"
+    """Host the workers run on, shown in the header."""
     open: Literal["auto", "always", "never"] = "auto"
     """xdg-open the result: auto = only when the output file is new."""
 
@@ -65,8 +67,10 @@ def main(args: Args) -> None:
     tickets = load_tickets(args.tasks_dir)
     assert tickets, f"no NN-<slug>.md tickets in {args.tasks_dir}"
     log = git_log(repo)
-    stamp = content_stamp(feature, tickets, args.needs_human, log)
-    page = render_page(feature, tickets, args.needs_human, log, stamp, out.name + ".stamp.js")
+    stamp = content_stamp(feature, tickets, args.needs_human, log, args.worker_host)
+    page = render_page(
+        feature, tickets, args.needs_human, log, stamp, out.name + ".stamp.js", args.worker_host
+    )
     existed = out.exists()
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__dispatchStamp = "{stamp}";\n')
@@ -124,10 +128,12 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(feature: str, tickets: list[Ticket], needs_human: list[str], log: str) -> str:
+def content_stamp(
+    feature: str, tickets: list[Ticket], needs_human: list[str], log: str, worker_host: str
+) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload
-    key = repr((feature, [(t.num, t.title, t.status, t.blocked_by, t.body_html) for t in tickets], needs_human, log))
+    key = repr((feature, [(t.num, t.title, t.status, t.blocked_by, t.body_html) for t in tickets], needs_human, log, worker_host))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
 
@@ -214,11 +220,12 @@ def wave_lanes(tickets: list[Ticket]) -> str:
 
 
 def render_page(
-    feature: str, tickets: list[Ticket], needs_human: list[str], log: str, stamp: str, stamp_src: str
+    feature: str, tickets: list[Ticket], needs_human: list[str], log: str, stamp: str, stamp_src: str,
+    worker_host: str,
 ) -> str:
     by_num = {t.num: t for t in tickets}
     counts = Counter(t.status for t in tickets)
-    meta = f"{counts['done']}/{len(tickets)} done"
+    meta = f"workers on {html.escape(worker_host)} · {counts['done']}/{len(tickets)} done"
     for status in ("claimed", "open", "blocked"):
         if counts[status]:
             meta += f" · {counts[status]} {status}"

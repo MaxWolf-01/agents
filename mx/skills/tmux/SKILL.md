@@ -16,9 +16,9 @@ A command runs in tmux — never as a blocking one-shot Bash call — when any o
 
 ## Long jobs
 
-A job that must finish belongs on a host that never sleeps. `pc` is always up — run it there and closing the laptop costs nothing.
+A job that must finish belongs on a machine that isn't going to suspend — `$MX_WORKER_HOST` names one where the environment sets it.
 
-For what has to stay local, prefix it with `nosleep` — `nosleep uv run train.py`. Idle suspend counts keyboard and mouse input, not CPU load, so a detached tmux pane crunching for an hour looks exactly as idle as an empty desk and gets suspended out from under you. `nosleep` holds a systemd inhibitor for the job's lifetime and releases it on exit, and is a no-op where there's nothing to inhibit. It does not survive a closed lid or a manual suspend.
+For what has to run on a laptop, prefix it with `nosleep` — `nosleep uv run train.py`. Idle suspend counts keyboard and mouse input, not CPU load, so a detached tmux pane crunching for an hour looks exactly as idle as an empty desk and gets suspended out from under you. `nosleep` holds a systemd inhibitor for the job's lifetime — idle, sleep, and the lid switch — and releases it on exit; it is a no-op where there's nothing to inhibit.
 
 ## Remote (SSH)
 
@@ -32,7 +32,7 @@ ssh host "tmux capture-pane -p -J -t claude -S -50"
 
 One command per ssh call. A chained remote command that starts the tmux server inherits the connection's stdout and holds the call open until it times out.
 
-Waiting on a remote job (`ssh host tmux wait-for <channel>`) is a hint, not proof. Suspend the laptop and the ssh call dies while the remote `tmux wait-for` lives on; the signal then reaches an orphan and is remembered for nobody. Add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` to collapse dead connections fast, and confirm state by asking the remote host what is running rather than by trusting the wait.
+Waiting on a remote job (`ssh host tmux wait-for <channel>`) is a hint, not proof. Suspend the laptop and the ssh call dies while the remote `tmux wait-for` lives on; the signal then reaches an orphan and is remembered for nobody. Add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` to collapse dead connections fast, and ask the host what is running to learn whether the job finished.
 
 ## Interactive prompts
 
