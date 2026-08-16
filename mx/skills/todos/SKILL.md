@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Task Overview
 
-Generate a useful overview of `agent/tasks/` — what's open, how it fits together, and what's workable right now. Conventions: the `tracker` skill.
+Generate a useful overview of `agent/tasks/` — what's open, how it fits together, and what's workable right now. Conventions: `/mx:tracker`.
 
 **User asked:** `$ARGUMENTS`
 
@@ -33,4 +33,4 @@ Present the tasks in a way that answers what the user asked. If they asked about
 
 ## Updating
 
-When the user closes work: set `status: done`; note relevant commits/PRs under `## Comments`. Retire shipped work per the `tracker` skill.
+When the user closes work: set `status: done`; note relevant commits/PRs under `## Comments`. Retire shipped work per `/mx:tracker`.

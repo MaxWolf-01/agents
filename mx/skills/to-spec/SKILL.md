@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user — just synthesize what you already know.
 
-Publish per the `tracker` skill's conventions (or the tracker the project's CLAUDE.md declares).
+Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
 
 ## Process
 
@@ -18,7 +18,7 @@ Check with the user that these seams match their expectations.
 
 3. Write the spec using the template below, then publish it to `agent/tasks/<feature-slug>/spec.md`. Decisions that pass the ADR gate belong in `decisions/` via `/mx:domain-modelling` — the spec references them, it doesn't restate them.
 
-4. **Review is conditional on provenance.** A spec distilled from a conversation the user took part in only summarizes what you already share — they don't need to read it. A spec *compiled from artifacts* — a wayfinder map, an external brief, someone else's notes — is a translation, and translations drift: walk the user through it before tickets are cut. When compiling from a map, this is also the moment the map is superseded — tombstone it per the `tracker` skill.
+4. **Review is conditional on provenance.** A spec distilled from a conversation the user took part in only summarizes what you already share — they don't need to read it. A spec *compiled from artifacts* — a wayfinder map, an external brief, someone else's notes — is a translation, and translations drift: walk the user through it before tickets are cut. When compiling from a map, this is also the moment the map is superseded — tombstone it per `/mx:tracker`.
 
 <spec-template>
 

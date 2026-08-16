@@ -7,7 +7,7 @@ description: Break a plan, spec, or the current conversation into a set of trace
 
 Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-Publish per the `tracker` skill's conventions (or the tracker the project's CLAUDE.md declares).
+Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
 
 ## Process
 
@@ -64,7 +64,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the tickets
 
-Publish per the `tracker` skill: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec.
+Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec.
 
 (On a repo whose CLAUDE.md declares a real tracker like GitHub Issues, publish one issue per ticket instead, using the platform's native blocking / sub-issue relationships.)
 

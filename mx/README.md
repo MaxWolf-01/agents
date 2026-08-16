@@ -21,7 +21,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Prototype  | `agent/prototypes/<slug>/`         | committed, kept                     | code that answered a design question + `ANSWER.md`    |
 | Show       | `agent/show/<slug>/`               | committed once approved             | an explanation carried by an artefact                 |
 
-The `tracker` skill defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
+`/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
 
 ## The main flow: idea → ship
 

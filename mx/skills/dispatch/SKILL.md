@@ -5,7 +5,7 @@ description: Work a feature's ticket DAG in parallel — one orchestrator fans i
 
 # Dispatch
 
-You are the **single orchestrator** of one feature's ticket DAG: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until no open tickets remain. `implement` works one ticket; dispatch orchestrates N implements. You are the sole claim-writer, the only holder of the feature branch, and the only judge of done.
+You are the **single orchestrator** of one feature's ticket DAG: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until no open tickets remain. `/mx:implement` works one ticket; dispatch orchestrates N implements. You are the sole claim-writer, the only holder of the feature branch, and the only judge of done.
 
 Dispatch runs downstream of `/mx:to-tickets` — the `blocked-by` DAG is what makes independence explicit and human-approved. An unticketed task with two or more independent parts routes through to-tickets first.
 
@@ -13,7 +13,7 @@ With a wave size of one, the same loop runs **serially** — the orchestrator ro
 
 ## Setup (once)
 
-1. Fetch the spec and every ticket per the `tracker` skill.
+1. Fetch the spec and every ticket per `/mx:tracker`.
 2. **The feature branch is the integration branch.** Check it out in the main checkout and hold it: ticket branches cut from it and merge back into it; main sees the feature only as one squashed PR when the spec ships.
 3. **Pick the worker host.** Workers belong wherever they can run unattended — every worker on a laptop dies when it suspends, mid-ticket. Default to `pc` (`ssh -o ConnectTimeout=3 pc true`), fall back to local, and name the choice in the first status line. Remote needs four things, checked once: `claude` authenticated there, the `mx` plugin installed, the repo's bare clone and `pc` remote in place (Mechanics), and the project's setup target green there. Anything missing → say which, and run local.
 4. Run the tick loop under `/loop` with no interval (self-paced). Worker exits drive the ticks, not a fixed cadence (step 5).
@@ -40,7 +40,7 @@ The tick's first half is complete when every exited worker is landed, resumed, o
 
 ### 2. Re-evaluate the frontier
 
-Re-read the ticket files: the frontier is open + unblocked + unclaimed (`tracker`). Landing tickets unblocks new ones — and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
+Re-read the ticket files: the frontier is open + unblocked + unclaimed (`/mx:tracker`). Landing tickets unblocks new ones — and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
 
 ### 3. Plan the wave
 

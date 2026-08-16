@@ -4,7 +4,7 @@ description: Writing artifact text for cold readers — docs, READMEs, docstring
 user_invocable: true
 ---
 
-Counterpart to `writing-for-agents`: that skill covers documents that instruct an agent's process; this one covers text that explains or records — read cold by whoever finds it, human or agent. A document that does both (a spec, an ADR) loads both.
+Counterpart to `/mx:writing-for-agents`: that skill covers documents that instruct an agent's process; this one covers text that explains or records — read cold by whoever finds it, human or agent. A document that does both (a spec, an ADR) loads both.
 
 Invoked on a file or diff, this is a pass: apply every rule below to every sentence, fix or report each hit. Empty is a valid result.
 
