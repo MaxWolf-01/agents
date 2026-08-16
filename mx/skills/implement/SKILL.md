@@ -13,6 +13,8 @@ If you find yourself making a design decision mid-ticket, or reaching for a hack
 
 A decision you make alone is an **assumption**, not a decision. When one is genuinely too small to escalate, record it as such — an `Assumptions` block in the ticket's closing comment, attributed to you — never woven into spec, map, or ADR language. QA ratifies or reverses assumptions; presenting your judgment call as settled poisons every later agent's picture of what the user chose.
 
+Inherited framing has the same status: an approach or option list an agent wrote into the ticket — even one the user waved through with a "sure, try it" — is an assumption, settled only by a grilling verdict, an ADR, or a spec decision. Before building, name the premise the ticket's approach rests on; if an option outside that frame beats everything inside it, escalate first.
+
 Once done, use /mx:code-review to review the work.
 
 Close with **evidence, not claims**: when announcing what now works, hand the user something they can skim in seconds — a screenshot, a driven CLI or app transcript, the exact command to reproduce — instead of making them re-derive the demo. Before a drivable surface exists, this evidence *is* the QA surface.
