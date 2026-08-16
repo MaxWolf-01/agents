@@ -7,8 +7,8 @@ argument-hint: [what's wrong, and where]
 Turn a finding into an issue its maintainers can act on. Filing runs on max's
 GitHub account, so every issue needs his explicit yes before it goes out.
 
-Load `writing-for-humans` first — an issue is read cold by a person deciding
-whether it is worth their afternoon. Load `writing-for-agents` after it, since
+Load `/mx:writing-for-humans` first — an issue is read cold by a person deciding
+whether it is worth their afternoon. Load `/mx:writing-for-agents` after it, since
 their agents read it too.
 
 ## Earn the filing

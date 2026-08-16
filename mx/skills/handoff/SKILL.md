@@ -10,6 +10,8 @@ Write a handoff document so a fresh agent can continue the work. A handoff requi
 - **Fork** (a side-quest surfaced — a bug, a refactor, an idea out of scope here): extract only the slice that pertains to the forked task, and note in this session that it's now out of scope — that sharpens the parent too.
 - **Return** (this session was a detour — a prototype, an investigation — reporting back to its parent): capture only what the produced artifacts don't already show: non-obvious learnings, dead ends, decisions.
 
+Load `/mx:writing-for-agents` before drafting the document, unless it's already loaded in this session — the handoff is read cold by an agent, and it's the standard for it.
+
 Before writing the file, put a short brief to the user — the purpose, the scope, and all the things only this conversation knows that you'd carry over. Their reply is the mandate: a purpose you inferred yourself is a proposal until they've confirmed it. The same discipline holds inside the document — the user's decisions are binding input; your proposals stay labeled as proposals.
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.

@@ -35,8 +35,8 @@ Look for the originating spec, in this order:
 Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Three files join these as standards sources, each passed by absolute path (a codex reviewer reads them from disk; an `Agent` fallback reviewer may invoke the skills instead):
 
 - [`SMELLS.md`](SMELLS.md), beside this file — the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
-- `writing-for-humans` (its `SKILL.md`) — for **every** diff: its rules bind all artifact text, wherever it lives — code comments, docstrings, UI strings, help text, docs, READMEs.
-- `writing-for-agents` (its `SKILL.md`) — when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
+- `/mx:writing-for-humans` (its `SKILL.md`) — for **every** diff: its rules bind all artifact text, wherever it lives — code comments, docstrings, UI strings, help text, docs, READMEs.
+- `/mx:writing-for-agents` (its `SKILL.md`) — when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
 
 ### 4. Spawn the reviewers in parallel
 
