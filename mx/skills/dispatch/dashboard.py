@@ -20,7 +20,11 @@ Examples:
 
     uv run dashboard.py agent/tasks/my-feature
     uv run dashboard.py agent/tasks/my-feature --needs-human "ticket 03: design call on retry semantics"
-    uv run dashboard.py agent/tasks/my-feature --out /tmp/dash.html --open never
+    uv run dashboard.py agent/tasks/my-feature --out ~/Downloads/dash.html --open never
+
+The browser is firejailed to a home whitelist (~/Downloads, ~/Documents,
+~/Pictures, ~/Music, ~/Videos, ~/repos) and a private /tmp. An --out anywhere
+else renders fine and then cannot be opened.
 """
 
 import datetime
