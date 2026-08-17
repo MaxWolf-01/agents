@@ -46,7 +46,7 @@ class Args:
     tasks_dir: Annotated[Path, tyro.conf.Positional]
     """Feature tasks directory, e.g. agent/tasks/<feature>."""
     out: Path | None = None
-    """Output HTML path. Default: ~/Downloads/dispatch-<feature>.html."""
+    """Output HTML path. Default: ~/Downloads/dispatch-dashboard/<feature>.html."""
     repo: Path | None = None
     """Repo for the commit log. Default: three levels above tasks_dir."""
     needs_human: Annotated[list[str], tyro.conf.UseAppendAction] = field(default_factory=list)
@@ -62,7 +62,8 @@ class Args:
 
 def main(args: Args) -> None:
     feature = args.tasks_dir.name
-    out = args.out or Path.home() / "Downloads" / f"dispatch-{feature}.html"
+    out = args.out or Path.home() / "Downloads" / "dispatch-dashboard" / f"{feature}.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
     repo = args.repo or args.tasks_dir.parent.parent.parent
     tickets = load_tickets(args.tasks_dir)
     assert tickets, f"no NN-<slug>.md tickets in {args.tasks_dir}"
