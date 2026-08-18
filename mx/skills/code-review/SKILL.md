@@ -44,6 +44,8 @@ Anything in the repo that documents how code should be written: `CLAUDE.md`, `CO
 
 Spawn one subagent per axis, all in a single message so they run concurrently. A reviewer sees its brief, not this session; the briefs below go in verbatim — they are self-contained, which is what fresh eyes need. (When the user asks for a cross-model review, run the same briefs through `/mx:codex` instead.)
 
+Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
+
 Every brief opens with the same discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
 **Correctness brief** — include:
@@ -79,7 +81,7 @@ Accepted findings land as a **follow-up commit**, never an amend — the commit'
 
 ## Light mode
 
-For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline` — with no spec, they are the closest record of intent: judge the diff against what they say was meant, and flag divergence), the standards-source files by absolute path, and the Correctness and Standards briefs joined — same filters, same citation rules, one report under 600 words. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
+For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline` — with no spec, they are the closest record of intent: judge the diff against what they say was meant, and flag divergence), the standards-source files by absolute path, and the Correctness and Standards briefs joined — same filters, same citation rules, one report under 600 words. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
 
 The fold trades axis separation for cost, which is the right trade exactly when there is no spec whose masking you'd care about.
 

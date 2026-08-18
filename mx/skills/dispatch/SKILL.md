@@ -56,7 +56,7 @@ For each ticket in the wave:
 1. Set `status: claimed` and commit on the feature branch (you are the sole claim-writer).
 2. Cut its worktree + branch from the feature branch's current tip — a newly-unblocked ticket needs its blockers' landed code.
 3. Run the project's setup target in the worktree — `make install`, or whatever the project documents; `nix develop -c make install` where a `flake.nix` exists. A project with no setup target gets a ticket, not an improvised venv: the target is what makes a worktree reproducible on any host, and every human on the project reads the same line.
-4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and the implementer model settled with the user at setup — Opus by default, Fable when the tickets warrant it (per the users directive -- heavily depends on current plan limits which you can't know and shouldn't guess), never lower; the judgment calls (wave planning, merges, verification) stay with you.
+4. Launch the worker in its tmux session (Mechanics) with `--permission-mode auto` and an explicit implementer model — Opus by default, Sonnet by your judgment for a small or trivial ticket, never Fable unless the user names it explicitly for this run, and never simply inherited from the orchestrator's own model; the judgment calls (wave planning, merges, verification) stay with you.
 
 ### 5. Stop or sleep
 
