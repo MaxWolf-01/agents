@@ -90,6 +90,7 @@ class Ticket:
     title: str
     status: str  # open | claimed | done, plus derived: blocked
     blocked_by: list[str]
+    ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
     body_html: str
 
 
@@ -99,20 +100,35 @@ def load_tickets(tasks_dir: Path) -> list[Ticket]:
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
+        blockers = meta.get("blocked-by") or []
         tickets.append(
             Ticket(
                 num=path.name[:2],
                 title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
                 status=str(meta.get("status", "open")),
-                blocked_by=[normalize_num(n) for n in meta.get("blocked-by") or []],
+                blocked_by=[normalize_num(n) for n in blockers if "/" not in str(n)],
+                ext_by=[(str(n), ext_status(tasks_dir, str(n))) for n in blockers if "/" in str(n)],
                 body_html=render_body(body),
             )
         )
     done = {t.num for t in tickets if t.status == "done"}
     for t in tickets:
-        if t.status == "open" and any(b not in done for b in t.blocked_by):
+        if t.status == "open" and (
+            any(b not in done for b in t.blocked_by) or any(s != "done" for _, s in t.ext_by)
+        ):
             t.status = "blocked"
     return tickets
+
+
+def ext_status(tasks_dir: Path, ref: str) -> str:
+    # Cross-feature blocker "<feature>/NN". A missing file counts as done: feature dirs
+    # are retired only after shipping (tracker conventions).
+    feature, num = ref.rsplit("/", 1)
+    matches = sorted((tasks_dir.parent / feature).glob(f"{normalize_num(num)}-*.md"))
+    if not matches:
+        return "done"
+    meta, _ = split_frontmatter(matches[0].read_text())
+    return str(meta.get("status", "open"))
 
 
 def render_body(md: str) -> str:
@@ -203,6 +219,8 @@ def wave_lanes(tickets: list[Ticket]) -> str:
     def card(t: Ticket) -> str:
         chips = "".join(
             f'<a class="chip {by_num[b].status}" href="#t{b}">{b}</a>' for b in t.blocked_by
+        ) + "".join(
+            f'<span class="chip {s}" title="cross-feature blocker">{html.escape(r)}</span>' for r, s in t.ext_by
         )
         deps = f'<span class="chips">{chips}</span>' if chips else ""
         return (
@@ -246,6 +264,8 @@ def render_page(
     def row(t: Ticket) -> str:
         chips = "".join(
             f'<a class="chip {by_num[b].status}" href="#t{b}">{b}</a>' for b in t.blocked_by
+        ) + "".join(
+            f'<span class="chip {s}" title="cross-feature blocker">{html.escape(r)}</span>' for r, s in t.ext_by
         ) or '<span class="deps">—</span>'
         return (
             f'<details class="ticket row-{t.status}" id="t{t.num}"><summary>'

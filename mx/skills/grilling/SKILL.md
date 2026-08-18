@@ -3,7 +3,9 @@ name: grilling
 description: Grill the user about a plan, design, decision, or idea — proportionally: one question for a small ambiguity, a full interview for a feature. Invoke unprompted whenever the user states an intent that is not fully mechanical ("I want X, maybe like this") before implementing anything; also on any "grill" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to.
 ---
 
-Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
+Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full tree treatment below is for designs and features.
+
+Map the design as a **design tree**: every decision branches into the decisions that hang off it.
 
 Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled — the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
 

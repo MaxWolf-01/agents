@@ -16,7 +16,7 @@ Frontmatter:
 
 ```yaml
 status: open | claimed | done
-blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing blocks it
+blocked-by: [01, 02] # ticket numbers within the feature, or qualified <feature>/NN; omit when nothing blocks it
 ```
 
 - A cross-feature blocker is written qualified: `blocked-by: [01, other-feature/03]`. A qualified reference whose file no longer exists counts as `done` — feature dirs are retired only after shipping.
