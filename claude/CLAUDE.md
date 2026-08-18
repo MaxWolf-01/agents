@@ -61,6 +61,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
   - NEVER AMMEND A COMMIT WITHOUT CHECKING WETHER IT'S PUSHED ALREADY
   - If a file already carries foreign uncommitted hunks, don't `git add` the file; stage only your hunks (`git diff -- file > /tmp/p`, trim to your hunks, `git apply --cached /tmp/p`) and say in chat that foreign hunks remain.
 - Commit as you go without asking. Multi-commit features: feature branch + PR, squash on merge. Never push main unless asked; pushing feature branches is fine.
+- Commit bodies open with intent, so the message answers "what did the human want?" cold, weeks later: reference the ticket/spec when one exists (don't restate it); otherwise an `Intent:` section — 1-3 short plain bullets of what the user asked for, in the glossary's vocabulary. Where you deviated from that intent, add `diverged: X — because Y`. A diverged bullet records the agent's own deviation, never user approval — whether the user ratified it is a strictly separate fact that doesn't belong in the commit.
 </git>
 
 <anti-patterns>

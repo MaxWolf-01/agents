@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: Grill the user relentlessly about a plan, design, decision, or idea. Use when the user wants to stress-test their thinking, uses any "grill" trigger phrase, or when you want to ensure an accurate, shared mental model of a plan or design.
+description: Grill the user about a plan, design, decision, or idea — proportionally: one question for a small ambiguity, a full interview for a feature. Invoke unprompted whenever the user states an intent that is not fully mechanical ("I want X, maybe like this") before implementing anything; also on any "grill" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to.
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.

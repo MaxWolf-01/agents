@@ -12,6 +12,7 @@ Some resources that might be useful to consult when brainstorming architectural 
 - ./resources
 - ALWAYS consult the "writing for agents" skill when updating anything here / anywhere agents might read it / meant primarily for agent consumption, including skills, docs, ...
 - Skills stay harness-agnostic: "spawn a subagent", never a harness-specific mechanism or agent-type name ("Agent tool", "general-purpose") — see ef90c24.
+- The workflow's why: automate every mechanically-catchable check (reviews, QA), even at compute cost — the user's attention is reserved for design decisions and taste, engaged at deliberate HITL stations, never spent flagging slop. And it must ship: refinement loops end when the human says go.
 
 
 # Related Porjects

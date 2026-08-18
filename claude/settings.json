@@ -646,7 +646,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Before presenting this work for human review, run /mx:code-review \\\\u2014 light when specless, full at ticket completion on spec work. Skip only for truly mechanical changes. Cadence: once per hand-off to the human, not per commit.\\\"}}\" || true",
+            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Before showing this work to the user for review, run /mx:code-review (the skill picks the right depth). Skip only for truly mechanical changes. Cadence: once per batch of changes shown to the user, not per commit.\\\"}}\" || true",
             "timeout": 10
           }
         ]
