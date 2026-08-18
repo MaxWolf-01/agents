@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes — Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel reviewers and reports them side by side. Use when the user wants to review a branch, work-in-progress changes, or asks to "review since X".
+description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes — Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel reviewers; specless work runs light — one reviewer, no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to "review since X" or a "light review".
 ---
 
 Three-axis review of the diff between `HEAD` and a fixed point:
@@ -15,7 +15,7 @@ The axes run as parallel reviewers so they don't pollute each other's context; t
 
 ### 1. Pin the fixed point
 
-Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
+Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, default it: `@{upstream}` when it resolves and differs from `HEAD` (the unshipped commits), else the merge-base with the default branch. Ask only when neither produces a non-empty diff.
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
@@ -28,11 +28,13 @@ Look for the originating spec, in this order:
 1. A path, URL, or text the user passed as an argument.
 2. Issue/PR references in the commit messages (`#123`, `Closes #45`) — fetch via `gh`.
 3. A task or spec file: `agent/tasks/`, `docs/`, `specs/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** reviewer will skip and report "no spec available".
+4. If nothing is found, ask the user where the spec is — unless the work is plainly loose in-session work that never had one.
+
+No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Three files join these as standards sources, each passed by absolute path (a codex reviewer reads them from disk; an `Agent` fallback reviewer may invoke the skills instead):
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Three files join these as standards sources, each passed by absolute path:
 
 - [`SMELLS.md`](SMELLS.md), beside this file — the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
 - `/mx:writing-for-humans` (its `SKILL.md`) — for **every** diff: its rules bind all artifact text, wherever it lives — code comments, docstrings, UI strings, help text, docs, READMEs.
@@ -40,15 +42,7 @@ Anything in the repo that documents how code should be written: `CLAUDE.md`, `CO
 
 ### 4. Spawn the reviewers in parallel
 
-Default runner is `codex exec` — a different model family reviews than the one that wrote the code, and the review spends codex's quota rather than the session's. Pick one run id for the whole review, then send a single message with three background Bash calls, one per axis:
-
-```sh
-codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -C <repo-root> -o "/tmp/codex-review-<runid>-<axis>.md" "<brief>" > "/tmp/codex-review-<runid>-<axis>-log.md" 2>&1
-```
-
-The briefs below go in verbatim — they are already self-contained, which is exactly what codex needs, having no view of this session. Read each axis's findings from its `-o` file.
-
-Each axis falls back on its own: when a run exits non-zero or leaves its output file empty, read its log for the cause — usage limits and codex outages are the usual ones — and rerun that one brief as a `general-purpose` `Agent` call. Run all three that way when the user asks for it.
+Reviewers are `general-purpose` subagents — one per axis, launched in a single message so they run concurrently. A reviewer sees its brief, not this session; the briefs below go in verbatim — they are self-contained, which is what fresh eyes need. (When the user asks for a cross-model review, run the same briefs through `/mx:codex` instead.)
 
 Every brief opens with the same discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
@@ -69,8 +63,6 @@ Every brief opens with the same discipline line: *"Read every touched file in fu
 - The path or fetched contents of the spec.
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
-If the spec is missing, skip the Spec reviewer and note this in the final report.
-
 ### 5. Aggregate
 
 The review is one message, written after every axis has returned. Nothing about findings goes out before that — no per-axis narration as reviewers land, no "Correctness came back clean, waiting on the others".
@@ -82,6 +74,14 @@ Present the reports under `## Correctness`, `## Standards`, and `## Spec` headin
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes — that's the reranking the separation exists to prevent.
 
 A clean diff gets a short review. Report the axes as they came back; empty is a valid result.
+
+Accepted findings land as a **follow-up commit**, never an amend — the commit's diff is the review's measurable effect. The session that wrote the work applies them when it's still around; any session can otherwise.
+
+## Light mode
+
+For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** `general-purpose` subagent whose brief is the discipline line, the diff command and commit list, the standards-source files by absolute path, and the Correctness and Standards briefs joined — same filters, same citation rules, one report under 600 words. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
+
+The fold trades axis separation for cost, which is the right trade exactly when there is no spec whose masking you'd care about.
 
 ## Why separate axes
 
