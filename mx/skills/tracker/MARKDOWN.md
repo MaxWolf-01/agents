@@ -19,6 +19,7 @@ status: open | claimed | done
 blocked-by: [01, 02] # ticket numbers within the feature; omit when nothing blocks it
 ```
 
+- A cross-feature blocker is written qualified: `blocked-by: [01, other-feature/03]`. A qualified reference whose file no longer exists counts as `done` — feature dirs are retired only after shipping.
 - A ticket is **unblocked** when every ticket in `blocked-by` is `done`.
 - The **frontier**: open, unblocked, unclaimed tickets — what can be started right now.
 - `claimed` marks a ticket a session is actively working. Set it before any work. When agents run in parallel, a single orchestrating agent oversees them and is the sole claim-writer — no cross-checkout coordination needed. (With a single agent in a single checkout, claiming is optional.)
