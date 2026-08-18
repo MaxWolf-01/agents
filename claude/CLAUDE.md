@@ -49,6 +49,16 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 
 </max>
 
+<workflow>
+Projects with an `agent/` directory use the mx workflow plugin — `/mx:orient` is the map of flows, skills, and artefacts.
+
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Before significant work, read the glossary and the ADRs touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots, `agent/prototypes/` retired prototypes kept as primary sources, `agent/transcripts/` + `agent/handoffs/` session continuity (gitignored).
+
+Always invoke the relevant skill before doing the work it covers — don't skip it and wing the output.
+
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, project CLAUDE.md) — a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+</workflow>
+
 <git>
 - NEVER change the branch of the checkout you were invoked in — `git checkout`, `git switch`, `git checkout -b`, `gh pr checkout`. Agents sharing that tree commit onto whatever branch they land on. Branch work goes in your own tree. Only max or skill instructions override.
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /tmp so they don't clutter home.
@@ -60,9 +70,10 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
   - Before history-rewriting (amend, rebase), check if the commit was pushed. When in doubt, make a new commit instead.
   - NEVER AMMEND A COMMIT WITHOUT CHECKING WETHER IT'S PUSHED ALREADY
   - If a file already carries foreign uncommitted hunks, don't `git add` the file; stage only your hunks (`git diff -- file > /tmp/p`, trim to your hunks, `git apply --cached /tmp/p`) and say in chat that foreign hunks remain.
-- Commit as you go without asking. Multi-commit features: feature branch + PR, squash on merge. Never push main unless asked; pushing feature branches is fine.
+- Commit as you go without asking. The branch decision is the review decision: truly mechanical work goes directly on the integration branch; anything needing a review pass gets a feature branch in its own worktree — the human's checkout never switches branches — reviewed before it's shown, merged with `--no-ff` (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
+- Push freely — any branch, master included — once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours — anything hard to reverse, or with real cost (time, money, a broken system) when wrong.
 - Every commit body opens with an `Intent:` section answering "what did the human want?" cold, weeks later. Its content: the ticket/spec reference when one exists (the ticket is the intent — don't restate it); otherwise 1-3 short plain bullets of what the user asked for, in the glossary's vocabulary. When — and only when — you deviated from that intent, add `diverged: X — because Y`: the agent's own deviation, never user approval; whether the user ratified it is a strictly separate fact that doesn't belong in the commit.
-- Every commit carries a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, map/question tickets — wayfinding included) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included). A commit with no trailer reads as work that bypassed the workflow — that's a greppable signal, so leave it absent rather than guessing.
+- Every commit carries a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, map/question tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow — that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
 <anti-patterns>
@@ -156,20 +167,11 @@ Practical mindset:
 
 </tools>
 
-<workflow>
-Projects with an `agent/` directory use the mx workflow plugin — `/mx:orient` is the map of flows, skills, and artefacts.
-
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Before significant work, read the glossary and the ADRs touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots, `agent/prototypes/` retired prototypes kept as primary sources, `agent/transcripts/` + `agent/handoffs/` session continuity (gitignored).
-
-Always invoke the relevant skill before doing the work it covers — don't skip it and wing the output. WHEN THE USER MENTIONS CODEX, CALL /mx:codex, NOT A SUBAGENT.
-
-Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, project CLAUDE.md) — a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
-</workflow>
-
 <subagents>
 NEVER use subagents to edit code or docs you're responsible for — edits stay with the session that owns the mental model. A background agent writing its own self-contained artefact (e.g. a research note in agent/research/) is fine.
 NEVER use subagents to read source code files, documentation, or knowledge files, unless you need to plan across many different aspects in a huge codebase or need to research 2-3 isolated things in parallel.
-You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself, especially if there is existing documentation / it's easy to orient yourself. 
+You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
+IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 </subagents>
 
 <taste>
