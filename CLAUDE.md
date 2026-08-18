@@ -11,6 +11,7 @@ Every machine installs `mx` from the marketplace, and `claude plugin update` is 
 Some resources that might be useful to consult when brainstorming architectural / design decisions around the workflow etc.
 - ./resources
 - ALWAYS consult the "writing for agents" skill when updating anything here / anywhere agents might read it / meant primarily for agent consumption, including skills, docs, ...
+- Skills stay harness-agnostic: "spawn a subagent", never a harness-specific mechanism or agent-type name ("Agent tool", "general-purpose") — see ef90c24.
 
 
 # Related Porjects
@@ -25,4 +26,3 @@ Profiles live in `clankr1/` (symlinked to `~/.config/clankr/profiles/clankr1/`).
 - `init` — runs inside the container before claude starts (plugin installs, extensions, etc.)
 
 **Memex cli** /home/max/repos/github/MaxWolf-01/memex
-

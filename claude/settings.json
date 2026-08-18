@@ -646,7 +646,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"This turn committed. If the work includes prose for humans or agents (comments, docstrings, docs, UI text), run /mx:code-review (light) before presenting it for human review \\\\u2014 slop the reviewer must flag by hand is wasted reviewer attention, and confuses later agents.\\\"}}\" || true",
+            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Before presenting this work for human review, run /mx:code-review \\\\u2014 light when specless, full at ticket completion on spec work. Skip only for truly mechanical changes. Cadence: once per hand-off to the human, not per commit.\\\"}}\" || true",
             "timeout": 10
           }
         ]
