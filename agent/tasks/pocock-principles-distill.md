@@ -1,0 +1,20 @@
+---
+status: open
+---
+
+# Distill workflow principles from upstream and our own refinement history
+
+Two histories hold lessons nobody has written down as principles:
+
+1. Upstream: mattpocock/skills release history since our adoption baseline (see the pocock-sync skill for the recorded baseline commit).
+2. Ours: this repo's commit history since the workflow was adopted — every refinement we made to the adapted skills, and why (e.g. ef90c24 harness-agnostic wording).
+
+## What to build
+
+Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them into a few bullets in this repo's CLAUDE.md as durable context for future workflow adjustments.
+
+## Acceptance criteria
+
+- Each bullet is a principle (transferable rule), not a change log entry.
+- Each cites at least one commit (upstream or ours) as evidence.
+- Existing CLAUDE.md bullets that turn out to be instances of a distilled principle are folded in, not duplicated.
