@@ -1,7 +1,9 @@
 {
   "name": "mx",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent workflow for multi-session work. File-based specs and tickets, domain glossary and ADRs, research artefacts, session continuity.",
-  "author": {"name": "MaxWolf-01"},
+  "author": {
+    "name": "MaxWolf-01"
+  },
   "repository": "https://github.com/MaxWolf-01/agents"
 }
