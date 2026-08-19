@@ -5,6 +5,9 @@
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
 #   channel       tmux wait-for channel, unique per run; also names /tmp/<channel>.status
 #   session-id    resume this conversation instead of starting a new one
+# Env:
+#   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
+#                             worker host isolates workers itself (then `bypassPermissions`)
 set -u
 
 message=$1
@@ -12,6 +15,7 @@ ticket=$2
 model=$3
 channel=$4
 resume_session=${5:-}
+permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
@@ -23,11 +27,11 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
     if [ "$attempt" -gt 1 ]; then
-        claude -p --permission-mode auto --model "$model" --resume "$session" continue
+        claude -p --permission-mode "$permission_mode" --model "$model" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        claude -p --permission-mode auto --model "$model" --resume "$session" "$(cat "$message")"
+        claude -p --permission-mode "$permission_mode" --model "$model" --resume "$session" "$(cat "$message")"
     else
-        claude -p --permission-mode auto --model "$model" --session-id "$session" < "$message"
+        claude -p --permission-mode "$permission_mode" --model "$model" --session-id "$session" < "$message"
     fi
     rc=$?
     status=$(sed -n 's/^status: *//p' "$ticket" | head -1)
