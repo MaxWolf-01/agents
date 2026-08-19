@@ -270,8 +270,10 @@ def node_lines(ns: str, feature: str, tickets: list[Ticket], include: set[str], 
     return lines
 
 
-def feature_dag(feature: Feature, full: bool) -> str:
+def feature_dag(feature: Feature, full: bool) -> str | None:
     include, ghost = visible(feature.tickets, full)
+    if not include:
+        return None
     ns = "f1" if full else "f0"
     return "flowchart LR\n" + "\n".join(node_lines(ns, feature.name, feature.tickets, include, ghost))
 
@@ -309,10 +311,12 @@ def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
     return "\n".join(lines)
 
 
-def wave_lanes(feature: Feature) -> str:
+def wave_lanes(feature: Feature) -> str | None:
     tickets = feature.tickets
     by_num = {t.num: t for t in tickets}
     live = [t for t in tickets if t.status != "done"]
+    if not live:
+        return None
     depth: dict[str, int] = {}
 
     def wave(t: Ticket) -> int:
@@ -360,13 +364,23 @@ def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
 # ---- page -----------------------------------------------------------------
 
 
-def graph_views(sec_id: str, frontier: str, full: str, lanes: str | None) -> str:
-    def view(key: str, inner: str, mermaid: bool) -> str:
-        content = f'<pre class="mermaid" data-key="{sec_id}:{key}">{inner}</pre>' if mermaid else inner
+def graph_views(
+    sec_id: str, frontier: str | None, full: str | None, lanes: str | None, done_note: str,
+    with_lanes: bool = True,
+) -> str:
+    """One .view per mode; a None graph renders the done-note instead of a diagram.
+    with_lanes=False omits the lanes view entirely (the section hides in lanes mode)."""
+    def view(key: str, inner: str | None, mermaid: bool) -> str:
+        if inner is None:
+            content = f'<div class="alldone">✓ {done_note}</div>'
+        elif mermaid:
+            content = f'<pre class="mermaid" data-key="{sec_id}:{key}">{inner}</pre>'
+        else:
+            content = inner
         return f'<div class="view" data-view="{key}"><div class="panel board">{content}</div></div>'
 
     out = view("frontier", frontier, True) + view("full", full, True)
-    if lanes is not None:
+    if with_lanes:
         out += view("lanes", lanes, False)
     return out
 
@@ -377,25 +391,36 @@ def render_page(
     total = sum(len(f.tickets) for f in features)
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
     all_needs = [(f.name, item) for f in features for item in f.needs_human]
-    meta = f"{len(features)} features · {total_done}/{total} tickets done"
-    if tasks:
-        n = sum(1 for k in tasks if k.status != "done")
-        meta += f" · {n} standalone task{'s' if n != 1 else ''}"
-    if all_needs:
-        meta += f' · <a href="#needs-human">● {len(all_needs)} need human</a>'
-    meta += f" · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
+    open_tasks = sum(1 for k in tasks if k.status != "done")
 
+    meta = f"{total_done}/{total} done"
+    if open_tasks:
+        meta += f" · {open_tasks} task{'s' if open_tasks != 1 else ''}"
+    needs_badge = (
+        f'<a class="needsbadge" href="#needs-human">● {len(all_needs)} need human</a>' if all_needs else ""
+    )
     nav = "".join(
-        f'<a class="cell open" href="#f-{f.name}">{html.escape(f.name)} '
-        f"{sum(1 for t in f.tickets if t.status == 'done')}/{len(f.tickets)}</a>"
+        f'<a class="featchip" href="#f-{f.name}">{html.escape(f.name)} '
+        f"<span class=\"dim\">{sum(1 for t in f.tickets if t.status == 'done')}/{len(f.tickets)}</span></a>"
         for f in features
     )
 
-    board = (
-        f'<section class="viewgroup" id="sec-board"><h2>Board</h2>'
-        + graph_views("sec-board", board_dag(features, tasks, False), board_dag(features, tasks, True), None)
-        + "</section>"
-    )
+    # the all-features graph earns its place only when there is more than one feature —
+    # with one, it duplicates that feature's own section
+    board = ""
+    if len(features) > 1:
+        board = (
+            '<section class="viewgroup" id="sec-board"><h2>Board</h2>'
+            + graph_views(
+                "sec-board",
+                board_dag(features, tasks, False),
+                board_dag(features, tasks, True),
+                None,
+                "everything done",
+                with_lanes=False,
+            )
+            + "</section>"
+        )
 
     def needs_item(feature: str, item: str) -> str:
         chip = f'<a class="chip open" href="#f-{feature}">{html.escape(feature)}</a> '
@@ -426,16 +451,17 @@ def render_page(
         f'<div class="body">{k.body_html}</div></details>'
         for k in tasks
     )
-    tasks_sec = f'<section><h2>Standalone tasks</h2><div class="tickets">{task_rows}</div></section>' if tasks else ""
+    tasks_sec = f'<section><h2>Standalone tasks</h2><div class="tickets panel-b">{task_rows}</div></section>' if tasks else ""
 
     log_html = "\n".join(
         f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
         for line in log.strip().splitlines()
     )
+    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(tasks)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
-        project=html.escape(project), meta=meta, nav=nav, board=board, needs=needs,
-        sections=sections, tasks=tasks_sec, log=log_html,
-        stamp=stamp, stamp_src=html.escape(stamp_src),
+        project=html.escape(project), meta=meta, needs_badge=needs_badge, nav=nav,
+        board=board, needs=needs, sections=sections, tasks=tasks_sec, log=log_html,
+        footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
 
@@ -469,12 +495,13 @@ def feature_section(f: Feature) -> str:
         f'<details class="done-fold" id="done-{f.name}"><summary>{counts["done"]} done tickets</summary>{done_rows}</details>'
         if done_rows else ""
     )
+    done_note = f"all {len(f.tickets)} tickets done"
     return (
         f'<section class="viewgroup feature" id="f-{f.name}">'
-        f'<h2>{html.escape(f.name)} <span class="counts">{" · ".join(bits)}</span></h2>'
-        f'<div class="strip">{strip}</div>'
-        + graph_views(f"f-{f.name}", feature_dag(f, False), feature_dag(f, True), wave_lanes(f))
-        + f'<div class="tickets">{active_rows}{done_fold}</div>'
+        f'<div class="fhead"><h2>{html.escape(f.name)} <span class="counts">{" · ".join(bits)}</span></h2>'
+        f'<div class="strip">{strip}</div></div>'
+        + graph_views(f"f-{f.name}", feature_dag(f, False), feature_dag(f, True), wave_lanes(f), done_note)
+        + f'<div class="tickets panel-b">{active_rows}{done_fold}</div>'
         "</section>"
     )
 
@@ -485,136 +512,139 @@ PAGE = Template("""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>board — ${project}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f3f5f8; --panel: #ffffff; --line: #dfe4ec; --ink: #1a2432; --muted: #5d6a7d; --edge: #8fa0b5;
-    --done-bg: #e2f6e9; --done-br: #2c9257; --done-tx: #1e6b40;
-    --claimed-bg: #fdf0d5; --claimed-br: #c08a1e; --claimed-tx: #7d5a11;
-    --open-bg: #e2f0fb; --open-br: #2e79b5; --open-tx: #1d5c8f;
-    --blocked-bg: #edf0f4; --blocked-br: #97a2b1; --blocked-tx: #5d6a7d;
-    --human: #c03535; --human-bg: #fbe9e9; --flash: #fdf0d5;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1320; --panel: #151d2b; --line: #26324a; --ink: #dfe6f2; --muted: #8b96a8; --edge: #4d5c74;
-      --done-bg: #12321f; --done-br: #2f9e5f; --done-tx: #7fe0a7;
-      --claimed-bg: #3a2a10; --claimed-br: #c9932e; --claimed-tx: #f0c46a;
-      --open-bg: #10293c; --open-br: #3e87c2; --open-tx: #86c5ee;
-      --blocked-bg: #1b2230; --blocked-br: #3a4453; --blocked-tx: #7a8698;
-      --human: #e25b5b; --human-bg: #3a1414; --flash: #3a2a10;
-    }
+    color-scheme: dark;
+    --bg: #141519; --panel: #1b1d23; --raised: #22252c; --border: #2c303a; --border-strong: #3a4050;
+    --ink: #d6dae2; --ink2: #9aa1af; --ink3: #6a7180; --edge: #4d5665;
+    --accent: #7aa2f7; --accent-dim: #4b689f;
+    --done-bg: #17251a; --done-br: #3f7a44; --done-tx: #85d18d;
+    --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
+    --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
+    --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
+    --human: #e5534b; --human-bg: #291414; --flash: #2a2214;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --topbar-h: 46px;
   }
   * { box-sizing: border-box; }
-  body {
-    font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 15px; line-height: 1.55;
-    background: var(--bg); color: var(--ink); max-width: 64rem; margin: 2.5rem auto 6rem; padding: 0 1.25rem;
-  }
-  .eyebrow, h1, h2, .meta, .strip, .badge, .num, .deps, .chip, .log, .mermaid, .cardnum, .lanelabel, .counts, #switcher { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  html { scrollbar-color: #3a3f4b var(--bg); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+  a { color: var(--accent); text-decoration: none; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .dim { color: var(--ink3); font-weight: 400; }
+  .eyebrow, .meta, .strip, .badge, .num, .deps, .chip, .log, .mermaid, .cardnum, .lanelabel, .counts, .featchip, .cell { font-family: var(--mono); }
 
-  .eyebrow { text-transform: uppercase; letter-spacing: .24em; font-size: .68rem; color: var(--muted); margin: 0 0 .35rem; }
-  .masthead { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; }
-  h1 { font-size: 1.55rem; font-weight: 600; margin: 0; }
-  .strip { display: flex; gap: 2px; flex-wrap: wrap; margin: .3rem 0 .8rem; }
-  .cell { min-width: 2em; text-align: center; font-size: .68rem; padding: .18rem .35rem; border: 1px solid; border-radius: 4px; text-decoration: none; }
-  .meta { color: var(--muted); font-size: .74rem; margin: .6rem 0 0; }
-  .meta a { color: var(--human); font-weight: 600; text-decoration: none; }
-  .meta a:focus-visible, .meta a:hover { text-decoration: underline; }
+  /* ---- sticky topbar: identity left, controls right ---- */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 12px; align-items: center; height: var(--topbar-h);
+    padding: 0 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border); }
+  .top h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
+  .top .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink3); }
+  .top .meta { color: var(--ink2); font-size: 12px; white-space: nowrap; }
+  .needsbadge { color: var(--human); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .featnav { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .featchip { font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px;
+    color: var(--ink2); white-space: nowrap; }
+  .featchip:hover { color: var(--ink); border-color: var(--border-strong); }
+  .modes { display: flex; gap: 4px; margin-left: auto; }
+  .btn { background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px;
+    cursor: pointer; color: var(--ink2); font-size: 12.5px; white-space: nowrap; font-family: var(--sans); }
+  .btn:hover { color: var(--ink); border-color: var(--border-strong); }
+  .btn.on { color: var(--accent); border-color: var(--accent-dim); }
+  .modes kbd { font-family: var(--mono); font-size: 10px; color: var(--ink3); align-self: center; }
 
-  h2 {
-    text-transform: uppercase; letter-spacing: .2em; font-size: .7rem; font-weight: 500;
-    color: var(--muted); margin: 2.4rem 0 .8rem; display: flex; align-items: center; gap: .8rem;
-  }
-  h2::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
-  h2 .counts { letter-spacing: 0; text-transform: none; }
+  main { max-width: 72rem; margin: 0 auto 6rem; padding: 0 1.25rem; }
 
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  h2 { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; font-weight: 600;
+    color: var(--ink2); margin: 2.2rem 0 .7rem; display: flex; align-items: baseline; gap: .8rem; font-family: var(--sans); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--border); align-self: center; }
+  h2 .counts { letter-spacing: 0; text-transform: none; font-size: 11.5px; color: var(--ink3); font-weight: 400; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  .panel-b { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0 .6rem; }
   .board { padding: 1rem; overflow-x: auto; }
-  .mermaid { margin: 0; display: flex; justify-content: center; color: var(--muted); }
+  .alldone { color: var(--ink3); font-size: 12.5px; padding: .2rem .4rem; }
+  .mermaid { margin: 0; display: flex; justify-content: center; color: var(--ink3); }
   .mermaid:not(:has(svg)) { visibility: hidden; }
   .view { display: none; }
   .view.active { display: block; }
-  .viewgroup:not(:has(.view.active)) .strip { display: none; }
+  section.viewgroup:not(.feature):not(:has(.view.active)) { display: none; }
 
   .done { background: var(--done-bg); border-color: var(--done-br); color: var(--done-tx); }
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
 
-  /* wave lanes */
-  .lane { display: flex; gap: 1rem; padding: .7rem 0; border-bottom: 1px dashed var(--line); align-items: baseline; }
+  /* ---- feature header: sticky under the topbar ---- */
+  .fhead { position: sticky; top: var(--topbar-h); z-index: 5; padding: .3rem 0 .5rem;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); }
+  .fhead h2 { margin: 0 0 .45rem; }
+  .strip { display: flex; gap: 2px; flex-wrap: wrap; }
+  .cell { min-width: 2em; text-align: center; font-size: 10.5px; padding: .14rem .3rem; border: 1px solid; border-radius: 4px; text-decoration: none; }
+
+  /* ---- wave lanes ---- */
+  .lane { display: flex; gap: 1rem; padding: .7rem 0; border-bottom: 1px dashed var(--border); align-items: baseline; }
   .lane:last-child { border-bottom: 0; }
-  .lanelabel { flex: 0 0 9.5rem; text-transform: uppercase; letter-spacing: .14em; font-size: .64rem; color: var(--muted); padding-top: .5rem; }
+  .lanelabel { flex: 0 0 9.5rem; text-transform: uppercase; letter-spacing: .14em; font-size: 10px; color: var(--ink3); padding-top: .5rem; }
   .lanecards { display: flex; flex-wrap: wrap; gap: .5rem; flex: 1; }
   .card { display: flex; flex-direction: column; gap: .15rem; border: 1px solid; border-radius: 6px; padding: .45rem .65rem; max-width: 15rem; }
   .cardlink { display: flex; flex-direction: column; gap: .15rem; text-decoration: none; color: inherit; }
-  .cardnum { font-size: .68rem; opacity: .8; }
-  .cardtitle { font-size: .8rem; line-height: 1.35; }
+  .cardnum { font-size: 10.5px; opacity: .8; }
+  .cardtitle { font-size: 12px; line-height: 1.35; }
   .card .chips { margin-top: .2rem; justify-content: flex-start; min-width: 0; }
 
-  /* ticket rows */
-  .ticket { border-bottom: 1px solid var(--line); }
-  .ticket summary {
-    display: grid; grid-template-columns: 2.2rem 1fr auto auto; gap: .8rem; align-items: baseline;
-    padding: .45rem .3rem; cursor: pointer; list-style: none;
-  }
+  /* ---- ticket rows ---- */
+  .ticket { border-bottom: 1px solid var(--border); }
+  .ticket:last-child, .done-fold .ticket:last-child { border-bottom: 0; }
+  .ticket summary { display: grid; grid-template-columns: 2.2rem 1fr auto auto; gap: .8rem; align-items: baseline;
+    padding: .45rem .3rem; cursor: pointer; list-style: none; }
   .ticket summary::-webkit-details-marker { display: none; }
-  .ticket summary:hover { background: var(--panel); }
-  .ticket .num { color: var(--muted); font-size: .8rem; }
-  .row-done summary .title { color: var(--muted); }
-  .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: .72rem; white-space: nowrap; }
+  .ticket summary:hover { background: var(--raised); }
+  .ticket .num { color: var(--ink3); font-size: 12px; }
+  .ticket .title { font-size: 13.5px; }
+  .row-done summary .title { color: var(--ink2); }
+  .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
   .chips { display: inline-flex; gap: .25rem; min-width: 5rem; justify-content: flex-end; flex-wrap: wrap; }
-  .chip { border: 1px solid; border-radius: 4px; font-size: .68rem; padding: 0 .3rem; text-decoration: none; }
-  .deps { color: var(--muted); font-size: .8rem; }
-  .ticket .body {
-    padding: .2rem 1rem 1rem 3rem; font-size: .88rem; color: var(--ink);
-    border-left: 3px solid var(--line); margin: 0 0 .8rem .6rem;
-  }
-  .ticket .body h2 { text-transform: none; letter-spacing: 0; font-size: .95rem; font-family: "IBM Plex Sans", sans-serif; color: var(--ink); margin: 1rem 0 .3rem; }
+  .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
+  .deps { color: var(--ink3); font-size: 12px; }
+  .ticket .body { padding: .2rem 1rem 1rem 3rem; font-size: 13px; color: var(--ink);
+    border-left: 3px solid var(--border); margin: 0 0 .8rem .6rem; }
+  .ticket .body h2 { text-transform: none; letter-spacing: 0; font-size: 13.5px; color: var(--ink); margin: 1rem 0 .3rem; }
   .ticket .body h2::after { display: none; }
-  .ticket .body code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 .25rem; font-size: .82em; }
+  .ticket .body code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem; font-size: .85em; font-family: var(--mono); }
   .ticket .body pre code { display: block; padding: .6rem .8rem; overflow-x: auto; }
-  .ticket .body a { color: var(--open-tx); }
   .ticket.flash > summary { background: var(--flash); transition: background .2s; }
-  .done-fold > summary {
-    cursor: pointer; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: .78rem;
-    text-transform: uppercase; letter-spacing: .14em; padding: .7rem .3rem;
-  }
+  .done-fold > summary { cursor: pointer; color: var(--ink3); font-family: var(--mono); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .14em; padding: .7rem .3rem; }
 
   .needs-human { padding: 0; margin: 0; }
-  .needs-human li {
-    list-style: none; background: var(--human-bg); border-left: 3px solid var(--human);
-    border-radius: 0 6px 6px 0; padding: .45rem .8rem; margin: .4rem 0; font-size: .9rem;
-  }
+  .needs-human li { list-style: none; background: var(--human-bg); border-left: 3px solid var(--human);
+    border-radius: 0 6px 6px 0; padding: .45rem .8rem; margin: .4rem 0; font-size: 13px; }
   .needs-human summary { cursor: pointer; }
-  .needs-detail { padding: .3rem .2rem 0; font-size: .875rem; line-height: 1.55; }
-  .needs-detail pre {
-    background: var(--bg); border-radius: 6px; padding: .6rem .8rem;
-    overflow-x: auto; font-size: .8rem; line-height: 1.5; white-space: pre-wrap;
-  }
-  .log { padding: .9rem 1.1rem; margin: 0; font-size: .8rem; line-height: 1.75; overflow-x: auto; }
-  .hash { color: var(--claimed-br); }
-
-  #switcher {
-    position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%);
-    display: flex; align-items: center; gap: .8rem; background: var(--ink); color: var(--bg);
-    padding: .4rem 1rem; border-radius: 99px; font-size: .78rem; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 10;
-  }
-  #switcher button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0 .2rem; }
+  .needs-detail { padding: .3rem .2rem 0; font-size: 12.5px; line-height: 1.55; }
+  .needs-detail pre { background: var(--bg); border-radius: 6px; padding: .6rem .8rem;
+    overflow-x: auto; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }
+  .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
+  .hash { color: var(--claimed-tx); }
+  .footmeta { color: var(--ink3); font-size: 11.5px; font-family: var(--mono); margin-top: .8rem; }
 </style>
 </head>
 <body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
-<header>
-  <p class="eyebrow">tracker · board</p>
-  <div class="masthead">
-    <h1>${project}</h1>
-    <div class="strip">${nav}</div>
+<div class="top">
+  <span class="eyebrow">board</span>
+  <h1>${project}</h1>
+  <span class="meta">${meta}</span>
+  ${needs_badge}
+  <nav class="featnav">${nav}</nav>
+  <div class="modes" id="modes">
+    <button class="btn" data-mode="frontier">frontier</button>
+    <button class="btn" data-mode="full">full</button>
+    <button class="btn" data-mode="lanes">lanes</button>
+    <kbd>←→</kbd>
   </div>
-  <p class="meta">${meta}</p>
-</header>
+</div>
+<main>
 
 ${board}
 
@@ -627,20 +657,17 @@ ${tasks}
 <section>
   <h2>Recent commits</h2>
   <pre class="panel log">${log}</pre>
+  <p class="footmeta">${footmeta}</p>
 </section>
 
-<div id="switcher">
-  <button id="prev" title="previous view (←)">◀</button>
-  <span id="vlabel"></span>
-  <button id="next" title="next view (→)">▶</button>
-</div>
+</main>
 
 <script>
   // Synchronous state restore, before first paint. The module below waits on the
   // mermaid import; doing any of this there makes every 30s reload visibly
   // collapse the graphs and drop expanded tickets for a beat.
   (() => {
-    const views = [["frontier", "frontier graph"], ["full", "full graph"], ["lanes", "wave lanes"]];
+    const MODES = ["frontier", "full", "lanes"];
     // state saved by the pre-reload saveState: sessionStorage, with window.name
     // (which survives navigation in every browser) as the fallback carrier
     let saved = null, cache = {};
@@ -653,9 +680,9 @@ ${tasks}
     }
     // saved state wins over the URL: the reload keeps a stale ?view= around
     let view = saved?.view ?? new URLSearchParams(location.search).get("view") ?? "frontier";
-    if (!views.some(([k]) => k === view)) view = "frontier";
+    if (!MODES.includes(view)) view = "frontier";
     for (const s of document.querySelectorAll(".view")) s.classList.toggle("active", s.dataset.view === view);
-    document.getElementById("vlabel").textContent = views.find(([k]) => k === view)[1];
+    for (const b of document.querySelectorAll("#modes .btn")) b.classList.toggle("on", b.dataset.mode === view);
     // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid
     for (const el of document.querySelectorAll(".view .mermaid")) {
       const hit = cache[el.dataset.key];
@@ -663,7 +690,7 @@ ${tasks}
     }
     for (const id of saved?.open ?? []) document.getElementById(id)?.setAttribute("open", "");
     if (saved) scrollTo(0, saved.scroll ?? 0);
-    window.dispatchView = { views, view, saved };
+    window.dispatchView = { MODES, view, saved };
   })();
 </script>
 
@@ -684,9 +711,11 @@ ${tasks}
     startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base",
     elk: { mergeEdges: false },
     themeVariables: {
-      fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: "13px",
+      fontFamily: "ui-monospace, monospace", fontSize: "13px",
       primaryColor: v("--panel"), primaryTextColor: v("--ink"),
-      primaryBorderColor: v("--line"), lineColor: v("--edge"),
+      primaryBorderColor: v("--border"), lineColor: v("--edge"),
+      clusterBkg: v("--panel"), clusterBorder: v("--border-strong"),
+      titleColor: v("--ink2"),
     },
   });
 
@@ -703,26 +732,24 @@ ${tasks}
     }
   }
 
-  const { views, saved } = window.dispatchView;
+  const { MODES, saved } = window.dispatchView;
   let current = window.dispatchView.view;
 
   async function activate(key) {
     current = key;
     for (const s of document.querySelectorAll(".view"))
       s.classList.toggle("active", s.dataset.view === key);
-    document.getElementById("vlabel").textContent = views.find(([k]) => k === key)[1];
+    for (const b of document.querySelectorAll("#modes .btn"))
+      b.classList.toggle("on", b.dataset.mode === key);
     await renderGraphs();
   }
-  function cycle(delta) {
-    const i = views.findIndex(([k]) => k === current);
-    activate(views[(i + delta + views.length) % views.length][0]);
-  }
-  document.getElementById("prev").addEventListener("click", () => cycle(-1));
-  document.getElementById("next").addEventListener("click", () => cycle(1));
+  for (const b of document.querySelectorAll("#modes .btn"))
+    b.addEventListener("click", () => activate(b.dataset.mode));
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable]")) return;
-    if (e.key === "ArrowLeft") cycle(-1);
-    if (e.key === "ArrowRight") cycle(1);
+    const i = MODES.indexOf(current);
+    if (e.key === "ArrowLeft") activate(MODES[(i + MODES.length - 1) % MODES.length]);
+    if (e.key === "ArrowRight") activate(MODES[(i + 1) % MODES.length]);
   });
 
   // anchor navigation: open the target ticket (and any enclosing fold), flash it
