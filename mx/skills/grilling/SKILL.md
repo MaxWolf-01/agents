@@ -9,13 +9,24 @@ Map the design as a **design tree**: every decision branches into the decisions 
 
 Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled — the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
 
-Each question should be formatted like so:
+Each question is one decision, formatted like so:
 
 ```
-❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
+❓ **Q1** — **<the decision, as a question>**
+   ➡️ **(a)** <the option you recommend>
+      **(b)** <option>
+      **(c)** <option>
 
-➡️ <your recommended answer>
+💡 <why you'd pick it, and what it costs>
 ```
+
+The question line states the decision and nothing else. The arrow marks the winner where it sits, so no scanning; every reason, consequence and preference lives under the 💡, which is the skim path — reading only the 💡 lines tells the user what you would build. Labelled options make answering cheap (`q1 -> a`, sharpened where they disagree). A decision over an open range takes concrete candidate values as its options.
+
+Offer only options you would defend. Two live options beat three padded with one you dismiss in the same breath. **One live option means it is not a question** — it is a fact to look up, or a call to make and state as an assumption. Ask a yes/no only when both sides are named and both are live; a question shaped "accept my proposal?" leaves the user rubber-stamping and turns the 💡 into "yes".
+
+Entangled decisions split — `Q1` and `Q1b`, with the dependency named under the 💡 — or become combined options. Never one question carrying two halves.
+
+Reach for a table instead when 3+ options differ along shared axes _and_ why-not-the-others is load-bearing: same `❓` line, then a row per option with the `➡️` on the recommended one, columns for the axes that separate them. Two options fit the default — a table's columns demand content, and a demanded cell gets filler.
 
 Each round the user answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
