@@ -13,6 +13,11 @@ needs-human queue, and a section per feature (graph, wave lanes, ticket rows).
 One switcher (floating bar or arrow keys) cycles every graph on the page
 through frontier / full / lanes at once.
 
+A ticket row links its diffview review page when one has been rendered:
+agent/diffviews mirrors agent/tasks, so <feature>/NN-*.html beside the ticket
+and <slug>.html beside a standalone task. Those pages are gitignored, so the
+link appears only on the machine that rendered them.
+
 Any agent that changes tracker state re-renders; the render is deterministic
 from disk, so last-writer-wins is safe. Per-feature dispatcher state lives in
 agent/tasks/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
@@ -93,6 +98,7 @@ class Ticket:
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
     body_html: str
+    diffview: str | None  # rendered review page, when one exists
 
 
 @dataclass
@@ -109,6 +115,7 @@ class Task:
     title: str
     status: str
     body_html: str
+    diffview: str | None
 
 
 def load_features(root: Path) -> list[Feature]:
@@ -143,9 +150,20 @@ def load_tasks(root: Path) -> list[Task]:
                 title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
                 status=str(meta.get("status", "open")),
                 body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
+                diffview=find_diffview(root.parent / "diffviews", f"{path.stem}.html"),
             )
         )
     return tasks
+
+
+def find_diffview(directory: Path, pattern: str) -> str | None:
+    """Absolute path of a ticket's review page, by convention — agent/diffviews mirrors agent/tasks.
+
+    The page is gitignored, so it exists only where it was rendered; a ticket
+    without one simply renders no link.
+    """
+    matches = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
+    return str(matches[-1].resolve()) if matches else None
 
 
 def load_needs_human(path: Path) -> tuple[list[str], str | None]:
@@ -158,6 +176,7 @@ def load_needs_human(path: Path) -> tuple[list[str], str | None]:
 
 
 def load_tickets(tasks_dir: Path) -> list[Ticket]:
+    dv_dir = tasks_dir.parent.parent / "diffviews" / tasks_dir.name
     tickets = []
     for path in sorted(tasks_dir.glob("[0-9][0-9]-*.md")):
         meta, body = split_frontmatter(path.read_text())
@@ -172,6 +191,7 @@ def load_tickets(tasks_dir: Path) -> list[Ticket]:
                 blocked_by=[normalize_num(n) for n in blockers if "/" not in str(n)],
                 ext_by=[(str(n), ext_status(tasks_dir, str(n))) for n in blockers if "/" in str(n)],
                 body_html=render_body(body, tasks_dir.name),
+                diffview=find_diffview(dv_dir, f"{path.name[:2]}-*.html"),
             )
         )
     done = {t.num for t in tickets if t.status == "done"}
@@ -218,9 +238,9 @@ def content_stamp(project: str, features: list[Feature], tasks: list[Task], log:
     key = repr((
         project,
         [(f.name, f.needs_human, f.worker_host,
-          [(t.num, t.title, t.status, t.blocked_by, t.ext_by, t.body_html) for t in f.tickets])
+          [(t.num, t.title, t.status, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.body_html) for k in tasks],
+        [(k.slug, k.title, k.status, k.body_html, k.diffview) for k in tasks],
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -445,7 +465,7 @@ def render_page(
 
     task_rows = "".join(
         f'<details class="ticket row-{k.status}" id="task-{k.slug}"><summary>'
-        f'<span class="num">·</span><span class="title">{html.escape(k.title)}</span>'
+        f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
         f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>'
         f'<span class="deps">—</span></summary>'
         f'<div class="body">{k.body_html}</div></details>'
@@ -465,6 +485,12 @@ def render_page(
     )
 
 
+def dv_link(path: str | None) -> str:
+    if not path:
+        return ""
+    return f'<a class="dv" href="file://{html.escape(path)}" target="_blank" title="{html.escape(path)}">diff</a>'
+
+
 def feature_section(f: Feature) -> str:
     by_num = {t.num: t for t in f.tickets}
     counts = Counter(t.status for t in f.tickets)
@@ -481,7 +507,7 @@ def feature_section(f: Feature) -> str:
         chips = dep_chips(f.name, by_num, t) or '<span class="deps">—</span>'
         return (
             f'<details class="ticket row-{t.status}" id="t-{f.name}-{t.num}"><summary>'
-            f'<span class="num">{t.num}</span><span class="title">{html.escape(t.title)}</span>'
+            f'<span class="num">{t.num}</span><span class="title">{html.escape(t.title)}{dv_link(t.diffview)}</span>'
             f'<span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>'
             f'<span class="chips">{chips}</span></summary>'
             f'<div class="body">{t.body_html}</div></details>'
@@ -603,6 +629,9 @@ PAGE = Template("""<!doctype html>
   .ticket summary:hover { background: var(--raised); }
   .ticket .num { color: var(--ink3); font-size: 12px; }
   .ticket .title { font-size: 13.5px; }
+  .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
+    color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
+  .dv:hover { color: var(--ink); border-color: var(--ink3); }
   .row-done summary .title { color: var(--ink2); }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
   .chips { display: inline-flex; gap: .25rem; min-width: 5rem; justify-content: flex-end; flex-wrap: wrap; }
