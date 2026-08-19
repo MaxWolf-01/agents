@@ -68,7 +68,7 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 | `/mx:improve-codebase-architecture`, `/mx:bloat-audit` | codebase health |
 | `/mx:research` | primary-source investigation → cited artefact |
 | `/mx:codex` | second opinion from a different model |
-| `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:todos`, `/mx:reflect` | session continuity & status |
+| `/mx:handoff`, `/mx:transcript`, `/mx:recap`, `/mx:reflect` | session continuity & status |
 | `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, CLAUDE.md, specs, tickets) / artifact text read cold (docs, comments, UI copy) |
 
 Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `project-setup`, `ml`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `overview`, `changelog`, `dependabot-triage`.

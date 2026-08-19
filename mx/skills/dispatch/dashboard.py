@@ -117,14 +117,23 @@ def load_features(root: Path) -> list[Feature]:
         tickets = load_tickets(d)
         if not tickets:
             continue
+        assert_safe_name(d.name)
         needs_human, worker_host = load_needs_human(d / "needs-human.md")
         features.append(Feature(d.name, tickets, needs_human, worker_host))
+    ids = [slug_id(f.name) for f in features]
+    assert len(ids) == len(set(ids)), f"feature names collide as mermaid ids: {sorted(ids)}"
     return features
+
+
+def assert_safe_name(name: str) -> None:
+    # names ride into HTML attributes and mermaid click strings unescaped
+    assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
 def load_tasks(root: Path) -> list[Task]:
     tasks = []
     for path in sorted(root.glob("*.md")):
+        assert_safe_name(path.stem)
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
