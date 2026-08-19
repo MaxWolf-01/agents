@@ -628,6 +628,17 @@ PAGE = Template("""<!doctype html>
   .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
   .hash { color: var(--claimed-tx); }
   .footmeta { color: var(--ink3); font-size: 11.5px; font-family: var(--mono); margin-top: .8rem; }
+
+  .kcur > summary, li.kcur { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+  main > section { scroll-margin-top: calc(var(--topbar-h) + 10px); }
+  .ticket, .done-fold, .needs-human li { scroll-margin-top: calc(var(--topbar-h) + 100px); scroll-margin-bottom: 60px; }
+
+  #help { position: fixed; inset: 0; z-index: 100; background: rgba(10,11,13,.7); display: none; align-items: center; justify-content: center; }
+  #help.open { display: flex; }
+  #help .card { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 20px 26px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  #help table { border-collapse: collapse; font-size: 13px; }
+  #help td { padding: 3px 14px 3px 0; }
+  #help kbd { font-family: var(--mono); background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; font-size: 12px; }
 </style>
 </head>
 <body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
@@ -641,7 +652,7 @@ PAGE = Template("""<!doctype html>
     <button class="btn" data-mode="frontier">frontier</button>
     <button class="btn" data-mode="full">full</button>
     <button class="btn" data-mode="lanes">lanes</button>
-    <kbd>←→</kbd>
+    <button class="btn" id="helpbtn" title="keyboard help (?)">?</button>
   </div>
 </div>
 <main>
@@ -661,6 +672,15 @@ ${tasks}
 </section>
 
 </main>
+
+<div id="help"><div class="card"><table>
+<tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>cycle view: frontier / full / lanes</td></tr>
+<tr><td><kbd>h</kbd> <kbd>l</kbd> or <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd></td><td>previous / next section</td></tr>
+<tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row</td></tr>
+<tr><td><kbd>Enter</kbd> / <kbd>Space</kbd></td><td>expand / collapse row</td></tr>
+<tr><td><kbd>x</kbd></td><td>expand / collapse all tickets</td></tr>
+<tr><td><kbd>?</kbd></td><td>this help</td></tr>
+</table></div></div>
 
 <script>
   // Synchronous state restore, before first paint. The module below waits on the
@@ -745,11 +765,59 @@ ${tasks}
   }
   for (const b of document.querySelectorAll("#modes .btn"))
     b.addEventListener("click", () => activate(b.dataset.mode));
+  // ---- keyboard: view cycling, section jumps, row cursor ----
+  let cur = null;
+  const visible = (el) => el.offsetParent !== null;
+  const rows = () => [...document.querySelectorAll("main details, .needs-human li:not(:has(details))")].filter(visible);
+  function setCur(el) {
+    cur?.classList.remove("kcur");
+    cur = el ?? null;
+    if (cur) { cur.classList.add("kcur"); cur.scrollIntoView({ block: "nearest" }); }
+  }
+  function moveCur(delta) {
+    const list = rows();
+    if (!list.length) return;
+    const i = list.indexOf(cur);
+    setCur(list[i < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(Math.max(i + delta, 0), list.length - 1)]);
+  }
+  function jumpSection(delta) {
+    const secs = [...document.querySelectorAll("main > section")].filter(visible);
+    if (!secs.length) return;
+    const y = scrollY + 1;
+    let i = secs.findIndex((s) => s.offsetTop > y) - 1;  // section containing the viewport top
+    if (i < -1) i = secs.length - 1;
+    const next = secs[Math.min(Math.max(i + delta, 0), secs.length - 1)];
+    next.scrollIntoView({ block: "start" });
+  }
+  const help = document.getElementById("help");
+  document.getElementById("helpbtn").addEventListener("click", () => help.classList.toggle("open"));
+  help.addEventListener("click", () => help.classList.remove("open"));
+
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable]")) return;
-    const i = MODES.indexOf(current);
-    if (e.key === "ArrowLeft") activate(MODES[(i + MODES.length - 1) % MODES.length]);
-    if (e.key === "ArrowRight") activate(MODES[(i + 1) % MODES.length]);
+    if (e.key === "Escape") { help.classList.remove("open"); setCur(null); return; }
+    if (e.key === "?") { help.classList.toggle("open"); return; }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      if (e.shiftKey) { jumpSection(e.key === "ArrowRight" ? 1 : -1); return; }
+      const i = MODES.indexOf(current);
+      activate(MODES[(i + (e.key === "ArrowRight" ? 1 : MODES.length - 1)) % MODES.length]);
+      return;
+    }
+    if (e.key === "h") { jumpSection(-1); return; }
+    if (e.key === "l") { jumpSection(1); return; }
+    if (e.key === "j") { e.preventDefault(); moveCur(1); return; }
+    if (e.key === "k") { e.preventDefault(); moveCur(-1); return; }
+    if ((e.key === "Enter" || e.key === " ") && cur) {
+      e.preventDefault();
+      const d = cur.tagName === "DETAILS" ? cur : cur.querySelector("details");
+      if (d) d.open = !d.open;
+      return;
+    }
+    if (e.key === "x") {
+      const anyOpen = document.querySelector("main details.ticket[open], main .done-fold[open]");
+      for (const d of document.querySelectorAll("main details.ticket, main .done-fold")) d.open = !anyOpen;
+    }
   });
 
   // anchor navigation: open the target ticket (and any enclosing fold), flash it
