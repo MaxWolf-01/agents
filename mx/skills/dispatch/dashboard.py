@@ -98,7 +98,7 @@ class Ticket:
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
     body_html: str
-    diffview: str | None  # rendered review page, when one exists
+    diffview: str | None
 
 
 @dataclass
@@ -157,11 +157,6 @@ def load_tasks(root: Path) -> list[Task]:
 
 
 def find_diffview(directory: Path, pattern: str) -> str | None:
-    """Absolute path of a ticket's review page, by convention — agent/diffviews mirrors agent/tasks.
-
-    The page is gitignored, so it exists only where it was rendered; a ticket
-    without one simply renders no link.
-    """
     matches = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
     return str(matches[-1].resolve()) if matches else None
 
@@ -488,7 +483,8 @@ def render_page(
 def dv_link(path: str | None) -> str:
     if not path:
         return ""
-    return f'<a class="dv" href="file://{html.escape(path)}" target="_blank" title="{html.escape(path)}">diff</a>'
+    return (f'<a class="dv" href="file://{html.escape(path)}" target="_blank" '
+            f'onclick="event.stopPropagation()" title="{html.escape(path)}">diff</a>')
 
 
 def feature_section(f: Feature) -> str:

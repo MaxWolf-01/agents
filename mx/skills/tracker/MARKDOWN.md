@@ -22,7 +22,7 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 
 - A cross-feature blocker is written qualified: `blocked-by: [01, other-feature/03]`. A qualified reference whose file no longer exists counts as `done` — feature dirs are retired only after shipping.
 - A ticket is **unblocked** when every ticket in `blocked-by` is `done`.
-- `diff` accumulates one range per round — the implementation, then one per review round. SHAs, never branch names: a ticket branch is deleted once it lands while its commits survive. It is what regenerates the ticket's review page, which renders one section per range.
+- `diff` accumulates one range per round — the implementation, then one per review round. SHAs, never branch names: a ticket branch is deleted once it lands while its commits survive. It is what regenerates the ticket's review page, which renders one section per range. That page lives at `agent/diffviews/<feature>/<NN>-<slug>.html`, or `agent/diffviews/<slug>.html` for a standalone task — gitignored, and the board links it from there.
 - The **frontier**: open, unblocked, unclaimed tickets — what can be started right now.
 - `claimed` marks a ticket a session is actively working. Set it before any work. When agents run in parallel, a single orchestrating agent oversees them and is the sole claim-writer — no cross-checkout coordination needed. (With a single agent in a single checkout, claiming is optional.)
 - Notes and follow-up conversation append under a `## Comments` heading at the bottom of the file.

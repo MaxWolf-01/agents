@@ -19,7 +19,7 @@ Write each one anchored, so it can be shown where it applies:
 - A3 `path/file.py:118` — the call and why
 ```
 
-The id and the anchor are what let the ticket's review page project the assumption onto the line it concerns, which is where the user rules on it. Ids are permanent: a reversed call gets a fresh id that supersedes the old bullet, so the numbering holds across regenerations. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the export shows them — that line is what marks them resolved on the page.
+The id and the anchor are what let the ticket's review page project the assumption onto the line it concerns, which is where the user rules on it. Ids are permanent, and a later round continues from the highest already in the ticket: a reversed call gets a fresh id that supersedes the old bullet, and a duplicate id fails the render outright. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the export shows them — that line is what marks them resolved on the page.
 
 Inherited framing has the same status: an approach or option list an agent wrote into the ticket — even one the user waved through with a "sure, try it" — is an assumption, settled only by a grilling verdict, an ADR, or a spec decision. Before building, name the premise the ticket's approach rests on; if an option outside that frame beats everything inside it, escalate first.
 

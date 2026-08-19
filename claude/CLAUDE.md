@@ -135,7 +135,7 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 - Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
 - Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
 
-`diffview` — a diff as a self-contained HTML review page, where the user's line comments export as markdown to paste back (`diffview --help`). "show me the diff" / "show the changes" means this. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it — a judgment call, why X beat Y, an assumption awaiting the user's ruling. Notes are your voice and never enter the comment export. `--watch` backgrounded at the start of an interactive session makes the work visible as it accretes.
+`diffview` — a diff as a self-contained HTML review page (`diffview --help`). "show me the diff" / "show the changes" means this. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it — a judgment call, why X beat Y, an assumption awaiting the user's ruling. `--watch` backgrounded at the start of an interactive session makes the work visible as it accretes.
 
 LaTeX — full TeX Live is installed on workstations (via Home Manager): `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
 
