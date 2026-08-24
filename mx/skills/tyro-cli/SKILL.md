@@ -151,6 +151,22 @@ config = tyro.cli(Config)
 
 ## Documenting --help
 
+### Scope: the CLI, not the workflow
+
+`--help` describes the tool — what each flag accepts, what it rejects, what the tool does with it. Process lives elsewhere: who runs this, in what order, what to do with the output. A help string that prescribes process is a second copy of a policy some skill or doc already owns, and it is the copy nobody updates when the policy changes.
+
+```python
+# BAD: schema plus a process rule owned by the workflow doc
+notes: str = ""
+"""JSON notes file. Schema: {...}. Pick each id once, leave a gap when a note is dropped, never renumber."""
+
+# GOOD: what the flag accepts, and the constraint the loader enforces
+notes: str = ""
+"""JSON notes file. Schema: {...}. Ids must be unique."""
+```
+
+The test: would the sentence still hold for a caller using this tool in a different workflow? If not, it belongs in that workflow's document. Self-documenting (Core Principle 1) means nobody must read the *source* to drive the tool — not that `--help` carries the process the tool is used in.
+
 ### Module Docstring → Program Description
 
 The module docstring (or `description=__doc__`) becomes the top-level help text. Structure it as:
