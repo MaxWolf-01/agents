@@ -3,7 +3,7 @@
 # Usage: run-worker.sh <message-file> <ticket-file> <model> <channel> [session-id]
 #   message-file  worker prompt, or resume guidance; sent on the first attempt only
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
-#   channel       tmux wait-for channel, unique per run; also names /tmp/<channel>.status
+#   channel       tmux wait-for channel, unique per run; also names /tmp/<channel>.{status,log}
 #   session-id    resume this conversation instead of starting a new one
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
@@ -17,21 +17,45 @@ channel=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
 # truncates the code review closing /mx:implement.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
+# Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
+# what makes the instruction to write it conditional rather than a path every session must know.
+export DISPATCH_WORKLOG="/tmp/$channel.log"
+
+# The user CLAUDE.md is written for a human at a terminal: it tells its reader to ask, and
+# describes a conversation this worker is not in. worker-prompt.md replaces it. On an isolated
+# worker host that path holds nothing anyway, and the exclusion is inert.
+settings=$(cat <<EOF
+{
+  "claudeMdExcludes": ["$HOME/.claude/CLAUDE.md"],
+  "autoMemoryEnabled": false
+}
+EOF
+)
+
+common=(
+    -p
+    --permission-mode "$permission_mode"
+    --model "$model"
+    --settings "$settings"
+    --append-system-prompt "$(cat "$here/worker-prompt.md")"
+)
 
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
     if [ "$attempt" -gt 1 ]; then
-        claude -p --permission-mode "$permission_mode" --model "$model" --resume "$session" continue
+        claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        claude -p --permission-mode "$permission_mode" --model "$model" --resume "$session" "$(cat "$message")"
+        claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
-        claude -p --permission-mode "$permission_mode" --model "$model" --session-id "$session" < "$message"
+        claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
     status=$(sed -n 's/^status: *//p' "$ticket" | head -1)
