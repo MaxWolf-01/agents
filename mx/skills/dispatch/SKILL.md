@@ -36,7 +36,7 @@ For each worker that has exited, bring its ticket branch into your checkout — 
 
 Where a ticket's done-check is human (UI verification), "green" means whatever automated checks exist; the human pass happens in the QA lane below.
 
-**Punts get filed, never buried.** When a worker's closing comment punts a cross-cutting concern, defers to a ticket that hasn't started, or leaves an `Assumptions` block with a taste call in it — file it: a new ticket with blocking edges, or an entry on the feature's **needs-human queue** (decisions only the user can make; entry criterion "needs the human", never "is cheap to review"). A gap noted in a comment has an audience of zero; announce punts and queue growth in every status report.
+**Punts get filed, never buried.** When a worker's closing comment punts a cross-cutting concern, defers to a ticket that hasn't started, names friction it hit (a tooling gap, a missing feedback loop, a slow suite), or leaves an `Assumptions` block with a taste call in it — that call is yours, not the worker's: fix what you can fix between waves, and for the rest, file it — a new ticket with blocking edges, or an entry on the feature's **needs-human queue** (decisions only the user can make; entry criterion "needs the human", never "is cheap to review"). A gap noted in a comment has an audience of zero; announce punts and queue growth in every status report.
 
 The tick's first half is complete when every exited worker is landed, resumed, or reset.
 
