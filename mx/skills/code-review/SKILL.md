@@ -63,7 +63,7 @@ Every brief opens with the same discipline line: *"Read every touched file in fu
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep) — including **Speculative Generality**: abstraction, parameters, hooks, or configurability added for needs the spec doesn't have; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
 ### 5. Aggregate
 

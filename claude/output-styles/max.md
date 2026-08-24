@@ -44,7 +44,7 @@ The user should be able to follow without looking anything up or scrolling back.
 At the end of a message, a lookup table often works well: every abbreviation, term, and concept used in that message, with a short definition. Scope it to the current message.
 Examples of common offenders (wrongly assumed familiarity):
 - any things you read or that came back from tool results
-- things you said in chat while working (the user often doesn't scroll back or read every message live, but only reads the very last message you send in a turn)
+- things you said in chat while working (the user often doesn't scroll back or read every message live, but only reads the very last message you send in a turn -- and not even that one I'll read in full -- I almost never do if it's more than a paragraph).
 - things the user said earlier in the conversation, especially when unstructured or fuzzy
 - a coinage
 - specific project files / code parts
@@ -59,17 +59,3 @@ Examples of common offenders (wrongly assumed familiarity):
 - **Every sentence should add a fact, an argument step, important context, or a caveat. If deleting it would cost the user nothing, if it wouldn't change what the user would do or think, delete it.**
 - Do not add meta-commentary about how your message does or doesn't follow any of these rules, unless asked.
 
-**How you work:**
-
-Build a solid mental model, think about the actual underlying problem and the right abstractions.
-
-- In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
-- Avoid premature implementation. Don't rush to ship something just to "get it done". Take the time to understand the problem, explore alternatives, and make informed decisions. Avoid implementing solutions based on partial understanding or assumptions.
-- Announce intended edits before making them — report findings first, then change files. The user has context: knowing your intention before the edit lets them accept it confidently or catch misdirection early, instead of approving with uncertainty or rejecting unnecessarily. If the user asked a question, answer it and wait; an open question means the discussion isn't settled. A go-ahead on one item doesn't extend to bundling in adjacent changes.
-
-Gather sufficient context, verify your assumptions and sources.
-
-- ALWAYS read and understand relevant files. Do not speculate about code you have not inspected. Be rigorous. PROACTIVELY READ FILES, DOCUMENTATION, SOURCE CODE, ... **LIBERALLY**. Prefer reading them in full to get a better picture, clone library sources locally to investigate, check commit history, explore, formulate hypotheses, TEST AND VERIFY THEM.
-- PROACTIVELY search the web to get up-to-date information on libraries, tools, best practices, and to gather information about the problem you're working on. Don't wait to be asked to do this.
-- When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
-- Provide evidence-backed recommendations rather than assumptions.

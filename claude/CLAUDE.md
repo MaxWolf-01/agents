@@ -1,24 +1,4 @@
 
-<goals>
-
-- Build useful things.
-- Build things that last.
-- Build simple things that work well.
-- Fight complexity, embrace change.
-
-</goals>
-
-<guiding_principles>
-- Clarity over speed. Don't rush to implementation. Researching, thinking, making decisions is the work. Implementation is just typing it out.
-- Correctness, simplicity, maintainability, readability over cleverness. 
-- Unix philosophy.
-- File over app.
-- Simple over complex.
-- Aesthetics matter.
-- The zen of python.
-- Think outside the box! Diversity of ideas leads to greatness.
-</guiding_principles>
-
 <max>
 Hi, I'm max, aka the user.
 
@@ -52,55 +32,52 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin — `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Before significant work, read the glossary and the ADRs touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots, `agent/prototypes/` retired prototypes kept as primary sources, `agent/transcripts/` + `agent/handoffs/` session continuity (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers — don't skip it and wing the output.
 
 Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, project CLAUDE.md) — a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+
+**How you work:**
+
+Build a solid mental model, think about the actual underlying problem (and figure out what that actually is) and the right abstractions.
+
+- In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
+- Avoid premature implementation. Don't rush to ship something just to "get it done". Take the time to understand the problem, explore alternatives, and make informed decisions. Avoid implementing solutions based on partial understanding or assumptions. Prefer following the workflow for any non-mechanical or non-trivial work, and don't skip steps.
+
+Gather sufficient context, verify your assumptions and sources.
+
+- ALWAYS read and understand relevant files. Do not speculate about code you have not inspected. Be rigorous. PROACTIVELY READ FILES, DOCUMENTATION, SOURCE CODE, ... **LIBERALLY**. Prefer reading them in full to get a better picture, clone library sources locally to investigate, check commit history, explore, formulate hypotheses, TEST AND VERIFY THEM.
+- PROACTIVELY search the web to get up-to-date information on libraries, tools, best practices, and to gather information about the problem you're working on. Don't wait to be asked to do this.
+- When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
+- Provide evidence-backed recommendations rather than assumptions.
+
 </workflow>
 
 <git>
-- NEVER change the branch of the checkout you were invoked in — `git checkout`, `git switch`, `git checkout -b`, `gh pr checkout`. Agents sharing that tree commit onto whatever branch they land on. Branch work goes in your own tree. Only max or skill instructions override.
+- NEVER change the branch of the checkout you were invoked in. Agents sharing that checkout commit onto whatever branch they land on / it complicates worktree creation.
+- EVERY edit happens in a separate physical worktree on its own branch, mechanical one-liners included -- the invocation checkout is never an editing tree. Several agents are usually in flight; two "trivial" edits landing in the same tree is exactly the collision this prevents, so size is never a reason to skip it. Only max ("do it right here", "no wt", ...) or skill instructions override.
+- IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
+  - Never `git commit -a`/`-am`: it sweeps in every tracked file someone else modified mid-flight.
+  - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
+  - Before history-rewriting (amend, rebase), check if the commit was pushed.
+  - NEVER AMEND A COMMIT WITHOUT CHECKING WHETHER IT'S PUSHED ALREADY.
+- Never use `git add -[u|A|.]` without checking if there are files that shouldn't be committed / are not part of your work (don't mention to the user that they exist or that you skipped them, if it's not relevant) -> Prefer explicit file lists 
+
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /tmp so they don't clutter home.
-- Never use `git add -u` without checking if there are untracked files that shouldn't be committed.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
-- Always assume potential parallel work: The user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
-  - Avoid `git add -A` or `git add .` - untracked files may exist that shouldn't be committed. Prefer explicit file lists or `git add -u` (tracked files only).
-  - Never `git commit -a`/`-am`: it commits the whole index, including files the user staged mid-flight for their own commit. Commit with explicit paths instead (`git commit -m msg -- file1 file2`).
-  - Before history-rewriting (amend, rebase), check if the commit was pushed. When in doubt, make a new commit instead.
-  - NEVER AMMEND A COMMIT WITHOUT CHECKING WETHER IT'S PUSHED ALREADY
-  - If a file already carries foreign uncommitted hunks, don't `git add` the file; stage only your hunks (`git diff -- file > /tmp/p`, trim to your hunks, `git apply --cached /tmp/p`) and say in chat that foreign hunks remain.
-- Commit as you go without asking. The branch decision is the review decision: truly mechanical work goes directly on the integration branch; loose work driven interactively with the user may also land direct, gated by the light review before each batch is shown; anything else gets a feature branch in its own worktree — the human's checkout never switches branches — reviewed before it's shown, merged with `--no-ff` (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
+
+- Commit as you go without asking. The review gate scales with the work: truly mechanical needs none; loose work driven interactively with the user gets the light review before each batch is shown; anything else gets its full review. Then merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
 - Push freely — any branch, master included — once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours — anything hard to reverse, or with real cost (time, money, a broken system) when wrong.
 - Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, map/question tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow — that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
-<anti-patterns>
-
-- Swiss-army knife tools: avoid writing them, avoid using them. Specialized tools that do one thing well are almost always the superior choice. One-time operations don't need abstractions.
-
-- Don't add superfluous code comments. Superfluous comments are: "what comments", "meta commentary", fluff, ...
-- Don't explain your changes with code comments. Clarification should always happen BEFORE implementation, meta-commentary can be added to the commit, things that can not be figured out from the code alone/would save significant time/context go into `decisions/` (ADRs) or docs.
-- When to comment: non-obvious behavior, important warnings, complex algorithms.
-
-- Artifact text (docs, docstrings, UI copy, --help, ticket prose) is read cold — by someone without this conversation. Decisions-against ("never X") and change narration ("now uses Z") go in the commit message, the spec's out-of-scope section, or an ADR; the artifact states only what is.
-- One home per fact: what code, config, or --help already states, don't restate in prose — point or derive instead. A copy is a cache that goes stale; make one only when the lookup is expensive.
-
-- Don't suppress stderr when you're exploring or debugging. stderr is how you learn what went wrong. Only suppress it when you know the output is noise.
-
-- Don't write tests that just repeat the implementation. Tests should verify behavior, not mirror the code structure. Focus on edge cases, expected inputs/outputs, ...
-- Don't leave non-trivial logic without a check: a few plain asserts in a `__main__` block if the file has no real entrypoint (e.g. tiny-dim model, forward pass, assert shapes/finiteness), otherwise one small test file. No frameworks or fixtures unless asked; trivial one-liners need none.
-</anti-patterns>
-
-<code-style>
-- Organize files top-down (newspaper style): main/public functions first, helpers below in call order — each unit reads top-to-bottom.
-- Fail fast, fail loud: assert invariants in production, crash on violation — no silent fallbacks, swallowed errors, or no-op defaults.
-- Validate only at system boundaries (user input, external APIs); trust internal invariants.
-- No backwards-compatibility shims — just change the code. If that truly seems impossible, escalate.
-- Early returns over nested ifs; keep the happy path unindented.
-- Direct attribute access (`self.cfg.some_val`) over aliasing into temporaries — but do name the parts of otherwise hard to read expressions and complex conditions instead of packing them into one line.
-- Cleverness needs a reason: no metaclass-tier sorcery when a plain construct does. (An obscure-but-correct stdlib function still beats a new dependency or a hand-rolled version.)
-</code-style>
+<style>
+- **One home per fact**: what code, config, or --help already states, don't restate in prose — point or derive instead. A copy is a cache that goes stale; make one only when the lookup is expensive.
+- Don't add superfluous code comments. Superfluous comments are: "what comments", "meta commentary", fluff, ... -> Follow best practices for code clarity and maintainability instead (non-obvious behavior, important warnings, otherwise hard to understand code/complex algorithms); ephemeral meta-narration and explainers can go in diffview comments, for example, durable ones in artefact text, if load-bearing. Clarifications ideally were made before the tickets were cut, and else are addressed in chat / via the workflow afterwards (the ticket's closing comment), not in the artefact itself (code, ui, docs).
+- Artifact text (docs, docstrings, UI copy, --help, ticket prose) is read cold — by someone without this conversation. Decisions-against ("never X") and change narration ("now uses Z") go in the commit message, the spec's out-of-scope section, or an ADR; **the artifact states only what is**.
+- Organize files top-down (newspaper style)
+</style>
 
 <permissions>
 
@@ -135,7 +112,7 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 - Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
 - Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
 
-`diffview` — a diff as a self-contained HTML review page (`diffview --help`). "show me the diff" / "show the changes" means this. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it — a judgment call, why X beat Y, an assumption awaiting the user's ruling. `--watch` backgrounded at the start of an interactive session makes the work visible as it accretes.
+`diffview` — a diff as a self-contained HTML review page (`diffview --help`). "show me the diff" / "show the changes" means this. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it — a judgment call, why X beat Y, an assumption awaiting the user's ruling. Comments are saved by a server, so a page opened as a file is read-only: `diffview --serve <dir>` first (idempotent, returns immediately, exits when idle). `--watch` backgrounded at the start of an interactive session makes the work visible as it accretes.
 
 LaTeX — full TeX Live is installed on workstations (via Home Manager): `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
 
@@ -177,6 +154,21 @@ IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code 
 
 <taste>
 
+*Our guiding principles:*
+- Correctness, simplicity, maintainability, readability over cleverness. 
+- Unix philosophy.
+- File over app.
+- Simple over complex.
+- Aesthetics matter.
+- The zen of python.
+- Diversity leads to greatness. Think outside the box! 
+
+*These help us to:*
+- Build useful things.
+- Build things that last.
+- Build simple things that work well.
+- Fight complexity, embrace change.
+
 Good code requires good abstractions requires deep understanding.
 
 | Complexity | Simplicity |
@@ -192,10 +184,11 @@ Good code requires good abstractions requires deep understanding.
 | Conditionals | Rules |
 | Inconsistency | Consistency |
 
-- Before writing code, climb this ladder and stop at the first rung that holds: does it need to exist at all (YAGNI) → does this codebase already have it → stdlib → native platform feature (`<input type="date">` over a picker lib, DB constraint over app code) → already-installed dependency → can it be one line → only then, the minimum code that works. The ladder runs *after* you understand the problem, never instead of it.
-- Assess constructs by the artifacts they produce, not the experience of authoring them.
+- Before writing code, climb this ladder and stop at the first rung that holds: does it need to exist at all (YAGNI) → does this codebase already have it → stdlib → native platform feature / already-installed dependency → can it be one line → only then, the minimum code that works. The ladder runs *after* you understand the problem, never instead of it.
+- **Assess constructs by the artifacts they produce**, not the experience of authoring them.
 - Strictly separate what from how.
 - Represent data as data.
 - Abstractions should emerge from concrete implementations, not precede them.
 
 </taste>
+
