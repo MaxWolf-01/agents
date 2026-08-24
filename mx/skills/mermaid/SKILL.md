@@ -17,7 +17,7 @@ Use this skill to quickly validate Mermaid diagrams by parsing + rendering them 
 ### Validate a diagram
 
 ```bash
-validate-mermaid diagram.mmd [output.svg]
+bash <skill-dir>/tools/validate.sh diagram.mmd [output.svg]
 ```
 
 - Parses and renders the Mermaid source.
@@ -29,7 +29,7 @@ validate-mermaid diagram.mmd [output.svg]
 
 1. **If the diagram will live in Markdown**: draft it in a standalone `diagram.mmd` first (the tool only validates plain Mermaid files).
 2. Write/update `diagram.mmd`.
-3. Run `validate-mermaid diagram.mmd`.
+3. Run `bash <skill-dir>/tools/validate.sh diagram.mmd`.
 4. Fix any errors shown by the CLI.
 5. Once it validates, copy the Mermaid block into your Markdown file.
 

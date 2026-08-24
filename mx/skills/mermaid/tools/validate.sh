@@ -28,7 +28,8 @@ trap 'if [ "$CLEANUP" -eq 1 ]; then rm -f "$OUTPUT"; fi' EXIT
 echo "Validating: $INPUT"
 
 # Use mermaid-cli (mmdc) to parse and render. Errors mean invalid syntax.
-if npx -y @mermaid-js/mermaid-cli -i "$INPUT" -o "$OUTPUT" -q; then
+# Filter out JS stack traces, keep only the parse error.
+if npx -y @mermaid-js/mermaid-cli -i "$INPUT" -o "$OUTPUT" -q 2> >(grep -vE '^\s*at |^Parser3?\.' >&2); then
     echo "✓ Mermaid OK"
     echo ""
     echo "ASCII preview:"
