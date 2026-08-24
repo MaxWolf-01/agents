@@ -41,6 +41,7 @@ else renders fine and then cannot be opened.
 import datetime
 import hashlib
 import html
+import json
 import re
 import subprocess
 from collections import Counter
@@ -71,8 +72,9 @@ class Args:
 def main(args: Args) -> None:
     repo = (args.repo or args.tasks_root.parent.parent).resolve()
     project = repo.name
-    features = load_features(args.tasks_root)
-    tasks = load_tasks(args.tasks_root)
+    diffviews = args.tasks_root.parent / "diffviews"
+    features = load_features(args.tasks_root, diffviews)
+    tasks = load_tasks(args.tasks_root, diffviews)
     assert features or tasks, f"no feature dirs or task files in {args.tasks_root}"
     log = git_log(repo)
     stamp = content_stamp(project, features, tasks, log)
@@ -118,10 +120,10 @@ class Task:
     diffview: str | None
 
 
-def load_features(root: Path) -> list[Feature]:
+def load_features(root: Path, diffviews: Path) -> list[Feature]:
     features = []
     for d in sorted(p for p in root.iterdir() if p.is_dir()):
-        tickets = load_tickets(d)
+        tickets = load_tickets(d, diffviews / d.name)
         if not tickets:
             continue
         assert_safe_name(d.name)
@@ -137,7 +139,7 @@ def assert_safe_name(name: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
-def load_tasks(root: Path) -> list[Task]:
+def load_tasks(root: Path, diffviews: Path) -> list[Task]:
     tasks = []
     for path in sorted(root.glob("*.md")):
         assert_safe_name(path.stem)
@@ -150,15 +152,31 @@ def load_tasks(root: Path) -> list[Task]:
                 title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
                 status=str(meta.get("status", "open")),
                 body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
-                diffview=find_diffview(root.parent / "diffviews", f"{path.stem}.html"),
+                diffview=find_diffview(diffviews, diffviews, f"{path.stem}.html"),
             )
         )
     return tasks
 
 
-def find_diffview(directory: Path, pattern: str) -> str | None:
+def find_diffview(root: Path, directory: Path, pattern: str) -> str | None:
+    """The link to a ticket's review page: the served URL where one is up, the file otherwise.
+
+    Only a served page can save comments, so the http link is the one that makes the
+    page a review surface rather than a viewer.
+    """
     matches = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
-    return str(matches[-1].resolve()) if matches else None
+    if not matches:
+        return None
+    page = matches[-1].resolve()
+    port = serving_port(root)
+    return f"file://{page}" if port is None else f"http://127.0.0.1:{port}/{page.relative_to(root.resolve())}"
+
+
+def serving_port(root: Path) -> int | None:
+    try:
+        return int(json.loads((root / ".serve.json").read_text())["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def load_needs_human(path: Path) -> tuple[list[str], str | None]:
@@ -170,8 +188,7 @@ def load_needs_human(path: Path) -> tuple[list[str], str | None]:
     return entries, str(host) if host else None
 
 
-def load_tickets(tasks_dir: Path) -> list[Ticket]:
-    dv_dir = tasks_dir.parent.parent / "diffviews" / tasks_dir.name
+def load_tickets(tasks_dir: Path, dv_dir: Path) -> list[Ticket]:
     tickets = []
     for path in sorted(tasks_dir.glob("[0-9][0-9]-*.md")):
         meta, body = split_frontmatter(path.read_text())
@@ -186,7 +203,7 @@ def load_tickets(tasks_dir: Path) -> list[Ticket]:
                 blocked_by=[normalize_num(n) for n in blockers if "/" not in str(n)],
                 ext_by=[(str(n), ext_status(tasks_dir, str(n))) for n in blockers if "/" in str(n)],
                 body_html=render_body(body, tasks_dir.name),
-                diffview=find_diffview(dv_dir, f"{path.name[:2]}-*.html"),
+                diffview=find_diffview(dv_dir.parent, dv_dir, f"{path.name[:2]}-*.html"),
             )
         )
     done = {t.num for t in tickets if t.status == "done"}
@@ -483,7 +500,7 @@ def render_page(
 def dv_link(path: str | None) -> str:
     if not path:
         return ""
-    return (f'<a class="dv" href="file://{html.escape(path)}" target="_blank" '
+    return (f'<a class="dv" href="{html.escape(path)}" target="_blank" '
             f'onclick="event.stopPropagation()" title="{html.escape(path)}">diff</a>')
 
 

@@ -113,5 +113,6 @@ Every command below runs **on the worker host**: as written when that's this mac
   ```
   diffview '<repo>@<range>' ['<repo>@<range>' …] --notes agent/diffviews/<feature>/<NN>-<slug>.notes.json -o agent/diffviews/<feature>/<NN>-<slug>.html
   ```
+  Then `diffview --serve agent/diffviews` — idempotent, returns immediately, exits on its own when idle. Only a served page can save comments to disk, and the board links the served URL whenever it finds a server; a page opened as a file is a read-only viewer.
   The notes file is a pure projection of the ticket — two scans, no state of its own: assumption bullets become `notes` (`A3` → `"id": 3`), `Addressed:` lines become `resolved`. Rewrite it whole on every render; the user's own comments and overrides live in a state file beside the page that rendering never touches. `agent/diffviews/` is gitignored, so render here, never on the worker host.
 - **Cleanup after landing**: `git worktree remove <path>`, `git branch -d ticket/<feature>/<NN>-<slug>`, `tmux kill-session -t <session>` — on the worker host, plus the ticket branch you fetched into your own checkout.
