@@ -23,8 +23,8 @@ if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
     # Signal anyway: an orchestrator whose watcher never fires waits for its
     # fallback heartbeat instead of hearing about this.
-    echo "run-worker: no worker-prompt.md beside this script — copy it along with it" \
-        | tee "/tmp/$channel.status" >&2
+    printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
+        "no worker-prompt.md beside run-worker.sh" | tee "/tmp/$channel.status" >&2
     tmux wait-for -S "$channel"
     exit 1
 fi
