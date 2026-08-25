@@ -18,6 +18,16 @@ resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+prompt_file=$here/worker-prompt.md
+if [ ! -f "$prompt_file" ]; then
+    # Without it the worker would run on no instructions at all, and silently.
+    # Signal anyway: an orchestrator whose watcher never fires waits for its
+    # fallback heartbeat instead of hearing about this.
+    echo "run-worker: no worker-prompt.md beside this script — copy it along with it" \
+        | tee "/tmp/$channel.status" >&2
+    tmux wait-for -S "$channel"
+    exit 1
+fi
 
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
@@ -43,7 +53,7 @@ common=(
     --permission-mode "$permission_mode"
     --model "$model"
     --settings "$settings"
-    --append-system-prompt "$(cat "$here/worker-prompt.md")"
+    --append-system-prompt "$(cat "$prompt_file")"
 )
 
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
