@@ -64,7 +64,7 @@ Gather sufficient context, verify your assumptions and sources.
   - NEVER AMEND A COMMIT WITHOUT CHECKING WHETHER IT'S PUSHED ALREADY.
 - Never use `git add -[u|A|.]` without checking if there are files that shouldn't be committed / are not part of your work (don't mention to the user that they exist or that you skipped them, if it's not relevant) -> Prefer explicit file lists 
 
-- Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /tmp so they don't clutter home.
+- Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /var/tmp so they don't clutter home.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 
 - Commit as you go without asking. The review gate scales with the work: truly mechanical needs none; loose work driven interactively with the user gets the light review before each batch is shown; anything else gets its full review. Then merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
