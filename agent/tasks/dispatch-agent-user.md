@@ -76,3 +76,51 @@ Workers spawn with `--dangerously-skip-permissions` on this host. The isolation 
 - GPU work and training runs — separate instructions per project, not dispatch.
 - clankr containers as an alternative isolation mechanism.
 - A standalone script to add the clanker account as a `pull` collaborator on a repo — useful for clankr, unnecessary here.
+
+## Comments
+
+### Implementation, 2026-08-25
+
+The host exists and every acceptance criterion above is verified except the
+end-to-end dispatch run, which waits on the plugin release that carries these
+skill changes to the worker host.
+
+**Decided in session, beyond what this ticket asked for.** Each came out of
+working the ticket and was ruled on by max as it came up:
+
+- Workers get their own system prompt (`mx/skills/dispatch/worker-prompt.md`)
+  instead of the user CLAUDE.md, which is written for a human at a terminal.
+  Delivered on every host by `claudeMdExcludes` plus `--append-system-prompt`,
+  so a local worker gets it too. Auto memory off with it.
+- `$DISPATCH_WORKLOG`: a per-run line log the worker writes and the
+  orchestrator reads when a worker stops early, replacing pane scrollback as
+  the source for *why*.
+- Worker friction routes to the dispatcher, which fixes it or files it — the
+  reading half of a rule whose writing half already existed.
+- `/mx:mermaid` calls the validator it ships; `bin/validate-mermaid` is gone.
+- Six tools past the list in "What to build" — `curl`, `fd`, `jq`, `rg`,
+  `make`, `ast-grep` — because a worker without them reports blockers instead
+  of working.
+- Host selection by registry rather than `$MX_WORKER_HOST` is filed separately
+  as `dispatch-host-registry.md`.
+
+**Assumptions.** Mine, not decisions — reverse them freely:
+
+- A1 `nix/nixos/pc/agent-user.nix:44` — only zephyrus's key is authorized, so
+  dispatch from xmg19 falls back to local until its key is added. That host was
+  offline throughout.
+- A2 `mx/skills/dispatch/SKILL.md:19` — the plugin update and the permission
+  mode name `claude` explicitly, in a skill the repo asks to keep
+  harness-agnostic. Mechanics already names it throughout; the two setup steps
+  now do too.
+
+**Deviations from the ticket, both forced by what the host turned out to be:**
+
+- `virtualisation.docker.rootless.setSocketVariable` is *not* set, though the
+  ticket calls for it. Upstream exports `DOCKER_HOST` from `/etc/profile` for
+  every user, which would have moved max's docker CLI off the system daemon
+  silently. The agent gets it per-user instead, and the rootless daemon is
+  pinned to that user with `ConditionUser`.
+- The bare repo on the worker host is created empty rather than cloned. A user
+  with no GitHub credentials cannot clone a private repo, and shouldn't
+  authenticate for a public one.

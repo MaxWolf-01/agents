@@ -46,7 +46,9 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with the same discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
+Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/research/code-review-<axis>.md`."*
+
+Then the discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
 **Correctness brief** — include:
 
@@ -68,6 +70,8 @@ Every brief opens with the same discipline line: *"Read every touched file in fu
 ### 5. Aggregate
 
 The review is one message, written after every axis has returned. Nothing about findings goes out before that — no per-axis narration as reviewers land, no "Correctness came back clean, waiting on the others".
+
+Read the axes' report files, then delete them: their content lives in this message from here on.
 
 That last message is the only one that reliably gets read: the reader skims to the end of the turn, copies the review to another agent to act on, or — when this skill runs as a sub-agent — receives only the final message. So it has to stand alone. Every finding, its reasoning, and the fixed point it was reviewed against belong in it; don't reference an earlier message as if it were read.
 
