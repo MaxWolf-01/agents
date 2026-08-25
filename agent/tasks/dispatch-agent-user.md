@@ -98,7 +98,7 @@ working the ticket and was ruled on by max as it came up:
 - Worker friction routes to the dispatcher, which fixes it or files it — the
   reading half of a rule whose writing half already existed.
 - `/mx:mermaid` calls the validator it ships; `bin/validate-mermaid` is gone.
-- Four tools past the list in "What to build" — `curl`, `fd`, `jq`, `rg`,
+- Six tools past the list in "What to build" — `curl`, `fd`, `jq`, `rg`,
   `make`, `ast-grep` — because a worker without them reports blockers instead
   of working.
 - Host selection by registry rather than `$MX_WORKER_HOST` is filed separately
