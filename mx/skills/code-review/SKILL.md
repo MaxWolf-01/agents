@@ -46,7 +46,9 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with the same discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
+Every brief opens with two lines. First, delivery: *"Send your finished report back through the channel this spawn gives you, once, when you are done — printing it is not delivering it."* A reviewer that ends its turn holding the report leaves you waiting on a review that is already written, and pulling it back costs a round trip per axis.
+
+Then the discipline line: *"Read every touched file in full, plus the callers of anything changed — not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
 **Correctness brief** — include:
 
