@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 # Dispatch picks a worker host from the machines that have one, not from an env var
@@ -88,7 +88,7 @@ sessions were missed. They become `dispatch-<repo>-<feature>-<NN>`.
 - [x] `MX_WORKER_HOST` is gone from `nix/home/hosts/*.nix` and from every skill.
 - [x] A machine given a `<name>-agent` Home Manager config appears in
       `worker-hosts` without any other edit.
-- [ ] `ssh pc` reaches pc's tailnet address rather than whatever DNS answers.
+- [x] `ssh pc` reaches pc's tailnet address rather than whatever DNS answers.
 - [x] Worker sessions and channels carry the repo name.
 
 ## Out of scope
@@ -103,10 +103,10 @@ sessions were missed. They become `dispatch-<repo>-<feature>-<NN>`.
 
 ### Implementation, 2026-08-27
 
-Built. Every criterion is verified except the one that needs a switch on a
-running machine: `ssh pc` keeps resolving through DNS until `home-manager`
-runs here, and pc keeps serving the pre-split `~/HOST.md` until
-`nixos-rebuild` runs there.
+Built and switched here: `ssh -G pc` resolves to the tailnet address and
+`MX_WORKER_HOST` is set by nothing on disk. pc keeps serving the pre-split
+`~/HOST.md` until `nixos-rebuild` runs there, which changes what the record
+says rather than whether any of this works.
 
 Verified: `worker-hosts` prints pc in 0.3s and a down host in 5.1s (the connect
 timeout, paid once for all hosts at a time rather than once each); a throwaway
