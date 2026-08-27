@@ -85,7 +85,7 @@ Gather sufficient context, verify your assumptions and sources.
 *This is most relevant when you are *not* told you are running in auto-mode (so I'm not unnecessarily prompted for giving you permission), though best-practices (paralell vs. independent tool calls) and caution still apply.*
 
 - Don't chain shell commands (`&&`, `||`, `;`) — every chained command requires manual approval, which blocks async execution and stalls the agent. One command per Bash call is the default.
-  - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C` (at the end, so it doesnt bust permission rules), `npm --prefix`) instead.
+  - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead — both flags go before the subcommand, there is no trailing form.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
 - `ssh` commands: the permission system matches the remote command as tokens of the local command, which breaks two ways:
   - NEVER quote the remote command unless actually needed (spaces/metacharacters in arguments). Quotes are literal in the command string — `ssh host "cmd arg"` doesn't match the glob `ssh * cmd *` because `"cmd arg"` is one token. Always `ssh host cmd arg`. Exception: tmux commands with `-l` need quoting to preserve spaces — `ssh host "tmux send-keys -t sess -l 'text with spaces'"` — these will prompt for permission.
