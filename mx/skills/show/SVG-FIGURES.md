@@ -57,7 +57,7 @@ Then Read the PNG and fix what you see — overlaps, collisions, drift, dead spa
 
 ## The skin
 
-One accent, three type families, hairlines, no shadows. Everything below is a default to inherit or replace wholesale — but replace it as a set, because the pieces are balanced against each other.
+One accent, two type families, hairlines, no shadows. Everything below is a default to inherit or replace wholesale — but replace it as a set, because the pieces are balanced against each other.
 
 ### Tokens
 
@@ -73,6 +73,8 @@ One accent, three type families, hairlines, no shadows. Everything below is a de
 | `accent-tint` — fill behind accent strokes | `rgba(235,108,54,0.08)` | `rgba(240,138,89,0.10)` |
 | `link` — HTTP/API/external | `#2e5aa8` | `#6a95d8` |
 
+Implement the tokens as CSS custom properties, with the dark column in a `@media (prefers-color-scheme: dark)` override — a figure ships both schemes, neither is optional. Headless chromium follows the *system* scheme, so a render's scheme must be forced, never assumed: screenshot twice, each time injecting a `<style>` block that pins `:root` to one column's values, and look at both.
+
 **The accent is editorial, not a signalling system.** One or two elements per figure, chosen as the thing the reader should look at first. On five elements it signals nothing. If you want to accent four things, you have not yet decided what the figure is about. Everything else is ink, muted, or soft.
 
 Node treatments: focal is `accent-tint` on `accent`; a service or step is white on `ink`; a store is `ink @ 0.05` on `muted`; an external system is `ink @ 0.03` on `ink @ 0.30`; an optional or async node is `ink @ 0.02` on `ink @ 0.20` dashed `4,3`; a security boundary is `accent @ 0.05` on `accent @ 0.50` dashed `4,4`.
@@ -81,20 +83,22 @@ Strokes 0.8 / 1 / 1.2. Radius 4 on tags, 6 on nodes, 8 on containers. Never a `b
 
 ### Type
 
-Three families, each with one job. Mono is for content that *is* technical — ports, paths, URLs, field types, state transitions — never as a blanket "developer" texture, which is the single fastest way to make a figure look generated.
+Two families, each with one job. Mono is for content that *is* technical — ports, paths, URLs, field types, state transitions — never as a blanket "developer" texture, which is the single fastest way to make a figure look generated.
 
 | Role | Family | Size |
 |---|---|---|
-| Title | Instrument Serif 400 | 1.75rem |
+| Title | Geist 600 | 1.25rem |
 | Node name | Geist 600 | 12px |
 | Sublabel | Geist Mono | 9px |
 | Eyebrow / tag | Geist Mono 500, uppercase, 0.18em tracking | 7–8px |
 | Arrow label | Geist Mono, 0.06em tracking | 8px, ≤14 chars, all caps |
-| Editorial aside | Instrument Serif *italic* | 14px |
+| Aside | Geist 400, `soft` | 11px |
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 ```
+
+**Chrome text states; it never sells.** The title names what the figure shows; the subtitle, when one exists, is one factual sentence. No slogans, no coined phrases, no pitch-deck cadence — a title that argues or charms instead of naming gets rewritten to just name. The same register holds for asides inside the figure: a fact worth a line, nothing more.
 
 ### Markers and page
 
@@ -106,7 +110,7 @@ Define all three markers up front, then reference by role — muted for internal
 </marker>
 ```
 
-Page is an eyebrow in mono, an H1 in serif, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it.
+Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it.
 
 ### What the default skin rules out
 

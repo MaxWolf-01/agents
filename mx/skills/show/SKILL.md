@@ -20,6 +20,7 @@ Examples with delivery notes — an open set, not a menu; combining media is nor
 
 ## Produce and present
 
+- Facts in an artifact come from primary sources — the config, the code, the live system — never only from prose docs about them. Docs drift, and the artifact inherits the drift; a figure states things with more authority than the README it was cribbed from.
 - Artifacts go to `agent/show/<slug>/`; commit once the user has approved the final version, or once a decision rests on it. Use `~/Downloads/show/<slug>/` instead when the user wants it throwaway, when there's no repo to keep it in, or when the repo is the wrong home for it. Never `/tmp`: the sandboxed browser can't read it.
 - Look at your own render before presenting — Read the PNG, run the demo, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
 - Present it opened (`xdg-open`), with one line on what it shows and the absolute path.
