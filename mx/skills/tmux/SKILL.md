@@ -16,7 +16,7 @@ A command runs in tmux — never as a blocking one-shot Bash call — when any o
 
 ## Long jobs
 
-A job that must finish belongs on a machine that isn't going to suspend — `$MX_WORKER_HOST` names one where the environment sets it.
+A job that must finish belongs on a machine that isn't going to suspend — `worker-hosts` names the ones there are, where the environment provides such a command.
 
 For what has to run on a laptop, prefix it with `nosleep` — `nosleep uv run train.py`. Idle suspend counts keyboard and mouse input, not CPU load, so a detached tmux pane crunching for an hour looks exactly as idle as an empty desk and gets suspended out from under you. `nosleep` holds a systemd inhibitor for the job's lifetime — idle, sleep, and the lid switch — and releases it on exit; it is a no-op where there's nothing to inhibit.
 
