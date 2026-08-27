@@ -59,7 +59,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 When a term is resolved, update `CONTEXT.md` right there. Don't batch these up — capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
 
-`CONTEXT.md` should be totally devoid of implementation details. Do not treat `CONTEXT.md` as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
+`CONTEXT.md` is a glossary and nothing else. Right after a decision settles, the freshly-agreed mechanism feels like the definition — it isn't: the ADR or design doc you just wrote is its home. Touch an entry only when the term's meaning moved, not its implementation.
 
 ### Offer ADRs sparingly
 
