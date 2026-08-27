@@ -126,3 +126,6 @@ A gate that does not pass sends it round again: another subagent round when the
 gap is real work, a direct edit and a fresh yes when it is wording. A finding the
 session later invalidates, or max judges not worth filing, is dropped — the work
 already paid for itself by being understood.
+
+Dont ever add "happy to PR" or bs like that unless the user explicitly asks!
+
