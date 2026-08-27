@@ -80,16 +80,16 @@ sessions were missed. They become `dispatch-<repo>-<feature>-<NN>`.
 
 ## Acceptance criteria
 
-- [ ] `worker-hosts` lists every host with its state and lead paragraph, and a
+- [x] `worker-hosts` lists every host with its state and lead paragraph, and a
       down host returns a result instead of hanging.
-- [ ] A host that is down still shows its lead paragraph.
-- [ ] Dispatch's setup names the hosts it saw and which it chose, with no
+- [x] A host that is down still shows its lead paragraph.
+- [x] Dispatch's setup names the hosts it saw and which it chose, with no
       reference to `$MX_WORKER_HOST`.
-- [ ] `MX_WORKER_HOST` is gone from `nix/home/hosts/*.nix` and from every skill.
-- [ ] A machine given a `<name>-agent` Home Manager config appears in
+- [x] `MX_WORKER_HOST` is gone from `nix/home/hosts/*.nix` and from every skill.
+- [x] A machine given a `<name>-agent` Home Manager config appears in
       `worker-hosts` without any other edit.
 - [ ] `ssh pc` reaches pc's tailnet address rather than whatever DNS answers.
-- [ ] Worker sessions and channels carry the repo name.
+- [x] Worker sessions and channels carry the repo name.
 
 ## Out of scope
 
@@ -103,10 +103,10 @@ sessions were missed. They become `dispatch-<repo>-<feature>-<NN>`.
 
 ### Implementation, 2026-08-27
 
-Built. Every criterion is verified except the two that need a switch on a
-running machine — `~/HOST.md` on pc still holds the pre-split text, and
-zephylux still exports `MX_WORKER_HOST`, until `nixos-rebuild` runs there and
-`home-manager` here.
+Built. Every criterion is verified except the one that needs a switch on a
+running machine: `ssh pc` keeps resolving through DNS until `home-manager`
+runs here, and pc keeps serving the pre-split `~/HOST.md` until
+`nixos-rebuild` runs there.
 
 Verified: `worker-hosts` prints pc in 0.3s and a down host in 5.1s (the connect
 timeout, paid once for all hosts at a time rather than once each); a throwaway
@@ -128,3 +128,33 @@ spliced into the hand-written record.
 `dispatch/SKILL.md` and `tmux/SKILL.md` as a command the environment may or may
 not provide, the same shape `$MX_WORKER_HOST` had. A machine without it falls
 back to `ssh <host> cat HOST.md` and to running workers locally.
+
+### Review, 2026-08-27
+
+`/mx:code-review` against `master`, three axes. Fixed, each verified by running
+the command:
+
+- Three or more workers rendered as `a,b c,d`: `paste -sd', '` treats its
+  argument as a delimiter *list* and cycles it. Replaced by the loop that also
+  supplies the worktree directory the state list asked for and this first cut
+  had dropped.
+- Every ssh failure read as "unreachable". The probe discarded stderr, so an
+  unauthorized key looked exactly like a machine that was off — the case that
+  is one line of config away from working. It now reports
+  `pc — unreachable: nosuchuser@pc: Permission denied (publickey).`
+- Probe results were keyed by the host a record names rather than by the record,
+  so two records claiming one machine were handed each other's answers.
+- `worker-hosts <name>` on a down host printed a literal `@TOOLCHAIN@` and gave
+  no sign it had fallen back. It now says so on stderr and substitutes the
+  token; both ssh paths carry the same host-key policy, which they did not.
+- The lead paragraph cached the core count, the memory and the GPU model —
+  three facts the command prints live, three lines below it.
+- `setup`'s "Available:" list listed `pc-agent` twice, having started matching a
+  directory as well as a `.nix` file.
+- The note that dispatching from xmg19 needs its key on pc was deleted along
+  with the env var it sat beside; it moved to the key list itself.
+
+Rejected: **Divergent Change** on folding session namespacing into this ticket
+(max's call, made when the collision surfaced), and hoisting pc's address out
+of `common.nix`'s two entries into a binding, which would read as an exception
+in a file that spells every other host's address out in place.
