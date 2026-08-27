@@ -108,15 +108,17 @@ expensive to be caught on.
 ## Filing
 
 Drilling down is slow and mostly mechanical, so hand it to a subagent and carry on
-with the session's real work. Give it the finding, the repo, and this skill; it
-comes back with a body, not a filed issue.
+with the session's real work. Give it the finding, the repo, and this skill, and
+name the file it writes to — `agent/research/upstream-<repo>-<slug>.md`, holding
+the body, the duplicate search, and whatever it could not verify. It writes that
+file; it never files the issue.
 
 The main session then owns three gates, in order:
 
 1. **Sanity check** the body against what the session actually knows — the
    subagent worked from a brief and can have drifted.
-2. **Show max**: write the body to a file and `xdg-open` it, or paste it, so he
-   reads what would be published.
+2. **Show max**: `xdg-open` that file, or paste the body, so he reads what would
+   be published.
 3. **His explicit yes.** Then `gh issue create -R <repo>` with the label the
    template assigns, and report the URL back.
 
