@@ -32,7 +32,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin — `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it — don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers — don't skip it and wing the output.
 
