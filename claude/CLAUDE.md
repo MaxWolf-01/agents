@@ -150,6 +150,8 @@ NEVER use subagents to edit code or docs you're responsible for — edits stay w
 NEVER use subagents to read source code files, documentation, or knowledge files, unless you need to plan across many different aspects in a huge codebase or need to research 2-3 isolated things in parallel.
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
+When a subagent's output matters, tell it to write the report to a file and read that file — the return channel is not reliable. `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage, so spawn unnamed unless you have a reason not to.
+A subagent that goes idle without handing back a report has NOT stalled. Its transcript is at `~/.claude/projects/<project>/<session-id>/subagents/agent-*.jsonl` — never cat it, pull the final report with `jq -rs '[.[]|select(.type=="assistant")|.message.content[]?|select(.type=="text")|.text]|last'`. Read that before redoing any of the work yourself.
 </subagents>
 
 <taste>
