@@ -588,7 +588,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Before showing this work to the user for review, run /mx:code-review (the skill picks the right depth). Skip only for truly mechanical changes. Cadence: once per batch of changes shown to the user, not per commit.\\\"}}\" || true",
+            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[;&|(] *)git (-C +[^ ]+ +)?(-c +[^ ]+ +)*commit( |$)' && printf '%s' \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Before showing this work to the user for review, run /mx:code-review (the skill picks the right depth). Skip only when the change is mechanical — the exact edit was dictated, or no judgment went into it (rename, version bump); prose in skills/docs is reviewed like code. Cadence: once per batch of changes shown to the user, not per commit.\\\"}}\" || true",
             "timeout": 10
           }
         ]
