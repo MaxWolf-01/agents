@@ -98,3 +98,33 @@ sessions were missed. They become `dispatch-<repo>-<feature>-<NN>`.
   is usable, dispatch takes one; a preference belongs in a host's lead
   paragraph, not in a scheduler.
 - Anything about what a host *can* do — that is `HOST.md`, already built.
+
+## Comments
+
+### Implementation, 2026-08-27
+
+Built. Every criterion is verified except the two that need a switch on a
+running machine — `~/HOST.md` on pc still holds the pre-split text, and
+zephylux still exports `MX_WORKER_HOST`, until `nixos-rebuild` runs there and
+`home-manager` here.
+
+Verified: `worker-hosts` prints pc in 0.3s and a down host in 5.1s (the connect
+timeout, paid once for all hosts at a time rather than once each); a throwaway
+`xmg19-agent/HOST.md` appeared as an unreachable host with its lead paragraph
+and no other edit; `nix eval` of the agent's `HOST.md` shows the toolchain
+spliced into the hand-written record.
+
+**Decided in session, beyond what the ticket asked for:**
+
+- The probe reads uptime from `/proc/uptime` rather than `uptime -p`: procps is
+  not in the agent's toolchain, and the missing binary silently emptied the
+  field rather than failing.
+- `worker-hosts <name>` asks the host for its record and falls back to the
+  local copy, so the toolchain line is the real one whenever the host is up.
+- The `drop` block's comment in `common.nix` lost the half that explained why
+  `pc` had to be an address — the `pc` block above it now carries that.
+
+**Assumption.** Mine, not a decision: `worker-hosts` is named in
+`dispatch/SKILL.md` and `tmux/SKILL.md` as a command the environment may or may
+not provide, the same shape `$MX_WORKER_HOST` had. A machine without it falls
+back to `ssh <host> cat HOST.md` and to running workers locally.

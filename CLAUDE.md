@@ -4,7 +4,7 @@ This is my coding agent setup (mainly claude code).
 
 # Releasing mx
 
-Every machine installs `mx` from the marketplace, and `claude plugin update` is version-gated: it re-copies only when `mx/.claude-plugin/plugin.json` carries a version it doesn't have yet. So shipping skill edits is `make release-patch` (bump + commit; `release-minor|major` when the number should say more) then `git push` — a pre-push hook (`~/.dotfiles/git/hooks/mx-plugin-update-pre-push`) updates the plugin here and on `$MX_WORKER_HOST`. Unpushed and untagged edits exist nowhere: no version, no install.
+Every machine installs `mx` from the marketplace, and `claude plugin update` is version-gated: it re-copies only when `mx/.claude-plugin/plugin.json` carries a version it doesn't have yet. So shipping skill edits is `make release-patch` (bump + commit; `release-minor|major` when the number should say more) then `git push` — a pre-push hook (`~/.dotfiles/git/hooks/mx-plugin-update-pre-push`) updates the plugin on this machine; a worker host pulls its own version when dispatch sets a run up. Unpushed and untagged edits exist nowhere: no version, no install.
 
 # Resources
 
