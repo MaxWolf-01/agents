@@ -85,11 +85,8 @@ Gather sufficient context, verify your assumptions and sources.
 *This is most relevant when you are *not* told you are running in auto-mode (so I'm not unnecessarily prompted for giving you permission), though best-practices (paralell vs. independent tool calls) and caution still apply.*
 
 - Don't chain shell commands (`&&`, `||`, `;`) — every chained command requires manual approval, which blocks async execution and stalls the agent. One command per Bash call is the default.
-  - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead — both flags go before the subcommand, there is no trailing form.
+  - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
-- `ssh` commands: the permission system matches the remote command as tokens of the local command, which breaks two ways:
-  - NEVER quote the remote command unless actually needed (spaces/metacharacters in arguments). Quotes are literal in the command string — `ssh host "cmd arg"` doesn't match the glob `ssh * cmd *` because `"cmd arg"` is one token. Always `ssh host cmd arg`. Exception: tmux commands with `-l` need quoting to preserve spaces — `ssh host "tmux send-keys -t sess -l 'text with spaces'"` — these will prompt for permission.
-  - Never embed subshells: in `ssh host 'cmd_a $(cmd_b) ...'` the permission system sees `ssh *` and matches the first token, so `cmd_a` never gets its own check. If you need the output of one remote command to run another, run them as separate Bash calls: get the result locally, then use it in the next call.
 - Read-only commands are auto-approved in ~/.claude/settings.json.
 - For `gh api`: Always use `-X GET` explicitly (e.g., `gh api -X GET repos/owner/repo`) — this is the only form that's auto-approved. POST/PUT/DELETE will prompt.
 - ALWAYS prefer `fd` over `find` — unless it is not powerful enough, e.g. you actually want to delete something 
