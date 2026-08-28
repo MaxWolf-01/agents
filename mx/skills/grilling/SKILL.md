@@ -17,10 +17,10 @@ Each question is one decision, formatted like so:
       **(b)** <option>
       **(c)** <option>
 
-💡 <why you'd pick it, and what it costs>
+💡 <why you'd pick it, and what it costs — argued as the best expert in the field would>
 ```
 
-The question line states the decision and nothing else. The arrow marks the winner where it sits, so no scanning; every reason, consequence and preference lives under the 💡, which is the skim path — reading only the 💡 lines tells the user what you would build. Labelled options make answering cheap (`q1 -> a`, sharpened where they disagree). A decision over an open range takes concrete candidate values as its options.
+The question line states the decision and nothing else. The arrow marks the winner where it sits, so no scanning; every reason, consequence and preference lives under the 💡, which is the skim path — reading only the 💡 lines tells the user what you would build. Argue each 💡 as the best expert in that field would argue it — what they'd concretely choose here, what they'd reject about your current pick and why; recommend what that expert would judge correct, never what satisfies the stated constraints most cheaply. Labelled options make answering cheap (`q1 -> a`, sharpened where they disagree). A decision over an open range takes concrete candidate values as its options.
 
 Offer only options you would defend. Two live options beat three padded with one you dismiss in the same breath. **One live option means it is not a question** — it is a fact to look up, or a call to make and state as an assumption. Ask a yes/no only when both sides are named and both are live; a question shaped "accept my proposal?" leaves the user rubber-stamping and turns the 💡 into "yes".
 
