@@ -53,18 +53,14 @@ text{fill:var(--ink);}
 .sw-rust{fill:rgba(156,107,80,.18); stroke:#9c6b50; stroke-width:.8;}
 .legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
 .topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
-.scheme{flex:none; display:flex; border:1px solid var(--rule); border-radius:6px; overflow:hidden; background:var(--paper2);}
-.scheme button{font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:none; border:0; border-left:1px solid var(--rule); padding:5px 9px; cursor:pointer;}
-.scheme button:first-child{border-left:0;}
-.scheme button[aria-pressed="true"]{color:var(--paper); background:var(--ink);}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
 </style>
 </head>
 <body>
 <header class="topbar">
   <p class="eyebrow">mx workflow &middot; idea &rarr; ship</p>
-  <div class="scheme" role="group" aria-label="Color scheme">
-    <button data-scheme="">Auto</button><button data-scheme="light">Light</button><button data-scheme="dark">Dark</button>
-  </div>
+  <button class="scheme"></button>
 </header>
 <h1>Plan together, build AFK.</h1>
 <p class="dek">Alignment is built once, by interview, with the human in the loop. Everything downstream trades
@@ -202,10 +198,15 @@ in when a slice lands.</p>
   <text class="legend-text" x="956" y="618">one context window per ticket</text>
 </svg>
 <script>
-const root = document.documentElement, buttons = document.querySelectorAll('.scheme button');
-const apply = v => { root.style.colorScheme = v; buttons.forEach(b => b.setAttribute('aria-pressed', b.dataset.scheme === v)); };
-buttons.forEach(b => b.addEventListener('click', () => apply(b.dataset.scheme)));
-apply('');
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
 </script>
 </body>
 </html>

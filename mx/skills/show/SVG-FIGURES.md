@@ -1,6 +1,6 @@
 # Hand-authored SVG figures
 
-A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no JS, no build step. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
+A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step — and the few lines of JS the scheme toggle needs, nothing more. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
 
 Two other tools own neighbouring ground. **Charts belong to `dataviz`** — anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), including all the color decisions. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
 
@@ -81,7 +81,7 @@ Implement each token as one CSS custom property holding a `light-dark()` pair, u
 
 The pair resolves against the element's used color scheme, so `color-scheme` alone drives the whole figure and each token keeps one definition. Three consequences:
 
-- **Toggle** — a hairline-bordered `Auto` / `Light` / `Dark` control that sets `document.documentElement.style.colorScheme`; clearing it back to `""` returns to the system setting, so `Auto` stays reachable. It belongs on the page's header row, right-aligned with the content — `position: fixed` to a viewport corner strands it in the margin on a wide window.
+- **Toggle** — one hairline-bordered button that flips `document.documentElement.style.colorScheme` between `light` and `dark`, labelled with the scheme it switches *to*. Initialize the state from `matchMedia('(prefers-color-scheme: dark)')` so the first view matches the reader's system setting. It belongs on the page's header row, right-aligned with the content — `position: fixed` to a viewport corner strands it in the margin on a wide window.
 - **Render** — headless chromium ignores `--force-dark-mode` and `--blink-settings=preferredColorScheme` once `color-scheme` is declared, so pin it instead: screenshot twice, injecting `<style>:root{color-scheme:light}</style>` and then the `dark` variant, and look at both.
 - **Standalone `.svg`** — no scripting, so no toggle; it still carries the `light-dark()` tokens and gets both renders.
 
