@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Pane lifecycle for dispatch workers: spawn/resume, exit probe, session cleanup.
+# Runs on the worker host, from the feature's scratch dir. Git stays with the
+# orchestrator; this owns only tmux sessions, channels, and the state files.
+#
+# Usage: dispatch-ctl spawn <name> <worktree> <prompt-file> <ticket-path> <model> [session-id]
+#        dispatch-ctl probe
+#        dispatch-ctl cleanup <name>
+#   name        worker session name, dispatch-<repo>-<feature>-<NN>
+#   session-id  resume this conversation instead of starting a new one
+# Env:
+#   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
+#   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one)
+#
+# State, all plain text in this directory:
+#   manifest                     one line per run: name TAB channel TAB worktree
+#   /tmp/<channel>.status|.log   written by the runner (see run-worker.sh)
+#
+# Every tmux command is echoed before it runs, so a transcript shows the
+# primitives — anything this script does wrong can be redone by hand.
+set -u
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+manifest=$here/manifest
+runner=${DISPATCH_RUNNER:-$here/run-worker.sh}
+mode=${DISPATCH_PERMISSION_MODE:-auto}
+
+tmx() { echo "+ tmux $*" >&2; tmux "$@"; }
+
+spawn() {
+    name=$1 worktree=$2 prompt=$3 ticket=$4 model=$5
+    session_id=${6:-}
+    channel=$name-$(date +%s)
+
+    tmx has-session -t "=$name" 2>/dev/null || tmx new-session -d -s "$name" -c "$worktree"
+    tmx send-keys -t "$name" -l "DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $channel $session_id"
+    tmx send-keys -t "$name" Enter
+
+    # The runner creates the log within its first seconds; its absence means the
+    # command never ran — wrong pane, dead shell, bad path.
+    for _ in $(seq 30); do
+        [ -f "/tmp/$channel.log" ] && break
+        sleep 0.5
+    done
+    if [ ! -f "/tmp/$channel.log" ]; then
+        echo "spawn: no /tmp/$channel.log after 15s — the pane caught:" >&2
+        tmux capture-pane -p -J -t "$name" -S -15 >&2
+        exit 1
+    fi
+
+    printf '%s\t%s\t%s\n' "$name" "$channel" "$worktree" >> "$manifest"
+    echo "spawned $name  channel=$channel"
+    echo "watcher: tmux wait-for $channel"
+}
+
+probe() {
+    [ -f "$manifest" ] || { echo "no manifest — nothing spawned from $here" >&2; exit 1; }
+    # Last manifest line per name is the current run; earlier runs' status files
+    # are history, not state.
+    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree; do
+        if [ -f "/tmp/$channel.status" ]; then
+            echo "$name exited  $(cat "/tmp/$channel.status")"
+        else
+            echo "$name running  channel=$channel  log: $(tail -1 "/tmp/$channel.log" 2>/dev/null || echo -)"
+        fi
+    done
+}
+
+cleanup() {
+    name=$1
+    tmx kill-session -t "=$name" 2>/dev/null || echo "no session $name" >&2
+    if [ -f "$manifest" ]; then
+        awk -F'\t' -v n="$name" '$1 != n' "$manifest" > "$manifest.tmp"
+        mv "$manifest.tmp" "$manifest"
+    fi
+    echo "cleaned $name (its worktree and branch are the orchestrator's to remove)"
+}
+
+cmd=${1:?usage: dispatch-ctl spawn|probe|cleanup ...}
+shift
+case $cmd in
+    spawn)   spawn "$@" ;;
+    probe)   probe ;;
+    cleanup) cleanup "$@" ;;
+    *) echo "unknown command: $cmd" >&2; exit 1 ;;
+esac
