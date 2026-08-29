@@ -73,7 +73,17 @@ One accent, two type families, hairlines, no shadows. Everything below is a defa
 | `accent-tint` — fill behind accent strokes | `rgba(235,108,54,0.08)` | `rgba(240,138,89,0.10)` |
 | `link` — HTTP/API/external | `#2e5aa8` | `#6a95d8` |
 
-Implement the tokens as CSS custom properties, with the dark column in a `@media (prefers-color-scheme: dark)` override — a figure ships both schemes, neither is optional. Headless chromium follows the *system* scheme, so a render's scheme must be forced, never assumed: screenshot twice, each time injecting a `<style>` block that pins `:root` to one column's values, and look at both.
+Implement each token as one CSS custom property holding a `light-dark()` pair, under `color-scheme: light dark`:
+
+```css
+:root { color-scheme: light dark; --paper: light-dark(#f5f5f5, #2d3142); /* ... */ }
+```
+
+The pair resolves against the element's used color scheme, so `color-scheme` alone drives the whole figure and each token keeps one definition. Three consequences:
+
+- **Toggle** — a hairline-bordered `Auto` / `Light` / `Dark` control that sets `document.documentElement.style.colorScheme`; clearing it back to `""` returns to the system setting, so `Auto` stays reachable. It belongs on the page's header row, right-aligned with the content — `position: fixed` to a viewport corner strands it in the margin on a wide window.
+- **Render** — headless chromium ignores `--force-dark-mode` and `--blink-settings=preferredColorScheme` once `color-scheme` is declared, so pin it instead: screenshot twice, injecting `<style>:root{color-scheme:light}</style>` and then the `dark` variant, and look at both.
+- **Standalone `.svg`** — no scripting, so no toggle; it still carries the `light-dark()` tokens and gets both renders.
 
 **The accent is editorial, not a signalling system.** One or two elements per figure, chosen as the thing the reader should look at first. On five elements it signals nothing. If you want to accent four things, you have not yet decided what the figure is about. Everything else is ink, muted, or soft.
 
@@ -110,7 +120,7 @@ Define all three markers up front, then reference by role — muted for internal
 </marker>
 ```
 
-Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it.
+Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
 
 ### What the default skin rules out
 
