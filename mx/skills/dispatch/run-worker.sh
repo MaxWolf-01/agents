@@ -36,9 +36,8 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="/tmp/$channel.log"
-# Created here, never truncated: a resume keeps the earlier run's lines, and a file that
-# exists but is empty says the worker wrote nothing, where a missing one would leave the
-# orchestrator unable to tell that from a worklog it never got told about.
+# Created here so that an empty file says the worker wrote nothing, where a missing one
+# would leave the orchestrator unable to tell that from a worklog it never got told about.
 touch "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md is written for a human at a terminal: it tells its reader to ask, and
