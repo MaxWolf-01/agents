@@ -81,7 +81,7 @@ Implement each token as one CSS custom property holding a `light-dark()` pair, u
 
 The pair resolves against the element's used color scheme, so `color-scheme` alone drives the whole figure and each token keeps one definition. Three consequences:
 
-- **Toggle** — a fixed, hairline-bordered button in a page corner (`Light` / `Dark` / `Auto`, or a single icon cycling them) that sets `document.documentElement.style.colorScheme` to `light` or `dark`; clearing it back to `""` returns to the system setting.
+- **Toggle** — a hairline-bordered `Auto` / `Light` / `Dark` control that sets `document.documentElement.style.colorScheme`; clearing it back to `""` returns to the system setting, so `Auto` stays reachable. It belongs on the page's header row, right-aligned with the content — `position: fixed` to a viewport corner strands it in the margin on a wide window.
 - **Render** — headless chromium ignores `--force-dark-mode` and `--blink-settings=preferredColorScheme` once `color-scheme` is declared, so pin it instead: screenshot twice, injecting `<style>:root{color-scheme:light}</style>` and then the `dark` variant, and look at both.
 - **Standalone `.svg`** — no scripting, so no toggle; it still carries the `light-dark()` tokens and gets both renders.
 
@@ -120,7 +120,7 @@ Define all three markers up front, then reference by role — muted for internal
 </marker>
 ```
 
-Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it.
+Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom — never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
 
 ### What the default skin rules out
 

@@ -22,7 +22,7 @@ body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; 
 .eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
 h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
 .dek{font-size:13px; color:var(--muted); max-width:660px; line-height:1.5; margin:0 0 24px;}
-svg{display:block; max-width:1200px;}
+svg{display:block; width:100%; height:auto;}
 .mask{fill:var(--paper);}
 .chev1{fill:var(--wash1);} .chev2{fill:var(--wash2);} .chev3{fill:var(--wash3);}
 .lane-wash{fill:var(--wash-lane);}
@@ -52,17 +52,20 @@ text{fill:var(--ink);}
 .sw-mustard{fill:rgba(184,145,90,.20); stroke:#b8915a; stroke-width:.8;}
 .sw-rust{fill:rgba(156,107,80,.18); stroke:#9c6b50; stroke-width:.8;}
 .legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
-.scheme{position:fixed; top:16px; right:16px; display:flex; gap:0; border:1px solid var(--rule); border-radius:6px; overflow:hidden; background:var(--paper2);}
+.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.scheme{flex:none; display:flex; border:1px solid var(--rule); border-radius:6px; overflow:hidden; background:var(--paper2);}
 .scheme button{font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:none; border:0; border-left:1px solid var(--rule); padding:5px 9px; cursor:pointer;}
 .scheme button:first-child{border-left:0;}
 .scheme button[aria-pressed="true"]{color:var(--paper); background:var(--ink);}
 </style>
 </head>
 <body>
-<div class="scheme" role="group" aria-label="Color scheme">
-  <button data-scheme="">Auto</button><button data-scheme="light">Light</button><button data-scheme="dark">Dark</button>
-</div>
-<p class="eyebrow">mx workflow &middot; idea &rarr; ship</p>
+<header class="topbar">
+  <p class="eyebrow">mx workflow &middot; idea &rarr; ship</p>
+  <div class="scheme" role="group" aria-label="Color scheme">
+    <button data-scheme="">Auto</button><button data-scheme="light">Light</button><button data-scheme="dark">Dark</button>
+  </div>
+</header>
 <h1>Plan together, build AFK.</h1>
 <p class="dek">Alignment is built once, by interview, with the human in the loop. Everything downstream trades
 on it: the spec summarizes it, tickets slice it, implementation runs unattended on it — and taste comes back
