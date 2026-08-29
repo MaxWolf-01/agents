@@ -10,14 +10,21 @@
 #   session-id  resume this conversation instead of starting a new one
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
-#   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one)
+#   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
+#                             The contract a replacement owes: argv is
+#                             <prompt> <ticket> <model> <channel> [session-id];
+#                             it creates /tmp/<channel>.log within seconds of
+#                             starting, and at exit writes /tmp/<channel>.status
+#                             (key=value line, `session=` included) before
+#                             firing `tmux wait-for -S <channel>`.
 #
 # State, all plain text in this directory:
 #   manifest                     one line per run: name TAB channel TAB worktree
-#   /tmp/<channel>.status|.log   written by the runner (see run-worker.sh)
+#   /tmp/<channel>.status|.log   written by the runner
 #
-# Every tmux command is echoed before it runs, so a transcript shows the
-# primitives — anything this script does wrong can be redone by hand.
+# Every tmux command that changes something is echoed before it runs, so a
+# transcript shows the primitives — anything this script does wrong can be
+# redone by hand.
 set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -27,12 +34,28 @@ mode=${DISPATCH_PERMISSION_MODE:-auto}
 
 tmx() { echo "+ tmux $*" >&2; tmux "$@"; }
 
+current_channel() { # newest manifest channel for a name, empty if none
+    [ -f "$manifest" ] || return 0
+    tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print $2; exit }'
+}
+
+run_state() { # exited | running | gone
+    [ -f "/tmp/$1.status" ] && { echo exited; return; }
+    pgrep -f "$1" >/dev/null && { echo running; return; }
+    echo gone
+}
+
 spawn() {
     name=$1 worktree=$2 prompt=$3 ticket=$4 model=$5
     session_id=${6:-}
+    prev=$(current_channel "$name")
+    if [ -n "$prev" ] && [ "$(run_state "$prev")" = running ]; then
+        echo "spawn: $name is still running channel=$prev — a line typed into its pane now would launch a second worker when it exits" >&2
+        exit 1
+    fi
     channel=$name-$(date +%s)
 
-    tmx has-session -t "=$name" 2>/dev/null || tmx new-session -d -s "$name" -c "$worktree"
+    tmux has-session -t "=$name" 2>/dev/null || tmx new-session -d -s "$name" -c "$worktree"
     tmx send-keys -t "$name" -l "DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $channel $session_id"
     tmx send-keys -t "$name" Enter
 
@@ -48,7 +71,7 @@ spawn() {
         exit 1
     fi
 
-    printf '%s\t%s\t%s\n' "$name" "$channel" "$worktree" >> "$manifest"
+    ( flock 9; printf '%s\t%s\t%s\n' "$name" "$channel" "$worktree" >> "$manifest" ) 9>>"$manifest.lock"
     echo "spawned $name  channel=$channel"
     echo "watcher: tmux wait-for $channel"
 }
@@ -58,29 +81,38 @@ probe() {
     # Last manifest line per name is the current run; earlier runs' status files
     # are history, not state.
     tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree; do
-        if [ -f "/tmp/$channel.status" ]; then
-            echo "$name exited  $(cat "/tmp/$channel.status")"
-        else
-            echo "$name running  channel=$channel  log: $(tail -1 "/tmp/$channel.log" 2>/dev/null || echo -)"
-        fi
+        case $(run_state "$channel") in
+            exited)  echo "$name exited  channel=$channel  $(cat "/tmp/$channel.status")" ;;
+            running) echo "$name running  channel=$channel  log: $(tail -1 "/tmp/$channel.log" 2>/dev/null || echo -)" ;;
+            # No status file and no runner process: killed pane, killed session,
+            # or rebooted host. No status is coming and the channel will never
+            # fire — treat like an unrecoverable session, not like running.
+            gone)    echo "$name gone  channel=$channel  (runner dead without a status file)" ;;
+        esac
     done
 }
 
 cleanup() {
     name=$1
-    tmx kill-session -t "=$name" 2>/dev/null || echo "no session $name" >&2
+    if tmux has-session -t "=$name" 2>/dev/null; then
+        tmx kill-session -t "=$name"
+    else
+        echo "no session $name" >&2
+    fi
     if [ -f "$manifest" ]; then
-        awk -F'\t' -v n="$name" '$1 != n' "$manifest" > "$manifest.tmp"
-        mv "$manifest.tmp" "$manifest"
+        ( flock 9
+          awk -F'\t' -v n="$name" '$1 != n' "$manifest" > "$manifest.tmp"
+          mv "$manifest.tmp" "$manifest"
+        ) 9>>"$manifest.lock"
     fi
     echo "cleaned $name (its worktree and branch are the orchestrator's to remove)"
 }
 
-cmd=${1:?usage: dispatch-ctl spawn|probe|cleanup ...}
-shift
+cmd=${1:-}
 case $cmd in
-    spawn)   spawn "$@" ;;
-    probe)   probe ;;
-    cleanup) cleanup "$@" ;;
+    spawn)      shift; spawn "$@" ;;
+    probe)      probe ;;
+    cleanup)    shift; cleanup "$@" ;;
+    -h|--help|"") sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
     *) echo "unknown command: $cmd" >&2; exit 1 ;;
 esac
