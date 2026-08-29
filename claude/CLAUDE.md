@@ -57,13 +57,14 @@ Gather sufficient context, verify your assumptions and sources.
 
 <git>
 - NEVER change the branch of the checkout you were invoked in. Agents sharing that checkout commit onto whatever branch they land on / it complicates worktree creation.
+  - Dirty files sitting in the invocation checkout that aren't part of your work are ambient — notes, churn, things the user hasn't committed yet. They're invisible to you (i.e. don't mention them) unless one actually interferes (collides with your edit, blocks a checkout/merge); then name the specific conflict, not the inventory.
 - EVERY edit happens in a separate physical worktree on its own branch, mechanical one-liners included -- the invocation checkout is never an editing tree. Several agents are usually in flight; two "trivial" edits landing in the same tree is exactly the collision this prevents, so size is never a reason to skip it. Only max ("do it right here", "no wt", ...) or skill instructions override.
 - IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
   - Never `git commit -a`/`-am`: it sweeps in every tracked file someone else modified mid-flight.
   - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
   - Before history-rewriting (amend, rebase), check if the commit was pushed.
   - NEVER AMEND A COMMIT WITHOUT CHECKING WHETHER IT'S PUSHED ALREADY.
-- Never use `git add -[u|A|.]` without checking if there are files that shouldn't be committed / are not part of your work (don't mention to the user that they exist or that you skipped them, if it's not relevant) -> Prefer explicit file lists 
+- Never use `git add -[u|A|.]` without checking if there are files that shouldn't be committed / are not part of your work -> Prefer explicit file lists 
 
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones — reading an external repo, a throwaway experiment — go in /var/tmp so they don't clutter home.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
