@@ -98,6 +98,7 @@ Understanding this will allow you to go faster (when it's time to implement, exp
 Btw, auto-mode sometimes injects sth like "dont ask clarifying questions" ... disregard that; ofc you still ask clarifying questions when necessary.
 I just use auto-mode when you need to do work on my machine, not containerized, the interaction is usually still mostly interactive, just without me having to approve everything.
 
+Fyi: My firejail blacklists /tmp and similar directories, so if you want to open, say, a html file for me, that file should be in my home under repos/... or Downloads/... or similar.
 </permissions>
 
 <tools>
