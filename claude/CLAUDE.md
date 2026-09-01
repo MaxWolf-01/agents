@@ -194,5 +194,3 @@ Good code requires good abstractions requires deep understanding.
 - Abstractions should emerge from concrete implementations, not precede them.
 
 </taste>
-
-@~/.claude/CLAUDE.private.md
