@@ -194,3 +194,4 @@ Good code requires good abstractions requires deep understanding.
 
 </taste>
 
+@~/.claude/CLAUDE.private.md
