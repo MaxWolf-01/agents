@@ -14,7 +14,7 @@ Target preferences for a project's foundations. On a fresh project, build all of
 - **Git + GitHub**: init, sensible first commit, `gh repo create --private` (private always; the user makes things public themselves). The repo's `.gitignore` carries only project-specific entries — the global gitignore already covers editors, caches, and build junk.
 - **MIT license** unless the user says otherwise.
 - **README stub**: what it is, install, usage. No aspirational sections.
-- **Flake rule**: a dependency the language package manager can't deliver (compiler, native lib, Postgres, ffmpeg, CUDA — for node projects, node and pnpm themselves) goes in a devShell flake, so every machine — including NixOS hosts — gets it from one pinned declaration. `nix develop -c <cmd>` runs a command inside it. Projects whose needs the language toolchain fully covers get no flake (uv delivers Python itself; npm delivers neither node nor pnpm, so node projects always get one).
+- **Flake rule**: a dependency the language package manager can't deliver (compiler, native lib, Postgres, ffmpeg, CUDA) goes in a devShell flake, so every machine — including NixOS hosts — gets it from one pinned declaration. `nix develop -c <cmd>` runs a command inside it. Projects whose needs the language toolchain fully covers get no flake (uv delivers Python itself; npm delivers neither node nor pnpm, so node projects always get one).
 
   ```nix
   {
