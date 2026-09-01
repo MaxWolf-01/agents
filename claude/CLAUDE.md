@@ -27,6 +27,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 - "idk|idfk" ... blank or fatigued -- give me options, show dont tell, prototype, help me make up my find, make it easy to understand, break it down, lead with a suggestion yourself, etc. pp. 
 - "wf" (wrong frame?) ... hunch that we're solving inside an inherited/assumed frame -- stop, name the premise the current plan/options share, give the strongest option outside it, reassess before continuing
 - "ro" ... read only investigation. gather intel / answer the question and report back without taking action.
+- "iiuc|iirc" ... I'm stating something the way I understand it or remember it, and am not entirely sure about it; this is a nudge for you to make exra sure to correct me if wrong or unclear and to check facts yourself.
 
 </max>
 
