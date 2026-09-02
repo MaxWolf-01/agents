@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hub files — why the rebases keep coming</title>
+<style>
+  :root {
+    --paper: #f7f8f6;
+    --ink: #16191c;
+    --dim: #6b7480;
+    --rule: #d9ddd8;
+    --add: #2f7a4a;
+    --add-bg: #e6f2ea;
+    --del: #b03a2e;
+    --del-bg: #fbe9e7;
+    --lock: #2f5d8a;
+    --lock-bg: #e5edf5;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 32px 96px; }
+
+  /* The conflict marker is the page's structural device: every section that
+     describes a collision opens with one. */
+  .marker {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 10px;
+  }
+  .marker::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(26px, 4.2vw, 40px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 14px;
+  }
+  h2 {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--dim);
+    margin: 0 0 8px;
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  .lede { font-size: 17px; color: #333a42; max-width: 72ch; }
+  section { margin-top: 54px; }
+  .note { font-size: 13.5px; color: var(--dim); max-width: 72ch; }
+
+  table.probe { border-collapse: collapse; font-family: var(--mono); font-size: 13.5px; margin: 14px 0 10px; }
+  table.probe td { padding: 3px 0; }
+  table.probe td.n { text-align: right; padding-right: 14px; color: var(--dim); width: 3ch; }
+  table.probe td.meter { padding-right: 14px; }
+  table.probe .fill { display: block; height: 9px; background: var(--ink); border-radius: 1px; }
+  table.probe tr.hub .fill { background: var(--del); }
+  table.probe tr.hub td.f { color: var(--del); }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    margin: 0;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  pre .c { color: var(--dim); }
+  pre .t { color: var(--del); }
+  pre .k { color: var(--lock); }
+  pre .hunk { background: var(--del-bg); display: block; margin: 0 -16px; padding: 0 16px; }
+  pre .fixed { background: var(--add-bg); display: block; margin: 0 -16px; padding: 0 16px; }
+  figcaption { font-size: 12.5px; color: var(--dim); margin-top: 8px; font-family: var(--mono); }
+  figure { margin: 0; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+  .door { border-top: 2px solid var(--ink); padding-top: 14px; }
+  .door.seam { border-top-color: var(--add); }
+
+  /* schedule bars */
+  .sched { font-family: var(--mono); font-size: 12px; margin: 12px 0 6px; }
+  .row { display: grid; grid-template-columns: 12ch 1fr; align-items: center; gap: 10px; margin-bottom: 5px; }
+  .row span.lbl { color: var(--dim); }
+  .track { position: relative; height: 20px; background: #fff; border: 1px solid var(--rule); border-radius: 2px; }
+  .bar { position: absolute; top: 2px; bottom: 2px; border-radius: 1px; display: flex; align-items: center; padding: 0 6px; font-size: 10.5px; color: #fff; white-space: nowrap; }
+  .bar.work { background: #3d444c; }
+  .bar.hub { background: var(--lock); }
+  .bar.redo { background: var(--del); }
+  .bar.wait { background: repeating-linear-gradient(45deg, #e3e6e2, #e3e6e2 4px, #f2f4f1 4px, #f2f4f1 8px); color: var(--dim); border: 1px solid var(--rule); }
+
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  strong.hl { background: var(--del-bg); padding: 0 3px; }
+  strong.ok { background: var(--add-bg); padding: 0 3px; }
+  @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="kicker">dispatch · v0-core-loop</p>
+  <h1>Five tickets, one file,<br />the same two hunks.</h1>
+  <p class="lede">
+    The rebase churn isn't bad luck and it isn't 20 tickets colliding at random. A handful of files
+    absorb an edit from nearly every ticket. Those are the <em>hub files</em>, and there are exactly
+    two ways out: make tickets take turns on them, or make tickets stop needing them.
+  </p>
+
+  <section>
+    <p class="marker">&lt;&lt;&lt;&lt;&lt;&lt;&lt; which files are hubs</p>
+    <h2>The orchestrator can measure this, not guess it</h2>
+    <p>
+      One command over what the feature has already landed. Run on skilltree just now — the top five
+      are touched by a third to a half of every ticket in the feature:
+    </p>
+    <pre><span class="c">git log --format= --name-only --no-merges &lt;feature-base&gt;..HEAD \
+  | sort | uniq -c | sort -rn | head</span></pre>
+    <table class="probe">
+      <tr class="hub"><td class="n">8</td><td class="meter"><span class="fill" style="width:160px"></span></td><td class="f">src/server/http.ts</td></tr>
+      <tr class="hub"><td class="n">6</td><td class="meter"><span class="fill" style="width:120px"></span></td><td class="f">src/cli/serve.ts</td></tr>
+      <tr class="hub"><td class="n">5</td><td class="meter"><span class="fill" style="width:100px"></span></td><td class="f">web/src/App.svelte</td></tr>
+      <tr class="hub"><td class="n">5</td><td class="meter"><span class="fill" style="width:100px"></span></td><td class="f">src/store/mutate.ts</td></tr>
+      <tr class="hub"><td class="n">5</td><td class="meter"><span class="fill" style="width:100px"></span></td><td class="f">src/store/index.ts</td></tr>
+      <tr><td class="n">4</td><td class="meter"><span class="fill" style="width:80px"></span></td><td class="f">web/src/lib/chat/ChatWindow.svelte</td></tr>
+      <tr><td class="n">3</td><td class="meter"><span class="fill" style="width:60px"></span></td><td class="f">test/driver.test.ts</td></tr>
+      <tr><td class="n">1</td><td class="meter"><span class="fill" style="width:20px"></span></td><td class="f">…the long tail: most files, one ticket each</td></tr>
+    </table>
+    <p class="note">
+      The orchestrator named the first three by feel and missed the two store files. This is the same
+      list, produced from data, sharpening every time a ticket lands.
+    </p>
+  </section>
+
+  <section>
+    <p class="marker">======= why they conflict</p>
+    <h2>Every ticket writes to the same two places</h2>
+    <p>
+      Here is the real <span style="font-family:var(--mono)">App.svelte</span>, with the ticket that
+      added each line. It is 57 lines long and five tickets edited it — but not five different
+      regions. <strong class="hl">Two</strong>: the import block and the panel column.
+    </p>
+    <figure>
+<pre>&lt;script lang="ts"&gt;
+<span class="hunk">  import ChatWindow       from "$lib/chat/ChatWindow.svelte";       <span class="t">// 07</span>
+  import QuizPanel        from "$lib/quiz/QuizPanel.svelte";        <span class="t">// 12</span>
+  import ReviewPanel      from "$lib/sr/ReviewPanel.svelte";        <span class="t">// 15</span>
+  import SuggestionsCorner from "$lib/suggest/SuggestionsCorner.svelte"; <span class="t">// 19</span>
+  import Viewport         from "$lib/view/Viewport.svelte";         <span class="t">// 10</span></span>
+&lt;/script&gt;
+
+  <span class="c">&lt;!-- the right-hand column --&gt;</span>
+  &lt;div class="… flex flex-col items-end gap-3"&gt;
+<span class="hunk">    &lt;SuggestionsCorner /&gt;                                          <span class="t">// 19</span>
+    &lt;div class="pointer-events-auto w-full min-h-0 overflow-y-auto"&gt;
+      &lt;QuizPanel /&gt;                                                <span class="t">// 12</span>
+      &lt;ReviewPanel /&gt;                                              <span class="t">// 15</span></span>
+    &lt;/div&gt;
+  &lt;/div&gt;</pre>
+      <figcaption>shaded = the two hunks every frontend ticket lands in</figcaption>
+    </figure>
+    <p class="note" style="margin-top:14px">
+      Git conflicts on <em>adjacent</em> lines, so five tickets appending to one sorted import block
+      is close to a guaranteed collision. Each ticket's own diff looks fine in review — one import,
+      one tag. Only the orchestrator, watching tickets converge, can see the file is a hub at all.
+    </p>
+  </section>
+
+  <section>
+    <p class="marker">&gt;&gt;&gt;&gt;&gt;&gt;&gt; two ways out</p>
+    <h2>Take turns, or stop needing to</h2>
+    <p>Same problem, two different levels. One is a scheduling rule; the other deletes the hub.</p>
+
+    <div class="two">
+
+      <div class="door">
+        <h3>DOOR 1 — take turns (scheduling)</h3>
+        <p style="font-size:14px">
+          A hub file is a <strong>lock</strong>: at most one in-flight ticket may hold it. Everything
+          that doesn't touch it still runs in parallel. That's a much weaker condition than the
+          current rule, which asks for fully disjoint file sets and therefore never fires.
+        </p>
+        <p class="kicker" style="margin-top:18px">today — wave of four</p>
+        <div class="sched">
+          <div class="row"><span class="lbl">15 · http.ts</span><div class="track"><div class="bar work" style="left:0;width:44%">implement</div><div class="bar" style="left:44%;width:8%;background:var(--add)"></div></div></div>
+          <div class="row"><span class="lbl">19 · http.ts</span><div class="track"><div class="bar work" style="left:0;width:56%">implement</div><div class="bar redo" style="left:56%;width:22%">rebase</div><div class="bar redo" style="left:78%;width:22%">rebase again</div></div></div>
+          <div class="row"><span class="lbl">16 · store</span><div class="track"><div class="bar work" style="left:0;width:62%">implement</div><div class="bar redo" style="left:62%;width:26%">rebase</div></div></div>
+          <div class="row"><span class="lbl">22 · own files</span><div class="track"><div class="bar work" style="left:0;width:70%">implement</div><div class="bar" style="left:70%;width:8%;background:var(--add)"></div></div></div>
+        </div>
+        <p class="kicker" style="margin-top:18px">with the lock</p>
+        <div class="sched">
+          <div class="row"><span class="lbl">15 · http.ts</span><div class="track"><div class="bar hub" style="left:0;width:44%">holds http.ts</div><div class="bar" style="left:44%;width:8%;background:var(--add)"></div></div></div>
+          <div class="row"><span class="lbl">19 · http.ts</span><div class="track"><div class="bar wait" style="left:0;width:52%">waits — next wave</div><div class="bar hub" style="left:52%;width:40%">holds http.ts</div></div></div>
+          <div class="row"><span class="lbl">16 · store</span><div class="track"><div class="bar work" style="left:0;width:62%">implement</div><div class="bar" style="left:62%;width:8%;background:var(--add)"></div></div></div>
+          <div class="row"><span class="lbl">22 · own files</span><div class="track"><div class="bar work" style="left:0;width:70%">implement</div><div class="bar" style="left:70%;width:8%;background:var(--add)"></div></div></div>
+        </div>
+        <p class="note">
+          Ticket 19 starts later and finishes earlier, because it never pays for two rebases. Tickets
+          16 and 22 are unaffected — the lock is per file, not per wave.
+        </p>
+      </div>
+
+      <div class="door seam">
+        <h3>DOOR 2 — stop needing to (structure)</h3>
+        <p style="font-size:14px">
+          The hub exists because the panel list is <em>hand-maintained</em>. Make the list something
+          the app discovers, and a ticket adds its own file instead of editing a shared one.
+        </p>
+        <figure style="margin-top:16px">
+<pre><span class="c">// web/src/lib/panels.ts — written once, by the seam ticket</span>
+<span class="k">const</span> mods = import.meta.glob("./*/panel.ts", { eager: <span class="k">true</span> });
+<span class="k">export const</span> panels = Object.values(mods)
+  .map((m) =&gt; m.panel).sort((a, b) =&gt; a.order - b.order);</pre>
+          <figcaption>the registry — Vite scans the directory at build time</figcaption>
+        </figure>
+        <figure style="margin-top:14px">
+<pre><span class="c">&lt;!-- App.svelte — now fixed. No ticket opens it. --&gt;</span>
+<span class="fixed">  &lt;div class="… flex flex-col items-end gap-3"&gt;
+    {#each panels as p}
+      &lt;svelte:component this={p.component} /&gt;
+    {/each}
+  &lt;/div&gt;</span></pre>
+          <figcaption>the hub becomes a loop, and stops changing</figcaption>
+        </figure>
+        <figure style="margin-top:14px">
+<pre><span class="c">// web/src/lib/sr/panel.ts — ticket 15's ENTIRE registration</span>
+<span class="k">import</span> ReviewPanel <span class="k">from</span> "./ReviewPanel.svelte";
+<span class="k">export const</span> panel = { component: ReviewPanel, order: 30 };</pre>
+          <figcaption>a new file, owned by one ticket — nothing to conflict with</figcaption>
+        </figure>
+        <p class="note" style="margin-top:14px">
+          Ticket 15 and ticket 19 now write to different paths that have never existed before. The
+          merge is trivial by construction. Same move for <span style="font-family:var(--mono)">http.ts</span>
+          (route modules) and <span style="font-family:var(--mono)">serve.ts</span> (command table).
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <p class="marker">&lt;&lt;&lt;&lt;&lt;&lt;&lt; how they fit together</p>
+    <h2>The probe decides which door</h2>
+    <p>
+      They aren't alternatives so much as a threshold. The measurement in section one is what tells
+      you which you're in:
+    </p>
+    <table class="probe" style="font-size:14px">
+      <tr><td class="n" style="width:8ch;color:var(--ink)">2–3</td><td class="f" style="padding-right:20px">tickets on a file</td><td>take turns — the lock costs one delayed spawn</td></tr>
+      <tr class="hub"><td class="n" style="width:8ch">4+</td><td class="f" style="padding-right:20px">tickets on a file</td><td style="color:var(--ink)">build the seam — the lock would serialize the feature</td></tr>
+    </table>
+    <p class="note" style="margin-top:16px">
+      Above the threshold the lock stops being a scheduling tweak and becomes a queue: with five
+      tickets waiting on <span style="font-family:var(--mono)">http.ts</span>, taking turns is just
+      dispatch doing serial work in an expensive way. That's the point where a seam ticket lands
+      first, alone, and the wave behind it runs wide.
+    </p>
+  </section>
+
+</div>
+</body>
+</html>
