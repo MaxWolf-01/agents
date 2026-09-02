@@ -1,0 +1,1 @@
+/home/max/repos/obsidian/knowledge-base/library/full-walkthrough-workflow-for-ai-coding-matt-pocock/full-walkthrough-workflow-for-ai-coding-matt-pocock.md
