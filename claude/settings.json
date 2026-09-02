@@ -470,7 +470,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "claude-fable-5-1[1m]",
   "skillOverrides": {
     "code-review": "off",
     "review": "off",
@@ -536,6 +536,7 @@
     }
   },
   "outputStyle": "max",
+  "feedbackDrafts": "quiet",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "promptSuggestionEnabled": false,
@@ -547,11 +548,14 @@
     "enabled": true,
     "mode": "hold"
   },
+  "timeFormat": "24-hour",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-ansi",
   "verbose": true,
+  "preferredNotifChannel": "ghostty",
   "autoCompactEnabled": false,
   "switchModelsOnFlag": false,
+  "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
