@@ -5,7 +5,7 @@ description: Must read guide on creating/editing CLIs or any Python script that 
 
 # CLI Scripts with tyro
 
-All Python CLI scripts use tyro for argument parsing — never argparse, click, or fire. tyro generates CLIs from type annotations with zero boilerplate, and `--help` output is derived directly from docstrings and type hints.
+All Python CLI scripts use tyro for argument parsing, never argparse, click, or fire. tyro generates CLIs from type annotations with zero boilerplate, and `--help` output is derived directly from docstrings and type hints.
 
 ## Core Principles
 
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
 ### Pattern 2a: Decorator Subcommands (preferred for extensible CLIs)
 
-`tyro.extras.SubcommandApp` — click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
+`tyro.extras.SubcommandApp`: click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
 
 ```python
 import tyro
@@ -153,7 +153,7 @@ config = tyro.cli(Config)
 
 ### Scope: the CLI, not the workflow
 
-`--help` describes the tool — what each flag accepts, what it rejects, what the tool does with it. Process lives elsewhere: who runs this, in what order, what to do with the output. A help string that prescribes process is a second copy of a policy some skill or doc already owns, and it is the copy nobody updates when the policy changes.
+`--help` describes the tool: what each flag accepts, what it rejects, what the tool does with it. Process lives elsewhere: who runs this, in what order, what to do with the output. A help string that prescribes process is a second copy of a policy some skill or doc already owns, and it is the copy nobody updates when the policy changes.
 
 ```python
 # BAD: schema plus a process rule owned by the workflow doc
@@ -165,7 +165,7 @@ notes: str = ""
 """JSON notes file. Schema: {...}. Ids must be unique."""
 ```
 
-The test: would the sentence still hold for a caller using this tool in a different workflow? If not, it belongs in that workflow's document. Self-documenting (Core Principle 1) means nobody must read the *source* to drive the tool — not that `--help` carries the process the tool is used in.
+The test: would the sentence still hold for a caller using this tool in a different workflow? If not, it belongs in that workflow's document. Self-documenting (Core Principle 1) means nobody must read the *source* to drive the tool, not that `--help` carries the process the tool is used in.
 
 ### Module Docstring → Program Description
 
@@ -173,7 +173,7 @@ The module docstring (or `description=__doc__`) becomes the top-level help text.
 
 1. One-line summary of what the script does
 2. Blank line, then details/context if needed
-3. `Examples:` section with concrete invocations. Don't use `::` (reST convention) — tyro renders it literally and it looks ugly in `--help` output.
+3. `Examples:` section with concrete invocations. Don't use `::` (reST convention); tyro renders it literally and it looks ugly in `--help` output.
 
 ```python
 """Stress test for the TTS synthesis pipeline.
@@ -219,7 +219,7 @@ def main(input_path: str, verbose: bool = False) -> None:
 
 tyro collapses single newlines to spaces (like HTML). To force a line break:
 - Use a blank line (double newline) for paragraph breaks
-- Start the next line with a non-alpha character (`-`, `*`, a number) — this forces a break
+- Start the next line with a non-alpha character (`-`, `*`, a number); this forces a break
 
 ```python
 # WRONG: renders as one line in --help
@@ -251,7 +251,7 @@ verbose: bool = False
 
 ### Optional Args Display
 
-`str | None = None` shows as `{None}|STR` in help, which is ugly. No built-in fix — use `metavar=` via `tyro.conf.arg(metavar="VALUE")` to override, or provide a default string value instead of None where possible.
+`str | None = None` shows as `{None}|STR` in help, which is ugly. No built-in fix: use `metavar=` via `tyro.conf.arg(metavar="VALUE")` to override, or provide a default string value instead of None where possible.
 
 ### Subcommand Argument Ordering
 
@@ -280,20 +280,20 @@ When passing `default=Config(...)` to `tyro.cli()`, `__post_init__` is called tw
 
 ## Machine-Consumable Output
 
-CLIs should be usable by both humans and programs (LLMs, scripts, pipelines). Don't build format converters into every CLI — emit JSON and let consumers transform it with `jq` (`@csv`, `@tsv`, etc.). Two flags handle the human/machine split:
+CLIs should be usable by both humans and programs (LLMs, scripts, pipelines). Don't build format converters into every CLI; emit JSON and let consumers transform it with `jq` (`@csv`, `@tsv`, etc.). Two flags handle the human/machine split:
 
-### `--plain` — terse, undecorated text
+### `--plain`: terse, undecorated text
 
 Strips progress bars, unicode boxes, color codes, and decorative formatting. Emits compact text (TSV, plain prose, etc.). Use when the consumer wants readable text but not visual chrome.
 
 ```python
 plain: bool = False
-"""Terse output — no bars, no unicode, no color. For piping to LLMs or scripts."""
+"""Terse output: no bars, no unicode, no color. For piping to LLMs or scripts."""
 ```
 
-Make `--plain` affect all output paths — tables, progress indicators, summaries. The default (rich/human-friendly) stays unchanged.
+Make `--plain` affect all output paths: tables, progress indicators, summaries. The default (rich/human-friendly) stays unchanged.
 
-### `--json` — structured data
+### `--json`: structured data
 
 For commands that list, query, or return structured data, add a `--json` flag that emits JSON. This lets consumers pipe to `jq` for filtering/transformation without fragile text parsing.
 
@@ -322,11 +322,11 @@ Examples:
 """
 ```
 
-This is especially valuable when the CLI is used as a tool by LLM agents — they can read `--help` once and know exactly what to `jq` for, instead of running exploratory commands to discover the output shape.
+This is especially valuable when the CLI is used as a tool by LLM agents; they can read `--help` once and know exactly what to `jq` for, instead of running exploratory commands to discover the output shape.
 
 ## Anti-Patterns
 
-**String choices instead of Literal.** Use `Literal["a", "b"]` — not `str` with choices documented in the docstring. Literal gives type safety, auto-completion, and tyro generates proper `{a,b}` choices in help.
+**String choices instead of Literal.** Use `Literal["a", "b"]`, not `str` with choices documented in the docstring. Literal gives type safety, auto-completion, and tyro generates proper `{a,b}` choices in help.
 
 **Multiple `tyro.cli()` calls with `return_unknown_args`.** Calling `tyro.cli()` twice and passing leftovers to a second call is fragile. Use a single nested dataclass instead.
 

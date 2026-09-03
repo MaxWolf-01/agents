@@ -1,6 +1,6 @@
 ---
 name: overview
-description: Analyze a repository and write a comprehensive OVERVIEW.md — structure, key components, interfaces, quick start.
+description: "Analyze a repository and write a comprehensive OVERVIEW.md: structure, key components, interfaces, quick start."
 disable-model-invocation: true
 ---
 

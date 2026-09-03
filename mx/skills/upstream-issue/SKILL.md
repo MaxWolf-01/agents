@@ -7,7 +7,7 @@ argument-hint: [what's wrong, and where]
 Turn a finding into an issue its maintainers can act on. Filing runs on max's
 GitHub account, so every issue needs his explicit yes before it goes out.
 
-Load `/mx:writing-for-humans` first — an issue is read cold by a person deciding
+Load `/mx:writing-for-humans` first; an issue is read cold by a person deciding
 whether it is worth their afternoon. Load `/mx:writing-for-agents` after it, since
 their agents read it too.
 
@@ -36,12 +36,12 @@ what triggers it remains, and each removal that keeps the bug alive is one less
 thing the maintainer has to rule out. This mostly settles the privacy question on
 its own: a minimal case rarely contains anything of max's.
 
-Some findings resist it — a race, something that needs the real data, a crash you
+Some findings resist it: a race, something that needs the real data, a crash you
 saw once. Then the report is the observation plus its log or stack trace, said
 plainly as a single occurrence.
 
 **Read the body as a stranger would, for what it discloses.** Hostnames, paths,
-usernames, tokens, internal URLs, a stack trace carrying any of those — and the
+usernames, tokens, internal URLs, a stack trace carrying any of those, and the
 subtler kind, where the shape of a setup or the reason for a question says more
 about max than he'd choose to publish. Redact to the minimum that still
 reproduces.
@@ -51,21 +51,21 @@ reproduces.
 Where a template exists, fill **its** fields. The maintainers wrote it to get what
 they need, and a foreign structure laid over it reads as not having looked.
 
-Where none exists, use this order — the same information a good template asks for:
+Where none exists, use this order, the same information a good template asks for:
 
-- **What happens** — one plain sentence, then expected against actual.
-- **Why it matters** — what it costs someone. A bug: what breaks, and what a
+- **What happens**: one plain sentence, then expected against actual.
+- **Why it matters**: what it costs someone. A bug: what breaks, and what a
   caller can do about it. A gap: what it made you believe that was untrue.
-- **How to reproduce** — exact steps on a stated version. A table of inputs
+- **How to reproduce**: exact steps on a stated version. A table of inputs
   against results carries a boundary better than prose does.
-- **Cause** — only with evidence in hand: a log line, a traced code path. Anything
+- **Cause**, only with evidence in hand: a log line, a traced code path. Anything
   short of that stays out.
 
 One report per problem. Several one-line corrections to the same document are one
 report; a crash and a documentation gap are two.
 
 These headings are available, not owed. A section you have nothing behind is a
-section to drop — inventing a cause or a consequence to fill one is the failure
+section to drop; inventing a cause or a consequence to fill one is the failure
 this skill exists to prevent, and a maintainer spots it immediately.
 
 ## Fix direction
@@ -78,7 +78,7 @@ It earns a place only when the finding admits several plausible fixes, one of th
 clearly better for max and the difference invisible from where the maintainer
 sits. Then say which and why, because nobody else can supply that.
 
-Where the fix follows from the report — correct the sentence, return the error —
+Where the fix follows from the report (correct the sentence, return the error),
 naming it says nothing the maintainer had not already worked out by the end of the
 first paragraph.
 
@@ -92,7 +92,7 @@ The first line of every issue, verbatim:
 
 Three claims, each load-bearing: where the text came from, that its content was
 checked, and that a person is on the other end. Maintainers are being flooded with
-unverified AI reports, and this says which kind this is. Keep it to the one line —
+unverified AI reports, and this says which kind this is. Keep it to the one line;
 length reads as legalese and invites dismissal.
 
 ## Voice
@@ -100,7 +100,7 @@ length reads as legalese and invites dismissal.
 Describe what happened. Let the reader judge how bad it is: "the connection closes
 after one byte" survives scrutiny, where a severity claim invites an argument about
 whether the severity is right. The value judgements that belong in an issue are the
-ones only max can make — expected against actual, and why it cost him something.
+ones only max can make: expected against actual, and why it cost him something.
 
 Say what was checked and what was inferred. An untested corner is cheap to flag and
 expensive to be caught on.
@@ -109,13 +109,13 @@ expensive to be caught on.
 
 Drilling down is slow and mostly mechanical, so hand it to a subagent and carry on
 with the session's real work. Give it the finding, the repo, and this skill, and
-name the file it writes to — `agent/research/upstream-<repo>-<slug>.md`, holding
+name the file it writes to, `agent/research/upstream-<repo>-<slug>.md`, holding
 the body, the duplicate search, and whatever it could not verify. It writes that
 file; it never files the issue.
 
 The main session then owns three gates, in order:
 
-1. **Sanity check** the body against what the session actually knows — the
+1. **Sanity check** the body against what the session actually knows; the
    subagent worked from a brief and can have drifted.
 2. **Show max**: `xdg-open` that file, or paste the body, so he reads what would
    be published.
@@ -124,7 +124,7 @@ The main session then owns three gates, in order:
 
 A gate that does not pass sends it round again: another subagent round when the
 gap is real work, a direct edit and a fresh yes when it is wording. A finding the
-session later invalidates, or max judges not worth filing, is dropped — the work
+session later invalidates, or max judges not worth filing, is dropped; the work
 already paid for itself by being understood.
 
 Dont ever add "happy to PR" or bs like that unless the user explicitly asks!

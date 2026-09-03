@@ -1,13 +1,13 @@
 ---
 name: bloat-audit
-description: Whole-repo over-engineering audit — a ranked list of what to delete, simplify, or replace with stdlib. Report only; applying cuts is a separate decision.
+description: "Whole-repo over-engineering audit: a ranked list of what to delete, simplify, or replace with stdlib. Report only; applying cuts is a separate decision."
 disable-model-invocation: true
 ---
 
 Audit the repo for code that shouldn't exist. Read the code, not the tree:
 the manifest, the entry points, every source file outside vendored or
 generated output. The audit is complete when every dependency and every
-source file has been cleared or flagged — a file only skimmed is a file not
+source file has been cleared or flagged; a file only skimmed is a file not
 yet audited. Rank findings biggest cut first.
 
 ## Tags
@@ -39,5 +39,5 @@ End with `net: -<N> lines, -<M> deps possible.` Nothing to cut: `Lean already. S
 
 Scope is over-engineering only; route correctness, security, and performance
 findings to a normal review pass. A lone smoke test or `assert` self-check is
-the lean minimum — leave it standing. Report only: the reader decides what to
+the lean minimum; leave it standing. Report only: the reader decides what to
 apply.

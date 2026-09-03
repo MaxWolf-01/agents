@@ -25,6 +25,6 @@ Assume the directory `agent/transcripts/` already exists. Do NOT preemtively use
 3. **Report** the session name and the path so user can use it for pickup:
 ```
 /rename <slug>
-Continue from agent/transcripts/<filename>.txt — read it in full first.
+Continue from agent/transcripts/<filename>.txt. Read it in full first.
 ```
 
