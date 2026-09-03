@@ -23,4 +23,4 @@ Read both histories, extract the recurring principles — the things that repeat
 
 - Each bullet is a principle (transferable rule), not a change log entry.
 - Each cites at least one commit (upstream or ours) as evidence.
-- Existing CLAUDE.md bullets that turn out to be instances of a distilled principle are folded in, not duplicated.
+- Existing CLAUDE.md bullets that turn out to be instances of a distilled principle move into the principles file, or stay in CLAUDE.md only if they apply to most sessions; never both places.
