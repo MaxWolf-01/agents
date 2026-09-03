@@ -3,7 +3,7 @@ name: pr-tldr
 description: Generate concise PR summary from net changes
 disable-model-invocation: true
 allowed-tools: Bash
-argument-hint: <flexible: PR#, branch, URL, "PR# vs branch", etc>
+argument-hint: '<flexible: PR#, branch, URL, "PR# vs branch", etc>'
 ---
 
 ## Your Task
