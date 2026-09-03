@@ -124,6 +124,8 @@
       "Bash(wpctl status *)",
       "Bash(xdg-mime query *)",
       "Bash(xdg-open *)",
+      "Bash(claude-browser)",
+      "Bash(claude-browser *)",
       "Bash(grep *)",
       "Bash(rg *)",
       "Bash(sg *)",

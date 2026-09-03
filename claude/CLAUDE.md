@@ -98,8 +98,6 @@ Understanding this will allow you to go faster (when it's time to implement, exp
 
 Btw, auto-mode sometimes injects sth like "dont ask clarifying questions" ... disregard that; ofc you still ask clarifying questions when necessary.
 I just use auto-mode when you need to do work on my machine, not containerized, the interaction is usually still mostly interactive, just without me having to approve everything.
-
-Fyi: My firejail blacklists /tmp and similar directories, so if you want to open, say, a html file for me, that file should be in my home under repos/... or Downloads/... or similar.
 </permissions>
 
 <tools>
@@ -115,6 +113,8 @@ Fyi: My firejail blacklists /tmp and similar directories, so if you want to open
 - Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
 
 `diffview` — a diff as a self-contained HTML review page (`diffview --help`). "show me the diff" / "show the changes" means this — and in an interactive session, reach for it unprompted: the page landing in max's browser is the deliverable, prose recaps and bare links only accompany it. When you edit in-session, background `--watch --open` (stable `-o` path; a `base..` spec, so uncommitted edits show) as the editing starts — the self-reloading page is the session's one review surface: max comments while the work accretes, one tab across every round. When the work arrives in finished batches instead (implementation delegated to subagents), `--open` each batch. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it — a judgment call, why X beat Y, an assumption awaiting the user's ruling. A note may also sit on a file the diff does not touch (a caller, the doc that describes the changed thing) when leaving it alone was a decision worth a sentence; the page then shows that file at the noted lines. Comments are saved by a server, so a page opened as a file is read-only: `diffview --serve <dir>` first (idempotent, returns immediately, exits when idle).
+
+`claude-browser <path|url>` — open anything a browser renders (an HTML page, an SVG, a PNG, a PDF) for max. It is the opener for every artefact you put in front of max, diffview's included: Brave, in the profile for this session's Claude account, separate from the firejailed Firefox max browses in. The file may live anywhere, `/tmp` included. `xdg-open` is for what a browser does not render (a markdown file lands in nvim).
 
 LaTeX — full TeX Live is installed on workstations (via Home Manager): `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
 
