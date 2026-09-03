@@ -30,7 +30,7 @@ Material reached only through a pointer escapes context load at the price of the
 
 A document is built from two content types, **steps** (the ordered actions the agent performs) and **reference** (definitions, rules, facts consulted on demand), that mix freely: all steps (a recipe), all reference (a review's rules, this skill), or both. The core decision is where each piece sits on the **information hierarchy**, a ladder ranked by how immediately the agent needs the material:
 
-1. **In-file step**, the primary tier: what the agent does, in order.
+1. **In-file step**: the primary tier, what the agent does, in order.
 2. **In-file reference**: consulted on demand. Often a legitimately flat peer-set (every rule of a review on one rung), a fine arrangement, not a smell.
 3. **Disclosed reference**: pushed out into a separate file, reached by a context pointer, loaded only when the pointer fires. Spans a sibling file in the same folder through fully external reference that lives anywhere and any document can point at.
 
@@ -56,7 +56,7 @@ The strongest criteria are both checkable and exhaustive.
 Splitting one document into two spends one of the two loads, so split only when the cut earns it:
 
 - **By sequence**: split a run of steps where the post-completion steps tempt the agent to rush the one in front of it. Keeping them out of view drives more legwork on the current task. Beware the reverse: merging sequences exposes each step's later steps to what follows, inviting premature completion.
-- **By invocation**, skill-specific: see [`SKILL-MECHANICS.md`](SKILL-MECHANICS.md).
+- **By invocation**: skill-specific; see [`SKILL-MECHANICS.md`](SKILL-MECHANICS.md).
 
 ## Leading words
 

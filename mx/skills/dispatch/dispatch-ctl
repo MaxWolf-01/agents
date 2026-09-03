@@ -23,7 +23,7 @@
 #   /tmp/<channel>.status|.log   written by the runner
 #
 # Every tmux command that changes something is echoed before it runs, so a
-# transcript shows the primitives — anything this script does wrong can be
+# transcript shows the primitives; anything this script does wrong can be
 # redone by hand.
 set -u
 
@@ -50,7 +50,7 @@ spawn() {
     session_id=${6:-}
     prev=$(current_channel "$name")
     if [ -n "$prev" ] && [ "$(run_state "$prev")" = running ]; then
-        echo "spawn: $name is still running channel=$prev — a line typed into its pane now would launch a second worker when it exits" >&2
+        echo "spawn: $name is still running channel=$prev; a line typed into its pane now would launch a second worker when it exits" >&2
         exit 1
     fi
     channel=$name-$(date +%s)
@@ -60,13 +60,13 @@ spawn() {
     tmx send-keys -t "$name" Enter
 
     # The runner creates the log within its first seconds; its absence means the
-    # command never ran — wrong pane, dead shell, bad path.
+    # command never ran: wrong pane, dead shell, bad path.
     for _ in $(seq 30); do
         [ -f "/tmp/$channel.log" ] && break
         sleep 0.5
     done
     if [ ! -f "/tmp/$channel.log" ]; then
-        echo "spawn: no /tmp/$channel.log after 15s — the pane caught:" >&2
+        echo "spawn: no /tmp/$channel.log after 15s; the pane caught:" >&2
         tmux capture-pane -p -J -t "$name" -S -15 >&2
         exit 1
     fi
@@ -77,7 +77,7 @@ spawn() {
 }
 
 probe() {
-    [ -f "$manifest" ] || { echo "no manifest — nothing spawned from $here" >&2; exit 1; }
+    [ -f "$manifest" ] || { echo "no manifest; nothing spawned from $here" >&2; exit 1; }
     # Last manifest line per name is the current run; earlier runs' status files
     # are history, not state.
     tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree; do
@@ -86,7 +86,7 @@ probe() {
             running) echo "$name running  channel=$channel  log: $(tail -1 "/tmp/$channel.log" 2>/dev/null || echo -)" ;;
             # No status file and no runner process: killed pane, killed session,
             # or rebooted host. No status is coming and the channel will never
-            # fire — treat like an unrecoverable session, not like running.
+            # fire; treat like an unrecoverable session, not like running.
             gone)    echo "$name gone  channel=$channel  (runner dead without a status file)" ;;
         esac
     done

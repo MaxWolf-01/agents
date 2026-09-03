@@ -48,7 +48,7 @@ uv run <skill-dir>/scripts/scan_unapproved.py \
 
 The tests cover the shell parsing the scanner depends on. They take a second; a failure means the numbers below are fiction.
 
-The sessions directory is scanned recursively, so `~/.claude/projects/` covers every project at once; the right default, since friction rarely stays inside one project. Narrow it to `~/.claude/projects/<project-path-encoded>/` for one project (replace `/` with `-`, strip the leading slash).
+The sessions directory is scanned recursively, so `~/.claude/projects/` covers every project at once, which is the right default, since friction rarely stays inside one project. Narrow it to `~/.claude/projects/<project-path-encoded>/` for one project (replace `/` with `-`, strip the leading slash).
 
 Output is JSON sorted by frequency: one `{signature, count, example}` per distinct segment shape that would prompt.
 

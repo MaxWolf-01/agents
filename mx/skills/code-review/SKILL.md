@@ -50,18 +50,18 @@ Every brief opens with two lines. First, delivery: *"Write your finished report 
 
 Then the discipline line: *"Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
-**Correctness brief** includes:
+For the **Correctness brief**, include:
 
 - The full diff command and commit list.
 - The brief: "Trace the change end to end: touched files in full, callers of changed functions, changed types/protocols/contracts, related tests. Report only findings that survive three filters: (a) it's a real problem, not an artifact of reading the diff in isolation: check surrounding code and existing patterns first; (b) you can name the concrete consequence (bug, security hole, data loss, perf regression, maintenance trap); no nameable consequence, no finding; (c) the codebase doesn't already handle it. Not findings: style the change is internally consistent about, validation for inputs that can't arrive, API semantics that match existing conventions, 'what if X' where the system prevents X. Each finding: the scenario that breaks, file:line, fix. Under 400 words."
 
-**Standards brief** includes:
+For the **Standards brief**, include:
 
 - The full diff command and commit list.
 - The standards-source files from step 3 (repo docs, `SMELLS.md`, and the skill files), all by absolute path.
 - The brief: "Read every standards-source file before judging. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces. Under 400 words."
 
-**Spec brief** includes:
+For the **Spec brief**, include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.

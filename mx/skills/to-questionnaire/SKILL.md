@@ -24,7 +24,11 @@ Frame the document as a **discovery questionnaire**: the user lacks context, the
 
 **Purpose:** why this questionnaire exists and the decision riding on it.
 
-**From:** <the user> | **To:** <the recipient> | **How your answers will be used:** <where they go>
+**From:** <the user>
+
+**To:** <the recipient>
+
+**How your answers will be used:** <where they go>
 
 ## Context
 
