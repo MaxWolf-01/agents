@@ -11,6 +11,10 @@ Two histories hold lessons nobody has written down as principles:
 
 Also: Fetch youtube transcripts from his youtube and talks he gave -- one of them is already symlinked in this repo's resources/
 
+## Research
+
+- `agent/research/03-agent-workflow-principles.md` — both histories, the blog, the keynote and 32 videos, plus a web survey of other practitioners, read into a candidate list with citations, a model-specific layer, and a mapping onto the current CLAUDE.md bullets. Transcripts and the fetch recipe sit beside it in `03-agent-workflow-principles.sources/`.
+
 ## What to build
 
 Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them into a few bullets in this repo's CLAUDE.md as durable context for future workflow adjustments.
