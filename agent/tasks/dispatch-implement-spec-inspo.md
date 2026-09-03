@@ -4,7 +4,7 @@ status: open
 
 # Take what upstream's implement-spec does better into dispatch
 
-Rough intent, not yet grilled. Upstream `skills/in-progress/implement-spec` (mattpocock/skills, 84b5e5 + 5b15a47) is a small dispatch: implementer subagents per frontier ticket in own worktrees, a merger subagent, one PR. Revisit once it leaves `in-progress/`.
+Rough intent, not yet grilled. Upstream `skills/in-progress/implement-spec` (mattpocock/skills, 84b5ee5 + 5b15a47) is a small dispatch: implementer subagents per frontier ticket in own worktrees, a merger subagent, one PR. Revisit once it leaves `in-progress/`.
 
 Ideas it has that `/mx:dispatch` lacks:
 
