@@ -18,7 +18,7 @@ Check with the user that these seams match their expectations.
 
 3. Write the spec using the template below, then publish it to `agent/tasks/<feature-slug>/spec.md`. Decisions that pass the ADR gate belong in `decisions/` via `/mx:domain-modelling` — the spec references them, it doesn't restate them.
 
-4. **Review is conditional on provenance.** A spec distilled from a conversation the user took part in only summarizes what you already share — they don't need to read it. A spec *compiled from artifacts* — a wayfinder map, an external brief, someone else's notes — is a translation, and translations drift: walk the user through it before tickets are cut. When compiling from a map, this is also the moment the map is superseded — tombstone it per `/mx:tracker`.
+4. **Review depth follows provenance.** A wrong line here becomes hundreds of wrong lines downstream, so offer the spec for a look either way. A spec distilled from a conversation the user took part in summarizes what you already share — a quick pass for what the summary lost is enough, deeper only where they stop. A spec *compiled from artifacts* — a wayfinder map, an external brief, someone else's notes — is a translation, and translations drift: walk the user through it line by line before tickets are cut. When compiling from a map, this is also the moment the map is superseded — tombstone it per `/mx:tracker`.
 
 <spec-template>
 
