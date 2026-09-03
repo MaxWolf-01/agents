@@ -1,5 +1,5 @@
 
-### [mx](https://github.com/MaxWolf-01/agents/tree/master/mx) — Agent Workflow Plugin
+### [mx](https://github.com/MaxWolf-01/agents/tree/master/mx): Agent Workflow Plugin
 
 Markdown-based issue tracking, research artefacts, knowledge persistence, and session continuity for multi-session agent work. Uses [memex CLI](https://github.com/MaxWolf-01/memex) for wikilink + semantic knowledge base navigation.
 
@@ -31,9 +31,9 @@ Or, in project's `.claude/settings.json`:
 }
 ```
 
-### [clankr](https://github.com/MaxWolf-01/clankr) — Sandboxed Agent Fleet
+### [clankr](https://github.com/MaxWolf-01/clankr): Sandboxed Agent Fleet
 
-Run coding agents in isolated Docker containers. `uvx clankr` — see [clankr repo](https://github.com/MaxWolf-01/clankr).
+Run coding agents in isolated Docker containers. `uvx clankr`; see [clankr repo](https://github.com/MaxWolf-01/clankr).
 
 ### References
 

@@ -1,11 +1,11 @@
 ---
 name: dependabot-triage
-description: Triage Dependabot alerts — assess real impact, dismiss noise
+description: "Triage Dependabot alerts: assess real impact, dismiss noise"
 allowed-tools: Bash(gh:*), Bash(npm:*), Bash(uv:*), Read, Grep, Glob
 disable-model-invocation: true
 ---
 
-Triage open Dependabot alerts for the current repository. The goal is distinguishing real vulnerabilities from noise — most Dependabot alerts on transitive dependencies are not exploitable.
+Triage open Dependabot alerts for the current repository. The goal is distinguishing real vulnerabilities from noise; most Dependabot alerts on transitive dependencies are not exploitable.
 
 ## Fetch
 
@@ -32,11 +32,11 @@ Then classify:
 | **Tree-shaken** | In dep tree but bundler (Vite/webpack) strips it from runtime output |
 | **Unused path** | Transitive dep via a code path we don't exercise |
 
-Key questions: Is it direct or transitive? Does it run at runtime or only during build/test? For frontend JS — does it end up in the browser bundle? Does our code use the vulnerable function?
+Key questions: Is it direct or transitive? Does it run at runtime or only during build/test? For frontend JS, does it end up in the browser bundle? Does our code use the vulnerable function?
 
 ## Report
 
-Present a table, one row per alert. Keep reasoning to one specific sentence — "transitive of X via Y, only used in Z" not "low risk".
+Present a table, one row per alert. Keep reasoning to one specific sentence: "transitive of X via Y, only used in Z" not "low risk".
 
 ```
 | # | Sev | Package | Manifest | Classification | Reasoning |

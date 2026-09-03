@@ -78,7 +78,7 @@ for attempt in $(seq 1 $max_attempts); do
     [ "$attempt" -eq "$max_attempts" ] && break
 
     backoff=$((attempt * 30))
-    echo "run-worker: attempt $attempt exited $rc (ticket: ${status:-?}) — retrying in ${backoff}s"
+    echo "run-worker: attempt $attempt exited $rc (ticket: ${status:-?}); retrying in ${backoff}s"
     sleep "$backoff"
 done
 

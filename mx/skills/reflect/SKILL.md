@@ -8,7 +8,7 @@ Look back at what you just implemented. Be honest, be critical.
 
 - Where was the friction during implementation? What fought you? Could you write any tooling to make it easier next time?
 - What assumptions did you make that you weren't sure about?
-- Now that you've seen all the pieces — would you approach it differently?
+- Now that you've seen all the pieces, would you approach it differently?
 - Is the architecture working with or against this feature?
 - Any hacks, shortcuts, or "I'll fix this later" moments?
 - Does the result actually match the intent?

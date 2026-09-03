@@ -21,7 +21,7 @@ Claude Code stores sessions as `.jsonl` files in:
 ~/.claude/projects/<project-path-with-dashes>/*.jsonl
 ```
 
-Subagent sessions live in subdirectories (`<session-id>/subagents/`) — these are excluded (they belong to their parent session).
+Subagent sessions live in subdirectories (`<session-id>/subagents/`); these are excluded (they belong to their parent session).
 
 Determine the correct project path from the current working directory. The path encoding replaces `/` with `-` and strips the leading slash. Example: `/home/max/repos/code/yapit` → `-home-max-repos-code-yapit`.
 
@@ -33,42 +33,42 @@ Determine the correct project path from the current working directory. The path 
 uv run python <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N> --exclude <current_session_id>
 ```
 
-**IMPORTANT: Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl — matching it is useless and confusing. To get the current session ID, use the most recently modified `.jsonl` file in the sessions directory: `ls -t <sessions_dir>/*.jsonl | head -1` and extract the stem. The current (active) session is always the most recently written file.
+**IMPORTANT: Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl; matching it is useless and confusing. To get the current session ID, use the most recently modified `.jsonl` file in the sessions directory: `ls -t <sessions_dir>/*.jsonl | head -1` and extract the stem. The current (active) session is always the most recently written file.
 
 Arguments:
-- `--days N` — only sessions modified within the last N days
-- `--sessions N` — only the N most recent sessions (by modification time)
-- `--exclude ID` — exclude a session by ID (repeatable). Always exclude the current session.
+- `--days N`: only sessions modified within the last N days
+- `--sessions N`: only the N most recent sessions (by modification time)
+- `--exclude ID`: exclude a session by ID (repeatable). Always exclude the current session.
 
-Both filters can be combined. If the user specifies "last 100 sessions or last 10 days, whichever is greater," run with `--days 10` first, then check if the count is under 100 — if so, run again with `--sessions 100`.
+Both filters can be combined. If the user specifies "last 100 sessions or last 10 days, whichever is greater," run with `--days 10` first, then check if the count is under 100; if so, run again with `--sessions 100`.
 
 The script outputs a JSON array of session objects (newest first), each containing:
 - `session_id`, `modified`, `size_kb`
-- `user_msgs_total`, `user_msgs_substantive` — total vs. non-meta/non-system user messages
-- `signals.commit`, `signals.transcribe`, `signals.handoff` — boolean completion indicators
-- `interrupted` — whether the last user message was a request interruption
-- `first_user` — first substantive user message (cleaned of command tags)
-- `last_user` — last substantive user message
-- `last_assistant` — last assistant message with >20 chars
+- `user_msgs_total`, `user_msgs_substantive`: total vs. non-meta/non-system user messages
+- `signals.commit`, `signals.transcribe`, `signals.handoff`: boolean completion indicators
+- `interrupted`: whether the last user message was a request interruption
+- `first_user`: first substantive user message (cleaned of command tags)
+- `last_user`: last substantive user message
+- `last_assistant`: last assistant message with >20 chars
 
 ### 2. Classify each session
 
 For each session, assign one of these statuses:
 
-**DONE** — Clear completion signal AND last messages confirm it:
+**DONE**: Clear completion signal AND last messages confirm it:
 - Committed + last assistant confirms ("Committed.", "Pushed.", etc.)
 - Transcribed + last assistant shows transcript save
 - Handoff written + last assistant confirms
 - Health check / diagnostic agents (these are self-contained reports)
 - `/mx:recap` or other info-only commands that completed
 
-**JUNK** — Not worth showing:
+**JUNK**: Not worth showing:
 - 0-1 substantive user messages with no real content
 - Tiny size (<5KB) with no meaningful exchange
 - Sessions that are just `/test`, `/context`, `/clear`, `/model`, `/rename` commands
 - Duplicate starts (user opened session, typed nothing useful, started a new one)
 
-**UNFINISHED** — Everything else. This is the default — be inclusive. When in doubt, mark as unfinished. Specifically:
+**UNFINISHED**: Everything else. This is the default; be inclusive. When in doubt, mark as unfinished. Specifically:
 - No completion signals AND substantial content
 - `interrupted: true` (crash/abort mid-work)
 - Has commit signal but last messages show continued work after the commit
@@ -76,7 +76,7 @@ For each session, assign one of these statuses:
 - Last user message asked for something that wasn't addressed
 
 **Key judgment calls:**
-- A session can have `signals.commit: true` but still be UNFINISHED if work continued after the commit. Check `last_assistant` — does it reference the commit as final, or is there subsequent work?
+- A session can have `signals.commit: true` but still be UNFINISHED if work continued after the commit. Check `last_assistant`: does it reference the commit as final, or is there subsequent work?
 - Sessions ending with `/mx:transcript` ARE done (the transcript captures the state for later).
 - Sessions where last_user is a question or request and last_assistant doesn't resolve it → UNFINISHED.
 

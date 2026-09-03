@@ -1,11 +1,11 @@
 ---
 name: to-tickets
-description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions — ticket files with blocked-by edges, or native blocking links on a real tracker.
+description: "Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges, or native blocking links on a real tracker."
 ---
 
 # To Tickets
 
-Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
+Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
 Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
 
@@ -27,24 +27,24 @@ Break the work into **tracer bullet** tickets.
 
 <vertical-slice-rules>
 
-- Each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, NOT a horizontal slice of one layer
+- Each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests): vertical, NOT a horizontal slice of one layer
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window
 - Any prefactoring should be done first
 
 </vertical-slice-rules>
 
-Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately. Prefer orderings that make the feature **drivable early**: human QA is gated on demo cost, and every ticket that lands before a drivable surface exists accumulates unreviewed taste debt.
+Give each ticket its **blocking edges**: the other tickets that must complete before it can start. A ticket with no blockers can start immediately. Prefer orderings that make the feature **drivable early**: human QA is gated on demo cost, and every ticket that lands before a drivable surface exists accumulates unreviewed taste debt.
 
-**Dispose of every spec property.** Each entry in the spec's Properties section either becomes its own capability ticket or a named acceptance criterion stamped onto every ticket touching its area — no third option. A property left undisposed is a feature nobody builds.
+**Dispose of every spec property.** Each entry in the spec's Properties section either becomes its own capability ticket or a named acceptance criterion stamped onto every ticket touching its area; no third option. A property left undisposed is a feature nobody builds.
 
-**Stamp floors.** A ticket building a surface with a promoted floor (see the spec's Implementation Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor — match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
+**Stamp floors.** A ticket building a surface with a promoted floor (see the spec's Implementation Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
 
 Only ticket what you can specify precisely now. If part of the work is still too foggy to state as a slice, leave it in the spec's Further Notes and ticket it when the frontier reaches it.
 
-**Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket — green is promised only there.
+**Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change (rename a column, retype a shared symbol) whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket; green is promised only there.
 
-**Cross-cutting capabilities are the second exception.** A spec property usually needs one deliberately horizontal capability ticket — the shared renderer, the error boundary — that exists so every vertical slice after it can lean on it. Schedule it early and block the slices that need it on it. Greenfield is where these are most invisible: nothing exists yet to make their absence obvious.
+**Cross-cutting capabilities are the second exception.** A spec property usually needs one deliberately horizontal capability ticket (the shared renderer, the error boundary) that exists so every vertical slice after it can lean on it. Schedule it early and block the slices that need it on it. Greenfield is where these are most invisible: nothing exists yet to make their absence obvious.
 
 ### 4. Quiz the user
 
@@ -57,7 +57,7 @@ Present the proposed breakdown as a numbered list. For each ticket, show:
 Ask the user:
 
 - Does the granularity feel right? (too coarse / too fine)
-- Are the blocking edges correct — does each ticket only depend on tickets that genuinely gate it?
+- Are the blocking edges correct: does each ticket only depend on tickets that genuinely gate it?
 - Should any tickets be merged or split further?
 
 Iterate until the user approves the breakdown.
@@ -79,7 +79,7 @@ blocked-by: [NN] # omit when nothing blocks it
 
 ## What to build
 
-The end-to-end behaviour this ticket makes work, from the user's perspective — not layer-by-layer implementation.
+The end-to-end behaviour this ticket makes work, from the user's perspective, not layer-by-layer implementation.
 
 ## Acceptance criteria
 
@@ -88,6 +88,6 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 </ticket-template>
 
-Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
 Work the frontier one ticket at a time with `/mx:implement`, clearing context between tickets. Independent frontier tickets can run in parallel via `/mx:dispatch`.
