@@ -5,7 +5,7 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 # Sync with mattpocock/skills
 
-**Baseline** — last upstream commit reviewed: `8b78b53` (2026-08-13). Every sync ends by moving this line forward; it is the single source of truth for "where we left off".
+**Baseline** — last upstream commit reviewed: `6654f6b` (2026-08-24). Every sync ends by moving this line forward; it is the single source of truth for "where we left off".
 
 ## Process
 

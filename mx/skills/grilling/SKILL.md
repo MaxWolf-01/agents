@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: Grill the user about a plan, design, decision, or idea — proportionally: one question for a small ambiguity, a full interview for a feature. Invoke unprompted whenever the user states an intent that is not fully mechanical ("I want X, maybe like this") before implementing anything; also on any "grill" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to.
+description: "Grill the user about a plan, design, decision, or idea — proportionally: one question for a small ambiguity, a full interview for a feature. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full tree treatment below is for designs and features.
