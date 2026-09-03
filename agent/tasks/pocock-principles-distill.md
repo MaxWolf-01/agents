@@ -17,10 +17,10 @@ Also: Fetch youtube transcripts from his youtube and talks he gave -- one of the
 
 ## What to build
 
-Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them into a few bullets in this repo's CLAUDE.md as durable context for future workflow adjustments.
+Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them as durable context for future workflow adjustments. Shape (Max, 2026-09-03): a file loaded when skills, CLAUDE.md or the workflow are edited, with one pointer line in CLAUDE.md — not always-loaded bullets; the research artefact's Frame section carries the reasoning.
 
 ## Acceptance criteria
 
 - Each bullet is a principle (transferable rule), not a change log entry.
 - Each cites at least one commit (upstream or ours) as evidence.
-- Existing CLAUDE.md bullets that turn out to be instances of a distilled principle are folded in, not duplicated.
+- Existing CLAUDE.md bullets that turn out to be instances of a distilled principle move into the principles file, or stay in CLAUDE.md only if they apply to most sessions; never both places.
