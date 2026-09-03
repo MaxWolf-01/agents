@@ -32,16 +32,13 @@ Examples:
 
     uv run dashboard.py agent/tasks
     uv run dashboard.py agent/tasks --out ~/Downloads/board.html --open never
-
-The browser is firejailed to a home whitelist (~/Downloads, ~/Documents,
-~/Pictures, ~/Music, ~/Videos, ~/repos) and a private /tmp. An --out anywhere
-else renders fine and then cannot be opened.
 """
 
 import datetime
 import hashlib
 import html
 import json
+import os
 import re
 import subprocess
 import urllib.request
@@ -67,7 +64,7 @@ class Args:
     repo: Path | None = None
     """Repo for the commit log. Default: two levels above tasks_root."""
     open: Literal["auto", "always", "never"] = "auto"
-    """xdg-open the result: auto = only when the output file is new."""
+    """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window. auto = only when the output file is new."""
 
 
 def main(args: Args) -> None:
@@ -87,7 +84,8 @@ def main(args: Args) -> None:
     Path(str(out) + ".stamp.js").write_text(f'window.__dispatchStamp = "{stamp}";\n')
     print(out)
     if args.open == "always" or (args.open == "auto" and not existed):
-        subprocess.Popen(["xdg-open", str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
+        subprocess.Popen([browser, str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # ---- tracker state --------------------------------------------------------
