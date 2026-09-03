@@ -17,7 +17,7 @@ Also: Fetch youtube transcripts from his youtube and talks he gave -- one of the
 
 ## What to build
 
-Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them into a few bullets in this repo's CLAUDE.md as durable context for future workflow adjustments.
+Read both histories, extract the recurring principles — the things that repeatedly bit and got fixed, upstream or here — and distill them as durable context for future workflow adjustments. Shape (Max, 2026-09-03): a file loaded when skills, CLAUDE.md or the workflow are edited, with one pointer line in CLAUDE.md — not always-loaded bullets; the research artefact's Frame section carries the reasoning.
 
 ## Acceptance criteria
 
