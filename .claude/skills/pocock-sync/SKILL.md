@@ -18,7 +18,10 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-spec, to-tickets, implement, handoff, wayfinder, wait-what, to-questionnaire, wizard, writing-for-agents.
+Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-tickets, implement, handoff, wayfinder, wait-what, to-questionnaire, wizard, writing-for-agents.
+
+Dissolved:
+- to-spec → grilling writes the spec round by round; upstream changes to to-spec's template map onto grilling's `SPEC-FORMAT.md`, changes to its process onto grilling's gate.
 
 Renamed:
 - orient ← ask-matt

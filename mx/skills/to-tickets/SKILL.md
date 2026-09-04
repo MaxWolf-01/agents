@@ -1,11 +1,11 @@
 ---
 name: to-tickets
-description: "Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges, or native blocking links on a real tracker."
+description: "Break a confirmed spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges, or native blocking links on a real tracker."
 ---
 
 # To Tickets
 
-Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
+Break a confirmed spec into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
 Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
 
@@ -13,7 +13,7 @@ Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md 
 
 ### 1. Gather context
 
-Work from whatever is already in the conversation context. If the user passes a reference (a spec path, an issue number or URL) as an argument, fetch it and read its full body and comments.
+Work from the confirmed spec: the one already in the conversation, or the reference the user passes as an argument (a spec path, an issue number or URL), fetched with its full body and comments.
 
 ### 2. Explore the codebase (optional)
 

@@ -5,9 +5,9 @@ Issues for this repo live as markdown files in `agent/tasks/`.
 ## Layout
 
 - **Feature**: one directory per feature, `agent/tasks/<feature-slug>/`
-  - `spec.md`: the work order for the whole feature (written by `/mx:to-spec`)
-  - `NN-<slug>.md`: tickets, numbered from `01` (written by `/mx:to-tickets`)
-- **Small standalone task**: a single file `agent/tasks/<slug>.md`, ticket-shaped, no spec needed
+  - `spec.md`: the work order for the whole feature, written round by round by `/mx:grilling`; frontmatter `status: draft | confirmed`, and a draft is never read as settled truth
+  - `NN-<slug>.md`: tickets, numbered from `01` (written by `/mx:to-tickets`); a feature built in the session that grilled it has none
+- **Small standalone task**: a single file `agent/tasks/<slug>.md`, ticket-shaped, no spec: work that needs no design round, or a brief filed for later. A brief that gets grilled is absorbed into its feature directory (see `/mx:grilling`).
 - **Numbering**: `NN` is an id, unique within its directory. Assign the next one by scanning the directory for the highest existing number and incrementing, never from an in-context picture of the board, which parallel sessions leave stale.
 
 ## Ticket state
@@ -16,11 +16,11 @@ Frontmatter:
 
 ```yaml
 status: open | claimed | done
-blocked-by: [01, 02] # ticket numbers within the feature, or qualified <feature>/NN; omit when nothing blocks it
+blocked-by: [01, 02] # ticket numbers within the feature, qualified <feature>/NN, or a standalone task's slug; omit when nothing blocks it
 diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the first lands
 ```
 
-- A cross-feature blocker is written qualified: `blocked-by: [01, other-feature/03]`. A qualified reference whose file no longer exists counts as `done`; feature dirs are retired only after shipping.
+- A cross-feature blocker is written qualified: `blocked-by: [01, other-feature/03]`; a standalone task is referenced by its slug. Blocking names a ticket, never a whole feature. A reference whose file no longer exists counts as `done`; feature dirs are retired only after shipping.
 - A ticket is **unblocked** when every ticket in `blocked-by` is `done`.
 - `diff` accumulates one range per round: the implementation, then one per review round. SHAs, never branch names: a ticket branch is deleted once it lands while its commits survive. It is what regenerates the ticket's review page, which renders one section per range. That page lives at `agent/diffviews/<feature>/<NN>-<slug>.html`, or `agent/diffviews/<slug>.html` for a standalone task; gitignored, and the board links it from there.
 - The **frontier**: open, unblocked, unclaimed tickets, i.e. what can be started right now.
@@ -55,4 +55,4 @@ Used by `/mx:wayfinder`. An effort's map lives where the feature's spec will lat
 - **Decision ticket**: `agent/tasks/<effort>/questions/NN-<slug>.md`, numbered from `01`, body `## Question`. Frontmatter: `status` and `blocked-by` as above, plus `type: research | prototype | grilling | task`.
 - **Resolve**: append the answer under an `## Answer` heading, set `status: done`, and add a one-line pointer (gist + link) to the map's Decisions so far.
 - **Frontier**: scan `questions/` for open, unblocked, unclaimed tickets; first by number wins.
-- When the map is done, `/mx:to-spec` writes `spec.md` beside it, **tombstones the map** (see Supersede), and build tickets land in the feature dir root per the layout above. Retire the whole effort directory when the feature ships; the decision trail stays readable until then.
+- The spec draft (`spec.md`, `status: draft`) grows beside the map from charting on. The session that confirms it **tombstones the map** (see Supersede), and build tickets land in the feature dir root per the layout above. Retire the whole effort directory when the feature ships; the decision trail stays readable until then.

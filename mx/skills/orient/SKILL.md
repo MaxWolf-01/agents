@@ -13,9 +13,9 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | ---------- | ------------------------------- | -------------------------------- | ---------------------------------------------------------------- |
 | Glossary   | `CONTEXT.md` (repo root)        | durable, edited in place         | domain terminology, opinionated, with avoid-lists                |
 | ADR        | `decisions/NNNN-slug.md`        | durable, append-only             | one hard-to-reverse decision and why                              |
-| Spec       | `agent/tasks/<feature>/spec.md` | committed; `git rm -r` when shipped | the work order for one feature                                 |
+| Spec       | `agent/tasks/<feature>/spec.md` | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature, single- or multi-session |
 | Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature      | one vertical slice: what to build, blocked-by, acceptance criteria |
-| Small task | `agent/tasks/<slug>.md`         | deleted when done                | ticket-shaped, no spec                                            |
+| Small task | `agent/tasks/<slug>.md`         | deleted when done                | a ticket with no spec: work needing no design round, or a brief filed for later |
 | Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far index, fog  |
 | Research   | `agent/research/NN-slug.md`     | gitignored, ephemeral            | one question, cited findings                                      |
 | Prototype  | `agent/prototypes/<slug>/`      | committed, kept                  | throwaway code that answered a design question + `ANSWER.md` (question, verdicts), kept as primary source |
@@ -25,11 +25,11 @@ Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a go
 
 ## The main flow: idea → ship
 
-1. **`/mx:grill-with-docs`**: sharpen the idea by interview. Stateful: terms land in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). Not working in a repo? Plain `/mx:grilling`. External inputs (a meeting transcript, a client brief, a bug report) feed in here too: grill through their unstated assumptions. Too big and foggy for one session? **`/mx:wayfinder`** instead: chart the effort as a shared map of decision tickets on the tracker and resolve them across sessions (threads you can't pull now become tickets, never lost context), merging back onto the flow at `/mx:to-spec`.
+1. **`/mx:grill-with-docs`**: sharpen the idea by interview. Stateful: the design lands in the spec as it settles (a draft each round, confirmed at the gate), terms in `CONTEXT.md`, hard-to-reverse decisions in `decisions/` (both via `/mx:domain-modelling`). Not working in a repo? Plain `/mx:grilling`. External inputs (a meeting transcript, a client brief, a bug report) feed in here too: grill through their unstated assumptions. Too big and foggy for one session? **`/mx:wayfinder`** instead: chart the effort as a shared map of decision tickets on the tracker and resolve them across sessions (threads you can't pull now become tickets, never lost context), the spec draft growing beside the map until the last session confirms it.
 2. **Branch: does a question need a runnable answer?** (state, business logic, a UI you have to see) Detour, bridged by `/mx:handoff` in both directions: handoff out, fresh session, `/mx:prototype` to answer with throwaway code, handoff back; the prototype's `ANSWER.md` carries the verdicts. User-visible surfaces default here: surface judgment is **render-triggered**, so a human who is blank on "how should it look" in the abstract will produce sharp criticism in front of a render, and a blank answer means prototype, not more grilling.
 3. **Branch: is this a multi-session build?**
-   - **Yes** → `/mx:to-spec` (thread → spec), then `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**; each ticket is self-contained, so the last one's context is disposable. Independent frontier tickets can run in parallel; `/mx:dispatch` orchestrates the waves (one orchestrator, N implements).
-   - **No** → `/mx:implement` right here, in the same context window.
+   - **Yes** → `/mx:to-tickets` (spec → tracer-bullet tickets with blocking edges). Then `/mx:implement` per ticket, working the frontier, **clearing context between tickets**; each ticket is self-contained, so the last one's context is disposable. Independent frontier tickets can run in parallel; `/mx:dispatch` orchestrates the waves (one orchestrator, N implements).
+   - **No** → `/mx:implement` right here, from the spec, in the same context window.
 
    `/mx:implement` drives `/mx:tdd` internally, one red-green slice at a time, and closes with `/mx:code-review`. Reach for either on its own too.
 
@@ -72,9 +72,9 @@ No `/compact` on the ladder: a deterministic reset from a file you can proofread
 
 ## Standalone
 
-- **`/mx:grilling`**: the interview primitive itself (rounds, the frontier, facts are the agent's job and decisions are the user's). `/mx:grill-with-docs` wraps it with docs; `/mx:wayfinder` runs it inside tickets. Reach for it bare when the discussion has no repo under it.
+- **`/mx:grilling`**: the interview primitive itself (rounds that deliver the design whole and write it to the spec, the frontier, facts are the agent's job and decisions are the user's). `/mx:grill-with-docs` wraps it with docs; `/mx:wayfinder` runs it inside tickets. Reach for it bare when the discussion has no repo under it.
 - **`/mx:research`**: investigate a question against **primary sources**; leaves a cited artefact in `agent/research/`. Research feeds the thinking, it doesn't replace it.
-- **`/mx:to-questionnaire`**: when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. The inverse of grilling: it interviews you about the **send** (who it's going to, what you need back) and aims the questions at the gap. What comes back is material for `/mx:grill-with-docs` or `/mx:to-spec`.
+- **`/mx:to-questionnaire`**: when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. The inverse of grilling: it interviews you about the **send** (who it's going to, what you need back) and aims the questions at the gap. What comes back is material for `/mx:grill-with-docs`.
 - **`/mx:wizard`**: for the steps only a **human** can take: provisioning infrastructure, credentials and CI secrets, an unfamiliar third-party dashboard, a one-off migration. Generates an interactive bash script that opens each URL, captures each value, and writes it where it belongs. Model-invoked: the agent reaches for it when it hits a wall only you can pass; anything the agent can do itself, it should.
 - **`/mx:wait-what`**: the corrective for a message that didn't land: the agent re-pitches what it just said with the context you were missing, in plain language, using the `CONTEXT.md` vocabulary.
 - **`/mx:codex`**: second opinion from a different model.

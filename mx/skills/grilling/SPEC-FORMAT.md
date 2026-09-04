@@ -1,24 +1,8 @@
----
-name: to-spec
-description: "Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed."
-disable-model-invocation: true
----
+# Spec format
 
-This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
+The spec is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Published per `/mx:tracker` (`agent/tasks/<slug>/spec.md` on the markdown backend), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
 
-Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
-
-## Process
-
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the vocabulary from `CONTEXT.md` throughout the spec, and respect any ADRs in `decisions/` in the area you're touching.
-
-2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
-
-Check with the user that these seams match their expectations.
-
-3. Write the spec using the template below, then publish it to `agent/tasks/<feature-slug>/spec.md`. Decisions that pass the ADR gate belong in `decisions/` via `/mx:domain-modelling`; the spec references them, it doesn't restate them.
-
-4. **Review depth follows provenance.** A wrong line here becomes hundreds of wrong lines downstream, so offer the spec for a look either way. A spec distilled from a conversation the user took part in summarizes what you already share: a quick pass for what the summary lost is enough, deeper only where they stop. A spec *compiled from artifacts* (a wayfinder map, an external brief, someone else's notes) is a translation, and translations drift: walk the user through it line by line before tickets are cut. When compiling from a map, this is also the moment the map is superseded: tombstone it per `/mx:tracker`.
+Frontmatter `status: draft | confirmed`. A draft carries the provenance markers the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
 
 <spec-template>
 
@@ -28,11 +12,11 @@ The problem that the user is facing, from the user's perspective.
 
 ## Solution
 
-The solution to the problem, from the user's perspective.
+The solution to the problem, from the user's perspective. Rival designs still in play sit here side by side until one is chosen; the loser moves to Out of Scope with its reason.
 
 ## User Stories
 
-A LONG, numbered list of user stories: extremely extensive, covering every actor and every aspect of the feature. No human reads this document, so exhaustiveness costs nothing; the stories carry the definition of done, and tickets are later sliced from and checked against them. Each user story should be in the format of:
+A LONG, numbered list of user stories: extremely extensive, covering every actor and every aspect of the feature. The user reads them as they grow during grilling, which is where misunderstandings surface; tickets are later sliced from and checked against them. Each user story should be in the format of:
 
 1. As an <actor>, I want a <feature>, so that <benefit>
 
@@ -66,7 +50,7 @@ List any **floors**, prototypes (or aspects of one) the user promoted to minimum
 
 ## Testing Decisions
 
-A list of testing decisions that were made. Include:
+The **seams** at which the feature is tested: a design call put to the user in a round like any other. Existing seams over new ones, the highest seam possible; new seams proposed at the highest point they can sit. The fewer seams across the codebase, the better; the ideal number is one. Also:
 
 - A description of what makes a good test (only test external behavior, not implementation details)
 - Which modules will be tested
@@ -74,10 +58,10 @@ A list of testing decisions that were made. Include:
 
 ## Out of Scope
 
-A description of the things that are out of scope for this spec.
+The things that are out of scope for this spec, each with its reason: the decisions against.
 
 ## Further Notes
 
-Any further notes about the feature.
+Anything still too foggy to state as a slice lives here; to-tickets tickets it when the frontier reaches it.
 
 </spec-template>
