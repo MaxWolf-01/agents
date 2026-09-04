@@ -73,7 +73,8 @@ def main(args: Args) -> None:
     diffviews = load_diffviews(args.tasks_root.parent / "diffviews")
     features = load_features(args.tasks_root, diffviews)
     tasks = load_tasks(args.tasks_root, diffviews)
-    assert features or tasks, f"no feature dirs or task files in {args.tasks_root}"
+    # a spec-only feature dir (grilled, built in-session, no tickets) is a valid, empty board
+    assert features or tasks or any(args.tasks_root.glob("*/spec.md")), f"nothing tracked in {args.tasks_root}"
     log = git_log(repo)
     stamp = content_stamp(project, features, tasks, log)
     out = args.out or Path.home() / "Downloads" / "dispatch-dashboard" / f"{project}.html"
@@ -135,7 +136,8 @@ class Feature:
 class Task:
     slug: str
     title: str
-    status: str
+    status: str  # open | claimed | done, plus derived: blocked
+    blocked_by: list[tuple[str, str]]  # (ref "<feature>/NN" or "<slug>", status)
     body_html: str
     diffview: str | None
 
@@ -166,11 +168,16 @@ def load_tasks(root: Path, diffviews: Diffviews) -> list[Task]:
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
+        blocked_by = [(str(n), ref_status(root, str(n))) for n in meta.get("blocked-by") or []]
+        status = str(meta.get("status", "open"))
+        if status == "open" and any(s != "done" for _, s in blocked_by):
+            status = "blocked"
         tasks.append(
             Task(
                 slug=path.stem,
                 title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
-                status=str(meta.get("status", "open")),
+                status=status,
+                blocked_by=blocked_by,
                 body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
                 diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
             )
@@ -211,8 +218,8 @@ def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ti
                 num=path.name[:2],
                 title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
                 status=str(meta.get("status", "open")),
-                blocked_by=[normalize_num(n) for n in blockers if "/" not in str(n)],
-                ext_by=[(str(n), ext_status(tasks_dir, str(n))) for n in blockers if "/" in str(n)],
+                blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
+                ext_by=[(str(n), ref_status(tasks_dir.parent, str(n))) for n in blockers if not is_local_ref(n)],
                 body_html=render_body(body, tasks_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
@@ -226,15 +233,31 @@ def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ti
     return tickets
 
 
-def ext_status(tasks_dir: Path, ref: str) -> str:
-    # Cross-feature blocker "<feature>/NN". A missing file counts as done: feature dirs
-    # are retired only after shipping (tracker conventions).
-    feature, num = ref.rsplit("/", 1)
-    matches = sorted((tasks_dir.parent / feature).glob(f"{normalize_num(num)}-*.md"))
+def is_local_ref(n: object) -> bool:
+    # a bare ticket number within the feature; "<feature>/NN" and "<slug>" are external
+    return isinstance(n, int) or str(n).isdigit()
+
+
+def ref_status(root: Path, ref: str) -> str:
+    # External blocker: "<feature>/NN" or a standalone task's "<slug>". A missing file
+    # counts as done: done work is deleted, feature dirs retired only after shipping
+    # (tracker conventions).
+    if "/" in ref:
+        feature, num = ref.rsplit("/", 1)
+        matches = sorted((root / feature).glob(f"{normalize_num(num)}-*.md"))
+    else:
+        matches = [p for p in [root / f"{ref}.md"] if p.exists()]
     if not matches:
         return "done"
     meta, _ = split_frontmatter(matches[0].read_text())
     return str(meta.get("status", "open"))
+
+
+def ref_anchor(ref: str) -> str:
+    if "/" in ref:
+        feature, num = ref.rsplit("/", 1)
+        return f"#t-{feature}-{normalize_num(num)}"
+    return f"#task-{ref}"
 
 
 def render_body(md: str, feature: str) -> str:
@@ -263,7 +286,7 @@ def content_stamp(project: str, features: list[Feature], tasks: list[Task], log:
         [(f.name, f.needs_human, f.worker_host,
           [(t.num, t.title, t.status, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.body_html, k.diffview) for k in tasks],
+        [(k.slug, k.title, k.status, k.blocked_by, k.body_html, k.diffview) for k in tasks],
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -342,15 +365,28 @@ def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
             lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {label}"]:::{cls}')
             lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#task-{k.slug}"')
         lines.append("  end")
-    # cross-feature edges, drawn where both endpoints are on the board
+    # external edges (cross-feature, and standalone tasks), drawn where both endpoints are on the board
+    shown_tasks = {k.slug for k in show_tasks}
+
+    def node(ref: str) -> str | None:
+        if "/" in ref:
+            src_feat, src_num = ref.rsplit("/", 1)
+            if normalize_num(src_num) in included.get(src_feat, set()):
+                return f"T_{ns}_{slug_id(src_feat)}_{normalize_num(src_num)}"
+            return None
+        return f"K_{ns}_{slug_id(ref)}" if ref in shown_tasks else None
+
     for f in features:
         for t in f.tickets:
             if t.num not in included[f.name]:
                 continue
             for ref, _ in t.ext_by:
-                src_feat, src_num = ref.rsplit("/", 1)
-                if src_num in included.get(src_feat, set()):
-                    lines.append(f"  T_{ns}_{slug_id(src_feat)}_{normalize_num(src_num)} --> T_{ns}_{slug_id(f.name)}_{t.num}")
+                if src := node(ref):
+                    lines.append(f"  {src} --> T_{ns}_{slug_id(f.name)}_{t.num}")
+    for k in show_tasks:
+        for ref, _ in k.blocked_by:
+            if src := node(ref):
+                lines.append(f"  {src} --> K_{ns}_{slug_id(k.slug)}")
     return "\n".join(lines)
 
 
@@ -396,12 +432,14 @@ def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
     local = "".join(
         f'<a class="chip {by_num[b].status}" href="#t-{feature}-{b}">{b}</a>' for b in t.blocked_by
     )
-    ext = "".join(
-        f'<a class="chip {s}" href="#t-{ref.rsplit("/", 1)[0]}-{normalize_num(ref.rsplit("/", 1)[1])}" '
-        f'title="cross-feature blocker">{html.escape(ref)}</a>'
-        for ref, s in t.ext_by
+    return local + ext_chips(t.ext_by)
+
+
+def ext_chips(refs: list[tuple[str, str]]) -> str:
+    return "".join(
+        f'<a class="chip {s}" href="{ref_anchor(ref)}" title="external blocker">{html.escape(ref)}</a>'
+        for ref, s in refs
     )
-    return local + ext
 
 
 # ---- page -----------------------------------------------------------------
@@ -486,11 +524,12 @@ def render_page(
 
     sections = "".join(feature_section(f) for f in features)
 
+    no_deps = '<span class="deps">—</span>'
     task_rows = "".join(
         f'<details class="ticket row-{k.status}" id="task-{k.slug}"><summary>'
         f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
         f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>'
-        f'<span class="deps">—</span></summary>'
+        f'<span class="chips">{ext_chips(k.blocked_by) or no_deps}</span></summary>'
         f'<div class="body">{k.body_html}</div></details>'
         for k in tasks
     )

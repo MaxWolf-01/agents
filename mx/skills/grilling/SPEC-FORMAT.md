@@ -1,8 +1,8 @@
 # Spec format
 
-`agent/tasks/<slug>/spec.md` is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
+The spec is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Published per `/mx:tracker` (`agent/tasks/<slug>/spec.md` on the markdown backend), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
 
-Frontmatter `status: draft | confirmed`. A draft carries the round's provenance markers (`(you, rN)`, `(my call)`, `(open → Qn)`, `(fog)`) and is never read as settled truth by any skill. The gate strips the markers and sets `confirmed`; from then on the document reads cold.
+Frontmatter `status: draft | confirmed`. A draft carries the provenance markers the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
 
 <spec-template>
 
@@ -62,6 +62,6 @@ The things that are out of scope for this spec, each with its reason: the decisi
 
 ## Further Notes
 
-Anything still too foggy to state as a slice lives here; to-tickets tickets it when the frontier reaches it. Any further notes about the feature.
+Anything still too foggy to state as a slice lives here; to-tickets tickets it when the frontier reaches it.
 
 </spec-template>

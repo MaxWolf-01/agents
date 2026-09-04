@@ -6,7 +6,7 @@ status: confirmed
 
 ## Problem Statement
 
-A grilling round is a numbered list of questions, each with a recommended option. The design is never shown: it is the implicit product of the recommended answers, and the user rebuilds it in their head, round after round. The frontier rule makes this worse: downstream questions wait until their prerequisites settle, so the consequences of a root choice are exactly what a round cannot show. Judgment is render-triggered (retro finding 5), and a question list is not a render of a design.
+A grilling round is a numbered list of questions, each with a recommended option. The design is never shown: it is the implicit product of the recommended answers, and the user rebuilds it in their head, round after round. The frontier rule makes this worse: downstream questions wait until their prerequisites settle, so the consequences of a root choice are exactly what a round cannot show. Judgment is render-triggered: the same person who is blank on an abstract question produces sharp criticism in front of a render, and a question list is not a render of a design.
 
 The spec, the one artefact that would hold the design, is written by a separate user-invoked skill after grilling, and only on the multi-session branch. Agents never suggest it, and the user never wants an extra document to check afterwards, so every single-session grilled design lives and dies in chat.
 
@@ -73,4 +73,4 @@ Prose in skills is the logic, so the test is a grilling run under the new skill:
 
 ## Further Notes
 
-Principles this rests on, from `agent/research/03-agent-workflow-principles.md`: humans judge in front of a render (A12); decisions are the human's, with provenance per claim (A5); deliver through artefacts (A3); state the goal at the right altitude (A22).
+Principles this rests on: humans judge in front of a render; decisions are the human's, with provenance per claim; deliver through artefacts, not chat; state the goal at the right altitude and leave presentation to judgment.
