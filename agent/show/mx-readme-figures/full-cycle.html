@@ -2,31 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>mx — the full cycle</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<title>mx: the full cycle</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#f5f5f5; --paper2:#ececec; --node:#ffffff;
-  --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
-  --rule:rgba(45,49,66,.12);
-  --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
-}
-@media (prefers-color-scheme: dark){
-  :root{
-    --paper:#2d3142; --paper2:#393e53; --node:#393e53;
-    --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
-    --rule:rgba(245,245,245,.12);
-    --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
-  }
+  color-scheme: light dark;
+  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
+  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
+  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
+  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
+  --wash-bar:light-dark(rgba(45,49,66,.05),rgba(245,245,245,.05));
 }
 body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:32px 56px 24px;}
-svg{display:block; max-width:1200px;}
+svg{display:block; width:100%; height:auto;}
 .mask{fill:var(--paper);}
 .card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
 .card-focal{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
 .card-ghost{fill:var(--paper2); stroke:var(--rule); stroke-width:1;}
-.bar{fill:rgba(45,49,66,.05); stroke:var(--muted); stroke-width:.8;}
-@media (prefers-color-scheme: dark){ .bar{fill:rgba(245,245,245,.05);} }
+.bar{fill:var(--wash-bar); stroke:var(--muted); stroke-width:.8;}
 .flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
 .flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2; stroke-dasharray:5 4;}
 .gate{stroke:var(--muted); stroke-width:1; stroke-dasharray:4 4; opacity:.7;}
@@ -42,9 +35,16 @@ text{fill:var(--ink);}
 .al-accent{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--accent);}
 .rule{stroke:var(--rule); stroke-width:1;}
 .legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+.topbar{display:flex; justify-content:flex-end; margin:0 0 8px;}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
 </style>
 </head>
 <body>
+<header class="topbar">
+  <button class="scheme"></button>
+</header>
+
 <svg viewBox="0 0 1200 672" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
@@ -63,6 +63,7 @@ text{fill:var(--ink);}
   <path class="flow" d="M 240,168 H 298" marker-end="url(#arrow)"/>
   <path class="flow" d="M 480,168 H 538" marker-end="url(#arrow)"/>
   <path class="flow" d="M 720,168 H 778" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 440,120 V 96 Q 440,88 448,88 H 848 Q 856,88 856,96 V 100" marker-end="url(#arrow)"/>
   <path class="flow" d="M 872,216 V 266" marker-end="url(#arrow)"/>
   <path class="flow" d="M 960,168 H 1018" marker-end="url(#arrow)"/>
   <path class="flow-accent" d="M 1112,216 V 480 Q 1112,488 1104,488 H 200 Q 192,488 192,480 V 222" marker-end="url(#arrow-accent)"/>
@@ -91,13 +92,15 @@ text{fill:var(--ink);}
 
   <text class="name" x="76" y="144">Sharpen the idea</text>
   <text class="cmd" x="76" y="160">/mx:grill-with-docs</text>
-  <text class="note" x="76" y="178">terms + decisions written down</text>
-  <text class="note" x="76" y="192">big + foggy? /mx:wayfinder</text>
+  <text class="note" x="76" y="178">each round: the design whole</text>
+  <text class="note" x="76" y="192">terms + decisions written down</text>
+  <text class="note" x="76" y="206">big + foggy? /mx:wayfinder</text>
 
   <text class="name" x="316" y="144">Spec</text>
-  <text class="cmd" x="316" y="160">/mx:to-spec</text>
-  <text class="note" x="316" y="178">user stories + app-wide properties</text>
-  <text class="note" x="316" y="192">from a wayfinder map? you review it</text>
+  <text class="cmd" x="316" y="160">(written while grilling)</text>
+  <text class="note" x="316" y="178">a draft from round one</text>
+  <text class="note" x="316" y="192">you review each round's delta</text>
+  <text class="note" x="316" y="206">confirmed at the gate: size call</text>
 
   <text class="name" x="556" y="144">Tickets</text>
   <text class="cmd" x="556" y="160">/mx:to-tickets</text>
@@ -107,14 +110,14 @@ text{fill:var(--ink);}
   <text class="name" x="796" y="144">Build the frontier</text>
   <text class="cmd" x="796" y="160">/mx:implement &middot; /mx:dispatch</text>
   <text class="note" x="796" y="178">fresh window per ticket</text>
-  <text class="note" x="796" y="191">independent ones run in parallel</text>
+  <text class="note" x="796" y="191">parallel waves across worker hosts</text>
   <text class="note" x="796" y="204">open questions filed, never buried</text>
 
   <text class="name" x="796" y="296">Drive each landed slice</text>
   <text class="cmd" x="796" y="312">(human in the loop)</text>
   <text class="note" x="796" y="330">every landed ticket is demoable</text>
-  <text class="note" x="796" y="344">before end-to-end: agent shows</text>
-  <text class="note" x="796" y="358">screenshots + demos instead</text>
+  <text class="note" x="796" y="344">each lands with its review page</text>
+  <text class="note" x="796" y="358">not drivable yet? agent evidence</text>
 
   <text class="name" x="1036" y="144">Review session</text>
   <text class="cmd" x="1036" y="160">(use the app + grill)</text>
@@ -127,15 +130,18 @@ text{fill:var(--ink);}
   <text class="note" x="80" y="603">the feedback loops &rarr; new idea</text>
 
   <text class="barname" x="320" y="566">CONTEXT.md</text>
-  <text class="note" x="320" y="582">the domain glossary — read by every session</text>
+  <text class="note" x="320" y="582">the domain glossary, read by every session</text>
   <text class="barname" x="608" y="566">decisions/</text>
-  <text class="note" x="608" y="582">ADRs: the why behind choices — read every session</text>
+  <text class="note" x="608" y="582">ADRs: the why behind choices, read every session</text>
   <text class="barname" x="896" y="566">agent/prototypes/</text>
   <text class="note" x="896" y="582">kept as reference, consulted when relevant</text>
 
   <!-- gate + arrow labels -->
   <rect class="mask" x="918" y="82" width="148" height="16" rx="4"/>
   <text class="eb" x="992" y="93" text-anchor="middle">FIRST END-TO-END</text>
+
+  <rect class="mask" x="600" y="64" width="96" height="16" rx="4"/>
+  <text class="al" x="648" y="76" text-anchor="middle">FITS A SESSION</text>
 
   <rect class="mask" x="884" y="230" width="52" height="14" rx="4"/>
   <text class="al" x="888" y="240">LANDED</text>
@@ -159,11 +165,22 @@ text{fill:var(--ink);}
   <line class="flow" x1="512" y1="655" x2="548" y2="655" marker-end="url(#arrow)"/>
   <text class="legend-text" x="556" y="659">the flow</text>
   <line class="flow-accent" x1="640" y1="655" x2="676" y2="655"/>
-  <text class="legend-text" x="684" y="659">feedback — the board absorbs it</text>
+  <text class="legend-text" x="684" y="659">feedback: the board absorbs it</text>
   <line class="gate" x1="908" y1="648" x2="908" y2="662"/>
   <text class="legend-text" x="920" y="659">first end-to-end checkpoint</text>
   <rect class="bar" x="1080" y="650" width="24" height="12" rx="3"/>
   <text class="legend-text" x="1112" y="659">durable docs</text>
 </svg>
+<script>
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
+</script>
 </body>
 </html>

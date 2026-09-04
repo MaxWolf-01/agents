@@ -2,31 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>mx — the wayfinder loop</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<title>mx: the wayfinder loop</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#f5f5f5; --paper2:#ececec; --node:#ffffff;
-  --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
-  --rule:rgba(45,49,66,.12);
-  --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
-}
-@media (prefers-color-scheme: dark){
-  :root{
-    --paper:#2d3142; --paper2:#393e53; --node:#393e53;
-    --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
-    --rule:rgba(245,245,245,.12);
-    --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
-  }
+  color-scheme: light dark;
+  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
+  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
+  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
+  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
 }
 body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
 .eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
-h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
+h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
 .dek{font-size:13px; color:var(--muted); max-width:680px; line-height:1.5; margin:0 0 24px;}
-svg{display:block; max-width:1200px;}
+svg{display:block; width:100%; height:auto;}
 .mask{fill:var(--paper);}
 .card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
 .hub{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
+.hub-rule{stroke:var(--accent); stroke-width:.8; opacity:.5;}
 .flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
 .spoke{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:5 4;}
 .m-muted{fill:var(--muted);}
@@ -36,20 +30,26 @@ text{fill:var(--ink);}
 .note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
 .hubrow{font:500 8px 'Geist Mono',monospace; letter-spacing:.08em; fill:var(--muted);}
 .al{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
-.aside{font:italic 14px 'Instrument Serif',serif; fill:var(--soft);}
+.aside{font:400 11px 'Geist',sans-serif; fill:var(--soft);}
 .rule{stroke:var(--rule); stroke-width:1;}
 .legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
 </style>
 </head>
 <body>
-<p class="eyebrow">mx workflow &middot; wayfinder</p>
+<header class="topbar">
+  <p class="eyebrow">mx workflow &middot; wayfinder</p>
+  <button class="scheme"></button>
+</header>
 <h1>Planning too big for one session: a shared map of decision tickets.</h1>
 <p class="dek">Chart the map once, then loop: each lap is a fresh session that claims one open question, resolves
-it, and records the decision. Sessions come and go — the map accumulates. When no tickets remain and no fog
-is specifiable, the way is clear, and only then does building start. A repo can run several maps (efforts)
-at once.</p>
+it, and records the decision on the map and in the spec draft. Sessions come and go; the map and the draft
+accumulate. When no tickets remain and no fog is specifiable, the way is clear: the last session confirms the
+spec, and only then does building start. A repo can run several maps (efforts) at once.</p>
 
-<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 740" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
@@ -58,15 +58,15 @@ at once.</p>
 
   <!-- connectors: the loop -->
   <path class="flow" d="M 736,216 H 948 Q 956,216 956,224 V 324" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 956,424 V 556 Q 956,564 948,564 H 732" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 552,564 H 356 Q 348,564 348,556 V 428" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 956,424 V 592 Q 956,600 948,600 H 732" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 552,600 H 356 Q 348,600 348,592 V 428" marker-end="url(#arrow)"/>
   <path class="flow" d="M 348,328 V 224 Q 348,216 356,216 H 540" marker-end="url(#arrow)"/>
   <!-- entry and exit -->
   <path class="flow" d="M 264,144 H 588 Q 596,144 596,152 V 172" marker-end="url(#arrow)"/>
   <path class="flow" d="M 660,176 V 152 Q 660,144 668,144 H 932" marker-end="url(#arrow)"/>
-  <!-- spokes: map reads and writes -->
+  <!-- spokes: shared-state reads and writes -->
   <path class="spoke" d="M 640,304 V 260" marker-end="url(#arrow)"/>
-  <path class="spoke" d="M 640,520 V 436" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 640,552 V 476" marker-end="url(#arrow)"/>
   <path class="spoke" d="M 448,376 H 524" marker-end="url(#arrow)"/>
 
   <!-- nodes -->
@@ -74,35 +74,40 @@ at once.</p>
   <rect class="card" x="936" y="96" width="208" height="96" rx="6"/>
   <rect class="card" x="544" y="176" width="192" height="80" rx="6"/>
   <rect class="card" x="848" y="328" width="216" height="96" rx="6"/>
-  <rect class="card" x="552" y="520" width="176" height="88" rx="6"/>
+  <rect class="card" x="552" y="552" width="176" height="96" rx="6"/>
   <rect class="card" x="248" y="328" width="200" height="96" rx="6"/>
-  <rect class="hub" x="528" y="304" width="224" height="128" rx="8"/>
+  <rect class="hub" x="528" y="304" width="224" height="168" rx="8"/>
+  <line class="hub-rule" x1="544" y1="420" x2="736" y2="420"/>
 
   <!-- labels -->
   <!-- chart -->
   <text class="name" x="80" y="120">Chart the map</text>
   <text class="cmd" x="80" y="136">/mx:wayfinder</text>
   <text class="note" x="80" y="154">name the destination, sketch the fog,</text>
-  <text class="note" x="80" y="168">cut the first decision tickets</text>
-  <!-- to-spec -->
-  <text class="name" x="952" y="120">Collapse into a spec</text>
-  <text class="cmd" x="952" y="136">/mx:to-spec &rarr; tickets &rarr; implement</text>
-  <text class="note" x="952" y="154">written from the map, not with you —</text>
-  <text class="note" x="952" y="168">review it, then mark the map historical</text>
+  <text class="note" x="80" y="168">cut the first decision tickets,</text>
+  <text class="note" x="80" y="182">open the spec draft beside the map</text>
+  <!-- confirm -->
+  <text class="name" x="952" y="120">Confirm the spec</text>
+  <text class="cmd" x="952" y="136">the gate, then /mx:to-tickets</text>
+  <text class="note" x="952" y="154">the draft grew lap by lap: read it</text>
+  <text class="note" x="952" y="168">whole once, then walk the gate;</text>
+  <text class="note" x="952" y="182">the confirmed spec supersedes the map</text>
   <!-- claim -->
   <text class="name" x="560" y="200">Pick &amp; claim</text>
-  <text class="note" x="560" y="218">first open, unblocked, unclaimed ticket</text>
-  <text class="note" x="560" y="232">— the frontier, the edge of the known</text>
+  <text class="note" x="560" y="218">first open, unblocked, unclaimed ticket:</text>
+  <text class="note" x="560" y="232">the frontier, the edge of the known</text>
   <!-- resolve -->
   <text class="name" x="864" y="352">Resolve the question</text>
   <text class="cmd" x="864" y="368">grill &middot; prototype &middot; research &middot; task</text>
-  <text class="note" x="864" y="386">HITL or AFK — research runs in background</text>
+  <text class="note" x="864" y="386">HITL or AFK: research runs in background</text>
   <text class="note" x="864" y="400">surfaces prototype-first; blank? render it</text>
+  <text class="note" x="864" y="414">AFK findings reach the draft in a round</text>
   <!-- record -->
-  <text class="name" x="568" y="544">Record on the map</text>
-  <text class="note" x="568" y="562">answer on the ticket, close it,</text>
-  <text class="note" x="568" y="576">gist + link in Decisions so far</text>
-  <text class="note" x="568" y="590">unratified = marked unconfirmed</text>
+  <text class="name" x="568" y="576">Record the decision</text>
+  <text class="note" x="568" y="594">answer on the ticket, close it,</text>
+  <text class="note" x="568" y="608">gist + link in Decisions so far,</text>
+  <text class="note" x="568" y="622">spec sections it touches rewritten;</text>
+  <text class="note" x="568" y="636">unratified = marked unconfirmed</text>
   <!-- graduate -->
   <text class="name" x="264" y="352">Graduate the fog</text>
   <text class="note" x="264" y="370">newly sharp questions become tickets;</text>
@@ -110,33 +115,46 @@ at once.</p>
   <!-- hub -->
   <text class="name" x="548" y="328">The map</text>
   <text class="hubrow" x="548" y="350">DESTINATION</text>
-  <text class="hubrow" x="548" y="368">DECISIONS SO FAR — THE INDEX</text>
-  <text class="hubrow" x="548" y="386">NOT YET SPECIFIED — THE FOG</text>
+  <text class="hubrow" x="548" y="368">DECISIONS SO FAR: THE INDEX</text>
+  <text class="hubrow" x="548" y="386">NOT YET SPECIFIED: THE FOG</text>
   <text class="hubrow" x="548" y="404">OUT OF SCOPE</text>
+  <text class="name" x="548" y="442">The spec draft</text>
+  <text class="hubrow" x="548" y="460">GROWS AS DECISIONS LAND</text>
 
   <!-- arrow labels -->
   <rect class="mask" x="748" y="120" width="96" height="18" rx="4"/>
   <text class="al" x="796" y="132" text-anchor="middle">FRONTIER EMPTY</text>
-  <rect class="mask" x="652" y="466" width="64" height="16" rx="4"/>
-  <text class="al" x="656" y="477">DECISION</text>
+  <rect class="mask" x="652" y="502" width="64" height="16" rx="4"/>
+  <text class="al" x="656" y="513">DECISION</text>
   <rect class="mask" x="452" y="354" width="68" height="14" rx="4"/>
   <text class="al" x="486" y="364" text-anchor="middle">NEW TICKETS</text>
   <text class="al" x="336" y="268" text-anchor="end">ONE LAP =</text>
   <text class="al" x="336" y="280" text-anchor="end">ONE SESSION</text>
 
   <!-- aside -->
-  <text class="aside" x="80" y="566">sessions come and go —</text>
-  <text class="aside" x="80" y="584">the map keeps every decision.</text>
+  <text class="aside" x="80" y="600">sessions come and go;</text>
+  <text class="aside" x="80" y="616">the map keeps every decision.</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="648" x2="1136" y2="648"/>
-  <line class="flow" x1="64" y1="672" x2="104" y2="672" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="112" y="675">the loop — a fresh session per lap</text>
-  <line class="spoke" x1="336" y1="672" x2="376" y2="672"/>
-  <text class="legend-text" x="384" y="675">map reads &amp; writes</text>
-  <rect class="hub" x="536" y="666" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="568" y="675">shared state — outlives every session</text>
-  <text class="legend-text" x="800" y="675">task = manual work that unblocks a decision</text>
+  <line class="rule" x1="64" y1="688" x2="1136" y2="688"/>
+  <line class="flow" x1="64" y1="712" x2="104" y2="712" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="112" y="715">the loop: a fresh session per lap</text>
+  <line class="spoke" x1="336" y1="712" x2="376" y2="712"/>
+  <text class="legend-text" x="384" y="715">map + draft reads &amp; writes</text>
+  <rect class="hub" x="568" y="706" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="600" y="715">shared state: outlives every session</text>
+  <text class="legend-text" x="832" y="715">task = manual work that unblocks a decision</text>
 </svg>
+<script>
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
+</script>
 </body>
 </html>

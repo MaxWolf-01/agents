@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>mx — idea to ship</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<title>mx: idea to ship</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   color-scheme: light dark;
@@ -20,7 +20,7 @@
 }
 body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
 .eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
-h1{font:400 1.75rem 'Instrument Serif',serif; margin:0 0 8px;}
+h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
 .dek{font-size:13px; color:var(--muted); max-width:660px; line-height:1.5; margin:0 0 24px;}
 svg{display:block; width:100%; height:auto;}
 .mask{fill:var(--paper);}
@@ -41,7 +41,7 @@ text{fill:var(--ink);}
 .eb{font:500 8px 'Geist Mono',monospace; letter-spacing:.18em; fill:var(--muted);}
 .al{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
 .chiptext{font:500 7px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--ink);}
-.aside{font:italic 14px 'Instrument Serif',serif; fill:var(--soft);}
+.aside{font:400 11px 'Geist',sans-serif; fill:var(--soft);}
 .chip-sage{fill:rgba(124,143,111,.18); stroke:#7c8f6f; stroke-width:.8;}
 .chip-blue{fill:rgba(94,122,155,.18); stroke:#5e7a9b; stroke-width:.8;}
 .chip-mustard{fill:rgba(184,145,90,.20); stroke:#b8915a; stroke-width:.8;}
@@ -62,10 +62,10 @@ text{fill:var(--ink);}
   <p class="eyebrow">mx workflow &middot; idea &rarr; ship</p>
   <button class="scheme"></button>
 </header>
-<h1>Plan together, build AFK.</h1>
+<h1>Who is in the loop at each step, and in which context window.</h1>
 <p class="dek">Alignment is built once, by interview, with the human in the loop. Everything downstream trades
-on it: the spec summarizes it, tickets slice it, implementation runs unattended on it — and taste comes back
-in when a slice lands.</p>
+on it: the spec holds it, rewritten round by round as the interview settles; tickets slice it; implementation
+runs unattended on it, and taste comes back in when a slice lands.</p>
 
 <svg viewBox="0 0 1200 656" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -90,6 +90,7 @@ in when a slice lands.</p>
 
   <!-- connectors -->
   <path class="flow" d="M 184,216 V 356 Q 184,364 192,364 H 308" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 344,316 V 200 Q 344,192 336,192 H 276" marker-end="url(#arrow)"/>
   <path class="flow" d="M 400,316 V 176 Q 400,168 408,168 H 524" marker-end="url(#arrow)"/>
   <path class="flow" d="M 616,216 V 356 Q 616,364 624,364 H 756" marker-end="url(#arrow)"/>
   <path class="flow" d="M 848,300 V 176 Q 848,168 856,168 H 984" marker-end="url(#arrow)"/>
@@ -116,20 +117,22 @@ in when a slice lands.</p>
   <text class="eb" x="1070" y="22" text-anchor="middle">QA</text>
 
   <text class="eb" x="76" y="76">HUMAN IN THE LOOP</text>
-  <text class="eb" x="76" y="276">AFK — AGENT ALONE</text>
+  <text class="eb" x="76" y="276">AFK: AGENT ALONE</text>
 
   <!-- card: grill -->
   <text class="name" x="108" y="144">Grill the idea</text>
   <text class="cmd" x="108" y="162">/mx:grill-with-docs</text>
   <text class="note" x="108" y="180">where alignment happens</text>
   <!-- card: spec -->
-  <text class="name" x="324" y="340">Write the spec</text>
-  <text class="cmd" x="324" y="358">/mx:to-spec</text>
-  <text class="note" x="324" y="376">don't review it — you were there</text>
+  <text class="name" x="324" y="340">Rewrite the spec draft</text>
+  <text class="cmd" x="324" y="358">(each grilling round)</text>
+  <text class="note" x="324" y="376">you read the delta, then answer</text>
+  <text class="note" x="324" y="390">confirmed at the gate</text>
   <!-- card: tickets -->
   <text class="name" x="540" y="144">Cut tickets</text>
   <text class="cmd" x="540" y="162">/mx:to-tickets</text>
-  <text class="note" x="540" y="180">vertical slices — review the cut</text>
+  <text class="note" x="540" y="180">vertical slices, review the cut</text>
+  <text class="note" x="540" y="194">fits one session? no tickets</text>
   <!-- card: implement -->
   <text class="name" x="772" y="340">Implement</text>
   <text class="cmd" x="772" y="358">/mx:implement &middot; per ticket</text>
@@ -171,7 +174,11 @@ in when a slice lands.</p>
   <rect class="chip-rust" x="996" y="208" width="84" height="16" rx="4"/>
   <text class="chiptext" x="1038" y="219" text-anchor="middle">TRACER BULLET</text>
 
-  <!-- arrow label on return edge -->
+  <!-- arrow labels -->
+  <rect class="mask" x="190" y="300" width="44" height="14" rx="4"/>
+  <text class="al" x="192" y="310">ANSWERS</text>
+  <rect class="mask" x="280" y="252" width="54" height="14" rx="4"/>
+  <text class="al" x="284" y="262">NEXT ROUND</text>
   <rect class="mask" x="806" y="64" width="80" height="18" rx="4"/>
   <text class="al" x="846" y="76" text-anchor="middle">NEW TICKETS</text>
 
@@ -179,7 +186,7 @@ in when a slice lands.</p>
   <text class="al" x="400" y="500" text-anchor="middle">ONE UNBROKEN CONTEXT WINDOW</text>
   <text class="note" x="400" y="532" text-anchor="middle">grill &rarr; spec &rarr; tickets, same thinking end to end</text>
   <text class="al" x="846" y="532" text-anchor="middle">FRESH WINDOW PER TICKET</text>
-  <text class="note" x="846" y="548" text-anchor="middle">parallel when independent — /mx:dispatch</text>
+  <text class="note" x="846" y="548" text-anchor="middle">parallel when independent: /mx:dispatch</text>
 
   <!-- legend -->
   <line class="rule" x1="64" y1="584" x2="1164" y2="584"/>
