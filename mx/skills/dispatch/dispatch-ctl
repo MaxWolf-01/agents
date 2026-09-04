@@ -25,12 +25,13 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
 #   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
-#                             The contract a replacement owes: argv is
-#                             <prompt> <ticket> <model> <channel> [session-id];
-#                             it creates <channel>.log in this directory within seconds of
-#                             starting, and at exit writes <channel>.status beside it
-#                             (key=value line, `session=` included) before
-#                             firing `tmux wait-for -S <channel>`.
+#                             A replacement lives in this directory too. The
+#                             contract it owes: argv is <prompt> <ticket> <model>
+#                             <channel> [session-id]; within seconds of starting
+#                             it creates <channel>.log beside itself, and at exit
+#                             writes <channel>.status there (key=value line,
+#                             `session=` included) before firing
+#                             `tmux wait-for -S <channel>`.
 #
 # State, all plain text in this directory:
 #   config                       repo, feature, git dir, worktrees dir (init)
@@ -86,8 +87,8 @@ init() {
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
     printf 'repo=%s\nfeature=%s\ngit=%s\nworktrees=%s\n' "$repo" "$feature" "$git_dir" "$worktrees" > "$here/config"
-    # Prompts, worklogs and status lines of every feature live under here;
-    # another user on the host has no business reading them.
+    # The parent holds every feature's scratch dir: prompts, worklogs, status
+    # lines. No other user on the host has business reading them.
     chmod 700 "$(dirname "$here")"
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     # A running worker keeps the version directory it started with (old
