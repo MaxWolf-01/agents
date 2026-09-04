@@ -38,6 +38,11 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 
 ## What's manual, what's AFK, and why
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/main-flow.png">
+  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round and implementation per ticket with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
+</picture>
+
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
 - **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → handoff to a fresh thread, don't push on degraded.
 - **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Grilling writes it round by round and you review each round's delta as it lands (`/mx:grilling` has the mechanics); writing it down is itself a design step. A spec assembled across sessions (a wayfinder effort) gets one whole-document read at the end, for drift between sessions.
