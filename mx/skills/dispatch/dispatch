@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# The orchestrator's side of one feature's dispatch: the steps with an ordering
+# that matters and nothing in them to judge. Runs here, inside the feature
+# worktree, on the feature branch; `dispatch-ctl` is its counterpart on the
+# worker host.
+#
+# Usage: dispatch setup <host> <repo> <feature>
+#        dispatch review <NN-slug>
+#   setup    once per feature: adds the git remote when missing, puts this
+#            plugin version's dispatch-ctl, runner and worker prompt into the
+#            host's scratch dir, runs `dispatch-ctl init` there and pushes the
+#            feature branch. <host> is user@host, or `local` for this machine
+#            (scratch dir in /tmp here, init pointed at this worktree).
+#   review   once a ticket branch is fetched, before or after its merge alike:
+#            records the branch's range in the ticket's `diff:` frontmatter,
+#            projects the ticket's assumptions into the review page's notes,
+#            renders the page under agent/diffviews, serves it, re-renders the
+#            board.
+#
+# Ticket branches merge into the feature branch with --no-ff; that merge commit
+# is how `review` finds a ticket's range after the merge (its second parent is
+# the ticket tip).
+set -u
+
+skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+feature=$(git branch --show-current)
+repo_root=$(git rev-parse --show-toplevel)
+
+run() { echo "+ $*" >&2; "$@"; }
+die() { echo "dispatch: $1" >&2; exit 1; }
+
+setup() {
+    host=$1 repo=$2 feature=$3
+    scratch=/tmp/dispatch-$repo-$feature
+    if [ "$host" = local ]; then
+        run mkdir -p "$scratch"
+        run cp "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$scratch/"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$PWD" "$(dirname "$PWD")"
+        echo "scratch=$scratch"
+        return
+    fi
+    remote=${host//[@.]/-}
+    git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
+    run ssh "$host" mkdir -p "$scratch"
+    run scp -q "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$host:$scratch/"
+    # init creates the bare repo the push lands in; the push gives the host a
+    # <feature> for spawn to cut ticket branches from.
+    run ssh "$host" bash "$scratch/dispatch-ctl" init "$repo" "$feature"
+    run git push -q "$remote" "$feature"
+    echo "remote=$remote  scratch=$scratch  ctl='ssh $host bash $scratch/dispatch-ctl'"
+}
+
+# <tip> → <base>..<tip>, whether or not the ticket branch has merged yet. Before
+# the merge, merge-base against the feature branch is the answer; after it, the
+# tip is an ancestor of the feature branch and merge-base would return the tip
+# itself, so the base comes from the merge commit that brought it in.
+range_of() {
+    tip=$1
+    if git merge-base --is-ancestor "$tip" "$feature"; then
+        merge=$(git rev-list --first-parent --merges --parents "$feature" | awk -v t="$tip" '$3 == t { print $1; exit }')
+        [ -n "$merge" ] || die "$tip is on $feature but no --no-ff merge brought it there; append the range to the ticket by hand"
+        echo "$(git merge-base "$merge^1" "$tip")..$tip"
+    else
+        echo "$(git merge-base "$feature" "$tip")..$tip"
+    fi
+}
+
+# The notes file is a pure projection of the ticket, rewritten whole on every
+# render: assumption bullets `- A3 \`path:118\`: text` become notes, each
+# `Addressed: C1, C4` line lists resolved comments. A duplicate id fails the
+# render, as /mx:implement promises the worker it will.
+notes_of() {
+    jq -R -s '
+        split("\n")
+        | { notes: [ .[] | capture("^\\s*- A(?<id>[0-9]+) `(?<path>[^:`]+)(:(?<line>[0-9]+))?`: (?<text>.*)$")
+                          | .id |= tonumber | .line |= (if . == null then empty else tonumber end) ],
+            resolved: [ .[] | capture("^Addressed: (?<ids>.*)$").ids | split(",")[] | gsub("^ +| +$"; "") | select(. != "") ] }
+        | if (.notes | map(.id) | length) != (.notes | map(.id) | unique | length)
+          then error("duplicate assumption id in the ticket") else . end' "$1"
+}
+
+review() {
+    id=$1
+    ticket=agent/tasks/$feature/$id.md
+    branch=ticket/$feature/$id
+    [ -f "$ticket" ] || die "no ticket at $ticket"
+    tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
+    range=$(range_of "$tip") || exit 1
+
+    # `diff:` is a flow list in the frontmatter, added after `status:` (every
+    # ticket has one) when absent. A re-render finds its range already there.
+    if ! grep -q "$range" "$ticket"; then
+        if grep -q '^diff: \[' "$ticket"; then
+            sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
+        else
+            sed -i "/^status:/a diff: [$range]" "$ticket"
+        fi
+        run git commit -q -m "$feature: $id review range" -- "$ticket"
+    fi
+
+    out=agent/diffviews/$feature/$id
+    mkdir -p "$(dirname "$out")"
+    notes_of "$ticket" > "$out.notes.json" || exit 1
+    specs=()
+    while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
+    run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
+    run diffview --serve agent/diffviews
+    run uv run "$skill/dashboard.py" agent/tasks
+}
+
+cmd=${1:-}
+case $cmd in
+    setup)   shift; setup "$@" ;;
+    review)  shift; review "$@" ;;
+    -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
+    *) die "unknown command: $cmd" ;;
+esac
