@@ -11,6 +11,7 @@ A command runs in tmux, never as a blocking one-shot Bash call, when any of thes
 
 - `tms claude`: create or attach the default shared session.
 - **Check before sending**: the shared session may be busy with another agent's process. `tmux list-panes -t claude -F '#{pane_current_command}'`: anything but a shell name means occupied. Then create your own session named for the activity (`tmux new-session -d -s <activity>`, e.g. `train-resnet`) and tell the user its name.
+- Kill only what you created, by name: `tmux kill-session -t <name>`. Never `kill-server`: the user's server hosts their shells, editors, and every other agent. Throwaway servers for tests get their own socket, `tmux -L <label> ...`, and die with `tmux -L <label> kill-server`. `TMUX_TMPDIR` is not isolation inside a pane: `$TMUX` already names the socket and wins.
 - Send a command: `tmux send-keys -t <session> -l 'command'` then `tmux send-keys -t <session> Enter`
 - Read output: `tmux capture-pane -p -J -t <session> -S -50` (`-J` joins wrapped lines)
 
