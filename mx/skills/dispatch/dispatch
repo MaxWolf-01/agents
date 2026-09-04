@@ -55,6 +55,7 @@ setup() {
     if [ "$host" = local ]; then
         scratch=$HOME/$scratch
         run mkdir -p "$scratch"
+        [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
         run cp "${files[@]}" "$scratch/"
         run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
         echo "scratch=$scratch"
@@ -63,6 +64,7 @@ setup() {
     remote=${host//[@.]/-}
     git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
     run ssh "$host" mkdir -p "$scratch"
+    [ -n "$setup_cmd" ] || run ssh "$host" rm -f "$scratch/setup"
     run scp -q "${files[@]}" "$host:$scratch/"
     # init creates the bare repo the push lands in; the push gives the host a
     # <feature> for spawn to cut ticket branches from.

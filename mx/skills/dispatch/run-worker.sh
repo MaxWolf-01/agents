@@ -88,6 +88,8 @@ for attempt in $(seq 1 $max_attempts); do
     backoff=$((attempt * 30))
     echo "run-worker: attempt $attempt exited $rc (ticket: ${status:-?}); retrying in ${backoff}s"
     sleep "$backoff"
+    # A TERM that lands here ends the sleep, and must end the run too.
+    [ -n "$stopped" ] && break
 done
 
 [ -n "$stopped" ] && rc=stopped

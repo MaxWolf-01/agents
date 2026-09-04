@@ -19,10 +19,11 @@
 #             its feature worktree and the directory beside it.
 #   spawn     cuts ticket/<feature>/<NN-slug> from <feature> into
 #             <worktrees-dir>/<repo>-<feature>-<NN-slug> when absent, sets it up
-#             (the `setup` file's command when present, else `make install`,
-#             under `nix develop -c` where a flake.nix exists), then starts the
-#             worker on prompt-<NN>.md from this directory. A session id resumes
-#             that conversation on the same file, which then holds the guidance.
+#             (the `setup` file's command, run as given; without that file
+#             `make install`, under `nix develop -c` where a flake.nix exists),
+#             then starts the worker on prompt-<NN>.md from this directory. A
+#             session id resumes that conversation on the same file, which then
+#             holds the guidance.
 #   stop      ends the current run without losing it: the runner writes its
 #             status line (`exit=stopped`, session id) and fires the channel.
 #             Worktree and branch stay for a resume.
@@ -46,7 +47,7 @@
 #   config                       repo, feature, git dir, worktrees dir (init)
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch setup`)
-#   manifest                     one line per run: name TAB channel TAB worktree
+#   manifest                     one line per run: name TAB channel TAB worktree TAB runner
 #   <channel>.status|.log        written by the runner
 #   <name>.install.log           the setup command's output
 #
@@ -82,19 +83,24 @@ names() {
     prompt=$here/prompt-$nn.md
 }
 
-current_channel() { # newest manifest channel for a name, empty if none
+# The newest manifest line for a name sets `channel` and `run_runner`, the
+# runner that run was typed with (what its command line shows, whatever
+# DISPATCH_RUNNER says now); both empty when the name has never run.
+current_run() {
+    channel= run_runner=
     [ -f "$manifest" ] || return 0
-    tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print $2; exit }'
+    IFS=$'\t' read -r _ channel _ run_runner < <(tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print; exit }')
+    run_runner=${run_runner:-$runner}
 }
 
 # The runner's pid for a channel. Anchored on the runner's own command line: a
 # remote watcher's `tmux wait-for <channel>` also carries the channel and must
 # not count as a live worker.
-runner_pid() { pgrep -f "^bash $runner .* $1( |$)"; }
+runner_pid() { pgrep -f "^bash $2 .* $1( |$)"; } # <channel> <runner>
 
-run_state() { # exited | running | gone
+run_state() { # <channel> <runner> → exited | running | gone
     [ -f "$here/$1.status" ] && { echo exited; return; }
-    runner_pid "$1" >/dev/null && { echo running; return; }
+    runner_pid "$1" "$2" >/dev/null && { echo running; return; }
     echo gone
 }
 
@@ -137,7 +143,7 @@ checkout() {
         # and starting a worker in a tree that was never set up.
         run git -C "$git_dir" worktree remove --force "$worktree"
         run git -C "$git_dir" branch -D "$branch"
-        die "setup target failed in $worktree; the log above is its tail"
+        die "setup command failed in $worktree; the log above is its tail"
     fi
 }
 
@@ -145,9 +151,9 @@ spawn() {
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
-    prev=$(current_channel "$name")
-    if [ -n "$prev" ] && [ "$(run_state "$prev")" = running ]; then
-        die "$name is still running channel=$prev; a line typed into its pane now would launch a second worker when it exits"
+    current_run "$name"
+    if [ -n "$channel" ] && [ "$(run_state "$channel" "$run_runner")" = running ]; then
+        die "$name is still running channel=$channel; a line typed into its pane now would launch a second worker when it exits"
     fi
     [ -d "$worktree" ] || checkout
     channel=$name-$(date +%s)
@@ -167,7 +173,7 @@ spawn() {
         die "no $here/$channel.log after 15s; the pane's last lines are above"
     fi
 
-    ( flock 9; printf '%s\t%s\t%s\n' "$name" "$channel" "$worktree" >> "$manifest" ) 9>>"$manifest.lock"
+    ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$channel" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
     echo "spawned $name  channel=$channel"
     echo "watcher: tmux wait-for $channel"
 }
@@ -176,8 +182,8 @@ probe() {
     [ -f "$manifest" ] || die "no manifest; nothing spawned from $here"
     # Last manifest line per name is the current run; earlier runs' status files
     # are history, not state.
-    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree; do
-        case $(run_state "$channel") in
+    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree run_runner; do
+        case $(run_state "$channel" "${run_runner:-$runner}") in
             exited)  echo "$name exited  channel=$channel  $(cat "$here/$channel.status")" ;;
             running) echo "$name running  channel=$channel  log: $(tail -1 "$here/$channel.log" 2>/dev/null || echo -)" ;;
             # No status file and no runner process: killed pane, killed session,
@@ -190,10 +196,11 @@ probe() {
 
 stop() {
     load; names "$1"
-    channel=$(current_channel "$name")
+    current_run "$name"
     [ -n "$channel" ] || die "no run of $name in the manifest"
-    [ "$(run_state "$channel")" = running ] || die "$name is not running (channel=$channel, $(run_state "$channel"))"
-    pid=$(runner_pid "$channel")
+    state=$(run_state "$channel" "$run_runner")
+    [ "$state" = running ] || die "$name is not running (channel=$channel, $state)"
+    pid=$(runner_pid "$channel" "$run_runner")
     pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
     # The pane shell runs the runner as a job, so the runner leads its own
     # process group and claude sits in it: one signal reaches both. Were that
@@ -202,7 +209,8 @@ stop() {
     if [ "$pgid" = "$pid" ]; then
         run kill -TERM -- "-$pgid"
     else
-        pkill -TERM -P "$pid"; run kill -TERM "$pid"
+        run pkill -TERM -P "$pid"
+        run kill -TERM "$pid"
     fi
     for _ in $(seq 60); do
         [ -f "$here/$channel.status" ] && { echo "stopped $name  $(cat "$here/$channel.status")"; return; }
@@ -213,9 +221,14 @@ stop() {
 
 resume() {
     load; names "$1"
-    channel=$(current_channel "$name")
+    current_run "$name"
     [ -n "$channel" ] || die "no run of $name to resume; spawn it"
-    [ -f "$here/$channel.status" ] || die "$name has no status line (state: $(run_state "$channel")); stop it first, or spawn afresh"
+    if [ ! -f "$here/$channel.status" ]; then
+        case $(run_state "$channel" "$run_runner") in
+            running) die "$name is still running; stop it first" ;;
+            *)       die "$name is gone without a status line, so no session id survives; spawn afresh" ;;
+        esac
+    fi
     session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$channel.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
     spawn "$1" "$2" "$session"
@@ -224,9 +237,9 @@ resume() {
 log() {
     load; names "$1"
     lines=${2:-20}
-    channel=$(current_channel "$name")
+    current_run "$name"
     [ -n "$channel" ] || die "no run of $name in the manifest"
-    echo "$name $(run_state "$channel")  channel=$channel"
+    echo "$name $(run_state "$channel" "$run_runner")  channel=$channel"
     [ -f "$here/$channel.status" ] && cat "$here/$channel.status"
     echo "-- worklog, last $lines lines"
     tail -n "$lines" "$here/$channel.log" 2>/dev/null || echo "(no worklog)"
@@ -245,7 +258,7 @@ cleanup() {
           mv "$manifest.tmp" "$manifest"
         ) 9>>"$manifest.lock"
     fi
-    # --force: the setup target left untracked files (node_modules, .venv) that
+    # --force: the setup command left untracked files (node_modules, .venv) that
     # a plain remove refuses over. -D: the ticket branch merges into the feature
     # branch on the orchestrator's side and never here, so -d would refuse too;
     # the orchestrator has fetched the branch before calling this.
