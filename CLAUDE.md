@@ -11,7 +11,7 @@ Every machine installs `mx` from the marketplace, and `claude plugin update` is 
 Some resources that might be useful to consult when brainstorming architectural / design decisions around the workflow etc.
 - ./resources
 - ALWAYS consult the "writing for agents" skill when updating anything here / anywhere agents might read it / meant primarily for agent consumption, including skills, docs, ...
-- Before changing a skill, a CLAUDE.md, or how the workflow runs, read `PRINCIPLES.md`: the rules every past refinement of this workflow re-learned, with the commits as evidence. A change that strains one says so in its commit message.
+- `PRINCIPLES.md` before changing a skill, a CLAUDE.md, or how the workflow runs: the rules every past refinement of this workflow re-learned, with the commits as evidence.
 
 
 # Related Porjects
