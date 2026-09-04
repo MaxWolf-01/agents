@@ -3,7 +3,7 @@
 # Usage: run-worker.sh <message-file> <ticket-file> <model> <channel> [session-id]
 #   message-file  worker prompt, or resume guidance; sent on the first attempt only
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
-#   channel       tmux wait-for channel, unique per run; also names /tmp/<channel>.{status,log}
+#   channel       tmux wait-for channel, unique per run; also names <channel>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
@@ -24,7 +24,7 @@ if [ ! -f "$prompt_file" ]; then
     # Signal anyway: an orchestrator whose watcher never fires waits for its
     # fallback heartbeat instead of hearing about this.
     printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
-        "no worker-prompt.md beside run-worker.sh" | tee "/tmp/$channel.status" >&2
+        "no worker-prompt.md beside run-worker.sh" | tee "$here/$channel.status" >&2
     tmux wait-for -S "$channel"
     exit 1
 fi
@@ -35,7 +35,7 @@ session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
-export DISPATCH_WORKLOG="/tmp/$channel.log"
+export DISPATCH_WORKLOG="$here/$channel.log"
 # Created here so that an empty file says the worker wrote nothing, where a missing one
 # would leave the orchestrator unable to tell that from a worklog it never got told about.
 touch "$DISPATCH_WORKLOG"
@@ -83,5 +83,5 @@ for attempt in $(seq 1 $max_attempts); do
 done
 
 printf 'attempts=%s exit=%s status=%s session=%s\n' \
-    "$attempt" "$rc" "${status:-?}" "$session" > "/tmp/$channel.status"
+    "$attempt" "$rc" "${status:-?}" "$session" > "$here/$channel.status"
 tmux wait-for -S "$channel"

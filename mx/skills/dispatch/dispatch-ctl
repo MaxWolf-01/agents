@@ -27,16 +27,16 @@
 #   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
 #                             The contract a replacement owes: argv is
 #                             <prompt> <ticket> <model> <channel> [session-id];
-#                             it creates /tmp/<channel>.log within seconds of
-#                             starting, and at exit writes /tmp/<channel>.status
+#                             it creates <channel>.log in this directory within seconds of
+#                             starting, and at exit writes <channel>.status beside it
 #                             (key=value line, `session=` included) before
 #                             firing `tmux wait-for -S <channel>`.
 #
 # State, all plain text in this directory:
 #   config                       repo, feature, git dir, worktrees dir (init)
 #   manifest                     one line per run: name TAB channel TAB worktree
-#   /tmp/<channel>.status|.log   written by the runner
-#   /tmp/<name>.install.log      the setup target's output
+#   <channel>.status|.log        written by the runner
+#   <name>.install.log           the setup target's output
 #
 # Every command that changes something is echoed before it runs, so a
 # transcript shows the primitives; anything this script does wrong can be
@@ -76,7 +76,7 @@ current_channel() { # newest manifest channel for a name, empty if none
 }
 
 run_state() { # exited | running | gone
-    [ -f "/tmp/$1.status" ] && { echo exited; return; }
+    [ -f "$here/$1.status" ] && { echo exited; return; }
     pgrep -f "$1" >/dev/null && { echo running; return; }
     echo gone
 }
@@ -86,6 +86,9 @@ init() {
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
     printf 'repo=%s\nfeature=%s\ngit=%s\nworktrees=%s\n' "$repo" "$feature" "$git_dir" "$worktrees" > "$here/config"
+    # Prompts, worklogs and status lines of every feature live under here;
+    # another user on the host has no business reading them.
+    chmod 700 "$(dirname "$here")"
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     # A running worker keeps the version directory it started with (old
     # versions stay in the plugin cache), so this changes only workers started
@@ -107,9 +110,9 @@ checkout() {
     else
         die "no setup target in $worktree (no flake.nix, no make install); the project needs one before it can be dispatched"
     fi
-    echo "+ (cd $worktree && ${setup[*]}) > /tmp/$name.install.log 2>&1" >&2
-    if ! (cd "$worktree" && "${setup[@]}") > "/tmp/$name.install.log" 2>&1; then
-        tail -20 "/tmp/$name.install.log" >&2
+    echo "+ (cd $worktree && ${setup[*]}) > $here/$name.install.log 2>&1" >&2
+    if ! (cd "$worktree" && "${setup[@]}") > "$here/$name.install.log" 2>&1; then
+        tail -20 "$here/$name.install.log" >&2
         # Unwound, so the next spawn builds again instead of finding a worktree
         # and starting a worker in a tree that was never set up.
         run git -C "$git_dir" worktree remove --force "$worktree"
@@ -136,12 +139,12 @@ spawn() {
     # The runner creates the log within its first seconds; its absence means the
     # command never ran: wrong pane, dead shell, bad path.
     for _ in $(seq 30); do
-        [ -f "/tmp/$channel.log" ] && break
+        [ -f "$here/$channel.log" ] && break
         sleep 0.5
     done
-    if [ ! -f "/tmp/$channel.log" ]; then
+    if [ ! -f "$here/$channel.log" ]; then
         tmux capture-pane -p -J -t "$name" -S -15 >&2
-        die "no /tmp/$channel.log after 15s; the pane's last lines are above"
+        die "no $here/$channel.log after 15s; the pane's last lines are above"
     fi
 
     ( flock 9; printf '%s\t%s\t%s\n' "$name" "$channel" "$worktree" >> "$manifest" ) 9>>"$manifest.lock"
@@ -155,8 +158,8 @@ probe() {
     # are history, not state.
     tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree; do
         case $(run_state "$channel") in
-            exited)  echo "$name exited  channel=$channel  $(cat "/tmp/$channel.status")" ;;
-            running) echo "$name running  channel=$channel  log: $(tail -1 "/tmp/$channel.log" 2>/dev/null || echo -)" ;;
+            exited)  echo "$name exited  channel=$channel  $(cat "$here/$channel.status")" ;;
+            running) echo "$name running  channel=$channel  log: $(tail -1 "$here/$channel.log" 2>/dev/null || echo -)" ;;
             # No status file and no runner process: killed pane, killed session,
             # or rebooted host. No status is coming and the channel will never
             # fire; treat like an unrecoverable session, not like running.
@@ -171,9 +174,9 @@ log() {
     channel=$(current_channel "$name")
     [ -n "$channel" ] || die "no run of $name in the manifest"
     echo "$name $(run_state "$channel")  channel=$channel"
-    [ -f "/tmp/$channel.status" ] && cat "/tmp/$channel.status"
+    [ -f "$here/$channel.status" ] && cat "$here/$channel.status"
     echo "-- worklog, last $lines lines"
-    tail -n "$lines" "/tmp/$channel.log" 2>/dev/null || echo "(no worklog)"
+    tail -n "$lines" "$here/$channel.log" 2>/dev/null || echo "(no worklog)"
 }
 
 cleanup() {

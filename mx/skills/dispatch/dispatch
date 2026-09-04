@@ -10,7 +10,7 @@
 #            plugin version's dispatch-ctl, runner and worker prompt into the
 #            host's scratch dir, runs `dispatch-ctl init` there and pushes the
 #            feature branch. <host> is user@host, or `local` for this machine
-#            (scratch dir in /tmp here, init pointed at this worktree). <repo>
+#            (init pointed at this worktree). <repo>
 #            names the bare repo on the host, shared by every feature of the
 #            project; the feature is the current branch.
 #   review   once a ticket branch is fetched, before or after its merge alike:
@@ -39,8 +39,10 @@ locate() {
 setup() {
     locate
     host=$1 repo=$2
-    scratch=/tmp/dispatch-$repo-$feature
+    # Relative to the home on either side: ssh and scp resolve it there.
+    scratch=.local/state/dispatch/$repo-$feature
     if [ "$host" = local ]; then
+        scratch=$HOME/$scratch
         run mkdir -p "$scratch"
         run cp "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$scratch/"
         run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
@@ -55,7 +57,7 @@ setup() {
     # <feature> for spawn to cut ticket branches from.
     run ssh "$host" bash "$scratch/dispatch-ctl" init "$repo" "$feature"
     run git push -q "$remote" "$feature"
-    echo "remote=$remote  scratch=$scratch  ctl='ssh $host bash $scratch/dispatch-ctl'"
+    echo "remote=$remote  scratch=~/$scratch  ctl='ssh $host bash $scratch/dispatch-ctl'"
 }
 
 # <tip> → <base>..<tip>, whether or not the ticket branch has merged yet. Before
