@@ -33,7 +33,7 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/wayfinder-loop.png">
-  <img alt="The wayfinder loop: chart the map, then per session pick and claim a decision ticket, resolve it, record it on the map, graduate the fog, until the frontier is empty and the spec supersedes the map" src="assets/wayfinder-loop-light.png">
+  <img alt="The wayfinder loop: chart the map, then per session pick and claim a decision ticket, resolve it, record it on the map and in the spec draft, graduate the fog, until the frontier is empty and the confirmed spec supersedes the map" src="assets/wayfinder-loop-light.png">
 </picture>
 
 ## What's manual, what's AFK, and why
