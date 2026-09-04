@@ -13,9 +13,9 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | ---------- | ---------------------------------- | ----------------------------------- | ---------------------------------------------------- |
 | Glossary   | `CONTEXT.md` (repo root)           | durable, edited in place            | domain terminology, opinionated, with avoid-lists   |
 | ADR        | `decisions/NNNN-slug.md`           | durable, append-only                | one hard-to-reverse decision and why                  |
-| Spec       | `agent/tasks/<feature>/spec.md`    | committed; `git rm -r` when shipped | the work order for one feature                        |
+| Spec       | `agent/tasks/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature |
 | Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges              |
-| Small task | `agent/tasks/<slug>.md`            | deleted when done                   | ticket-shaped, no spec                                |
+| Small task | `agent/tasks/<slug>.md`            | deleted when done                   | a ticket with no spec: no design round needed, or a brief for later |
 | Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far, fog |
 | Research   | `agent/research/NN-slug.md`        | gitignored, ephemeral               | one question, cited findings                          |
 | Prototype  | `agent/prototypes/<slug>/`         | committed, kept                     | code that answered a design question + `ANSWER.md`    |
@@ -25,7 +25,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 ## The main flow: idea → ship
 
-`/mx:grill-with-docs` (relentless interview; glossary terms and ADRs land as residue) → `/mx:to-spec` (thread → work order) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:implement` per ticket (tdd inside, code-review at the end), fresh context each.
+`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:implement` per ticket (tdd inside, code-review at the end), fresh context each. Work that fits one session skips the tickets: implement reads the confirmed spec directly.
 
 **`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
 
@@ -39,8 +39,8 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 ## What's manual, what's AFK, and why
 
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
-- **Plan in one window, respect the smart zone.** Grilling → spec → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → handoff to a fresh thread, don't push on degraded.
-- **Review the spec in proportion to its provenance.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. After a real grilling session the spec summarizes an understanding you already share: a quick look for what the summary lost, deeper where something reads off. A spec *compiled from artifacts* (a wayfinder map, an external brief) is a translation, and translations drift: review that one line by line. Writing it all down in one place is itself a design step, and has caught flaws the grilling missed.
+- **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → handoff to a fresh thread, don't push on degraded.
+- **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Each grilling round delivers the design whole, every call marked by who made it, and writes it to the spec draft: you veto calls by name and read only the round's delta, and the user stories grow from round one because that is where misunderstandings show. Writing it down is itself a design step, now taken every round instead of once at the end. A spec assembled across sessions (a wayfinder effort) gets one whole-document read at the end, for drift between sessions.
 - **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones; no feedback until the layers meet.
 - **Implementation is the AFK part.** Day shift plans and queues the backlog; night shift works the frontier, fresh context per ticket.
 - **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands; the agent announces what works and how to exercise it (the ticket's What-to-build + acceptance criteria), you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
@@ -53,9 +53,9 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 | | |
 | --- | --- |
 | `/mx:orient` | the router; start here |
-| `/mx:grill-with-docs`, `/mx:grilling` | sharpen a plan by interview |
+| `/mx:grill-with-docs`, `/mx:grilling` | sharpen a plan by interview; the design lands in the spec as it settles |
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
-| `/mx:to-spec`, `/mx:to-tickets` | conversation → spec → tickets |
+| `/mx:to-tickets` | spec → tracer-bullet tickets |
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
 | `/mx:dispatch` | parallelize independent frontier tickets: one orchestrator, N implements |
 | `/mx:prototype` | throwaway code to answer a design question |
