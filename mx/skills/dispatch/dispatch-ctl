@@ -107,9 +107,13 @@ checkout() {
     else
         die "no setup target in $worktree (no flake.nix, no make install); the project needs one before it can be dispatched"
     fi
-    echo "+ (cd $worktree && ${setup[*]}) > /tmp/$name.install.log" >&2
+    echo "+ (cd $worktree && ${setup[*]}) > /tmp/$name.install.log 2>&1" >&2
     if ! (cd "$worktree" && "${setup[@]}") > "/tmp/$name.install.log" 2>&1; then
         tail -20 "/tmp/$name.install.log" >&2
+        # Unwound, so the next spawn builds again instead of finding a worktree
+        # and starting a worker in a tree that was never set up.
+        run git -C "$git_dir" worktree remove --force "$worktree"
+        run git -C "$git_dir" branch -D "$branch"
         die "setup target failed in $worktree; the log above is its tail"
     fi
 }

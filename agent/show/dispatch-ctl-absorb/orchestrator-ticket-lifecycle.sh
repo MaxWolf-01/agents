@@ -14,7 +14,7 @@ git worktree add ../workspace-architecture-map -b architecture-map
 cd ../workspace-architecture-map
 
 # remote + scratch dir + bare repo + plugin update + first push of the feature branch
-dispatch setup agent-hl@pc workspace architecture-map
+bash ~/.claude-helferline/plugins/cache/MaxWolf-01/mx/0.1.21/skills/dispatch/dispatch setup agent-hl@pc workspace
 # → initialised /tmp/dispatch-workspace-architecture-map  mx=0.1.21  git=/home/agent-hl/repos/dispatch/workspace.git  worktrees=/home/agent-hl/repos/dispatch
 # → remote=agent-hl-pc  scratch=/tmp/dispatch-workspace-architecture-map  ctl='ssh agent-hl@pc bash /tmp/dispatch-workspace-architecture-map/dispatch-ctl'
 
@@ -49,9 +49,9 @@ git show ticket/architecture-map/03-shape-curated-model-layout:agent/tasks/archi
 git merge --no-ff ticket/architecture-map/03-shape-curated-model-layout        # JUDGE: conflict → resume the worker with "the feature branch moved"
 make check                                                                     # JUDGE: red → same
 
-# landed: range (found from the merge commit, so the order no longer matters),
+# landed: range (found from the merge commit, so the order no longer matters) committed to the ticket,
 # notes projected from the ticket, page rendered and served, board re-rendered
-dispatch review 03-shape-curated-model-layout
+bash ~/.claude-helferline/plugins/cache/MaxWolf-01/mx/0.1.21/skills/dispatch/dispatch review 03-shape-curated-model-layout
 # JUDGE: announce the landed slice: what works, how to exercise it
 
 # ---- cleanup ----------------------------------------------------------------

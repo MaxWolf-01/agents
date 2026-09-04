@@ -4,18 +4,20 @@
 # worktree, on the feature branch; `dispatch-ctl` is its counterpart on the
 # worker host.
 #
-# Usage: dispatch setup <host> <repo> <feature>
+# Usage: dispatch setup <host> <repo>
 #        dispatch review <NN-slug>
 #   setup    once per feature: adds the git remote when missing, puts this
 #            plugin version's dispatch-ctl, runner and worker prompt into the
 #            host's scratch dir, runs `dispatch-ctl init` there and pushes the
 #            feature branch. <host> is user@host, or `local` for this machine
-#            (scratch dir in /tmp here, init pointed at this worktree).
+#            (scratch dir in /tmp here, init pointed at this worktree). <repo>
+#            names the bare repo on the host, shared by every feature of the
+#            project; the feature is the current branch.
 #   review   once a ticket branch is fetched, before or after its merge alike:
-#            records the branch's range in the ticket's `diff:` frontmatter,
-#            projects the ticket's assumptions into the review page's notes,
-#            renders the page under agent/diffviews, serves it, re-renders the
-#            board.
+#            appends the branch's range to the ticket's `diff:` frontmatter and
+#            commits that on the feature branch, projects the ticket's
+#            assumptions into the review page's notes, renders the page under
+#            agent/diffviews, serves it, re-renders the board.
 #
 # Ticket branches merge into the feature branch with --no-ff; that merge commit
 # is how `review` finds a ticket's range after the merge (its second parent is
@@ -23,19 +25,25 @@
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-feature=$(git branch --show-current)
-repo_root=$(git rev-parse --show-toplevel)
 
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
+# Both commands run inside the feature worktree, on the feature branch.
+locate() {
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
+    feature=$(git branch --show-current)
+    [ -n "$feature" ] || die "detached HEAD; run this on the feature branch"
+}
+
 setup() {
-    host=$1 repo=$2 feature=$3
+    locate
+    host=$1 repo=$2
     scratch=/tmp/dispatch-$repo-$feature
     if [ "$host" = local ]; then
         run mkdir -p "$scratch"
         run cp "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$scratch/"
-        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$PWD" "$(dirname "$PWD")"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
         echo "scratch=$scratch"
         return
     fi
@@ -80,6 +88,7 @@ notes_of() {
 }
 
 review() {
+    locate
     id=$1
     ticket=agent/tasks/$feature/$id.md
     branch=ticket/$feature/$id
@@ -87,13 +96,16 @@ review() {
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
     range=$(range_of "$tip") || exit 1
 
-    # `diff:` is a flow list in the frontmatter, added after `status:` (every
-    # ticket has one) when absent. A re-render finds its range already there.
+    # `diff:` is a flow list in the frontmatter. When absent it goes in as the
+    # last frontmatter line, away from `status:`, which the ticket branch edits
+    # too: adjacent lines would make the merge conflict. A re-render finds its
+    # range already there.
     if ! grep -q "$range" "$ticket"; then
         if grep -q '^diff: \[' "$ticket"; then
             sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
         else
-            sed -i "/^status:/a diff: [$range]" "$ticket"
+            awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
+                mv "$ticket.tmp" "$ticket"
         fi
         run git commit -q -m "$feature: $id review range" -- "$ticket"
     fi
