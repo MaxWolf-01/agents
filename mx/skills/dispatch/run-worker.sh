@@ -45,7 +45,7 @@ touch "$DISPATCH_WORKLOG"
 # worker host that path holds nothing anyway, and the exclusion is inert.
 settings=$(cat <<EOF
 {
-  "claudeMdExcludes": ["$HOME/.claude/CLAUDE.md"],
+  "claudeMdExcludes": ["${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"],
   "autoMemoryEnabled": false
 }
 EOF
