@@ -43,7 +43,7 @@ Sources: A3, A6, A19.
 
 ## 6. Facts are the agent's to find; decisions are the human's to make
 
-An unconfirmed decision stays marked; silence leaves it unconfirmed. A recommendation followed by the user moving to another topic once reached the ticket, the ADR, the glossary and the spec as a decision. Every claim carries provenance, and the agent's negative claims about the environment ("there is no test suite") are as unverified as its positive ones. A casual go-ahead ratifies proceeding, not the frame. An agent's statement of its own intent is self-certification. A question offers at least two options the agent would defend. The friction a worker hits is filed by the dispatcher after the user has ruled; the worker is the party least able to judge whether it is ticket-worthy. Human attention pays most at the plan, where one wrong line multiplies into many downstream; grilling is the station, and the mx README says why.
+An unconfirmed decision stays marked; silence leaves it unconfirmed. A recommendation followed by the user moving to another topic once reached the ticket, the ADR, the glossary and the spec as a decision. Every claim carries provenance, and the agent's negative claims about the environment ("there is no test suite") are as unverified as its positive ones. A casual go-ahead ratifies proceeding, not the frame. An agent's statement of its own intent is self-certification. A question offers at least two options the agent would defend. The friction a worker hits is filed by the dispatcher after the user has ruled; the worker is the party least able to judge whether it is ticket-worthy. Human attention pays most at the plan: a wrong line of code is one wrong line, a wrong line in a plan becomes hundreds. Grilling is the station.
 
 Sources: A5.
 
@@ -55,13 +55,13 @@ Sources: A12.
 
 ## 8. Fresh context per unit of work
 
-Reasoning degrades well before the advertised window is full, and an agent cannot introspect the degradation, so the limit is stated as a fraction rather than a feeling. An author is the wrong reviewer of its own diff, and a model is reluctant to change code sitting in its own context. Repeated compaction leaves sediment; a handoff file is a deliberate reset that can be read and edited before it seeds the next session, and crosses harnesses. A different model family reviewing than the one that wrote is the strongest form. Ticket-sized fresh workers stay the unit of implementation; the coherence cost of isolation is carried by slicing (principle 9) and the review session.
+Reasoning degrades well before the advertised window is full, and an agent cannot introspect the degradation, so the limit is stated as a fraction rather than a feeling. An author is the wrong reviewer of its own diff, and a model is reluctant to change code sitting in its own context; a reviewer sharing the implementer's window reviews in the dumb zone. Repeated compaction leaves sediment; a handoff file is a deliberate reset that can be read and edited before it seeds the next session, and crosses harnesses. A different model family reviewing than the one that wrote is the strongest form. Ticket-sized fresh workers stay the unit of implementation; the coherence cost of isolation is carried by slicing (principle 9) and the review session.
 
 Sources: A10.
 
 ## 9. Slice along seams that already exist
 
-A unit of work that spans an owner boundary or a hub file is a serialisation signal, not a scheduling problem: the per-ticket isolation that keeps workers fresh is what produced the incoherence when twelve of twenty-nine tickets wrote into one file. Vertical slices, each demoable when it lands; the model codes horizontally by default. The breakdown is reviewed for its shape (slice count, size, verticality); the text is not. A property with no user story gets no slice, so the spec states properties. Interfaces are designed, implementations delegated; test boundaries follow module boundaries. Dispatch's coherence test (shared surface, serial worker) is this principle running.
+A unit of work that spans an owner boundary or a hub file is a serialisation signal, not a scheduling problem: the per-ticket isolation that keeps workers fresh is what produced the incoherence when twelve of twenty-nine tickets wrote into one file. Vertical slices, each demoable when it lands; the model codes horizontally by default. The breakdown is reviewed for its shape (slice count, size, verticality), which is cheap to check and whose failure is visible; the text is not. A property with no user story gets no slice, so the spec states properties. Interfaces are designed, implementations delegated; test boundaries follow module boundaries. Dispatch's coherence test (shared surface, serial worker) is this principle running.
 
 Sources: A11.
 
