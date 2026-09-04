@@ -472,7 +472,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "fable",
   "skillOverrides": {
     "code-review": "off",
     "review": "off",
@@ -551,6 +551,7 @@
     "mode": "hold"
   },
   "timeFormat": "24-hour",
+  "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-ansi",
   "verbose": true,
