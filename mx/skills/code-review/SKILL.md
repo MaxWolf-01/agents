@@ -34,7 +34,7 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`. Three files join these as standards sources, each passed by absolute path:
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Three files join these as standards sources, each passed by absolute path:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
 - `/mx:writing-for-humans` (its `SKILL.md`), for **every** diff: its rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).

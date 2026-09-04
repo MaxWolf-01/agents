@@ -11,8 +11,7 @@ Every machine installs `mx` from the marketplace, and `claude plugin update` is 
 Some resources that might be useful to consult when brainstorming architectural / design decisions around the workflow etc.
 - ./resources
 - ALWAYS consult the "writing for agents" skill when updating anything here / anywhere agents might read it / meant primarily for agent consumption, including skills, docs, ...
-- Skills stay harness-agnostic: "spawn a subagent", never a harness-specific mechanism or agent-type name ("Agent tool", "general-purpose"); see ef90c24.
-- The workflow's why: automate every mechanically-catchable check (reviews, QA), even at compute cost; the user's attention is reserved for design decisions and taste, engaged at deliberate HITL stations, never spent flagging obvious slop.
+- Before changing a skill, a CLAUDE.md, or how the workflow runs, read `PRINCIPLES.md`: the rules every past refinement of this workflow re-learned, with the commits as evidence. A change that strains one says so in its commit message.
 
 
 # Related Porjects
