@@ -4,15 +4,18 @@
 # worktree, on the feature branch; `dispatch-ctl` is its counterpart on the
 # worker host.
 #
-# Usage: dispatch setup <host> <repo>
+# Usage: dispatch setup <host> <repo> [setup-command]
 #        dispatch review <NN-slug>
 #   setup    once per feature: adds the git remote when missing, puts this
 #            plugin version's dispatch-ctl, runner and worker prompt into the
 #            host's scratch dir, runs `dispatch-ctl init` there and pushes the
 #            feature branch. <host> is user@host, or `local` for this machine
-#            (init pointed at this worktree). <repo>
-#            names the bare repo on the host, shared by every feature of the
-#            project; the feature is the current branch.
+#            (init pointed at this worktree). <repo> names the bare repo on
+#            the host, shared by every feature of the project; the feature is
+#            the current branch. <setup-command> is the project's own setup
+#            line, run in every ticket worktree before its worker starts;
+#            without it spawn uses `make install` (under `nix develop -c`
+#            where a flake.nix exists).
 #   review   once a ticket branch is fetched, before or after its merge alike:
 #            appends the branch's range to the ticket's `diff:` frontmatter and
 #            commits that on the feature branch, projects the ticket's
@@ -38,13 +41,22 @@ locate() {
 
 setup() {
     locate
-    host=$1 repo=$2
+    host=$1 repo=$2 setup_cmd=${3:-}
     # Relative to the home on either side: ssh and scp resolve it there.
     scratch=.local/state/dispatch/$repo-$feature
+    # The setup command travels as a file named `setup`, so its quoting never
+    # has to survive an ssh hop; no argument leaves the host on its default.
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
+    if [ -n "$setup_cmd" ]; then
+        staged=$(mktemp -d)
+        printf '%s\n' "$setup_cmd" > "$staged/setup"
+        files+=("$staged/setup")
+    fi
     if [ "$host" = local ]; then
         scratch=$HOME/$scratch
         run mkdir -p "$scratch"
-        run cp "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$scratch/"
+        [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
+        run cp "${files[@]}" "$scratch/"
         run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
         echo "scratch=$scratch"
         return
@@ -52,7 +64,8 @@ setup() {
     remote=${host//[@.]/-}
     git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
     run ssh "$host" mkdir -p "$scratch"
-    run scp -q "$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$host:$scratch/"
+    [ -n "$setup_cmd" ] || run ssh "$host" rm -f "$scratch/setup"
+    run scp -q "${files[@]}" "$host:$scratch/"
     # init creates the bare repo the push lands in; the push gives the host a
     # <feature> for spawn to cut ticket branches from.
     run ssh "$host" bash "$scratch/dispatch-ctl" init "$repo" "$feature"
