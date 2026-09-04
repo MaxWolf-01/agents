@@ -7,6 +7,8 @@
 #
 # Usage: dispatch-ctl init <repo> <feature> [git-dir] [worktrees-dir]
 #        dispatch-ctl spawn <NN-slug> <model> [session-id]
+#        dispatch-ctl stop <NN-slug>
+#        dispatch-ctl resume <NN-slug> <model>
 #        dispatch-ctl probe
 #        dispatch-ctl log <NN-slug> [lines]
 #        dispatch-ctl cleanup <NN-slug>
@@ -16,10 +18,16 @@
 #             and worktrees-dir to ~/repos/dispatch; a local orchestrator passes
 #             its feature worktree and the directory beside it.
 #   spawn     cuts ticket/<feature>/<NN-slug> from <feature> into
-#             <worktrees-dir>/<repo>-<feature>-<NN-slug> when absent, runs the
-#             project's setup target there, then starts the worker on
-#             prompt-<NN>.md from this directory. A session id resumes that
-#             conversation on the same file, which then holds the guidance.
+#             <worktrees-dir>/<repo>-<feature>-<NN-slug> when absent, sets it up
+#             (the `setup` file's command when present, else `make install`,
+#             under `nix develop -c` where a flake.nix exists), then starts the
+#             worker on prompt-<NN>.md from this directory. A session id resumes
+#             that conversation on the same file, which then holds the guidance.
+#   stop      ends the current run without losing it: the runner writes its
+#             status line (`exit=stopped`, session id) and fires the channel.
+#             Worktree and branch stay for a resume.
+#   resume    spawn with the session id from the current run's status line;
+#             prompt-<NN>.md holds the guidance.
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane, forgets the run, removes worktree and branch
 # Env:
@@ -31,13 +39,16 @@
 #                             it creates <channel>.log beside itself, and at exit
 #                             writes <channel>.status there (key=value line,
 #                             `session=` included) before firing
-#                             `tmux wait-for -S <channel>`.
+#                             `tmux wait-for -S <channel>`; on TERM it does the
+#                             same with `exit=stopped`.
 #
 # State, all plain text in this directory:
 #   config                       repo, feature, git dir, worktrees dir (init)
+#   setup                        the project's setup command, one line, when
+#                                the orchestrator gave one (`dispatch setup`)
 #   manifest                     one line per run: name TAB channel TAB worktree
 #   <channel>.status|.log        written by the runner
-#   <name>.install.log           the setup target's output
+#   <name>.install.log           the setup command's output
 #
 # Every command that changes something is echoed before it runs, so a
 # transcript shows the primitives; anything this script does wrong can be
@@ -76,9 +87,14 @@ current_channel() { # newest manifest channel for a name, empty if none
     tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print $2; exit }'
 }
 
+# The runner's pid for a channel. Anchored on the runner's own command line: a
+# remote watcher's `tmux wait-for <channel>` also carries the channel and must
+# not count as a live worker.
+runner_pid() { pgrep -f "^bash $runner .* $1( |$)"; }
+
 run_state() { # exited | running | gone
     [ -f "$here/$1.status" ] && { echo exited; return; }
-    pgrep -f "$1" >/dev/null && { echo running; return; }
+    runner_pid "$1" >/dev/null && { echo running; return; }
     echo gone
 }
 
@@ -102,17 +118,20 @@ init() {
 
 checkout() {
     run git -C "$git_dir" worktree add "$worktree" -b "$branch" "$feature" || exit 1
-    # The setup target is what makes a worktree reproducible on any host. A
-    # project without one gets a ticket, not an environment improvised here.
-    if [ -f "$worktree/flake.nix" ]; then
-        setup=(nix develop -c make install)
+    # The setup command is what makes a worktree reproducible on any host: the
+    # project's own, as its docs give it, or its `make install`. A project with
+    # neither gets a ticket, not an environment improvised here.
+    if [ -f "$here/setup" ]; then
+        setup=$(cat "$here/setup")
+    elif [ -f "$worktree/flake.nix" ]; then
+        setup="nix develop -c make install"
     elif grep -qs '^install:' "$worktree/Makefile"; then
-        setup=(make install)
+        setup="make install"
     else
-        die "no setup target in $worktree (no flake.nix, no make install); the project needs one before it can be dispatched"
+        die "no setup command for $worktree (no \`setup\` file here, no flake.nix, no make install); the project needs one before it can be dispatched"
     fi
-    echo "+ (cd $worktree && ${setup[*]}) > $here/$name.install.log 2>&1" >&2
-    if ! (cd "$worktree" && "${setup[@]}") > "$here/$name.install.log" 2>&1; then
+    echo "+ (cd $worktree && $setup) > $here/$name.install.log 2>&1" >&2
+    if ! (cd "$worktree" && bash -c "$setup") > "$here/$name.install.log" 2>&1; then
         tail -20 "$here/$name.install.log" >&2
         # Unwound, so the next spawn builds again instead of finding a worktree
         # and starting a worker in a tree that was never set up.
@@ -169,6 +188,39 @@ probe() {
     done
 }
 
+stop() {
+    load; names "$1"
+    channel=$(current_channel "$name")
+    [ -n "$channel" ] || die "no run of $name in the manifest"
+    [ "$(run_state "$channel")" = running ] || die "$name is not running (channel=$channel, $(run_state "$channel"))"
+    pid=$(runner_pid "$channel")
+    pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
+    # The pane shell runs the runner as a job, so the runner leads its own
+    # process group and claude sits in it: one signal reaches both. Were that
+    # ever not so, signalling the group would take the pane shell down too, so
+    # the fallback signals the runner and its children by pid.
+    if [ "$pgid" = "$pid" ]; then
+        run kill -TERM -- "-$pgid"
+    else
+        pkill -TERM -P "$pid"; run kill -TERM "$pid"
+    fi
+    for _ in $(seq 60); do
+        [ -f "$here/$channel.status" ] && { echo "stopped $name  $(cat "$here/$channel.status")"; return; }
+        sleep 0.5
+    done
+    die "$name has not written its status line 30s after TERM; \`tmux attach -t $name\` shows what it is doing"
+}
+
+resume() {
+    load; names "$1"
+    channel=$(current_channel "$name")
+    [ -n "$channel" ] || die "no run of $name to resume; spawn it"
+    [ -f "$here/$channel.status" ] || die "$name has no status line (state: $(run_state "$channel")); stop it first, or spawn afresh"
+    session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$channel.status")
+    [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
+    spawn "$1" "$2" "$session"
+}
+
 log() {
     load; names "$1"
     lines=${2:-20}
@@ -206,6 +258,8 @@ cmd=${1:-}
 case $cmd in
     init)       shift; init "$@" ;;
     spawn)      shift; spawn "$@" ;;
+    stop)       shift; stop "$@" ;;
+    resume)     shift; resume "$@" ;;
     probe)      probe ;;
     log)        shift; log "$@" ;;
     cleanup)    shift; cleanup "$@" ;;

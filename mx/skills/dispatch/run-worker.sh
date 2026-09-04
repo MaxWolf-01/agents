@@ -5,6 +5,7 @@
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
 #   channel       tmux wait-for channel, unique per run; also names <channel>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
+# TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
@@ -59,6 +60,12 @@ common=(
     --append-system-prompt "$(cat "$prompt_file")"
 )
 
+# `dispatch-ctl stop` sends TERM to this process group: claude dies with it and returns, then
+# this runs, and the loop below ends the run instead of retrying it. The status line says
+# `exit=stopped` and carries the session id, which is what a later resume needs.
+stopped=
+trap 'stopped=1' TERM
+
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
 max_attempts=3
@@ -73,6 +80,7 @@ for attempt in $(seq 1 $max_attempts); do
     rc=$?
     status=$(sed -n 's/^status: *//p' "$ticket" | head -1)
 
+    [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
     [ "$status" = done ] && break
     [ "$attempt" -eq "$max_attempts" ] && break
@@ -82,6 +90,7 @@ for attempt in $(seq 1 $max_attempts); do
     sleep "$backoff"
 done
 
+[ -n "$stopped" ] && rc=stopped
 printf 'attempts=%s exit=%s status=%s session=%s\n' \
     "$attempt" "$rc" "${status:-?}" "$session" > "$here/$channel.status"
 tmux wait-for -S "$channel"
