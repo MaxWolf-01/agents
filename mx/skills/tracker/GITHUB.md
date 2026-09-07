@@ -24,3 +24,4 @@ Specs and tickets for this repo live as GitHub issues. Use the `gh` CLI for all 
 - **Unblocked**: every blocker closed (`issue_dependencies_summary.blocked_by` reports open blockers only).
 - **Frontier**: the spec issue's open sub-issues (`gh issue list --state open`, scoped to them), minus any with an open blocker or an assignee; first by number wins.
 - **Retire**: close the issue. Closed issues stay readable forever; no cleanup step.
+- **Supersede** (`/mx:tracker`, Supersede): close the old issue with a comment naming its successor.

@@ -17,9 +17,17 @@ A ticket's framing names who holds it: an Options or approach section an agent s
 
 ## Decision tickets (all backends)
 
-A **decision ticket** is a ticket whose deliverable is an answer: a decision sharp enough to state now (one question, or a few that share their context and fit one session), whose answer is missing. It carries a `type`, one of `research | prototype | grilling | legwork` (Ticket Types, below), and its body is the question plus the spec sections its answer may rewrite; resolving it records the answer, rewrites those sections (`/mx:grilling`, Across sessions), and closes it, the way the backend does. A ticket without a `type` is a **build ticket**. A ticket's name is its title. Both kinds share one numbering, one frontier and one claim rule, so a build ticket that needs the answer names the decision ticket in its blocking edges.
+A **decision ticket** is a ticket whose deliverable is an answer: a decision sharp enough to state now (one question, or a few that share their context and fit one session), whose answer is missing. It carries a `type`, one of `research | prototype | grilling | legwork` (Ticket Types, below), and its body is the question plus, when it belongs to a feature, the spec sections its answer may rewrite; resolving it records the answer, rewrites those sections (`/mx:grilling`, Across sessions), and closes it, the way the backend does. A ticket without a `type` is a **build ticket**. A ticket's name is its title. Both kinds share one numbering, one frontier and one claim rule, so a build ticket that needs the answer names the decision ticket in its blocking edges.
 
 **The sort** for any piece of design, from grilling, to-tickets or a review session alike: the question can be stated sharply now, answered or not → a decision ticket (or, once answered, the spec and a build ticket); the question itself cannot yet be phrased → **fog**, held in the spec's Fog section until an answer sharpens it. A decision ticket is resolved with the human, or by a background research agent; never by an implementing worker.
+
+## Supersede (all backends)
+
+A newer artefact that replaces an older one never leaves the old one looking live; agents read whatever exists as current truth. The backend file says how (tombstone or delete a file, close and cross-reference an issue).
+
+**Amend or supersede a decision.** While nothing is built on a ticket's answer, a later decision that overturns it amends it in place: edit the answer, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer, it is the reasoning behind that code: leave it, open a new ticket that supersedes it, and put a one-line forward pointer on the old one.
+
+Either way the **spec sweep** follows in the same session: rewrite the spec sections the decision touches, and grep the retired claim across the tickets, `CONTEXT.md` and `decisions/`; a copy left standing is current truth to every later reader. When the sweep cannot run now, file a ticket for it with a blocking edge.
 
 ## Ticket Types (all backends)
 

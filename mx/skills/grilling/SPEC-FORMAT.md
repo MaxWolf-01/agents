@@ -64,6 +64,6 @@ The things that are out of scope for this spec, each with its reason: the decisi
 
 ## Fog
 
-In-scope work whose question cannot yet be stated, as loosely or as fully as the view allows. A question that can be stated is a decision ticket on the tracker, not a line here; resolving a question is what graduates fog into tickets.
+In-scope work whose question cannot yet be stated (`/mx:grilling`, Fog and scope).
 
 </spec-template>

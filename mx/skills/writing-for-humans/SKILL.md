@@ -34,7 +34,7 @@ Cache deliberately or not at all: a copy earns its place only when the lookup is
 - One idea per sentence. Active voice, named actors.
 - State facts directly: no throat-clearing openers, no vague declaratives ("the implications are significant"; name the implication), no meta-commentary announcing the document's own structure.
 - Plain words over coinage, but a genuinely new concept the text keeps returning to gets one term, defined once, used consistently everywhere (never rotated through synonyms).
-- Refer to a ticket, issue, or ADR by its title, with the id riding inside the link: `[Decide the ticket vocabulary](../tickets/03-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.
+- Refer to a ticket, issue, or ADR by its title, in chat as much as in a file, with the id riding inside the link: `[Decide the ticket vocabulary](agent/tickets/tracker-rename/03-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.
 - Cut every sentence whose deletion costs the reader nothing.
 
 For a deep de-slop pass on longform prose, sweep against [`PATTERNS.md`](PATTERNS.md), the full catalogue of AI prose tells: phrase lists, formulaic structures, before/after examples.

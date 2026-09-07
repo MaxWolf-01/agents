@@ -37,11 +37,7 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 
 ## Supersede
 
-When a newer artefact replaces an older one (a new spec replaces the old), never leave the old file looking live: agents read whatever exists as current truth. Either **tombstone** it (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **delete** it; git history keeps it. A real tracker expresses this natively (closed state + cross-reference).
-
-**Amend or supersede a decision.** While nothing is built on a ticket's answer, a later decision that overturns it amends it in place: edit the answer, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer, it is the reasoning behind that code: leave it, open a new ticket that supersedes it, and put a one-line forward pointer on the old one.
-
-Either way the **spec sweep** follows in the same session: rewrite the spec sections the decision touches, and grep the retired claim across the tickets, `CONTEXT.md` and `decisions/`; a copy left standing is current truth to every later reader. When the sweep cannot run now, file a ticket for it with a blocking edge.
+A superseded file (`/mx:tracker`, Supersede) is either **tombstoned** (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **deleted**; git history keeps it.
 
 ## Retire
 
