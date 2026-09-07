@@ -105,9 +105,12 @@ notes_of() {
 review() {
     locate
     id=$1
-    ticket=agent/tasks/$feature/$id.md
+    ticket=agent/tickets/$feature/$id.md
     branch=ticket/$feature/$id
-    [ -f "$ticket" ] || die "no ticket at $ticket"
+    if [ ! -f "$ticket" ]; then
+        [ -d agent/tasks ] && die "no ticket at $ticket, but agent/tasks/ is there: the tracker lives in agent/tickets/ now; git mv it"
+        die "no ticket at $ticket"
+    fi
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
     range=$(range_of "$tip") || exit 1
 
@@ -132,7 +135,7 @@ review() {
     while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve agent/diffviews
-    run uv run "$skill/dashboard.py" agent/tasks
+    run uv run "$skill/dashboard.py" agent/tickets
 }
 
 cmd=${1:-}

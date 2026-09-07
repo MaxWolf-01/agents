@@ -5,11 +5,11 @@ description: Plan a huge chunk of work (more than one agent session can hold) as
 
 A loose idea has arrived, too big for one agent session and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about finding that way, not charging at the destination. This skill charts the way as a **shared map** on the repo's issue tracker, then works its **decision tickets** (questions whose resolution is a decision, not slices of a build to execute) one at a time until the route is clear.
 
-The destination varies per effort, and naming it is the first act of charting; it shapes every ticket. It might be a spec to hand off and iterate on, a decision to lock before planning starts, or a change made in place like a data-structure migration. The map is domain-agnostic: engineering work, course content, whatever fits the shape.
+The destination varies per feature, and naming it is the first act of charting; it shapes every ticket. It might be a spec to hand off and iterate on, a decision to lock before planning starts, or a change made in place like a data-structure migration. The map is domain-agnostic: engineering work, course content, whatever fits the shape.
 
 ## Plan, don't do
 
-Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear: nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes**, carrying execution into the map itself, but absent that, produce decisions, not deliverables.
+Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear: nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. A feature can override this in its **Notes**, carrying execution into the map itself, but absent that, produce decisions, not deliverables.
 
 ## Consent
 
@@ -36,11 +36,11 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 ```markdown
 ## Destination
 
-<what reaching the end of this map looks like: the spec, decision, or change this effort is finding its way to. One or two lines; every session orients to it before choosing a ticket.>
+<what reaching the end of this map looks like: the spec, decision, or change this feature is finding its way to. One or two lines; every session orients to it before choosing a ticket.>
 
 ## Notes
 
-<domain; skills every session should consult; standing preferences for this effort>
+<domain; skills every session should consult; standing preferences for this feature>
 
 ## Decisions so far
 
@@ -67,7 +67,7 @@ Each ticket is a **child issue** of the map; the tracker's issue id is its ident
 <the decision or investigation this ticket resolves>
 ```
 
-Each ticket carries a **type**, one of `research`, `prototype`, `grilling`, `task` (see [Ticket Types](#ticket-types)), recorded per the tracker's conventions.
+Each ticket carries a **type**, one of `research`, `prototype`, `grilling`, `legwork` (see [Ticket Types](#ticket-types)), recorded per the tracker's conventions.
 
 A session **claims** a ticket per the tracker's claim convention, **first**, before any work, so concurrent sessions skip it.
 
@@ -82,13 +82,13 @@ Every ticket is either **HITL** (human in the loop, worked *with* a human who sp
 - **Research** (AFK): Reading documentation, third-party APIs, or local resources like knowledge bases to surface a fact a decision waits on. Resolved by a background `/mx:research` agent: findings land as a research artefact (`agent/research/`), the ticket's answer gists and links it, and they reach the spec draft only through a grilling round that puts them to the user. Use when knowledge outside the current working directory is required.
 - **Prototype** (HITL): Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/mx:prototype`. Links the prototype and its `ANSWER.md` (the verdicts) as assets. Use when "how should it look" or "how should it behave" is the key question, and default to it for anything user-visible: surface judgment is render-triggered, and a surface question doesn't sharpen when other decisions land, only against a built artifact.
 - **Grilling** (HITL): Conversation. The default case. Always invoke `/mx:grilling` and `/mx:domain-modelling`. When the user is blank on a question, the question is usually posed backwards ("what goes in the sidebar?" assumes a sidebar); convert the ticket to a prototype rather than extracting a conceptual answer that a render will overturn.
-- **Task** (HITL or AFK): Manual work that must happen before a *decision* can be made: nothing to decide, prototype, or research, but the discussion is blocked until it's done. Signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. This is the one type that *does* rather than decides, and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when the work is done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
+- **Legwork** (HITL or AFK): Manual work that must happen before a *decision* can be made: nothing to decide, prototype, or research, but the discussion is blocked until it's done. Signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. This is the one type that *does* rather than decides, and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when the work is done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
 
 ## Fog of war
 
 The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war**: the dim view of decisions and investigations you can tell are coming but can't yet pin down, because they hang on questions still open. Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets, one at a time, until the way to the destination is clear and no tickets remain.
 
-The map's **Not yet specified** section is where that dim view is written down: the suspected question, the area to revisit later. It's the undiscovered frontier _toward_ the destination: everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as the view allows; it doubles as a signpost for collaborators reading where the effort is headed.
+The map's **Not yet specified** section is where that dim view is written down: the suspected question, the area to revisit later. It's the undiscovered frontier _toward_ the destination: everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as the view allows; it doubles as a signpost for collaborators reading where the feature is headed.
 
 **Fog or ticket?** `/mx:tracker`'s sort: whether you can state the question precisely now, _not_ whether you can answer it now.
 
@@ -99,9 +99,9 @@ The map's **Not yet specified** section is where that dim view is written down: 
 
 ## Out of scope
 
-Fog only ever gathers _toward_ the destination. The destination fixes the scope, so work beyond it is **out of scope**: it isn't fog, and it doesn't belong in **Not yet specified**. It gets its own **Out of scope** section on the map: work you've consciously ruled out of _this_ effort. Scope, not sharpness, lands it here.
+Fog only ever gathers _toward_ the destination. The destination fixes the scope, so work beyond it is **out of scope**: it isn't fog, and it doesn't belong in **Not yet specified**. It gets its own **Out of scope** section on the map: work you've consciously ruled out of _this_ feature. Scope, not sharpness, lands it here.
 
-Out-of-scope work never graduates (the frontier stops at the destination), so it returns only if the destination is redrawn, and then as a fresh effort, not a resumption.
+Out-of-scope work never graduates (the frontier stops at the destination), so it returns only if the destination is redrawn, and then as a fresh feature, not a resumption.
 
 Ruling something out of scope is a scoping act, not a step on the route. When a ticket that already exists turns out to sit past the destination (mis-scoped in while charting, or exposed by a resolution), **close it** (a closed ticket is unambiguously off the frontier) and leave one line in the **Out of scope** section: the gist plus why it's out of scope, linking the closed ticket. It stays out of **Decisions so far**, which records the route actually walked; a scope boundary isn't a step on it.
 
@@ -134,4 +134,4 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 
 ### Reaching the destination
 
-When no open tickets remain and no fog is specifiable, the way is clear: the map is done, and the spec draft already holds the destination, linking the decision tickets as context pointers so implementation agents can walk back down to the reasoning. The final session reads the whole draft once for drift between sessions, then runs `/mx:grilling`'s gate: the unconfirmed list walked, markers stripped, `status: confirmed`. The confirmed spec **supersedes** the map: tombstone it per `/mx:tracker`, so no later agent reads its index as current truth, and continue at `/mx:to-tickets`. Retire the whole effort per `/mx:tracker` when it ships.
+When no open tickets remain and no fog is specifiable, the way is clear: the map is done, and the spec draft already holds the destination, linking the decision tickets as context pointers so implementation agents can walk back down to the reasoning. The final session reads the whole draft once for drift between sessions, then runs `/mx:grilling`'s gate: the unconfirmed list walked, markers stripped, `status: confirmed`. The confirmed spec **supersedes** the map: tombstone it per `/mx:tracker`, so no later agent reads its index as current truth, and continue at `/mx:to-tickets`. Retire the feature per `/mx:tracker` when it ships.

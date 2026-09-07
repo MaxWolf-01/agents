@@ -27,7 +27,7 @@ Look for the originating spec, in this order:
 
 1. A path, URL, or text the user passed as an argument.
 2. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
-3. A task or spec file: `agent/tasks/`, `docs/`, `specs/` matching the branch name or feature.
+3. A ticket or spec file: `agent/tickets/`, `docs/`, `specs/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is, unless the work is plainly loose in-session work that never had one.
 
 No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.

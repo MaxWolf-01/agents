@@ -32,7 +32,7 @@ The unit of a grilling round is the design, not the question. Every round above 
 14. As a wayfinding session, I want to update the spec draft as each decision resolves, so that the destination document grows with the journey and no end-of-map translation is needed.
 15. As a wayfinding session, I want research and other AFK results to reach the spec only through a round with the user, so that agent findings never pile up in the spec unproposed.
 16. As the user grilling outside a repo, I want the design delivered as a section in chat, so that the primitive works anywhere.
-17. As the user, I want a standalone task that gets grilled to be absorbed into its spec directory, so that the brief and the design have one home.
+17. As the user, I want a standalone ticket that gets grilled to be absorbed into its feature directory, so that the ticket and the design have one home.
 18. As a later reader, I want no skill, README, or tracker line still teaching the to-spec flow, so that agents do not follow a retired step.
 
 ## Properties
@@ -48,14 +48,14 @@ The unit of a grilling round is the design, not the question. Every round above 
 - **Round structure**: design section, then questions. When designs compete: per-design refining questions, then the questions that choose between designs. Question-only rounds remain for one or two ambiguities; a rival design appears only under the same bar as an option.
 - **Sketch depth**: the design is sketched to the leaves under the agent's defaults, each marked; `(fog)` marks what cannot be sketched yet.
 - **Markers**: `(you, rN)` settled, `(my call)` vetoable, `(open → Qn)`, `(fog)`. Stripped at the gate.
-- **File**: `agent/tasks/<slug>/spec.md` from the first design round, in any repo, frontmatter `status: draft | confirmed`. Outside a repo the design is a section in chat.
+- **File**: `agent/tickets/<feature>/spec.md` from the first design round, in any repo, frontmatter `status: draft | confirmed`. Outside a repo the design is a section in chat.
 - **Update granularity**: rewritten at the end of each round by default; skipped when clarification must come first or the picture is mid-flip; current at the gate.
 - **Per-round commit**: on the grilling worktree's branch, landing when the answers for round N arrive, so the page shows that round's delta during the answer window; merged `--no-ff`, so the integration branch's first-parent log shows one entry.
 - **Review surface**: `diffview --watch HEAD..` on the worktree. The spec stays textual; visuals are show artefacts, linked or embedded as images.
 - **User stories from round one**.
 - **to-spec dissolves**: its template becomes `SPEC-FORMAT.md` in the grilling skill; the seam step becomes a round topic; the gate is the finalize step; the skill directory is deleted.
-- **Roles**: spec = the design. Ticket = the execution unit with state, sliced by to-tickets when the work goes to the frontier. Standalone task = a ticket with no spec, for work that needs no design round or a brief filed for later; a grilled brief is absorbed into its spec directory (text into the problem statement; file deleted, or moved in as the single ticket if it should stay on the frontier).
-- **Feature structure**: the directory is the feature; no feature ticket file. Standalone tasks take `blocked-by`, referencing a standalone task by slug or a feature ticket by `<feature>/NN`; no blocking on a whole feature.
+- **Roles**: spec = the design. Ticket = the execution unit with state, sliced by to-tickets when the work goes to the frontier. Standalone ticket = a ticket with no spec, for work that needs no design round or a decision ticket filed for later; a grilled standalone ticket is absorbed into its feature directory (text into the problem statement; file deleted, or moved in as the single ticket if it should stay on the frontier).
+- **Feature structure**: the directory is the feature; no feature ticket file. Standalone tickets take `blocked-by`, referencing a standalone ticket by slug or a feature ticket by `<feature>/NN`; no blocking on a whole feature.
 - **Frontier**: tickets only. A spec-only directory is invisible to scanners; handing it to a worker means to-tickets.
 - **Wayfinder**: charting creates the spec draft beside the map; each HITL-resolved ticket updates the sections it touches; AFK results (research artefacts, prototype ANSWER.md) enter the spec only through a round; the final session is the gate plus one whole-document read for cross-session coherence, and tombstones the map. A decision ticket writes into its answer and the spec draft; when the destination is a decision rather than a spec, the ADR is the artefact.
 - **Sweep**: tracker MARKDOWN.md (written-by line, standalone `blocked-by`, wayfinding operations), orient (flow steps 1 and 3, artefacts table), README (flow line, spec-review bullet), to-tickets input line, expert ("last frontier round" becomes the design). grill-with-docs is unchanged.

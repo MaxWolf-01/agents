@@ -19,7 +19,7 @@ Specs and tickets for this repo live as GitHub issues. Use the `gh` CLI for all 
 ## Ticket state
 
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write. An open, unassigned issue is unclaimed.
-- **Type**: a decision ticket carries the label `type:<research|prototype|grilling|task>`; an unlabelled issue is a build ticket. It resolves with `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`.
+- **Type**: a decision ticket carries the label `type:<research|prototype|grilling|legwork>`; an unlabelled issue is a build ticket. It resolves with `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`.
 - **Unblocked**: every blocker closed (`issue_dependencies_summary.blocked_by` reports open blockers only).
 - **Retire**: close the issue. Closed issues stay readable forever; no cleanup step.
 
