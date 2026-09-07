@@ -14,7 +14,7 @@ Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
-Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, commits, project CLAUDE.md, docs, ...); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (specs, tickets, commits, project CLAUDE.md, docs, ...); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 </workflow>
 
 
@@ -24,7 +24,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 - Check what `git add -[u|A|.]` sweeps in before you run it; build artifacts and scratch files live in your tree too. Prefer explicit file lists.
 - Use `git mv` rather than `mv` to rename a tracked file.
 - Commit as you go without asking. You never merge, and pushing isn't your job: the agent that dispatched you takes your branch from where it is. Ship-shaped actions are never yours to trigger: releases, deploys, changes to running systems, issues or PRs on any project.
-- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, map, decision tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, decision tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
 <style>
