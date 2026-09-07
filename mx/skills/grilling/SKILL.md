@@ -56,6 +56,6 @@ The session is done when the frontier is empty: every branch of the design tree 
 
 ## Across sessions
 
-Whether the frontier drains in one session or twelve is discovered, not declared. A session that ends before it is empty leaves nothing in the conversation: each `(open → Qn)` becomes a decision ticket per `/mx:tracker`, its body the question and the spec sections its answer may rewrite; `(fog)` stays in Fog; the spec stays `draft`.
+Whether the frontier drains in one session or twelve is discovered, not declared. A session that ends before it is empty leaves nothing in the conversation: each `(open → Qn)` becomes a decision ticket per `/mx:tracker`, carrying the question as the round put it (the options, the recommended one and its reasoning) and the spec sections its answer may rewrite, and its mark in the spec becomes `(open → <ticket name>)`; `(fog)` stays in Fog; the spec stays `draft`.
 
 A fresh session reads the spec top-down: Problem Statement, Solution, the marks in Decisions, Fog, plus the open tickets; the middle sections when a ticket touches them. It claims a ticket, reads the ticket's Comments first (the answer, or the user's instinct about it, may already sit there), and grills it as a round like any other: the answer lands on the ticket, and the spec sections the ticket names are rewritten in the same session, each call marked `(you, <ticket name>)`.
