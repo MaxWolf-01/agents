@@ -42,7 +42,7 @@ The tick's first half is complete when every exited worker is landed, resumed, o
 
 ### 2. Re-evaluate the frontier
 
-Re-read the ticket files: the frontier is open + unblocked + unclaimed (`/mx:tracker`). Landing tickets unblocks new ones, and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
+Re-read the ticket files: the frontier is open + unblocked + unclaimed (`/mx:tracker`). A decision ticket on it (`type:` in its frontmatter) is never a worker's, and `dispatch-ctl spawn` refuses it. Claim it, so it leaves the frontier, and route it by type: `research` → a background `/mx:research` agent, whose findings you record as the ticket's answer; the human-in-the-loop types → an entry on `needs-human.md` carrying the question. Landing tickets unblocks new ones, and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
 
 ### 3. Plan the wave
 
@@ -64,7 +64,7 @@ For each ticket in the wave:
 
 The feature's queue lives in `agent/tasks/<feature>/needs-human.md`: optional `worker-host:` frontmatter, then one `- summary :: markdown detail` bullet per pending entry. The detail is what lets the human act without a chat round-trip: the decision's context and options, or the paste-ready kickoff prompt of a session only they can start (HITL prototypes). Delete an entry when it's answered; the answer lands in code or tickets, never in the file.
 
-Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop.
+Frontier empty and everything landed → run the full suite once more on the feature branch, report the feature PR-ready to the user, and stop the loop. Frontier empty with open tickets left, every one a decision ticket or blocked on one → the feature waits on the human: report which questions, and stop the loop; the answers reopen it.
 
 Otherwise the watchers are your wake signal: a worker's exit re-invokes you within seconds of it happening, so the scheduled wakeup is a long fallback heartbeat (1200s+), never a poll. It exists for what a watcher can't catch: a worker wedged short of exiting, a dead watcher, a human who interrupted the pane.
 

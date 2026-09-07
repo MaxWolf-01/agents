@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Decision tickets: now and proposed</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: light-dark(#f5f5f5, #2d3142);
+  --paper-2: light-dark(#ececec, #393e53);
+  --ink: light-dark(#2d3142, #f5f5f5);
+  --muted: light-dark(#4f5d75, #bfc0c0);
+  --soft: light-dark(#7a8399, #8e98ac);
+  --rule: light-dark(rgba(45,49,66,0.12), rgba(245,245,245,0.12));
+  --accent: light-dark(#eb6c36, #f08a59);
+  --accent-tint: light-dark(rgba(235,108,54,0.08), rgba(240,138,89,0.10));
+  --wash: light-dark(rgba(45,49,66,0.03), rgba(245,245,245,0.03));
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: Geist, system-ui, sans-serif; font-size: 13px; line-height: 1.45; }
+main { max-width: 1320px; margin: 0 auto; padding: 32px 32px 48px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.eyebrow { font-family: "Geist Mono", monospace; font-size: 8px; letter-spacing: .18em; text-transform: uppercase; color: var(--soft); }
+h1 { font-size: 1.25rem; font-weight: 600; margin: 4px 0 0; }
+.sub { color: var(--muted); margin: 4px 0 24px; max-width: 72ch; }
+button.scheme { font: 500 8px "Geist Mono", monospace; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; row-gap: 0; }
+.col-h { font-size: 12px; font-weight: 600; padding: 8px 0; border-bottom: 1px solid var(--rule); margin-bottom: 12px; }
+.col-h.prop { color: var(--accent); }
+.row-h { grid-column: 1 / -1; margin: 24px 0 8px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.row-h .eyebrow { display: block; }
+.row-h p { margin: 4px 0 0; color: var(--muted); max-width: 80ch; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--rule); }
+th { font-family: "Geist Mono", monospace; font-size: 8px; letter-spacing: .18em; text-transform: uppercase; color: var(--soft); font-weight: 500; }
+td.k { font-weight: 600; white-space: nowrap; }
+code { font-family: "Geist Mono", monospace; font-size: 11px; }
+.bad { color: var(--accent); }
+.tag { font: 500 7px "Geist Mono", monospace; letter-spacing: .18em; text-transform: uppercase; border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; color: var(--soft); vertical-align: middle; }
+pre.tree { font-family: "Geist Mono", monospace; font-size: 11px; line-height: 1.5; margin: 0; padding: 12px 14px; background: var(--wash); border: 1px solid var(--rule); border-radius: 8px; white-space: pre; }
+pre.tree .c { color: var(--soft); }
+pre.tree .a { color: var(--accent); }
+pre.tree .x { text-decoration: line-through; color: var(--soft); }
+svg { width: 100%; height: auto; display: block; }
+svg text { font-family: Geist, system-ui, sans-serif; fill: var(--ink); }
+svg .name { font-size: 12px; font-weight: 600; }
+svg .sub { font-family: "Geist Mono", monospace; font-size: 9px; fill: var(--soft); }
+svg .lbl { font-family: "Geist Mono", monospace; font-size: 8px; letter-spacing: .06em; fill: var(--muted); }
+svg .aside { font-size: 11px; fill: var(--soft); }
+svg .node { fill: var(--paper); stroke: var(--ink); stroke-width: 1; }
+svg .store { fill: var(--wash); stroke: var(--muted); stroke-width: 1; }
+svg .focal { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.2; }
+svg .ghost { fill: var(--wash); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+svg .edge { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+svg .edge.acc { stroke: var(--accent); }
+svg .edge.dash { stroke-dasharray: 5 4; }
+svg .mask { fill: var(--paper); }
+.legend { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--rule); color: var(--soft); font-size: 11px; }
+.legend span::before { content: ""; display: inline-block; width: 18px; height: 10px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--muted); border-radius: 3px; background: var(--wash); }
+.legend .l-node::before { border-color: var(--ink); background: var(--paper); }
+.legend .l-focal::before { border-color: var(--accent); background: var(--accent-tint); }
+.legend .l-ghost::before { border-style: dashed; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <span class="eyebrow">mx workflow · tracker, grilling, to-tickets, wayfinder</span>
+    <h1>Where a sharp-but-undecided question lives: now and proposed</h1>
+  </div>
+  <button class="scheme" id="scheme">dark</button>
+</header>
+<p class="sub">The page the decision was taken on. Left is what the skills said at v0.1.25, read from <code>mx/skills/</code>; right is the proposal, adopted in the release after: one ticket shape with a <code>type</code> field, no <code>questions/</code> directory.</p>
+
+<div class="grid">
+  <div class="col-h">Now</div>
+  <div class="col-h prop">Proposed</div>
+
+  <div class="row-h"><span class="eyebrow">1 · the sort rule</span><p>Three states of a piece of design, and where each goes. The middle row is the one that depends on which skill you arrived from.</p></div>
+  <div>
+    <table>
+      <tr><th>state of the piece</th><th>wayfinder</th><th>grilling</th><th>to-tickets</th><th>review session, orient §5</th></tr>
+      <tr><td class="k">settled</td><td>spec draft + Decisions-so-far</td><td>spec, <code>(you, rN)</code></td><td>build ticket</td><td>ticket / ADR</td></tr>
+      <tr><td class="k">sharp, undecided</td><td><code>questions/NN</code> <span class="tag">type</span></td><td>standalone brief <code>agent/tasks/&lt;slug&gt;.md</code></td><td class="bad">Further Notes (merged with fog)</td><td class="bad">"question tickets" (undefined outside a map)</td></tr>
+      <tr><td class="k">fog</td><td>map: Not yet specified</td><td>spec, <code>(fog)</code></td><td>Further Notes</td><td>handed-off grilling</td></tr>
+    </table>
+  </div>
+  <div>
+    <table>
+      <tr><th>state of the piece</th><th>anywhere</th></tr>
+      <tr><td class="k">settled</td><td>spec; build ticket once confirmed</td></tr>
+      <tr><td class="k">sharp, undecided</td><td><b>decision ticket</b>: a ticket with <code>type: grilling | prototype | research | task</code>, body <code>## Question</code>, resolved under <code>## Answer</code>. Standalone or inside a feature. Build tickets that need the answer are <code>blocked-by</code> it.</td></tr>
+      <tr><td class="k">fog</td><td>spec Further Notes (map: Not yet specified)</td></tr>
+    </table>
+    <p style="color:var(--muted);margin:10px 0 0">Wayfinder's own test, "can you state the question sharply, not whether you can answer it", becomes the rule everywhere.</p>
+  </div>
+
+  <div class="row-h"><span class="eyebrow">2 · the layout</span><p>The same feature directory under both conventions, with one settled part (tags) and one open part (pins).</p></div>
+  <div>
+<pre class="tree">agent/tasks/
+├── helix-chat-wishes/
+│   ├── spec.md              <span class="c">status: draft, pins section a placeholder</span>
+│   ├── 01-unity-91-followup.md
+│   ├── 02-helix-pr-367.md
+│   └── questions/           <span class="c">only legal beside a map.md</span>
+│       └── 01-pins.md       <span class="c">type: grilling</span>
+└── helix-pinned-notes.md    <span class="c">or: a standalone brief, absorbed when grilled</span>
+
+<span class="c">blocked-by cannot name questions/01: no reference syntax.
+A spec is draft or confirmed as a whole, so 01 and 02
+are cut from a draft, against to-tickets' first line.</span></pre>
+  </div>
+  <div>
+<pre class="tree">agent/tasks/
+└── helix-chat-wishes/
+    ├── spec.md              <span class="c">status: confirmed; pins in Further Notes or split out</span>
+    ├── 01-unity-91-followup.md
+    ├── 02-helix-pr-367.md
+    ├── <span class="a">03-pins-behaviour.md</span>   <span class="c">type: grilling · ## Question · ## Answer</span>
+    └── <span class="a">04-pins-endpoint.md</span>    <span class="c">blocked-by: [03]</span>
+    <span class="x">└── questions/</span>
+    <span class="x">└── map.md</span>               <span class="c">stays, only for a wayfinder effort: the index</span>
+
+<span class="c">One numbering, one frontier scan, one claim rule.
+A build ticket blocked by a decision ticket reads
+"not until decided"; the board shows pins as open work.</span></pre>
+  </div>
+
+  <div class="row-h"><span class="eyebrow">3 · the session sequence</span><p>What happens when a grilling session ends with questions still open, and how the open question reaches a build.</p></div>
+  <div>
+    <svg viewBox="0 0 620 380" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrM" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" style="fill:var(--muted)"/></marker>
+      </defs>
+      <!-- connectors -->
+      <line class="edge" x1="160" y1="44" x2="204" y2="44" marker-end="url(#arrM)"/>
+      <line class="edge" x1="352" y1="44" x2="396" y2="44" marker-end="url(#arrM)"/>
+      <path class="edge" d="M 278,72 V 116" marker-end="url(#arrM)"/>
+      <path class="edge dash" d="M 204,144 H 128 Q 120,144 120,152 V 200" marker-end="url(#arrM)"/>
+      <path class="edge dash" d="M 352,144 H 428 Q 436,144 436,152 V 200" marker-end="url(#arrM)"/>
+      <path class="edge" d="M 470,72 V 200" marker-end="url(#arrM)"/>
+      <path class="edge dash" d="M 120,256 V 300" marker-end="url(#arrM)"/>
+      <path class="edge dash" d="M 436,256 V 300" marker-end="url(#arrM)"/>
+      <!-- nodes -->
+      <rect class="node" x="20" y="20" width="140" height="52" rx="6"/>
+      <rect class="node" x="204" y="20" width="148" height="52" rx="6"/>
+      <rect class="node" x="396" y="20" width="148" height="52" rx="6"/>
+      <rect class="ghost" x="204" y="116" width="148" height="52" rx="6"/>
+      <rect class="store" x="40" y="204" width="160" height="52" rx="6"/>
+      <rect class="store" x="356" y="204" width="160" height="52" rx="6"/>
+      <rect class="ghost" x="40" y="300" width="160" height="52" rx="6"/>
+      <rect class="ghost" x="356" y="300" width="160" height="52" rx="6"/>
+      <!-- labels -->
+      <text class="name" x="90" y="42" text-anchor="middle">grilling rounds</text>
+      <text class="sub" x="90" y="58" text-anchor="middle">(open → Qn)  (fog)</text>
+      <text class="name" x="278" y="42" text-anchor="middle">gate</text>
+      <text class="sub" x="278" y="58" text-anchor="middle">frontier empty?</text>
+      <text class="name" x="470" y="42" text-anchor="middle">to-tickets</text>
+      <text class="sub" x="470" y="58" text-anchor="middle">confirmed spec only</text>
+      <rect class="mask" x="356" y="34" width="36" height="14"/><text class="lbl" x="374" y="44" text-anchor="middle">YES</text>
+      <rect class="mask" x="284" y="86" width="60" height="14"/><text class="lbl" x="314" y="96" text-anchor="middle">NOT EMPTY</text>
+      <text class="name" x="278" y="138" text-anchor="middle">spec stays draft</text>
+      <text class="sub" x="278" y="154" text-anchor="middle">whole feature waits</text>
+      <rect class="mask" x="120" y="164" width="76" height="14"/><text class="lbl" x="158" y="174" text-anchor="middle">IN A MAP</text>
+      <rect class="mask" x="356" y="164" width="76" height="14"/><text class="lbl" x="394" y="174" text-anchor="middle">NO MAP</text>
+      <text class="name" x="120" y="226" text-anchor="middle">questions/NN</text>
+      <text class="sub" x="120" y="242" text-anchor="middle">type · Question · Answer</text>
+      <text class="name" x="436" y="226" text-anchor="middle">standalone brief</text>
+      <text class="sub" x="436" y="242" text-anchor="middle">or Further Notes, as fog</text>
+      <text class="name" x="120" y="322" text-anchor="middle">resolve on the map</text>
+      <text class="sub" x="120" y="338" text-anchor="middle">Answer · map index · sweep</text>
+      <text class="name" x="436" y="322" text-anchor="middle">"grill pins" next session</text>
+      <text class="sub" x="436" y="338" text-anchor="middle">board shows nothing</text>
+      <text class="aside" x="20" y="372">Two resolution paths, two ticket shapes, no edge from a build ticket to either.</text>
+    </svg>
+  </div>
+  <div>
+    <svg viewBox="0 0 620 380" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrP" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" style="fill:var(--muted)"/></marker>
+        <marker id="arrA" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" style="fill:var(--accent)"/></marker>
+      </defs>
+      <!-- connectors -->
+      <line class="edge" x1="160" y1="44" x2="204" y2="44" marker-end="url(#arrP)"/>
+      <line class="edge" x1="352" y1="44" x2="396" y2="44" marker-end="url(#arrP)"/>
+      <path class="edge dash" d="M 278,72 V 116" marker-end="url(#arrP)"/>
+      <path class="edge dash" d="M 470,72 V 116" marker-end="url(#arrP)"/>
+      <path class="edge acc" d="M 278,168 V 200" marker-end="url(#arrA)"/>
+      <path class="edge acc" d="M 470,168 V 200" marker-end="url(#arrA)"/>
+      <path class="edge" d="M 470,256 V 300" marker-end="url(#arrP)"/>
+      <path class="edge acc dash" d="M 278,256 V 326 H 372" marker-end="url(#arrA)"/>
+      <path class="edge" d="M 60,72 V 300" marker-end="url(#arrP)"/>
+      <!-- nodes -->
+      <rect class="node" x="20" y="20" width="140" height="52" rx="6"/>
+      <rect class="node" x="204" y="20" width="148" height="52" rx="6"/>
+      <rect class="node" x="396" y="20" width="148" height="52" rx="6"/>
+      <rect class="ghost" x="204" y="116" width="148" height="52" rx="6"/>
+      <rect class="ghost" x="396" y="116" width="148" height="52" rx="6"/>
+      <rect class="focal" x="204" y="204" width="148" height="52" rx="6"/>
+      <rect class="store" x="396" y="204" width="148" height="52" rx="6"/>
+      <rect class="node" x="20" y="300" width="140" height="52" rx="6"/>
+      <rect class="node" x="380" y="300" width="164" height="52" rx="6"/>
+      <!-- labels -->
+      <text class="name" x="90" y="42" text-anchor="middle">grilling rounds</text>
+      <text class="sub" x="90" y="58" text-anchor="middle">(open → Qn)  (fog)</text>
+      <text class="name" x="278" y="42" text-anchor="middle">gate</text>
+      <text class="sub" x="278" y="58" text-anchor="middle">confirm what is settled</text>
+      <text class="name" x="470" y="42" text-anchor="middle">to-tickets</text>
+      <text class="sub" x="470" y="58" text-anchor="middle">three-way sort</text>
+      <rect class="mask" x="284" y="86" width="60" height="14"/><text class="lbl" x="314" y="96" text-anchor="middle">Qn LEFT OPEN</text>
+      <rect class="mask" x="476" y="86" width="68" height="14"/><text class="lbl" x="510" y="96" text-anchor="middle">SHARP, OPEN</text>
+      <text class="name" x="278" y="138" text-anchor="middle">split or keep draft</text>
+      <text class="sub" x="278" y="154" text-anchor="middle">own feature or draft</text>
+      <text class="name" x="470" y="138" text-anchor="middle">not a build slice</text>
+      <text class="sub" x="470" y="154" text-anchor="middle">fog → Further Notes</text>
+      <text class="name" x="278" y="226" text-anchor="middle">decision ticket</text>
+      <text class="sub" x="278" y="242" text-anchor="middle">NN-slug · type · Question</text>
+      <text class="name" x="470" y="226" text-anchor="middle">build ticket</text>
+      <text class="sub" x="470" y="242" text-anchor="middle">blocked-by: [decision NN]</text>
+      <rect class="mask" x="290" y="270" width="72" height="14"/><text class="lbl" x="326" y="280" text-anchor="middle">ANSWER + SWEEP</text>
+      <text class="name" x="90" y="322" text-anchor="middle">resolve it</text>
+      <text class="sub" x="90" y="338" text-anchor="middle">grilling / prototype</text>
+      <text class="name" x="462" y="322" text-anchor="middle">implement, when unblocked</text>
+      <text class="sub" x="462" y="338" text-anchor="middle">one frontier, both kinds</text>
+      <rect class="mask" x="40" y="180" width="40" height="14"/><text class="lbl" x="60" y="190" text-anchor="middle">LATER</text>
+      <text class="aside" x="20" y="372">One ticket shape; a map, when there is one, is only the index on top.</text>
+    </svg>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="l-node">step</span>
+  <span>ticket file</span>
+  <span class="l-focal">the object the proposal introduces</span>
+  <span class="l-ghost">a state the skills leave implicit today</span>
+</div>
+</main>
+<script>
+const b = document.getElementById('scheme');
+const set = s => { document.documentElement.style.colorScheme = s; b.textContent = s === 'dark' ? 'light' : 'dark'; };
+set(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+b.onclick = () => set(document.documentElement.style.colorScheme === 'dark' ? 'light' : 'dark');
+</script>
+</body>
+</html>

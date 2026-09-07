@@ -19,6 +19,7 @@ Specs and tickets for this repo live as GitHub issues. Use the `gh` CLI for all 
 ## Ticket state
 
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write. An open, unassigned issue is unclaimed.
+- **Type**: a decision ticket carries the label `type:<research|prototype|grilling|task>`; an unlabelled issue is a build ticket. It resolves with `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`.
 - **Unblocked**: every blocker closed (`issue_dependencies_summary.blocked_by` reports open blockers only).
 - **Retire**: close the issue. Closed issues stay readable forever; no cleanup step.
 
@@ -27,7 +28,7 @@ Specs and tickets for this repo live as GitHub issues. Use the `gh` CLI for all 
 Used by `/mx:wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
 - **Map**: a single issue labelled `wayfinder:map`, holding the Destination / Notes / Decisions-so-far / Not-yet-specified / Out-of-scope body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`).
+- **Child ticket**: a decision ticket (Ticket state) linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body.
 - **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api -X GET repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body.
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker or an assignee; first in map order wins.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **Resolve**: after the answer comment and the close (Ticket state), append a context pointer (gist + link) to the map's Decisions-so-far.
