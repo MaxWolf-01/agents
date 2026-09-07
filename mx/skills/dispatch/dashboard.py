@@ -57,24 +57,24 @@ STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘
 
 @dataclass
 class Args:
-    root: Annotated[Path, tyro.conf.Positional]
+    tickets_root: Annotated[Path, tyro.conf.Positional]
     """Tracker root, e.g. agent/tickets — the whole board renders from here."""
     out: Path | None = None
     """Output HTML path. Default: ~/Downloads/dispatch-dashboard/<project>.html."""
     repo: Path | None = None
-    """Repo for the commit log. Default: two levels above root."""
+    """Repo for the commit log. Default: two levels above tickets_root."""
     open: Literal["auto", "always", "never"] = "auto"
     """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window. auto = only when the output file is new."""
 
 
 def main(args: Args) -> None:
-    repo = (args.repo or args.root.parent.parent).resolve()
+    repo = (args.repo or args.tickets_root.parent.parent).resolve()
     project = repo.name
-    diffviews = load_diffviews(args.root.parent / "diffviews")
-    features = load_features(args.root, diffviews)
-    standalone = load_standalone(args.root, diffviews)
+    diffviews = load_diffviews(args.tickets_root.parent / "diffviews")
+    features = load_features(args.tickets_root, diffviews)
+    standalone = load_standalone(args.tickets_root, diffviews)
     # a spec-only feature dir (grilled, built in-session, no tickets) is a valid, empty board
-    assert features or standalone or any(args.root.glob("*/spec.md")), f"nothing tracked in {args.root}"
+    assert features or standalone or any(args.tickets_root.glob("*/spec.md")), f"nothing tracked in {args.tickets_root}"
     log = git_log(repo)
     stamp = content_stamp(project, features, standalone, log)
     out = args.out or Path.home() / "Downloads" / "dispatch-dashboard" / f"{project}.html"
@@ -270,7 +270,7 @@ def ref_anchor(ref: str) -> str:
     if "/" in ref:
         feature, num = ref.rsplit("/", 1)
         return f"#t-{feature}-{normalize_num(num)}"
-    return f"#s-{ref}"
+    return f"#standalone-{ref}"
 
 
 def render_body(md: str, feature: str) -> str:
@@ -376,7 +376,7 @@ def board_dag(features: list[Feature], standalone: list[Standalone], full: bool)
             label = k.title.replace('"', "#quot;")
             cls = "ghost" if k.status == "done" else k.status
             lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {label}"]:::{cls}')
-            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#s-{k.slug}"')
+            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}"')
         lines.append("  end")
     # external edges (cross-feature, and standalone tickets), drawn where both endpoints are on the board
     shown_slugs = {k.slug for k in shown}
@@ -489,7 +489,7 @@ def render_page(
 
     meta = f"{total_done}/{total} done"
     if open_standalone:
-        meta += f" · {open_standalone} standalone"
+        meta += f" · {open_standalone} standalone open"
     needs_badge = (
         f'<a class="needsbadge" href="#needs-human">● {len(all_needs)} need human</a>' if all_needs else ""
     )
@@ -539,7 +539,7 @@ def render_page(
 
     no_deps = '<span class="deps">—</span>'
     standalone_rows = "".join(
-        f'<details class="ticket row-{k.status}" id="s-{k.slug}"><summary>'
+        f'<details class="ticket row-{k.status}" id="standalone-{k.slug}"><summary>'
         f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
         f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}'
         f'<span class="chips">{ext_chips(k.blocked_by) or no_deps}</span></summary>'

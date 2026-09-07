@@ -155,7 +155,7 @@ spawn() {
     [ -f "$prompt" ] || die "no prompt at $prompt"
     if ! git -C "$git_dir" cat-file -e "$feature:$ticket" 2>/dev/null; then
         git -C "$git_dir" cat-file -e "$feature:agent/tasks" 2>/dev/null &&
-            die "no $ticket on $feature, but agent/tasks/ is there: the tracker lives in agent/tickets/ now; git mv it"
+            die "no $ticket on $feature; agent/tasks/ is there instead, and the tracker directory is agent/tickets/: git mv it"
         die "no $ticket on $feature"
     fi
     # Only the frontmatter counts: a body quoting a `type:` line is still a build ticket.

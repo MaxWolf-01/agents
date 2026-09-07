@@ -9,17 +9,17 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 ## Artefacts
 
-| Object     | Location                           | Lifecycle                           | Content                                             |
-| ---------- | ---------------------------------- | ----------------------------------- | ---------------------------------------------------- |
-| Glossary   | `CONTEXT.md` (repo root)           | durable, edited in place            | domain terminology, opinionated, with avoid-lists   |
-| ADR        | `decisions/NNNN-slug.md`           | durable, append-only                | one hard-to-reverse decision and why                  |
-| Spec       | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature |
-| Ticket     | `agent/tickets/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges, or, with `type: research | prototype | grilling | legwork`, a decision ticket: a decision to make, answered on resolution |
-| Standalone ticket | `agent/tickets/<slug>.md`     | deleted when done                   | a ticket with no spec: no design round needed, or a decision ticket for later |
-| Map        | `agent/tickets/<feature>/map.md`     | retired with its feature            | a feature charted by wayfinder: destination, decisions-so-far, fog; its decision tickets sit beside it |
-| Research   | `agent/research/NN-slug.md`        | gitignored, ephemeral               | one question, cited findings                          |
-| Prototype  | `agent/prototypes/<slug>/`         | committed, kept                     | code that answered a design question + `ANSWER.md`    |
-| Show       | `agent/show/<slug>/`               | committed once approved             | an explanation carried by an artefact                 |
+| Object            | Location                             | Lifecycle                                                             | Content                                                                                                                                                             |
+| ----------------- | ------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Glossary          | `CONTEXT.md` (repo root)             | durable, edited in place                                              | domain terminology, opinionated, with avoid-lists                                                                                                                   |
+| ADR               | `decisions/NNNN-slug.md`             | durable, append-only                                                  | one hard-to-reverse decision and why                                                                                                                                |
+| Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
+| Ticket            | `agent/tickets/<feature>/NN-slug.md` | retired with its feature                                              | one vertical slice with blocked-by edges, or, with `type: research | prototype | grilling | legwork`, a decision ticket: a decision to make, answered on resolution |
+| Standalone ticket | `agent/tickets/<slug>.md`            | deleted when done                                                     | a ticket with no spec: no design round needed, or a decision ticket for later                                                                                       |
+| Map               | `agent/tickets/<feature>/map.md`     | retired with its feature                                              | a feature charted by wayfinder: destination, decisions-so-far, fog; its decision tickets sit beside it                                                              |
+| Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
+| Prototype         | `agent/prototypes/<slug>/`           | committed, kept                                                       | code that answered a design question + `ANSWER.md`                                                                                                                  |
+| Show              | `agent/show/<slug>/`                 | committed once approved                                               | an explanation carried by an artefact                                                                                                                               |
 
 `/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
 

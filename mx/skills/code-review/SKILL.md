@@ -1,13 +1,13 @@
 ---
 name: code-review
-description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
+description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating ticket/issue asked for?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
 ---
 
 Three-axis review of the diff between `HEAD` and a fixed point:
 
 - **Correctness**: does the change work, without breaking callers, contracts, or edge cases?
 - **Standards**: does it conform to the repo's documented standards and the smell baseline?
-- **Spec**: does it faithfully implement the originating task / issue / spec?
+- **Spec**: does it faithfully implement the originating ticket / issue / spec?
 
 The axes run as parallel reviewers so they don't pollute each other's context; this skill aggregates their findings.
 

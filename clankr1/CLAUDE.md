@@ -61,8 +61,8 @@ Tips:
 
 In some of my repositories you might encoutner these artifacts:
 - `agent/knowledge/` — durable reference (committed). Persistent knowledge about the project, continuously refined and updated. Wikilinked, navigable, evergreen. 
-- `agent/tasks/` — [active, backlog, done] issues-as-files: intent, assumptions, done-when (lean, trail of decisions, useful for collaborators, committed). Updated when goals change, not as work logs.
-- `agent/research/` — investigation snapshots (gitignored, ephemeral, never commited). Point-in-time, linked from tasks.
+- `agent/tickets/` — [active, backlog, done] issues-as-files: intent, assumptions, done-when (lean, trail of decisions, useful for collaborators, committed). Updated when goals change, not as work logs.
+- `agent/research/` — investigation snapshots (gitignored, ephemeral, never commited). Point-in-time, linked from tickets.
 - `agent/transcripts/` — exported sessions, tool calls and thinking stripped (gitignored, just a better session compaction / lazy handoff).
 - `agent/handoffs/` — curated session summaries for targeted continuation (gitignored). Rare / for long sessions where the next steps can be distilled into a clear handoff.
 

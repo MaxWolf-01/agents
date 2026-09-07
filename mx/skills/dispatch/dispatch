@@ -108,7 +108,7 @@ review() {
     ticket=agent/tickets/$feature/$id.md
     branch=ticket/$feature/$id
     if [ ! -f "$ticket" ]; then
-        [ -d agent/tasks ] && die "no ticket at $ticket, but agent/tasks/ is there: the tracker lives in agent/tickets/ now; git mv it"
+        [ -d agent/tasks ] && die "no ticket at $ticket; agent/tasks/ is there instead, and the tracker directory is agent/tickets/: git mv it"
         die "no ticket at $ticket"
     fi
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
