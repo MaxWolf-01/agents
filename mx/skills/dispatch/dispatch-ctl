@@ -33,6 +33,8 @@
 #   cleanup   kills the pane, forgets the run, removes worktree and branch
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
+#   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
+#                             (default ~/.claude), passed through to the runner
 #   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
 #                             A replacement lives in this directory too. The
 #                             contract it owes: argv is <prompt> <ticket> <model>
@@ -164,7 +166,11 @@ spawn() {
     channel=$name-$(date +%s)
 
     tmux has-session -t "=$name" 2>/dev/null || run tmux new-session -d -s "$name" -c "$worktree"
-    run tmux send-keys -t "$name" -l "DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $channel $session_id"
+    # A pane's environment is the tmux server's, from whenever that started,
+    # not this process's: whatever the worker must inherit from here goes on
+    # the typed line. The profile is set either way, so a server that started
+    # under another profile cannot hand the worker that one.
+    run tmux send-keys -t "$name" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $channel $session_id"
     run tmux send-keys -t "$name" Enter
 
     # The runner creates the log within its first seconds; its absence means the
