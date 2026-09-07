@@ -4,7 +4,7 @@ The spec is the work order for one feature: what `/mx:to-tickets` slices and `/m
 
 Frontmatter `status: draft | confirmed`. A draft carries the provenance markers the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
 
-One template for every domain: a section with nothing to say is left out (course content has no Testing Decisions).
+One template for every domain: a section with nothing to say is left out.
 
 <spec-template>
 

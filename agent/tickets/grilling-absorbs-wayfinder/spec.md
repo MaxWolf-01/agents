@@ -44,7 +44,7 @@ One loop. Every grilling writes the spec; a session that ends with the frontier 
 - Tracker gains amend-vs-supersede beside Supersede: edit in place while nothing is built on it, supersede once code reads it.
 - writing-for-humans gains refer-by-name: a ticket, map, or issue is named by its title in narration and artefact text, with the id inside the link, never a bare id standing in for it.
 - The map's Notes (skills to consult, standing preferences) have no home in the spec; they are project navigation and belong in the project CLAUDE.md.
-- Dropped: the wayfinder skill and its name (its trigger words join grilling's description for one release), `map.md`, the map issue and `wayfinder:map` label, the Wayfinding operations sections of both tracker backends, the tombstone-the-map step, the Map row in orient and README, the wayfinder-loop figure (replaced by a session-boundary figure), the `(you, <ticket name>)` clause's reference to wayfinder in grilling. pocock-sync's mapping records wayfinder as dissolved, like to-spec.
+- Dropped: the wayfinder skill and its name (amended 2026-09-08, was: its trigger words join grilling's description for one release; the name goes at once), `map.md`, the map issue and `wayfinder:map` label, the Wayfinding operations sections of both tracker backends, the tombstone-the-map step, the Map row in orient and README, the wayfinder-loop figure (replaced by a session-boundary figure), the `(you, <ticket name>)` clause's reference to wayfinder in grilling. pocock-sync's mapping records wayfinder as dissolved, like to-spec.
 
 ## Testing Decisions
 
