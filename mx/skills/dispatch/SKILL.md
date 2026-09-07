@@ -42,7 +42,7 @@ The tick's first half is complete when every exited worker is landed, resumed, o
 
 ### 2. Re-evaluate the frontier
 
-Re-read the ticket files: the frontier is open + unblocked + unclaimed (`/mx:tracker`). A decision ticket on it (`type:` in its frontmatter) is never a worker's, and `dispatch-ctl spawn` refuses it. Claim it, so it leaves the frontier, and route it by type: `research` → a background `/mx:research` agent, whose findings you record as the ticket's answer; the human-in-the-loop types → an entry on `needs-human.md` carrying the question. Landing tickets unblocks new ones, and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
+Re-read the ticket files: the frontier is open + unblocked + unclaimed (`/mx:tracker`). A decision ticket on it (one carrying a `type`; a build ticket has none, per `/mx:tracker`) is never a worker's, and `dispatch-ctl spawn` refuses it. Claim it, so it leaves the frontier, and route it by the type's value: `research` → a background `/mx:research` agent, whose findings you record as the ticket's answer; the human-in-the-loop types → an entry on `needs-human.md` carrying the question. Landing tickets unblocks new ones, and the human QAs landed slices concurrently, filing findings as new tickets with blocking edges; the frontier absorbs those the same as the originals.
 
 ### 3. Plan the wave
 
