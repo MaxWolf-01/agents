@@ -14,7 +14,7 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Glossary   | `CONTEXT.md` (repo root)        | durable, edited in place         | domain terminology, opinionated, with avoid-lists                |
 | ADR        | `decisions/NNNN-slug.md`        | durable, append-only             | one hard-to-reverse decision and why                              |
 | Spec       | `agent/tasks/<feature>/spec.md` | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature, single- or multi-session |
-| Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature      | one vertical slice (what to build, blocked-by, acceptance criteria), or with `type:` a decision ticket: one question, answered on resolution |
+| Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature      | one vertical slice (what to build, blocked-by, acceptance criteria), or, with `type: research | prototype | grilling | task`, a decision ticket: a decision to make, answered on resolution |
 | Small task | `agent/tasks/<slug>.md`         | deleted when done                | a ticket with no spec: work needing no design round, or a decision ticket filed for later |
 | Map        | `agent/tasks/<effort>/map.md`   | retired when the effort ships    | wayfinder effort: destination, decisions-so-far index, fog; its decision tickets sit beside it as ordinary tickets |
 | Research   | `agent/research/NN-slug.md`     | gitignored, ephemeral            | one question, cited findings                                      |
