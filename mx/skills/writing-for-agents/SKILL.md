@@ -71,6 +71,8 @@ Hunt for opportunities to refactor with leading words. A triad spelled out at th
 
 You win twice: fewer tokens, and a sharper hook for the agent to hang its thinking on. Assume every document is carrying restatements that leading words retire; go find them.
 
+Test a word for what else it primes: _branches_ in a planning skill primed git-aware models to create git branches, and became _modes_. A harness's own names are the sharpest case (its spawn tool, an agent-type name): a no-op for the harness that owns them, since the model already knows its own mechanism, and a mis-prime for every other. Describe the shape of the step instead ("spawn three subagents in parallel", "hand this to a fresh context"), and name a mechanism only where the neutral form demonstrably misfires, in one place.
+
 **Negation** is the failure mode beside this lever: steering by prohibition drags the forbidden behaviour into context and makes it _more_ available, not less. _Don't think of an elephant_, and the elephant is all there is; the negation is a weak modifier the strongly-activated concept overruns, so the ban half-reads as an instruction to do the thing. Prompt the **positive**: state the target behaviour ("write one-line comments") so the banned one is never spoken. A prohibition earns its place only as a hard guardrail you cannot phrase positively; even then, pair it with the positive target so attention lands on what to do.
 
 ## Pruning

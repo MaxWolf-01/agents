@@ -2,6 +2,10 @@
 This is my coding agent setup (mainly claude code).
 `mx` is a plugin for skills, commands, etc. `claude/` is the global `~/.claude` config, symlinked live, so edits apply everywhere. The rest of my regular setup is in ~/.dotfiles, which will occasionaly be referenced here (./zsh/aliases ./zsh/functions bin/ ./setup interact with my agent setup)
 
+Audiences: `mx/README.md` is for humans learning the workflow and may restate what the skills say; agents orient via `/mx:orient`, and the skills stay the home of the process. `PRINCIPLES.md` is for agents changing the workflow or its harness.
+
+@PRINCIPLES.md
+
 # Releasing mx
 
 Every machine installs `mx` from the marketplace, and `claude plugin update` is version-gated: it re-copies only when `mx/.claude-plugin/plugin.json` carries a version it doesn't have yet. So shipping skill edits is `make release-patch` (bump + commit; `release-minor|major` when the number should say more) then `git push`; a pre-push hook (`~/.dotfiles/git/hooks/mx-plugin-update-pre-push`) updates the plugin on this machine; a worker host pulls its own version when dispatch sets a run up. Unpushed and untagged edits exist nowhere: no version, no install.
@@ -11,8 +15,6 @@ Every machine installs `mx` from the marketplace, and `claude plugin update` is 
 Some resources that might be useful to consult when brainstorming architectural / design decisions around the workflow etc.
 - ./resources
 - ALWAYS consult the "writing for agents" skill when updating anything here / anywhere agents might read it / meant primarily for agent consumption, including skills, docs, ...
-- Skills stay harness-agnostic: "spawn a subagent", never a harness-specific mechanism or agent-type name ("Agent tool", "general-purpose"); see ef90c24.
-- The workflow's why: automate every mechanically-catchable check (reviews, QA), even at compute cost; the user's attention is reserved for design decisions and taste, engaged at deliberate HITL stations, never spent flagging obvious slop.
 
 
 # Related Porjects
