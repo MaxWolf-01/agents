@@ -31,6 +31,6 @@ Once done, use /mx:code-review to review the work.
 
 Close with **evidence, not claims**: when announcing what now works, hand the user something they can skim in seconds (a screenshot, a driven CLI or app transcript, the exact command to reproduce) instead of making them re-derive the demo. Before a drivable surface exists, this evidence *is* the QA surface.
 
-If something fought you (a missing feedback loop, a tooling gap, a slow or flaky suite), name it in your closing comment rather than just enduring it: what you hit, what you did instead, what would have saved the time. Deciding what becomes of it belongs to the agent that dispatched you, which fixes it, raises it, or files it as a task once the user has ruled.
+If something fought you (a missing feedback loop, a tooling gap, a slow or flaky suite), name it in your closing comment rather than just enduring it: what you hit, what you did instead, what would have saved the time. Deciding what becomes of it belongs to the agent that dispatched you, which fixes it, raises it, or files it as a ticket once the user has ruled.
 
 Commit your work to the current feature branch.

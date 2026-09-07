@@ -13,7 +13,7 @@ Session ID: `${CLAUDE_SESSION_ID}`
 
 1. **Determine session name** (lowercase keywords separated by dashes):
    - If you already generated a session name earlier this session, reuse it.
-   - Otherwise, generate one covering all major topics. More detail is better for differentiating sessions. If working on a task, lead with the task name.
+   - Otherwise, generate one covering all major topics. More detail is better for differentiating sessions. If working on a ticket or spec, lead with its name.
    - Examples: `auth-migration-research-jwt-vs-sessions`, `deploy-script-docker-compose-env-vars-debugging`
 
 2. **Save transcript:**

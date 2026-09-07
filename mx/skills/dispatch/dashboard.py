@@ -3,10 +3,10 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro", "pyyaml", "markdown"]
 # ///
-"""Render the tracker board: one HTML page for a project's whole agent/tasks tree.
+"""Render the tracker board: one HTML page for a project's whole agent/tickets tree.
 
 Reads every feature directory (NN-<slug>.md tickets with status/blocked-by/type
-frontmatter, cross-feature refs as <feature>/NN) and every standalone task
+frontmatter, cross-feature refs as <feature>/NN) and every standalone ticket
 (*.md at the tracker root) and writes one self-contained page: an all-features
 dependency graph with feature subgraphs and cross-feature edges, the merged
 needs-human queue, and a section per feature (graph, wave lanes, ticket rows).
@@ -14,13 +14,13 @@ One switcher (floating bar or arrow keys) cycles every graph on the page
 through frontier / full / lanes at once.
 
 A ticket row links its diffview review page when one has been rendered:
-agent/diffviews mirrors agent/tasks, so <feature>/NN-*.html beside the ticket
-and <slug>.html beside a standalone task. Those pages are gitignored, so the
+agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
+and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
 link appears only on the machine that rendered them.
 
 Any agent that changes tracker state re-renders; the render is deterministic
 from disk, so last-writer-wins is safe. Per-feature dispatcher state lives in
-agent/tasks/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
+agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
 then one `- summary :: markdown detail` bullet per pending entry — an answered
 entry is deleted, its answer lands in code or tickets.
 
@@ -30,8 +30,8 @@ tab stays current across renders without flicker.
 
 Examples:
 
-    uv run dashboard.py agent/tasks
-    uv run dashboard.py agent/tasks --out ~/Downloads/board.html --open never
+    uv run dashboard.py agent/tickets
+    uv run dashboard.py agent/tickets --out ~/Downloads/board.html --open never
 """
 
 import datetime
@@ -57,29 +57,29 @@ STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘
 
 @dataclass
 class Args:
-    tasks_root: Annotated[Path, tyro.conf.Positional]
-    """Tracker root, e.g. agent/tasks — the whole board renders from here."""
+    tickets_root: Annotated[Path, tyro.conf.Positional]
+    """Tracker root, e.g. agent/tickets — the whole board renders from here."""
     out: Path | None = None
     """Output HTML path. Default: ~/Downloads/dispatch-dashboard/<project>.html."""
     repo: Path | None = None
-    """Repo for the commit log. Default: two levels above tasks_root."""
+    """Repo for the commit log. Default: two levels above tickets_root."""
     open: Literal["auto", "always", "never"] = "auto"
     """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window. auto = only when the output file is new."""
 
 
 def main(args: Args) -> None:
-    repo = (args.repo or args.tasks_root.parent.parent).resolve()
+    repo = (args.repo or args.tickets_root.parent.parent).resolve()
     project = repo.name
-    diffviews = load_diffviews(args.tasks_root.parent / "diffviews")
-    features = load_features(args.tasks_root, diffviews)
-    tasks = load_tasks(args.tasks_root, diffviews)
+    diffviews = load_diffviews(args.tickets_root.parent / "diffviews")
+    features = load_features(args.tickets_root, diffviews)
+    standalone = load_standalone(args.tickets_root, diffviews)
     # a spec-only feature dir (grilled, built in-session, no tickets) is a valid, empty board
-    assert features or tasks or any(args.tasks_root.glob("*/spec.md")), f"nothing tracked in {args.tasks_root}"
+    assert features or standalone or any(args.tickets_root.glob("*/spec.md")), f"nothing tracked in {args.tickets_root}"
     log = git_log(repo)
-    stamp = content_stamp(project, features, tasks, log)
+    stamp = content_stamp(project, features, standalone, log)
     out = args.out or Path.home() / "Downloads" / "dispatch-dashboard" / f"{project}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render_page(project, features, tasks, log, stamp, out.name + ".stamp.js")
+    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js")
     existed = out.exists()
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__dispatchStamp = "{stamp}";\n')
@@ -118,7 +118,7 @@ class Ticket:
     num: str
     title: str
     status: str  # open | claimed | done, plus derived: blocked
-    kind: str | None  # a decision ticket's type (research | prototype | grilling | task); None on a build ticket
+    kind: str | None  # a decision ticket's type (research | prototype | grilling | legwork); None on a build ticket
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
     body_html: str
@@ -134,7 +134,7 @@ class Feature:
 
 
 @dataclass
-class Task:
+class Standalone:
     slug: str
     title: str
     status: str  # open | claimed | done, plus derived: blocked
@@ -163,8 +163,8 @@ def assert_safe_name(name: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
-def load_tasks(root: Path, diffviews: Diffviews) -> list[Task]:
-    tasks = []
+def load_standalone(root: Path, diffviews: Diffviews) -> list[Standalone]:
+    standalone = []
     for path in sorted(root.glob("*.md")):
         assert_safe_name(path.stem)
         meta, body = split_frontmatter(path.read_text())
@@ -174,8 +174,8 @@ def load_tasks(root: Path, diffviews: Diffviews) -> list[Task]:
         status = str(meta.get("status", "open"))
         if status == "open" and any(s != "done" for _, s in blocked_by):
             status = "blocked"
-        tasks.append(
-            Task(
+        standalone.append(
+            Standalone(
                 slug=path.stem,
                 title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
                 status=status,
@@ -185,7 +185,7 @@ def load_tasks(root: Path, diffviews: Diffviews) -> list[Task]:
                 diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
             )
         )
-    return tasks
+    return standalone
 
 
 def load_diffviews(root: Path) -> Diffviews:
@@ -209,9 +209,9 @@ def load_needs_human(path: Path) -> tuple[list[str], str | None]:
     return entries, str(host) if host else None
 
 
-def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ticket]:
+def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ticket]:
     tickets = []
-    for path in sorted(tasks_dir.glob("[0-9][0-9]-*.md")):
+    for path in sorted(feature_dir.glob("[0-9][0-9]-*.md")):
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
@@ -223,8 +223,8 @@ def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ti
                 status=str(meta.get("status", "open")),
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
-                ext_by=[(str(n), ref_status(tasks_dir.parent, str(n))) for n in blockers if not is_local_ref(n)],
-                body_html=render_body(body, tasks_dir.name),
+                ext_by=[(str(n), ref_status(feature_dir.parent, str(n))) for n in blockers if not is_local_ref(n)],
+                body_html=render_body(body, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
         )
@@ -252,7 +252,7 @@ def is_local_ref(n: object) -> bool:
 
 
 def ref_status(root: Path, ref: str) -> str:
-    # External blocker: "<feature>/NN" or a standalone task's "<slug>". A missing file
+    # External blocker: "<feature>/NN" or a standalone ticket's "<slug>". A missing file
     # counts as done: done work is deleted, feature dirs retired only after shipping
     # (tracker conventions).
     if "/" in ref:
@@ -270,7 +270,7 @@ def ref_anchor(ref: str) -> str:
     if "/" in ref:
         feature, num = ref.rsplit("/", 1)
         return f"#t-{feature}-{normalize_num(num)}"
-    return f"#task-{ref}"
+    return f"#standalone-{ref}"
 
 
 def render_body(md: str, feature: str) -> str:
@@ -291,7 +291,7 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(project: str, features: list[Feature], tasks: list[Task], log: str) -> str:
+def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], log: str) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload
     key = repr((
@@ -299,7 +299,7 @@ def content_stamp(project: str, features: list[Feature], tasks: list[Task], log:
         [(f.name, f.needs_human, f.worker_host,
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview) for k in tasks],
+        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview) for k in standalone],
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -357,7 +357,7 @@ def feature_dag(feature: Feature, full: bool) -> str | None:
     return "flowchart LR\n" + "\n".join(node_lines(ns, feature.name, feature.tickets, include, ghost))
 
 
-def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
+def board_dag(features: list[Feature], standalone: list[Standalone], full: bool) -> str:
     ns = "b1" if full else "b0"
     lines = ["flowchart LR"]
     included: dict[str, set[str]] = {}
@@ -369,17 +369,17 @@ def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
         lines.append(f'  subgraph S_{ns}_{slug_id(f.name)}["{f.name}"]')
         lines.extend(node_lines(ns, f.name, f.tickets, include, ghost))
         lines.append("  end")
-    show_tasks = [k for k in tasks if full or k.status != "done"]
-    if show_tasks:
-        lines.append(f'  subgraph S_{ns}__tasks["tasks"]')
-        for k in show_tasks:
+    shown = [k for k in standalone if full or k.status != "done"]
+    if shown:
+        lines.append(f'  subgraph S_{ns}__standalone["standalone"]')
+        for k in shown:
             label = k.title.replace('"', "#quot;")
             cls = "ghost" if k.status == "done" else k.status
             lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {label}"]:::{cls}')
-            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#task-{k.slug}"')
+            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}"')
         lines.append("  end")
-    # external edges (cross-feature, and standalone tasks), drawn where both endpoints are on the board
-    shown_tasks = {k.slug for k in show_tasks}
+    # external edges (cross-feature, and standalone tickets), drawn where both endpoints are on the board
+    shown_slugs = {k.slug for k in shown}
 
     def node(ref: str) -> str | None:
         if "/" in ref:
@@ -387,7 +387,7 @@ def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
             if normalize_num(src_num) in included.get(src_feat, set()):
                 return f"T_{ns}_{slug_id(src_feat)}_{normalize_num(src_num)}"
             return None
-        return f"K_{ns}_{slug_id(ref)}" if ref in shown_tasks else None
+        return f"K_{ns}_{slug_id(ref)}" if ref in shown_slugs else None
 
     for f in features:
         for t in f.tickets:
@@ -396,7 +396,7 @@ def board_dag(features: list[Feature], tasks: list[Task], full: bool) -> str:
             for ref, _ in t.ext_by:
                 if src := node(ref):
                     lines.append(f"  {src} --> T_{ns}_{slug_id(f.name)}_{t.num}")
-    for k in show_tasks:
+    for k in shown:
         for ref, _ in k.blocked_by:
             if src := node(ref):
                 lines.append(f"  {src} --> K_{ns}_{slug_id(k.slug)}")
@@ -480,16 +480,16 @@ def graph_views(
 
 
 def render_page(
-    project: str, features: list[Feature], tasks: list[Task], log: str, stamp: str, stamp_src: str
+    project: str, features: list[Feature], standalone: list[Standalone], log: str, stamp: str, stamp_src: str
 ) -> str:
     total = sum(len(f.tickets) for f in features)
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
     all_needs = [(f.name, item) for f in features for item in f.needs_human]
-    open_tasks = sum(1 for k in tasks if k.status != "done")
+    open_standalone = sum(1 for k in standalone if k.status != "done")
 
     meta = f"{total_done}/{total} done"
-    if open_tasks:
-        meta += f" · {open_tasks} task{'s' if open_tasks != 1 else ''}"
+    if open_standalone:
+        meta += f" · {open_standalone} standalone open"
     needs_badge = (
         f'<a class="needsbadge" href="#needs-human">● {len(all_needs)} need human</a>' if all_needs else ""
     )
@@ -507,8 +507,8 @@ def render_page(
             '<section class="viewgroup" id="sec-board"><h2>Board</h2>'
             + graph_views(
                 "sec-board",
-                board_dag(features, tasks, False),
-                board_dag(features, tasks, True),
+                board_dag(features, standalone, False),
+                board_dag(features, standalone, True),
                 None,
                 "everything done",
                 with_lanes=False,
@@ -538,24 +538,24 @@ def render_page(
     sections = "".join(feature_section(f) for f in features)
 
     no_deps = '<span class="deps">—</span>'
-    task_rows = "".join(
-        f'<details class="ticket row-{k.status}" id="task-{k.slug}"><summary>'
+    standalone_rows = "".join(
+        f'<details class="ticket row-{k.status}" id="standalone-{k.slug}"><summary>'
         f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
         f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}'
         f'<span class="chips">{ext_chips(k.blocked_by) or no_deps}</span></summary>'
         f'<div class="body">{k.body_html}</div></details>'
-        for k in tasks
+        for k in standalone
     )
-    tasks_sec = f'<section><h2>Standalone tasks</h2><div class="tickets panel-b">{task_rows}</div></section>' if tasks else ""
+    standalone_sec = f'<section><h2>Standalone tickets</h2><div class="tickets panel-b">{standalone_rows}</div></section>' if standalone else ""
 
     log_html = "\n".join(
         f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
         for line in log.strip().splitlines()
     )
-    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(tasks)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
+    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
         project=html.escape(project), meta=meta, needs_badge=needs_badge, nav=nav,
-        board=board, needs=needs, sections=sections, tasks=tasks_sec, log=log_html,
+        board=board, needs=needs, sections=sections, standalone=standalone_sec, log=log_html,
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
@@ -769,7 +769,7 @@ ${needs}
 
 ${sections}
 
-${tasks}
+${standalone}
 
 <section>
   <h2>Recent commits</h2>

@@ -1,6 +1,6 @@
 # Spec format
 
-The spec is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Published per `/mx:tracker` (`agent/tasks/<slug>/spec.md` on the markdown backend), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
+The spec is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Published per `/mx:tracker` (`agent/tickets/<feature>/spec.md` on the markdown backend), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
 
 Frontmatter `status: draft | confirmed`. A draft carries the provenance markers the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
 

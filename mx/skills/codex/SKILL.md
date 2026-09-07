@@ -33,7 +33,7 @@ Codex has **zero context** from your session. Everything it needs must be in the
 
 **Give it orientation first:**
 - Tell it to read `./CLAUDE.md` (project root) for project context, knowledge map, and conventions
-- Point it to `CONTEXT.md`, `decisions/`, and `agent/tasks/` when relevant; written records is more efficient than re-explaining what's already documented
+- Point it to `CONTEXT.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
 - Name the specific files and directories to review; it can read them, but won't know which ones matter unless told
 
 **Add session context it can't get from files:**

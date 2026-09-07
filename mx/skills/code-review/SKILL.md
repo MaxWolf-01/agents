@@ -1,13 +1,13 @@
 ---
 name: code-review
-description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating task/issue asked for?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
+description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating ticket/issue asked for?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
 ---
 
 Three-axis review of the diff between `HEAD` and a fixed point:
 
 - **Correctness**: does the change work, without breaking callers, contracts, or edge cases?
 - **Standards**: does it conform to the repo's documented standards and the smell baseline?
-- **Spec**: does it faithfully implement the originating task / issue / spec?
+- **Spec**: does it faithfully implement the originating ticket / issue / spec?
 
 The axes run as parallel reviewers so they don't pollute each other's context; this skill aggregates their findings.
 
@@ -27,7 +27,7 @@ Look for the originating spec, in this order:
 
 1. A path, URL, or text the user passed as an argument.
 2. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
-3. A task or spec file: `agent/tasks/`, `docs/`, `specs/` matching the branch name or feature.
+3. A ticket or spec file: `agent/tickets/`, `docs/`, `specs/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is, unless the work is plainly loose in-session work that never had one.
 
 No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.

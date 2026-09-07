@@ -81,7 +81,7 @@ names() {
     name=dispatch-$repo-$feature-$nn
     branch=ticket/$feature/$id
     worktree=$worktrees/$repo-$feature-$id
-    ticket=agent/tasks/$feature/$id.md
+    ticket=agent/tickets/$feature/$id.md
     prompt=$here/prompt-$nn.md
 }
 
@@ -153,6 +153,11 @@ spawn() {
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
+    if ! git -C "$git_dir" cat-file -e "$feature:$ticket" 2>/dev/null; then
+        git -C "$git_dir" cat-file -e "$feature:agent/tasks" 2>/dev/null &&
+            die "no $ticket on $feature; agent/tasks/ is there instead, and the tracker directory is agent/tickets/: git mv it"
+        die "no $ticket on $feature"
+    fi
     # Only the frontmatter counts: a body quoting a `type:` line is still a build ticket.
     if git -C "$git_dir" show "$feature:$ticket" 2>/dev/null \
         | awk 'NR==1{if($0!="---")exit 1;next} /^---$/{exit 1} /^type:/{f=1;exit} END{exit !f}'; then

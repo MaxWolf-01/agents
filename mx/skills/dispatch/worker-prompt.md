@@ -10,7 +10,7 @@ Two channels reach the agent that dispatched you.
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Use the glossary's vocabulary in everything you write; Your output must not contradict an ADR -- escalate if it's a (real) blocker. `agent/tasks/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Use the glossary's vocabulary in everything you write; Your output must not contradict an ADR -- escalate if it's a (real) blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
