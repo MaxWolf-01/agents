@@ -151,6 +151,9 @@ spawn() {
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
+    if git -C "$git_dir" show "$feature:$ticket" 2>/dev/null | grep -q '^type:'; then
+        die "$id is a decision ticket (type: in its frontmatter): resolved with the human, never by a worker"
+    fi
     current_run "$name"
     if [ -n "$channel" ] && [ "$(run_state "$channel" "$run_runner")" = running ]; then
         die "$name is still running channel=$channel; a line typed into its pane now would launch a second worker when it exits"

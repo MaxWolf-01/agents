@@ -5,7 +5,7 @@
 # ///
 """Render the tracker board: one HTML page for a project's whole agent/tasks tree.
 
-Reads every feature directory (NN-<slug>.md tickets with status/blocked-by
+Reads every feature directory (NN-<slug>.md tickets with status/blocked-by/type
 frontmatter, cross-feature refs as <feature>/NN) and every standalone task
 (*.md at the tracker root) and writes one self-contained page: an all-features
 dependency graph with feature subgraphs and cross-feature edges, the merged
@@ -118,6 +118,7 @@ class Ticket:
     num: str
     title: str
     status: str  # open | claimed | done, plus derived: blocked
+    kind: str | None  # a decision ticket's type (research | prototype | grilling | task); None on a build ticket
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
     body_html: str
@@ -137,6 +138,7 @@ class Task:
     slug: str
     title: str
     status: str  # open | claimed | done, plus derived: blocked
+    kind: str | None
     blocked_by: list[tuple[str, str]]  # (ref "<feature>/NN" or "<slug>", status)
     body_html: str
     diffview: str | None
@@ -177,6 +179,7 @@ def load_tasks(root: Path, diffviews: Diffviews) -> list[Task]:
                 slug=path.stem,
                 title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
                 status=status,
+                kind=ticket_kind(meta),
                 blocked_by=blocked_by,
                 body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
                 diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
@@ -218,6 +221,7 @@ def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ti
                 num=path.name[:2],
                 title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
                 status=str(meta.get("status", "open")),
+                kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(tasks_dir.parent, str(n))) for n in blockers if not is_local_ref(n)],
                 body_html=render_body(body, tasks_dir.name),
@@ -231,6 +235,15 @@ def load_tickets(tasks_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ti
         ):
             t.status = "blocked"
     return tickets
+
+
+def ticket_kind(meta: dict) -> str | None:
+    kind = meta.get("type")
+    return str(kind) if kind else None
+
+
+def kind_badge(kind: str | None) -> str:
+    return f'<span class="badge kind">{html.escape(kind)}</span>' if kind else ""
 
 
 def is_local_ref(n: object) -> bool:
@@ -284,9 +297,9 @@ def content_stamp(project: str, features: list[Feature], tasks: list[Task], log:
     key = repr((
         project,
         [(f.name, f.needs_human, f.worker_host,
-          [(t.num, t.title, t.status, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
+          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.blocked_by, k.body_html, k.diffview) for k in tasks],
+        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview) for k in tasks],
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -415,7 +428,7 @@ def wave_lanes(feature: Feature) -> str | None:
         return (
             f'<div class="card {t.status}">'
             f'<a class="cardlink" href="#t-{feature.name}-{t.num}">'
-            f'<span class="cardnum">{STATUS_SYMBOL[t.status]} {t.num}</span>'
+            f'<span class="cardnum">{STATUS_SYMBOL[t.status]} {t.num}{" · " + html.escape(t.kind) if t.kind else ""}</span>'
             f'<span class="cardtitle">{html.escape(t.title)}</span></a>{deps}</div>'
         )
 
@@ -528,7 +541,7 @@ def render_page(
     task_rows = "".join(
         f'<details class="ticket row-{k.status}" id="task-{k.slug}"><summary>'
         f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
-        f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>'
+        f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}'
         f'<span class="chips">{ext_chips(k.blocked_by) or no_deps}</span></summary>'
         f'<div class="body">{k.body_html}</div></details>'
         for k in tasks
@@ -571,7 +584,7 @@ def feature_section(f: Feature) -> str:
         return (
             f'<details class="ticket row-{t.status}" id="t-{f.name}-{t.num}"><summary>'
             f'<span class="num">{t.num}</span><span class="title">{html.escape(t.title)}{dv_link(t.diffview)}</span>'
-            f'<span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>'
+            f'<span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>{kind_badge(t.kind)}'
             f'<span class="chips">{chips}</span></summary>'
             f'<div class="body">{t.body_html}</div></details>'
         )
@@ -664,6 +677,7 @@ PAGE = Template("""<!doctype html>
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
+  .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); margin-left: .35rem; }
 
   /* ---- feature header: sticky under the topbar ---- */
   .fhead { position: sticky; top: var(--topbar-h); z-index: 5; padding: .3rem 0 .5rem;

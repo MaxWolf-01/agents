@@ -14,9 +14,9 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Glossary   | `CONTEXT.md` (repo root)           | durable, edited in place            | domain terminology, opinionated, with avoid-lists   |
 | ADR        | `decisions/NNNN-slug.md`           | durable, append-only                | one hard-to-reverse decision and why                  |
 | Spec       | `agent/tasks/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature |
-| Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges              |
-| Small task | `agent/tasks/<slug>.md`            | deleted when done                   | a ticket with no spec: no design round needed, or a brief for later |
-| Map        | `agent/tasks/<effort>/map.md` + `questions/` | retired when the effort ships | wayfinder effort: destination, decisions-so-far, fog |
+| Ticket     | `agent/tasks/<feature>/NN-slug.md` | retired with its feature            | one vertical slice with blocked-by edges, or with `type:` a decision ticket: one question, answered on resolution |
+| Small task | `agent/tasks/<slug>.md`            | deleted when done                   | a ticket with no spec: no design round needed, or a decision ticket for later |
+| Map        | `agent/tasks/<effort>/map.md`      | retired when the effort ships       | wayfinder effort: destination, decisions-so-far, fog; its decision tickets sit beside it |
 | Research   | `agent/research/NN-slug.md`        | gitignored, ephemeral               | one question, cited findings                          |
 | Prototype  | `agent/prototypes/<slug>/`         | committed, kept                     | code that answered a design question + `ANSWER.md`    |
 | Show       | `agent/show/<slug>/`               | committed once approved             | an explanation carried by an artefact                 |

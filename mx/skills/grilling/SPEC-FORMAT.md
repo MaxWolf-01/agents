@@ -62,6 +62,6 @@ The things that are out of scope for this spec, each with its reason: the decisi
 
 ## Further Notes
 
-Anything still too foggy to state as a slice lives here; to-tickets tickets it when the frontier reaches it.
+Fog: in-scope work whose question cannot yet be stated. A question that can be stated is a decision ticket on the tracker, not a note here; to-tickets tickets fog once the frontier sharpens it.
 
 </spec-template>
