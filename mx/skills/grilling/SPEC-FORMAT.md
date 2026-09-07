@@ -4,6 +4,8 @@ The spec is the work order for one feature: what `/mx:to-tickets` slices and `/m
 
 Frontmatter `status: draft | confirmed`. A draft carries the provenance markers the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
 
+One template for every domain: a section with nothing to say is left out (course content has no Testing Decisions).
+
 <spec-template>
 
 ## Problem Statement
@@ -28,9 +30,9 @@ A LONG, numbered list of user stories: extremely extensive, covering every actor
 
 What the app must *be*, where stories say what a user can *do*; the story format cannot express these, and a property with no story gets no ticket. One sentence each, in the project's ubiquitous language, phrased as an always/never that a reviewer can check a diff against. Rendering, error containment, lifecycle/session models, copy discipline live here. A living list: it starts small and grows as the build surfaces new properties, so discovering one mid-build means adding it here, not noting it in a ticket comment.
 
-## Implementation Decisions
+## Decisions
 
-A list of implementation decisions that were made. This can include:
+The decisions made, each marked with the round or decision ticket that settled it while the spec is a draft. This can include:
 
 - The modules that will be built/modified
 - The interfaces of those modules that will be modified
@@ -60,8 +62,8 @@ The **seams** at which the feature is tested: a design call put to the user in a
 
 The things that are out of scope for this spec, each with its reason: the decisions against.
 
-## Further Notes
+## Fog
 
-Fog: in-scope work whose question cannot yet be stated. A question that can be stated is a decision ticket on the tracker, not a note here; to-tickets tickets fog once the frontier sharpens it.
+In-scope work whose question cannot yet be stated, as loosely or as fully as the view allows. A question that can be stated is a decision ticket on the tracker, not a line here; resolving a question is what graduates fog into tickets.
 
 </spec-template>

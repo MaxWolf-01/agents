@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a feature, whose design lands in the spec as it settles. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
+description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a feature, whose design lands in the spec as it settles, over as many sessions as the frontier takes. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\", wayfinder, or charting trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for designs and features.
@@ -9,7 +9,9 @@ Map the design as a **design tree**: every decision branches into the decisions 
 
 ## The round
 
-**The design first.** One coherent whole, as it currently stands, sketched past the frontier to the leaves under your best calls, so the user judges shape and consequences instead of reconstructing them from answers. Every call carries who made it: `(you, rN)` settled by the user in round N (`(you, <ticket name>)` when a wayfinder ticket settled it), `(my call)` yours and vetoable, `(open → Qn)` put to a question below, `(fog)` where nothing can be sketched yet. Argue each call as the best expert in that field would: what they'd concretely choose here, what they'd reject about your current pick and why; make the call that expert would judge correct, never the one that satisfies the stated constraints most cheaply.
+**A big idea's first round is breadth-first**: fan out across the whole space before going deep on any thread, so the frontier and the fog are both visible from round one and the questions that are already sharp separate from the ones that are not.
+
+**The design first.** One coherent whole, as it currently stands, sketched past the frontier to the leaves under your best calls, so the user judges shape and consequences instead of reconstructing them from answers. Every call carries who made it: `(you, rN)` settled by the user in round N (`(you, <ticket name>)` when a decision ticket settled it), `(my call)` yours and vetoable, `(open → Qn)` put to a question below, `(fog)` where nothing can be sketched yet. Argue each call as the best expert in that field would: what they'd concretely choose here, what they'd reject about your current pick and why; make the call that expert would judge correct, never the one that satisfies the stated constraints most cheaply.
 
 When more than one design survives that bar, deliver each with the questions that refine it, then the questions that choose between them: the trade-offs one pays and the other doesn't. That second level is where the framing of the problem gets decided explicitly, since rival designs usually embody rival readings of it. A rival whole joins only under the same bar as an option: one you would defend.
 
@@ -30,7 +32,7 @@ Offer only options you would defend. Two live options beat three padded with one
 
 Entangled decisions split (`Q1` and `Q1b`, with the dependency named under the 💡) or become combined options. Never one question carrying two halves. Reach for a table when 3+ options differ along shared axes _and_ why-not-the-others is load-bearing: same `❓` line, a row per option with the `➡️` on the recommended one, columns for the axes that separate them. Two options fit the default: a table's columns demand content, and a demanded cell gets filler.
 
-**The answers.** The user reacts to the whole: vetoes or amends calls by name, answers questions by number. A `(my call)` the user has not ruled on stays unconfirmed and is re-listed at the end of every round until they rule on it or ratify the rest in one word; silence never ratifies. Each round's answers reshape the tree: settled decisions push the frontier outward and unblock what depended on them. Recompute the frontier and deliver the next round. A question whose answer depends on another still open belongs to a later round.
+**The answers.** The user reacts to the whole: vetoes or amends calls by name, answers questions by number. A `(my call)` the user has not ruled on stays unconfirmed and is re-listed at the end of every round until they rule on it or ratify the rest in one word; silence never ratifies. A call found to have hardened without a ruling (into the spec, an ADR, the glossary) is re-marked unconfirmed in that artefact directly, never handed to the user as a message to relay. Each round's answers reshape the tree: settled decisions push the frontier outward and unblock what depended on them. Recompute the frontier and deliver the next round. A question whose answer depends on another still open belongs to a later round.
 
 ## The spec
 
@@ -42,8 +44,18 @@ A standalone ticket (`agent/tickets/<slug>.md`, a build ticket or a decision tic
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, web, tools), look it up rather than asking. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → propose a `/mx:prototype` detour, or file it as a decision ticket (`type: prototype`, per `/mx:tracker`) when the detour cannot run in this session. The _decisions_ are the user's: put each to them and wait.
 
+## Fog and scope
+
+`(fog)` marks in-scope work whose question cannot yet be stated; it lives in the spec's Fog section, written as loosely or as fully as the view allows. A question that can be stated is a decision ticket per `/mx:tracker`, even while it is blocked. Fog is coarser than a ticket: leave it unsliced, since one patch graduates into several tickets, or none, once an answer sharpens it, and resolving a question is the only thing that graduates fog.
+
+The Solution fixes the scope: work past it is out of scope, not fog; a ticket found to sit past it is closed, with one line in Out of Scope giving the reason, and never graduates.
+
 ## The gate
 
-The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the draft current, then walk the unconfirmed list with the user; when they confirm the understanding is shared, strip the markers and set `status: confirmed`. Confirmation is whole-document: a part still open either leaves as its own feature, its questions filed as a standalone decision ticket, so the rest confirms, or holds the whole spec at draft. Only then comes the size call: build from the spec in this session, or `/mx:to-tickets` when the work goes to the frontier (workers, parallel or later sessions). Do not act before that confirmation. Capturing what was settled (glossary terms, decisions worth an ADR) goes through `/mx:domain-modelling`; the spec references ADRs, it doesn't restate them.
+The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the draft current (a draft assembled across sessions is read whole once, for drift between them), then walk the unconfirmed list with the user; when they confirm the understanding is shared, strip the markers and set `status: confirmed`. Confirmation is whole-document: a part still open either leaves as its own feature, its questions filed as a standalone decision ticket, so the rest confirms, or holds the whole spec at draft. Only then comes the size call: build from the spec in this session, or `/mx:to-tickets` when the work goes to the frontier (workers, parallel or later sessions). Do not act before that confirmation. Capturing what was settled (glossary terms, decisions worth an ADR) goes through `/mx:domain-modelling`; the spec references ADRs, it doesn't restate them.
 
-A session that ends before the frontier is empty leaves nothing in the conversation: each `(open → Qn)` becomes a decision ticket per `/mx:tracker`, `(fog)` stays in Further Notes, and the spec stays `draft`.
+## Across sessions
+
+Whether the frontier drains in one session or twelve is discovered, not declared. A session that ends before it is empty leaves nothing in the conversation: each `(open → Qn)` becomes a decision ticket per `/mx:tracker`, its body the question and the spec sections its answer may rewrite; `(fog)` stays in Fog; the spec stays `draft`.
+
+A fresh session reads the spec top-down: Problem Statement, Solution, the marks in Decisions, Fog, plus the open tickets; the middle sections when a ticket touches them. It claims a ticket, reads the ticket's Comments first (the answer, or the user's instinct about it, may already sit there), and grills it as a round like any other: the answer lands on the ticket, and the spec sections the ticket names are rewritten in the same session, each call marked `(you, <ticket name>)`.
