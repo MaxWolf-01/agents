@@ -9,8 +9,7 @@ A command runs in tmux, never as a blocking one-shot Bash call, when any of thes
 
 ## Sessions
 
-- `tms claude`: create or attach the default shared session.
-- **Check before sending**: the shared session may be busy with another agent's process. `tmux list-panes -t claude -F '#{pane_current_command}'`: anything but a shell name means occupied. Then create your own session named for the activity (`tmux new-session -d -s <activity>`, e.g. `train-resnet`) and tell the user its name.
+- One session per job, named for the activity: `tmux new-session -d -s <activity>` (e.g. `train-resnet`); a taken name makes it fail, so pick another. Tell the user the name.
 - Kill only what you created, by name: `tmux kill-session -t <name>`. Never `kill-server`: the user's server hosts their shells, editors, and every other agent. Throwaway servers for tests get their own socket, `tmux -L <label> ...`, and die with `tmux -L <label> kill-server`. `TMUX_TMPDIR` is not isolation inside a pane: `$TMUX` already names the socket and wins.
 - Send a command: `tmux send-keys -t <session> -l 'command'` then `tmux send-keys -t <session> Enter`
 - Read output: `tmux capture-pane -p -J -t <session> -S -50` (`-J` joins wrapped lines)
@@ -26,9 +25,9 @@ For what has to run on a laptop, prefix it with `nosleep`: `nosleep uv run train
 Always quote the full tmux command so spaces survive the remote shell:
 
 ```
-ssh host "tmux send-keys -t claude -l 'command'"
-ssh host "tmux send-keys -t claude Enter"
-ssh host "tmux capture-pane -p -J -t claude -S -50"
+ssh host "tmux send-keys -t <session> -l 'command'"
+ssh host "tmux send-keys -t <session> Enter"
+ssh host "tmux capture-pane -p -J -t <session> -S -50"
 ```
 
 One command per ssh call. A chained remote command that starts the tmux server inherits the connection's stdout and holds the call open until it times out.
@@ -41,4 +40,4 @@ Poll for the prompt before sending input; don't race it. Use `bin/tmux-wait-for-
 
 ## Human access
 
-The user can always attach directly: `tmux attach -t claude` locally, or `ssh host -t "tmux attach -t claude"` remotely; mention the session name when you start something they might want to watch.
+The user can always attach directly: `tmux attach -t <session>` locally, or `ssh host -t "tmux attach -t <session>"` remotely; mention the session name when you start something they might want to watch.
