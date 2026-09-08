@@ -2,13 +2,15 @@
 status: draft
 ---
 
-# The board as the standing view of every ticket session
+# Tickets are always dispatched, and the board is their standing view
 
 ## Problem Statement
 
-The board (`dashboard.py`: every feature, its dependency graph, the needs-human queue, the review-page links) is the overview max wants whenever tickets exist, including a single session working them in sequence: "to have the overview of what tickets exist without having to constantly check in terminal". Today it is rendered only by `dispatch review`, after a landing; a session running `/mx:implement` per ticket, or a grilling claiming a decision ticket, never renders it, and the tracker skill that defines the tickets does not know the board exists.
+The board (`dashboard.py`: every feature, its dependency graph, the needs-human queue, the review-page links) is the overview max wants whenever tickets exist, including a single session working them in sequence: "to have the overview of what tickets exist without having to constantly check in terminal". Today it is rendered only by `dispatch review`, after a landing; a session running `/mx:implement` per ticket, or a grilling claiming a decision ticket, never renders it, and the tracker skill that defines the tickets does not know the board exists. Underneath sits a choice the workflow makes the human take every time: orient offers two ways to work tickets, by hand (`/mx:implement` per ticket, fresh window each) or dispatched, and with three projects open the by-hand way leaves max asking "which ticket was this session again?".
 
 ## Solution
+
+One way to work tickets: when a feature has tickets, a dispatcher works them, one at a time or in waves; when it has none, the session that grilled it builds it (you, r2). The by-hand loop leaves orient, the README and to-tickets; `/mx:implement` stays the worker's skill. The orchestrator, which holds the spec and every ticket, reads each landed diff before merging it, since it can spot what a worker's fresh context could not (my call).
 
 The board is a tracker artefact, not a dispatch one: the script moves to the tracker skill, the tracker's markdown backend says when it renders, and the open tab stays current on its own. A session that fetches a ticket renders the board once, which opens the tab the first time (you, ticket) and starts a watcher that re-renders on every change under the tracker directory, so the tab stays current whoever writes: this session, another, a merge, a hand edit (you, r1). Dispatch keeps calling the same script from the same place.
 
@@ -18,6 +20,8 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 2. As max with two sessions on one repo, I want one board both keep current, so that neither session's view lies about the other's claims.
 3. As a session starting on a ticket (`/mx:implement`, a grilling claiming a decision ticket), I want the board rendered when I fetch the ticket, so that the tab opens once and stays.
 4. As dispatch, I want the same script and the same page as every other ticket session, so that the board is one thing.
+6. As max, I want one way to work tickets, so that I never decide whether a feature is "big enough" to dispatch.
+7. As max, I want the orchestrator to read a landed diff with the whole feature in mind before it merges, so that a detail the worker's brief missed is caught by the session that knows it.
 5. As a reader of the board, I want a feature's spec status (draft or confirmed) beside its tickets, so that a spec-only feature (grilled, not yet ticketed) is visible rather than an empty section.
 
 ## Properties
@@ -34,7 +38,8 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 - Output path `~/Downloads/board/<project>.html`, replacing `dispatch-dashboard/` (my call).
 - The GitHub backend has no board of its own: GitHub's issue views are the board there (my call).
 - A feature section shows its spec's status in the header (my call), from `spec.md`'s frontmatter.
-- The serial ticket loop itself stays as orient describes it, the human running `/mx:implement` per ticket in a fresh window; a dispatch spawn mode for local subagents in worktrees, upstream implement-spec's shape without the tmux and host machinery, is (open → Q2): a sibling feature, or folded into this one.
+- A feature with tickets is worked by `/mx:dispatch`, at any size; orient's step 3 routes tickets to dispatch and drops the by-hand loop, the README and to-tickets' closing line follow (you, r2). A feature without tickets is built by the session that grilled it, as the gate already says.
+- Dispatch's tick step 1 gains: before merging a landed ticket branch, the orchestrator reads its diff against the ticket and the spec; what it finds goes back to the worker as guidance on resume, or becomes a ticket (my call).
 
 ## Testing Decisions
 
@@ -44,6 +49,7 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 
 - implement-spec's exploration subagent and whole-feature code review: the [dispatch-implement-spec-inspo](../dispatch-implement-spec-inspo.md) ticket, untouched by this.
 - The GitHub backend: nothing to build, its UI is the board.
+- A dispatch spawn mode without tmux (workers as in-process subagents): tmux panes on a host that stays awake are the better runner in every respect max cares about, and in-process subagents die with the orchestrator.
 
 ## Fog
 
