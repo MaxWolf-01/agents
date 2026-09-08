@@ -1,6 +1,6 @@
 # Dispatch dashboard overview — what makes the board übersichtlich?
 
-**Question.** The dispatch dashboard (mx/skills/dispatch/dashboard.py) rendered a real 56-ticket
+**Question.** The dispatch dashboard (mx/skills/tracker/board.py) rendered a real 56-ticket
 feature (skilltree v0-core-loop, 48 done) as an unreadable hairball: a 57-node mermaid flowchart
 with curved dagre edges, and a flat table dominated by done rows. What overview treatment reads
 at a glance late in a feature, when done tickets vastly outnumber live ones?

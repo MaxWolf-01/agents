@@ -16,9 +16,11 @@ the page through frontier / full / lanes at once.
 
 One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
-that has a worktree on its own branch (a dispatcher's feature worktree) is read
-from that worktree instead, so its claims and done flips are on the board while
-the feature is in flight.
+that has a worktree on a branch named after it (how dispatch cuts a feature
+worktree) is read from that worktree instead, review pages included, so its
+claims and done flips are on the board while the feature is in flight. A
+worktree whose branch is already merged is ignored. A standalone ticket whose
+slug names such a feature has been absorbed into it and is not shown.
 
 A ticket row links its diffview review page when one has been rendered:
 agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
@@ -26,18 +28,16 @@ and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
 link appears only on the machine that rendered them.
 
 --watch keeps rendering: every few seconds it looks for a change under the
-tracker (any worktree's copy included) and re-renders on one. It runs until
-killed, as a background task of the session that started it; several watchers
-writing the same page is harmless since the render is deterministic from disk.
-Per-feature dispatcher state lives in agent/tickets/<feature>/needs-human.md:
-optional YAML frontmatter (worker-host), then one `- summary :: markdown detail`
-bullet per pending entry; an answered entry is deleted, its answer lands in code
-or tickets.
+tracker (any worktree's copy included) and re-renders on one; it runs until
+killed. Several watchers writing the same page is harmless since the render is
+deterministic from disk. Per-feature dispatcher state is read from
+agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
+then one `- summary :: markdown detail` bullet per pending entry.
 
-The page polls a sidecar stamp file (written beside the HTML) every 30s and
+The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections and the chosen view, only when
 content actually changed: one open tab stays current across renders without
-flicker.
+flicker. The page and its stamp file are gitignored, like agent/diffviews.
 
 Examples:
 
@@ -99,7 +99,8 @@ def render(root: Path, overrides: dict[str, Path], repo: Path, out: Path) -> Non
     project = repo.name
     diffviews = load_diffviews(root.parent / "diffviews")
     features = load_features(root, overrides, diffviews)
-    standalone = load_standalone(root, diffviews)
+    # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
+    standalone = [k for k in load_standalone(root, diffviews) if k.slug not in overrides]
     assert features or standalone, f"nothing tracked in {root}"
     log = git_log(repo)
     stamp = content_stamp(project, features, standalone, log)
@@ -110,24 +111,25 @@ def render(root: Path, overrides: dict[str, Path], repo: Path, out: Path) -> Non
     print(out)
 
 
-def watch(tickets_root: Path, repo: Path, out: Path, interval: float = 2.0) -> None:
+def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     """Re-render on any change under the tracker, in every checkout that contributes to it."""
     seen = None
     while True:
-        root, overrides = tracker_roots(tickets_root)
-        dirs = [root, *overrides.values(), root.parent / "diffviews"]
-        snapshot = tuple(
-            (str(f), f.stat().st_mtime_ns, f.stat().st_size)
-            for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file()
-        )
-        if snapshot != seen:
-            if seen is not None:
-                try:
+        try:
+            root, overrides = tracker_roots(tickets_root)
+            dirs = [root, root.parent / "diffviews"]
+            dirs += [d for o in overrides.values() for d in (o, o.parent.parent / "diffviews" / o.name)]
+            snapshot = tuple(
+                (str(f), st.st_mtime_ns, st.st_size)
+                for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
+            )
+            if snapshot != seen:
+                if seen is not None:
                     render(root, overrides, repo, out)
-                except Exception as e:  # a half-written ticket parses on the next pass
-                    print(f"board: render failed, retrying on next change: {e}", file=sys.stderr)
-            seen = snapshot
-        time.sleep(interval)
+                seen = snapshot
+        except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
+            print(f"board: {e}; retrying", file=sys.stderr)
+        time.sleep(2)
 
 
 # ---- which checkout's tracker ---------------------------------------------
@@ -159,12 +161,25 @@ def tracker_roots(tickets_root: Path) -> tuple[Path, dict[str, Path]]:
         return here, {}
     toplevel = subprocess.run(["git", "-C", str(here), "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
     rel = here.relative_to(Path(toplevel).resolve())
-    root = wts[0][0].resolve() / rel
+    main = wts[0][0].resolve()
+    landed = landed_tips(main)
     overrides = {}
     for path, branch in wts[1:]:
-        if branch and (path / rel / branch).is_dir():
+        if branch and (path / rel / branch).is_dir() and git(path, "rev-parse", branch) not in landed:
             overrides[branch] = path.resolve() / rel / branch
-    return root, overrides
+    return main / rel, overrides
+
+
+def landed_tips(main: Path) -> set[str]:
+    """Tips of branches merged --no-ff into the main checkout's history: the second parent of each
+    first-parent merge commit. A worktree left behind on such a branch must not outvote the main
+    checkout; a branch merely cut from it and idle is not landed, so ancestry alone is the wrong test."""
+    parents = git(main, "log", "--first-parent", "--merges", "--format=%P", "HEAD")
+    return {line.split()[1] for line in parents.splitlines() if len(line.split()) > 1}
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True).stdout.strip()
 
 
 # ---- tracker state --------------------------------------------------------
@@ -225,10 +240,13 @@ class Standalone:
 
 def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Feature]:
     features = []
-    names = sorted({p.name for p in root.iterdir() if p.is_dir()} | set(overrides))
+    # the main checkout may not have the tracker yet: a first feature grilled in its own worktree
+    names = sorted(({p.name for p in root.iterdir() if p.is_dir()} if root.is_dir() else set()) | set(overrides))
     for name in names:
         d = overrides.get(name, root / name)
-        tickets = load_tickets(d, diffviews, diffviews.root / name)
+        # an in-flight feature's review pages are rendered and served from its own worktree
+        dv = load_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
+        tickets = load_tickets(d, dv, dv.root / name)
         spec_status = spec_state(d / "spec.md")
         # a directory with neither tickets nor a spec is not a feature (agent/tickets/done/, say)
         if not tickets and spec_status is None:
@@ -248,7 +266,7 @@ def assert_safe_name(name: str) -> None:
 
 def load_standalone(root: Path, diffviews: Diffviews) -> list[Standalone]:
     standalone = []
-    for path in sorted(root.glob("*.md")):
+    for path in sorted(root.glob("*.md")) if root.is_dir() else []:
         assert_safe_name(path.stem)
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
@@ -287,7 +305,7 @@ def spec_state(path: Path) -> str | None:
     if not path.exists():
         return None
     meta, _ = split_frontmatter(path.read_text())
-    return str(meta.get("status", "draft"))
+    return str(meta.get("status", "status missing"))
 
 
 def load_needs_human(path: Path) -> tuple[list[str], str | None]:
@@ -658,9 +676,8 @@ def dv_link(path: str | None) -> str:
 
 
 def feature_section(f: Feature) -> str:
-    by_num = {t.num: t for t in f.tickets}
     counts = Counter(t.status for t in f.tickets)
-    bits = [f"spec {f.spec_status}"] if f.spec_status else []
+    bits = [f"spec {html.escape(f.spec_status)}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked") if counts[s]]
     if f.worker_host:
@@ -669,6 +686,14 @@ def feature_section(f: Feature) -> str:
         f'<a class="cell {t.status}" href="#t-{f.name}-{t.num}" title="{html.escape(t.num + " " + t.title)} — {t.status}">{t.num}</a>'
         for t in f.tickets
     )
+    head = (
+        f'<section class="viewgroup feature" id="f-{f.name}">'
+        f'<div class="fhead"><h2>{html.escape(f.name)} <span class="counts">{" · ".join(bits)}</span></h2>'
+        f'<div class="strip">{strip}</div></div>'
+    )
+    if not f.tickets:
+        return head + "</section>"
+    by_num = {t.num: t for t in f.tickets}
 
     def row(t: Ticket) -> str:
         chips = dep_chips(f.name, by_num, t) or '<span class="deps">—</span>'
@@ -689,13 +714,6 @@ def feature_section(f: Feature) -> str:
         if done_rows else ""
     )
     done_note = f"all {len(f.tickets)} tickets done"
-    head = (
-        f'<section class="viewgroup feature" id="f-{f.name}">'
-        f'<div class="fhead"><h2>{html.escape(f.name)} <span class="counts">{" · ".join(bits)}</span></h2>'
-        f'<div class="strip">{strip}</div></div>'
-    )
-    if not f.tickets:
-        return head + "</section>"
     return (
         head
         + graph_views(f"f-{f.name}", feature_dag(f, False), feature_dag(f, True), wave_lanes(f), done_note)
@@ -1059,12 +1077,12 @@ ${standalone}
     s.onload = () => {
       s.remove();
       if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
-      else setTimeout(poll, 30_000);
+      else setTimeout(poll, 5_000);
     };
     s.onerror = () => { saveState(); location.reload(); };  // no sidecar: stay current the blunt way
     document.head.append(s);
   }
-  setTimeout(poll, 30_000);
+  setTimeout(poll, 5_000);
 
   await renderGraphs();
   if (!saved && location.hash) openTarget();

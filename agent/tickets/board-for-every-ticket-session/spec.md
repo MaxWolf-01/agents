@@ -34,10 +34,10 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 ## Decisions
 
 - `dashboard.py` moves to the tracker skill as `board.py`, the glossary's word, since the tracker skill is what every ticket session reads; `dispatch review` calls it there.
-- The tracker's markdown backend carries the rule: fetching a ticket renders the board (`--open auto` opens the tab only when the file is new) and ensures the watcher runs; one command does both, idempotent, like `diffview --serve`.
+- The tracker's markdown backend carries the rule: fetching a ticket renders the board (`--open auto` opens the tab only when the file is new) and starts the watcher; one command does both.
 - The board reads every worktree of the repo (`git worktree list`); a feature directory present in a worktree whose branch is that feature's is taken from there, every other feature and the standalone tickets from the integration checkout. Nothing about how tickets are committed changes.
 - The watcher (`board.py --watch`) polls the tracker directory for changes every few seconds and re-renders on one. It is a background task of the session that started it and dies with it; each ticket session starts its own, and several writing the same file is harmless since the render is deterministic from disk.
-- Output `agent/board.html` beside the tracker, with its stamp file, gitignored like `agent/diffviews/`; the project-setup skill's gitignore list and this repo's follow.
+- Output `agent/board.html` beside the tracker, with its stamp file, gitignored like `agent/diffviews/` (amended 2026-09-08, was: the project-setup skill's gitignore list follows; there is none, the other `agent/` artefacts are ignored by max's global git ignore, which is where these two go too; this repo's `.gitignore` carries them meanwhile).
 - The tracker has one backend, markdown: `GITHUB.md` is deleted, the tracker skill's backend list becomes the two homes (the repo, or a workspace repo over clones), and the README's and to-tickets' GitHub lines go.
 - A feature section shows its spec's status in the header, from `spec.md`'s frontmatter.
 - A feature with tickets is worked by `/mx:dispatch`, at any size; orient's step 3 routes tickets to dispatch and drops the by-hand loop, the README and to-tickets' closing line follow. A feature without tickets is built by the session that grilled it, as the gate already says.
