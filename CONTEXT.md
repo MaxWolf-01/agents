@@ -65,8 +65,8 @@ The rendered view of the whole tracker: every feature, its dependency graph, the
 _Avoid_: dashboard (the name of the script that renders it, nothing more)
 
 **Retire**:
-Delete a shipped feature's or ticket's files from the tree; git history keeps them.
-_Avoid_: archive, close (a ticket closes when done; it retires when shipped)
+Take a shipped feature's or ticket's record out of the live tracker; history keeps it.
+_Avoid_: archive, clean up
 
 **Tombstone**:
 The one-line header that marks a file as historical and names its successor.
