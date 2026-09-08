@@ -589,10 +589,10 @@ def render_page(
         for f in features
     )
 
-    # the all-features graph earns its place only when there is more than one feature —
-    # with one, it duplicates that feature's own section
+    # the all-features graph earns its place only when more than one feature has tickets;
+    # with one, it duplicates that feature's own section, with none it is an empty box
     board = ""
-    if len(features) > 1:
+    if sum(1 for f in features if f.tickets) > 1:
         board = (
             '<section class="viewgroup" id="sec-board"><h2>Board</h2>'
             + graph_views(
