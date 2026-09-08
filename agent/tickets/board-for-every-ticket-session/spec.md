@@ -1,5 +1,5 @@
 ---
-status: draft
+status: confirmed
 ---
 
 # Tickets are always dispatched, and the board is their standing view
@@ -10,9 +10,9 @@ The board (`dashboard.py`: every feature, its dependency graph, the needs-human 
 
 ## Solution
 
-One way to work tickets: when a feature has tickets, a dispatcher works them, one at a time or in waves; when it has none, the session that grilled it builds it (you, r2). The by-hand loop leaves orient, the README and to-tickets; `/mx:implement` stays the worker's skill. The orchestrator, which holds the spec and every ticket, reads each landed diff before merging it, since it can spot what a worker's fresh context could not (my call).
+One way to work tickets: when a feature has tickets, a dispatcher works them, one at a time or in waves; when it has none, the session that grilled it builds it. The by-hand loop leaves orient, the README and to-tickets; `/mx:implement` stays the worker's skill. The orchestrator, which holds the spec and every ticket, reads each landed diff before merging it, since it can spot what a worker's fresh context could not.
 
-The board is a tracker artefact, not a dispatch one: the script moves to the tracker skill, the tracker's markdown backend says when it renders, and the open tab stays current on its own. One board per tracker, written beside it as `agent/board.html` (you, r3); the tracker itself lives in the repo's `agent/tickets/`, or in a workspace repo over several clones when features span repos or the tickets stay private to max (you, r3). The GitHub backend goes: GitHub issues are the team's communication interface, never the tracker (you, r3). A session that fetches a ticket renders the board once, which opens the tab the first time (you, ticket) and starts a watcher that re-renders on every change under the tracker directory, so the tab stays current whoever writes: this session, another, a merge, a hand edit (you, r1). Dispatch keeps calling the same script from the same place.
+The board is a tracker artefact, not a dispatch one: the script moves to the tracker skill, the tracker's markdown backend says when it renders, and the open tab stays current on its own. One board per tracker, written beside it as `agent/board.html`; the tracker itself lives in the repo's `agent/tickets/`, or in a workspace repo over several clones when features span repos or the tickets stay private to max. The GitHub backend goes: GitHub issues are the team's communication interface, never the tracker. A session that fetches a ticket renders the board once, which opens the tab the first time and starts a watcher that re-renders on every change under the tracker directory, so the tab stays current whoever writes: this session, another, a merge, a hand edit. Dispatch keeps calling the same script from the same place.
 
 ## User Stories
 
@@ -27,21 +27,21 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 ## Properties
 
 - The board renders from disk alone; any writer's render is correct, last writer wins.
-- A change to tracker state is on the board within seconds without an agent's action (you, r1).
-- One board per tracker, showing what is actionable now: rendered from the integration checkout, never from a worktree (you, r3); a feature with a worktree on its own branch is shown from that worktree's copy of its tickets, so a dispatcher's claims and done flips are on the board while the feature is in flight (you, r4).
-- A re-render never moves the reader: scroll position, open sections and the chosen view survive it, and unchanged content never reloads (you, r3).
+- A change to tracker state is on the board within seconds without an agent's action.
+- One board per tracker, showing what is actionable now: rendered from the integration checkout, never from a worktree; a feature with a worktree on its own branch is shown from that worktree's copy of its tickets, so a dispatcher's claims and done flips are on the board while the feature is in flight.
+- A re-render never moves the reader: scroll position, open sections and the chosen view survive it, and unchanged content never reloads.
 
 ## Decisions
 
-- `dashboard.py` moves to the tracker skill as `board.py`, the glossary's word, since the tracker skill is what every ticket session reads; `dispatch review` calls it there (you, r4).
-- The tracker's markdown backend carries the rule: fetching a ticket renders the board (`--open auto` opens the tab only when the file is new) and ensures the watcher runs; one command does both, idempotent, like `diffview --serve` (you, r1).
-- The board reads every worktree of the repo (`git worktree list`); a feature directory present in a worktree whose branch is that feature's is taken from there, every other feature and the standalone tickets from the integration checkout (you, r4). Nothing about how tickets are committed changes.
-- The watcher (`board.py --watch`) polls the tracker directory for changes every few seconds and re-renders on one; it serves the page on localhost so the tab's stamp poll reaches it, and exits after fifteen minutes without a poll, i.e. once no tab is open (my call). A page opened from the file path keeps working, only without the live reload.
-- Output `agent/board.html` beside the tracker, with its stamp file, gitignored like `agent/diffviews/`; the project-setup skill's gitignore list and this repo's follow (you, r3).
-- The tracker has one backend, markdown: `GITHUB.md` is deleted, the tracker skill's backend list becomes the two homes (the repo, or a workspace repo over clones), and the README's and to-tickets' GitHub lines go (you, r3).
-- A feature section shows its spec's status in the header (my call), from `spec.md`'s frontmatter.
-- A feature with tickets is worked by `/mx:dispatch`, at any size; orient's step 3 routes tickets to dispatch and drops the by-hand loop, the README and to-tickets' closing line follow (you, r2). A feature without tickets is built by the session that grilled it, as the gate already says.
-- Dispatch's tick step 1 gains: before merging a landed ticket branch, the orchestrator reads its diff against the ticket and the spec; what it finds goes back to the worker as guidance on resume, or becomes a ticket (my call).
+- `dashboard.py` moves to the tracker skill as `board.py`, the glossary's word, since the tracker skill is what every ticket session reads; `dispatch review` calls it there.
+- The tracker's markdown backend carries the rule: fetching a ticket renders the board (`--open auto` opens the tab only when the file is new) and ensures the watcher runs; one command does both, idempotent, like `diffview --serve`.
+- The board reads every worktree of the repo (`git worktree list`); a feature directory present in a worktree whose branch is that feature's is taken from there, every other feature and the standalone tickets from the integration checkout. Nothing about how tickets are committed changes.
+- The watcher (`board.py --watch`) polls the tracker directory for changes every few seconds and re-renders on one. It is a background task of the session that started it and dies with it; each ticket session starts its own, and several writing the same file is harmless since the render is deterministic from disk.
+- Output `agent/board.html` beside the tracker, with its stamp file, gitignored like `agent/diffviews/`; the project-setup skill's gitignore list and this repo's follow.
+- The tracker has one backend, markdown: `GITHUB.md` is deleted, the tracker skill's backend list becomes the two homes (the repo, or a workspace repo over clones), and the README's and to-tickets' GitHub lines go.
+- A feature section shows its spec's status in the header, from `spec.md`'s frontmatter.
+- A feature with tickets is worked by `/mx:dispatch`, at any size; orient's step 3 routes tickets to dispatch and drops the by-hand loop, the README and to-tickets' closing line follow. A feature without tickets is built by the session that grilled it, as the gate already says.
+- Dispatch's tick step 1 gains: before merging a landed ticket branch, the orchestrator reads its diff against the ticket and the spec; what it finds goes back to the worker as guidance on resume, or becomes a ticket.
 
 ## Testing Decisions
 
