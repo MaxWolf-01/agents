@@ -20,9 +20,9 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 2. As max with two sessions on one repo, I want one board both keep current, so that neither session's view lies about the other's claims.
 3. As a session starting on a ticket (`/mx:implement`, a grilling claiming a decision ticket), I want the board rendered when I fetch the ticket, so that the tab opens once and stays.
 4. As dispatch, I want the same script and the same page as every other ticket session, so that the board is one thing.
-6. As max, I want one way to work tickets, so that I never decide whether a feature is "big enough" to dispatch.
-7. As max, I want the orchestrator to read a landed diff with the whole feature in mind before it merges, so that a detail the worker's brief missed is caught by the session that knows it.
-5. As a reader of the board, I want a feature's spec status (draft or confirmed) beside its tickets, so that a spec-only feature (grilled, not yet ticketed) is visible rather than an empty section.
+5. As max, I want one way to work tickets, so that I never decide whether a feature is "big enough" to dispatch.
+6. As max, I want the orchestrator to read a landed diff with the whole feature in mind before it merges, so that a detail the worker's brief missed is caught by the session that knows it.
+7. As a reader of the board, I want a feature's spec status (draft or confirmed) beside its tickets, so that a spec-only feature (grilled, not yet ticketed) is visible rather than an empty section.
 
 ## Properties
 

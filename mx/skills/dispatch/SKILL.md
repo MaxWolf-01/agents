@@ -1,15 +1,15 @@
 ---
 name: dispatch
-description: "Work a feature's ticket DAG in parallel: one orchestrator fans independent frontier tickets out to parallel worker agents and integrates them on the feature branch until the feature ships. Use when a ticketed feature has independent frontier tickets, the user says \"dispatch\" or wants tickets worked in parallel, or when another skill routes parallel frontier work here."
+description: "Work a feature's tickets: one orchestrator hands each frontier ticket to a worker agent in its own worktree, one at a time or in parallel waves, and integrates them on the feature branch until the feature ships. Use whenever a feature has tickets to work, when the user says \"dispatch\", or when another skill routes ticketed work here."
 ---
 
 # Dispatch
 
 You are the **single orchestrator** of one feature's ticket DAG: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until no open tickets remain. `/mx:implement` works one ticket; dispatch orchestrates N implements. You are the sole claim-writer, the only holder of the feature branch, and the only judge of done.
 
-Dispatch runs downstream of `/mx:to-tickets`: the `blocked-by` DAG is what makes independence explicit and human-approved. Unticketed work with two or more independent parts routes through to-tickets first.
+Dispatch runs downstream of `/mx:to-tickets` and is the one way tickets are worked, at any size: a feature with tickets is dispatched, a feature without them is built by the session that grilled it. The `blocked-by` DAG is what makes independence explicit and human-approved.
 
-With a wave size of one, the same loop runs **serially**: the orchestrator role (frontier bookkeeping, integration, status, QA hand-offs) is worth keeping even without parallelism, and serial is the right mode for surface-heavy waves (see the coherence test below).
+With a wave size of one the same loop runs **serially**, the common case: the orchestrator role (frontier bookkeeping, the pre-merge read, integration, status, QA hand-offs) is what a two-ticket feature gets from dispatch, and serial is the right mode for surface-heavy waves (see the coherence test below).
 
 ## Setup (once)
 
@@ -29,7 +29,7 @@ Open the tick with the **state probe** (Mechanics): it decides who exited.
 For each worker that has exited, bring its ticket branch into your checkout (a local worker shares your `.git` and is already there; a remote one needs `git fetch <remote> ticket/<feature>/<NN>-<slug>:ticket/<feature>/<NN>-<slug>`, on the remote `dispatch setup` printed), then read the ticket's frontmatter **from that branch**: the `done` flip lands on the ticket branch, so your feature-branch checkout still shows `claimed` until the merge:
 
 - **Not `done`** → the worker stopped early, its in-pane retries already spent (Mechanics). `dispatch-ctl log <NN>-<slug>` shows how it ended (attempts, exit code, ticket status, session id) and why, in the worker's own words: the chunk it was on, and the line it wrote on the way out. Scrollback is the fallback when that log is silent; where neither explains it, report the cause as unknown rather than guessing one. A permission denial or a spent usage limit is a first-class resumable event: clear the blocker (add the allowlist entry it needed, wait out the reset) and resume.
-- **`done`** → the flip alone proves nothing. Merge the ticket branch into the feature branch with `--no-ff` and run the project's verification there:
+- **`done`** → the flip alone proves nothing. Read the ticket branch's diff against the ticket and the spec first: you hold the whole feature where the worker held one ticket, so a detail its brief missed is yours to catch; what you find goes back to the worker as guidance on resume (Mechanics), or becomes a ticket. Then merge the ticket branch into the feature branch with `--no-ff` and run the project's verification there:
   - Clean merge, green → the ticket has **landed**: keep `status: done`, `dispatch-ctl cleanup <NN>-<slug>` on the host, `dispatch review <NN>-<slug>` here (Mechanics), and **announce it to the user**: the ticket is demoable now (tracer bullet), so name what works and how to exercise it, straight from the ticket's "What to build" and acceptance criteria. QA runs per landed slice, concurrent with the remaining waves.
   - Conflict, or red after merge → abort the merge and send the conflict to the most-informed agent: resume the worker with "the feature branch moved: rebase onto it, resolve, re-verify, flip done again". Ticket branches are private; rebasing them is safe.
 - **Session unrecoverable** (wedged, context-exhausted, gone) → no special machinery: reset the ticket to `open` and `dispatch-ctl cleanup` it; ticket + spec carry everything a fresh worker needs, by construction.
@@ -60,7 +60,7 @@ For each ticket in the wave:
 
 ### 5. Stop or sleep
 
-**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is the tracker board, rendered by `dashboard.py` beside this skill (`--help` for usage): `uv run <skill-dir>/dashboard.py agent/tickets` renders the whole tracker (every feature and standalone ticket on one page, cross-feature edges included, cycleable frontier/full/lanes views) to `~/Downloads/dispatch-dashboard/<project>.html` and opens the first render in the browser (the open tab then refreshes itself). Any agent that changes tracker state re-renders; concurrent dispatchers share the one board. `dispatch review` re-renders it after each landing; rerun it yourself after any other change to tracker state, and never hand-write status prose that can go stale.
+**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is the board (`/mx:tracker`, Board): `dispatch review` re-renders it after each landing, and the watcher the tracker rule started keeps it current in between; never hand-write status prose that can go stale.
 
 The feature's queue lives in `agent/tickets/<feature>/needs-human.md`: optional `worker-host:` frontmatter, then one `- summary :: markdown detail` bullet per pending entry. The detail is what lets the human act without a chat round-trip: the decision's context and options, or the paste-ready kickoff prompt of a session only they can start (HITL prototypes). Delete an entry when it's answered; the answer lands in code or tickets, never in the file.
 

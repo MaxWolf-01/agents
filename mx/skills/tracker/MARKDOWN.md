@@ -1,6 +1,6 @@
-# Tracker backend: local markdown
+# The markdown tracker
 
-Issues for this repo live as markdown files in `agent/tickets/`.
+Tickets live as markdown files in `agent/tickets/`.
 
 ## Layout
 
@@ -33,7 +33,13 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 ## Publish / fetch
 
 - "Publish to the issue tracker" → create the files above (creating the feature directory if needed).
-- "Fetch the ticket" → read the ticket file **and** the feature's `spec.md`; tickets don't repeat the feature context, the spec carries it.
+- "Fetch the ticket" → read the ticket file **and** the feature's `spec.md`; tickets don't repeat the feature context, the spec carries it. Then render the board (below).
+
+## Board
+
+The board is the tracker as one page, `agent/board.html` beside it: every feature with its spec status, dependency graph and ticket rows, the standalone tickets, the needs-human queue, the review-page links. `board.py` beside this skill renders it (`--help` for what it reads and which checkout's copy it shows).
+
+A session that fetches a ticket renders the board and starts its watcher, as a background task: `uv run <skill-dir>/board.py agent/tickets --watch`. The first render opens the tab; the watcher re-renders on every change under the tracker, and the tab reloads itself only when content changed, keeping scroll position, open sections and the chosen view. The watcher dies with the session; a second session starts its own.
 
 ## Supersede
 

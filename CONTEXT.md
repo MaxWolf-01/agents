@@ -62,7 +62,7 @@ _Avoid_: task, chore, prep
 
 **Board**:
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
-_Avoid_: dashboard (the name of the script that renders it, nothing more)
+_Avoid_: dashboard
 
 **Retire**:
 Take a shipped feature's or ticket's record out of the live tracker; history keeps it.

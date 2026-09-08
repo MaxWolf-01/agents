@@ -16,15 +16,16 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
 | Ticket            | `agent/tickets/<feature>/NN-slug.md` | retired with its feature                                              | one vertical slice with blocked-by edges, or, with `type: research | prototype | grilling | legwork`, a decision ticket: a decision to make, answered on resolution |
 | Standalone ticket | `agent/tickets/<slug>.md`            | deleted when done                                                     | a ticket with no spec: no design round needed, or a decision ticket for later                                                                                       |
+| Board             | `agent/board.html`                   | gitignored, re-rendered on every tracker change                       | the whole tracker as one page: features with spec status, dependency graphs, frontier, review-page links                                                            |
 | Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
 | Prototype         | `agent/prototypes/<slug>/`           | committed, kept                                                       | code that answered a design question + `ANSWER.md`                                                                                                                  |
 | Show              | `agent/show/<slug>/`                 | committed once approved                                               | an explanation carried by an artefact                                                                                                                               |
 
-`/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming); a repo can override them (e.g. GitHub Issues) in its CLAUDE.md.
+`/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming, the board); the tracker lives in the repo, or in a workspace repo when features span repos.
 
 ## The main flow: idea → ship
 
-`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:implement` per ticket (tdd inside, code-review at the end), fresh context each. Work that fits one session skips the tickets: implement reads the confirmed spec directly.
+`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:dispatch` works the tickets: a fresh `/mx:implement` per ticket (tdd inside, code-review at the end), serial or in waves, the board as the standing view. A feature without tickets is built by the session that grilled it, from the confirmed spec.
 
 **`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
 
@@ -61,7 +62,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
 | `/mx:to-tickets` | spec → tracer-bullet tickets |
 | `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
-| `/mx:dispatch` | parallelize independent frontier tickets: one orchestrator, N implements |
+| `/mx:dispatch` | work a feature's tickets: one orchestrator, a fresh implement per ticket, serial or in waves |
 | `/mx:prototype` | throwaway code to answer a design question |
 | `/mx:to-questionnaire` | turn a decision someone else must answer into a questionnaire for them |
 | `/mx:wizard` | bash wizard walking a human through steps only they can do (credentials, dashboards, migrations) |
