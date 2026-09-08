@@ -28,14 +28,14 @@ The board is a tracker artefact, not a dispatch one: the script moves to the tra
 
 - The board renders from disk alone; any writer's render is correct, last writer wins.
 - A change to tracker state is on the board within seconds without an agent's action (you, r1).
-- One board per tracker, showing what is actionable now: rendered from the integration checkout, never from a worktree (you, r3); how in-flight features' claims reach it is (open → Q3).
+- One board per tracker, showing what is actionable now: rendered from the integration checkout, never from a worktree (you, r3); a feature with a worktree on its own branch is shown from that worktree's copy of its tickets, so a dispatcher's claims and done flips are on the board while the feature is in flight (you, r4).
 - A re-render never moves the reader: scroll position, open sections and the chosen view survive it, and unchanged content never reloads (you, r3).
 
 ## Decisions
 
-- `dashboard.py` moves to the tracker skill as `board.py`, the glossary's word; `dispatch review` calls it there (my call).
+- `dashboard.py` moves to the tracker skill as `board.py`, the glossary's word, since the tracker skill is what every ticket session reads; `dispatch review` calls it there (you, r4).
 - The tracker's markdown backend carries the rule: fetching a ticket renders the board (`--open auto` opens the tab only when the file is new) and ensures the watcher runs; one command does both, idempotent, like `diffview --serve` (you, r1).
-- Claims and `done` flips made by a dispatcher on its feature branch are invisible to the integration checkout until the feature merges; the board shows them by (open → Q3): reading every worktree of the repo and taking a feature's tickets from the worktree on that feature's branch, or by moving ticket-state edits onto the integration checkout.
+- The board reads every worktree of the repo (`git worktree list`); a feature directory present in a worktree whose branch is that feature's is taken from there, every other feature and the standalone tickets from the integration checkout (you, r4). Nothing about how tickets are committed changes.
 - The watcher (`board.py --watch`) polls the tracker directory for changes every few seconds and re-renders on one; it serves the page on localhost so the tab's stamp poll reaches it, and exits after fifteen minutes without a poll, i.e. once no tab is open (my call). A page opened from the file path keeps working, only without the live reload.
 - Output `agent/board.html` beside the tracker, with its stamp file, gitignored like `agent/diffviews/`; the project-setup skill's gitignore list and this repo's follow (you, r3).
 - The tracker has one backend, markdown: `GITHUB.md` is deleted, the tracker skill's backend list becomes the two homes (the repo, or a workspace repo over clones), and the README's and to-tickets' GitHub lines go (you, r3).
