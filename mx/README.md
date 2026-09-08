@@ -16,7 +16,6 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
 | Ticket            | `agent/tickets/<feature>/NN-slug.md` | retired with its feature                                              | one vertical slice with blocked-by edges, or, with `type: research | prototype | grilling | legwork`, a decision ticket: a decision to make, answered on resolution |
 | Standalone ticket | `agent/tickets/<slug>.md`            | deleted when done                                                     | a ticket with no spec: no design round needed, or a decision ticket for later                                                                                       |
-| Map               | `agent/tickets/<feature>/map.md`     | retired with its feature                                              | a feature charted by wayfinder: destination, decisions-so-far, fog; its decision tickets sit beside it                                                              |
 | Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
 | Prototype         | `agent/prototypes/<slug>/`           | committed, kept                                                       | code that answered a design question + `ANSWER.md`                                                                                                                  |
 | Show              | `agent/show/<slug>/`                 | committed once approved                                               | an explanation carried by an artefact                                                                                                                               |
@@ -29,11 +28,11 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 **`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
 
-When the planning itself is too big for one session, `/mx:wayfinder` charts it as a shared map of decision tickets, resolved one fresh session at a time:
+Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until the gate confirms it:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/wayfinder-loop.png">
-  <img alt="The wayfinder loop: chart the map, then per session pick and claim a decision ticket, resolve it, record it on the map and in the spec draft, graduate the fog, until the frontier is empty and the confirmed spec supersedes the map" src="assets/wayfinder-loop-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
+  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; the gate confirms the spec when the frontier is empty" src="assets/session-boundary-light.png">
 </picture>
 
 ## What's manual, what's AFK, and why
@@ -44,8 +43,8 @@ When the planning itself is too big for one session, `/mx:wayfinder` charts it a
 </picture>
 
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
-- **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → handoff to a fresh thread, don't push on degraded.
-- **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Grilling writes it round by round and you review each round's delta as it lands (`/mx:grilling` has the mechanics); writing it down is itself a design step. A spec assembled across sessions (a feature charted by wayfinder) gets one whole-document read at the end, for drift between sessions.
+- **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → end the session with the frontier open (the sharp questions become decision tickets) or handoff to a fresh thread; don't push on degraded.
+- **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Grilling writes it round by round and you review each round's delta as it lands (`/mx:grilling` has the mechanics); writing it down is itself a design step. A spec assembled across sessions gets one whole-document read at the gate, for drift between sessions.
 - **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones; no feedback until the layers meet.
 - **Implementation is the AFK part.** Day shift plans and queues the backlog; night shift works the frontier, fresh context per ticket.
 - **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands; the agent announces what works and how to exercise it (the ticket's What-to-build + acceptance criteria), you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.

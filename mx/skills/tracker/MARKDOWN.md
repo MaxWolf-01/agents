@@ -37,9 +37,7 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 
 ## Supersede
 
-When a newer artefact replaces an older one (a spec supersedes a map, a new spec replaces the old), never leave the old file looking live: agents read whatever exists as current truth. Either **tombstone** it (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **delete** it; git history keeps it. A real tracker expresses this natively (closed state + cross-reference).
-
-The same duty applies partially: a resolved decision that contradicts a live spec includes the **spec sweep**: rewrite the affected spec sections in the same session, or file a ticket for the sweep with a blocking edge. A spec left teaching a superseded design is current truth to every later reader.
+A superseded file (`/mx:tracker`, Supersede) is either **tombstoned** (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, when it has no remaining reader value, **deleted**; git history keeps it.
 
 ## Retire
 
@@ -49,11 +47,3 @@ Set `status: done` when a ticket completes. Retire the files once the work has s
 - **Feature**: `git rm -r agent/tickets/<feature-slug>/`, once the whole feature has shipped.
 
 Git history preserves both: `git log --diff-filter=D -- agent/tickets` finds retired work. When the repo doesn't track `agent/tickets/`, git has nothing to recover from: move the file into `agent/tickets/done/` instead.
-
-## Wayfinding operations
-
-Used by `/mx:wayfinder`. A feature's map lives where its spec will later land:
-
-- **Map**: `agent/tickets/<feature>/map.md`, holding the Destination / Notes / Decisions-so-far / Not-yet-specified / Out-of-scope body. Its decision tickets are the feature's `NN-<slug>.md` files, per the layout above.
-- **Resolve**: after the ticket's `## Answer`, add a one-line pointer (gist + link) to the map's Decisions so far.
-- The spec draft (`spec.md`, `status: draft`) grows beside the map from charting on. The session that confirms it **tombstones the map** (see Supersede); build tickets continue the same numbering. Retire the feature directory when it ships; the decision trail stays readable until then.

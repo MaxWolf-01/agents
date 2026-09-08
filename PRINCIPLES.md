@@ -68,7 +68,7 @@ The human's decisions are front-loaded into grilling; everything that can run wi
 
 ## 12. Scale the process to the work
 
-A step (grilling, review, a map) is skipped only when the change was dictated or needed no judgment; size and medium never decide it, because in this setup prose in skills and docs is the logic. Grilling triggers proportionally on any intent that is not fully mechanical: depth, not volume. A map is for fog, an idea that will not fit one session; reaching for it on well-scoped work is the common mistake. Optimise only the artefacts someone reads: the "sacrifice grammar for concision" line left Pocock's `CLAUDE.md` once he stopped reading plans. Ticket sizing is two-sided; too small pays an agent start per slice.
+A step (grilling, review) is skipped only when the change was dictated or needed no judgment; size and medium never decide it, because in this setup prose in skills and docs is the logic. Grilling triggers proportionally on any intent that is not fully mechanical: depth, not volume. The wayfinder map was for fog, an idea that would not fit one session, and reaching for it on well-scoped work was the common mistake, until the up-front choice went: how many sessions a grilling takes is discovered, not declared. Optimise only the artefacts someone reads: the "sacrifice grammar for concision" line left Pocock's `CLAUDE.md` once he stopped reading plans. Ticket sizing is two-sided; too small pays an agent start per slice.
 
 
 ## 13. Own the stack

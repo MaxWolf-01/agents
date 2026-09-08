@@ -38,7 +38,7 @@ Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
-Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (maps, specs, tickets, project CLAUDE.md); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (specs, tickets, project CLAUDE.md); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 
 **How you work:**
 
@@ -74,7 +74,7 @@ Gather sufficient context, verify your assumptions and sources.
 - Merge commit subjects follow normal commit conventions: state what the branch as a whole delivered (`subagents: report delivery via named file`), no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
 - Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action (usually gated by the user reviewing the diffview). Committing and pushing work to a feature branch is not.
 - For releases, I almost always have a Makefile workflow that automates the mechanical parts, and avoids common mistakes, and documents the flow in code itself -- use that, before doing it manually.
-- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, map, decision tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
 <style>
