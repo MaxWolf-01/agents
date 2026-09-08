@@ -1,35 +1,31 @@
 ---
 name: tracker
-description: "Issue tracker conventions: how specs and tickets are published, fetched, claimed, and retired on this project's tracker backend, and how each decision-ticket type resolves. Use when publishing or fetching a spec or ticket, picking work from the frontier, filing or resolving a decision ticket, or when another skill says \"publish to the issue tracker\"."
+description: "Tracker conventions: where specs and tickets live, how they are published, fetched, claimed and retired, how each decision-ticket type resolves, and the board that shows them. Use when publishing or fetching a spec or ticket, picking work from the frontier, filing or resolving a decision ticket, rendering the board, or when another skill says \"publish to the issue tracker\"."
 ---
 
 # Tracker
 
-The conventions are backend-specific and each backend file is self-contained:
+Tickets are markdown files in `agent/tickets/`: [MARKDOWN.md](MARKDOWN.md) has the layout, the state, the board. The tracker sits in the repo it plans, or, when features span repos or the tickets stay out of a shared repo, in a workspace repo that holds the clones as untracked directories and the tracker beside them.
 
-- **Default**: markdown files in `agent/tickets/`; read [MARKDOWN.md](MARKDOWN.md).
-- The project's CLAUDE.md or other context declares GitHub Issues as its tracker: read [GITHUB.md](GITHUB.md).
-- It declares some other tracker: follow the project's own conventions.
-
-## Provenance (all backends)
+## Provenance
 
 A ticket's framing names who holds it: an Options or approach section an agent sketched says so inline ("options sketched by agent <date>, frame unconfirmed"); one the user decided points at the decision (ADR, spec decision, grilling verdict). Unmarked framing reads as agent-sketched. Write acceptance criteria that keep the option space open ("decision recorded; options outside this list count") so the session working the ticket settles the problem, not just the menu it arrived with.
 
-## Decision tickets (all backends)
+## Decision tickets
 
-A **decision ticket** is a ticket whose deliverable is an answer: a decision sharp enough to state now (one question, or a few that share their context and fit one session), whose answer is missing. It carries a `type`, one of `research | prototype | grilling | legwork` (Ticket Types, below), and its body is the question plus, when it belongs to a feature, the spec sections its answer may rewrite; resolving it records the answer, rewrites those sections (`/mx:grilling`, Across sessions), and closes it, the way the backend does. A ticket without a `type` is a **build ticket**. A ticket's name is its title. Both kinds share one numbering, one frontier and one claim rule, so a build ticket that needs the answer names the decision ticket in its blocking edges.
+A **decision ticket** is a ticket whose deliverable is an answer: a decision sharp enough to state now (one question, or a few that share their context and fit one session), whose answer is missing. It carries a `type`, one of `research | prototype | grilling | legwork` (Ticket Types, below), and its body is the question plus, when it belongs to a feature, the spec sections its answer may rewrite; resolving it records the answer, rewrites those sections (`/mx:grilling`, Across sessions), and closes it, per MARKDOWN.md. A ticket without a `type` is a **build ticket**. A ticket's name is its title. Both kinds share one numbering, one frontier and one claim rule, so a build ticket that needs the answer names the decision ticket in its blocking edges.
 
 **The sort** for any piece of design, from grilling, to-tickets or a review session alike: the question can be stated sharply now, answered or not → a decision ticket (or, once answered, the spec and a build ticket); the question itself cannot yet be phrased → **fog**, held in the spec's Fog section until an answer sharpens it. A decision ticket is resolved with the human, or by a background research agent; never by an implementing worker.
 
-## Supersede (all backends)
+## Supersede
 
-A newer artefact that replaces an older one never leaves the old one looking live; agents read whatever exists as current truth. The backend file says how (tombstone or delete a file, close and cross-reference an issue).
+A newer artefact that replaces an older one never leaves the old one looking live; agents read whatever exists as current truth. MARKDOWN.md says how.
 
 **Amend or supersede a decision.** While nothing is built on a ticket's answer, a later decision that overturns it amends it in place: edit the answer, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer, it is the reasoning behind that code: leave it, open a new ticket that supersedes it, and put a one-line forward pointer on the old one.
 
 Either way the **spec sweep** follows in the same session: rewrite the spec sections the decision touches, and grep the retired claim across the tickets, `CONTEXT.md` and `decisions/`; a copy left standing is current truth to every later reader. When the sweep cannot run now, file a ticket for it with a blocking edge.
 
-## Ticket Types (all backends)
+## Ticket Types
 
 Every decision ticket is either **HITL** (human in the loop, worked *with* a human who speaks for themselves) or **AFK**, driven by the agent alone. A HITL ticket only resolves through that live exchange; the agent never stands in for the human's side of it (a grilling agent that answers its own questions has broken this).
 

@@ -1,13 +1,13 @@
 ---
 name: to-tickets
-description: "Break a confirmed spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges, or native blocking links on a real tracker."
+description: "Break a confirmed spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges."
 ---
 
 # To Tickets
 
 Break a confirmed spec into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-Publish per `/mx:tracker`'s conventions (or the tracker the project's CLAUDE.md declares).
+Publish per `/mx:tracker`'s conventions.
 
 ## Process
 
@@ -66,8 +66,6 @@ Iterate until the user approves the breakdown.
 
 Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec.
 
-(On a repo whose CLAUDE.md declares a real tracker like GitHub Issues, publish one issue per ticket instead, using the platform's native blocking / sub-issue relationships.)
-
 <ticket-template>
 
 ---
@@ -92,4 +90,4 @@ A decision ticket uses the same frontmatter plus its `type`; its body is a `## Q
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
-Work the frontier one ticket at a time with `/mx:implement`, clearing context between tickets; a decision ticket on the frontier is a grilling, prototype or research session instead, per its type. Independent frontier tickets can run in parallel via `/mx:dispatch`.
+The tickets are worked by `/mx:dispatch`, at any size: a fresh `/mx:implement` per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type.

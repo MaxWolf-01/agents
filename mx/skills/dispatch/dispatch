@@ -135,7 +135,7 @@ review() {
     while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve agent/diffviews
-    run uv run "$skill/dashboard.py" agent/tickets
+    run uv run "$skill/../tracker/board.py" agent/tickets
 }
 
 cmd=${1:-}

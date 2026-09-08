@@ -2,3 +2,5 @@ TODO
 agent/research
 scratch/
 .claude/settings.local.json
+agent/board.html
+agent/board.html.stamp.js
