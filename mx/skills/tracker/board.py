@@ -41,8 +41,8 @@ flicker. The page and its stamp file are gitignored, like agent/diffviews.
 
 Examples:
 
-    uv run board.py agent/tickets --watch
-    uv run board.py agent/tickets --out /tmp/board.html --open never
+    board agent/tickets --watch
+    board agent/tickets --out /tmp/board.html --open never
 """
 
 import datetime
@@ -1096,4 +1096,4 @@ ${standalone}
 
 
 if __name__ == "__main__":
-    main(tyro.cli(Args, description=__doc__))
+    main(tyro.cli(Args, description=__doc__, prog="board"))

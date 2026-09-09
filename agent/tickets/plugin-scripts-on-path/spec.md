@@ -12,7 +12,7 @@ Raised from review comment C15 on the testing-workflow implementation; left as t
 
 ## Solution
 
-The plugin ships a `bin/` directory, and the harness does the rest: Claude Code (since 2.1.91) adds every enabled plugin's `bin/` to the Bash tool's `PATH`, so inside any Claude session, a worker on the host included, `harden`, `dispatch` and `board` are bare commands. A project's Makefile calls `harden` by name and never sees the cache. The shell gets the same commands through one line in the dotfiles that puts the newest installed plugin version's `bin/` on `PATH`.
+The plugin ships a `bin/` directory, and the harness does the rest: Claude Code (since 2.1.91) adds every enabled plugin's `bin/` to the Bash tool's `PATH`, so inside any Claude session, a worker on the host included, `harden`, `dispatch` and `board` are bare commands. A project's Makefile calls `harden` by name and never sees the cache. The shell gets the same commands through one line in the dotfiles that puts the checkout's `bin/` on `PATH`, the checkout the rest of `~/.claude` is already wired to.
 
 ## User Stories
 
@@ -37,13 +37,7 @@ The plugin ships a `bin/` directory, and the harness does the rest: Claude Code 
 - **Three commands: `harden`, `dispatch`, `board`**. `dispatch-ctl` stays off `PATH`: it keeps its state (`config`, `manifest`, run files) beside itself and is meant to run from a feature's scratch dir; on `PATH` it would write that state into the plugin cache the first time someone ran it by hand. Its reference is reachable as `dispatch ctl --help` once a feature is set up, and the `dispatch` help says so.
 - **The Makefile template calls `harden` by name**. `HARDEN ?= harden`; the target runs `$(HARDEN) $(ARGS)`, and when the command is missing it says where it comes from (a Claude session with the mx plugin, or the plugin's `bin/` on `PATH`) instead of failing on a bare `command not found`. The `HARDEN=<path>` override stays.
 - **Skills name the bare commands**. Dispatch: `dispatch` replaces `bash <skill-dir>/dispatch`. Tracker: `board agent/tickets --watch` replaces `uv run <skill-dir>/board.py agent/tickets --watch`. Testing: `harden --help` replaces `uv run harden.py --help`. Inside the `dispatch` script itself the call to the board keeps its relative path: the script should not depend on its own `PATH` entry.
-- **The shell**. One line in the dotfiles' `zsh/exports`, beside the `~/.claude/local` line that already puts a harness path on `PATH`, adding the newest installed mx version's `bin/`. Evaluated at shell start, so it follows `claude plugin update` with no hook. The line, from the round's demonstration (the `n` qualifier is load-bearing: lexical sort picks 0.1.9 over 0.1.40):
-
-  ```zsh
-  path=(~/.claude/plugins/cache/MaxWolf-01/mx/*/bin(Nn/[-1]) $path)
-  ```
-
-  Machines without the dotfiles (worker users on pc) don't get it and don't need it: their commands run inside sessions.
+- **The shell** (amended at review, C1: was the newest cache version's `bin/` by numeric glob). One line in the dotfiles' `zsh/exports` appends the agents checkout's `mx/bin` to `PATH`: the dotfiles setup clones that checkout and wires `~/.claude` to it, so the path is already a dotfiles assumption, and no cache layout enters the dotfiles at all. Appended, as the harness appends, so a name clash resolves the same way in a shell and in a session. A shell runs the checkout's scripts and a session the installed version's; the two differ only between an edit and its release. Machines without the dotfiles (worker users on pc) don't get it and don't need it: their commands run inside sessions.
 - **Worker host: nothing changes**. `dispatch setup` keeps copying `dispatch-ctl`, `run-worker.sh` and `worker-prompt.md` into the per-feature scratch dir, which is what pins one plugin version per run; workers get the bare commands from the harness.
 - **Existing project Makefiles**: only the template carries the glob today (checked every Makefile under `~/repos`); nothing to migrate.
 

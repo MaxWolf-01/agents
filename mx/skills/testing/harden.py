@@ -66,10 +66,10 @@ JSON schema (--json):
 
 Examples:
 
-    uv run harden.py                            # this repo, since it forked from the integration branch
-    uv run harden.py ~/repos/memex --range v2.2.2..HEAD
-    uv run harden.py --integration-branch develop --json | jq '.new_survivors'
-    uv run harden.py --whole-repo --json | jq '.new_survivors | group_by(.target)'
+    harden                                      # this repo, since it forked from the integration branch
+    harden ~/repos/memex --range v2.2.2..HEAD
+    harden --integration-branch develop --json | jq '.new_survivors'
+    harden --whole-repo --json | jq '.new_survivors | group_by(.target)'
 """
 
 from __future__ import annotations
@@ -550,4 +550,4 @@ def render(report: dict) -> str:
 
 
 if __name__ == "__main__":
-    main(tyro.cli(Args, description=__doc__))
+    main(tyro.cli(Args, description=__doc__, prog="harden"))
