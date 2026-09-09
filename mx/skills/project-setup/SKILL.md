@@ -34,4 +34,4 @@ Target preferences for a project's foundations. On a fresh project, build all of
 - Node/TypeScript → [NODE.md](NODE.md)
 - Any other stack: apply the core; when a stack recurs across projects, its preferences become a sidecar file here.
 
-Every project keeps the same two names, `tests/properties/` and `make harden` (`/mx:testing`); which tools sit behind them is the stack file's business, and PYTHON.md is the one that has them today.
+Every project has `tests/properties/` and `make harden` (`/mx:testing`); the stack file names the tools behind them.

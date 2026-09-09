@@ -10,11 +10,12 @@
 
 ## Testing
 
-- `uv add --group dev hypothesis`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`); `make harden` brings its own mutmut and coverage.
-- Hypothesis needs a profile named `harden`, registered in `tests/conftest.py`, so a mutation run costs a small example budget instead of the full one; `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))` picks it up:
+- `uv add --group dev hypothesis`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`). Hypothesis is the only testing dependency the project takes on: harden runs mutmut and coverage from its own environment, so neither belongs in the dev group.
+- Hypothesis takes two profiles in `tests/conftest.py`, picked up with `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))`: `harden`, so a mutation run costs a small example budget instead of the full one, and `fuzz`, the budget `make fuzz` runs until you stop it. Hypothesis keeps what either one finds in `.hypothesis/`, and the ordinary suite replays it from there.
 
   ```python
   settings.register_profile("harden", max_examples=25, deadline=None)
+  settings.register_profile("fuzz", max_examples=5000, deadline=None)
   ```
 
 - mutmut's config, in `pyproject.toml`, is what scopes `make harden`:
@@ -28,4 +29,4 @@
 
 - `mutants/`, `.coverage` and `.hypothesis/` are gitignored, and `[tool.pytest.ini_options] testpaths = ["tests"]` keeps pytest out of the copies of the suite that mutmut leaves in `mutants/`.
 - `COVERAGE_CORE=sysmon` wherever else coverage is collected (CI, a local `--cov` run); harden's `--help` says why it is the tracer to pin.
-- The long-running fuzz target (`make fuzz`) reuses the same property tests: `uv add --group dev hypofuzz` where its non-commercial licence fits the project, and Atheris through Hypothesis' `fuzz_one_input` where it does not.
+- `make fuzz` needs nothing beyond hypothesis. Coverage guidance is the optional upgrade: `uv add --group dev hypofuzz` where its non-commercial licence fits the project, and the target uses it as soon as it imports; where the licence does not fit, Atheris drives the same property tests through Hypothesis' `fuzz_one_input`.

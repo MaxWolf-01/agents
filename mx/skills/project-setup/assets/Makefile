@@ -14,11 +14,15 @@ harden:
 	@echo "harden: $(HARDEN)"
 	uv run $(HARDEN) $(ARGS)
 
-# The property tests again, coverage-guided, for as long as you leave it running. Needs hypofuzz,
-# whose licence is the project's call (see the stack notes).
+# The property tests again, at the fuzz profile's budget, until you stop it. HypoFuzz takes over
+# when it is installed and adds coverage guidance; its licence is the project's call.
 fuzz:
-	@uv run python -c "import hypofuzz" 2>/dev/null || { echo "make fuzz needs hypofuzz: uv add --group dev hypofuzz"; exit 1; }
-	uv run hypothesis fuzz -- tests/properties
+	@if uv run python -c "import hypofuzz" >/dev/null 2>&1; then \
+	  uv run hypothesis fuzz -- tests/properties; \
+	else \
+	  echo "no hypofuzz: looping the fuzz profile instead, ctrl-c to stop"; \
+	  while HYPOTHESIS_PROFILE=fuzz uv run pytest tests/properties -q; do :; done; \
+	fi
 
 check: lint typecheck
 	@echo "All checks passed!"

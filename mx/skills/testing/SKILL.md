@@ -41,4 +41,4 @@ Extend it: its fixtures, its helpers, its naming, its seams. A second parallel s
 
 `make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. The script beside this skill is what that target runs, and `uv run harden.py --help` is the reference for what it measures and what its report means.
 
-`make fuzz` runs the same property tests coverage-guided, for as long as a machine is idle; what it finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.
+`make fuzz` runs the same property tests with a large example budget until stopped, coverage-guided where HypoFuzz is installed; what it finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.

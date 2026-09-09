@@ -70,7 +70,7 @@ def main() -> None:
     with contextlib.redirect_stdout(sys.stderr):
         if job["test_files"]:
             collect_stats()
-            matched, covered_targets = tests_in_map(job["test_files"], mutmut.tests_by_mangled_function_name)
+            matched, covered_targets = targets_for_test_files(job["test_files"], mutmut.tests_by_mangled_function_name)
             if job["derive_targets"]:
                 patterns += covered_targets
         if patterns:
@@ -207,7 +207,7 @@ def collect_stats() -> None:
         raise SystemExit("mutmut collected no test-to-function map, so a changed test names no target")
 
 
-def tests_in_map(test_files: list[str], test_map: dict[str, set[str]]) -> tuple[list[str], list[str]]:
+def targets_for_test_files(test_files: list[str], test_map: dict[str, set[str]]) -> tuple[list[str], list[str]]:
     """Which of the candidate files mutmut knows as test files, and the targets their tests cover."""
     matched: set[str] = set()
     targets: set[str] = set()

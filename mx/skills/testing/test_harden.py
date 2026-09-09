@@ -42,11 +42,14 @@ from harden import (
 HARDEN = Path(__file__).parent / "harden.py"
 
 # mutmut reads a project's config when it is imported, so the runner is importable only from a tree
-# that has one.
+# that has one; the working directory this file was run from is the caller's, and goes back.
+HERE = Path.cwd()
 os.chdir(tempfile.mkdtemp(prefix="harden-tests-"))
 Path("setup.cfg").write_text("[mutmut]\nsource_paths = src\n")
 
-from mutmut_runner import mutmut_exit_code, tests_in_map
+from mutmut_runner import mutmut_exit_code, targets_for_test_files
+
+os.chdir(HERE)
 
 SOURCE = '''
 """A module."""
@@ -177,13 +180,16 @@ def test_an_edited_test_file_names_the_targets_its_tests_cover() -> None:
         "pkg.mod.x_scan": {"tests/test_mod.py::test_scan", "tests/test_other.py::test_wide"},
         "pkg.mod.x_untouched": {"tests/test_other.py::test_wide"},
     }
-    matched, targets = tests_in_map(["tests/test_mod.py"], test_map)
+    matched, targets = targets_for_test_files(["tests/test_mod.py"], test_map)
     assert matched == ["tests/test_mod.py"]
     assert targets == ["pkg.mod.x_scan*"]
 
 
 def test_a_changed_file_the_map_does_not_know_names_nothing() -> None:
-    assert tests_in_map(["scripts/tool.py"], {"pkg.mod.x_scan": {"tests/test_mod.py::test_scan"}}) == ([], [])
+    assert targets_for_test_files(["scripts/tool.py"], {"pkg.mod.x_scan": {"tests/test_mod.py::test_scan"}}) == (
+        [],
+        [],
+    )
 
 
 def test_a_kill_needs_a_failing_test() -> None:

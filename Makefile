@@ -9,7 +9,7 @@ check:
 	@echo "manifests parse"
 
 test:
-	uv run mx/skills/testing/test_harden.py
+	uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage pytest mx/
 
 version:
 	@jq -r .version $(PLUGIN)
