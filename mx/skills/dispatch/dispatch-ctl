@@ -102,8 +102,7 @@ current_run() {
     run_runner=${run_runner:-$runner}
 }
 
-# The runner's pid for a run, anchored on the runner's own command line so
-# that nothing else carrying the run id (a `wait`, a `log`) counts as a worker.
+# The runner's pid for a run, anchored on the runner's own command line.
 runner_pid() { pgrep -f "^bash $2 .* $1( |$)"; } # <run> <runner>
 
 # The status file is the runner's last act, which makes it the sole authority
@@ -217,9 +216,9 @@ spawn() {
     echo "spawned $name  run=$run_id"
 }
 
-# Polls rather than blocking on a tmux channel: a `tmux wait-for` client that
-# dies (an ssh hop dropped under it) leaves a waiter behind that swallows the
-# next signal, so a wait that was ever interrupted could miss the exit for good.
+# The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an
+# ssh hop dropped under it) stays registered and swallows the next signal, so
+# a channel cannot be trusted after an interrupted wait; the status file can.
 wait_() {
     load; names "$1"
     current_run "$name"

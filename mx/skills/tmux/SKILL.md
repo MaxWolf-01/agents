@@ -32,7 +32,7 @@ ssh host "tmux capture-pane -p -J -t <session> -S -50"
 
 One command per ssh call. A chained remote command that starts the tmux server inherits the connection's stdout and holds the call open until it times out.
 
-Waiting on a remote job (`ssh host tmux wait-for <channel>`) is a hint, not proof. Suspend the laptop and the ssh call dies while the remote `tmux wait-for` lives on; the signal then reaches an orphan and is remembered for nobody. Add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` to collapse dead connections fast, and ask the host what is running to learn whether the job finished.
+Waiting on a remote job (`ssh host tmux wait-for <channel>`) is a hint, not proof. Suspend the laptop and the ssh call dies while the remote `tmux wait-for` lives on; the signal then wakes that orphan, and a new waiter on the same channel never hears it. Add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` to collapse dead connections fast, and learn whether the job finished from its own end state on the host (a status file, a pid), never from a channel that was waited on across a connection that died.
 
 ## Interactive prompts
 

@@ -29,7 +29,8 @@
 #            dir there, with DISPATCH_PERMISSION_MODE passed along when set.
 #   wait     blocks until the current run of <NN-slug> ends and prints its
 #            probe line (`dispatch-ctl wait`), riding out a dropped connection
-#            to the host on the way. Exit 0 on `exited`, 1 on `gone`.
+#            to the host on the way. Exit 0 on `exited`; nonzero when the run
+#            is `gone`, or the host stayed unreachable for two minutes.
 #   fetch    brings ticket/<feature>/<NN-slug> from the host into this repo,
 #            replacing an earlier fetch of it (ticket branches get rebased).
 #   review   once a ticket branch is fetched, before or after its merge alike:
@@ -111,19 +112,19 @@ setup() {
         scratch=$HOME/$scratch
         run mkdir -p "$scratch"
         [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
-        run cp "${files[@]}" "$scratch/"
-        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
-        label=$USER@$(hostname)
+        run cp "${files[@]}" "$scratch/" || die "copy into $scratch failed"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
+        label=$(id -un)@$(hostname)
     else
         remote=${host//[@.]/-}
         git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
-        run on_host mkdir -p "$scratch"
+        run on_host mkdir -p "$scratch" || die "cannot reach $host"
         [ -n "$setup_cmd" ] || run on_host rm -f "$scratch/setup"
-        run scp -q "${files[@]}" "$host:$scratch/"
+        run scp -q "${files[@]}" "$host:$scratch/" || die "copy to $host:$scratch failed"
         # init creates the bare repo the push lands in; the push gives the host a
         # <feature> for spawn to cut ticket branches from.
-        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature"
-        run git push -q "$remote" "$feature"
+        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature" || die "init on $host failed"
+        run git push -q "$remote" "$feature" || die "push to $remote failed"
         label=$host
     fi
     git config "dispatch.$feature.host" "$host"
@@ -153,14 +154,17 @@ ctl() {
 
 wait_() {
     load
-    while :; do
+    for attempt in $(seq 8); do
         on_host bash "$scratch/dispatch-ctl" wait "$1"
         rc=$?
-        # 255 is ssh's own: the connection, not the command.
+        # 255 is ssh's own: the connection, not the command. A dropped one
+        # is back within a retry or two; one that stays down is a different
+        # failure (auth, host key, DNS) and gets reported, not waited out.
         [ "$rc" -eq 255 ] || return "$rc"
-        echo "dispatch: connection to $host lost; retrying in 15s" >&2
+        echo "dispatch: no connection to $host (attempt $attempt of 8); retrying in 15s" >&2
         sleep 15
     done
+    die "$host unreachable for two minutes; probe it when it is back and arm a new wait"
 }
 
 fetch() {
