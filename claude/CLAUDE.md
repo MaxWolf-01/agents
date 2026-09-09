@@ -103,19 +103,11 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 
 <tools>
 
-`tre` is an enhanced tree command for quick codebase overviews.
-- Auto-excludes .git + all patterns from project `.gitignore` and global `~/.gitignore_global`
-- `-e`/`--exclude PATTERN` for additional exclusions (supports wildcards like `*.log`, `test_*`)
-- `--limit N` caps total output lines (default: unlimited)
-- Examples: `tre`, `tre -e node_modules`, `tre -e "*.tmp" -L 2 src/`, `tre --limit 50`
+Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there; how to orient in the Obsidian vault, where grep is for exact content terms).
 
-`ast-grep` is syntax-aware and won't match inside strings/comments:
-- Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
-- Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
+`diffview` renders a diff as one self-contained HTML review page in max's browser, and that page is the deliverable whenever the user asks to see a diff or the changes; prose recaps and bare links only accompany it. In an interactive session reach for it unprompted, as the editing starts: `--watch --open` on a stable `-o` path with the branch's `<integration>...` spec, so one self-reloading tab is the session's review surface across every round, where max comments while the work accretes. Work that arrives in finished batches (implementation delegated to subagents) gets `--open` per batch. `--notes` carries your side of the review: the judgment calls, why X beat Y, an assumption awaiting max's ruling, anchored to the lines they concern, on a file the diff leaves alone too when leaving it alone was the decision.
 
-`diffview` renders a diff as a self-contained HTML review page (`diffview --help`). "show me the diff" / "show the changes" means this, and in an interactive session, reach for it unprompted: the page landing in max's browser is the deliverable, prose recaps and bare links only accompany it. When you edit in-session, background `--watch --open` (stable `-o` path; an `<integration>...` spec: the branch's work from its fork point with uncommitted edits, unmoved by what lands on the integration branch meanwhile; `HEAD..` when only the uncommitted edits are the point) as the editing starts; the self-reloading page is the session's one review surface: max comments while the work accretes, one tab across every round. When the work arrives in finished batches instead (implementation delegated to subagents), `--open` each batch. Annotate your own changes with `--notes`: line-anchored narrative that belongs beside the code but not in it: a judgment call, why X beat Y, an assumption awaiting the user's ruling. A note may also sit on a file the diff does not touch (a caller, the doc that describes the changed thing) when leaving it alone was a decision worth a sentence; the page then shows that file at the noted lines. Comments are saved by a server, so a page opened as a file is read-only: `diffview --serve <dir>` first (idempotent, returns immediately, exits when idle).
-
-`claude-browser <path|url>` opens anything a browser renders (an HTML page, an SVG, a PNG, a PDF) for max: Brave, in the profile for this session's Claude account, separate from the firejailed Firefox max browses in. The file may live anywhere, `/tmp` included. `xdg-open` is for what a browser does not render (a markdown file lands in nvim).
+`claude-browser <path|url>` puts anything a browser renders (HTML, SVG, PNG, PDF, from any path) in front of max; it is the agent's browser, separate from the one max browses in. `xdg-open` is for what a browser does not render (a markdown file lands in nvim).
 
 LaTeX: full TeX Live is installed on workstations (via Home Manager), with `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
 
@@ -124,7 +116,7 @@ LaTeX: full TeX Live is installed on workstations (via Home Manager), with `pdfl
 - You will NEVER need `source .venv/bin/activate` to activate the virtual environment. Simply `uv run app.py` is *always* sufficient.
 - When working in projects with pyproject.toml ONLY add / update deps via `uv add` / `uv remove`.
 - To install the deps run `uv sync` (with the required optional deps if any, or sometimes `--all-extras`).
-- To type check, run `cd /path/to/check check`, short for `uvx ty@latest check`, or - preferrably - use `make check` if available (I often use Makefiles to streamline and standardize common commands, read those files when doing dev work like testing, type checking, starting servers, etc.!)
+- To type check: `make check` where the Makefile has it (I often use Makefiles to streamline and standardize common commands; read them when doing dev work like testing, type checking, starting servers, etc.!), else `uvx ty@latest check .` in the project.
 - For Python CLIs, always use tyro (never argparse/click/fire). **ALWAYS load `/mx:tyro-cli` before writing any CLI**; it contains critical gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong.
  - Prefer creating CLIs/scripts with tyro, for anything you might want to run more than once or that has flags you want to ablate. Save time and attention by creating proper infrastructure for your investigations, visualizations, experiments, etc.
 
@@ -132,8 +124,6 @@ LaTeX: full TeX Live is installed on workstations (via Home Manager), with `pdfl
 - Prefer this a million times over raw curl or the webfetch tool, when fetching content for your own consumption (the webfetch tool always slop-summarizes sites for you, which is great for super duper long and noisy pages, but not for 99.9% your use-cases). 
 
 Chrome extension (live browser driving) is disabled by default (context cost). When a task would genuinely benefit from it, such as interaction-heavy UI testing (drag/hover/multi-step) or ad-hoc driving/debugging of a running app in an interactive session, say so and ask max to enable it (`/chrome`, works mid-session). If the browser tools then report not-connected, run `claude-browser` (opens the Brave profile for this session's account; Brave is normally closed) and retry; no second `/chrome` needed. For static renders, stick with the headless-chromium screenshot loop.
-
-`memex` (alias `mx`) is a markdown vault tool (a vault = named collection of directories). Capabilities: fuzzy note lookup by name/alias/path (`mx find query -v vault`, instant, no embeddings), semantic search (`mx search "1-3 sentence question, not keywords" -v vault`), wikilink graph exploration (`mx explore note_title vault`: outlinks + backlinks + similar), rename with wikilink updates (`mx rename old new vault`), vault management (`mx vault:list|info|add`). Prime use: orienting in knowledge bases (esp. the Obsidian vault), with `find` when you roughly know the note, `search` for entry points you don't know exist, then explore the graph from there. Exact content terms → regular search tools instead. `mx --help` for full usage.
 
 If you find a tool that would help you accomplish your task more efficiently / effectively isn't installed, you have several options:
 - Python tools: `uv run --with package command` (or `uvx package@latest`) - you shouldn't have to bother with venvs, especially for one-off commands. This is the preferred way, if the right tool exists on PyPI.
