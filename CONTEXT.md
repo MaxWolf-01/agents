@@ -97,7 +97,7 @@ _Avoid_: merged, finished, complete
 ### Testing
 
 **Oracle**:
-What a test compares the code's behaviour against, chosen so that it is not the code itself: a property from the spec, a worked example, a reference implementation, a round trip, a model. Decided per seam in the spec's Testing Decisions.
+What a test compares the code's behaviour against, chosen so that it is not the code itself: a property from the spec, a worked example, a reference implementation, a round trip, a model.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
 ### Sessions
