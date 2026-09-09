@@ -35,4 +35,6 @@ Property tests live in the project's properties directory and run in the ordinar
 
 Extend it: its fixtures, its helpers, its naming, its seams. A second parallel suite beside the first splits the signal, and the next agent has to read both to know what is covered.
 
-`make harden` measures what a feature's tests fail to hold, once per feature, at the review session (`/mx:dispatch`). The script beside this skill is what it runs, and `uv run harden.py --help` is the reference for what it measures and what its report means.
+## What the suite fails to hold
+
+`make harden` measures it, once per feature, at the review session (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. The script beside this skill is what that target runs, and `uv run harden.py --help` is the reference for what it measures and what its report means.
