@@ -541,6 +541,11 @@
   "feedbackDrafts": "quiet",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
+  "modelSettings": {
+    "claude-fable-5-1": {
+      "effortLevel": "high"
+    }
+  },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
