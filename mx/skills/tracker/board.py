@@ -1001,9 +1001,11 @@ ${standalone}
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
   ).join("\\n") + "\\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
   // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
-  // mode only when its measured width equals the wrap width exactly, and under a
-  // fractional device scale the measurement comes back a hair short, so every
-  // label stayed on one line and clipped. SVG labels wrap by mermaid's own measure.
+  // mode only when its measured width equals the wrap width exactly, and the
+  // measurement misses by a fraction of a pixel at any page zoom other than 100%
+  // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
+  // every long label stays on one line and clips (mermaid-js/mermaid#7794).
+  // SVG labels wrap by mermaid's own measure.
   mermaid.initialize({
     startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
     elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
