@@ -60,7 +60,7 @@ CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`
 - to-tickets disposes executable Properties into the **properties ticket**, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. `(you, r3)`; name `(you, r7)`
 - For a feature changing existing code, the worker sees the old code; a property encoding current behaviour is a regression net, and the properties for new behaviour come from the spec. The brief's scope and the Tests reviewer are the guards there. `(you, r5)`
 - The pre-merge read in dispatch: a change under the properties directory in an implementation ticket goes back to the worker, never merges. Stated as a rule in the skill's merge step; the orchestrator already reads the whole diff. `(you, r4)`
-- The hardening gate is a project command (`make harden`, beside `check` and `test`); mutation only. `(you, r3)` Its shape is the ratchet described in Solution; the baseline of pre-existing survivors is a committed file, so shrinking it shows on a diff and the review session burns it down when it chooses. `(you, r7)` The gate names the touched functions explicitly (mutmut's cache re-measures nothing for a test-only change) and never runs whole-repo per ticket; the whole-repo run is a report. `(my call)`
+- The hardening gate is a project command (`make harden`, beside `check` and `test`); mutation only. `(you, r3)` Its shape is the ratchet described in Solution; the baseline of pre-existing survivors is a committed file, so shrinking it shows on a diff and the review session burns it down when it chooses. `(you, r7)` The gate names the touched functions explicitly (mutmut's cache re-measures nothing for a test-only change) and never runs whole-repo per ticket; the whole-repo run is a report. `(you, r8)`
 - Prior art for what a properties ticket produces: `agent/research/05-mutmut-memex-prototype.md`, finding 6: one 70-line property file at a documented seam killed two mutants that 151 example tests missed, both the seam's stated contract. `(you, r7)`
 - Gate before the done flip and at merge. `(you, r3)`
 - Code-review gains the Tests axis, spawned when the diff touches tests, Opus by default. `(you, r4)`
@@ -69,9 +69,9 @@ CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`
 - Red-first named in diagnosing-bugs only. `(you, r2)`
 - Complexity via the linter's rule; CRAP nowhere. `(you, r3)`
 - Thresholds (the complexity cap, any survivor allowance above zero) live in project config. `(you, r3)`
-- The tools per language are interchangeable parts behind `make harden` and the properties directory, chosen by project-setup: Hypothesis / mutmut for Python; fast-check / Stryker for JS and TS; FsCheck / Stryker.NET for C#; proptest / cargo-mutants for Rust. `(my call)`
+- The tools per language are interchangeable parts behind `make harden` and the properties directory, chosen by project-setup: Hypothesis / mutmut for Python; fast-check / Stryker for JS and TS; FsCheck / Stryker.NET for C#; proptest / cargo-mutants for Rust. `(you, r8)`
 
-- Long fuzz runs reuse the property tests: HypoFuzz (pytest collects the `@given` tests, one worker per core, failures land in Hypothesis' example database so plain `pytest` replays them; a shared Redis database across workstation and VPSes) on repos where its non-commercial licence allows; Atheris through Hypothesis' `fuzz_one_input` where it does not. Wired by project-setup as an optional `make fuzz`. Source: `agent/research/06-long-fuzz-runners.md`. `(my call)`
+- Long fuzz runs reuse the property tests: HypoFuzz (pytest collects the `@given` tests, one worker per core, failures land in Hypothesis' example database so plain `pytest` replays them; a shared Redis database across workstation and VPSes) on repos where its non-commercial licence allows; Atheris through Hypothesis' `fuzz_one_input` where it does not. Wired by project-setup as an optional `make fuzz`. Source: `agent/research/06-long-fuzz-runners.md`. `(you, r8)`
 
 Deferrals: none that drop a capability; the fuzz target is optional and the suite runs the same property tests without it.
 
@@ -91,7 +91,7 @@ The skills' own testable surface is the project-setup template and any script un
 - Dependency-rule enforcement (a module-boundary file agents cannot violate, Martin's `dependency-checker`; import-linter for Python) and an architecture viewer: architecture, not testing; the viewer proved too generic in practice on large repos.
 - A separate tester agent writing a ticket's unit tests: independence comes from the properties ticket's ordering, not from a second author (arXiv 2607.23002 found no gain from a different model).
 
-- A red gate at merge is handled as a red `make test` is today: abort the merge, resume the worker. `(my call)` A greenfield first ticket needs no special case: its changed lines must be covered, and there is no baseline to inherit.
+- A red gate at merge is handled as a red `make test` is today: abort the merge, resume the worker. `(you, r8)` A greenfield first ticket needs no special case: its changed lines must be covered, and there is no baseline to inherit.
 
 ## Fog
 
