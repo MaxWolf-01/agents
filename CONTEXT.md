@@ -100,6 +100,10 @@ _Avoid_: merged, finished, complete
 What a test compares the code's behaviour against, chosen so that it is not the code itself: a property from the spec, a worked example, a reference implementation, a round trip, a model.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
+**Expected failure**:
+The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
+_Avoid_: mark (the provenance tag on a spec call), xfail, skip
+
 ### Sessions
 
 **Brief**:
