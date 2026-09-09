@@ -21,35 +21,21 @@ Claude Code stores sessions as `.jsonl` files in:
 ~/.claude/projects/<project-path-with-dashes>/*.jsonl
 ```
 
-Subagent sessions live in subdirectories (`<session-id>/subagents/`); these are excluded (they belong to their parent session).
-
 Determine the correct project path from the current working directory. The path encoding replaces `/` with `-` and strips the leading slash. Example: `/home/max/repos/code/yapit` → `-home-max-repos-code-yapit`.
 
 ## Process
 
-### 1. Run the scanner script
+### 1. Run the scanner
 
 ```bash
-uv run python <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N> --exclude <current_session_id>
+uv run <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N> --exclude <current_session_id>
 ```
 
-**IMPORTANT: Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl; matching it is useless and confusing. To get the current session ID, use the most recently modified `.jsonl` file in the sessions directory: `ls -t <sessions_dir>/*.jsonl | head -1` and extract the stem. The current (active) session is always the most recently written file.
+Its `--help` has the flags and the schema of what it prints; the classification below reads those fields.
 
-Arguments:
-- `--days N`: only sessions modified within the last N days
-- `--sessions N`: only the N most recent sessions (by modification time)
-- `--exclude ID`: exclude a session by ID (repeatable). Always exclude the current session.
+**Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl; matching it is useless and confusing. The current (active) session is always the most recently written file: `ls -t <sessions_dir>/*.jsonl | head -1`, and its stem is the id.
 
-Both filters can be combined. If the user specifies "last 100 sessions or last 10 days, whichever is greater," run with `--days 10` first, then check if the count is under 100; if so, run again with `--sessions 100`.
-
-The script outputs a JSON array of session objects (newest first), each containing:
-- `session_id`, `modified`, `size_kb`
-- `user_msgs_total`, `user_msgs_substantive`: total vs. non-meta/non-system user messages
-- `signals.commit`, `signals.transcribe`, `signals.handoff`: boolean completion indicators
-- `interrupted`: whether the last user message was a request interruption
-- `first_user`: first substantive user message (cleaned of command tags)
-- `last_user`: last substantive user message
-- `last_assistant`: last assistant message with >20 chars
+If the user asks for "the last 100 sessions or the last 10 days, whichever is greater," run with `--days 10` first; if that returns fewer than 100, run again with `--sessions 100`.
 
 ### 2. Classify each session
 

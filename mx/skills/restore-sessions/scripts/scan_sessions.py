@@ -1,17 +1,60 @@
-#!/usr/bin/env python3
-"""Scan Claude Code session files and extract summary info for triage.
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["tyro"]
+# ///
+"""Summarise Claude Code sessions for triage: what each one was about and whether it ended.
 
-Usage:
-    uv run python scan_sessions.py <sessions_dir> [--days N] [--sessions N] [--exclude ID]
+Reads the *.jsonl session files directly in one project's sessions directory
+(~/.claude/projects/<project-path-with-dashes>/), skipping subagent transcripts
+(they sit in subdirectories) and files under 3KB (empty or trivial sessions).
 
-Output: One JSON object per session (non-subagent only), sorted newest-first.
-Sessions smaller than 3KB are excluded (empty/trivial).
+JSON schema (stdout), one object per session, newest first:
+
+    [{"session_id": "str", "modified": "YYYY-MM-DD HH:MM", "size_kb": int,
+      "user_msgs_total": int, "user_msgs_substantive": int,
+      "signals": {"commit": bool, "transcribe": bool, "handoff": bool},
+      "interrupted": bool,
+      "first_user": "str", "last_user": "str", "last_assistant": "str"}]
+
+- user_msgs_substantive counts user messages that are neither meta nor system-injected
+  (command tags, interruption markers).
+- signals.* are completion indicators: a git commit/push, a transcript save, a handoff, seen
+  either as a tool call or claimed in assistant text.
+- interrupted: the last user message was a request interruption.
+- first_user / last_user / last_assistant: the text, whitespace-collapsed, command tags
+  stripped from first_user, truncated to a few hundred characters.
+
+Examples:
+
+    uv run scan_sessions.py ~/.claude/projects/-home-max-repos-foo --days 10
+    uv run scan_sessions.py ~/.claude/projects/-home-max-repos-foo --sessions 100 --exclude <id>
+    uv run scan_sessions.py <dir> --days 7 | jq '.[] | select(.interrupted)'
 """
 
 import json
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Annotated
+
+import tyro
+
+
+@dataclass
+class Args:
+    sessions_dir: Annotated[Path, tyro.conf.Positional]
+    """One project's sessions directory under ~/.claude/projects/."""
+
+    days: int = 0
+    """Only sessions modified within the last N days; 0 for no limit."""
+
+    sessions: int = 0
+    """Only the N most recently modified sessions; 0 for all. Combines with --days."""
+
+    exclude: tyro.conf.UseAppendAction[list[str]] = field(default_factory=list)
+    """Session id to leave out; repeatable."""
 
 
 def extract_text(content):
@@ -175,60 +218,24 @@ def scan_session(filepath: Path) -> dict | None:
     }
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: scan_sessions.py <sessions_dir> [--days N] [--sessions N]", file=sys.stderr)
-        sys.exit(1)
-
-    sessions_dir = Path(sys.argv[1])
-    max_days = None
-    max_sessions = None
-    exclude_ids: set[str] = set()
-
-    args = sys.argv[2:]
-    i = 0
-    while i < len(args):
-        if args[i] == "--days" and i + 1 < len(args):
-            max_days = int(args[i + 1])
-            i += 2
-        elif args[i] == "--sessions" and i + 1 < len(args):
-            max_sessions = int(args[i + 1])
-            i += 2
-        elif args[i] == "--exclude" and i + 1 < len(args):
-            exclude_ids.add(args[i + 1])
-            i += 2
-        else:
-            i += 1
-
-    # Collect all main session files (not subagents)
-    candidates = []
-    for f in sessions_dir.glob("*.jsonl"):
-        if f.name.endswith(".wakatime"):
-            continue
-        if f.stem in exclude_ids:
-            continue
-        candidates.append(f)
-
-    # Sort by modification time, newest first
+def main(args: Args) -> None:
+    exclude_ids = set(args.exclude)
+    # Top-level files only: subagent transcripts sit in <session-id>/subagents/.
+    candidates = [
+        f for f in args.sessions_dir.glob("*.jsonl")
+        if not f.name.endswith(".wakatime") and f.stem not in exclude_ids
+    ]
     candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 
-    # Apply filters
-    if max_days:
-        cutoff = datetime.now() - timedelta(days=max_days)
+    if args.days:
+        cutoff = datetime.now() - timedelta(days=args.days)
         candidates = [f for f in candidates if datetime.fromtimestamp(f.stat().st_mtime) >= cutoff]
+    if args.sessions:
+        candidates = candidates[: args.sessions]
 
-    if max_sessions:
-        candidates = candidates[:max_sessions]
-
-    # Scan and output
-    results = []
-    for f in candidates:
-        result = scan_session(f)
-        if result:
-            results.append(result)
-
+    results = [r for f in candidates if (r := scan_session(f))]
     json.dump(results, sys.stdout, indent=2)
 
 
 if __name__ == "__main__":
-    main()
+    main(tyro.cli(Args, description=__doc__))
