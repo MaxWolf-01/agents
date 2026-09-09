@@ -486,8 +486,15 @@ def node_lines(ns: str, feature: str, tickets: list[Ticket], include: set[str], 
         if t.num not in include:
             continue
         lines.extend(f"  T_{fid}_{b} --> T_{fid}_{t.num}" for b in t.blocked_by if b in include)
-    lines.extend(f'  click T_{fid}_{t.num} "#t-{feature}-{t.num}"' for t in tickets if t.num in include)
+    lines.extend(
+        f'  click T_{fid}_{t.num} "#t-{feature}-{t.num}" "{tooltip(t.num + " " + t.title)}"' for t in tickets if t.num in include
+    )
     return lines
+
+
+def tooltip(text: str) -> str:
+    # mermaid's click tooltip is a double-quoted string; the full title shows on hover where the node clips it
+    return text.replace('"', "'")
 
 
 def feature_dag(feature: Feature, full: bool) -> str | None:
@@ -517,7 +524,7 @@ def board_dag(features: list[Feature], standalone: list[Standalone], full: bool)
             label = k.title.replace('"', "#quot;")
             cls = "ghost" if k.status == "done" else k.status
             lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {label}"]:::{cls}')
-            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}"')
+            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}" "{tooltip(k.title)}"')
         lines.append("  end")
     # external edges (cross-feature, and standalone tickets), drawn where both endpoints are on the board
     shown_slugs = {k.slug for k in shown}
@@ -645,7 +652,7 @@ def render_page(
     )
     nav = "".join(
         f'<a class="featchip" href="#f-{f.name}">{html.escape(f.name)} '
-        f"<span class=\"dim\">{sum(1 for t in f.tickets if t.status == 'done')}/{len(f.tickets)}</span></a>"
+        f"<span class=\"dim\">{sum(1 for t in f.tickets if t.status == 'done')}/{sum(1 for t in f.tickets if t.status != 'proposed')}</span></a>"
         for f in features
     )
 
@@ -691,7 +698,7 @@ def render_page(
     standalone_rows = "".join(
         f'<details class="ticket row-{k.status}" id="standalone-{k.slug}"><summary>'
         f'<span class="num">·</span><span class="title">{html.escape(k.title)}{dv_link(k.diffview)}</span>'
-        f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}'
+        f'<span class="badges"><span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}</span>'
         f'<span class="chips">{ext_chips(k.blocked_by) or no_deps}</span></summary>'
         f'<div class="body">{k.body_html}</div></details>'
         for k in standalone
@@ -742,7 +749,7 @@ def feature_section(f: Feature) -> str:
         return (
             f'<details class="ticket row-{t.status}" id="t-{f.name}-{t.num}"><summary>'
             f'<span class="num">{t.num}</span><span class="title">{html.escape(t.title)}{dv_link(t.diffview)}</span>'
-            f'<span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>{kind_badge(t.kind)}'
+            f'<span class="badges"><span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>{kind_badge(t.kind)}</span>'
             f'<span class="chips">{chips}</span></summary>'
             f'<div class="body">{t.body_html}</div></details>'
         )
@@ -836,7 +843,7 @@ PAGE = Template("""<!doctype html>
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
   .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
   .proposed-count { color: var(--proposed-tx); }
-  .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); margin-left: .35rem; }
+  .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); }
 
   /* ---- feature header: sticky under the topbar ---- */
   .fhead { position: sticky; top: var(--topbar-h); z-index: 5; padding: .3rem 0 .5rem;
@@ -861,6 +868,7 @@ PAGE = Template("""<!doctype html>
   .ticket:last-child, .done-fold .ticket:last-child { border-bottom: 0; }
   .ticket summary { display: grid; grid-template-columns: 2.2rem 1fr auto auto; gap: .8rem; align-items: baseline;
     padding: .45rem .3rem; cursor: pointer; list-style: none; }
+  .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; }
   .ticket summary::-webkit-details-marker { display: none; }
   .ticket summary:hover { background: var(--raised); }
   .ticket .num { color: var(--ink3); font-size: 12px; }
@@ -880,7 +888,8 @@ PAGE = Template("""<!doctype html>
   .ticket .body h2::after { display: none; }
   .ticket .body code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem; font-size: .85em; font-family: var(--mono); }
   .ticket .body pre code { display: block; padding: .6rem .8rem; overflow-x: auto; }
-  .ticket.flash > summary { background: var(--flash); transition: background .2s; }
+  .ticket.flash > summary, li.flash { background: var(--flash); outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+  .ticket > summary, .needs-human li { transition: background .6s, outline-color .6s; }
   .done-fold > summary { cursor: pointer; color: var(--ink3); font-family: var(--mono); font-size: 11px;
     text-transform: uppercase; letter-spacing: .14em; padding: .7rem .3rem; }
 
@@ -997,7 +1006,7 @@ ${standalone}
     startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base",
     elk: { mergeEdges: false },
     themeVariables: {
-      fontFamily: "ui-monospace, monospace", fontSize: "13px",
+      fontFamily: v("--mono"), fontSize: "13px",
       primaryColor: v("--panel"), primaryTextColor: v("--ink"),
       primaryBorderColor: v("--border"), lineColor: v("--edge"),
       clusterBkg: v("--panel"), clusterBorder: v("--border-strong"),
@@ -1086,16 +1095,25 @@ ${standalone}
     }
   });
 
-  // anchor navigation: open the target ticket (and any enclosing fold), flash it
-  function openTarget() {
-    const el = document.getElementById(location.hash.slice(1));
+  // anchor navigation: open the target ticket (and any enclosing fold), flash it.
+  // A click on an in-page link (a graph node, a chip) runs it directly, so the
+  // flash fires again when the hash is already the target's and hashchange stays silent.
+  function openTarget(hash = location.hash) {
+    const el = document.getElementById(hash.slice(1));
     if (!el) return;
     for (let d = el; d; d = d.parentElement) if (d.tagName === "DETAILS") d.open = true;
     el.scrollIntoView({ block: "start" });
+    el.classList.remove("flash");
+    void el.offsetWidth;
     el.classList.add("flash");
-    setTimeout(() => el.classList.remove("flash"), 1200);
+    setTimeout(() => el.classList.remove("flash"), 2000);
   }
-  window.addEventListener("hashchange", openTarget);
+  window.addEventListener("hashchange", () => openTarget());
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    const href = a && (a.getAttribute("href") || a.getAttribute("xlink:href"));
+    if (href && href.startsWith("#")) setTimeout(() => openTarget(href));
+  });
 
   function saveState() {
     const state = {

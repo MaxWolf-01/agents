@@ -110,6 +110,9 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     assert 'card proposed"><a class="cardlink" href="#t-feat-03"' in lanes.split("proposed — awaiting ruling")[1]
     page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
     assert "1/4 done" in page  # the top bar: the proposal is not part of the feature's count
+    assert 'feat <span class="dim">1/4</span>' in page  # the feature chip agrees
+    assert '<span class="badges"><span class="badge proposed">' in page
+    assert 'click T_f0_feat_03 "#t-feat-03" "03 faster suite"' in feature_dag(feature, False)
     assert "1 standalone open" in page
     assert "2 proposed" in page
     assert "1 blocked · 1 proposed" in page  # the feature's own counts
