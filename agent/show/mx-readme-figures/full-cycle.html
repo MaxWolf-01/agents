@@ -22,6 +22,7 @@ svg{display:block; width:100%; height:auto;}
 .bar{fill:var(--wash-bar); stroke:var(--muted); stroke-width:.8;}
 .flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
 .flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2; stroke-dasharray:5 4;}
+.spoke{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:5 4;}
 .gate{stroke:var(--muted); stroke-width:1; stroke-dasharray:4 4; opacity:.7;}
 .m-muted{fill:var(--muted);} .m-accent{fill:var(--accent);}
 text{fill:var(--ink);}
@@ -45,7 +46,7 @@ text{fill:var(--ink);}
   <button class="scheme"></button>
 </header>
 
-<svg viewBox="0 0 1200 672" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
@@ -56,36 +57,44 @@ text{fill:var(--ink);}
   </defs>
 
   <!-- gate (zone layer) -->
-  <line class="gate" x1="992" y1="96" x2="992" y2="384"/>
+  <line class="gate" x1="512" y1="96" x2="512" y2="236"/>
 
-  <!-- connectors -->
+  <!-- connectors: the flow -->
   <path class="flow" d="M 152,88 V 116" marker-end="url(#arrow)"/>
   <path class="flow" d="M 240,168 H 298" marker-end="url(#arrow)"/>
   <path class="flow" d="M 480,168 H 538" marker-end="url(#arrow)"/>
   <path class="flow" d="M 720,168 H 778" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 440,120 V 96 Q 440,88 448,88 H 848 Q 856,88 856,96 V 100" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 872,216 V 266" marker-end="url(#arrow)"/>
   <path class="flow" d="M 960,168 H 1018" marker-end="url(#arrow)"/>
-  <path class="flow-accent" d="M 1112,216 V 480 Q 1112,488 1104,488 H 200 Q 192,488 192,480 V 222" marker-end="url(#arrow-accent)"/>
-  <path class="flow-accent" d="M 872,368 V 482" marker-end="url(#arrow-accent)"/>
-  <path class="flow-accent" d="M 672,488 V 222" marker-end="url(#arrow-accent)"/>
-  <path class="flow-accent" d="M 124,536 V 222" marker-end="url(#arrow-accent)"/>
+  <path class="flow" d="M 848,216 V 282" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 1112,216 V 282" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 960,336 H 1018" marker-end="url(#arrow)"/>
+
+  <!-- spokes: what gets written to the board -->
+  <path class="spoke" d="M 632,222 V 282" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 792,216 V 244 Q 792,252 784,252 H 712 Q 704,252 704,260 V 282" marker-end="url(#arrow)"/>
+
+  <!-- feedback rails -->
+  <path class="flow-accent" d="M 1112,384 V 432 Q 1112,440 1104,440 H 568 Q 560,440 560,432 V 390" marker-end="url(#arrow-accent)"/>
+  <path class="flow-accent" d="M 560,440 H 200 Q 192,440 192,432 V 222" marker-end="url(#arrow-accent)"/>
+  <path class="flow-accent" d="M 124,472 V 222" marker-end="url(#arrow-accent)"/>
 
   <!-- nodes -->
-  <rect class="card-focal" x="64" y="120" width="176" height="96" rx="6"/>
+  <rect class="card" x="64" y="120" width="176" height="96" rx="6"/>
   <rect class="card" x="304" y="120" width="176" height="96" rx="6"/>
   <rect class="card" x="544" y="120" width="176" height="96" rx="6"/>
   <rect class="card-ghost" x="800" y="104" width="176" height="96" rx="6"/>
   <rect class="card-ghost" x="792" y="112" width="176" height="96" rx="6"/>
-  <rect class="card" x="784" y="120" width="176" height="96" rx="6"/>
-  <rect class="card" x="784" y="272" width="176" height="96" rx="6"/>
+  <rect class="card-focal" x="784" y="120" width="176" height="96" rx="6"/>
   <rect class="card" x="1024" y="120" width="176" height="96" rx="6"/>
-  <rect class="card" x="64" y="536" width="208" height="76" rx="6"/>
+  <rect class="bar" x="304" y="288" width="416" height="96" rx="6"/>
+  <rect class="card" x="784" y="288" width="176" height="96" rx="6"/>
+  <rect class="card" x="1024" y="288" width="176" height="96" rx="6"/>
+  <rect class="card" x="64" y="472" width="208" height="76" rx="6"/>
 
   <!-- durable docs bar: three segments -->
-  <rect class="bar" x="304" y="544" width="276" height="52" rx="4"/>
-  <rect class="bar" x="592" y="544" width="276" height="52" rx="4"/>
-  <rect class="bar" x="880" y="544" width="280" height="52" rx="4"/>
+  <rect class="bar" x="304" y="480" width="276" height="52" rx="4"/>
+  <rect class="bar" x="592" y="480" width="276" height="52" rx="4"/>
+  <rect class="bar" x="880" y="480" width="280" height="52" rx="4"/>
 
   <!-- labels -->
   <text class="eb" x="64" y="80">IDEA &middot; BRIEF &middot; BUG REPORT</text>
@@ -93,83 +102,103 @@ text{fill:var(--ink);}
   <text class="name" x="76" y="144">Sharpen the idea</text>
   <text class="cmd" x="76" y="160">/mx:grill-with-docs</text>
   <text class="note" x="76" y="178">each round: the design whole</text>
-  <text class="note" x="76" y="192">terms + decisions written down</text>
-  <text class="note" x="76" y="206">outgrows the session? tickets carry it</text>
+  <text class="note" x="76" y="192">terms and decisions written down</text>
+  <text class="note" x="76" y="206">outgrows one session? file tickets</text>
 
   <text class="name" x="316" y="144">Spec</text>
   <text class="cmd" x="316" y="160">(written while grilling)</text>
-  <text class="note" x="316" y="178">a draft from round one</text>
-  <text class="note" x="316" y="192">you review each round's delta</text>
-  <text class="note" x="316" y="206">confirmed at the gate: size call</text>
+  <text class="note" x="316" y="178">a draft rewritten every round</text>
+  <text class="note" x="316" y="192">properties: what must always hold</text>
+  <text class="note" x="316" y="206">you review each round's delta</text>
 
   <text class="name" x="556" y="144">Tickets</text>
   <text class="cmd" x="556" y="160">/mx:to-tickets</text>
   <text class="note" x="556" y="178">tracer bullets in a dependency DAG</text>
-  <text class="note" x="556" y="192">you review the cut</text>
+  <text class="note" x="556" y="192">properties build first, from spec</text>
+  <text class="note" x="556" y="206">you review the cut</text>
 
-  <text class="name" x="796" y="144">Build the frontier</text>
-  <text class="cmd" x="796" y="160">/mx:implement &middot; /mx:dispatch</text>
-  <text class="note" x="796" y="178">fresh window per ticket</text>
-  <text class="note" x="796" y="191">parallel waves across worker hosts</text>
-  <text class="note" x="796" y="204">open questions filed, never buried</text>
+  <text class="name" x="796" y="144">Dispatch the tickets</text>
+  <text class="cmd" x="796" y="160">/mx:dispatch</text>
+  <text class="note" x="796" y="178">one orchestrator, many workers</text>
+  <text class="note" x="796" y="191">each worker: own worktree, fresh</text>
+  <text class="note" x="796" y="204">it reads each branch, then merges</text>
 
-  <text class="name" x="796" y="296">Drive each landed slice</text>
-  <text class="cmd" x="796" y="312">(human in the loop)</text>
-  <text class="note" x="796" y="330">every landed ticket is demoable</text>
-  <text class="note" x="796" y="344">each lands with its review page</text>
-  <text class="note" x="796" y="358">not drivable yet? agent evidence</text>
+  <text class="name" x="1036" y="144">Harden, then debrief</text>
+  <text class="cmd" x="1036" y="160">make harden</text>
+  <text class="note" x="1036" y="178">what the tests fail to hold</text>
+  <text class="note" x="1036" y="191">sorted: fixes, proposed tickets,</text>
+  <text class="note" x="1036" y="204">what it left; then make fuzz</text>
 
-  <text class="name" x="1036" y="144">Review session</text>
-  <text class="cmd" x="1036" y="160">(use the app + grill)</text>
-  <text class="note" x="1036" y="178">raw findings in, sorted out:</text>
-  <text class="note" x="1036" y="192">fixes &middot; tickets &middot; re-grills</text>
+  <text class="name" x="316" y="312">The board</text>
+  <text class="cmd" x="316" y="328">board &middot; agent/board.html</text>
+  <text class="note" x="316" y="346">every feature with its dependency graph, the frontier, the needs-human queue</text>
+  <text class="note" x="316" y="360">proposed tickets sit in every view in their own colour, waiting on your ruling</text>
+  <text class="note" x="316" y="374">gitignored; the open tab re-renders itself on every change under the tracker</text>
 
-  <text class="name" x="80" y="560">Codebase health</text>
-  <text class="cmd8" x="80" y="576">/mx:improve-codebase-architecture</text>
-  <text class="note" x="80" y="590">when agent output dips: improve</text>
-  <text class="note" x="80" y="603">the feedback loops &rarr; new idea</text>
+  <text class="name" x="796" y="312">Drive each landed slice</text>
+  <text class="cmd" x="796" y="328">(taste is manual, on purpose)</text>
+  <text class="note" x="796" y="346">every landed ticket is demoable</text>
+  <text class="note" x="796" y="360">each lands with a review page</text>
+  <text class="note" x="796" y="374">not drivable yet? agent evidence</text>
 
-  <text class="barname" x="320" y="566">CONTEXT.md</text>
-  <text class="note" x="320" y="582">the domain glossary, read by every session</text>
-  <text class="barname" x="608" y="566">decisions/</text>
-  <text class="note" x="608" y="582">ADRs: the why behind choices, read every session</text>
-  <text class="barname" x="896" y="566">agent/prototypes/</text>
-  <text class="note" x="896" y="582">kept as reference, consulted when relevant</text>
+  <text class="name" x="1036" y="312">Review session</text>
+  <text class="cmd" x="1036" y="328">(drive the app + grill)</text>
+  <text class="note" x="1036" y="346">scheduled at first drivable</text>
+  <text class="note" x="1036" y="360">you rule on proposed tickets</text>
+  <text class="note" x="1036" y="374">findings become fixes or tickets</text>
 
-  <!-- gate + arrow labels -->
-  <rect class="mask" x="918" y="82" width="148" height="16" rx="4"/>
-  <text class="eb" x="992" y="93" text-anchor="middle">FIRST END-TO-END</text>
+  <text class="name" x="80" y="496">Codebase health</text>
+  <text class="cmd8" x="80" y="512">/mx:improve-codebase-architecture</text>
+  <text class="note" x="80" y="526">output dips? fix the feedback loops,</text>
+  <text class="note" x="80" y="539">not the prompt</text>
 
-  <rect class="mask" x="600" y="64" width="96" height="16" rx="4"/>
-  <text class="al" x="648" y="76" text-anchor="middle">FITS A SESSION</text>
+  <text class="barname" x="320" y="502">CONTEXT.md</text>
+  <text class="note" x="320" y="518">the domain glossary, read by every session</text>
+  <text class="barname" x="608" y="502">decisions/</text>
+  <text class="note" x="608" y="518">ADRs: the why behind choices, read every session</text>
+  <text class="barname" x="896" y="502">agent/prototypes/</text>
+  <text class="note" x="896" y="518">kept as reference, consulted when relevant</text>
 
-  <rect class="mask" x="884" y="230" width="52" height="14" rx="4"/>
-  <text class="al" x="888" y="240">LANDED</text>
+  <!-- asides + arrow labels -->
+  <text class="note" x="304" y="252">a feature that fits one session skips the cut:</text>
+  <text class="note" x="304" y="266">no tickets; built where it was grilled</text>
 
-  <rect class="mask" x="684" y="340" width="76" height="14" rx="4"/>
-  <text class="al-accent" x="688" y="350">NEW TICKETS</text>
+  <rect class="mask" x="438" y="82" width="148" height="16" rx="4"/>
+  <text class="eb" x="512" y="93" text-anchor="middle">SPEC CONFIRMED</text>
 
-  <rect class="mask" x="380" y="466" width="120" height="14" rx="4"/>
-  <text class="al-accent" x="440" y="476" text-anchor="middle">REOPENED DECISIONS</text>
+  <rect class="mask" x="856" y="242" width="52" height="14" rx="4"/>
+  <text class="al" x="860" y="252">LANDED</text>
 
-  <rect class="mask" x="136" y="292" width="60" height="14" rx="4"/>
+  <rect class="mask" x="1120" y="242" width="72" height="14" rx="4"/>
+  <text class="al" x="1124" y="252">THE DEBRIEF</text>
+
+  <rect class="mask" x="962" y="316" width="56" height="14" rx="4"/>
+  <text class="al" x="990" y="326" text-anchor="middle">FINDINGS</text>
+
+  <rect class="mask" x="652" y="420" width="84" height="14" rx="4"/>
+  <text class="al-accent" x="660" y="430">NEW &amp; PROPOSED</text>
+
+  <rect class="mask" x="330" y="420" width="124" height="14" rx="4"/>
+  <text class="al-accent" x="392" y="430" text-anchor="middle">REOPENED DECISIONS</text>
+
+  <rect class="mask" x="136" y="292" width="48" height="14" rx="4"/>
   <text class="al-accent" x="140" y="302">NEW IDEA</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="632" x2="1160" y2="632"/>
-  <rect class="card-focal" x="64" y="650" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="96" y="659">human-in-the-loop alignment</text>
-  <rect class="card-ghost" x="284" y="646" width="20" height="14" rx="3"/>
-  <rect class="card" x="280" y="650" width="20" height="14" rx="3"/>
-  <text class="legend-text" x="312" y="659">N tickets, fresh context each</text>
-  <line class="flow" x1="512" y1="655" x2="548" y2="655" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="556" y="659">the flow</text>
-  <line class="flow-accent" x1="640" y1="655" x2="676" y2="655"/>
-  <text class="legend-text" x="684" y="659">feedback: the board absorbs it</text>
-  <line class="gate" x1="908" y1="648" x2="908" y2="662"/>
-  <text class="legend-text" x="920" y="659">first end-to-end checkpoint</text>
-  <rect class="bar" x="1080" y="650" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="1112" y="659">durable docs</text>
+  <line class="rule" x1="64" y1="572" x2="1160" y2="572"/>
+  <rect class="card-focal" x="64" y="590" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="96" y="599">the unattended stretch</text>
+  <rect class="card-ghost" x="236" y="586" width="20" height="14" rx="3"/>
+  <rect class="card" x="232" y="590" width="20" height="14" rx="3"/>
+  <text class="legend-text" x="264" y="599">one worker per ticket, fresh context</text>
+  <line class="flow" x1="470" y1="595" x2="506" y2="595" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="514" y="599">the flow</text>
+  <line class="spoke" x1="580" y1="595" x2="616" y2="595"/>
+  <text class="legend-text" x="624" y="599">written to the board</text>
+  <line class="flow-accent" x1="750" y1="595" x2="786" y2="595"/>
+  <text class="legend-text" x="794" y="599">feedback: the board absorbs it</text>
+  <rect class="bar" x="968" y="590" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="1000" y="599">the board and the durable docs</text>
 </svg>
 <script>
 const root = document.documentElement, button = document.querySelector('.scheme');

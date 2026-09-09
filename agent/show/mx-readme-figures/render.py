@@ -7,6 +7,7 @@
 
 `<name>.html` -> `<name>-light.png` and `<name>.png` (dark). The scheme arrives as the
 emulated system preference, the way a reader's does; the toggle button is hidden for the shot.
+The shot is of the body element, so the image is the figure's own height whatever the viewport.
 """
 
 import shutil
@@ -22,7 +23,7 @@ SCHEMES = {"light": "-light.png", "dark": ".png"}
 def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROMIUM)
-        page = browser.new_page(viewport={"width": 1312, "height": 800}, device_scale_factor=2)
+        page = browser.new_page(viewport={"width": 1312, "height": 400}, device_scale_factor=2)
         for html in sorted(HERE.glob("*.html")):
             for scheme, suffix in SCHEMES.items():
                 page.emulate_media(color_scheme=scheme)
@@ -30,7 +31,7 @@ def main() -> None:
                 page.add_style_tag(content=".scheme{display:none}")
                 page.wait_for_load_state("networkidle")
                 out = html.with_name(html.stem + suffix)
-                page.screenshot(path=str(out), full_page=True)
+                page.locator("body").screenshot(path=str(out))
                 print(out.name)
         browser.close()
 

@@ -4,8 +4,60 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
-  <img alt="The full mx cycle: sharpen the idea, spec, tickets, build the frontier, drive each landed slice, review session, with feedback rails returning new tickets, reopened decisions, and new ideas, over the durable docs" src="assets/full-cycle-light.png">
+  <img alt="The full mx cycle: sharpen the idea, spec, tickets, dispatch the tickets one worker each, harden the feature and debrief, drive each landed slice, review session; the board carries every ticket, and feedback rails return new and proposed tickets, reopened decisions and new ideas, over the durable docs" src="assets/full-cycle-light.png">
 </picture>
+
+<details>
+<summary><b>Every ticket holds one state, and each transition has exactly one writer</b></summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
+  <img alt="Ticket state: proposed, open, claimed, done, retired, with the one writer of each transition; your ruling is the only door out of proposed, and the board renders every state, the dependency graph with its frontier, and the needs-human queue" src="assets/ticket-state-light.png">
+</picture>
+
+</details>
+
+<details>
+<summary><b>Who is in the loop at each step, and in which context window</b></summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/main-flow.png">
+  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round, and one worker per ticket under a single orchestrator, with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
+</picture>
+
+</details>
+
+<details>
+<summary><b>Planning that spans sessions: the spec carries the design, decision tickets carry the open questions</b></summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
+  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; the gate confirms the spec when the frontier is empty" src="assets/session-boundary-light.png">
+</picture>
+
+</details>
+
+<details>
+<summary><b>The board: the tracker as one page</b></summary>
+
+`board`, run from anywhere in the repo, renders every feature's dependency graph with the frontier highlighted, the queue of things only you can answer, and a row per ticket. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
+
+<img alt="The board's overview: one dependency graph across two features and the standalone tickets, done in green, claimed in amber, blocked and proposed in their own colours, with a cross-feature edge; below it the needs-human queue with a feature's debrief open" src="assets/board-overview.png">
+
+A feature section, switched to the wave lanes view: what a worker could be handed now, what waits a wave, and what is proposed and waiting on a ruling.
+
+<img alt="One feature on the board: spec confirmed, wave lanes showing the in-flight ticket and a grilling ticket beside it, then a blocked ticket and a proposed one, and the ticket rows below with one expanded to its what-to-build and acceptance criteria" src="assets/board-feature.png">
+
+</details>
+
+<details>
+<summary><b>A ticket's review page: the diff, with the agent's reasoning on the lines it concerns</b></summary>
+
+Every landed ticket gets one, rendered by `dispatch review` and linked from its row on the board: side-by-side diff, keyboard-driven, comments you leave export as markdown to paste back to the agent that wrote the code. The agent's own notes arrive on the page as `AGENT` blocks, anchored to the lines they explain, including on a file the diff left alone deliberately.
+
+<img alt="A review page: the file tree with an untouched-but-noted file, a side-by-side diff of the importer, and an inline agent note explaining why rejected lines are reported per line rather than per file" src="assets/review-page.png">
+
+</details>
 
 ## Artefacts
 
@@ -14,7 +66,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Glossary          | `CONTEXT.md` (repo root)             | durable, edited in place                                              | domain terminology, opinionated, with avoid-lists                                                                                                                   |
 | ADR               | `decisions/NNNN-slug.md`             | durable, append-only                                                  | one hard-to-reverse decision and why                                                                                                                                |
 | Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
-| Ticket            | `agent/tickets/<feature>/NN-slug.md` | `proposed` while an agent's, until you rule; retired with its feature | one vertical slice with blocked-by edges, or, with `type: research | prototype | grilling | legwork`, a decision ticket: a decision to make, answered on resolution |
+| Ticket            | `agent/tickets/<feature>/NN-slug.md` | `proposed` while an agent's, until you rule; retired with its feature | one vertical slice with blocked-by edges, or, with `type: research \| prototype \| grilling \| legwork`, a decision ticket: a decision to make, answered on resolution |
 | Standalone ticket | `agent/tickets/<slug>.md`            | deleted when done                                                     | a ticket with no spec: no design round needed, or a decision ticket for later                                                                                       |
 | Board             | `agent/board.html`                   | gitignored, re-rendered on every tracker change                       | the whole tracker as one page: features with spec status, dependency graphs, frontier, review-page links                                                            |
 | Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
@@ -29,19 +81,9 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 **`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
 
-Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until the gate confirms it:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
-  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; the gate confirms the spec when the frontier is empty" src="assets/session-boundary-light.png">
-</picture>
+Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until the gate confirms it.
 
 ## What's manual, what's AFK, and why
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/main-flow.png">
-  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round and implementation per ticket with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
-</picture>
 
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
 - **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → end the session with the frontier open (the sharp questions become decision tickets) or handoff to a fresh thread; don't push on degraded.
