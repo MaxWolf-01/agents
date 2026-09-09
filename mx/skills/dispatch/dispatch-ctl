@@ -224,7 +224,7 @@ wait_() {
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name in the manifest"
     while [ "$(run_state "$run_id" "$run_runner")" = running ]; do
-        sleep 3
+        sleep 10
     done
     state_line "$name" "$run_id" "$run_runner"
     [ -f "$here/$run_id.status" ]

@@ -72,7 +72,10 @@ on_host() {
 }
 
 # The board shows the host beside the feature; the file is the queue it also
-# reads, so the frontmatter is added around whatever entries are there.
+# reads, so the frontmatter is added around whatever entries are there. Three
+# shapes of file: absent (created with just the frontmatter), frontmatter
+# present (the key replaced, or inserted before the closing ---), no
+# frontmatter (one prepended).
 record_host() { # <label>
     f=agent/tickets/$feature/needs-human.md
     mkdir -p "$(dirname "$f")"
