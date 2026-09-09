@@ -62,7 +62,7 @@ For each ticket in the wave:
 
 ### 5. Stop or sleep
 
-**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is the board (`/mx:tracker`, Board): `dispatch review` re-renders it after each landing, and the watcher you started when you fetched the tickets at setup keeps it current in between; never hand-write status prose that can go stale.
+**Status is a render, not prose.** Keep chat output to a line or two per tick. The standing status view is the board (`/mx:tracker`, Board): `dispatch review` re-renders it after each landing, and the human's own `board` keeps the tab current in between; never hand-write status prose that can go stale.
 
 The feature's queue lives in `agent/tickets/<feature>/needs-human.md`: `worker-host:` frontmatter (setup writes it), then one `- summary :: markdown detail` bullet per pending entry. The detail is what lets the human act without a chat round-trip: the decision's context and options, or the paste-ready kickoff prompt of a session only they can start (HITL prototypes). Delete an entry when it's answered; the answer lands in code or tickets, never in the file.
 
