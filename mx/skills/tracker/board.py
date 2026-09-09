@@ -1034,7 +1034,9 @@ ${standalone}
   function nodeHover(root) {
     for (const n of root.querySelectorAll("g.node")) {
       const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      t.textContent = n.textContent.trim().replace(/\\s+/g, " ");
+      // each wrapped row is its own tspan with no space at the boundary, so join the rows
+      const rows = [...n.querySelectorAll(".text-outer-tspan")].map((r) => r.textContent.trim());
+      t.textContent = (rows.length ? rows.join(" ") : n.textContent).replace(/\\s+/g, " ").trim();
       n.prepend(t);
     }
   }

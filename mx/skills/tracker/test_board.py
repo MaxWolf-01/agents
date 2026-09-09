@@ -113,6 +113,7 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     assert "1/4 done" in page  # the top bar: the proposal is not part of the feature's count
     assert 'feat <span class="dim">1/4</span>' in page  # the feature chip agrees
     assert '<span class="badges"><span class="badge proposed">' in page
+    assert 'click T_f0_feat_03 "#t-feat-03"' in feature_dag(feature, False)
     # a raw double quote in a label ends mermaid's string and breaks the whole flowchart
     assert 'K_b0_quoted["○ Say ”no limit” plainly"]' in board_dag([feature], standalone, False)
     assert "2 standalone open" in page
