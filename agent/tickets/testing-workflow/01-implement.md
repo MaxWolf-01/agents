@@ -1,6 +1,6 @@
 ---
 status: done
-diff: [ba9fd9f..132ae97, 983bd7c..a10309f, ab5464b..ad1f748]
+diff: [ba9fd9f..132ae97, 983bd7c..a10309f, ab5464b..ad1f748, 7eb1923..0e0c037]
 ---
 
 # Implement the testing-workflow spec
@@ -187,3 +187,21 @@ Run again, it keeps a second report and the first one does not make the tree dir
 - A16 `mx/skills/testing/harden.py:146`: the kept file is always the rendered text, including on a `--json` run, so a run leaves one file of one shape; its name carries the range verbatim with `/` replaced by `-`, and a whole-repo run is named `whole-repo-<sha>`.
 - A17 `mx/skills/testing/harden.py:197`: `agent/harden/` joins `mutants/`, `.coverage` and `.hypothesis/` as artefacts the dirty-tree check ignores. Without that, harden's own output would refuse the next run in any project that has not gitignored it yet.
 - A18 `mx/skills/testing/SKILL.md:42`: the skill now says harden runs when a feature's frontier empties rather than "at the review session", following C5: the orchestrator reads the report there, and what reaches the review session is its proposal.
+
+### Review round 3, `7eb1923..0e0c037`
+
+Addressed: C1, C3, C4, C6.
+
+**The repo's test run (C1).** `make test` ran one file by path, which reads as running harden rather than testing this repo. It is `pytest mx/` now, with the imports the checks need injected, and it collects the permissions-review script's twelve checks as well: they had no runner before. Two things stood in the way and are fixed: the runner's map helper was called `tests_in_map`, which pytest collects as a test and then errors on for missing fixtures, and is now `targets_for_test_files`; and the checks chdir'd into a temp directory at import and left the process there, which is exactly the Order-Dependent Test the smell list names, so the working directory goes back after the import that needs it. `uv run mx/skills/testing/test_harden.py` still runs the file on its own. `release-*` waits on `test` as before, so the release path picks all of this up.
+
+**`make fuzz` without a licence (C6).** The target required hypofuzz to do anything, and hypofuzz is non-commercial. It now runs the property tests under a `fuzz` Hypothesis profile until you stop it, needing nothing beyond hypothesis, and hands over to `hypothesis fuzz` for coverage guidance as soon as hypofuzz imports. PYTHON.md registers the profile beside `harden` and keeps the licence note; the testing skill says what the target does and what HypoFuzz adds, without claiming a machine has to be idle.
+
+**Plain sentences (C3, C4).** project-setup states the two names a project keeps and leaves the tools to the stack file, with nothing about which file has them today. PYTHON.md says the dev group takes hypothesis and nothing else for testing, because harden runs mutmut and coverage from its own environment.
+
+**Evidence.** `make test` → 45 passed in 17s (33 harden checks, 12 permissions-review). `uv run mx/skills/testing/test_harden.py` → 33 passed. `make -n fuzz` against a copy of the template prints the branch it would take.
+
+**Assumptions.**
+
+- A19 `Makefile:11`: `make test` runs everything under `mx/` that pytest collects, so a script added beside a skill is tested by the repo's test run the moment its checks are named `test_*` in a `test_*.py` file. The injected dependencies (pytest, tyro, mutmut, coverage) are the union of what those files import; a new script with new imports adds to that line.
+- A20 `mx/skills/project-setup/assets/Makefile:19`: without hypofuzz, `make fuzz` loops the ordinary pytest run under the `fuzz` profile and stops on the first failing run, which is the finding. With hypofuzz it defers entirely to `hypothesis fuzz`, whose own stopping behaviour applies.
+- A21 `mx/skills/project-setup/PYTHON.md:18`: `max_examples=5000` for the `fuzz` profile is a starting budget in the project's own config, as `harden`'s 25 is.
