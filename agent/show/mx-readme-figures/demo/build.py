@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from fixture import C1, C2, C3, CONTEXT, MAKEFILE, NOTES  # noqa: E402
+from fixture import C1, C2, C3, C4, C5, C6, CONTEXT, MAKEFILE, NOTES  # noqa: E402
 
 HERE = Path(__file__).parent
 OUT = HERE.parent
@@ -31,8 +31,10 @@ ENV = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com",
 
 def run(*args: str, cwd: Path = REPO) -> str:
     import os
-    return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True,
-                          env={**os.environ, **ENV}).stdout.strip()
+    done = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env={**os.environ, **ENV})
+    if done.returncode:
+        sys.exit(f"{' '.join(args)} failed ({done.returncode}):\n{done.stdout}\n{done.stderr}")
+    return done.stdout.strip()
 
 
 def write(files: dict[str, str]) -> None:
@@ -49,21 +51,41 @@ def commit(message: str) -> str:
 
 
 def build_repo() -> tuple[str, str]:
+    """The repo as dispatch would have left it: csv-import landed, saved-views waiting."""
     shutil.rmtree(REPO.parent, ignore_errors=True)
     REPO.mkdir(parents=True)
     run("git", "init", "-q", "-b", "main")
-    write({"CONTEXT.md": CONTEXT, "Makefile": MAKEFILE, ".gitignore": "agent/board.html\nagent/diffviews/\n"})
+    write({"CONTEXT.md": CONTEXT, "Makefile": MAKEFILE, ".gitignore": "agent/board.html\nagent/diffviews/\n.hypothesis/\n__pycache__/\n"})
     shutil.copytree(HERE / "tracker", REPO / "agent" / "tickets")
     write(C1)
-    commit("ledger: the skeleton, a Row and an importer that raises")
+    skeleton = commit("ledger: the skeleton, a Row and an importer that raises")
     write(C2)
-    base = commit("import-properties: the spec's three properties, as checks at their seams")
+    properties = commit("import-properties: the spec's three properties, as checks at their seams")
     write(C3)
-    head = commit("upload-and-parse-report: every line the mapping could not read, with its number")
-    stamp_diff("csv-import/01-import-properties.md", f"{run('git', 'rev-parse', '--short', 'HEAD~2')}..{base}")
-    stamp_diff("csv-import/02-upload-and-parse-report.md", f"{base}..{head}")
-    commit("csv-import: 01 and 02 landed")
-    return base, head
+    report = commit("upload-and-parse-report: every line the mapping could not read, with its number")
+    write(C4)
+    mapping = commit("map-columns-to-fields: a bank's mapping is remembered for its next statement")
+    write(C5)
+    commits = commit("commit-the-import: entries, after a dry run that says what will be skipped")
+    write(C6)
+    fix = commit("csv-import: the dry run's already-settled branch had no test")
+    verify()
+    for rel, rng in [
+        ("csv-import/01-import-properties.md", f"{skeleton}..{properties}"),
+        ("csv-import/02-upload-and-parse-report.md", f"{properties}..{report}"),
+        ("csv-import/03-map-columns-to-fields.md", f"{report}..{mapping}"),
+        ("csv-import/04-commit-the-import.md", f"{mapping}..{commits}"),
+    ]:
+        stamp_diff(rel, rng)
+    needs = REPO / "agent" / "tickets" / "csv-import" / "needs-human.md"
+    needs.write_text(needs.read_text().replace("{fix_sha}", fix))
+    commit("csv-import: 01 through 04 landed, and the feature's debrief")
+    return properties, report
+
+
+def verify() -> None:
+    """Run the demo's own suite: a worked example that does not pass teaches the wrong thing."""
+    run("uv", "run", "--with", "pytest", "--with", "hypothesis", "pytest", "-q")
 
 
 def stamp_diff(rel: str, rng: str) -> None:
@@ -98,14 +120,16 @@ def shoot(board: Path, review: Path) -> None:
         page.goto(board.resolve().as_uri())
         page.wait_for_selector(".view.active .mermaid svg", timeout=30_000)
         page.wait_for_timeout(1200)
+        page.evaluate("document.querySelector('.btn[data-mode=full]').click()")
+        page.wait_for_timeout(1500)
         page.evaluate("document.querySelector('#needs-human details').open = true")
         page.wait_for_timeout(300)
         band(page, "board-overview.png", "#needs-human")
 
         page.evaluate("document.querySelector('.btn[data-mode=lanes]').click()")
-        page.evaluate("document.querySelector('#t-csv-import-03').open = true")
+        page.evaluate("document.querySelector('#t-saved-views-05').open = true")
         page.wait_for_timeout(600)
-        page.locator("#f-csv-import").screenshot(path=str(OUT / "board-feature.png"))
+        page.locator("#f-saved-views").screenshot(path=str(OUT / "board-feature.png"))
         print("board-feature.png")
 
         page.goto(review.resolve().as_uri())
@@ -126,7 +150,7 @@ DISMISS_BANNER = """() => document.querySelector("div.readonly")?.remove()"""
 SCROLL_TO_NOTE = """() => {
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walk.nextNode()) {
-    if (!/rejected line is shown/.test(walk.currentNode.nodeValue)) continue;
+    if (!/cannot read is shown/.test(walk.currentNode.nodeValue)) continue;
     walk.currentNode.parentElement.scrollIntoView({block: "center"});
     window.scrollBy(0, -160);
     return;
@@ -138,7 +162,8 @@ SCROLL_TO_NOTE = """() => {
 def band(page, name: str, bottom: str) -> None:
     """Screenshot from the top of the page to the bottom of `bottom`, full width."""
     height = page.evaluate("b => document.querySelector(b).getBoundingClientRect().bottom + scrollY", bottom)
-    page.screenshot(path=str(OUT / name), clip={"x": 0, "y": 0, "width": 1280, "height": height})
+    page.screenshot(path=str(OUT / name), full_page=True,
+                    clip={"x": 0, "y": 0, "width": 1280, "height": height})
     print(name)
 
 

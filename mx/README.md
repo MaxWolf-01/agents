@@ -40,13 +40,13 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 <details>
 <summary><b>The board: the tracker as one page</b></summary>
 
-`board`, run from anywhere in the repo, renders every feature's dependency graph with the frontier highlighted, the queue of things only you can answer, and a row per ticket. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
+`board`, run from anywhere in the repo, renders every feature's dependency graph, the queue of things only you can answer, and a row per ticket. One switcher cycles every graph on the page through three views: the frontier alone, the full graph, and wave lanes. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
 
-<img alt="The board's overview: one dependency graph across two features and the standalone tickets, done in green, claimed in amber, blocked and proposed in their own colours, with a cross-feature edge; below it the needs-human queue with a feature's debrief open" src="assets/board-overview.png">
+<img alt="The board in its full view: one dependency graph across two features and the standalone tickets, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other; below it the needs-human queue, the first entry open on a finished feature's debrief" src="assets/board-overview.png">
 
-A feature section, switched to the wave lanes view: what a worker could be handed now, what waits a wave, and what is proposed and waiting on a ruling.
+A feature section in the wave lanes view: what is in flight now, what each later wave unblocks, and what is proposed and waiting on a ruling.
 
-<img alt="One feature on the board: spec confirmed, wave lanes showing the in-flight ticket and a grilling ticket beside it, then a blocked ticket and a proposed one, and the ticket rows below with one expanded to its what-to-build and acceptance criteria" src="assets/board-feature.png">
+<img alt="One feature on the board: spec confirmed, wave lanes with a research ticket and a prototype ticket in flight, two blocked slices one and two waves out, and a proposed ticket in its own lane; the ticket rows below, one expanded to the question it asks" src="assets/board-feature.png">
 
 </details>
 

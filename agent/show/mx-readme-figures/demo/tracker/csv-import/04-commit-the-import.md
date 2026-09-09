@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 blocked-by: [03, 05]
 ---
 
@@ -12,5 +12,5 @@ says what will be added and what will be skipped as a duplicate.
 
 ## Acceptance criteria
 
-- [ ] the duplicate property holds with its expected-failure mark removed
-- [ ] the dry run and the commit agree on every row
+- [x] property 3 holds with its expected-failure mark removed
+- [x] the dry run and the commit agree on every row

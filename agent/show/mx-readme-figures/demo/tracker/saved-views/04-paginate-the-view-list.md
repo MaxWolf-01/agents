@@ -4,8 +4,9 @@ status: proposed
 
 # The view list needs paging past 50
 
-Cut from the review session: the list renders every view on one screen, which
-is fine now and is the kind of thing nobody notices until an account has 300.
+Cut from the review session on `csv-import`: the view list renders every view
+on one screen. Fine now, and the kind of thing nobody notices until an account
+has three hundred of them.
 
 ## Acceptance criteria
 

@@ -12,3 +12,4 @@ A link that opens the view for someone else on the same account.
 ## Acceptance criteria
 
 - [ ] the link survives a rename of the view
+- [ ] a view filtered to an imported statement opens on the same entries
