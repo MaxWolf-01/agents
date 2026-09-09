@@ -1,6 +1,6 @@
 ---
 status: done
-diff: [ba9fd9f..132ae97, 983bd7c..a10309f, ab5464b..ad1f748, 7eb1923..0e0c037]
+diff: [ba9fd9f..132ae97, 983bd7c..a10309f, ab5464b..ad1f748, 7eb1923..0e0c037, e1df867..c2f60dc]
 ---
 
 # Implement the testing-workflow spec
@@ -205,3 +205,40 @@ Addressed: C1, C3, C4, C6.
 - A19 `Makefile:11`: `make test` runs everything under `mx/` that pytest collects, so a script added beside a skill is tested by the repo's test run the moment its checks are named `test_*` in a `test_*.py` file. The injected dependencies (pytest, tyro, mutmut, coverage) are the union of what those files import; a new script with new imports adds to that line.
 - A20 `mx/skills/project-setup/assets/Makefile:19`: without hypofuzz, `make fuzz` loops the ordinary pytest run under the `fuzz` profile and stops on the first failing run, which is the finding. With hypofuzz it defers entirely to `hypothesis fuzz`, whose own stopping behaviour applies.
 - A21 `mx/skills/project-setup/PYTHON.md:18`: `max_examples=5000` for the `fuzz` profile is a starting budget in the project's own config, as `harden`'s 25 is.
+
+### Review round 4, `e1df867..c2f60dc`
+
+Addressed: the two rulings.
+
+**HypoFuzz is the default.** The dev group takes `hypothesis hypofuzz`; the `fuzz` profile stays for the project that drops HypoFuzz, and the licence bullet says whose call that is: non-commercial use is the user's to rule on per project, and dropping it falls back to the profile loop, with Atheris still the one-line pointer for a project that wants coverage guidance anyway. The target keeps both branches; its comment and the testing skill's line now lead with HypoFuzz.
+
+**Something starts the fuzz run.** `dispatch-ctl fuzz start` cuts `fuzz/<feature>` from the feature branch's pushed tip into `<worktrees-dir>/<repo>-<feature>-fuzz`, sets it up through the same `checkout` a ticket worktree uses (so the project's own setup command runs), and leaves `make fuzz` in a tmux session `fuzz-<repo>-<feature>`; `stop` takes the session, the worktree and the branch. It writes no manifest line: there is no conversation to resume and no exit status to read, so the session either exists or it does not, and `stop` is the whole of undoing it. `--help` documents both. `dispatch`'s own help describes `ctl` as running `dispatch-ctl <args>` on the host without listing its commands, so there was nothing to add there. Dispatch's tick step 5 gained two sentences: start the run and hand the user the session name and how to attach; it runs until stopped, and retiring the feature includes stopping it.
+
+**Evidence.** `make test` → 45 passed. The new command driven against a throwaway bare repo and feature branch on this host:
+
+```
+$ dispatch-ctl fuzz start
++ git -C /var/tmp/fuzztest/demo.git worktree add /var/tmp/fuzztest/work/demo-demo-fuzz -b fuzz/demo demo
++ (cd /var/tmp/fuzztest/work/demo-demo-fuzz && make install) > .../fuzz-demo-demo.install.log 2>&1
++ tmux new-session -d -s fuzz-demo-demo -c /var/tmp/fuzztest/work/demo-demo-fuzz
++ tmux send-keys -t fuzz-demo-demo -l make fuzz
+fuzzing fuzz-demo-demo  worktree=/var/tmp/fuzztest/work/demo-demo-fuzz  (tmux attach -t fuzz-demo-demo)
+
+$ dispatch-ctl fuzz start          # a second one
+dispatch-ctl: fuzz-demo-demo is already fuzzing; dispatch-ctl fuzz stop ends it
+
+$ dispatch-ctl fuzz stop
++ tmux kill-session -t =fuzz-demo-demo
++ git -C /var/tmp/fuzztest/demo.git worktree remove --force /var/tmp/fuzztest/work/demo-demo-fuzz
++ git -C /var/tmp/fuzztest/demo.git branch -D fuzz/demo
+stopped fuzz-demo-demo
+```
+
+The pane held `make fuzz` running; after `stop` the worktrees directory and the branch list were empty, a second `stop` said `no session` and exited 0, and a `start` against a branch whose Makefile has no `fuzz` target refused before creating anything.
+
+**Assumptions.**
+
+- A22 `mx/skills/dispatch/dispatch-ctl:331`: the fuzz run is the feature's, one per feature, and its branch is `fuzz/<feature>` cut from the feature branch's pushed tip; it does not follow later pushes, so a feature that keeps building restarts the run to fuzz the newer code.
+- A23 `mx/skills/dispatch/dispatch-ctl:355`: `start` refuses when the feature branch's Makefile has no `fuzz:` target, read out of the bare repo before anything is created, rather than leaving a session with a make error in it.
+- A24 `Makefile:11`: the repo's test run sets `PYTHONDONTWRITEBYTECODE=1` and `-p no:cacheprovider`, after the first run left `__pycache__` files in the tree and the commit before this one swept them in. They are removed in `c2f60dc`; the mistake is in the history rather than amended away.
+- A25 `mx/skills/project-setup/PYTHON.md:13`: hypofuzz joins the dev group by default, so a fresh project's install pulls a non-commercially-licensed dependency unless the user rules otherwise. project-setup asks.
