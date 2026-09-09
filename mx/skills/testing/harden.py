@@ -523,7 +523,7 @@ def render(report: dict) -> str:
         for path, numbers in by_file(report["unmeasured"]["lines"]).items()
     ]
     lines += [
-        f"UNMEASURED {path}: no mutation target on {numbers}, removed"
+        f"UNMEASURED {path}: no mutation target on {numbers}, at the base"
         for path, numbers in by_file(report["unmeasured"]["removed_lines"]).items()
     ]
     lines += [f"UNMEASURED {name}: no mutants" for name in report["unmeasured"]["targets_without_mutants"]]
