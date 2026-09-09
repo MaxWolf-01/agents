@@ -60,6 +60,14 @@ _Avoid_: small task, loose ticket, note
 The decision-ticket type for manual work that unblocks a decision without deciding anything itself.
 _Avoid_: task, chore, prep
 
+**Proposed**:
+The status of a ticket an agent filed that the user has not yet ruled worth doing.
+_Avoid_: backlog, suggested, draft ticket, idea
+
+**Ruling**:
+The user's answer on a proposed ticket: whether it is worth doing.
+_Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
+
 **Board**:
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
 _Avoid_: dashboard
@@ -93,6 +101,10 @@ _Avoid_: batch, round
 **Land**:
 A ticket's work is on the feature branch and verified there.
 _Avoid_: merged, finished, complete
+
+**Debrief**:
+What the orchestrator tells the user when a feature is finished: what the workers and the harden report found, and what it proposes to do about it.
+_Avoid_: synthesis, report, summary, PR description
 
 ### Testing
 

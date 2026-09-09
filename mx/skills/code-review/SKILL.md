@@ -89,7 +89,7 @@ End with a one-line summary: total findings per axis, and the worst issue _withi
 
 A clean diff gets a short review. Report the axes as they came back; empty is a valid result.
 
-Accepted findings land as a **follow-up commit**, never an amend: the commit's diff is the review's measurable effect. The session that wrote the work applies them when it's still around; any session can otherwise.
+Accepted findings land as a **follow-up commit**, never an amend: the commit's diff is the review's measurable effect. The session that wrote the work applies them when it's still around; any session can otherwise. A finding accepted but too large for that commit is filed as a proposed ticket (`/mx:tracker`).
 
 ## Light mode
 

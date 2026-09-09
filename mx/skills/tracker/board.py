@@ -11,7 +11,9 @@ workspace repo both work), renders, opens the tab, and keeps re-rendering until
 Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
-status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
+status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN; a
+proposed ticket, one the user has not ruled on, keeps its status whatever
+blocks it and is drawn in every view in its own colour) and
 every standalone ticket (*.md at the tracker root) and writes one
 self-contained page beside the tracker, agent/board.html: an all-features
 dependency graph with feature subgraphs and cross-feature edges, the merged
@@ -37,7 +39,8 @@ any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
 render is deterministic from disk. Per-feature orchestrator state is read from
 agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
-then one `- summary :: markdown detail` bullet per pending entry.
+then one `- summary :: markdown detail` bullet per pending entry; indented lines
+under a bullet continue its detail.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections and the chosen view, only when
@@ -71,7 +74,7 @@ import markdown
 import tyro
 import yaml
 
-STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘"}
+STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
 
 @dataclass
@@ -229,7 +232,7 @@ class Diffviews:
 class Ticket:
     num: str
     title: str
-    status: str  # open | claimed | done, plus derived: blocked
+    status: str  # proposed | open | claimed | done, plus derived: blocked
     kind: str | None  # a decision ticket's type (research | prototype | grilling | legwork); None on a build ticket
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
@@ -250,7 +253,7 @@ class Feature:
 class Standalone:
     slug: str
     title: str
-    status: str  # open | claimed | done, plus derived: blocked
+    status: str  # proposed | open | claimed | done, plus derived: blocked
     kind: str | None
     blocked_by: list[tuple[str, str]]  # (ref "<feature>/NN" or "<slug>", status)
     body_html: str
@@ -331,7 +334,13 @@ def load_needs_human(path: Path) -> tuple[list[str], str | None]:
     if not path.exists():
         return [], None
     meta, body = split_frontmatter(path.read_text())
-    entries = [line[2:].strip() for line in body.splitlines() if line.startswith("- ")]
+    entries: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("- "):
+            entries.append(line[2:].strip())
+        elif entries and (line[:1] in (" ", "\t") or not line.strip()):
+            entries[-1] += "\n" + line.strip()
+    entries = [e.strip() for e in entries]
     host = meta.get("worker-host")
     return entries, str(host) if host else None
 
@@ -355,6 +364,10 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
         )
+    # a local blocker whose file is gone counts as done, as in ref_status
+    present = {t.num for t in tickets}
+    for t in tickets:
+        t.blocked_by = [b for b in t.blocked_by if b in present]
     done = {t.num for t in tickets if t.status == "done"}
     for t in tickets:
         if t.status == "open" and (
@@ -534,8 +547,9 @@ def board_dag(features: list[Feature], standalone: list[Standalone], full: bool)
 def wave_lanes(feature: Feature) -> str | None:
     tickets = feature.tickets
     by_num = {t.num: t for t in tickets}
-    live = [t for t in tickets if t.status != "done"]
-    if not live:
+    live = [t for t in tickets if t.status not in ("done", "proposed")]
+    proposed = [t for t in tickets if t.status == "proposed"]
+    if not live and not proposed:
         return None
     depth: dict[str, int] = {}
 
@@ -566,6 +580,9 @@ def wave_lanes(feature: Feature) -> str | None:
         label = names.get(d, f"wave +{d}")
         cards = "".join(card(t) for t in sorted(lanes[d], key=lambda t: (t.status != "claimed", t.num)))
         sections.append(f'<div class="lane"><div class="lanelabel">{label}</div><div class="lanecards">{cards}</div></div>')
+    if proposed:
+        cards = "".join(card(t) for t in proposed)
+        sections.append(f'<div class="lane"><div class="lanelabel">proposed — awaiting ruling</div><div class="lanecards">{cards}</div></div>')
     return "".join(sections)
 
 
@@ -610,14 +627,19 @@ def graph_views(
 def render_page(
     project: str, features: list[Feature], standalone: list[Standalone], log: str, stamp: str, stamp_src: str
 ) -> str:
-    total = sum(len(f.tickets) for f in features)
+    total = sum(1 for f in features for t in f.tickets if t.status != "proposed")
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
     all_needs = [(f.name, item) for f in features for item in f.needs_human]
-    open_standalone = sum(1 for k in standalone if k.status != "done")
+    open_standalone = sum(1 for k in standalone if k.status not in ("done", "proposed"))
+    proposed = sum(1 for f in features for t in f.tickets if t.status == "proposed") + sum(
+        1 for k in standalone if k.status == "proposed"
+    )
 
     meta = f"{total_done}/{total} done"
     if open_standalone:
         meta += f" · {open_standalone} standalone open"
+    if proposed:
+        meta += f' · <span class="proposed-count">{proposed} proposed</span>'
     needs_badge = (
         f'<a class="needsbadge" href="#needs-human">● {len(all_needs)} need human</a>' if all_needs else ""
     )
@@ -698,8 +720,8 @@ def dv_link(path: str | None) -> str:
 def feature_section(f: Feature) -> str:
     counts = Counter(t.status for t in f.tickets)
     bits = [f"spec {html.escape(f.spec_status)}"] if f.spec_status else []
-    bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
-    bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked") if counts[s]]
+    bits += [f"{counts['done']}/{len(f.tickets) - counts['proposed']} done"] if f.tickets else ["no tickets yet"]
+    bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked", "proposed") if counts[s]]
     if f.worker_host:
         bits.append(f"workers on {html.escape(f.worker_host)}")
     strip = "".join(
@@ -725,7 +747,7 @@ def feature_section(f: Feature) -> str:
             f'<div class="body">{t.body_html}</div></details>'
         )
 
-    order = {"claimed": 0, "open": 1, "blocked": 2}
+    order = {"claimed": 0, "open": 1, "blocked": 2, "proposed": 3}
     active = sorted((t for t in f.tickets if t.status != "done"), key=lambda t: (order[t.status], t.num))
     active_rows = "".join(row(t) for t in active)
     done_rows = "".join(row(t) for t in f.tickets if t.status == "done")
@@ -758,6 +780,7 @@ PAGE = Template("""<!doctype html>
     --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
     --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
     --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
+    --proposed-bg: #1d1a26; --proposed-br: #5b4f7a; --proposed-tx: #a397c4;
     --human: #e5534b; --human-bg: #291414; --flash: #2a2214;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -811,6 +834,8 @@ PAGE = Template("""<!doctype html>
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
+  .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
+  .proposed-count { color: var(--proposed-tx); }
   .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); margin-left: .35rem; }
 
   /* ---- feature header: sticky under the topbar ---- */
@@ -844,6 +869,7 @@ PAGE = Template("""<!doctype html>
     color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
   .dv:hover { color: var(--ink); border-color: var(--ink3); }
   .row-done summary .title { color: var(--ink2); }
+  .row-proposed summary .title { color: var(--ink2); }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
   .chips { display: inline-flex; gap: .25rem; min-width: 5rem; justify-content: flex-end; flex-wrap: wrap; }
   .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
@@ -964,7 +990,7 @@ ${standalone}
   // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
   // ghost = done ticket shown as context: done palette (so it never reads as
   // blocked-grey), dashed border marking it inactive
-  const classDefs = ["done", "claimed", "open", "blocked"].map((s) =>
+  const classDefs = ["done", "claimed", "open", "blocked", "proposed"].map((s) =>
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
   ).join("\\n") + "\\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
   mermaid.initialize({
