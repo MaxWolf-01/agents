@@ -63,8 +63,8 @@ CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`
 - to-tickets disposes executable Properties into one early ticket, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. It is an ordinary build ticket in the cross-cutting position to-tickets already knows; no ticket type, no name. `(you, r3)`; de-named `(you, r9)`
 - For a feature changing existing code, the worker sees the old code; a property encoding current behaviour is a regression net, and the properties for new behaviour come from the spec. The brief's scope and the Tests reviewer are the guards there. `(you, r5)`
 - The pre-merge read in dispatch: a change under the properties directory in an implementation ticket goes back to the worker, never merges. Stated as a rule in the skill's merge step; the orchestrator already reads the whole diff. `(you, r4)`
-- Harden is a project command (`make harden`, beside `check` and `test`) that calls a script the plugin ships; the script's mechanics (which lines it mutates, how it keys survivors, how it treats decorated functions, flaky fixtures and property tests, which coverage tracer it needs) are the script's own, decided by the two prototypes and stated in its `--help`, never in a skill. `(you, r11)`
-- Harden runs per feature, against the fork point, at the review session or when dispatch's frontier empties; its report is read by the human there. Not per ticket, not at merge. `(you, r11)`
+- Harden is a project command (`make harden`, beside `check` and `test`) that calls a script the plugin ships; the script's mechanics (which lines it mutates, how it keys survivors, how it treats decorated functions, flaky fixtures and property tests, which coverage tracer it needs) are the script's own, decided by the two prototypes and stated in its `--help`, never in a skill. `(my call)`
+- Harden runs per feature, against the fork point, at the review session or when dispatch's frontier empties; its report is read by the human there. Not per ticket `(you, r11)`; not at the feature's merge either, since the review session already sits before it `(my call)`.
 - improve-codebase-architecture gains a testing lens: harden's whole-repo report and the testability smells feed its deepening opportunities. `(you, r11)`
 - Prior art for what the property-tests ticket produces: `05-mutmut-memex-prototype.md` finding 6 (one 70-line property file killed two mutants that 151 example tests missed, both the seam's stated contract) and `07-ratchet-gate-yapit.md` finding 4 (three properties on a cache's eviction contract found a live bug on the first run and killed three mutants that 474 example tests missed). `(you, r7, r10)`
 - Code-review gains the Tests axis, spawned when the diff touches tests, Opus by default. `(you, r4)`
@@ -88,7 +88,7 @@ The skills' own testable surface is the harden script and the project-setup temp
 ## Out of Scope
 
 - Harden as a per-ticket gate: the yapit replay costs it at minutes per logic ticket and showed most API tickets unmeasurable by the tool; a gate that is usually blind or usually slow is neither. `(you, r11)`
-- A committed list of known-missed mutants: comparing against the fork point needs no curated file.
+- A committed list of known-missed mutants: comparing against the fork point needs no curated file. `(my call)`
 - Executable acceptance tests from ticket criteria (Martin's Gherkin layer and QA agent): a separate layer; human QA per landed slice stays as orient has it.
 - CRAP as a gate: see Solution.
 - Formal methods: Luu's agents used none of eight tools effectively.
