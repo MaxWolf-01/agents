@@ -27,7 +27,7 @@ The provenance tag on a call in a draft spec: who settled it, or that nobody has
 _Avoid_: marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the tickets nothing gates and nobody holds.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open tickets nothing gates and nobody holds.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:

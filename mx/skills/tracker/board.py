@@ -84,6 +84,7 @@ class Args:
 
 def main(args: Args) -> None:
     root, overrides = tracker_roots(args.tickets_root)
+    assert root.is_dir() or overrides, f"no tracker at {root}"
     repo = (args.repo or root.parent.parent).resolve()
     out = (args.out or root.parent / "board.html").resolve()
     existed = out.exists()
