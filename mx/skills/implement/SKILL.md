@@ -7,7 +7,7 @@ Implement the work described by the user in the spec or tickets (fetch them per 
 
 Load /mx:testing before you write or change a test.
 
-The marks under the properties directory that name your ticket (`/mx:testing`) are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the marks; the properties themselves are not yours to edit.
+The expected failures under the properties directory that name your ticket (`/mx:testing`) are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 

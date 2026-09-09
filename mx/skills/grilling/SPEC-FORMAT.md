@@ -35,7 +35,7 @@ What the app must *be*, where stories say what a user can *do*; the story format
 The decisions made, each marked with the round or decision ticket that settled it while the spec is a draft. This can include:
 
 - The modules that will be built/modified
-- The interfaces of those modules that will be built or modified: a seam that does not exist yet is stubbed from what is written here
+- The interfaces of those modules that will be built or modified
 - Technical clarifications from the developer
 - Architectural decisions
 - Schema changes
