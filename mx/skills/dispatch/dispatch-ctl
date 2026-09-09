@@ -192,10 +192,6 @@ spawn() {
         | awk 'NR==1{if($0!="---")exit 1;next} /^---$/{exit 1} /^type:/{f=1;exit} END{exit !f}'; then
         die "$id is a decision ticket (type: in its frontmatter): resolved with the human, never by a worker"
     fi
-    if git -C "$git_dir" show "$feature:$ticket" 2>/dev/null \
-        | awk 'NR==1{if($0!="---")exit 1;next} /^---$/{exit 1} /^status: *proposed *$/{f=1;exit} END{exit !f}'; then
-        die "$id is proposed: the user has not ruled it worth doing (tracker conventions); a ruling opens it"
-    fi
     current_run "$name"
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"

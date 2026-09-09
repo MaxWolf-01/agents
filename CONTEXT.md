@@ -65,12 +65,8 @@ The status of a ticket an agent filed that the user has not yet ruled worth doin
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Ruling**:
-The user's verdict on a proposed ticket: open it, delete it, or send it to grilling.
-_Avoid_: approval, triage, verdict (a grilling's verdicts settle calls, not tickets)
-
-**Synthesis**:
-The orchestrator's one reading of a feature besides its diff: what it fixed, what it proposes, what it left.
-_Avoid_: report, summary, PR description
+The user's answer on a proposed ticket: whether it is worth doing.
+_Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Board**:
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
@@ -105,6 +101,10 @@ _Avoid_: batch, round
 **Land**:
 A ticket's work is on the feature branch and verified there.
 _Avoid_: merged, finished, complete
+
+**Synthesis**:
+The orchestrator's one reading of a finished feature for the user, beside its diff.
+_Avoid_: report, summary, PR description
 
 ### Testing
 

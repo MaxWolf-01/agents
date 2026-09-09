@@ -5,6 +5,7 @@
 # `dispatch-ctl` is its counterpart on the worker host, reached through `ctl`.
 #
 # Usage: dispatch setup <host> <repo> [setup-command]
+#        dispatch claim <NN-slug>
 #        dispatch push
 #        dispatch prompt <NN-slug> < prompt-file
 #        dispatch ctl <dispatch-ctl args...>
@@ -23,6 +24,12 @@
 #            project's own setup line, run in every ticket worktree before its
 #            worker starts; without it spawn uses `make install` (under
 #            `nix develop -c` where a flake.nix exists).
+#   claim    flips <NN-slug> from open to claimed, commits that on the feature
+#            branch and pushes it, so the next spawn cuts from a tip that
+#            carries the claim. Refuses a ticket that is not open: a proposed
+#            one waits on the user's ruling, a claimed or done one is taken.
+#            A decision ticket is claimed the same way and then routed by its
+#            type; spawn is what refuses to hand one to a worker.
 #   push     the feature branch to the host, so the next spawn cuts from its tip.
 #   prompt   writes stdin as the worker prompt for <NN-slug> on the host.
 #   ctl      runs `dispatch-ctl <args>` on the host, from the feature's scratch
@@ -135,6 +142,25 @@ setup() {
     git config "dispatch.$feature.scratch" "$scratch"
     record_host "$label"
     echo "host=$host  scratch=$scratch  (git config dispatch.$feature.*)"
+}
+
+claim() {
+    locate
+    id=$1
+    ticket=agent/tickets/$feature/$id.md
+    [ -f "$ticket" ] || die "no ticket at $ticket"
+    front=$(awk 'NR==1{if($0!="---")exit;next} /^---$/{exit} {print}' "$ticket")
+    status=$(sed -n 's/^status: *//p' <<<"$front" | head -1)
+    case ${status:-open} in
+        open) ;;
+        proposed) die "$id is proposed: the user has not ruled it worth doing (tracker conventions); a ruling opens it" ;;
+        *) die "$id is $status, not open" ;;
+    esac
+    grep -q '^status:' <<<"$front" || die "$ticket has no status: line in its frontmatter (tracker conventions)"
+    sed -i '0,/^status:/s/^status:.*/status: claimed/' "$ticket"
+    grep -q '^status: claimed$' "$ticket" || die "could not write status: claimed into $ticket"
+    run git commit -q -m "$feature: claim $id" -- "$ticket"
+    push
 }
 
 push() {
@@ -252,6 +278,7 @@ review() {
 cmd=${1:-}
 case $cmd in
     setup)   shift; setup "$@" ;;
+    claim)   shift; claim "$@" ;;
     push)    push ;;
     prompt)  shift; prompt "$@" ;;
     ctl)     shift; ctl "$@" ;;
