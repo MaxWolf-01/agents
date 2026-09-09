@@ -7,6 +7,7 @@
 
 `<name>.html` -> `<name>-light.png` and `<name>.png` (dark). The scheme arrives as the
 emulated system preference, the way a reader's does; the toggle button is hidden for the shot.
+The shot is of the body element, so the image is the figure's own height whatever the viewport.
 """
 
 import shutil
@@ -30,7 +31,7 @@ def main() -> None:
                 page.add_style_tag(content=".scheme{display:none}")
                 page.wait_for_load_state("networkidle")
                 out = html.with_name(html.stem + suffix)
-                page.screenshot(path=str(out), full_page=True)
+                page.locator("body").screenshot(path=str(out))
                 print(out.name)
         browser.close()
 

@@ -103,16 +103,16 @@ keep state.</p>
   <rect class="card" x="760" y="440" width="384" height="200" rx="6"/>
 
   <!-- mini DAG inside the graph panel -->
-  <path class="dagedge" d="M 870,224 H 902" marker-end="url(#arrow)"/>
-  <path class="dagedge" d="M 870,268 H 902" marker-end="url(#arrow)"/>
-  <path class="dagedge" d="M 950,224 H 982" marker-end="url(#arrow)"/>
-  <path class="dagedge" d="M 950,268 Q 966,268 966,252 V 240 Q 966,224 978,224" marker-end="url(#arrow)"/>
-  <rect class="dagnode-frontier" x="830" y="212" width="40" height="24" rx="4"/>
-  <rect class="dagnode-frontier" x="830" y="256" width="40" height="24" rx="4"/>
-  <rect class="dagnode" x="910" y="212" width="40" height="24" rx="4"/>
-  <rect class="dagnode" x="910" y="256" width="40" height="24" rx="4"/>
-  <rect class="dagnode" x="990" y="212" width="40" height="24" rx="4"/>
-  <rect class="dagnode-proposed" x="990" y="256" width="40" height="24" rx="4"/>
+  <path class="dagedge" d="M 868,224 H 900" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 868,268 H 900" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 948,224 H 980" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 948,268 H 980" marker-end="url(#arrow)"/>
+  <rect class="dagnode-frontier" x="828" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode-frontier" x="828" y="256" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="908" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="908" y="256" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="988" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode-proposed" x="988" y="256" width="40" height="24" rx="4"/>
 
   <!-- labels: sources -->
   <text class="name" x="76" y="112">Any agent, on its own reading</text>
@@ -152,8 +152,8 @@ keep state.</p>
   <text class="note" x="448" y="560">the flip on its own proves nothing</text>
 
   <text class="state" x="448" y="648">retired</text>
-  <text class="note" x="448" y="666">not a status: the files are gone. git rm</text>
-  <text class="note" x="448" y="680">once the feature ships; history keeps it</text>
+  <text class="note" x="448" y="666">not a status: git rm once it ships, and</text>
+  <text class="note" x="448" y="680">the row leaves the board; history keeps it</text>
 
   <!-- labels: transitions -->
   <text class="al-accent" x="584" y="202">YOUR RULING</text>
@@ -173,8 +173,8 @@ keep state.</p>
   <!-- labels: board panels -->
   <text class="name" x="772" y="128">The dependency graph</text>
   <text class="cmd" x="772" y="144">one per feature, plus the cross-feature edges</text>
-  <text class="dagtag" x="826" y="300">the frontier</text>
-  <text class="dagtag" x="986" y="300">proposed</text>
+  <text class="dagtag" x="824" y="300">the frontier</text>
+  <text class="dagtag" x="984" y="300">proposed</text>
   <text class="note" x="772" y="330">the frontier is what can start right now, first by number</text>
   <text class="note" x="772" y="344">wins. A proposed node keeps its colour in every view, so</text>
   <text class="note" x="772" y="358">you triage from the picture rather than from a list.</text>
@@ -183,7 +183,7 @@ keep state.</p>
   <text class="cmd" x="772" y="480">board</text>
   <text class="note" x="772" y="498">spec status per feature: draft or confirmed</text>
   <text class="note" x="772" y="512">wave lanes: which tickets ran together</text>
-  <text class="note" x="772" y="526">a row per ticket, linking its review page</text>
+  <text class="note" x="772" y="526">a row per ticket, linking its review page where one exists</text>
   <text class="note" x="772" y="540">the needs-human queue, merged across features</text>
   <text class="note" x="772" y="554">one switcher cycles every graph: frontier / full / lanes</text>
   <text class="note" x="772" y="576">runs from anywhere in the repo, watches the tracker with</text>
@@ -196,7 +196,7 @@ keep state.</p>
 
   <text class="al-accent" x="232" y="384">YOU ANSWER</text>
 
-  <text class="al" x="352" y="476">MERGED IN</text>
+  <text class="al" x="332" y="476">MERGED IN</text>
 
   <text class="aside" x="432" y="712">A decision ticket takes the same states and is never handed to a worker: the orchestrator claims it, then routes it by type.</text>
 
