@@ -9,7 +9,7 @@ check:
 	@echo "manifests parse"
 
 test:
-	uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage pytest mx/
+	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage pytest mx/ -p no:cacheprovider
 
 version:
 	@jq -r .version $(PLUGIN)
