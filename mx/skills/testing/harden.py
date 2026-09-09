@@ -16,39 +16,37 @@ What it measures, and how:
 
 - Targets: the mutmut targets (a top-level function, or a method of a top-level class) holding a
   line the range added, changed or deleted, plus, for a range that edits tests, the targets whose
-  covering tests live in the edited files, read off mutmut's test-to-function map at the base. A
-  deleted or weakened test is a change, so it is measured like any other.
+  covering tests live in the edited files, read off mutmut's test-to-function map at the base.
 - Survivors are keyed by their target and mutation content, never by mutmut's `__mutmut_N`
-  numbering, which shifts whenever the function around it is edited. A survivor already surviving
-  at the base is the integration branch's, and is reported apart from the feature's.
+  numbering, which shifts whenever the function around it is edited. One that also survived at the
+  base is reported apart from the range's own.
 - Case-flip survivors (a mutant whose only change is the letter case inside a string literal) are
-  equivalent mutants by construction; they are listed apart and never counted as findings.
-- Lines: only lines the suite covers are mutated, so a changed line nothing runs is reported on its
-  own, as file:line, rather than scoring a silent zero. Coverage is collected with
-  `COVERAGE_CORE=sysmon`, the one tracer that records lines after an `await` across a greenlet
-  bridge.
+  listed apart and never counted as findings.
+- Lines: only lines the suite covers are mutated, and a changed line nothing runs is reported on
+  its own, as file:line. Coverage is collected with `COVERAGE_CORE=sysmon`, the one tracer that
+  records lines after an `await` across a greenlet bridge.
 - Unmeasured: mutmut mutates nothing at module level and skips decorated functions, so a changed
-  line inside one has no mutant to run and is reported as unmeasured, whether the range added it or
-  removed it, as are targets that generated no mutants and changed Python files outside the
-  project's source paths that no test map knows as tests.
+  line inside one is reported as unmeasured, whether the range added it or removed it, as are
+  targets that generated no mutants and changed Python files outside the project's source paths
+  that no test map knows as tests.
 - Unresolved: a mutant left without a verdict (timeout, suspicious, not checked). A kill needs a
-  failing test: a mutant whose tests error out (a broken fixture, a collection error) comes back
+  failing test, so a mutant whose tests error out (a broken fixture, a collection error) comes back
   unresolved rather than killed.
 - Property tests run under the `harden` Hypothesis profile: every test process gets
   `HYPOTHESIS_PROFILE=harden`, which a project registers with a small example budget.
 
 `--whole-repo` measures every target under the source paths at HEAD instead, with no base and so
-nothing pre-existing: the report an architecture pass reads, where clustered survivors, uncovered
-lines and unreachable code name the modules whose shape resists testing.
+nothing pre-existing.
 
-The tree has to be clean: harden mutates the tree it measures while reporting commits, so
-uncommitted work would be measured without appearing in the range. Its own `mutants/`, `.coverage`
-and `.hypothesis/` do not count as dirty.
+The tree it measures has to be clean, apart from its own `mutants/`, `.coverage`, `.hypothesis/`
+and `agent/harden/`.
 
 Exit code: 0 when everything measured came back clean, 1 on findings (a new survivor or an
-uncovered changed line), 2 when there are no findings but something could not be measured. `make`
-collapses both non-zero codes into its own, so the line to read from `make harden` is the report's
-last.
+uncovered changed line), 2 when there are no findings but something could not be measured.
+
+Every report is also written to `agent/harden/<utc timestamp>-<range>.txt` in repositories that
+have an `agent/` directory, so it can be read again without paying for the measurement twice;
+`agent/harden/` is gitignored by the same convention as the rest of `agent/`.
 
 Cost is one full test run per tree plus the touched targets' mutants: seconds on a small CLI,
 minutes for a feature's worth of plain logic on a service. It writes `mutants/` and a `.coverage`
@@ -87,6 +85,7 @@ import tokenize
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -138,7 +137,23 @@ def main(args: Args) -> None:
     source_paths = source_paths_of(repo)
     report = whole_repo(repo, source_paths) if args.whole_repo else since_base(repo, source_paths, args)
     print(json.dumps(report, indent=2) if args.json else render(report))
+    kept = keep(repo, report)
+    if kept:
+        print(f"kept at {kept}", file=sys.stderr)
     raise SystemExit({"pass": 0, "findings": 1, "unmeasured": 2}[report["verdict"]])
+
+
+def keep(repo: Path, report: dict) -> Path | None:
+    """Write the report where this workflow keeps its artefacts, so the next reader pays nothing."""
+    if not (repo / "agent").is_dir():
+        return None
+    directory = repo / "agent" / "harden"
+    directory.mkdir(exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    name = report["range"].replace("whole repo at ", "whole-repo-").replace("/", "-")
+    path = directory / f"{stamp}-{name}.txt"
+    path.write_text(render(report) + "\n")
+    return path
 
 
 def since_base(repo: Path, source_paths: list[str], args: Args) -> dict:
@@ -179,7 +194,7 @@ def whole_repo(repo: Path, source_paths: list[str]) -> dict:
 def require_clean(repo: Path) -> None:
     """Harden mutates the tree it measures, and reports commits: uncommitted work would be mutated
     without appearing in the range, and a crashed run would leave the mutants where the edits were."""
-    artefacts = ("mutants/", ".coverage", ".hypothesis/")
+    artefacts = ("mutants/", ".coverage", ".hypothesis/", "agent/harden/")
     dirty = [line[3:] for line in git(repo, "status", "--porcelain").splitlines() if not line[3:].startswith(artefacts)]
     if dirty:
         raise SystemExit(f"{repo} has uncommitted changes ({', '.join(dirty)}); harden measures commits")

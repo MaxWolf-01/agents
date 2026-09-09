@@ -29,6 +29,7 @@ from harden import (
     assemble,
     by_file,
     is_case_flip,
+    keep,
     module_name,
     mutation_targets,
     outside,
@@ -360,6 +361,22 @@ def test_the_report_reads_as_the_lines_the_human_acts_on() -> None:
     assert "UNCOVERED  pkg/mod.py: 12, 13" in rendered
     assert "UNMEASURED pkg/mod.py: no mutation target on 4" in rendered
     assert rendered.endswith("\nFINDINGS")
+
+
+def test_a_report_is_kept_where_the_workflow_keeps_its_artefacts() -> None:
+    """Measuring costs minutes; reading the same measurement again should cost nothing."""
+    directory = tmp("keep")
+    result = report(unmeasured_lines=["pkg/mod.py:4"])
+    assert keep(directory, result) is None, "a repository with no agent/ directory has nowhere to put one"
+
+    (directory / "agent").mkdir()
+    kept = keep(directory, result)
+    assert kept.parent == directory / "agent" / "harden"
+    assert kept.name.endswith("-base..head.txt")
+    assert kept.read_text().strip() == render(result)
+
+    whole = dict(result, range="whole repo at abc1234")
+    assert keep(directory, whole).name.endswith("-whole-repo-abc1234.txt")
 
 
 # --- driven at the command line, against a fixture repository ----------------------------------
