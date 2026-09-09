@@ -10,7 +10,7 @@ check:
 	@echo "manifests parse, bin/ answers --help"
 
 test:
-	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage --with greenlet pytest mx/ -p no:cacheprovider
+	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage pytest mx/ -p no:cacheprovider
 
 version:
 	@jq -r .version $(PLUGIN)
