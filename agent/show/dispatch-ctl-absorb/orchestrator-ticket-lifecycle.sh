@@ -1,3 +1,4 @@
+# > Historical artifact as of 2026-09-09, superseded by mx/skills/dispatch/SKILL.md (dispatch ctl, dispatch wait, agent/tickets). Not current; kept as the reasoning trail.
 # What the orchestrator types for ONE feature on a remote worker host, with the
 # host's mechanics in dispatch-ctl and the orchestrator's in dispatch.
 # Host agent-hl@pc, repo `workspace`, feature `architecture-map`, ticket
