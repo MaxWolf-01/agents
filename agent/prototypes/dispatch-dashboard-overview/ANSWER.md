@@ -31,4 +31,4 @@ auto-refresh switched from `<meta http-equiv=refresh>` to a JS reload that saves
 state in sessionStorage, because a meta refresh collapses every open `<details>` and resets the
 view every 30 seconds.
 
-Ported into `mx/skills/dispatch/dashboard.py` (2026-08-14).
+Ported into `mx/skills/dispatch/dashboard.py` (2026-08-14), now `mx/skills/tracker/board.py`.

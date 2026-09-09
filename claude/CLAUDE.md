@@ -38,7 +38,7 @@ Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
-Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (specs, tickets, project CLAUDE.md); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (specs, tickets, commits, project CLAUDE.md, docs); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 
 **How you work:**
 
