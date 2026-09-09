@@ -16,10 +16,10 @@ Sources: the Pocock interview with Martin (youtu.be/zcLPGC-tvgk, 33:41–35:23),
 
 ## Solution
 
-Three independent axes per test: where it enters the system (the seam), how its inputs are chosen (examples, generated properties, coverage-guided fuzz), and whether the tests themselves are checked (mutation). The spec decides the first two; a tool runs the third; a reviewer reads what neither can catch. The human sees three small things per ticket: the property list, the gate's verdict as one number, the reviewers' findings.
+Three independent axes per test: where it enters the system (the seam: a function, a module's public API, an endpoint, the browser; what unit, integration and end-to-end name), how its inputs are chosen (hand-picked examples, generated properties, coverage-guided fuzz), and whether the tests themselves are checked (mutation). The spec decides the first two; a tool runs the third; a reviewer reads what neither can catch. `(you, r6)` The human sees three small things per ticket: the property list, the gate's verdict as one number, the reviewers' findings.
 
 1. **Oracle, decided in the spec.** Testing Decisions names, per seam, what independent truth the tests compare against, and disposes each Property as *executable* (a property-based check at that seam) or *reviewed* (prose the Spec reviewer checks). Executable Properties are built by the feature's **properties ticket**: one early cross-cutting capability ticket, blocking every slice at its seams, whose worker has the spec and the seams' interface stubs and not the implementation, because the implementation does not exist yet when its worktree is cut. `(you, r3)`
-2. **Hardening gate, run by a tool.** `make harden` runs mutation testing and exits non-zero on survivors over the project's threshold; the implementer runs it before the done flip and kills survivors; the orchestrator runs it again at merge. It proves the tests hold the code; it is billed as exactly that. `(you, r3)` on placement; threshold `(open → Q4)`
+2. **Hardening gate, run by a tool.** `make harden` is a **ratchet**: it mutates only the lines some test covers, only in the functions the ticket's diff touched, and fails on any survivor not already in the project's committed baseline of survivors; survivors that are pure letter-case changes inside a string literal are listed, not counted; every line the ticket added or changed must be covered by some test. The implementer runs it before the done flip and kills the new survivors; the orchestrator runs it again at merge. It proves the tests hold the code; it is billed as exactly that. `(you, r3)` on placement; ratchet shape `(you, r7)`; a second measurement on a deployed app (yapit) is running to check the coverage rule for pedantry `(open → Q4b)`
 3. **Review.** A fourth code-review axis, **Tests**, spawned when the diff touches test files: its brief carries the test-smell file and the spec's Testing Decisions, so it checks tests against the agreed seams and oracle the way the Spec axis checks code against the spec. `(you, r4)`
 
 The discipline goes: `/mx:tdd` becomes `/mx:testing`, short and nudge-shaped (statements that move the agent off its default failure modes, no tutorial), with no prescribed order of test and code; `tests.md` and `mocking.md` are deleted and their content becomes smells. `(you, r2)` Red-first stays named in diagnosing-bugs, where the red proves the repro. `(you, r2)`
@@ -57,20 +57,23 @@ CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`
 ## Decisions
 
 - Testing Decisions in the spec gains the **oracle**: the independent truth per seam, and each Property's disposition, executable or reviewed. `(you, r3)`
-- to-tickets disposes executable Properties into the **properties ticket**, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. `(you, r3)`; name `(my call)`
+- to-tickets disposes executable Properties into the **properties ticket**, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. `(you, r3)`; name `(you, r7)`
 - For a feature changing existing code, the worker sees the old code; a property encoding current behaviour is a regression net, and the properties for new behaviour come from the spec. The brief's scope and the Tests reviewer are the guards there. `(you, r5)`
 - The pre-merge read in dispatch: a change under the properties directory in an implementation ticket goes back to the worker, never merges. Stated as a rule in the skill's merge step; the orchestrator already reads the whole diff. `(you, r4)`
-- The hardening gate is a project command (`make harden`, beside `check` and `test`); mutation only, incremental where the tool supports it. `(you, r3)`
+- The hardening gate is a project command (`make harden`, beside `check` and `test`); mutation only. `(you, r3)` Its shape is the ratchet described in Solution; the baseline of pre-existing survivors is a committed file, so shrinking it shows on a diff and the review session burns it down when it chooses. `(you, r7)` The gate names the touched functions explicitly (mutmut's cache re-measures nothing for a test-only change) and never runs whole-repo per ticket; the whole-repo run is a report. `(my call)`
+- Prior art for what a properties ticket produces: `agent/research/05-mutmut-memex-prototype.md`, finding 6: one 70-line property file at a documented seam killed two mutants that 151 example tests missed, both the seam's stated contract. `(you, r7)`
 - Gate before the done flip and at merge. `(you, r3)`
 - Code-review gains the Tests axis, spawned when the diff touches tests, Opus by default. `(you, r4)`
 - Test smells are a file beside SMELLS.md, a standards source for the Tests axis. `(you, r2)`
 - `/mx:tdd` → `/mx:testing`: seams, the oracle rule, discriminating inputs, structured generation over raw randomness, extend the existing suite; example files deleted. `(you, r2)`
 - Red-first named in diagnosing-bugs only. `(you, r2)`
 - Complexity via the linter's rule; CRAP nowhere. `(you, r3)`
-- Thresholds live in project config; the template ships a survivor threshold decided by a prototype run. `(open → Q4)`
+- Thresholds (the complexity cap, any survivor allowance above zero) live in project config. `(you, r3)`
 - The tools per language are interchangeable parts behind `make harden` and the properties directory, chosen by project-setup: Hypothesis / mutmut for Python; fast-check / Stryker for JS and TS; FsCheck / Stryker.NET for C#; proptest / cargo-mutants for Rust. `(my call)`
 
-Deferrals: the long-running fuzz runner (HypoFuzz over the existing property tests is the candidate) defers to a research round; if nobody decides, the property tests still run in the suite and nothing is lost but the idle-machine budget.
+- Long fuzz runs reuse the property tests: HypoFuzz (pytest collects the `@given` tests, one worker per core, failures land in Hypothesis' example database so plain `pytest` replays them; a shared Redis database across workstation and VPSes) on repos where its non-commercial licence allows; Atheris through Hypothesis' `fuzz_one_input` where it does not. Wired by project-setup as an optional `make fuzz`. Source: `agent/research/06-long-fuzz-runners.md`. `(my call)`
+
+Deferrals: none that drop a capability; the fuzz target is optional and the suite runs the same property tests without it.
 
 ## Testing Decisions
 
@@ -82,12 +85,14 @@ The skills' own testable surface is the project-setup template and any script un
 - CRAP as a gate: see Solution.
 - Formal methods: Luu's agents used none of eight tools effectively.
 - A mechanical guard against mocking own collaborators: no observed failure in this workflow yet; it stays a smell.
+- Coverage-guided fuzzing outside Python: fast-check's fuzz mode has no coverage feedback, and the .NET, Rust and Java fuzzers take hand-written targets rather than property tests; separate work when a project wants it.
+- Two mutmut findings to report upstream at the end of this grilling (`/mx:upstream-issue`): no way to disable the string-case mutations, which produce equivalent mutants by construction; covered-lines mode breaks when tests import numpy or PyYAML.
 - Surviving mutants projected onto the review page: notes the human stops reading; the board carries one number per ticket instead.
 - Dependency-rule enforcement (a module-boundary file agents cannot violate, Martin's `dependency-checker`; import-linter for Python) and an architecture viewer: architecture, not testing; the viewer proved too generic in practice on large repos.
 - A separate tester agent writing a ticket's unit tests: independence comes from the properties ticket's ordering, not from a second author (arXiv 2607.23002 found no gain from a different model).
 
+- A red gate at merge is handled as a red `make test` is today: abort the merge, resume the worker. `(my call)` A greenfield first ticket needs no special case: its changed lines must be covered, and there is no baseline to inherit.
+
 ## Fog
 
-- The long fuzz runner: tool, licence, where it runs, how findings come back.
-- What the gate does on a greenfield first ticket with no suite.
-- Whether a red gate at merge routes back to the worker or to a fresh worker.
+(none)
