@@ -855,11 +855,11 @@ PAGE = Template("""<!doctype html>
   .lane:last-child { border-bottom: 0; }
   .lanelabel { flex: 0 0 9.5rem; text-transform: uppercase; letter-spacing: .14em; font-size: 10px; color: var(--ink3); padding-top: .5rem; }
   .lanecards { display: flex; flex-wrap: wrap; gap: .5rem; flex: 1; }
-  .card { display: flex; flex-direction: column; gap: .15rem; border: 1px solid; border-radius: 6px; padding: .45rem .65rem; max-width: 15rem; }
+  .lanecards .card { display: flex; flex-direction: column; gap: .15rem; border: 1px solid; border-radius: 6px; padding: .45rem .65rem; max-width: 15rem; }
   .cardlink { display: flex; flex-direction: column; gap: .15rem; text-decoration: none; color: inherit; }
   .cardnum { font-size: 10.5px; opacity: .8; }
   .cardtitle { font-size: 12px; line-height: 1.35; }
-  .card .chips { margin-top: .2rem; justify-content: flex-start; min-width: 0; }
+  .lanecards .card .chips { margin-top: .2rem; justify-content: flex-start; min-width: 0; }
 
   /* ---- ticket rows ---- */
   .ticket { border-bottom: 1px solid var(--border); }
