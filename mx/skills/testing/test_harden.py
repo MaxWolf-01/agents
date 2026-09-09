@@ -47,7 +47,7 @@ HERE = Path.cwd()
 os.chdir(tempfile.mkdtemp(prefix="harden-tests-"))
 Path("setup.cfg").write_text("[mutmut]\nsource_paths = src\n")
 
-from mutmut_runner import mutmut_exit_code, targets_for_test_files
+from mutmut_runner import greenlet_unnamed, mutmut_exit_code, targets_for_test_files
 
 os.chdir(HERE)
 
@@ -190,6 +190,15 @@ def test_a_changed_file_the_map_does_not_know_names_nothing() -> None:
         [],
         [],
     )
+
+
+def test_a_project_with_greenlet_has_to_name_it_in_its_coverage_config() -> None:
+    """coverage's default is `thread`; naming greenlet replaces the default, and not naming it drops
+    every line after an `await` into SQLAlchemy's engine without a warning."""
+    assert greenlet_unnamed(None)
+    assert greenlet_unnamed(["thread"])
+    assert not greenlet_unnamed(["thread", "greenlet"])
+    assert not greenlet_unnamed(["greenlet"])
 
 
 def test_a_kill_needs_a_failing_test() -> None:

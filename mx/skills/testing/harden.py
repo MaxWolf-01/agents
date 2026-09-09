@@ -23,8 +23,10 @@ What it measures, and how:
 - Case-flip survivors (a mutant whose only change is the letter case inside a string literal) are
   listed apart and never counted as findings.
 - Lines: only lines the suite covers are mutated, and a changed line nothing runs is reported on
-  its own, as file:line. Coverage is collected with `COVERAGE_CORE=sysmon`, the one tracer that
-  records lines after an `await` across a greenlet bridge.
+  its own, as file:line. Coverage follows the project's own coverage config; a project with
+  greenlet installed (SQLAlchemy's async engine) has to name it under `[tool.coverage.run]
+  concurrency`, and harden stops and says so when it does not, since coverage would otherwise
+  drop every line after an `await` into the engine without a warning.
 - Unmeasured: mutmut mutates nothing at module level and skips decorated functions, so a changed
   line inside one is reported as unmeasured, whether the range added it or removed it, as are
   targets that generated no mutants and changed Python files outside the project's source paths
