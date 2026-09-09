@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 ---
 
 # Implement the testing-workflow spec
