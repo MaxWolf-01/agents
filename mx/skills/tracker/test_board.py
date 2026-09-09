@@ -56,6 +56,7 @@ def tracker(tmp_path: Path) -> Path:
     ticket(feature / "05-after-first.md", "open", blocked_by=["01"])
     ticket(root / "loose-idea.md", "proposed", blocked_by=["feat/02"])
     ticket(root / "small-chore.md", "open")
+    (root / "quoted.md").write_text('---\nstatus: open\n---\n\n# Say "no limit" plainly\n')
     return root
 
 
@@ -73,7 +74,7 @@ def by_num(feature):
 def test_a_proposed_ticket_is_off_the_frontier_whatever_blocks_it(tracker: Path) -> None:
     (feature,), standalone = load(tracker)
     assert by_num(feature)["03"].status == "proposed"
-    assert {k.slug: k.status for k in standalone} == {"loose-idea": "proposed", "small-chore": "open"}
+    assert {k.slug: k.status for k in standalone} == {"loose-idea": "proposed", "quoted": "open", "small-chore": "open"}
     frontier = sorted(t.num for t in feature.tickets if t.status == "open")
     assert frontier == ["02", "05"]
 
@@ -113,7 +114,9 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     assert 'feat <span class="dim">1/4</span>' in page  # the feature chip agrees
     assert '<span class="badges"><span class="badge proposed">' in page
     assert 'click T_f0_feat_03 "#t-feat-03" "03 faster suite"' in feature_dag(feature, False)
-    assert "1 standalone open" in page
+    # a double quote would end mermaid's tooltip string and break the whole flowchart
+    assert 'click K_b0_quoted "#standalone-quoted" "Say \'no limit\' plainly"' in board_dag([feature], standalone, False)
+    assert "2 standalone open" in page
     assert "2 proposed" in page
     assert "1 blocked · 1 proposed" in page  # the feature's own counts
     assert 'class="ticket row-proposed" id="t-feat-03"' in page

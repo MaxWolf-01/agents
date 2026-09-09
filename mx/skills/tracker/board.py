@@ -1112,7 +1112,7 @@ ${standalone}
   document.addEventListener("click", (e) => {
     const a = e.target.closest("a");
     const href = a && (a.getAttribute("href") || a.getAttribute("xlink:href"));
-    if (href && href.startsWith("#")) setTimeout(() => openTarget(href));
+    if (href && href.startsWith("#") && href === location.hash) setTimeout(() => openTarget(href));
   });
 
   function saveState() {
