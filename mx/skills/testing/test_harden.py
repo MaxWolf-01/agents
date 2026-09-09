@@ -196,9 +196,7 @@ def test_a_changed_file_the_map_does_not_know_names_nothing() -> None:
 
 
 def test_every_test_process_runs_coverage_on_the_sysmon_core() -> None:
-    """The default tracer records nothing after an `await` into SQLAlchemy's async engine and warns
-    about nothing; the yapit replay (agent/research/07) saw whole handlers get no mutants that way.
-    `sysmon` is coverage's own name for the core that sees those frames."""
+    """`test_env`'s docstring says why; this holds the setting in place."""
     env = coverage_pass_env("/tmp/cov")
     assert env["COVERAGE_CORE"] == "sysmon"
     assert env["COVERAGE_FILE"] == "/tmp/cov"
