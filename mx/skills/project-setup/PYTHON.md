@@ -18,6 +18,8 @@
   settings.register_profile("fuzz", max_examples=5000, deadline=None)
   ```
 
+- A property ahead of its seam (`/mx:testing`) is marked `@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 03-<slug>")`, with `raises=AssertionError` where the seam exists and lacks the behaviour; a file whose properties share one lifter sets the mark once as `pytestmark`. A seam's stub is its signature over `raise NotImplementedError`.
+
 - mutmut's config, in `pyproject.toml`, is what scopes `make harden`:
 
   ```toml

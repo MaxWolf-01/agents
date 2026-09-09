@@ -33,6 +33,8 @@ Generate structure rather than raw randomness: draw whole valid values of the do
 
 Property tests live in the project's properties directory and run in the ordinary suite.
 
+A property written before the behaviour it tests exists carries a **mark**: a strict expected failure that tolerates only the exception the seam's absence raises (not-implemented at a stub, the assertion's own failure at a seam that exists without the behaviour) and names the ticket that lifts it. Strict, so the run goes red the moment the property passes with the mark still on; one exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A property that holds carries no mark. The ticket that makes the property hold deletes the mark, and touches nothing else in the file. The stack file of `/mx:project-setup` has the framework's spelling.
+
 ## The suite already there
 
 Extend it: its fixtures, its helpers, its naming, its seams. A second parallel suite beside the first splits the signal, and the next agent has to read both to know what is covered.
