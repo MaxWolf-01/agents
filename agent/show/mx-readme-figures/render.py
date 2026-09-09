@@ -22,7 +22,7 @@ SCHEMES = {"light": "-light.png", "dark": ".png"}
 def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROMIUM)
-        page = browser.new_page(viewport={"width": 1312, "height": 800}, device_scale_factor=2)
+        page = browser.new_page(viewport={"width": 1312, "height": 400}, device_scale_factor=2)
         for html in sorted(HERE.glob("*.html")):
             for scheme, suffix in SCHEMES.items():
                 page.emulate_media(color_scheme=scheme)

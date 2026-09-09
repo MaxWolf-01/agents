@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx: ticket state and the board</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light dark;
+  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
+  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
+  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
+  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
+  --wash:light-dark(rgba(45,49,66,.03),rgba(245,245,245,.03));
+  --wash-strong:light-dark(rgba(45,49,66,.10),rgba(245,245,245,.10));
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:720px; line-height:1.5; margin:0 0 24px;}
+svg{display:block; width:100%; height:auto;}
+.mask{fill:var(--paper);}
+.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.chip{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.chip-accent{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
+.chip-ghost{fill:var(--wash); stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
+.zone{fill:var(--wash); stroke:var(--rule); stroke-width:1;}
+.dagnode{fill:var(--node); stroke:var(--muted); stroke-width:1;}
+.dagnode-frontier{fill:var(--wash-strong); stroke:var(--ink); stroke-width:1.2;}
+.dagnode-proposed{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; stroke-dasharray:4 3;}
+.dagedge{fill:none; stroke:var(--muted); stroke-width:1; opacity:.7;}
+.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2;}
+.spoke{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:5 4;}
+.m-muted{fill:var(--muted);} .m-accent{fill:var(--accent);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.state{font:600 12px 'Geist Mono',monospace;}
+.cmd{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.dagtag{font:400 8px 'Geist Mono',monospace; fill:var(--muted);}
+.eb{font:500 8px 'Geist Mono',monospace; letter-spacing:.18em; fill:var(--muted);}
+.al{font:500 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
+.al-accent{font:500 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--accent);}
+.aside{font:400 11px 'Geist',sans-serif; fill:var(--soft);}
+.rule{stroke:var(--rule); stroke-width:1;}
+.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <p class="eyebrow">mx tracker &middot; ticket state</p>
+  <button class="scheme"></button>
+</header>
+<h1>Every ticket holds one state, and each transition has exactly one writer.</h1>
+<p class="dek">Tickets are markdown files under <code>agent/tickets/</code>; the board is the whole tracker rendered as
+one page. An agent that spots work nobody asked for files it as <code>proposed</code>: off the frontier, in its own
+colour in every view, until you rule on it. Everything the page shows &mdash; the dependency graph, the frontier, the
+wave lanes, the review pages, the queue &mdash; is derived from those files, so the page is never a second place to
+keep state.</p>
+
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
+    </marker>
+    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-accent"/>
+    </marker>
+  </defs>
+
+  <!-- the board, as a zone -->
+  <rect class="zone" x="392" y="64" width="768" height="664" rx="8"/>
+
+  <!-- connectors -->
+  <path class="flow" d="M 344,136 H 426" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 344,296 H 426" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 344,492 H 386" marker-end="url(#arrow)"/>
+  <path class="flow-accent" d="M 124,424 V 350" marker-end="url(#arrow-accent)"/>
+
+  <path class="flow-accent" d="M 568,174 V 258" marker-end="url(#arrow-accent)"/>
+  <path class="flow" d="M 568,334 V 378" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 568,454 V 498" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 568,574 V 618" marker-end="url(#arrow)"/>
+
+  <!-- state chips -->
+  <rect class="chip-accent" x="432" y="104" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="264" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="384" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="504" width="272" height="64" rx="6"/>
+  <rect class="chip-ghost" x="432" y="624" width="272" height="64" rx="6"/>
+
+  <!-- source cards -->
+  <rect class="card" x="64" y="88" width="280" height="96" rx="6"/>
+  <rect class="card" x="64" y="248" width="280" height="96" rx="6"/>
+  <rect class="card" x="64" y="424" width="280" height="136" rx="6"/>
+
+  <!-- board panels -->
+  <rect class="card" x="760" y="104" width="384" height="280" rx="6"/>
+  <rect class="card" x="760" y="440" width="384" height="200" rx="6"/>
+
+  <!-- mini DAG inside the graph panel -->
+  <path class="dagedge" d="M 870,224 H 902" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 870,268 H 902" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 950,224 H 982" marker-end="url(#arrow)"/>
+  <path class="dagedge" d="M 950,268 Q 966,268 966,252 V 240 Q 966,224 978,224" marker-end="url(#arrow)"/>
+  <rect class="dagnode-frontier" x="830" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode-frontier" x="830" y="256" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="910" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="910" y="256" width="40" height="24" rx="4"/>
+  <rect class="dagnode" x="990" y="212" width="40" height="24" rx="4"/>
+  <rect class="dagnode-proposed" x="990" y="256" width="40" height="24" rx="4"/>
+
+  <!-- labels: sources -->
+  <text class="name" x="76" y="112">Any agent, on its own reading</text>
+  <text class="note" x="76" y="132">a worker: the friction it hit, a punt it left</text>
+  <text class="note" x="76" y="148">the orchestrator: a harden line no test pins,</text>
+  <text class="note" x="76" y="162">a skill or a script that misled it</text>
+  <text class="note" x="76" y="176">a review: a finding too large to fix there</text>
+
+  <text class="name" x="76" y="272">You</text>
+  <text class="note" x="76" y="292">asked for in chat, a to-tickets cut, a</text>
+  <text class="note" x="76" y="306">grilling's decision tickets: rulings already</text>
+  <text class="note" x="76" y="322">silence is not a ruling</text>
+
+  <text class="name" x="76" y="448">The needs-human queue</text>
+  <text class="cmd" x="76" y="464">needs-human.md, per feature</text>
+  <text class="note" x="76" y="482">one entry per thing only you can answer:</text>
+  <text class="note" x="76" y="496">the feature's debrief, a decision, the</text>
+  <text class="note" x="76" y="510">kickoff prompt of a session you must run</text>
+  <text class="note" x="76" y="528">answered? the entry is deleted; the answer</text>
+  <text class="note" x="76" y="542">lands in code or in tickets, never here</text>
+
+  <!-- labels: states -->
+  <text class="state" x="448" y="128">proposed</text>
+  <text class="note" x="448" y="146">an agent's reading, not yet yours; off the</text>
+  <text class="note" x="448" y="160">frontier, and dispatch's claim refuses it</text>
+
+  <text class="state" x="448" y="288">open</text>
+  <text class="note" x="448" y="306">on the tracker, nobody holds it; open +</text>
+  <text class="note" x="448" y="320">unblocked + unclaimed is the frontier</text>
+
+  <text class="state" x="448" y="408">claimed</text>
+  <text class="note" x="448" y="426">one worker is on it, in its own worktree,</text>
+  <text class="note" x="448" y="440">set before any work starts</text>
+
+  <text class="state" x="448" y="528">done</text>
+  <text class="note" x="448" y="546">the worker's flip, on its ticket branch;</text>
+  <text class="note" x="448" y="560">the flip on its own proves nothing</text>
+
+  <text class="state" x="448" y="648">retired</text>
+  <text class="note" x="448" y="666">not a status: the files are gone. git rm</text>
+  <text class="note" x="448" y="680">once the feature ships; history keeps it</text>
+
+  <!-- labels: transitions -->
+  <text class="al-accent" x="584" y="202">YOUR RULING</text>
+  <text class="note" x="584" y="218">the only door: open, delete, or</text>
+  <text class="note" x="584" y="232">send it to grilling first</text>
+
+  <text class="al" x="584" y="352">DISPATCH CLAIM</text>
+  <text class="note" x="584" y="368">the orchestrator, sole claim-writer</text>
+
+  <text class="al" x="584" y="472">THE WORKER'S LAST ACT</text>
+  <text class="note" x="584" y="488">committed and verified first</text>
+
+  <text class="al" x="584" y="592">LANDED</text>
+  <text class="note" x="584" y="606">it reads the branch against the</text>
+  <text class="note" x="584" y="620">ticket and the spec, then merges</text>
+
+  <!-- labels: board panels -->
+  <text class="name" x="772" y="128">The dependency graph</text>
+  <text class="cmd" x="772" y="144">one per feature, plus the cross-feature edges</text>
+  <text class="dagtag" x="826" y="300">the frontier</text>
+  <text class="dagtag" x="986" y="300">proposed</text>
+  <text class="note" x="772" y="330">the frontier is what can start right now, first by number</text>
+  <text class="note" x="772" y="344">wins. A proposed node keeps its colour in every view, so</text>
+  <text class="note" x="772" y="358">you triage from the picture rather than from a list.</text>
+
+  <text class="name" x="772" y="464">Also on the page</text>
+  <text class="cmd" x="772" y="480">board</text>
+  <text class="note" x="772" y="498">spec status per feature: draft or confirmed</text>
+  <text class="note" x="772" y="512">wave lanes: which tickets ran together</text>
+  <text class="note" x="772" y="526">a row per ticket, linking its review page</text>
+  <text class="note" x="772" y="540">the needs-human queue, merged across features</text>
+  <text class="note" x="772" y="554">one switcher cycles every graph: frontier / full / lanes</text>
+  <text class="note" x="772" y="576">runs from anywhere in the repo, watches the tracker with</text>
+  <text class="note" x="772" y="590">every worktree's copy, and the open tab re-renders itself</text>
+  <text class="note" x="772" y="604">on each change. Gitignored: it is a view, not a record.</text>
+
+  <!-- board zone label + arrow labels + aside -->
+  <rect class="mask" x="408" y="56" width="152" height="16" rx="4"/>
+  <text class="eb" x="416" y="68">AGENT/BOARD.HTML</text>
+
+  <text class="al-accent" x="232" y="384">YOU ANSWER</text>
+
+  <text class="al" x="352" y="476">MERGED IN</text>
+
+  <text class="aside" x="432" y="712">A decision ticket takes the same states and is never handed to a worker: the orchestrator claims it, then routes it by type.</text>
+
+  <!-- legend -->
+  <line class="rule" x1="64" y1="748" x2="1160" y2="748"/>
+  <rect class="chip-accent" x="64" y="766" width="24" height="12" rx="3"/>
+  <line class="flow-accent" x1="100" y1="772" x2="130" y2="772" marker-end="url(#arrow-accent)"/>
+  <text class="legend-text" x="142" y="775">waiting on you</text>
+  <rect class="dagnode-frontier" x="290" y="766" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="322" y="775">the frontier: startable now</text>
+  <line class="flow" x1="500" y1="771" x2="536" y2="771" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="544" y="775">the state chain</text>
+  <line class="spoke" x1="660" y1="771" x2="696" y2="771"/>
+  <text class="legend-text" x="704" y="775">a file the page merges in</text>
+</svg>
+<script>
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
+</script>
+</body>
+</html>

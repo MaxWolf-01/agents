@@ -4,7 +4,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
-  <img alt="The full mx cycle: sharpen the idea, spec, tickets, build the frontier, drive each landed slice, review session, with feedback rails returning new tickets, reopened decisions, and new ideas, over the durable docs" src="assets/full-cycle-light.png">
+  <img alt="The full mx cycle: sharpen the idea, spec, tickets, dispatch the tickets one worker each, harden the feature and debrief, drive each landed slice, review session; the board carries every ticket, and feedback rails return new and proposed tickets, reopened decisions and new ideas, over the durable docs" src="assets/full-cycle-light.png">
 </picture>
 
 ## Artefacts
@@ -20,6 +20,11 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 | Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
 | Prototype         | `agent/prototypes/<slug>/`           | committed, kept                                                       | code that answered a design question + `ANSWER.md`                                                                                                                  |
 | Show              | `agent/show/<slug>/`                 | committed once approved                                               | an explanation carried by an artefact                                                                                                                               |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
+  <img alt="Ticket state: proposed, open, claimed, done, retired, with the one writer of each transition; your ruling is the only door out of proposed, and the board renders every state, the dependency graph with its frontier, and the needs-human queue" src="assets/ticket-state-light.png">
+</picture>
 
 `/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming, the board); the tracker lives in the repo, or in a workspace repo when features span repos.
 
@@ -40,7 +45,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/main-flow.png">
-  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round and implementation per ticket with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
+  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round, and one worker per ticket under a single orchestrator, with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
 </picture>
 
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.

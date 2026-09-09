@@ -92,7 +92,7 @@ runs unattended on it, and taste comes back in when a slice lands.</p>
   <path class="flow" d="M 184,216 V 356 Q 184,364 192,364 H 308" marker-end="url(#arrow)"/>
   <path class="flow" d="M 344,316 V 200 Q 344,192 336,192 H 276" marker-end="url(#arrow)"/>
   <path class="flow" d="M 400,316 V 176 Q 400,168 408,168 H 524" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 616,216 V 356 Q 616,364 624,364 H 756" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 616,216 V 348 Q 616,356 624,356 H 756" marker-end="url(#arrow)"/>
   <path class="flow" d="M 848,300 V 176 Q 848,168 856,168 H 984" marker-end="url(#arrow)"/>
   <path class="flow-accent" d="M 1076,120 V 96 Q 1076,88 1068,88 H 624 Q 616,88 616,96 V 116" marker-end="url(#arrow-accent)"/>
 
@@ -100,10 +100,13 @@ runs unattended on it, and taste comes back in when a slice lands.</p>
   <rect class="card-focal" x="96" y="120" width="176" height="96" rx="6"/>
   <rect class="card" x="312" y="316" width="176" height="96" rx="6"/>
   <rect class="card" x="528" y="120" width="176" height="96" rx="6"/>
-  <rect class="card-ghost" x="776" y="300" width="176" height="96" rx="6"/>
-  <rect class="card-ghost" x="768" y="308" width="176" height="96" rx="6"/>
-  <rect class="card" x="760" y="316" width="176" height="96" rx="6"/>
+  <rect class="card-ghost" x="776" y="300" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="768" y="308" width="176" height="80" rx="6"/>
+  <rect class="card" x="760" y="316" width="176" height="80" rx="6"/>
   <rect class="card" x="988" y="120" width="176" height="96" rx="6"/>
+
+  <!-- orchestrator: the cross-cutting bar under the workers -->
+  <rect class="bar" x="724" y="416" width="240" height="36" rx="4"/>
 
   <!-- context-window bar -->
   <rect class="bar" x="96" y="480" width="608" height="32" rx="4"/>
@@ -133,17 +136,22 @@ runs unattended on it, and taste comes back in when a slice lands.</p>
   <text class="cmd" x="540" y="162">/mx:to-tickets</text>
   <text class="note" x="540" y="180">vertical slices, review the cut</text>
   <text class="note" x="540" y="194">fits one session? no tickets</text>
-  <!-- card: implement -->
-  <text class="name" x="772" y="340">Implement</text>
-  <text class="cmd" x="772" y="358">/mx:implement &middot; per ticket</text>
-  <text class="note" x="772" y="376">testing inside, review at the end</text>
+  <!-- card: workers -->
+  <text class="name" x="772" y="340">A worker per ticket</text>
+  <text class="cmd" x="772" y="358">/mx:implement</text>
+  <text class="note" x="772" y="376">its own worktree, fresh window</text>
   <!-- card: qa -->
   <text class="name" x="1000" y="144">Drive the demo</text>
   <text class="cmd" x="1000" y="162">(no skill)</text>
   <text class="note" x="1000" y="180">taste is manual on purpose</text>
   <text class="note" x="1000" y="194">agent evidence until drivable</text>
-  <text class="note" x="1076" y="352" text-anchor="middle">meanwhile, the remaining</text>
-  <text class="note" x="1076" y="366" text-anchor="middle">frontier keeps running</text>
+  <text class="note" x="1064" y="340" text-anchor="middle">every ticketed feature is</text>
+  <text class="note" x="1064" y="354" text-anchor="middle">dispatched, at any size;</text>
+  <text class="note" x="1064" y="368" text-anchor="middle">meanwhile the remaining</text>
+  <text class="note" x="1064" y="382" text-anchor="middle">frontier keeps running</text>
+
+  <text class="al" x="844" y="433" text-anchor="middle">ONE ORCHESTRATOR &middot; /mx:dispatch</text>
+  <text class="note" x="844" y="446" text-anchor="middle">claims, spawns, then merges and lands</text>
 
   <!-- chips -->
   <rect class="mask" x="104" y="208" width="56" height="16" rx="4"/>
@@ -162,13 +170,13 @@ runs unattended on it, and taste comes back in when a slice lands.</p>
   <rect class="chip-mustard" x="628" y="208" width="68" height="16" rx="4"/>
   <text class="chiptext" x="662" y="219" text-anchor="middle">TICKETS ×N</text>
 
-  <rect class="mask" x="768" y="404" width="48" height="16" rx="4"/>
-  <rect class="chip-mustard" x="768" y="404" width="48" height="16" rx="4"/>
-  <text class="chiptext" x="792" y="415" text-anchor="middle">TICKET</text>
+  <rect class="mask" x="768" y="388" width="48" height="16" rx="4"/>
+  <rect class="chip-mustard" x="768" y="388" width="48" height="16" rx="4"/>
+  <text class="chiptext" x="792" y="399" text-anchor="middle">TICKET</text>
 
-  <rect class="mask" x="860" y="404" width="68" height="16" rx="4"/>
-  <rect class="chip-rust" x="860" y="404" width="68" height="16" rx="4"/>
-  <text class="chiptext" x="894" y="415" text-anchor="middle">CODE+TESTS</text>
+  <rect class="mask" x="860" y="388" width="68" height="16" rx="4"/>
+  <rect class="chip-rust" x="860" y="388" width="68" height="16" rx="4"/>
+  <text class="chiptext" x="894" y="399" text-anchor="middle">CODE+TESTS</text>
 
   <rect class="mask" x="996" y="208" width="84" height="16" rx="4"/>
   <rect class="chip-rust" x="996" y="208" width="84" height="16" rx="4"/>
@@ -186,7 +194,7 @@ runs unattended on it, and taste comes back in when a slice lands.</p>
   <text class="al" x="400" y="500" text-anchor="middle">ONE UNBROKEN CONTEXT WINDOW</text>
   <text class="note" x="400" y="532" text-anchor="middle">grill &rarr; spec &rarr; tickets, same thinking end to end</text>
   <text class="al" x="846" y="532" text-anchor="middle">FRESH WINDOW PER TICKET</text>
-  <text class="note" x="846" y="548" text-anchor="middle">parallel when independent: /mx:dispatch</text>
+  <text class="note" x="846" y="548" text-anchor="middle">handed out one at a time, or in waves</text>
 
   <!-- legend -->
   <line class="rule" x1="64" y1="584" x2="1164" y2="584"/>
