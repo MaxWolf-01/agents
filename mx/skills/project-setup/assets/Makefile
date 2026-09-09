@@ -3,16 +3,15 @@
 test:
 	uv run pytest
 
-# What the tests fail to hold, for everything this branch changed. The highest installed version of
-# the plugin wins; `HARDEN=path make harden` points at another checkout, and `make harden ARGS=--help`
-# explains the range, the report and the exit codes.
-HARDEN ?= $(shell ls -d $(HOME)/.claude/plugins/cache/*/mx/*/skills/testing/harden.py 2>/dev/null | sort -V | tail -1)
+# What the tests fail to hold, for everything this branch changed. `harden` comes with the mx
+# plugin, on PATH in every session that has it; `HARDEN=path make harden` points at another
+# checkout, and `make harden ARGS=--help` explains the range, the report and the exit codes.
+HARDEN ?= harden
 ARGS ?=
 
 harden:
-	@test -n "$(HARDEN)" || { echo "no harden.py found; install the mx plugin or set HARDEN=<path>"; exit 1; }
-	@echo "harden: $(HARDEN)"
-	uv run $(HARDEN) $(ARGS)
+	@command -v $(HARDEN) >/dev/null || { echo "$(HARDEN) not found: run from a session with the mx plugin, put its bin/ on PATH, or set HARDEN=<path>"; exit 1; }
+	$(HARDEN) $(ARGS)
 
 # The property tests again, coverage-guided by HypoFuzz, until you stop it. A project without
 # HypoFuzz (its licence is the user's call) loops them at the fuzz profile's budget instead.
