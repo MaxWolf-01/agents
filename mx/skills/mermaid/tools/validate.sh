@@ -1,13 +1,20 @@
 #!/bin/bash
-# Validate a Mermaid diagram by parsing + rendering to a temp SVG.
+# Validate a Mermaid diagram by parsing and rendering it with the official CLI.
 # Usage: validate.sh diagram.mmd [output.svg]
+#   Exit 0 with an ASCII preview when the diagram parses and renders; nonzero
+#   with the parser's error otherwise. The SVG lands at output.svg when given,
+#   else in a temp file that is removed again. The preview (beautiful-mermaid)
+#   is best effort: an unsupported diagram type prints a warning, not a failure.
+#   Needs Node and npx; the first run downloads a headless Chromium through
+#   Puppeteer (PUPPETEER_EXECUTABLE_PATH points it at an installed one).
 
 set -euo pipefail
 
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 diagram.mmd [output.svg]"
-    exit 1
-fi
+usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
+case ${1:-} in
+    -h|--help) usage; exit 0 ;;
+    "") usage >&2; exit 1 ;;
+esac
 
 INPUT="$1"
 OUTPUT="${2:-}"

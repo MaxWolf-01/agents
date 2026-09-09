@@ -4,18 +4,26 @@
 # ///
 """Scan Claude Code sessions for Bash commands the permission allowlist does not cover.
 
-Claude Code permission-checks a command *per segment*: it splits on ``|``, ``;``, ``&&``
-and ``||``, unwraps ``timeout N ...``, and separately auto-approves a built-in set of
-read-only programs without consulting settings.json at all. Matching a whole command
-string against the allowlist therefore produces mostly noise -- ``cd /tmp && tre`` looks
-unapproved even though neither half ever prompts. This script mirrors the real behaviour,
-so what it reports is what actually interrupts you.
+Claude Code permission-checks a command per segment: it splits on |, ;, && and ||,
+matches each piece on its own, unwraps `timeout N ...` and `time ...`, and auto-approves a
+built-in set of read-only programs (cat, head, cd, read-only sed, git read subcommands and
+their kin) without consulting settings.json at all. So chaining never prompts by itself,
+one uncovered segment prompts for the whole call, and an allowlist entry for a built-in
+program is dead weight. This script mirrors that behaviour, reading the allowlist from the
+settings files given, so what it reports is what actually interrupts you. Not modelled:
+commands inside `$(...)`.
 
-Reads the allowlist from settings.json file(s), so results stay in sync with
-configuration. Output: JSON array of {signature, count, example} objects sorted by
-frequency, one entry per distinct *segment* shape that would prompt.
+The built-in set is version-dependent and this script's copy of it is confirmed by probing
+a live session; after a Claude Code upgrade, --show-auto-approved is where a stale entry
+shows up (something listed there that does prompt).
 
-Examples::
+JSON schema (stdout), sorted by count, one entry per distinct segment shape:
+
+    [{"signature": "git -C * status ...", "count": 12, "example": "git -C /x status -s"}]
+
+Totals go to stderr.
+
+Examples:
 
     uv run scan_unapproved.py ~/.claude/projects/ ~/.claude/settings.json
     uv run scan_unapproved.py ~/.claude/projects/-home-max-myproject/ global.json project.json --days 60
