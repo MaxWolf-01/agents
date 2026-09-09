@@ -100,22 +100,6 @@ _Avoid_: merged, finished, complete
 What a test compares the code's behaviour against, chosen so that it is not the code itself: a property from the spec, a worked example, a reference implementation, a round trip, a model. Decided per seam in the spec's Testing Decisions.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
-**Properties ticket**:
-The build ticket that turns a feature's executable spec Properties into property-based tests at the agreed seams, scheduled before the slices it blocks.
-_Avoid_: harness ticket, test ticket, invariants ticket
-
-**Harden**:
-The project's mutation check on one change: whether the tests notice when the changed code is altered. A verdict of pass, fail, or unmeasured.
-_Avoid_: gate (a spec's confirmation), mutation run, coverage check
-
-**Known survivors**:
-The committed list of mutants the suite already fails to catch, which harden compares against so only new ones fail a change.
-_Avoid_: baseline (mutmut's word for the unmutated test run), allowlist, debt file
-
-**Unmeasured**:
-Harden's verdict when a change produced no mutants to run, read as not passed.
-_Avoid_: vacuous pass, skipped, n/a
-
 ### Sessions
 
 **Brief**:
