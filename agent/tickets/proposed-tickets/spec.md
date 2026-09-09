@@ -16,13 +16,13 @@ Raised from review comment C12 on the testing-workflow implementation (mx v0.1.4
 
 A ticket an agent files without a ruling from the user carries `status: proposed`. It is a ticket in every other respect (a build ticket or a decision ticket, numbered, with blocking edges), but it is off the frontier by construction and a worker can never be spawned on it. The user rules on each: open it, delete it, or send it to grilling. Nothing but a ruling writes `open`.
 
-The friction pipeline then has one shape from worker to ruling. A worker names what fought it in its closing comment, as today. At the tick the orchestrator sorts every such line, and every harden line, the same way: fixable now → fixed on the feature branch in a commit naming it; action-shaped but not now → a proposed ticket carrying its origin and the reason; a question only the user can answer → a needs-human entry, as today; nothing statable → left, and said so. When the frontier empties the orchestrator's synthesis (fixed, proposed, left) is one needs-human entry whose summary is the PR-ready line, so the board carries it and no chat message has to. The user reads the diff, which already contains the proposed ticket files because they are committed on the feature branch, and rules; the merge commit body records the rulings.
+The friction pipeline then has one shape from worker to ruling. A worker names what fought it in its closing comment, as today. At the tick the orchestrator sorts every such line, and every harden line, the same way: fixable now → fixed on the feature branch in a commit naming it; action-shaped but not now → a proposed ticket carrying its origin and the reason; a question only the user can answer → a needs-human entry, as today; nothing statable → left, and said so. When the frontier empties the orchestrator's debrief (fixed, proposed, left) is one needs-human entry, so the board carries it and no chat message has to. The user reads the diff, which already contains the proposed ticket files because they are committed on the feature branch, and rules; the merge commit body records the rulings.
 
 The same rule holds outside dispatch: a review session, a code-review follow-up too large to fix, a session that built a feature without an orchestrator all file `proposed`; a ticket the user asks for in conversation is a ruling and is `open`.
 
 ## User Stories
 
-1. As max, I want to read one synthesis per feature besides the diff, so that I rule on what the orchestrator found without reading closing comments or harden reports myself.
+1. As max, I want to read one debrief per feature besides the diff, so that I rule on what the orchestrator found without reading closing comments or harden reports myself.
 2. As max, I want a ticket an agent proposed to look different from one I decided, so that I never work or dispatch something I did not ask for.
 3. As max, I want to rule on a proposed ticket with one word per ticket (open, delete, grill), so that the ruling costs less than the reading.
 4. As max, I want the proposed tickets in the feature diff I already read, so that the proposal and the diff are one page.
@@ -45,7 +45,7 @@ The same rule holds outside dispatch: a review session, a code-review follow-up 
 - A ticket reaches `open` only through a ruling by the user.
 - Every proposed ticket names its origin and the reason it is worth doing.
 - Every line of friction a worker names is fixed, proposed, queued or listed as left; none stays only in the closing comment.
-- The user reads one synthesis per feature.
+- The user reads one debrief per feature.
 - A rejected proposal leaves no live artefact.
 - A feature is retired only once every proposed ticket in it is ruled.
 - The tracker's state machine has one home; no other skill restates it.
@@ -57,8 +57,8 @@ The same rule holds outside dispatch: a review session, a code-review follow-up 
 - Workers never file tickets: a worker's closing comment names friction and assumptions; the orchestrator files. A worker owns one ticket file and one worktree, and two parallel workers scanning a directory for the next number collide.
 - A ruling has three outcomes: **open** (flip the status; the origin line stays), **delete** (the commit message carries the reason; a reason the next feature must know goes where rules live: an ADR, the project CLAUDE.md, the tool's config), **grill** (set `type: grilling`, open it; a feature-sized one becomes a standalone grilling ticket that a later session grills into a spec).
 - A proposed ticket's body opens with one line of provenance: which closing comment, harden line or review finding it was cut from, and why it is worth a ticket. The tracker's existing framing-provenance rule still governs the options it sketches.
-- The orchestrator's sort at the tick, for a worker's friction line, an assumption with a taste call, and every harden line alike: fixable now → fixed here, commit names it; action-shaped, not now → proposed ticket, blocking edges where a ticket waits on it; a question only the user can answer → needs-human entry; nothing statable → left, named in the synthesis. This replaces dispatch's "file it as a new ticket with blocking edges" and implement's "once the user has ruled", which contradict each other today.
-- The synthesis is a needs-human entry: summary `PR-ready`, detail the fixed commits, the proposed tickets by number, and what was left with its reason. The board renders it under Needs human like every entry; it is deleted when the rulings land, and the merge commit body records them. No new file, and the chat report becomes a pointer to it.
+- The orchestrator's sort at the tick, for a worker's friction line, an assumption with a taste call, and every harden line alike: fixable now → fixed here, commit names it; action-shaped, not now → proposed ticket, blocking edges where a ticket waits on it; a question only the user can answer → needs-human entry; nothing statable → left, named in the debrief. This replaces dispatch's "file it as a new ticket with blocking edges" and implement's "once the user has ruled", which contradict each other today.
+- The debrief is a needs-human entry: summary `debrief`, detail the fixed commits, the proposed tickets by number, and what was left with its reason. The board renders it under Needs human like every entry; it is deleted when the rulings land, and the merge commit body records them. No new file, and the chat report becomes a pointer to it.
 - Reading surface: the board, where a proposed ticket is an ordinary node and row in every view, in its own colour, so it is triaged from the graph with its edges; a count in the top bar; and the feature diff, where the ticket files already are. Ruling channel: a diffview comment or a line in chat; the session flips the files. The board stays a render.
 - Friction with the workflow itself (a skill that misled, a dispatch script that broke) is a proposed ticket in the project's tracker like any other, its body saying the fix lives in the plugin; the ruling "open" means the user moves it to the plugin's tracker.
 - Retiring a feature requires every proposed ticket in it ruled; an opened one that outlives the feature moves to a standalone ticket, as the tracker's retire rule already implies for shipped work.
@@ -75,7 +75,7 @@ Two seams in the board script, both driven against a fixture tracker in a temp d
 ## Out of Scope
 
 - Mining friction across sessions (the session index, workers over transcripts): the user ruled it out for the workflow in C12; the standalone ticket `retro-semi-automated` holds the idea.
-- Deriving the needs-human queue from ticket state instead of its file: a separate feature; the file stays, and the synthesis entry uses it as it is.
+- Deriving the needs-human queue from ticket state instead of its file: a separate feature; the file stays, and the debrief entry uses it as it is.
 - A write-back from the board: rulings go through a session, the board stays a render.
 - Filing into another repository's tracker: an unattended orchestrator writes only where it holds the checkout.
 - Changing what grilling and to-tickets file: their output is already the user's.

@@ -123,7 +123,7 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     queue = tmp_path / "needs-human.md"
     queue.write_text(
         "---\nworker-host: agent@pc\n---\n\n"
-        "- PR-ready :: **fixed** a1b2c3 pins the averaging rule.\n"
+        "- debrief :: **fixed** a1b2c3 pins the averaging rule.\n"
         "  **proposed** 03, 04.\n\n"
         "  **left** two case-flip survivors, the value is case-insensitive.\n"
         "- Which colour :: the prototype at agent/prototypes/colour\n"
@@ -131,7 +131,7 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     entries, host = load_needs_human(queue)
     assert host == "agent@pc"
     assert entries == [
-        "PR-ready :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
+        "debrief :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
         "Which colour :: the prototype at agent/prototypes/colour",
     ]
 

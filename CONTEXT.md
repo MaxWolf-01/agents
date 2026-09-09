@@ -102,9 +102,9 @@ _Avoid_: batch, round
 A ticket's work is on the feature branch and verified there.
 _Avoid_: merged, finished, complete
 
-**Synthesis**:
-The orchestrator's one reading of a finished feature for the user, beside its diff.
-_Avoid_: report, summary, PR description
+**Debrief**:
+What the orchestrator tells the user when a feature is finished: what the workers and the harden report found, and what it proposes to do about it.
+_Avoid_: synthesis, report, summary, PR description
 
 ### Testing
 
