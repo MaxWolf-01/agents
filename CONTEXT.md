@@ -23,11 +23,11 @@ One design decision as the spec states it, carrying a mark that says who settled
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
 **Mark**:
-The provenance tag on a call in a draft spec: settled by the user in a round or by a ticket, the agent's and vetoable, open, or fog.
+The provenance tag on a call in a draft spec: who settled it, or that nobody has yet.
 _Avoid_: marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now. In a grilling, the decisions whose prerequisites are settled; on the tracker, the open, unblocked, unclaimed tickets.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open tickets nothing gates and nobody holds.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
@@ -35,7 +35,7 @@ In-scope work whose question cannot yet be stated.
 _Avoid_: Further Notes, Not yet specified, unknowns, TBD
 
 **Gate**:
-The point where a spec is confirmed: frontier empty, unconfirmed calls walked with the user, marks stripped.
+The point where a spec is confirmed and reads cold from then on.
 _Avoid_: sign-off, approval, freeze
 
 ### Tracker

@@ -2,7 +2,7 @@
 
 The spec is the work order for one feature: what `/mx:to-tickets` slices and `/mx:implement` reads. Published per `/mx:tracker` (`agent/tickets/<feature>/spec.md`), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
 
-Frontmatter `status: draft | confirmed`. A draft carries the provenance marks the grilling skill defines; the gate strips them and sets `confirmed`, and from then on the document reads cold.
+Frontmatter `status: draft | confirmed`. A draft carries the provenance marks the grilling skill defines; a confirmed spec carries none and reads cold.
 
 One template for every domain: a section with nothing to say is left out.
 

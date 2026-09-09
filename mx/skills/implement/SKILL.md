@@ -15,7 +15,7 @@ If you find yourself making a design decision mid-ticket, or reaching for a hack
 
 Your blast radius is your worktree: everything you create, install, or modify lives inside it. A missing system dependency, an absent global tool, a service that isn't running: report it as a **blocker**, never solve it. Say what you hit, finish whatever doesn't depend on it, and stop there. This holds on every host, and a dispatched worker's blocker is what routes its ticket to the human queue.
 
-A decision you make alone is an **assumption**, not a decision. When one is genuinely too small to escalate, record it as such: an `Assumptions` block in the ticket's closing comment, attributed to you, never woven into spec, map, or ADR language. QA ratifies or reverses assumptions; presenting your judgment call as settled poisons every later agent's picture of what the user chose.
+A decision you make alone is an **assumption**, not a decision. When one is genuinely too small to escalate, record it as such: an `Assumptions` block in the ticket's closing comment, attributed to you, never woven into spec or ADR language. QA ratifies or reverses assumptions; presenting your judgment call as settled poisons every later agent's picture of what the user chose.
 
 Write each one anchored, so it can be shown where it applies:
 
