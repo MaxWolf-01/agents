@@ -146,8 +146,7 @@ NEVER use subagents to read source code files, documentation, or knowledge files
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
-Use opus subagents for most subagent-tasks, fable for large, complex subagent-tasks that require reasoning, planning, and/or multi-step problem solving.
-For trivial tasks (lookup, simple research, etc.) sonnet subagents are fine.
+Subagents default to opus, whatever the session model is. Pass `model` only to deviate: fable for large, complex tasks that need multi-step reasoning and planning, sonnet for trivial ones (lookup, simple research).
 </subagents>
 
 <taste>
