@@ -33,7 +33,7 @@ Generate structure rather than raw randomness: draw whole valid values of the do
 
 Property tests live in the project's properties directory and run in the ordinary suite.
 
-A property written before the behaviour it tests exists is an **expected failure**: strict, so the run goes red the moment the property passes with the annotation still on, and naming the ticket that lifts it. At a stub it tolerates only the not-implemented exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A seam that exists without the behaviour, or a wire seam with no route yet, fails in more ways than one, so its expected failure tolerates any; the orchestrator's check that none names a landed ticket is the guard there. A property that holds carries none. The stack file of `/mx:project-setup` has the framework's spelling.
+A property written before the behaviour it tests exists is an **expected failure**: strict, so the run goes red the moment the property passes with the annotation still on, and naming the ticket that lifts it. At a stub it tolerates only the not-implemented exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A seam that exists without the behaviour, or a wire seam with no route yet, fails in more ways than one, so its expected failure tolerates any; the orchestrator's check that none names a landed ticket is the guard there. A property that holds carries none.
 
 ## The suite already there
 
