@@ -1,13 +1,14 @@
 ---
 name: code-review
-description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along three axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), and Spec (does it match what the originating ticket/issue asked for?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
+description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along four axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), Spec (does it match what the originating ticket/issue asked for?), and Tests (what do the tests it touches actually catch?). Runs the axes as parallel reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
 ---
 
-Three-axis review of the diff between `HEAD` and a fixed point:
+Review of the diff between `HEAD` and a fixed point, along four axes:
 
 - **Correctness**: does the change work, without breaking callers, contracts, or edge cases?
 - **Standards**: does it conform to the repo's documented standards and the smell baseline?
 - **Spec**: does it faithfully implement the originating ticket / issue / spec?
+- **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? Spawned only when the diff touches test files.
 
 The axes run as parallel reviewers so they don't pollute each other's context; this skill aggregates their findings.
 
@@ -19,7 +20,7 @@ Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside three parallel reviewers.
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside the parallel reviewers.
 
 ### 2. Identify the spec source
 
@@ -34,9 +35,10 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Three files join these as standards sources, each passed by absolute path:
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Four files join these as standards sources, each passed by absolute path:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
+- [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source in light mode whenever the diff touches tests.
 - `/mx:writing-for-humans` (its `SKILL.md`), for **every** diff: its rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
 
@@ -65,7 +67,13 @@ For the **Spec brief**, include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), including **Speculative Generality**: abstraction, parameters, hooks, or configurability added for needs the spec doesn't have; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), including **Speculative Generality**: abstraction, parameters, hooks, or configurability added for needs the spec doesn't have; (c) requirements that look implemented but where the implementation looks wrong; (d) each Property the spec's Testing Decisions disposes as *reviewed*, checked against the diff by name. Quote the spec line for each finding. Under 400 words."
+
+For the **Tests brief**, spawned only when the diff touches test files, include:
+
+- The diff command and commit list.
+- `TEST-SMELLS.md` by absolute path, and the spec's **Testing Decisions** section (its path, or quoted in full when the spec is fetched from an issue).
+- The brief: "Judge what these tests catch, not whether they pass. Read the tests in full and the code under test. Report: (a) every test-smell from TEST-SMELLS.md: name it and quote the hunk; (b) tests entering at a seam the Testing Decisions does not name, and seams it names that the diff leaves untested; (c) executable spec Properties with no check in the properties directory, and reviewed ones the diff contradicts; (d) behaviour the diff adds that no test could tell from its absence. Each finding: the test, the mutation or input it would not catch, the fix. Under 400 words."
 
 ### 5. Aggregate
 
@@ -75,7 +83,7 @@ Read the axes' report files, then delete them: their content lives in this messa
 
 That last message is the only one that reliably gets read: the reader skims to the end of the turn, copies the review to another agent to act on, or, when this skill runs as a sub-agent, receives only the final message. So it has to stand alone. Every finding, its reasoning, and the fixed point it was reviewed against belong in it; don't reference an earlier message as if it were read.
 
-Present the reports under `## Correctness`, `## Standards`, and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings; the axes are deliberately separate (see _Why separate axes_).
+Present the reports under `## Correctness`, `## Standards`, `## Spec` and `## Tests` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings; the axes are deliberately separate (see _Why separate axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes; that's the reranking the separation exists to prevent.
 
@@ -85,7 +93,7 @@ Accepted findings land as a **follow-up commit**, never an amend: the commit's d
 
 ## Light mode
 
-For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline`), the standards-source files by absolute path, and the Correctness and Standards briefs joined: same filters, same citation rules, one report under 600 words. The commit messages are orientation over the diff: the author's account of what each commit does, never an anchor to judge it against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
+For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline`), the standards-source files by absolute path, and the Correctness and Standards briefs joined: same filters, same citation rules, one report under 600 words. A diff touching tests adds `TEST-SMELLS.md` to that reviewer's standards sources and no Tests brief: light mode has no Testing Decisions to check the tests against. The commit messages are orientation over the diff: the author's account of what each commit does, never an anchor to judge it against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
 
 The fold trades axis separation for cost, which is the right trade exactly when there is no spec whose masking you'd care about.
 
@@ -96,5 +104,6 @@ A change can pass any axis and fail another:
 - Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
 - Code that does exactly what the issue asked but breaks a caller → **Spec pass, Correctness fail.**
 - Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
+- Code that is correct, conventional and asked for, under tests that would pass without it → **every other axis passes, Tests fail.**
 
 Reporting them separately stops one axis from masking another.

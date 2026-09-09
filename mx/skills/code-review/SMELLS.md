@@ -1,6 +1,6 @@
 # The smell baseline
 
-A fixed set of code smells (Fowler, _Refactoring_, ch.3, extended) that the Standards axis applies to every diff, even when the repo documents no standards of its own. Two rules bind it:
+Code smells (Fowler, _Refactoring_, ch.3, extended) the Standards axis knows by name, so it can call one out in any diff, even where the repo documents no standards of its own. Naming is all the list does: something wrong that no entry covers is a finding too, reported in your own words. Two things shape how each one lands:
 
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
 - **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation, and, like any standard here, skip anything tooling already enforces.

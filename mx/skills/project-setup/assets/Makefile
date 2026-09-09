@@ -1,7 +1,28 @@
-.PHONY: test check format lint typecheck install dev clean build publish release-patch release-minor release-major
+.PHONY: test harden fuzz check format lint typecheck install dev clean build publish release-patch release-minor release-major
 
 test:
 	uv run pytest
+
+# What the tests fail to hold, for everything this branch changed. The highest installed version of
+# the plugin wins; `HARDEN=path make harden` points at another checkout, and `make harden ARGS=--help`
+# explains the range, the report and the exit codes.
+HARDEN ?= $(shell ls -d $(HOME)/.claude/plugins/cache/*/mx/*/skills/testing/harden.py 2>/dev/null | sort -V | tail -1)
+ARGS ?=
+
+harden:
+	@test -n "$(HARDEN)" || { echo "no harden.py found; install the mx plugin or set HARDEN=<path>"; exit 1; }
+	@echo "harden: $(HARDEN)"
+	uv run $(HARDEN) $(ARGS)
+
+# The property tests again, coverage-guided by HypoFuzz, until you stop it. A project without
+# HypoFuzz (its licence is the user's call) loops them at the fuzz profile's budget instead.
+fuzz:
+	@if uv run python -c "import hypofuzz" >/dev/null 2>&1; then \
+	  uv run hypothesis fuzz -- tests/properties; \
+	else \
+	  echo "no hypofuzz: looping the fuzz profile instead, ctrl-c to stop"; \
+	  while HYPOTHESIS_PROFILE=fuzz uv run pytest tests/properties -q; do :; done; \
+	fi
 
 check: lint typecheck
 	@echo "All checks passed!"
