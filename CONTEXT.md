@@ -72,6 +72,28 @@ _Avoid_: archive, clean up
 The one-line header that marks a file as historical and names its successor.
 _Avoid_: deprecation notice, banner
 
+### Dispatch
+
+**Orchestrator**:
+The one agent that works a feature's tickets through workers: the sole claim-writer and the only judge of done.
+_Avoid_: dispatcher, coordinator, parent
+
+**Worker**:
+The agent that works one ticket in its own worktree, unattended.
+_Avoid_: subagent, implementer
+
+**Tick**:
+One pass of the orchestrator's loop.
+_Avoid_: iteration, cycle
+
+**Wave**:
+The tickets one tick hands to workers together.
+_Avoid_: batch, round
+
+**Land**:
+A ticket's work is on the feature branch and verified there.
+_Avoid_: merged, finished, complete
+
 ### Sessions
 
 **Brief**:
