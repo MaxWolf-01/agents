@@ -52,11 +52,15 @@ List any **floors**, prototypes (or aspects of one) the user promoted to minimum
 
 ## Testing Decisions
 
-The **seams** at which the feature is tested: a design call put to the user in a round like any other. Existing seams over new ones, the highest seam possible; new seams proposed at the highest point they can sit. The fewer seams across the codebase, the better; the ideal number is one. Also:
+The **seams** at which the feature is tested: a design call put to the user in a round like any other. Existing seams over new ones, the highest seam possible; new seams proposed at the highest point they can sit. The fewer seams across the codebase, the better; the ideal number is one. Per seam:
 
-- A description of what makes a good test (only test external behavior, not implementation details)
-- Which modules will be tested
-- Prior art for the tests (i.e. similar types of tests in the codebase)
+- The **oracle**: the independent truth its tests compare against, in one phrase (a sentence of this spec, a worked example, a reference implementation, an invariant of the domain, a captured production payload). A seam whose only available answer is what the code returns today says so, and the reviewer reads its tests knowing it.
+- Prior art: the existing tests at that seam, named, as the pattern the new ones follow.
+
+Then **dispose of every Property**, one line each:
+
+- **executable**: a check over generated inputs at a named seam, built by one early ticket ahead of the slices.
+- **reviewed**: prose the Spec reviewer checks each diff against.
 
 ## Out of Scope
 

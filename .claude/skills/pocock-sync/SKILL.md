@@ -18,13 +18,14 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, tdd, to-tickets, implement, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
+Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, to-tickets, implement, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
 
 Dissolved:
 - to-spec → grilling writes the spec round by round; upstream changes to to-spec's template map onto grilling's `SPEC-FORMAT.md`, changes to its process onto grilling's gate.
 - wayfinder → grilling spans sessions through decision tickets on the tracker; upstream changes to wayfinder's map body map onto grilling's `SPEC-FORMAT.md`, to its ticket types onto the tracker skill, to its charting or work-through process onto grilling's Across sessions.
 
 Renamed:
+- testing ← tdd (red-green is no longer the frame: upstream changes to tdd's loop map onto diagnosing-bugs' regression test, its test-quality material onto `code-review/TEST-SMELLS.md`)
 - orient ← ask-matt
 - domain-modelling ← domain-modeling
 - tracker ← the one-file-per-ticket local tracker conventions (upstream folded these into setup-matt-pocock-skills)
