@@ -471,10 +471,16 @@
       "Bash(nix flake check *)",
       "Bash(sleep *)"
     ],
+    "deny": [
+      "AskUserQuestion",
+      "ReportFindings",
+      "SendFeedback"
+    ],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "opus",
   "skillOverrides": {
+    "security-review": "user-invocable-only",
     "code-review": "off",
     "review": "off",
     "simplify": "off",
@@ -545,6 +551,9 @@
   "modelSettings": {
     "claude-fable-5-1": {
       "effortLevel": "high"
+    },
+    "claude-opus-5": {
+      "effortLevel": "xhigh"
     }
   },
   "promptSuggestionEnabled": false,
