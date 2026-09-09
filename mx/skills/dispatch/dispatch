@@ -26,7 +26,8 @@
 #   push     the feature branch to the host, so the next spawn cuts from its tip.
 #   prompt   writes stdin as the worker prompt for <NN-slug> on the host.
 #   ctl      runs `dispatch-ctl <args>` on the host, from the feature's scratch
-#            dir there, with DISPATCH_PERMISSION_MODE passed along when set.
+#            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
+#            `dispatch ctl --help` is that script's reference.
 #   wait     blocks until the current run of <NN-slug> ends and prints its
 #            probe line (`dispatch-ctl wait`), riding out a dropped connection
 #            to the host on the way. Exit 0 on `exited`; nonzero when the run

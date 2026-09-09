@@ -6,7 +6,8 @@ MARKETPLACE := .claude-plugin/marketplace.json
 check:
 	@jq -e . $(PLUGIN) >/dev/null
 	@jq -e . $(MARKETPLACE) >/dev/null
-	@echo "manifests parse"
+	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
+	@echo "manifests parse, bin/ answers --help"
 
 test:
 	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with tyro --with mutmut~=3.7 --with coverage --with greenlet pytest mx/ -p no:cacheprovider
