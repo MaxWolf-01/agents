@@ -1,5 +1,5 @@
 ---
-status: draft
+status: confirmed
 ---
 
 # Testing in the workflow
@@ -16,17 +16,17 @@ Sources: the Pocock interview with Martin (youtu.be/zcLPGC-tvgk, 33:41–35:23),
 
 ## Solution
 
-Three independent axes per test: where it enters the system (the seam: a function, a module's public API, an endpoint, the browser; what unit, integration and end-to-end name), how its inputs are chosen (hand-picked examples, generated properties, coverage-guided fuzz), and whether the tests themselves are checked (mutation). The spec decides the first two; a tool measures the third; a reviewer reads what neither can catch. `(you, r6)`
+Three independent axes per test: where it enters the system (the seam: a function, a module's public API, an endpoint, the browser; what unit, integration and end-to-end name), how its inputs are chosen (hand-picked examples, generated properties, coverage-guided fuzz), and whether the tests themselves are checked (mutation). The spec decides the first two; a tool measures the third; a reviewer reads what neither can catch.
 
-1. **Oracle, decided in the spec.** Testing Decisions names, per seam, what independent truth the tests compare against, and disposes each Property as *executable* (a property-based check at that seam) or *reviewed* (prose the Spec reviewer checks). Executable Properties are built by one early cross-cutting ticket, blocking every slice at its seams, whose worker has the spec and the seams' interface stubs and not the implementation, because the implementation does not exist yet when its worktree is cut. `(you, r3)`
-2. **Harden, per feature.** A script the plugin ships measures what a feature's tests fail to hold: the mutants in the feature's changes that no test notices (compared against the point the feature branched from, so only what the feature added counts), the changed lines nothing runs, and the changes it could not measure at all. It runs once per feature, at the review session or when the frontier empties, and its output is a report the human reads there; findings become tickets or ship knowingly, like every other review-session finding. Nothing new runs per ticket. `(you, r11)`
-3. **Review.** A fourth code-review axis, **Tests**, spawned when the diff touches test files: its brief carries the test-smell file and the spec's Testing Decisions, so it checks tests against the agreed seams and oracle the way the Spec axis checks code against the spec. `(you, r4)`
+1. **Oracle, decided in the spec.** Testing Decisions names, per seam, what independent truth the tests compare against, and disposes each Property as *executable* (a property-based check at that seam) or *reviewed* (prose the Spec reviewer checks). Executable Properties are built by one early cross-cutting ticket, blocking every slice at its seams, whose worker has the spec and the seams' interface stubs and not the implementation, because the implementation does not exist yet when its worktree is cut.
+2. **Harden, per feature.** A script the plugin ships measures what a feature's tests fail to hold: the mutants in the feature's changes that no test notices (compared against the point the feature branched from, so only what the feature added counts), the changed lines nothing runs, and the changes it could not measure at all. It runs once per feature, at the review session or when the frontier empties, and its output is a report the human reads there; findings become tickets or ship knowingly, like every other review-session finding. Nothing new runs per ticket.
+3. **Review.** A fourth code-review axis, **Tests**, spawned when the diff touches test files: its brief carries the test-smell file and the spec's Testing Decisions, so it checks tests against the agreed seams and oracle the way the Spec axis checks code against the spec.
 
-The discipline goes: `/mx:tdd` becomes `/mx:testing`, short and nudge-shaped (statements that move the agent off its default failure modes, no tutorial), with no prescribed order of test and code; `tests.md` and `mocking.md` are deleted and their content becomes smells. `(you, r2)` Red-first stays named in diagnosing-bugs, where the red proves the repro. `(you, r2)`
+The discipline goes: `/mx:tdd` becomes `/mx:testing`, short and nudge-shaped (statements that move the agent off its default failure modes, no tutorial), with no prescribed order of test and code; `tests.md` and `mocking.md` are deleted and their content becomes smells. Red-first stays named in diagnosing-bugs, where the red proves the repro.
 
-The periodic, whole-repo view of the same three questions belongs to `/mx:improve-codebase-architecture`, which already holds that structure decides testability: logic inside decorated entry points that no mutation tool can reach, a module whose tests need a database to say anything, a seam with no property. Those are deepening opportunities, and the skill gains a testing lens and a reason to be run. `(you, r11)`
+The periodic, whole-repo view of the same three questions belongs to `/mx:improve-codebase-architecture`, which already holds that structure decides testability: logic inside decorated entry points that no mutation tool can reach, a module whose tests need a database to say anything, a seam with no property. Those are deepening opportunities, and the skill gains a testing lens and a reason to be run.
 
-CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`) found a forced CRAP threshold doubled function counts and never raised a design score. Complexity is capped where it already is: the linter's complexity rule (ruff `C901`), its limit in the project config. `(you, r3)`
+CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`) found a forced CRAP threshold doubled function counts and never raised a design score. Complexity is capped where it already is: the linter's complexity rule (ruff `C901`), its limit in the project config.
 
 ## User Stories
 
@@ -59,27 +59,27 @@ CRAP is not a gate: Martin's own experiment (`unclebob/negative-test-experiment`
 
 ## Decisions
 
-- Testing Decisions in the spec gains the **oracle**: the independent truth per seam, and each Property's disposition, executable or reviewed. `(you, r3)`
-- to-tickets disposes executable Properties into one early ticket, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. It is an ordinary build ticket in the cross-cutting position to-tickets already knows; no ticket type, no name. `(you, r3)`; de-named `(you, r9)`
-- For a feature changing existing code, the worker sees the old code; a property encoding current behaviour is a regression net, and the properties for new behaviour come from the spec. The brief's scope and the Tests reviewer are the guards there. `(you, r5)`
-- The pre-merge read in dispatch: a change under the properties directory in an implementation ticket goes back to the worker, never merges. Stated as a rule in the skill's merge step; the orchestrator already reads the whole diff. `(you, r4)`
-- Harden is a project command (`make harden`, beside `check` and `test`) that calls a script the plugin ships; the script's mechanics (which lines it mutates, how it keys survivors, how it treats decorated functions, flaky fixtures and property tests, which coverage tracer it needs) are the script's own, decided by the two prototypes and stated in its `--help`, never in a skill. `(my call)`
-- Harden runs per feature, against the fork point, at the review session or when dispatch's frontier empties; its report is read by the human there. Not per ticket `(you, r11)`; not at the feature's merge either, since the review session already sits before it `(my call)`.
-- improve-codebase-architecture gains a testing lens: harden's whole-repo report and the testability smells feed its deepening opportunities. `(you, r11)`
-- Prior art for what the property-tests ticket produces: `05-mutmut-memex-prototype.md` finding 6 (one 70-line property file killed two mutants that 151 example tests missed, both the seam's stated contract) and `07-ratchet-gate-yapit.md` finding 4 (three properties on a cache's eviction contract found a live bug on the first run and killed three mutants that 474 example tests missed). `(you, r7, r10)`
-- Code-review gains the Tests axis, spawned when the diff touches tests, Opus by default. `(you, r4)`
-- Test smells are a file beside SMELLS.md, a standards source for the Tests axis. `(you, r2)`
-- `/mx:tdd` → `/mx:testing`: seams, the oracle rule, discriminating inputs, structured generation over raw randomness, logic in plain functions the decorated entry point calls, extend the existing suite; example files deleted. `(you, r2)`
-- Red-first named in diagnosing-bugs only. `(you, r2)`
-- Complexity via the linter's rule; CRAP nowhere. `(you, r3)`
-- The tools per language are interchangeable parts behind `make harden` and the properties directory, chosen by project-setup: Hypothesis / mutmut for Python; fast-check / Stryker for JS and TS; FsCheck / Stryker.NET for C#; proptest / cargo-mutants for Rust. `(you, r8)`
-- Long fuzz runs reuse the property tests: HypoFuzz on repos where its non-commercial licence allows; Atheris through Hypothesis' `fuzz_one_input` where it does not. Wired by project-setup as an optional `make fuzz`. `(you, r8)`
+- Testing Decisions in the spec gains the **oracle**: the independent truth per seam, and each Property's disposition, executable or reviewed.
+- to-tickets disposes executable Properties into one early ticket, blocked by nothing, blocking every slice at its seams; its tests live in the project's properties directory. It is an ordinary build ticket in the cross-cutting position to-tickets already knows; no ticket type, no name.
+- For a feature changing existing code, the worker sees the old code; a property encoding current behaviour is a regression net, and the properties for new behaviour come from the spec. The brief's scope and the Tests reviewer are the guards there.
+- The pre-merge read in dispatch: a change under the properties directory in an implementation ticket goes back to the worker, never merges. Stated as a rule in the skill's merge step; the orchestrator already reads the whole diff.
+- Harden is a project command (`make harden`, beside `check` and `test`) that calls a script the plugin ships; the script's mechanics (which lines it mutates, how it keys survivors, how it treats decorated functions, flaky fixtures and property tests, which coverage tracer it needs) are the script's own, decided by the two prototypes and stated in its `--help`, never in a skill.
+- Harden runs per feature, against the fork point, at the review session or when dispatch's frontier empties; its report is read by the human there. Not per ticket, and not repeated at the feature's merge, since the review session already sits before it.
+- improve-codebase-architecture gains a testing lens: harden's whole-repo report and the testability smells feed its deepening opportunities.
+- Prior art for what the property-tests ticket produces: `05-mutmut-memex-prototype.md` finding 6 (one 70-line property file killed two mutants that 151 example tests missed, both the seam's stated contract) and `07-ratchet-gate-yapit.md` finding 4 (three properties on a cache's eviction contract found a live bug on the first run and killed three mutants that 474 example tests missed).
+- Code-review gains the Tests axis, spawned when the diff touches tests, Opus by default.
+- Test smells are a file beside SMELLS.md, a standards source for the Tests axis.
+- `/mx:tdd` → `/mx:testing`: seams, the oracle rule, discriminating inputs, structured generation over raw randomness, logic in plain functions the decorated entry point calls, extend the existing suite; example files deleted.
+- Red-first named in diagnosing-bugs only.
+- Complexity via the linter's rule; CRAP nowhere.
+- The tools per language are interchangeable parts behind `make harden` and the properties directory, chosen by project-setup: Hypothesis / mutmut for Python; fast-check / Stryker for JS and TS; FsCheck / Stryker.NET for C#; proptest / cargo-mutants for Rust.
+- Long fuzz runs reuse the property tests: HypoFuzz on repos where its non-commercial licence allows; Atheris through Hypothesis' `fuzz_one_input` where it does not. Wired by project-setup as an optional `make fuzz`.
 
 Deferrals: none that drop a capability; the fuzz target is optional and the suite runs the same property tests without it.
 
 ## Cost
 
-Harden on a deployed FastAPI app with a 22-second unit suite: minutes for a feature's worth of plain logic, hours for the whole repo; on a small CLI, seconds. Which is why it is a per-feature report and a periodic pass, not a step in a ticket. `(you, r10)`
+Harden on a deployed FastAPI app with a 22-second unit suite: minutes for a feature's worth of plain logic, hours for the whole repo; on a small CLI, seconds. Which is why it is a per-feature report and a periodic pass, not a step in a ticket.
 
 ## Testing Decisions
 
@@ -87,8 +87,8 @@ The skills' own testable surface is the harden script and the project-setup temp
 
 ## Out of Scope
 
-- Harden as a per-ticket gate: the yapit replay costs it at minutes per logic ticket and showed most API tickets unmeasurable by the tool; a gate that is usually blind or usually slow is neither. `(you, r11)`
-- A committed list of known-missed mutants: comparing against the fork point needs no curated file. `(my call)`
+- Harden as a per-ticket gate: the yapit replay costs it at minutes per logic ticket and showed most API tickets unmeasurable by the tool; a gate that is usually blind or usually slow is neither.
+- A committed list of known-missed mutants: comparing against the fork point needs no curated file.
 - Executable acceptance tests from ticket criteria (Martin's Gherkin layer and QA agent): a separate layer; human QA per landed slice stays as orient has it.
 - CRAP as a gate: see Solution.
 - Formal methods: Luu's agents used none of eight tools effectively.
