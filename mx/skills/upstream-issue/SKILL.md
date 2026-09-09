@@ -53,6 +53,12 @@ reproduces.
 
 ## Shape
 
+**The first screen carries the finding.** Whatever the shape, the evidence a
+reader checks only if they doubt you, the repro's files, commands and output, a
+stack, a probe of the cause, goes inside `<details>` blocks whose summaries say
+what each holds. It is there to survive the maintainer's decision, not to make
+it.
+
 Where a template exists, fill **its** fields. The maintainers wrote it to get what
 they need, and a foreign structure laid over it reads as not having looked.
 
@@ -65,13 +71,6 @@ Where none exists, use this order, the same information a good template asks for
   against results carries a boundary better than prose does.
 - **Cause**, only with evidence in hand: a log line, a traced code path. Anything
   short of that stays out.
-
-**The first screen carries the finding.** Mechanism, expected against actual, and
-what it cost, in that order, before any code block. The evidence a reader checks
-only if they doubt you, the repro's files, commands and output, a stack, a probe
-of the cause, goes inside `<details>` blocks whose summaries say what each holds.
-The maintainer decides from the first screen whether this is worth their
-afternoon; the evidence is there to survive that decision, not to make it.
 
 One report per problem. Several one-line corrections to the same document are one
 report; a crash and a documentation gap are two.
@@ -129,10 +128,17 @@ The main session then owns three gates, in order:
 
 1. **Sanity check** the body against what the session actually knows; the
    subagent worked from a brief and can have drifted.
-2. **Show max** what would be published, rendered the way its destination renders
-   it: `gh api -X POST /markdown -f text="$(cat <file>)" > <file>.html`, opened
-   with `claude-browser` where it exists, else `xdg-open`. A `<details>` block
-   then shows up collapsed, the way a maintainer meets it.
+2. **Show max** what would be published, rendered the way its destination
+   renders it, opened with `claude-browser` where it exists, else `xdg-open`:
+
+   ```console
+   gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> \
+       -f text="$(cat <file>)" > <file>.html
+   ```
+
+   `mode=gfm` with the repo as `context` is what resolves `#123` and `@name`;
+   the default mode leaves them as text. A `<details>` block shows up collapsed,
+   the way a maintainer meets it.
 3. **His explicit yes.** Then `gh issue create -R <repo>` with the label the
    template assigns, and report the URL back.
 

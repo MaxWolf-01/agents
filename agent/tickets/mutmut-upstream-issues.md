@@ -9,9 +9,9 @@ Filed from the testing-workflow grilling; the harden script works around each of
 
 mutmut 3.7.0 (`boxed/mutmut`):
 
-- The three string-literal mutations (wrap in `XX`, lowercase, uppercase) cannot be switched off, and the case flips are equivalent mutants by construction wherever they survive (SQL keywords, encoding names, header names): 25% of survivors on memex, 11% on yapit. Filed as boxed/mutmut#577.
-- `mutate_only_covered_lines` runs the suite in-process and evicts every imported module afterwards, which crashes on projects whose tests import C-extension or registry-holding modules (numpy, PyYAML, SQLAlchemy, asyncpg): segfault in asyncpg, double registration in SQLAlchemy's inspection registry. Filed as a comment on boxed/mutmut#528.
-- The fork-per-mutant runner inherits a dead asyncio loop, so every mutant of an async suite times out; a fresh interpreter per mutant gives real verdicts (15 of 15 `create_reservation` mutants: 158 s of timeouts versus 17 s of verdicts). Filed as boxed/mutmut#578.
+- The three string-literal mutations (wrap in `XX`, lowercase, uppercase) cannot be switched off, and the case flips are equivalent mutants by construction wherever they survive (SQL keywords, encoding names, header names): 25% of survivors on memex, 11% on yapit. Filed as [mutmut#577](https://github.com/boxed/mutmut/issues/577).
+- `mutate_only_covered_lines` runs the suite in-process and evicts every imported module afterwards, which crashes on projects whose tests import C-extension or registry-holding modules (numpy, PyYAML, SQLAlchemy, asyncpg): segfault in asyncpg, double registration in SQLAlchemy's inspection registry. Filed as a [comment on mutmut#528](https://github.com/boxed/mutmut/issues/528#issuecomment-5607227417).
+- The fork-per-mutant runner inherits a dead asyncio loop, so every mutant of an async suite times out; a fresh interpreter per mutant gives real verdicts (15 of 15 `create_reservation` mutants: 158 s of timeouts versus 17 s of verdicts). Filed as [mutmut#578](https://github.com/boxed/mutmut/issues/578).
 - Decorated functions are skipped with no opt-in: every FastAPI handler and pydantic validator (17% of yapit's functions) is invisible.
 - The per-mutant time budget counts only the `call` phase of the covering tests, so interpreter start-up and fixture setup (testcontainers) are unbudgeted.
 
@@ -19,10 +19,4 @@ coverage.py: nothing to file. The lines lost after an `await` into SQLAlchemy ar
 
 ## Comments
 
-**2026-09-09** Three of the five filed on mutmut 3.7.0, each carrying a minimal repro built and run in a clean directory and inlined in the issue:
-
-- https://github.com/boxed/mutmut/issues/577 (string case flips)
-- https://github.com/boxed/mutmut/issues/578 (fork-per-mutant, async timeouts)
-- https://github.com/boxed/mutmut/issues/528#issuecomment-5607227417 (the #528 comment)
-
-Still to file: the skipped decorated functions, and the time budget that counts only the `call` phase.
+**2026-09-09** The three marked above are filed against mutmut 3.7.0, each carrying a minimal repro built and run in a clean directory and inlined in the issue.
