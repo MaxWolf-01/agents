@@ -36,6 +36,11 @@ what triggers it remains, and each removal that keeps the bug alive is one less
 thing the maintainer has to rule out. This mostly settles the privacy question on
 its own: a minimal case rarely contains anything of max's.
 
+The files in the report are the files you ran: build the repro in an empty
+directory, run it there, and paste that directory and its output. A repro
+assembled afterwards out of a larger project reports numbers its own code cannot
+produce.
+
 Some findings resist it: a race, something that needs the real data, a crash you
 saw once. Then the report is the observation plus its log or stack trace, said
 plainly as a single occurrence.
@@ -47,6 +52,12 @@ about max than he'd choose to publish. Redact to the minimum that still
 reproduces.
 
 ## Shape
+
+**The first screen carries the finding.** Whatever the shape, the evidence a
+reader checks only if they doubt you, the repro's files, commands and output, a
+stack, a probe of the cause, goes inside `<details>` blocks whose summaries say
+what each holds. It is there to survive the maintainer's decision, not to make
+it.
 
 Where a template exists, fill **its** fields. The maintainers wrote it to get what
 they need, and a foreign structure laid over it reads as not having looked.
@@ -117,8 +128,17 @@ The main session then owns three gates, in order:
 
 1. **Sanity check** the body against what the session actually knows; the
    subagent worked from a brief and can have drifted.
-2. **Show max**: `xdg-open` that file, or paste the body, so he reads what would
-   be published.
+2. **Show max** what would be published, rendered the way its destination
+   renders it, opened with `claude-browser` where it exists, else `xdg-open`:
+
+   ```console
+   gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> \
+       -f text="$(cat <file>)" > <file>.html
+   ```
+
+   `mode=gfm` with the repo as `context` is what resolves `#123` and `@name`;
+   the default mode leaves them as text. A `<details>` block shows up collapsed,
+   the way a maintainer meets it.
 3. **His explicit yes.** Then `gh issue create -R <repo>` with the label the
    template assigns, and report the URL back.
 
