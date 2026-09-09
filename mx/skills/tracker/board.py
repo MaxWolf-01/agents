@@ -76,7 +76,7 @@ STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘
 
 @dataclass
 class Args:
-    tickets_root: Annotated[Path | None, tyro.conf.Positional] = None
+    tickets_root: Annotated[Path | None, tyro.conf.Positional, tyro.conf.arg(metavar="[PATH]")] = None
     """Tracker root, e.g. agent/tickets, in any checkout of the repo; the board renders the main checkout's copy. Default: the nearest agent/tickets up from the current directory."""
     out: Path | None = None
     """Output HTML path. Default: board.html beside the tracker (agent/board.html)."""
