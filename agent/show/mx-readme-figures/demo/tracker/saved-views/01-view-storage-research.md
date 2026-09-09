@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 type: research
 ---
 
@@ -7,5 +7,7 @@ type: research
 
 ## Question
 
-Whether the filter set can be stored as one column the database can query
-into, or needs its own table, and what each costs when a view is shared.
+Whether the filter set can be stored as one column the database can query into,
+or needs its own table, and what each costs when a view is shared.
+
+Answering this rewrites the spec's Decisions and Testing Decisions.

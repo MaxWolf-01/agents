@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: done
 blocked-by: [02]
 ---
 
@@ -12,5 +12,5 @@ and keep the mapping for the next statement from the same bank.
 
 ## Acceptance criteria
 
-- [ ] the report re-reads the upload as the mapping changes, without re-uploading
-- [ ] a second statement from the same bank arrives already mapped
+- [x] the report re-reads the upload as the mapping changes, without re-uploading
+- [x] a second statement from the same bank arrives already mapped

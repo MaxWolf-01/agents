@@ -12,5 +12,5 @@ not, with its number and the reason. Nothing is stored yet.
 
 ## Acceptance criteria
 
-- [x] a line the mapping cannot read is reported, never dropped
-- [x] the two parse properties hold with their expected-failure marks removed
+- [x] a line the mapping cannot read is reported with its reason, never dropped
+- [x] properties 1 and 2 hold with their expected-failure marks removed
