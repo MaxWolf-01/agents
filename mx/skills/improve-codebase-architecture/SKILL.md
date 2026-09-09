@@ -30,6 +30,10 @@ Then spawn an `Explore` subagent to walk the codebase. Don't follow rigid heuris
 - Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
 - Where do tightly-coupled modules leak across their seams?
 - Which parts of the codebase are untested, or hard to test through their current interface?
+- Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), out of reach of a test and of a mutation tool alike?
+- Which seams have a stated contract and no property checking it?
+
+A feature's harden report is an input wherever one exists (`/mx:testing`): survivors clustered in one module, changed lines nothing runs, and changes the tool could not measure at all are testability smells that already name a location.
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 

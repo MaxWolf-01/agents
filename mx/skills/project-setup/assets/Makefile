@@ -1,7 +1,20 @@
-.PHONY: test check format lint typecheck install dev clean build publish release-patch release-minor release-major
+.PHONY: test harden fuzz check format lint typecheck install dev clean build publish release-patch release-minor release-major
 
 test:
 	uv run pytest
+
+# What the tests fail to hold, for everything this branch changed. `HARDEN=path make harden` to
+# point at a checkout; `make harden ARGS=--help` for the range, the report and the exit codes.
+HARDEN ?= $(shell ls -td $(HOME)/.claude/plugins/cache/*/mx/*/skills/testing/harden.py 2>/dev/null | head -1)
+ARGS ?=
+
+harden:
+	@test -n "$(HARDEN)" || { echo "no harden.py found; install the mx plugin or set HARDEN=<path>"; exit 1; }
+	uv run $(HARDEN) $(ARGS)
+
+# The property tests again, coverage-guided, for as long as you leave it running.
+fuzz:
+	uv run hypothesis fuzz -- tests/properties
 
 check: lint typecheck
 	@echo "All checks passed!"

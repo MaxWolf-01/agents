@@ -25,7 +25,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 ## The main flow: idea → ship
 
-`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:dispatch` works the tickets: a fresh `/mx:implement` per ticket (tdd inside, code-review at the end), serial or in waves, the board as the standing view. A feature without tickets is built by the session that grilled it, from the confirmed spec.
+`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:dispatch` works the tickets: a fresh `/mx:implement` per ticket (testing inside, code-review at the end), serial or in waves, the board as the standing view. A feature without tickets is built by the session that grilled it, from the confirmed spec.
 
 **`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
 
@@ -51,6 +51,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 - **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands; the agent announces what works and how to exercise it (the ticket's What-to-build + acceptance criteria), you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
 - **Reviews run in fresh context.** A reviewer sharing the implementer's window reviews in the dumb zone; implement closes with code-review in clean context for a reason.
 - **Feedback loops are the ceiling.** Agent output quality tracks the quality of the repo's tests and typechecks. Bad output → improve the loops, not the prompt (`/mx:improve-codebase-architecture`; deep modules: design the interface, delegate the implementation).
+- **The suite is measured once per feature, not per ticket.** `make test` says the tests pass; `make harden` says what they would fail to catch: the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. Dispatch runs it when the frontier empties and the report is yours to read at the review session; findings become tickets or ship knowingly, like every other finding there. The properties the spec pinned down are built once, ahead of the slices, from the spec rather than from the code.
 - **Done work gets deleted** (`git rm`). Closed tickets and specs left in the tree are doc rot steering future agents wrong; git history keeps them.
 
 ## Skills & commands
@@ -61,7 +62,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:grill-with-docs`, `/mx:grilling` | sharpen a plan by interview; the design lands in the spec as it settles |
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
 | `/mx:to-tickets` | spec → tracer-bullet tickets |
-| `/mx:implement`, `/mx:tdd`, `/mx:code-review` | work a ticket; test-first; three-axis review |
+| `/mx:implement`, `/mx:testing`, `/mx:code-review` | work a ticket; what makes a test worth keeping, and `make harden`; four-axis review |
 | `/mx:dispatch` | work a feature's tickets: one orchestrator, a fresh implement per ticket, serial or in waves |
 | `/mx:prototype` | throwaway code to answer a design question |
 | `/mx:to-questionnaire` | turn a decision someone else must answer into a questionnaire for them |

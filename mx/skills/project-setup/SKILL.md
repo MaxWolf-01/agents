@@ -33,3 +33,14 @@ Target preferences for a project's foundations. On a fresh project, build all of
 - Python → [PYTHON.md](PYTHON.md)
 - Node/TypeScript → [NODE.md](NODE.md)
 - Any other stack: apply the core; when a stack recurs across projects, its preferences become a sidecar file here.
+
+The testing tools are interchangeable parts behind two names every project keeps, `tests/properties/` and `make harden` (`/mx:testing`):
+
+| Stack | Properties over generated inputs | Mutation |
+| --- | --- | --- |
+| Python | Hypothesis | mutmut, driven by the script the testing skill ships |
+| JS / TS | fast-check | Stryker |
+| C# | FsCheck | Stryker.NET |
+| Rust | proptest | cargo-mutants |
+
+Only Python has the script; elsewhere `harden` is the stack's own mutation runner wired to the same target, scoped to the branch's changes.
