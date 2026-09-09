@@ -53,18 +53,19 @@ reproduces.
 
 ## Shape
 
-**The first screen carries the finding.** Whatever the shape, the evidence a
+**The first screen carries the finding.** Whatever the shape, it opens with
+expected against actual, or, for a request, with the ask itself. The evidence a
 reader checks only if they doubt you, the repro's files, commands and output, a
 stack, a probe of the cause, goes inside `<details>` blocks whose summaries say
-what each holds. It is there to survive the maintainer's decision, not to make
-it.
+what each holds. Done: a maintainer who skims that first screen and stops there
+has the finding.
 
 Where a template exists, fill **its** fields. The maintainers wrote it to get what
 they need, and a foreign structure laid over it reads as not having looked.
 
 Where none exists, use this order, the same information a good template asks for:
 
-- **What happens**: one plain sentence, then expected against actual.
+- **What happens**: one plain sentence.
 - **Why it matters**: what it costs someone. A bug: what breaks, and what a
   caller can do about it. A gap: what it made you believe that was untrue.
 - **How to reproduce**: exact steps on a stated version. A table of inputs
