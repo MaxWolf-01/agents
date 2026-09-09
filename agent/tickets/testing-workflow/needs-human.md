@@ -1,3 +1,0 @@
----
-worker-host: agent@pc
----
