@@ -11,7 +11,7 @@ Dispatch runs downstream of `/mx:to-tickets` and is the one way tickets are work
 
 With a wave size of one the same loop runs **serially**, the common case: the orchestrator role (frontier bookkeeping, the pre-merge read, integration, status, QA hand-offs) is what a two-ticket feature gets from dispatch, and serial is the right mode for surface-heavy waves (see the coherence test below).
 
-Two scripts beside this skill carry the mechanics, and each one's `--help` is its reference. `dispatch` (on `PATH` with the plugin) runs here, in the feature worktree, and is the one command you type for the worker host: `dispatch ctl <args>` runs `dispatch-ctl` there (this machine or one over ssh, as `setup` recorded), which owns the ticket worktrees, branches, sessions and run state on the host. History stays here: commits, merges, pushes and fetches are yours. `run-worker.sh` is the in-pane runner and the only file that names a harness; a different one (`codex exec`, a container) is a sibling runner passed via `DISPATCH_RUNNER`.
+Two scripts beside this skill carry the mechanics, and each one's `--help` is its reference. `dispatch` runs here, in the feature worktree, and is the one command you type for the worker host: `dispatch ctl <args>` runs `dispatch-ctl` there (this machine or one over ssh, as `setup` recorded), which owns the ticket worktrees, branches, sessions and run state on the host. History stays here: commits, merges, pushes and fetches are yours. `run-worker.sh` is the in-pane runner and the only file that names a harness; a different one (`codex exec`, a container) is a sibling runner passed via `DISPATCH_RUNNER`.
 
 ## Setup (once)
 

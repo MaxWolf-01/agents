@@ -39,6 +39,6 @@ Extend it: its fixtures, its helpers, its naming, its seams. A second parallel s
 
 ## What the suite fails to hold
 
-`make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden`, on `PATH` with the plugin, is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
+`make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden` is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
 
 `make fuzz` runs the same property tests coverage-guided under HypoFuzz until stopped, or, in a project without it, loops them at a large example budget; what either finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.
