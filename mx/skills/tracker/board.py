@@ -100,8 +100,7 @@ def render(root: Path, overrides: dict[str, Path], repo: Path, out: Path) -> Non
     diffviews = load_diffviews(root.parent / "diffviews")
     features = load_features(root, overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
-    standalone = [k for k in load_standalone(root, diffviews) if k.slug not in overrides]
-    assert features or standalone, f"nothing tracked in {root}"
+    standalone = [k for k in load_standalone(root, overrides, diffviews) if k.slug not in overrides]
     log = git_log(repo)
     stamp = content_stamp(project, features, standalone, log)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +118,7 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
             root, overrides = tracker_roots(tickets_root)
             dirs = [root, root.parent / "diffviews"]
             dirs += [d for o in overrides.values() for d in (o, o.parent.parent / "diffviews" / o.name)]
-            snapshot = tuple(
+            snapshot = (git(repo, "rev-parse", "HEAD"),) + tuple(
                 (str(f), st.st_mtime_ns, st.st_size)
                 for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
             )
@@ -179,7 +178,9 @@ def landed_tips(main: Path) -> set[str]:
 
 
 def git(cwd: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True).stdout.strip()
+    result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    assert result.returncode == 0, f"git {' '.join(args)} failed in {cwd}: {result.stderr.strip()}"
+    return result.stdout.strip()
 
 
 # ---- tracker state --------------------------------------------------------
@@ -246,7 +247,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) 
         d = overrides.get(name, root / name)
         # an in-flight feature's review pages are rendered and served from its own worktree
         dv = load_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
-        tickets = load_tickets(d, dv, dv.root / name)
+        tickets = load_tickets(d, dv, dv.root / name, root, overrides)
         spec_status = spec_state(d / "spec.md")
         # a directory with neither tickets nor a spec is not a feature (agent/tickets/done/, say)
         if not tickets and spec_status is None:
@@ -264,14 +265,14 @@ def assert_safe_name(name: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
-def load_standalone(root: Path, diffviews: Diffviews) -> list[Standalone]:
+def load_standalone(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Standalone]:
     standalone = []
     for path in sorted(root.glob("*.md")) if root.is_dir() else []:
         assert_safe_name(path.stem)
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
-        blocked_by = [(str(n), ref_status(root, str(n))) for n in meta.get("blocked-by") or []]
+        blocked_by = [(str(n), ref_status(root, overrides, str(n))) for n in meta.get("blocked-by") or []]
         status = str(meta.get("status", "open"))
         if status == "open" and any(s != "done" for _, s in blocked_by):
             status = "blocked"
@@ -317,7 +318,7 @@ def load_needs_human(path: Path) -> tuple[list[str], str | None]:
     return entries, str(host) if host else None
 
 
-def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[Ticket]:
+def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path]) -> list[Ticket]:
     tickets = []
     for path in sorted(feature_dir.glob("[0-9][0-9]-*.md")):
         meta, body = split_frontmatter(path.read_text())
@@ -331,7 +332,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path) -> list[
                 status=str(meta.get("status", "open")),
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
-                ext_by=[(str(n), ref_status(feature_dir.parent, str(n))) for n in blockers if not is_local_ref(n)],
+                ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
                 body_html=render_body(body, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
@@ -359,13 +360,14 @@ def is_local_ref(n: object) -> bool:
     return isinstance(n, int) or str(n).isdigit()
 
 
-def ref_status(root: Path, ref: str) -> str:
-    # External blocker: "<feature>/NN" or a standalone ticket's "<slug>". A missing file
-    # counts as done: done work is deleted, feature dirs retired only after shipping
-    # (tracker conventions).
+def ref_status(root: Path, overrides: dict[str, Path], ref: str) -> str:
+    # External blocker: "<feature>/NN" or a standalone ticket's "<slug>", resolved in the
+    # checkout that holds the feature (an in-flight feature lives in its worktree). A
+    # missing file counts as done: done work is deleted, feature dirs retired only after
+    # shipping (tracker conventions).
     if "/" in ref:
         feature, num = ref.rsplit("/", 1)
-        matches = sorted((root / feature).glob(f"{normalize_num(num)}-*.md"))
+        matches = sorted(overrides.get(feature, root / feature).glob(f"{normalize_num(num)}-*.md"))
     else:
         matches = [p for p in [root / f"{ref}.md"] if p.exists()]
     if not matches:
