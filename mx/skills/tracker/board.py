@@ -30,7 +30,7 @@ link appears only on the machine that rendered them.
 --watch keeps rendering: every few seconds it looks for a change under the
 tracker (any worktree's copy included) and re-renders on one; it runs until
 killed. Several watchers writing the same page is harmless since the render is
-deterministic from disk. Per-feature dispatcher state is read from
+deterministic from disk. Per-feature orchestrator state is read from
 agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
 then one `- summary :: markdown detail` bullet per pending entry.
 
@@ -151,7 +151,7 @@ def worktrees(path: Path) -> list[tuple[Path, str | None]]:
 def tracker_roots(tickets_root: Path) -> tuple[Path, dict[str, Path]]:
     """The main checkout's tracker, plus the feature directories a worktree on that feature's branch overrides.
 
-    Ticket state a dispatcher commits on its feature branch is invisible to the main
+    Ticket state an orchestrator commits on its feature branch is invisible to the main
     checkout until the feature merges; the worktree on that branch is where the
     feature's current truth lives, so its copy of the feature directory wins.
     """
