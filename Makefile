@@ -1,12 +1,15 @@
 PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 
-.PHONY: check version release-patch release-minor release-major
+.PHONY: check test version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
 	@jq -e . $(MARKETPLACE) >/dev/null
 	@echo "manifests parse"
+
+test:
+	uv run mx/skills/testing/test_harden.py
 
 version:
 	@jq -r .version $(PLUGIN)
@@ -15,7 +18,7 @@ release-patch: PART = patch
 release-minor: PART = minor
 release-major: PART = major
 
-release-patch release-minor release-major: check
+release-patch release-minor release-major: check test
 	@V=$$(jq -r .version $(PLUGIN)); \
 	NEW=$$(echo $$V | awk -F. -v part=$(PART) '{ \
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \

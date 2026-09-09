@@ -33,7 +33,7 @@ Then spawn an `Explore` subagent to walk the codebase. Don't follow rigid heuris
 - Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), out of reach of a test and of a mutation tool alike?
 - Which seams have a stated contract and no property checking it?
 
-A feature's harden report is an input wherever one exists (`/mx:testing`): survivors clustered in one module, changed lines nothing runs, and changes the tool could not measure at all are testability smells that already name a location.
+Harden reads the same friction as a measurement (`/mx:testing`): `make harden ARGS=--whole-repo` over the area you scoped, or a feature's report where dispatch already ran one. Survivors clustered in one module, lines nothing runs, and code the tool could not measure at all are testability smells that already name a location.
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 

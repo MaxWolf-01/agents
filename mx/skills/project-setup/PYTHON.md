@@ -10,7 +10,7 @@
 
 ## Testing
 
-- `uv add --group dev pytest-cov hypothesis mutmut`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`).
+- `uv add --group dev hypothesis`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`); `make harden` brings its own mutmut and coverage.
 - Hypothesis needs a profile named `harden`, registered in `tests/conftest.py`, so a mutation run costs a small example budget instead of the full one; `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))` picks it up:
 
   ```python
@@ -27,5 +27,5 @@
   ```
 
 - `mutants/`, `.coverage` and `.hypothesis/` are gitignored, and `[tool.pytest.ini_options] testpaths = ["tests"]` keeps pytest out of the copies of the suite that mutmut leaves in `mutants/`.
-- `COVERAGE_CORE=sysmon` wherever coverage is collected outside harden (CI, a local `--cov` run): the C tracer loses lines after an `await` across a greenlet bridge, on SQLAlchemy above all.
+- `COVERAGE_CORE=sysmon` wherever else coverage is collected (CI, a local `--cov` run); harden's `--help` says why it is the tracer to pin.
 - The long-running fuzz target (`make fuzz`) reuses the same property tests: `uv add --group dev hypofuzz` where its non-commercial licence fits the project, and Atheris through Hypothesis' `fuzz_one_input` where it does not.

@@ -1,9 +1,6 @@
 # The test-smell baseline
 
-A fixed set of test smells that the Tests axis applies to every diff touching tests, and that the Standards axis applies in light mode. Two rules bind it, as they bind [`SMELLS.md`](SMELLS.md):
-
-- **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
-- **Always a judgement call.** Each smell is a labelled heuristic ("possible Indiscriminate Input"), never a hard violation, and skip anything tooling already enforces.
+A fixed set of test smells that the Tests axis applies to every diff touching tests, and that the Standards axis applies in light mode. [`SMELLS.md`](SMELLS.md)'s two binding rules bind these too.
 
 Each smell reads *what it is* → *how to fix*; match it against the diff:
 
@@ -15,7 +12,6 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Untestable Entry Point**: behaviour lives inside a decorated entry point (a route handler, a CLI command, a scheduled task), where a test reaches it only through the framework and a mutation tool cannot reach it at all. → move the logic into a plain function the entry point calls, and test that.
 - **Unagreed Seam**: the test enters at a boundary the spec's Testing Decisions does not name: a new unit test past a module's interface, a browser test for logic a function call would settle, a second seam for behaviour an existing one already covers. → move it to an agreed seam, or have the seam agreed and written into the spec.
 - **Assertion-Free Test**: the test drives the code and asserts nothing beyond "it did not raise", so every behaviour passes. → assert the observable result. A deliberate smoke test says so in its name and stays one.
-- **Redundant Example**: a new example test that no change to the code could fail differently from one already there: the same path with different data, a parametrised case that varies an input the assertion does not depend on. → delete it, or replace the whole set with one property over the generated space.
 - **Weakened Test**: the diff loosens what was already pinned: an assertion relaxed to a looser matcher, a case deleted, a test marked skip or xfail, a tolerance widened, a strict comparison turned into a membership check. → restore the assertion; a behaviour that genuinely changed says so in the ticket and the spec, and the test moves with it.
 - **Order-Dependent Test**: the test passes only in the suite's usual order, because it leaks or consumes global state (a shared session fixture it mutates, an event loop it closes, a module-level cache, a file at a fixed path). It reads as a flake, and under mutation it scores kills the mutation did not cause. → give each test the state it needs and leave the state it found.
 - **Oversized Snapshot**: a snapshot or golden assertion over a large output where one field carries the meaning, so any unrelated change fails it and nobody reads the diff. → assert the field; keep snapshots for output whose whole shape is the contract.
