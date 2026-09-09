@@ -36,6 +36,11 @@ what triggers it remains, and each removal that keeps the bug alive is one less
 thing the maintainer has to rule out. This mostly settles the privacy question on
 its own: a minimal case rarely contains anything of max's.
 
+The files in the report are the files you ran: build the repro in an empty
+directory, run it there, and paste that directory and its output. A repro
+assembled afterwards out of a larger project reports numbers its own code cannot
+produce.
+
 Some findings resist it: a race, something that needs the real data, a crash you
 saw once. Then the report is the observation plus its log or stack trace, said
 plainly as a single occurrence.
@@ -60,6 +65,13 @@ Where none exists, use this order, the same information a good template asks for
   against results carries a boundary better than prose does.
 - **Cause**, only with evidence in hand: a log line, a traced code path. Anything
   short of that stays out.
+
+**The first screen carries the finding.** Mechanism, expected against actual, and
+what it cost, in that order, before any code block. The evidence a reader checks
+only if they doubt you, the repro's files, commands and output, a stack, a probe
+of the cause, goes inside `<details>` blocks whose summaries say what each holds.
+The maintainer decides from the first screen whether this is worth their
+afternoon; the evidence is there to survive that decision, not to make it.
 
 One report per problem. Several one-line corrections to the same document are one
 report; a crash and a documentation gap are two.
@@ -117,8 +129,10 @@ The main session then owns three gates, in order:
 
 1. **Sanity check** the body against what the session actually knows; the
    subagent worked from a brief and can have drifted.
-2. **Show max**: `xdg-open` that file, or paste the body, so he reads what would
-   be published.
+2. **Show max** what would be published, rendered the way its destination renders
+   it: `gh api -X POST /markdown -f text="$(cat <file>)" > <file>.html`, opened
+   with `claude-browser` where it exists, else `xdg-open`. A `<details>` block
+   then shows up collapsed, the way a maintainer meets it.
 3. **His explicit yes.** Then `gh issue create -R <repo>` with the label the
    template assigns, and report the URL back.
 
