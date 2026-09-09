@@ -28,16 +28,27 @@ What it measures, and how:
   `COVERAGE_CORE=sysmon`, the one tracer that records lines after an `await` across a greenlet
   bridge.
 - Unmeasured: mutmut mutates nothing at module level and skips decorated functions, so a changed
-  line inside one has no mutant to run and is reported as unmeasured, as are targets that generated
-  no mutants and changed Python files outside the project's source paths.
+  line inside one has no mutant to run and is reported as unmeasured, whether the range added it or
+  removed it, as are targets that generated no mutants and changed Python files outside the
+  project's source paths that no test map knows as tests.
 - Unresolved: a mutant left without a verdict (timeout, suspicious, not checked). A kill needs a
   failing test: a mutant whose tests error out (a broken fixture, a collection error) comes back
   unresolved rather than killed.
 - Property tests run under the `harden` Hypothesis profile: every test process gets
   `HYPOTHESIS_PROFILE=harden`, which a project registers with a small example budget.
 
+`--whole-repo` measures every target under the source paths at HEAD instead, with no base and so
+nothing pre-existing: the report an architecture pass reads, where clustered survivors, uncovered
+lines and unreachable code name the modules whose shape resists testing.
+
+The tree has to be clean: harden mutates the tree it measures while reporting commits, so
+uncommitted work would be measured without appearing in the range. Its own `mutants/`, `.coverage`
+and `.hypothesis/` do not count as dirty.
+
 Exit code: 0 when everything measured came back clean, 1 on findings (a new survivor or an
-uncovered changed line), 2 when there are no findings but something could not be measured.
+uncovered changed line), 2 when there are no findings but something could not be measured. `make`
+collapses both non-zero codes into its own, so the line to read from `make harden` is the report's
+last.
 
 Cost is one full test run per tree plus the touched targets' mutants: seconds on a small CLI,
 minutes for a feature's worth of plain logic on a service. It writes `mutants/` and a `.coverage`
@@ -49,8 +60,9 @@ JSON schema (--json):
      "new_survivors": [{"mutant": "str", "target": "str", "diff": "str"}],
      "case_flip_survivors": [{"mutant": "str", "target": "str", "diff": "str"}],
      "pre_existing_survivors": ["str"], "uncovered": ["file:line"],
-     "unmeasured": {"lines": ["file:line"], "targets_without_mutants": ["str"],
-                    "files": ["str"], "unanalysable": {"file": "reason"}},
+     "unmeasured": {"lines": ["file:line"], "removed_lines": ["file:line at the base"],
+                    "targets_without_mutants": ["str"], "files": ["str"],
+                    "unanalysable": {"file": "reason"}},
      "unresolved": {"mutant": "status"}, "wall_s": {"base": float, "head": float},
      "verdict": "pass|findings|unmeasured"}
 
@@ -59,6 +71,7 @@ Examples:
     uv run harden.py                            # this repo, since it forked from the integration branch
     uv run harden.py ~/repos/memex --range v2.2.2..HEAD
     uv run harden.py --integration-branch develop --json | jq '.new_survivors'
+    uv run harden.py --whole-repo --json | jq '.new_survivors | group_by(.target)'
 """
 
 from __future__ import annotations
@@ -72,7 +85,7 @@ import sys
 import tempfile
 import tokenize
 from collections import Counter, defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,37 +111,78 @@ to say so; what it changed, if anything, comes back under unmeasured."""
 @dataclass
 class Args:
     repo: Annotated[str, tyro.conf.Positional] = "."
-    """Repository to measure. Its working tree must be at the range's head."""
+    """Repository to measure. Its working tree must be at the range's head, and clean."""
     range: str = ""
     """Commit range `<base>..<head>`. Default: the merge-base with the integration branch, to HEAD."""
     integration_branch: str = ""
     """Branch the feature forked from, for the default range. Default: the remote's head branch, else main, else master."""
+    whole_repo: bool = False
+    """Measure every target under the source paths, at HEAD, with no base to compare against."""
     json: bool = False
     """Emit the report as JSON on stdout. Pipe to jq for filtering."""
 
 
+@dataclass
+class Changes:
+    """What the report is about, and the part of it no mutant can speak for."""
+
+    range: str
+    files: list[str]
+    unmeasured_lines: list[str]
+    removed_lines: list[str]
+
+
 def main(args: Args) -> None:
     repo = Path(args.repo).resolve()
+    require_clean(repo)
+    source_paths = source_paths_of(repo)
+    report = whole_repo(repo, source_paths) if args.whole_repo else since_base(repo, source_paths, args)
+    print(json.dumps(report, indent=2) if args.json else render(report))
+    raise SystemExit({"pass": 0, "findings": 1, "unmeasured": 2}[report["verdict"]])
+
+
+def since_base(repo: Path, source_paths: list[str], args: Args) -> dict:
+    """What the range's own changes added to what the tests fail to hold, base measurement and all."""
     base, head = resolve_range(repo, args.range, args.integration_branch)
     if git(repo, "rev-parse", head) != git(repo, "rev-parse", "HEAD"):
         raise SystemExit(f"{head} is not the checked-out tree of {repo}; harden mutates the tree it measures")
 
-    source_paths = source_paths_of(repo)
     changed = changed_files(repo, base, head)
     new, old = parse_diff(git(repo, "diff", "-U0", f"{base}..{head}", "--", *source_paths))
-    targets, unmeasured_lines = collect_targets(repo, base, new, old)
+    targets, unmeasured_lines = collect_targets(new, lambda path: read(repo / path))
+    removed_targets, removed_lines = collect_targets(old, lambda path: show(repo, base, path))
     test_files = outside(changed, source_paths)
+    changes = Changes(f"{base}..{head}", changed, unmeasured_lines, removed_lines)
 
-    if targets or test_files:
-        with base_worktree(repo, base) as tree:
-            at_base = measure(tree, patterns=[f"{name}*" for name in targets], test_files=test_files)
-        at_head = measure(repo, patterns=at_base["patterns_run"], changed_lines=new)
-    else:
-        at_base = at_head = NOTHING_MEASURED
+    if not (targets or removed_targets or test_files):
+        return assemble(repo, changes, source_paths, NOTHING_MEASURED, NOTHING_MEASURED)
+    patterns = [f"{name}*" for name in sorted(set(targets) | set(removed_targets))]
+    with base_worktree(repo, base) as tree:
+        at_base = measure(tree, patterns=patterns, test_files=test_files, derive_targets=True)
+    at_head = measure(repo, patterns=at_base["patterns_run"], test_files=test_files, changed_lines=new)
+    return assemble(repo, changes, source_paths, at_base, at_head)
 
-    report = assemble(repo, f"{base}..{head}", changed, source_paths, unmeasured_lines, at_base, at_head)
-    print(json.dumps(report, indent=2) if args.json else render(report))
-    raise SystemExit({"pass": 0, "findings": 1, "unmeasured": 2}[report["verdict"]])
+
+def whole_repo(repo: Path, source_paths: list[str]) -> dict:
+    """The same three questions over the whole tree, for an architecture pass rather than a feature.
+
+    Nothing is pre-existing when there is no base to compare against, so every survivor is reported.
+    """
+    files = [path for path in git(repo, "ls-files", "--", *source_paths).splitlines() if path.endswith(".py")]
+    lines = {path: set(range(1, len(read(repo / path).splitlines()) + 1)) for path in files}
+    targets, unmeasured_lines = collect_targets(lines, lambda path: read(repo / path))
+    changes = Changes(f"whole repo at {git(repo, 'rev-parse', '--short', 'HEAD')}", files, unmeasured_lines, [])
+    at_head = measure(repo, patterns=[f"{name}*" for name in targets], changed_lines=lines)
+    return assemble(repo, changes, source_paths, NOTHING_MEASURED, at_head)
+
+
+def require_clean(repo: Path) -> None:
+    """Harden mutates the tree it measures, and reports commits: uncommitted work would be mutated
+    without appearing in the range, and a crashed run would leave the mutants where the edits were."""
+    artefacts = ("mutants/", ".coverage", ".hypothesis/")
+    dirty = [line[3:] for line in git(repo, "status", "--porcelain").splitlines() if not line[3:].startswith(artefacts)]
+    if dirty:
+        raise SystemExit(f"{repo} has uncommitted changes ({', '.join(dirty)}); harden measures commits")
 
 
 # --- the range, and what it changed ---------------------------------------------------------
@@ -183,8 +237,8 @@ def parse_diff(diff: str) -> tuple[dict[str, set[int]], dict[str, set[int]]]:
     old: dict[str, set[int]] = {}
     path = None
     for line in diff.splitlines():
-        if line.startswith("+++ b/"):
-            path = line[len("+++ b/") :]
+        if line.startswith("+++ "):
+            path = line[len("+++ b/") :] if line.startswith("+++ b/") else None
             continue
         match = HUNK.match(line)
         if not match or path is None or not path.endswith(".py"):
@@ -202,22 +256,30 @@ def parse_diff(diff: str) -> tuple[dict[str, set[int]], dict[str, set[int]]]:
 # --- changed lines to mutation targets ------------------------------------------------------
 
 
-def collect_targets(
-    repo: Path, base: str, new: dict[str, set[int]], old: dict[str, set[int]]
-) -> tuple[list[str], list[str]]:
-    """The targets holding the range's changed lines, and the changed lines held by no target."""
+def collect_targets(lines_by_path: dict[str, set[int]], source_of: Callable[[str], str]) -> tuple[list[str], list[str]]:
+    """The targets holding the given lines, and the lines held by no target.
+
+    Both sides of a diff go through this: the new side against the working tree, the old side
+    against the base's blobs, so a hunk that only deletes still names its function, and a deleted
+    module-level line still comes back as something nothing measured.
+    """
     targets: set[str] = set()
     unmeasured: list[str] = []
-    for path, lines in sorted(new.items()):
-        source = (repo / path).read_text() if (repo / path).exists() else ""
+    for path, lines in sorted(lines_by_path.items()):
+        source = source_of(path)
         hits = mutation_targets(source, module_name(path), lines)
         targets |= {name for name in hits if name}
         unmeasured += [f"{path}:{line}" for line in sorted(with_code(source, hits.get("", set())))]
-    for path, lines in sorted(old.items()):
-        blob = subprocess.run(["git", "-C", str(repo), "show", f"{base}:{path}"], capture_output=True, text=True)
-        if blob.returncode == 0:
-            targets |= {name for name in mutation_targets(blob.stdout, module_name(path), lines) if name}
     return sorted(targets), unmeasured
+
+
+def read(path: Path) -> str:
+    return path.read_text() if path.exists() else ""
+
+
+def show(repo: Path, commit: str, path: str) -> str:
+    blob = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True, text=True)
+    return blob.stdout if blob.returncode == 0 else ""
 
 
 def mutation_targets(source: str, module: str, lines: set[int]) -> dict[str, set[int]]:
@@ -270,8 +332,9 @@ def mutable(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def module_name(path: str) -> str:
-    """Dotted module path as mutmut names it; mutmut drops the `__init__` segment and any source
-    root above the package."""
+    """Dotted module path as mutmut names it (`utils/format_utils.py:get_mutant_name`): the path with
+    separators as dots, `__init__` dropped, and a literal leading `src.` stripped. Any other source
+    root (`source/`, `lib/`, the package itself) stays in the name, on both sides."""
     dotted = path[: -len(".py")].replace("/", ".").replace(".__init__", "")
     return dotted.split(".", 1)[1] if dotted.startswith("src.") else dotted
 
@@ -294,12 +357,16 @@ def measure(
     *,
     patterns: list[str],
     test_files: list[str] | None = None,
+    derive_targets: bool = False,
     changed_lines: dict[str, set[int]] | None = None,
 ) -> dict:
+    """Measure one tree. `derive_targets` lets the tree's own test-to-function map add targets, which
+    is the base's job: a target the base never measured has nothing to be new against."""
     job = {
         "mode": "measure",
         "patterns": patterns,
         "test_files": test_files or [],
+        "derive_targets": derive_targets,
         "changed_lines": {path: sorted(lines) for path, lines in (changed_lines or {}).items()},
         "coverage_file": str(tree / ".coverage"),
     }
@@ -312,7 +379,7 @@ def source_paths_of(repo: Path) -> list[str]:
 
 def run_runner(tree: Path, job: dict) -> dict:
     """The measurement runs in the project's own environment, where its tests can import it."""
-    argv = ["uv", "run", "--quiet", "--with", "mutmut", "--with", "coverage", "--with", "pytest-cov"]
+    argv = ["uv", "run", "--quiet", "--with", "mutmut~=3.7", "--with", "coverage", "--with", "pytest-cov"]
     argv += ["python", str(RUNNER)]
     with tempfile.NamedTemporaryFile(suffix=".json") as report:
         job = {**job, "report_file": report.name}
@@ -326,15 +393,7 @@ def run_runner(tree: Path, job: dict) -> dict:
 # --- the report -----------------------------------------------------------------------------
 
 
-def assemble(
-    repo: Path,
-    commit_range: str,
-    changed: list[str],
-    source_paths: list[str],
-    unmeasured_lines: list[str],
-    at_base: dict,
-    at_head: dict,
-) -> dict:
+def assemble(repo: Path, changes: Changes, source_paths: list[str], at_base: dict, at_head: dict) -> dict:
     survivors_at_base = {survivor_key(mutant, verdict["diff"]) for mutant, verdict in survivors(at_base).items()}
     new_survivors, case_flips, pre_existing = [], [], []
     for mutant, verdict in sorted(survivors(at_head).items()):
@@ -347,12 +406,14 @@ def assemble(
             new_survivors.append(entry)
 
     targets = sorted({pattern.rstrip("*") for pattern in at_head["patterns_run"]})
+    known_tests = set(at_base["test_files_matched"]) | set(at_head["test_files_matched"])
     unmeasured = {
-        "lines": unmeasured_lines,
+        "lines": changes.unmeasured_lines,
+        "removed_lines": changes.removed_lines,
         "targets_without_mutants": [
             name for name in targets if not any(target_of(m) == name for m in at_head["verdicts"])
         ],
-        "files": [path for path in outside(changed, source_paths) if path not in at_base["test_files_matched"]],
+        "files": [path for path in outside(changes.files, source_paths) if path not in known_tests],
         "unanalysable": at_head["unanalysable"],
     }
     unresolved = {
@@ -364,7 +425,7 @@ def assemble(
     blind = bool(unresolved or any(unmeasured.values()))
     return {
         "repo": str(repo),
-        "range": commit_range,
+        "range": changes.range,
         "targets": targets,
         "mutants": {"head": len(at_head["verdicts"]), "base": len(at_base["verdicts"])},
         "new_survivors": new_survivors,
@@ -434,6 +495,16 @@ def by_target(unresolved: dict[str, str]) -> dict[str, str]:
     }
 
 
+def by_file(locations: list[str]) -> dict[str, str]:
+    """`file:line` locations as one entry per file: a whole-repo report otherwise prints a screen of
+    them, and a reader wants the file before the numbers either way."""
+    numbers: dict[str, list[str]] = defaultdict(list)
+    for location in locations:
+        path, _, line = location.rpartition(":")
+        numbers[path].append(line)
+    return {path: ", ".join(lines) for path, lines in sorted(numbers.items())}
+
+
 def render(report: dict) -> str:
     lines = [
         f"repo       {report['repo']}",
@@ -445,9 +516,16 @@ def render(report: dict) -> str:
         ),
     ]
     lines += [f"SURVIVED   {entry['mutant']}: {entry['diff']}" for entry in report["new_survivors"]]
-    lines += [f"UNCOVERED  {location}" for location in report["uncovered"]]
+    lines += [f"UNCOVERED  {path}: {numbers}" for path, numbers in by_file(report["uncovered"]).items()]
     lines += [f"UNRESOLVED {target}: {count}" for target, count in by_target(report["unresolved"]).items()]
-    lines += [f"UNMEASURED {location}: no mutation target" for location in report["unmeasured"]["lines"]]
+    lines += [
+        f"UNMEASURED {path}: no mutation target on {numbers}"
+        for path, numbers in by_file(report["unmeasured"]["lines"]).items()
+    ]
+    lines += [
+        f"UNMEASURED {path}: no mutation target on {numbers}, removed"
+        for path, numbers in by_file(report["unmeasured"]["removed_lines"]).items()
+    ]
     lines += [f"UNMEASURED {name}: no mutants" for name in report["unmeasured"]["targets_without_mutants"]]
     lines += [f"UNMEASURED {path}: outside the source paths" for path in report["unmeasured"]["files"]]
     lines += [f"UNMEASURED {path}: {reason}" for path, reason in report["unmeasured"]["unanalysable"].items()]

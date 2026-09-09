@@ -9,20 +9,22 @@ Job (stdin), `mode` selecting one of two:
 
     {"mode": "config", "report_file": "/tmp/report.json"}
     {"mode": "measure", "report_file": "/tmp/report.json", "patterns": ["pkg.mod.x_fn*"],
-     "test_files": ["tests/test_x.py"], "changed_lines": {"pkg/mod.py": [12, 13]},
-     "coverage_file": ".coverage"}
+     "test_files": ["tests/test_x.py"], "derive_targets": true,
+     "changed_lines": {"pkg/mod.py": [12, 13]}, "coverage_file": ".coverage"}
 
 Report (the job's `report_file`):
 
     {"source_paths": ["pkg/"],                                    # both modes
      "patterns_run": ["pkg.mod.x_fn*"],                           # measure only, below
+     "test_files_matched": ["tests/test_x.py"],
      "verdicts": {"pkg.mod.x_fn__mutmut_1": {"status": "survived", "diff": "a -> b"}},
      "uncovered": ["pkg/mod.py:12"], "unanalysable": {"pkg/mod.py": "reason"},
      "wall_s": 12.3}
 
-`patterns_run` is the job's patterns plus the mutation targets whose covering tests live in
-`test_files`, read off mutmut's test-to-function map: a diff that only edits tests still names
-the functions those tests hold in place. `diff` is filled for surviving mutants only.
+`test_files_matched` is the candidates this tree's test-to-function map knows as tests; under
+`derive_targets`, the targets their tests cover join `patterns_run`, which is how a diff that only
+edits tests still names the functions those tests hold in place. `diff` is filled for surviving
+mutants only.
 """
 
 from __future__ import annotations
@@ -69,7 +71,8 @@ def main() -> None:
         if job["test_files"]:
             collect_stats()
             matched, covered_targets = tests_in_map(job["test_files"], mutmut.tests_by_mangled_function_name)
-            patterns += covered_targets
+            if job["derive_targets"]:
+                patterns += covered_targets
         if patterns:
             run_mutmut(patterns)
 
@@ -188,19 +191,18 @@ def mutated_source_roots() -> str:
 
 
 def run_mutmut(patterns: list[str]) -> None:
+    """mutmut asserts its way out when a name filter matches no mutant, which is an ordinary state
+    here: a function added by the range has no mutants at the base, and a decorated one has none
+    anywhere. The report says so through the targets that came back without verdicts."""
     sys.argv = ["mutmut", "run", *patterns]
-    with contextlib.suppress(SystemExit):
+    with contextlib.suppress(SystemExit, AssertionError):
         mutmut_main.cli(standalone_mode=False)
 
 
 def collect_stats() -> None:
-    """Ask for the test-to-function map alone.
-
-    mutmut builds the map on any run, then asserts its way out when the filter matches no mutant,
-    which is the cheapest stopping point past it.
-    """
-    with contextlib.suppress(SystemExit, AssertionError):
-        run_mutmut([NO_MUTANT_PATTERN])
+    """Ask for the test-to-function map alone: mutmut builds it on any run, and a filter that matches
+    no mutant stops the run right after."""
+    run_mutmut([NO_MUTANT_PATTERN])
     if not mutmut.tests_by_mangled_function_name:
         raise SystemExit("mutmut collected no test-to-function map, so a changed test names no target")
 
