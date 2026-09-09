@@ -1,6 +1,6 @@
 ---
 status: done
-diff: [ba9fd9f..132ae97]
+diff: [ba9fd9f..132ae97, 983bd7c..a10309f]
 ---
 
 # Implement the testing-workflow spec
@@ -91,3 +91,59 @@ Both survivor groups are real: nothing pins the averaging rule, and nothing dist
 - mutmut leaves a full copy of the suite in `mutants/`, and a project's plain `pytest` then collects both copies and dies on duplicate module basenames. Harden passes `--ignore=mutants` for its own runs; `PYTHON.md` now sets `testpaths` so the project's own `make test` survives adopting harden. Anyone running harden on a repo without that config sees a broken suite next.
 - mutmut's mutants are served to the tests through `sys.path` in the process that forks the runner. Re-running pytest as a subprocess (which the yapit prototype needs, and which this script keeps) drops that, so on a src-layout project with an editable install every mutant ran against unmutated code and scored `survived` — and mutmut's own forced-fail guard reports "Unable to force test failures" rather than failing hard. The fix is a `PYTHONPATH` over the mutated roots; finding it cost about half an hour of a run that looked like it worked.
 - No `/mx:code-review` axes were spawned on this diff: this session was instructed not to use the subagent tool. The review of these ~1100 lines is the orchestrator's, and the Tests axis it describes cannot review itself.
+
+### Review round 1, `983bd7c..a10309f`
+
+Addressed: Correctness 1, 2, 3, 4, 5 and both Minors; Standards 1, 2, 3, 5, 6, 7, 8, 9; Spec (a) whole-repo, (a) `make test`, (b) Redundant Example, (c) deletion-only, (c) dirty tree; Tests (a) all four, (b) the command-line seam, (c) 1, 2 and 3, (d) all four.
+
+**The script.** Four states it got wrong, each now a check. A name filter matching no mutant is ordinary rather than exceptional — a function the range adds has none at the base — and it crashed the run where it should have reported a target without verdicts. A test file the range creates cannot be in the base's map, so every feature that added one read `unmeasured`; the head's map now answers the same question, for reporting only, since taking targets from it would make an untouched function's old survivors look new. A deleted file's `+++ /dev/null` left the previous path in place, handing a 200-line deletion's line numbers to whatever file sorted before it. And a range that only deletes module-level lines came back `pass`, which the spec's own property forbids: the old side is now read for what nothing measured, reported as its own line with the tree that numbered it.
+
+`--whole-repo` mutates every target under the source paths with no base to compare against, which is the report improve-codebase-architecture was promised; that skill now names the command. A dirty tree is refused, since harden mutates the tree while reporting commits.
+
+**The checks.** 32, of which five drive `harden.py` at its command line against a fixture repository built in a temp dir: the prototypes' two replays at fixture scale (a function the tests do not pin comes back as a survivor with its uncovered branch and its module-level constant; a deleted test brings its function back through the base's map and turns the mutant it alone killed into a finding), plus whole-repo, the dirty tree, and a range with no Python in it that creates no `mutants/` at all. They take about 18 seconds together and are the only checks that reach `main`, `mutated_source_roots` and the exit codes. The helper-level cases lost their shared cwd, gained the discriminating inputs the review named (a source path with its trailing slash, a comment line, a junit report carrying both a failure and an error, a token-unbalanced case flip, two functions sharing one mutation), and now assert the rendered report.
+
+**One finding not implemented as described.** Spec (c) and Standards' Local Inconsistency read `module_name`'s `src.` special case as a bug for other source roots. It mirrors mutmut exactly, which I verified against the function that names every mutant:
+
+```
+$ uv run --with mutmut python -c "from mutmut.utils.format_utils import get_mutant_name; ..."
+source/pkg/mod.py            -> source.pkg.mod.x_fn
+lib/pkg/mod.py               -> lib.pkg.mod.x_fn
+src/pkg/mod.py               -> pkg.mod.x_fn
+```
+
+mutmut strips one literal `src.` and leaves every other root in the name (`utils/format_utils.py:get_mutant_name`), so harden's rule is the matching one and changing it would break `source/` and `lib/` layouts rather than fix them. `mutated_source_roots`, which the finding compares it against, answers a different question: which directories go on `PYTHONPATH` so the mutated copies import. The rule is now named in the docstring and pinned by a check over all three layouts.
+
+**The skills.** Dispatch passes `--integration-branch`. code-review's counts follow the fourth axis. The test-smell file points at `SMELLS.md`'s binding rules instead of copying them, and drops Redundant Example. PYTHON.md installs what the project needs rather than what harden injects, and leaves the tracer's why to `--help`. The `harden` target picks the highest installed version (`sort -V`) and prints the path it chose; `fuzz` says what it needs before failing on it. This repo's `make test` runs the checks, and `release-*` waits on them. pocock-sync maps tdd to testing.
+
+**Evidence.** `make test` → 32 passed. The memex replay, re-run against the same range on the round's code:
+
+```
+$ make harden HARDEN=<worktree>/mx/skills/testing/harden.py ARGS="--range 2be4898..HEAD"
+harden: <worktree>/mx/skills/testing/harden.py
+targets    2: memex_md.find.x__combine, memex_md.find.x_find_notes
+mutants    53 at head, 42 at base (12s + 17s)
+SURVIVED   memex_md.find.x__combine__mutmut_1: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS or part_count > 1:
+SURVIVED   memex_md.find.x__combine__mutmut_2: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS and part_count >= 1:
+SURVIVED   memex_md.find.x__combine__mutmut_3: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS and part_count > 2:
+SURVIVED   memex_md.find.x__combine__mutmut_4: return total / part_count -> return total * part_count
+SURVIVED   memex_md.find.x_find_notes__mutmut_31: if limit < 0: -> if limit <= 0:
+SURVIVED   memex_md.find.x_find_notes__mutmut_32: if limit < 0: -> if limit < 1:
+UNCOVERED  src/memex_md/find.py: 104
+UNMEASURED src/memex_md/find.py: no mutation target on 14, 17
+UNMEASURED src/memex_md/find.py: no mutation target on 14, at the base
+pre-exists 6 survivors the base already had
+FINDINGS
+```
+
+The findings are the ones the first round recorded; locations now read one file at a time, and the modified module-level constant shows on both sides, as the line the range wrote and the line it replaced.
+
+**Assumptions.**
+
+- A10 `mx/skills/testing/harden.py:456`: a case-flip survivor (a mutant whose only change is letter case inside a string literal) is listed apart and never counted as a finding. It was 11% of unkilled mutants on yapit and 2 of 2 on one replayed ticket, and such a mutant survives only where the value is case-insensitive; the report still shows every one, so reversing this is a one-line change in `assemble`.
+- A11 `mx/skills/testing/harden.py:132`: a module-level line the range *modifies* is unmeasured on both sides and reported twice, once per tree. Collapsing the pair would need the two line numbers to be matched across trees, and the deletion case is the one the spec's property is about.
+- A12 `mx/skills/testing/harden.py:166`: `--whole-repo` reports every survivor as new, because there is no base for anything to pre-exist against, and its uncovered list is every uncovered line under the source paths. On a repo the size of memex that is hundreds of lines, which is why the render groups them per file.
+- A13 `mx/skills/testing/harden.py:179`: the dirty-tree refusal exempts harden's own `mutants/`, `.coverage` and `.hypothesis/`, so a project that has not gitignored them yet still gets a second run rather than a refusal it cannot read.
+- A14 `mx/skills/testing/harden.py:360`: the base decides which targets are measured, and the head's test map is read for reporting alone. A test file the feature *adds* therefore does not pull the functions it covers into the measurement: those functions are unchanged, and their survivors predate the feature.
+- A15 `Makefile:11`: `make test` runs the harden checks (about 18 seconds, five of them driving uv, mutmut and pytest in temp repositories), and `release-*` now waits on them, so a release needs a machine with `uv` and a warm cache.
+
+**Friction.** The end-to-end checks needed a fixture whose tests are not redundant against the mutation set: the first fixture's three `clamp` tests killed the same mutants, so deleting one changed nothing and the deleted-test check could not fail. A boundary function (`fits(value, limit)`, whose `<` -> `<=` mutant only one test catches) was what made the property observable. Worth knowing for anyone writing tests against harden: a suite where no single test uniquely kills a mutant cannot demonstrate that deleting a test costs anything.
