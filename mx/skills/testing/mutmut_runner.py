@@ -32,6 +32,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -98,6 +99,7 @@ def collect_coverage(source_paths: list[str], coverage_file: str) -> None:
     segfaults on single-phase-init C extensions and empties global registries (numpy, PyYAML,
     SQLAlchemy). A subprocess run hands the same map over without touching the importer.
     """
+    require_concurrency_config()
     argv = [sys.executable, "-m", "pytest", "-q", *PYTEST_ORDER_ARGS, "--ignore=mutants"]
     argv += [f"--cov={path}" for path in source_paths]
     argv += ["--cov-report=", *test_selection()]
@@ -107,14 +109,33 @@ def collect_coverage(source_paths: list[str], coverage_file: str) -> None:
 
 
 def test_env(coverage_file: str) -> dict[str, str]:
-    """`sysmon` is the one coverage tracer that records lines after an `await` across a greenlet
-    bridge; the C tracer silently drops them and mutation targets vanish with them."""
-    return {
-        **os.environ,
-        "COVERAGE_CORE": "sysmon",
-        "COVERAGE_FILE": coverage_file,
-        "HYPOTHESIS_PROFILE": "harden",
-    }
+    return {**os.environ, "COVERAGE_FILE": coverage_file, "HYPOTHESIS_PROFILE": "harden"}
+
+
+def require_concurrency_config() -> None:
+    """A project that has greenlet installed (SQLAlchemy's async engine rides on it) has to name it
+    in its coverage config, or coverage records nothing after an `await` into the engine and
+    attributes the engine's own lines to the project's files. coverage warns about neither, so this
+    is the one place that does; the setting is the project's, in `[tool.coverage.run]`."""
+    if project_has_greenlet(Path.cwd()) and greenlet_unnamed(coverage.Coverage().config.concurrency):
+        raise SystemExit(
+            "greenlet is installed and the coverage config does not name it: set "
+            '`[tool.coverage.run] concurrency = ["thread", "greenlet"]` (/mx:project-setup, PYTHON.md)'
+        )
+
+
+def project_has_greenlet(tree: Path) -> bool:
+    """Whether greenlet is the project's own, read off its lock or its environment: an importable
+    greenlet proves nothing here, since `uv run --with` layers the caller's packages over the
+    project's and this runner is started that way."""
+    lock = tree / "uv.lock"
+    if lock.exists() and re.search(r'^name = "greenlet"$', lock.read_text(), re.MULTILINE):
+        return True
+    return any((tree / ".venv").glob("lib/python*/site-packages/greenlet"))
+
+
+def greenlet_unnamed(concurrency: list[str]) -> bool:
+    return "greenlet" not in concurrency
 
 
 def test_selection() -> list[str]:

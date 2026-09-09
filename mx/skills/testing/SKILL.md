@@ -33,12 +33,14 @@ Generate structure rather than raw randomness: draw whole valid values of the do
 
 Property tests live in the project's properties directory and run in the ordinary suite.
 
+A property written before the behaviour it tests exists is an **expected failure**: strict, so the run goes red the moment the property passes with the annotation still on, and naming the ticket that lifts it. At a stub it tolerates only the not-implemented exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A seam that exists without the behaviour, or a wire seam with no route yet, fails in more ways than one, so its expected failure tolerates any; the orchestrator's check that none names a landed ticket is the guard there. A property that holds carries none.
+
 ## The suite already there
 
 Extend it: its fixtures, its helpers, its naming, its seams. A second parallel suite beside the first splits the signal, and the next agent has to read both to know what is covered.
 
 ## What the suite fails to hold
 
-`make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. The script beside this skill is what that target runs, and `uv run harden.py --help` is the reference for what it measures and what its report means.
+`make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden` is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
 
 `make fuzz` runs the same property tests coverage-guided under HypoFuzz until stopped, or, in a project without it, loops them at a large example budget; what either finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.
