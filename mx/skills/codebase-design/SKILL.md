@@ -11,7 +11,7 @@ Design **deep modules**: a lot of behaviour behind a small interface, placed at 
 
 Use these terms exactly; each entry's _Avoid_ list names the substitutes to steer clear of. Consistent language is the whole point.
 
-**Module**: anything with an interface and an implementation, and exactly one interface. Deliberately scale-agnostic: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
+**Module**: anything with exactly one interface and an implementation. Deliberately scale-agnostic: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
 
 **Interface**: everything a caller must know to use the module correctly: the type signature, but also invariants, ordering constraints, error modes, required configuration, and performance characteristics. _Avoid_: API, signature (too narrow; they refer only to the type-level surface).
 
