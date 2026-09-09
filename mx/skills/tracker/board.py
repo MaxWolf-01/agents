@@ -6,7 +6,9 @@
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
-status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
+status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN; a
+proposed ticket, one the user has not ruled on, keeps its status whatever
+blocks it and is drawn in every view in its own colour) and
 every standalone ticket (*.md at the tracker root) and writes one
 self-contained page beside the tracker, agent/board.html: an all-features
 dependency graph with feature subgraphs and cross-feature edges, the merged
@@ -65,7 +67,7 @@ import markdown
 import tyro
 import yaml
 
-STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘"}
+STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
 
 @dataclass
@@ -338,6 +340,10 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
         )
+    # a local blocker whose file is gone counts as done (tracker conventions): a retired ticket, a rejected proposal
+    present = {t.num for t in tickets}
+    for t in tickets:
+        t.blocked_by = [b for b in t.blocked_by if b in present]
     done = {t.num for t in tickets if t.status == "done"}
     for t in tickets:
         if t.status == "open" and (
@@ -596,11 +602,16 @@ def render_page(
     total = sum(len(f.tickets) for f in features)
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
     all_needs = [(f.name, item) for f in features for item in f.needs_human]
-    open_standalone = sum(1 for k in standalone if k.status != "done")
+    open_standalone = sum(1 for k in standalone if k.status not in ("done", "proposed"))
+    proposed = sum(1 for f in features for t in f.tickets if t.status == "proposed") + sum(
+        1 for k in standalone if k.status == "proposed"
+    )
 
     meta = f"{total_done}/{total} done"
     if open_standalone:
         meta += f" · {open_standalone} standalone open"
+    if proposed:
+        meta += f' · <span class="proposed-count">{proposed} proposed</span>'
     needs_badge = (
         f'<a class="needsbadge" href="#needs-human">● {len(all_needs)} need human</a>' if all_needs else ""
     )
@@ -682,7 +693,7 @@ def feature_section(f: Feature) -> str:
     counts = Counter(t.status for t in f.tickets)
     bits = [f"spec {html.escape(f.spec_status)}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
-    bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked") if counts[s]]
+    bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked", "proposed") if counts[s]]
     if f.worker_host:
         bits.append(f"workers on {html.escape(f.worker_host)}")
     strip = "".join(
@@ -708,7 +719,7 @@ def feature_section(f: Feature) -> str:
             f'<div class="body">{t.body_html}</div></details>'
         )
 
-    order = {"claimed": 0, "open": 1, "blocked": 2}
+    order = {"claimed": 0, "open": 1, "blocked": 2, "proposed": 3}
     active = sorted((t for t in f.tickets if t.status != "done"), key=lambda t: (order[t.status], t.num))
     active_rows = "".join(row(t) for t in active)
     done_rows = "".join(row(t) for t in f.tickets if t.status == "done")
@@ -741,6 +752,7 @@ PAGE = Template("""<!doctype html>
     --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
     --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
     --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
+    --proposed-bg: #1d1a26; --proposed-br: #5b4f7a; --proposed-tx: #a397c4;
     --human: #e5534b; --human-bg: #291414; --flash: #2a2214;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -794,6 +806,8 @@ PAGE = Template("""<!doctype html>
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
+  .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); border-style: dashed; }
+  .proposed-count { color: var(--proposed-tx); }
   .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); margin-left: .35rem; }
 
   /* ---- feature header: sticky under the topbar ---- */
@@ -827,6 +841,7 @@ PAGE = Template("""<!doctype html>
     color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
   .dv:hover { color: var(--ink); border-color: var(--ink3); }
   .row-done summary .title { color: var(--ink2); }
+  .row-proposed summary .title { color: var(--ink2); }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
   .chips { display: inline-flex; gap: .25rem; min-width: 5rem; justify-content: flex-end; flex-wrap: wrap; }
   .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
@@ -947,8 +962,8 @@ ${standalone}
   // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
   // ghost = done ticket shown as context: done palette (so it never reads as
   // blocked-grey), dashed border marking it inactive
-  const classDefs = ["done", "claimed", "open", "blocked"].map((s) =>
-    "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
+  const classDefs = ["done", "claimed", "open", "blocked", "proposed"].map((s) =>
+    "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx") + (s === "proposed" ? ",stroke-dasharray:2 3" : "")
   ).join("\\n") + "\\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
   mermaid.initialize({
     startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base",

@@ -8,4 +8,4 @@ Rough intent, not yet grilled. Retros don't happen today. Wanted: a way to run t
 
 Upstream `skills/in-progress/retro` (mattpocock/skills, 8fa1886 + 3ec8e23 + 6654f6b, still a stub) has the useful part: seven categories to look for — navigation pointers, automated checks, coding standards for the reviewer, global AGENTS.md size, tool economy, no-op instructions, information access. Revisit once it leaves `in-progress/`.
 
-`/mx:reflect` is the nearest existing skill; refactoring it into this, or replacing it, is on the table.
+The per-session half of this (what fought the agent, what it would build) is the closing rule in `/mx:implement`, whose output is proposed tickets on the tracker; `/mx:reflect`, which asked the same questions and wrote nothing, was retired with that rule (mx v0.1.41). What is left for this ticket is the cross-session view.

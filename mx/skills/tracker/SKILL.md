@@ -9,7 +9,7 @@ Tickets are markdown files in `agent/tickets/`: [MARKDOWN.md](MARKDOWN.md) has t
 
 ## Provenance
 
-A ticket's framing names who holds it: an Options or approach section an agent sketched says so inline ("options sketched by agent <date>, frame unconfirmed"); one the user decided points at the decision (ADR, spec decision, grilling verdict). Unmarked framing reads as agent-sketched. Write acceptance criteria that keep the option space open ("decision recorded; options outside this list count") so the session working the ticket settles the problem, not just the menu it arrived with.
+Two facts about a ticket carry provenance, each with one home. Whether the user wanted it at all is its `status`: a ticket an agent files on its own reading is `proposed` until the user rules (MARKDOWN.md, Ticket state). Whose framing it carries is inline: an Options or approach section an agent sketched says so ("options sketched by agent <date>, frame unconfirmed"); one the user decided points at the decision (ADR, spec decision, grilling verdict). Unmarked framing reads as agent-sketched. Write acceptance criteria that keep the option space open ("decision recorded; options outside this list count") so the session working the ticket settles the problem, not just the menu it arrived with.
 
 ## Decision tickets
 
