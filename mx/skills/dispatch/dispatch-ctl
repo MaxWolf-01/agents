@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # The worker host's side of one feature's dispatch: ticket worktrees and
-# branches off the repo there, worker panes, channels, state files. Runs on the
+# branches off the repo there, worker panes, runs, state files. Runs on the
 # worker host from the feature's scratch dir; `dispatch` (beside this file in
-# the skill) is the orchestrator's side. History -- commits, merges, pushes,
-# fetches -- stays with the orchestrator.
+# the skill) is the orchestrator's side and the one that calls this. History --
+# commits, merges, pushes, fetches -- stays with the orchestrator.
 #
 # Usage: dispatch-ctl init <repo> <feature> [git-dir] [worktrees-dir]
 #        dispatch-ctl spawn <NN-slug> <model> [session-id]
+#        dispatch-ctl wait <NN-slug>
 #        dispatch-ctl stop <NN-slug>
 #        dispatch-ctl resume <NN-slug> <model>
 #        dispatch-ctl probe
@@ -21,14 +22,21 @@
 #             <worktrees-dir>/<repo>-<feature>-<NN-slug> when absent, sets it up
 #             (the `setup` file's command, run as given; without that file
 #             `make install`, under `nix develop -c` where a flake.nix exists),
-#             then starts the worker on prompt-<NN>.md from this directory. A
-#             session id resumes that conversation on the same file, which then
-#             holds the guidance.
+#             then starts the worker on prompt-<NN>.md from this directory, in
+#             a tmux session named dispatch-<repo>-<feature>-<NN>. A session id
+#             resumes that conversation on the same file, which then holds the
+#             guidance.
+#   wait      blocks until the current run of <NN-slug> ends, then prints its
+#             probe line: exit 0 on `exited`, 1 on `gone`.
 #   stop      ends the current run without losing it: the runner writes its
-#             status line (`exit=stopped`, session id) and fires the channel.
-#             Worktree and branch stay for a resume.
+#             status line (`exit=stopped`, session id). Worktree and branch
+#             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
 #             prompt-<NN>.md holds the guidance.
+#   probe     one line per worker: `running` with the worklog's last line,
+#             `exited` with the status line (attempts, exit code, ticket
+#             status, session id), or `gone` (runner dead, no status line:
+#             a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane, forgets the run, removes worktree and branch
 # Env:
@@ -38,19 +46,18 @@
 #   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
 #                             A replacement lives in this directory too. The
 #                             contract it owes: argv is <prompt> <ticket> <model>
-#                             <channel> [session-id]; within seconds of starting
-#                             it creates <channel>.log beside itself, and at exit
-#                             writes <channel>.status there (key=value line,
-#                             `session=` included) before firing
-#                             `tmux wait-for -S <channel>`; on TERM it does the
-#                             same with `exit=stopped`.
+#                             <run> [session-id]; within seconds of starting it
+#                             creates <run>.log beside itself, and its last act
+#                             is writing <run>.status there (key=value line,
+#                             `session=` included); on TERM the same, with
+#                             `exit=stopped`.
 #
 # State, all plain text in this directory:
 #   config                       repo, feature, git dir, worktrees dir (init)
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch setup`)
-#   manifest                     one line per run: name TAB channel TAB worktree TAB runner
-#   <channel>.status|.log        written by the runner
+#   manifest                     one line per run: name TAB run TAB worktree TAB runner
+#   <run>.status|.log            written by the runner
 #   <name>.install.log           the setup command's output
 #
 # Every command that changes something is echoed before it runs, so a
@@ -85,35 +92,50 @@ names() {
     prompt=$here/prompt-$nn.md
 }
 
-# The newest manifest line for a name sets `channel` and `run_runner`, the
+# The newest manifest line for a name sets `run_id` and `run_runner`, the
 # runner that run was typed with (what its command line shows, whatever
 # DISPATCH_RUNNER says now); both empty when the name has never run.
 current_run() {
-    channel= run_runner=
+    run_id= run_runner=
     [ -f "$manifest" ] || return 0
-    IFS=$'\t' read -r _ channel _ run_runner < <(tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print; exit }')
+    IFS=$'\t' read -r _ run_id _ run_runner < <(tac "$manifest" | awk -F'\t' -v n="$1" '$1 == n { print; exit }')
     run_runner=${run_runner:-$runner}
 }
 
-# The runner's pid for a channel. Anchored on the runner's own command line: a
-# remote watcher's `tmux wait-for <channel>` also carries the channel and must
-# not count as a live worker.
-runner_pid() { pgrep -f "^bash $2 .* $1( |$)"; } # <channel> <runner>
+# The runner's pid for a run, anchored on the runner's own command line so
+# that nothing else carrying the run id (a `wait`, a `log`) counts as a worker.
+runner_pid() { pgrep -f "^bash $2 .* $1( |$)"; } # <run> <runner>
 
-run_state() { # <channel> <runner> → exited | running | gone
+# The status file is the runner's last act, which makes it the sole authority
+# on a finished run; the pane's process name says nothing, since the runner is
+# the pane process for live and dead workers alike.
+run_state() { # <run> <runner> → exited | running | gone
     [ -f "$here/$1.status" ] && { echo exited; return; }
     runner_pid "$1" "$2" >/dev/null && { echo running; return; }
     echo gone
+}
+
+state_line() { # <name> <run> <runner>
+    case $(run_state "$2" "$3") in
+        exited)  echo "$1 exited  run=$2  $(cat "$here/$2.status")" ;;
+        running) echo "$1 running  run=$2  log: $(tail -1 "$here/$2.log" 2>/dev/null || echo -)" ;;
+        gone)    echo "$1 gone  run=$2  (runner dead without a status file)" ;;
+    esac
 }
 
 init() {
     repo=$1 feature=$2
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
+    # config is rewritten on every init; the manifest never is: it is the only
+    # record of the runs in flight, and an orchestrator taking over needs it.
     printf 'repo=%s\nfeature=%s\ngit=%s\nworktrees=%s\n' "$repo" "$feature" "$git_dir" "$worktrees" > "$here/config"
     # The parent holds every feature's scratch dir: prompts, worklogs, status
     # lines. No other user on the host has business reading them.
     chmod 700 "$(dirname "$here")"
+    # Empty, never a clone: history arrives by push from the orchestrator, so
+    # this host authenticates nowhere, and ticket-branch churn stays off the
+    # project's remote, where branch pushes would fire CI.
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     # A running worker keeps the version directory it started with (old
     # versions stay in the plugin cache), so this changes only workers started
@@ -164,59 +186,67 @@ spawn() {
         die "$id is a decision ticket (type: in its frontmatter): resolved with the human, never by a worker"
     fi
     current_run "$name"
-    if [ -n "$channel" ] && [ "$(run_state "$channel" "$run_runner")" = running ]; then
-        die "$name is still running channel=$channel; a line typed into its pane now would launch a second worker when it exits"
+    if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
+        die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
     [ -d "$worktree" ] || checkout
-    channel=$name-$(date +%s)
+    run_id=$name-$(date +%s)
 
+    # The session is a shell the runner is typed into, so it outlives the
+    # worker and holds its scrollback.
     tmux has-session -t "=$name" 2>/dev/null || run tmux new-session -d -s "$name" -c "$worktree"
     # A pane's environment is the tmux server's, from whenever that started,
     # not this process's: whatever the worker must inherit from here goes on
     # the typed line. The profile is set either way, so a server that started
     # under another profile cannot hand the worker that one.
-    run tmux send-keys -t "$name" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $channel $session_id"
+    run tmux send-keys -t "$name" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $run_id $session_id"
     run tmux send-keys -t "$name" Enter
 
     # The runner creates the log within its first seconds; its absence means the
     # command never ran: wrong pane, dead shell, bad path.
     for _ in $(seq 30); do
-        [ -f "$here/$channel.log" ] && break
+        [ -f "$here/$run_id.log" ] && break
         sleep 0.5
     done
-    if [ ! -f "$here/$channel.log" ]; then
+    if [ ! -f "$here/$run_id.log" ]; then
         tmux capture-pane -p -J -t "$name" -S -15 >&2
-        die "no $here/$channel.log after 15s; the pane's last lines are above"
+        die "no $here/$run_id.log after 15s; the pane's last lines are above"
     fi
 
-    ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$channel" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    echo "spawned $name  channel=$channel"
-    echo "watcher: tmux wait-for $channel"
+    ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
+    echo "spawned $name  run=$run_id"
+}
+
+# Polls rather than blocking on a tmux channel: a `tmux wait-for` client that
+# dies (an ssh hop dropped under it) leaves a waiter behind that swallows the
+# next signal, so a wait that was ever interrupted could miss the exit for good.
+wait_() {
+    load; names "$1"
+    current_run "$name"
+    [ -n "$run_id" ] || die "no run of $name in the manifest"
+    while [ "$(run_state "$run_id" "$run_runner")" = running ]; do
+        sleep 3
+    done
+    state_line "$name" "$run_id" "$run_runner"
+    [ -f "$here/$run_id.status" ]
 }
 
 probe() {
     [ -f "$manifest" ] || die "no manifest; nothing spawned from $here"
     # Last manifest line per name is the current run; earlier runs' status files
     # are history, not state.
-    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name channel worktree run_runner; do
-        case $(run_state "$channel" "${run_runner:-$runner}") in
-            exited)  echo "$name exited  channel=$channel  $(cat "$here/$channel.status")" ;;
-            running) echo "$name running  channel=$channel  log: $(tail -1 "$here/$channel.log" 2>/dev/null || echo -)" ;;
-            # No status file and no runner process: killed pane, killed session,
-            # or rebooted host. No status is coming and the channel will never
-            # fire; treat like an unrecoverable session, not like running.
-            gone)    echo "$name gone  channel=$channel  (runner dead without a status file)" ;;
-        esac
+    tac "$manifest" | awk -F'\t' '!seen[$1]++' | while IFS=$'\t' read -r name run_id worktree run_runner; do
+        state_line "$name" "$run_id" "${run_runner:-$runner}"
     done
 }
 
 stop() {
     load; names "$1"
     current_run "$name"
-    [ -n "$channel" ] || die "no run of $name in the manifest"
-    state=$(run_state "$channel" "$run_runner")
-    [ "$state" = running ] || die "$name is not running (channel=$channel, $state)"
-    pid=$(runner_pid "$channel" "$run_runner")
+    [ -n "$run_id" ] || die "no run of $name in the manifest"
+    state=$(run_state "$run_id" "$run_runner")
+    [ "$state" = running ] || die "$name is not running (run=$run_id, $state)"
+    pid=$(runner_pid "$run_id" "$run_runner")
     pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
     # The pane shell runs the runner as a job, so the runner leads its own
     # process group and claude sits in it: one signal reaches both. Were that
@@ -229,7 +259,7 @@ stop() {
         run kill -TERM "$pid"
     fi
     for _ in $(seq 60); do
-        [ -f "$here/$channel.status" ] && { echo "stopped $name  $(cat "$here/$channel.status")"; return; }
+        [ -f "$here/$run_id.status" ] && { echo "stopped $name  $(cat "$here/$run_id.status")"; return; }
         sleep 0.5
     done
     die "$name has not written its status line 30s after TERM; \`tmux attach -t $name\` shows what it is doing"
@@ -238,14 +268,14 @@ stop() {
 resume() {
     load; names "$1"
     current_run "$name"
-    [ -n "$channel" ] || die "no run of $name to resume; spawn it"
-    if [ ! -f "$here/$channel.status" ]; then
-        case $(run_state "$channel" "$run_runner") in
+    [ -n "$run_id" ] || die "no run of $name to resume; spawn it"
+    if [ ! -f "$here/$run_id.status" ]; then
+        case $(run_state "$run_id" "$run_runner") in
             running) die "$name is still running; stop it first" ;;
             *)       die "$name is gone without a status line, so no session id survives; spawn afresh" ;;
         esac
     fi
-    session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$channel.status")
+    session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$run_id.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
     spawn "$1" "$2" "$session"
 }
@@ -254,11 +284,11 @@ log() {
     load; names "$1"
     lines=${2:-20}
     current_run "$name"
-    [ -n "$channel" ] || die "no run of $name in the manifest"
-    echo "$name $(run_state "$channel" "$run_runner")  channel=$channel"
-    [ -f "$here/$channel.status" ] && cat "$here/$channel.status"
+    [ -n "$run_id" ] || die "no run of $name in the manifest"
+    echo "$name $(run_state "$run_id" "$run_runner")  run=$run_id"
+    [ -f "$here/$run_id.status" ] && cat "$here/$run_id.status"
     echo "-- worklog, last $lines lines"
-    tail -n "$lines" "$here/$channel.log" 2>/dev/null || echo "(no worklog)"
+    tail -n "$lines" "$here/$run_id.log" 2>/dev/null || echo "(no worklog)"
 }
 
 cleanup() {
@@ -287,6 +317,7 @@ cmd=${1:-}
 case $cmd in
     init)       shift; init "$@" ;;
     spawn)      shift; spawn "$@" ;;
+    wait)       shift; wait_ "$@" ;;
     stop)       shift; stop "$@" ;;
     resume)     shift; resume "$@" ;;
     probe)      probe ;;

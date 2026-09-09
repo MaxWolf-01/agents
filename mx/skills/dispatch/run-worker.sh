@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Run one dispatch worker in this pane, retrying transient failures, then signal the orchestrator.
-# Usage: run-worker.sh <message-file> <ticket-file> <model> <channel> [session-id]
+# Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
+# Usage: run-worker.sh <message-file> <ticket-file> <model> <run> [session-id]
 #   message-file  worker prompt, or resume guidance; sent on the first attempt only
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
-#   channel       tmux wait-for channel, unique per run; also names <channel>.{status,log} beside this script
+#   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
 # Env:
@@ -14,7 +14,7 @@ set -u
 message=$1
 ticket=$2
 model=$3
-channel=$4
+run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
@@ -22,21 +22,22 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
-    # Signal anyway: an orchestrator whose watcher never fires waits for its
-    # fallback heartbeat instead of hearing about this.
+    # The status line is what the orchestrator's wait returns on.
     printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
-        "no worker-prompt.md beside run-worker.sh" | tee "$here/$channel.status" >&2
-    tmux wait-for -S "$channel"
+        "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 
+# By id, never --continue: --continue means the newest conversation in this
+# directory, which stops being this worker's the moment anything else runs
+# claude here (someone attaching to try something).
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
 # truncates the code review closing /mx:implement.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
-export DISPATCH_WORKLOG="$here/$channel.log"
+export DISPATCH_WORKLOG="$here/$run_id.log"
 # Created here so that an empty file says the worker wrote nothing, where a missing one
 # would leave the orchestrator unable to tell that from a worklog it never got told about.
 touch "$DISPATCH_WORKLOG"
@@ -93,6 +94,6 @@ for attempt in $(seq 1 $max_attempts); do
 done
 
 [ -n "$stopped" ] && rc=stopped
+# Last act: the orchestrator's wait returns on this file.
 printf 'attempts=%s exit=%s status=%s session=%s\n' \
-    "$attempt" "$rc" "${status:-?}" "$session" > "$here/$channel.status"
-tmux wait-for -S "$channel"
+    "$attempt" "$rc" "${status:-?}" "$session" > "$here/$run_id.status"

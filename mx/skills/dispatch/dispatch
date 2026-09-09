@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
 # The orchestrator's side of one feature's dispatch: the steps with an ordering
-# that matters and nothing in them to judge. Runs here, inside the feature
-# worktree, on the feature branch; `dispatch-ctl` is its counterpart on the
-# worker host.
+# that matters and nothing in them to judge, and the one door to the worker
+# host. Runs here, inside the feature worktree, on the feature branch;
+# `dispatch-ctl` is its counterpart on the worker host, reached through `ctl`.
 #
 # Usage: dispatch setup <host> <repo> [setup-command]
+#        dispatch push
+#        dispatch prompt <NN-slug> < prompt-file
+#        dispatch ctl <dispatch-ctl args...>
+#        dispatch wait <NN-slug>
+#        dispatch fetch <NN-slug>
 #        dispatch review <NN-slug>
 #   setup    once per feature: adds the git remote when missing, puts this
 #            plugin version's dispatch-ctl, runner and worker prompt into the
-#            host's scratch dir, runs `dispatch-ctl init` there and pushes the
-#            feature branch. <host> is user@host, or `local` for this machine
-#            (init pointed at this worktree). <repo> names the bare repo on
-#            the host, shared by every feature of the project; the feature is
-#            the current branch. <setup-command> is the project's own setup
-#            line, run in every ticket worktree before its worker starts;
-#            without it spawn uses `make install` (under `nix develop -c`
-#            where a flake.nix exists).
+#            host's scratch dir, runs `dispatch-ctl init` there, records the
+#            host in the feature's needs-human.md and in git config
+#            (dispatch.<feature>.*, what every command below reads), and
+#            pushes the feature branch. <host> is user@host, or `local` for
+#            this machine (init pointed at this worktree). <repo> names the
+#            bare repo on the host, shared by every feature of the project;
+#            the feature is the current branch. <setup-command> is the
+#            project's own setup line, run in every ticket worktree before its
+#            worker starts; without it spawn uses `make install` (under
+#            `nix develop -c` where a flake.nix exists).
+#   push     the feature branch to the host, so the next spawn cuts from its tip.
+#   prompt   writes stdin as the worker prompt for <NN-slug> on the host.
+#   ctl      runs `dispatch-ctl <args>` on the host, from the feature's scratch
+#            dir there, with DISPATCH_PERMISSION_MODE passed along when set.
+#   wait     blocks until the current run of <NN-slug> ends and prints its
+#            probe line (`dispatch-ctl wait`), riding out a dropped connection
+#            to the host on the way. Exit 0 on `exited`, 1 on `gone`.
+#   fetch    brings ticket/<feature>/<NN-slug> from the host into this repo,
+#            replacing an earlier fetch of it (ticket branches get rebased).
 #   review   once a ticket branch is fetched, before or after its merge alike:
 #            appends the branch's range to the ticket's `diff:` frontmatter and
 #            commits that on the feature branch, projects the ticket's
@@ -32,17 +48,56 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
-# Both commands run inside the feature worktree, on the feature branch.
+# Every command runs inside the feature worktree, on the feature branch.
 locate() {
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
     feature=$(git branch --show-current)
     [ -n "$feature" ] || die "detached HEAD; run this on the feature branch"
 }
 
+load() {
+    locate
+    host=$(git config "dispatch.$feature.host") || die "no worker host recorded for $feature; run: dispatch setup <host> <repo>"
+    scratch=$(git config "dispatch.$feature.scratch")
+    remote=${host//[@.]/-}
+}
+
+# A command on the worker host, or here when the host is this machine. The
+# keepalive collapses a dead connection in ~30s, so a suspended laptop's
+# `wait` fails fast and retries instead of hanging on a connection that will
+# never speak again.
+on_host() {
+    if [ "$host" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$host" "$@"; fi
+}
+
+# The board shows the host beside the feature; the file is the queue it also
+# reads, so the frontmatter is added around whatever entries are there.
+record_host() { # <label>
+    f=agent/tickets/$feature/needs-human.md
+    mkdir -p "$(dirname "$f")"
+    [ -f "$f" ] || printf -- '---\n---\n' > "$f"
+    if [ "$(head -1 "$f")" = --- ]; then
+        awk -v v="$1" '
+            NR == 1 { print; next }
+            !done && /^worker-host:/ { print "worker-host: " v; seen = 1; next }
+            !done && /^---$/ { if (!seen) print "worker-host: " v; done = 1 }
+            { print }' "$f" > "$f.tmp"
+    else
+        { printf -- '---\nworker-host: %s\n---\n' "$1"; cat "$f"; } > "$f.tmp"
+    fi
+    mv "$f.tmp" "$f"
+    git add -- "$f"
+    git diff --cached --quiet -- "$f" || run git commit -q -m "$feature: workers on $1" -- "$f"
+}
+
 setup() {
     locate
     host=$1 repo=$2 setup_cmd=${3:-}
-    # Relative to the home on either side: ssh and scp resolve it there.
+    # Relative to the home on either side: ssh and scp resolve it there. Per
+    # feature, because a concurrent dispatcher may be on another plugin
+    # version, and on a shared path its runner and worker prompt would replace
+    # this one's under running workers; named after the repo too, because the
+    # directory is per user, not per project.
     scratch=.local/state/dispatch/$repo-$feature
     # The setup command travels as a file named `setup`, so its quoting never
     # has to survive an ssh hop; no argument leaves the host on its default.
@@ -58,25 +113,72 @@ setup() {
         [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
         run cp "${files[@]}" "$scratch/"
         run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")"
-        echo "scratch=$scratch"
+        label=$USER@$(hostname)
+    else
+        remote=${host//[@.]/-}
+        git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
+        run on_host mkdir -p "$scratch"
+        [ -n "$setup_cmd" ] || run on_host rm -f "$scratch/setup"
+        run scp -q "${files[@]}" "$host:$scratch/"
+        # init creates the bare repo the push lands in; the push gives the host a
+        # <feature> for spawn to cut ticket branches from.
+        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature"
+        run git push -q "$remote" "$feature"
+        label=$host
+    fi
+    git config "dispatch.$feature.host" "$host"
+    git config "dispatch.$feature.scratch" "$scratch"
+    record_host "$label"
+    echo "host=$host  scratch=$scratch  (git config dispatch.$feature.*)"
+}
+
+push() {
+    load
+    [ "$host" = local ] && { echo "local host: $feature is already here"; return; }
+    run git push -q "$remote" "$feature"
+}
+
+prompt() {
+    load
+    nn=${1%%-*}
+    if [ "$host" = local ]; then cat > "$scratch/prompt-$nn.md"; else ssh "$host" "cat > $scratch/prompt-$nn.md"; fi
+}
+
+ctl() {
+    load
+    env=()
+    [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
+    on_host env "${env[@]}" bash "$scratch/dispatch-ctl" "$@"
+}
+
+wait_() {
+    load
+    while :; do
+        on_host bash "$scratch/dispatch-ctl" wait "$1"
+        rc=$?
+        # 255 is ssh's own: the connection, not the command.
+        [ "$rc" -eq 255 ] || return "$rc"
+        echo "dispatch: connection to $host lost; retrying in 15s" >&2
+        sleep 15
+    done
+}
+
+fetch() {
+    load
+    branch=ticket/$feature/$1
+    if [ "$host" = local ]; then
+        git rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch here"
+        echo "local host: $branch is already here"
         return
     fi
-    remote=${host//[@.]/-}
-    git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
-    run ssh "$host" mkdir -p "$scratch"
-    [ -n "$setup_cmd" ] || run ssh "$host" rm -f "$scratch/setup"
-    run scp -q "${files[@]}" "$host:$scratch/"
-    # init creates the bare repo the push lands in; the push gives the host a
-    # <feature> for spawn to cut ticket branches from.
-    run ssh "$host" bash "$scratch/dispatch-ctl" init "$repo" "$feature"
-    run git push -q "$remote" "$feature"
-    echo "remote=$remote  scratch=~/$scratch  ctl='ssh $host bash $scratch/dispatch-ctl'"
+    run git fetch -q "$remote" "+$branch:$branch"
 }
 
 # <tip> → <base>..<tip>, whether or not the ticket branch has merged yet. Before
 # the merge, merge-base against the feature branch is the answer; after it, the
 # tip is an ancestor of the feature branch and merge-base would return the tip
-# itself, so the base comes from the merge commit that brought it in.
+# itself, so the base comes from the merge commit that brought it in. SHAs on
+# both ends, because cleanup deletes the branch while its commits survive.
 range_of() {
     tip=$1
     if git merge-base --is-ancestor "$tip" "$feature"; then
@@ -91,7 +193,8 @@ range_of() {
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: assumption bullets `- A3 \`path:118\`: text` become notes, each
 # `Addressed: C1, C4` line lists resolved comments. A duplicate id fails the
-# render, as /mx:implement promises the worker it will.
+# render, as /mx:implement promises the worker it will. The user's own comments
+# live in diffview's state file beside the page, which a render never touches.
 notes_of() {
     jq -R -s '
         split("\n")
@@ -141,6 +244,11 @@ review() {
 cmd=${1:-}
 case $cmd in
     setup)   shift; setup "$@" ;;
+    push)    push ;;
+    prompt)  shift; prompt "$@" ;;
+    ctl)     shift; ctl "$@" ;;
+    wait)    shift; wait_ "$@" ;;
+    fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
     -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
     *) die "unknown command: $cmd" ;;
