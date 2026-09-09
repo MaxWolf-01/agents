@@ -471,6 +471,11 @@ def visible(tickets: list[Ticket], full: bool) -> tuple[set[str], set[str]]:
     return live | ghost, ghost
 
 
+def node_label(text: str) -> str:
+    # a double quote ends mermaid's label string, and the #quot; entity renders literally in an SVG text label
+    return text.replace('"', "\u201d")
+
+
 def node_lines(ns: str, feature: str, tickets: list[Ticket], include: set[str], ghost: set[str]) -> list[str]:
     # ns makes node ids unique per diagram instance: mermaid+elk contaminate across
     # diagrams on one page when two share a node id (DOM lookups hit the first SVG).
@@ -479,22 +484,15 @@ def node_lines(ns: str, feature: str, tickets: list[Ticket], include: set[str], 
     for t in tickets:
         if t.num not in include:
             continue
-        label = f"{t.num} {t.title}".replace('"', "#quot;")
+        label = node_label(f"{t.num} {t.title}")
         cls = "ghost" if t.num in ghost else t.status
         lines.append(f'  T_{fid}_{t.num}["{STATUS_SYMBOL[t.status]} {label}"]:::{cls}')
     for t in tickets:
         if t.num not in include:
             continue
         lines.extend(f"  T_{fid}_{b} --> T_{fid}_{t.num}" for b in t.blocked_by if b in include)
-    lines.extend(
-        f'  click T_{fid}_{t.num} "#t-{feature}-{t.num}" "{tooltip(t.num + " " + t.title)}"' for t in tickets if t.num in include
-    )
+    lines.extend(f'  click T_{fid}_{t.num} "#t-{feature}-{t.num}"' for t in tickets if t.num in include)
     return lines
-
-
-def tooltip(text: str) -> str:
-    # mermaid's click tooltip is a double-quoted string; the full title shows on hover where the node clips it
-    return text.replace('"', "'")
 
 
 def feature_dag(feature: Feature, full: bool) -> str | None:
@@ -521,10 +519,10 @@ def board_dag(features: list[Feature], standalone: list[Standalone], full: bool)
     if shown:
         lines.append(f'  subgraph S_{ns}__standalone["standalone"]')
         for k in shown:
-            label = k.title.replace('"', "#quot;")
+            label = node_label(k.title)
             cls = "ghost" if k.status == "done" else k.status
             lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {label}"]:::{cls}')
-            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}" "{tooltip(k.title)}"')
+            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}"')
         lines.append("  end")
     # external edges (cross-feature, and standalone tickets), drawn where both endpoints are on the board
     shown_slugs = {k.slug for k in shown}
@@ -1002,9 +1000,13 @@ ${standalone}
   const classDefs = ["done", "claimed", "open", "blocked", "proposed"].map((s) =>
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
   ).join("\\n") + "\\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
+  // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
+  // mode only when its measured width equals the wrap width exactly, and under a
+  // fractional device scale the measurement comes back a hair short, so every
+  // label stayed on one line and clipped. SVG labels wrap by mermaid's own measure.
   mermaid.initialize({
-    startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base",
-    elk: { mergeEdges: false },
+    startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
+    elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
     themeVariables: {
       fontFamily: v("--mono"), fontSize: "13px",
       primaryColor: v("--panel"), primaryTextColor: v("--ink"),
@@ -1024,8 +1026,19 @@ ${standalone}
       el.dataset.src = el.textContent;
       const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\\n" + classDefs);
       el.innerHTML = svg;
+      nodeHover(el);
     }
   }
+
+  // Every node carries its full title as a native tooltip.
+  function nodeHover(root) {
+    for (const n of root.querySelectorAll("g.node")) {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t.textContent = n.textContent.trim().replace(/\\s+/g, " ");
+      n.prepend(t);
+    }
+  }
+  for (const el of document.querySelectorAll(".view .mermaid")) if (el.querySelector("svg")) nodeHover(el);
 
   const { MODES, saved } = window.boardView;
   let current = window.boardView.view;
