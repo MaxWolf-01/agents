@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>harden and greenlet: what breaks, what is there now, what to do instead</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper: #fbfaf7; --ink: #1c1b18; --mute: #6b675e; --rule: #d9d5cc;
+    --miss: #b3261e; --miss-bg: #f8dedb; --hit: #2b6a3f; --hit-bg: #dcefe1;
+    --code-bg: #f1efe9; --keep: #2b6a3f; --drop: #b3261e;
+    --serif: "Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  html[data-scheme="dark"] {
+    --paper: #17171a; --ink: #e8e5dd; --mute: #9a968c; --rule: #34343a;
+    --miss: #f08a80; --miss-bg: #3d1f1d; --hit: #7fce9a; --hit-bg: #1b3324;
+    --code-bg: #1f1f24; --keep: #7fce9a; --drop: #f08a80;
+  }
+  @media (prefers-color-scheme: dark) { html:not([data-scheme]) {
+    --paper: #17171a; --ink: #e8e5dd; --mute: #9a968c; --rule: #34343a;
+    --miss: #f08a80; --miss-bg: #3d1f1d; --hit: #7fce9a; --hit-bg: #1b3324;
+    --code-bg: #1f1f24; --keep: #7fce9a; --drop: #f08a80;
+  } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--serif); font-size: 17px; line-height: 1.55; }
+  main { max-width: 74ch; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  h1 { font-size: 1.9rem; line-height: 1.2; font-weight: 500; margin: 0 0 .5rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.2rem; font-weight: 600; margin: 2.8rem 0 .6rem; }
+  p { margin: .6rem 0; }
+  .lede { color: var(--mute); margin-bottom: 2rem; }
+  code, pre { font-family: var(--mono); font-size: .84em; }
+  code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre { background: var(--code-bg); padding: .9rem 1rem; border-radius: 4px; overflow-x: auto; line-height: 1.5; margin: .8rem 0; }
+  pre code { background: none; padding: 0; }
+  .fig { margin: 1rem 0 1.4rem; }
+  .fig pre { padding: 0; white-space: normal; }
+  .fig .ln { display: grid; grid-template-columns: 3.2rem 1fr; }
+  .fig .ln > span:first-child { color: var(--mute); text-align: right; padding: 0 .8rem 0 .4rem; user-select: none; }
+  .fig .ln > span:last-child { padding-right: 1rem; white-space: pre; }
+  .fig .hit { background: var(--hit-bg); }
+  .fig .miss { background: var(--miss-bg); }
+  .fig .miss > span:first-child { color: var(--miss); font-weight: 700; }
+  .fig .ln.head { padding-top: .6rem; }
+  .fig .ln.tail { padding-bottom: .6rem; }
+  .cap { color: var(--mute); font-size: .92rem; margin-top: .5rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; margin: .8rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .6rem .45rem 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; padding-right: 1rem; }
+  td .miss { color: var(--miss); font-weight: 600; }
+  td .ok { color: var(--hit); font-weight: 600; }
+  tr.pick td { background: var(--hit-bg); }
+  .diff .del { color: var(--drop); }
+  .diff .add { color: var(--keep); }
+  .diff .ctx { color: var(--mute); }
+  .toggle { position: fixed; top: .9rem; right: 1rem; font: inherit; font-size: .85rem; background: var(--code-bg); color: var(--ink); border: 1px solid var(--rule); border-radius: 999px; padding: .3rem .8rem; cursor: pointer; }
+  .toggle:focus-visible { outline: 2px solid var(--hit); outline-offset: 2px; }
+  .small { font-size: .92rem; color: var(--mute); }
+  ul { padding-left: 1.2rem; } li { margin: .25rem 0; }
+</style>
+</head>
+<body>
+<button class="toggle" id="toggle" aria-label="switch colour scheme">dark</button>
+<main>
+<h1>harden and greenlet</h1>
+<p class="lede">What breaks, what v0.1.43 does about it, and the shape that needs no detector and no per-project config. Every number below is from a run on the yapit and memex clones today.</p>
+
+<h2>What breaks</h2>
+<p>SQLAlchemy's async engine runs on greenlet, a library that switches stacks under Python's tracer. coverage.py's default tracer loses the frame at the switch, so every line after an <code>await</code> into the engine is recorded as never run. It does not warn. This is the one test that exercises <code>get_document</code>, as coverage sees it:</p>
+<div class="fig"><pre>
+<div class="ln head hit"><span>1421</span><span>async def get_document(document_id: UUID, db: DbSession, user: OptionalUser) -&gt; DocumentDetailResponse:</span></div>
+<div class="ln"><span>1422</span><span>    """Get a document. Public docs need no auth; private docs require ownership."""</span></div>
+<div class="ln hit"><span>1423</span><span>    document = await _get_document_with_optional_auth(document_id, db, user)</span></div>
+<div class="ln miss"><span>1424</span><span>    is_owner = user is not None and document.user_id == user.id</span></div>
+<div class="ln miss"><span>1425</span><span>    return DocumentDetailResponse(</span></div>
+<div class="ln tail"><span>1426</span><span>        id=document.id,</span></div>
+</pre>
+<p class="cap">Green: recorded as run. Red: run by the test (replacing line 1424 with <code>raise</code> fails it) and recorded as not run. Across <code>documents.py</code> that is 15 statements, across yapit 19.</p></div>
+<p>Why harden cares: it mutates only covered lines, so those 15 statements get no mutants and the report lists them as "changed lines nothing runs". A wrong map is worse than no map.</p>
+
+<h2>What is there now (v0.1.43)</h2>
+<p>The fix chosen was coverage's documented setting, put in the project: <code>[tool.coverage.run] concurrency = ["thread", "greenlet"]</code>. Because coverage does not warn when it is missing, harden then had to detect the missing setting, and because harden runs under <code>uv run --with</code>, which layers its own packages over the project's, <code>import greenlet</code> cannot tell whose greenlet it is. So:</p>
+<ul>
+  <li><code>project_has_greenlet</code> greps <code>uv.lock</code> for <code>name = "greenlet"</code>, then globs <code>.venv/lib/python*/site-packages/greenlet</code>.</li>
+  <li><code>require_concurrency_config</code> reads the project's coverage config and exits with a message telling the project to add the line.</li>
+  <li>Two tests build fake lock files and venvs to check the detector; a PYTHON.md paragraph and a <code>--help</code> sentence tell every project about it.</li>
+</ul>
+<p>Three functions and a filesystem sniff exist to prove that a project failed to configure itself for harden. A tool that needs every project set up for it, plus a detector for when it was not, is the wrong shape: the measurement is harden's, so its settings should be harden's.</p>
+
+<h2>Where the setting can live</h2>
+<p>Four places produce the same 12 executed lines in <code>get_document</code>; only the default loses two. Measured on yapit (<code>-k owner_sees_full</code>) and on memex, which does not use greenlet.</p>
+<table>
+<thead><tr><th>shape</th><th class="n">get_document</th><th class="n">documents.py</th><th class="n">yapit</th><th>project config</th><th>detector</th><th>memex, 156 tests</th></tr></thead>
+<tbody>
+<tr><td>default</td><td class="n"><span class="miss">10</span> of 12</td><td class="n"><span class="miss">235</span> of 678</td><td class="n"><span class="miss">2362</span></td><td>none</td><td>none</td><td>5.1 s</td></tr>
+<tr><td>project config names greenlet (now)</td><td class="n">12</td><td class="n">250</td><td class="n">2381</td><td>required per project</td><td>lock grep + venv glob</td><td>5.2 s</td></tr>
+<tr><td><code>COVERAGE_CORE=sysmon</code> in harden's env (the original fix)</td><td class="n">12</td><td class="n">250</td><td class="n">2381</td><td>none</td><td>none</td><td>5.2 s</td></tr>
+<tr class="pick"><td><code>coverage run --concurrency=thread,greenlet</code>, harden supplies greenlet</td><td class="n">12</td><td class="n">250</td><td class="n">2381</td><td>none</td><td>none</td><td>8.1 s</td></tr>
+<tr><td><code>COVERAGE_RCFILE</code> pointing at a file harden writes</td><td class="n">12</td><td class="n">250</td><td class="n">2381</td><td>none, but the project's own is ignored</td><td>none</td><td>not timed</td></tr>
+</tbody>
+</table>
+<p class="small">The memex column is one coverage pass; harden runs it once per report, then hundreds of mutant runs without coverage, so the flag's three seconds are paid once. The rcfile row is out because it replaces the project's coverage config wholesale (its omit and exclude lines go with it). The sysmon row is the smallest change, and the reason it was dropped ("sysmon and greenlet exclude each other") does not hold: with a project config naming greenlet, coverage warns, falls back to the default core and still records the 12 lines. Its real limit is Python below 3.12, where the sysmon core does not exist and coverage would fall back to the lossy default on a greenlet project.</p>
+
+<h2>The shape to build</h2>
+<p>harden already injects three packages into the project's environment for its run; greenlet becomes the fourth, and the coverage pass names it on the command line. Nothing is read from the project, nothing is refused.</p>
+<pre class="diff"><code><span class="ctx">harden.py, run_runner</span>
+<span class="del">-    argv = ["uv", "run", "--quiet", "--with", "mutmut~=3.7", "--with", "coverage", "--with", "pytest-cov"]</span>
+<span class="add">+    argv = ["uv", "run", "--quiet", "--with", "mutmut~=3.7", "--with", "coverage", "--with", "greenlet"]</span>
+
+<span class="ctx">mutmut_runner.py, collect_coverage</span>
+<span class="del">-    require_concurrency_config()</span>
+<span class="del">-    argv = [sys.executable, "-m", "pytest", "-q", *PYTEST_ORDER_ARGS, "--ignore=mutants"]</span>
+<span class="del">-    argv += [f"--cov={path}" for path in source_paths]</span>
+<span class="del">-    argv += ["--cov-report=", *test_selection()]</span>
+<span class="add">+    argv = [sys.executable, "-m", "coverage", "run", "--concurrency=thread,greenlet"]</span>
+<span class="add">+    argv += [f"--source={','.join(source_paths)}", "-m", "pytest", "-q", *PYTEST_ORDER_ARGS]</span>
+<span class="add">+    argv += ["--ignore=mutants", *test_selection()]</span>
+
+<span class="del">-def require_concurrency_config() -> None: ...        (12 lines)</span>
+<span class="del">-def project_has_greenlet(tree: Path) -> bool: ...     (8 lines)</span>
+<span class="del">-def greenlet_unnamed(concurrency: list[str]) -> bool: ...</span>
+
+<span class="ctx">test_harden.py</span>
+<span class="del">-def test_a_project_with_greenlet_has_to_name_it_in_its_coverage_config(): ...</span>
+<span class="del">-def test_greenlet_is_the_projects_when_its_lock_or_venv_says_so(): ...</span>
+<span class="add">+one test: the coverage pass names greenlet in its command line</span>
+
+<span class="ctx">PYTHON.md</span>
+<span class="del">-  the paragraph that tells a project to name greenlet, and that harden refuses without it</span>
+<span class="add">+  one line, for the project's own CI coverage: name greenlet if SQLAlchemy async is in use</span>
+
+<span class="ctx">harden.py --help</span>
+<span class="del">-  "a project with greenlet installed has to name it ... harden stops and says so"</span>
+<span class="add">+  "coverage is collected with greenlet named, so lines after an await into SQLAlchemy count"</span>
+</code></pre>
+<p>Net: about forty lines and two tests deleted, one flag and one <code>--with</code> added, pytest-cov no longer needed. A project with no greenlet pays one slower coverage pass and nothing else. The project's own coverage config is still read by <code>coverage run</code> for everything but concurrency, so omit and exclude lines keep working.</p>
+<p class="small">One edge stays open: a project on gevent or eventlet names that in its config, and a fixed <code>--concurrency</code> would override it. When one exists, harden reads the project's list and adds greenlet only if no greenlet-family library is already named; no project of yours does today.</p>
+</main>
+<script>
+  const root = document.documentElement, btn = document.getElementById('toggle');
+  const dark = () => root.dataset.scheme ? root.dataset.scheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const paint = () => btn.textContent = dark() ? 'light' : 'dark';
+  btn.onclick = () => { root.dataset.scheme = dark() ? 'light' : 'dark'; paint(); };
+  paint();
+</script>
+</body>
+</html>
