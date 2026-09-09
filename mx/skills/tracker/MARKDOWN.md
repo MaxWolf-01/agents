@@ -37,9 +37,9 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): every feature with its spec status, dependency graph and ticket rows, the standalone tickets, the needs-human queue, the review-page links. `board` renders it; its `--help` says what it reads, which checkout's copy it shows, and how the open tab stays current.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): every feature with its spec status, dependency graph and ticket rows, the standalone tickets, the needs-human queue, the review-page links. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what it reads and which checkout's copy it shows.
 
-A session working with a human that fetches a ticket renders the board and starts its watcher, as a background task of that session: `board agent/tickets --watch`. The first render opens the tab. The watcher dies with the session; a second session starts its own. A dispatch worker skips this: it runs unattended, and its orchestrator holds the board.
+The human runs `board`; the tab then follows every tracker change on its own. A session renders once, without opening a tab, after it changes tracker state (`board --no-watch --no-open`), so the page on disk is current for whoever opens it next.
 
 ## Supersede
 

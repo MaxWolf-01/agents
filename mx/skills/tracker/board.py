@@ -5,6 +5,11 @@
 # ///
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
+Run `board` from anywhere inside the repo: it finds the tracker (the nearest
+agent/tickets up from the current directory, so a worktree or a clone inside a
+workspace repo both work), renders, opens the tab, and keeps re-rendering until
+Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
+
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
 every standalone ticket (*.md at the tracker root) and writes one
@@ -27,10 +32,10 @@ agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
 and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
 link appears only on the machine that rendered them.
 
---watch keeps rendering: every few seconds it looks for a change under the
-tracker (any worktree's copy included) and re-renders on one; it runs until
-killed. Several watchers writing the same page is harmless since the render is
-deterministic from disk. Per-feature orchestrator state is read from
+Watching means: every few seconds it looks for a change under the tracker,
+any worktree's copy included, a worktree cut after the start too, and
+re-renders on one. Several watchers writing the same page is harmless since the
+render is deterministic from disk. Per-feature orchestrator state is read from
 agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
 then one `- summary :: markdown detail` bullet per pending entry.
 
@@ -41,8 +46,9 @@ flicker. The page and its stamp file are gitignored, like agent/diffviews.
 
 Examples:
 
-    board agent/tickets --watch
-    board agent/tickets --out /tmp/board.html --open never
+    board
+    board --no-watch --no-open
+    board ~/repos/workspace/agent/tickets --out /tmp/board.html
 """
 
 import datetime
@@ -59,7 +65,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
-from typing import Annotated, Literal
+from typing import Annotated
 
 import markdown
 import tyro
@@ -70,30 +76,41 @@ STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘
 
 @dataclass
 class Args:
-    tickets_root: Annotated[Path, tyro.conf.Positional]
-    """Tracker root, e.g. agent/tickets, in any checkout of the repo; the board renders the main checkout's copy."""
+    tickets_root: Annotated[Path | None, tyro.conf.Positional, tyro.conf.arg(metavar="[PATH]")] = None
+    """Tracker root, e.g. agent/tickets, in any checkout of the repo; the board renders the main checkout's copy. Default: the nearest agent/tickets up from the current directory."""
     out: Path | None = None
     """Output HTML path. Default: board.html beside the tracker (agent/board.html)."""
     repo: Path | None = None
     """Repo for the commit log. Default: the main checkout."""
-    open: Literal["auto", "always", "never"] = "auto"
-    """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window. auto = only when the output file is new."""
-    watch: bool = False
-    """Keep running and re-render whenever anything under the tracker changes."""
+    open: bool = True
+    """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window."""
+    watch: bool = True
+    """Keep running and re-render whenever anything under the tracker changes, until Ctrl-C."""
 
 
 def main(args: Args) -> None:
-    root, overrides = tracker_roots(args.tickets_root)
+    tickets_root = args.tickets_root or find_tracker(Path.cwd())
+    root, overrides = tracker_roots(tickets_root)
     assert root.is_dir() or overrides, f"no tracker at {root}"
     repo = (args.repo or root.parent.parent).resolve()
     out = (args.out or root.parent / "board.html").resolve()
-    existed = out.exists()
     render(root, overrides, repo, out)
-    if args.open == "always" or (args.open == "auto" and not existed):
+    if args.open:
         browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
         subprocess.Popen([browser, str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if args.watch:
-        watch(args.tickets_root, repo, out)
+        try:
+            watch(tickets_root, repo, out)
+        except KeyboardInterrupt:
+            pass
+
+
+def find_tracker(start: Path) -> Path:
+    """The nearest agent/tickets at or above `start`: the repo's own tracker, or the workspace repo's when `start` is inside a clone it holds."""
+    for d in (start, *start.parents):
+        if (d / "agent" / "tickets").is_dir():
+            return d / "agent" / "tickets"
+    sys.exit(f"board: no agent/tickets at or above {start}")
 
 
 def render(root: Path, overrides: dict[str, Path], repo: Path, out: Path) -> None:
