@@ -236,6 +236,13 @@ def test_an_unresolved_mutant_never_reads_as_clean() -> None:
     assert result["verdict"] == "unmeasured"
 
 
+def test_a_range_with_nothing_to_mutate_is_a_report_not_a_run() -> None:
+    """Two full suite runs to say a docs-only range changed no behaviour is a cost with no reading
+    behind it; what such a range did change still comes back unmeasured."""
+    assert report(changed=["README.md"])["verdict"] == "pass"
+    assert report(changed=["README.md"], unmeasured_lines=["pkg/mod.py:4"])["verdict"] == "unmeasured"
+
+
 def test_an_uncovered_changed_line_outranks_what_went_unmeasured() -> None:
     result = report(unmeasured_lines=["pkg/mod.py:4"], at_head={"uncovered": ["pkg/mod.py:12"]})
     assert result["verdict"] == "findings"

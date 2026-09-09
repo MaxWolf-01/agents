@@ -83,6 +83,16 @@ import tyro
 RUNNER = Path(__file__).parent / "mutmut_runner.py"
 CLASS_SEPARATOR = "ǁ"
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+NOTHING_MEASURED = {
+    "verdicts": {},
+    "patterns_run": [],
+    "test_files_matched": [],
+    "uncovered": [],
+    "unanalysable": {},
+    "wall_s": 0.0,
+}
+"""A range with no mutation target and no edited test is reported without running the suite twice
+to say so; what it changed, if anything, comes back under unmeasured."""
 
 
 @dataclass
@@ -107,10 +117,14 @@ def main(args: Args) -> None:
     changed = changed_files(repo, base, head)
     new, old = parse_diff(git(repo, "diff", "-U0", f"{base}..{head}", "--", *source_paths))
     targets, unmeasured_lines = collect_targets(repo, base, new, old)
+    test_files = outside(changed, source_paths)
 
-    with base_worktree(repo, base) as tree:
-        at_base = measure(tree, patterns=[f"{name}*" for name in targets], test_files=outside(changed, source_paths))
-    at_head = measure(repo, patterns=at_base["patterns_run"], changed_lines=new)
+    if targets or test_files:
+        with base_worktree(repo, base) as tree:
+            at_base = measure(tree, patterns=[f"{name}*" for name in targets], test_files=test_files)
+        at_head = measure(repo, patterns=at_base["patterns_run"], changed_lines=new)
+    else:
+        at_base = at_head = NOTHING_MEASURED
 
     report = assemble(repo, f"{base}..{head}", changed, source_paths, unmeasured_lines, at_base, at_head)
     print(json.dumps(report, indent=2) if args.json else render(report))
