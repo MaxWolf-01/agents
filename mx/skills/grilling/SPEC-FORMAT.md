@@ -55,7 +55,7 @@ List any **floors**, prototypes (or aspects of one) the user promoted to minimum
 The **seams** at which the feature is tested: a design call put to the user in a round like any other. Existing seams over new ones, the highest seam possible; new seams proposed at the highest point they can sit. The fewer seams across the codebase, the better; the ideal number is one. Per seam:
 
 - The **oracle**: the independent truth its tests compare against, in one phrase (a sentence of this spec, a worked example, a reference implementation, an invariant of the domain, a captured production payload). A seam whose only available answer is what the code returns today says so, and the reviewer reads its tests knowing it.
-- Prior art: the tests already entering there.
+- Prior art: the existing tests at that seam, named, as the pattern the new ones follow.
 
 Then **dispose of every Property**, one line each:
 

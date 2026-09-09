@@ -30,10 +30,10 @@ Then spawn an `Explore` subagent to walk the codebase. Don't follow rigid heuris
 - Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
 - Where do tightly-coupled modules leak across their seams?
 - Which parts of the codebase are untested, or hard to test through their current interface?
-- Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), out of reach of a test and of a mutation tool alike?
+- Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), where every test of it pays the framework's setup and a mutation tool cannot reach it at all?
 - Which seams have a stated contract and no property checking it?
 
-Harden reads the same friction as a measurement (`/mx:testing`): `make harden ARGS=--whole-repo` over the area you scoped, or a feature's report where dispatch already ran one. Survivors clustered in one module, lines nothing runs, and code the tool could not measure at all are testability smells that already name a location.
+Harden reads the same friction as a measurement (`/mx:testing`): read the newest whole-repo report under `agent/harden/` when no commit since it touched the area you scoped, and run `make harden ARGS=--whole-repo` otherwise. Survivors clustered in one module, lines nothing runs, and code the tool could not measure at all are testability smells that already name a location.
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
