@@ -28,10 +28,5 @@
   ```
 
 - `mutants/`, `.coverage` and `.hypothesis/` are gitignored, and `[tool.pytest.ini_options] testpaths = ["tests"]` keeps pytest out of the copies of the suite that mutmut leaves in `mutants/`.
-- A project with greenlet installed (SQLAlchemy's async engine brings it) names it in the coverage config, or coverage records nothing after an `await` into the engine and warns about nothing; harden refuses to measure until it is set. The value replaces the default rather than adding to it, so `thread` stays in the list:
-
-  ```toml
-  [tool.coverage.run]
-  concurrency = ["thread", "greenlet"]
-  ```
+- A project on SQLAlchemy's async engine sets `[tool.coverage.run] concurrency = ["thread", "greenlet"]` for its own coverage runs (CI, a local `--cov`), or coverage's default tracer records nothing after an `await` into the engine and warns about nothing. Harden's own pass needs no setting from the project.
 - HypoFuzz is licensed for non-commercial use, which is the user's call per project: ask, and drop the dependency where they rule it a problem. Without it `make fuzz` loops the `fuzz` profile instead, and Atheris drives the same property tests through Hypothesis' `fuzz_one_input` where a project wants coverage guidance anyway.

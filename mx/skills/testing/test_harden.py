@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "mutmut~=3.7", "coverage", "greenlet"]
+# dependencies = ["tyro", "mutmut~=3.7", "coverage"]
 # ///
 """Checks for harden. Run: uv run test_harden.py
 
@@ -49,7 +49,8 @@ HERE = Path.cwd()
 os.chdir(tempfile.mkdtemp(prefix="harden-tests-"))
 Path("setup.cfg").write_text("[mutmut]\nsource_paths = src\n")
 
-from mutmut_runner import greenlet_unnamed, mutmut_exit_code, require_concurrency_config, targets_for_test_files
+from mutmut_runner import mutmut_exit_code, targets_for_test_files
+from mutmut_runner import test_env as coverage_pass_env  # imported under another name: pytest collects test_*
 
 os.chdir(HERE)
 
@@ -194,37 +195,11 @@ def test_a_changed_file_the_map_does_not_know_names_nothing() -> None:
     )
 
 
-def test_a_project_with_greenlet_has_to_name_it_in_its_coverage_config() -> None:
-    """coverage's default is `thread`; naming greenlet replaces the default, and not naming it drops
-    every line after an `await` into SQLAlchemy's engine without a warning."""
-    assert greenlet_unnamed([])
-    assert greenlet_unnamed(["thread"])
-    assert not greenlet_unnamed(["thread", "greenlet"])
-    assert not greenlet_unnamed(["greenlet"])
-
-
-def test_the_coverage_config_is_read_from_the_tree_being_measured() -> None:
-    """The check reads the project's lock and `[tool.coverage.run]` from the working directory,
-    which is the tree the runner is started in; whatever is importable in the runner's own
-    environment says nothing about the project."""
-    lock = 'version = 1\n\n[[package]]\nname = "greenlet"\nversion = "3.5.5"\n'
-    unnamed, named, without = tmp("coverage-unnamed"), tmp("coverage-named"), tmp("coverage-without")
-    (unnamed / "uv.lock").write_text(lock)
-    (unnamed / "pyproject.toml").write_text('[tool.coverage.run]\nsource = ["pkg"]\n')
-    (named / "uv.lock").write_text(lock)
-    (named / "pyproject.toml").write_text('[tool.coverage.run]\nconcurrency = ["thread", "greenlet"]\n')
-    (without / "pyproject.toml").write_text('[tool.coverage.run]\nsource = ["pkg"]\n')
-    here = Path.cwd()
-    try:
-        os.chdir(unnamed)
-        with pytest.raises(SystemExit, match="does not name it"):
-            require_concurrency_config()
-        os.chdir(named)
-        require_concurrency_config()
-        os.chdir(without)
-        require_concurrency_config()
-    finally:
-        os.chdir(here)
+def test_every_test_process_runs_coverage_on_the_sysmon_core() -> None:
+    """`test_env`'s docstring says why; this holds the setting in place."""
+    env = coverage_pass_env("/tmp/cov")
+    assert env["COVERAGE_CORE"] == "sysmon"
+    assert env["COVERAGE_FILE"] == "/tmp/cov"
 
 
 def test_a_kill_needs_a_failing_test() -> None:
