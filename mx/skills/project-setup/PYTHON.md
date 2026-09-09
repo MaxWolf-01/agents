@@ -10,8 +10,8 @@
 
 ## Testing
 
-- `uv add --group dev hypothesis`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`). Hypothesis is the only testing dependency the project takes on: harden runs mutmut and coverage from its own environment, so neither belongs in the dev group.
-- Hypothesis takes two profiles in `tests/conftest.py`, picked up with `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))`: `harden`, so a mutation run costs a small example budget instead of the full one, and `fuzz`, the budget `make fuzz` runs until you stop it. Hypothesis keeps what either one finds in `.hypothesis/`, and the ordinary suite replays it from there.
+- `uv add --group dev hypothesis hypofuzz`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`). Those two are the testing dependencies the project takes on: harden runs mutmut and coverage from its own environment, so neither belongs in the dev group.
+- Hypothesis takes two profiles in `tests/conftest.py`, picked up with `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))`: `harden`, so a mutation run costs a small example budget instead of the full one, and `fuzz`, the budget `make fuzz` runs until you stop it where the project has no HypoFuzz. Hypothesis keeps what either one finds in `.hypothesis/`, and the ordinary suite replays it from there.
 
   ```python
   settings.register_profile("harden", max_examples=25, deadline=None)
@@ -29,4 +29,4 @@
 
 - `mutants/`, `.coverage` and `.hypothesis/` are gitignored, and `[tool.pytest.ini_options] testpaths = ["tests"]` keeps pytest out of the copies of the suite that mutmut leaves in `mutants/`.
 - `COVERAGE_CORE=sysmon` wherever else coverage is collected (CI, a local `--cov` run); harden's `--help` says why it is the tracer to pin.
-- `make fuzz` needs nothing beyond hypothesis. Coverage guidance is the optional upgrade: `uv add --group dev hypofuzz` where its non-commercial licence fits the project, and the target uses it as soon as it imports; where the licence does not fit, Atheris drives the same property tests through Hypothesis' `fuzz_one_input`.
+- HypoFuzz is licensed for non-commercial use, which is the user's call per project: ask, and drop the dependency where they rule it a problem. Without it `make fuzz` loops the `fuzz` profile instead, and Atheris drives the same property tests through Hypothesis' `fuzz_one_input` where a project wants coverage guidance anyway.

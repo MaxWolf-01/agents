@@ -14,8 +14,8 @@ harden:
 	@echo "harden: $(HARDEN)"
 	uv run $(HARDEN) $(ARGS)
 
-# The property tests again, at the fuzz profile's budget, until you stop it. HypoFuzz takes over
-# when it is installed and adds coverage guidance; its licence is the project's call.
+# The property tests again, coverage-guided by HypoFuzz, until you stop it. A project without
+# HypoFuzz (its licence is the user's call) loops them at the fuzz profile's budget instead.
 fuzz:
 	@if uv run python -c "import hypofuzz" >/dev/null 2>&1; then \
 	  uv run hypothesis fuzz -- tests/properties; \

@@ -13,6 +13,7 @@
 #        dispatch-ctl probe
 #        dispatch-ctl log <NN-slug> [lines]
 #        dispatch-ctl cleanup <NN-slug>
+#        dispatch-ctl fuzz start|stop
 #   init      once per feature, before the first spawn: writes `config`,
 #             creates the bare repo when missing, updates the mx plugin and
 #             prints its version. git-dir defaults to ~/repos/dispatch/<repo>.git
@@ -39,6 +40,13 @@
 #             a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane, forgets the run, removes worktree and branch
+#   fuzz      start: cuts fuzz/<feature> from the feature branch into
+#             <worktrees-dir>/<repo>-<feature>-fuzz, sets it up as a ticket
+#             worktree is, and runs `make fuzz` in a tmux session
+#             fuzz-<repo>-<feature>, which then runs until it is stopped.
+#             stop: kills that session and removes its worktree and branch.
+#             One per feature; it holds no state beyond the session and the
+#             worktree, so `stop` is the whole of undoing it.
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
@@ -312,6 +320,46 @@ cleanup() {
     echo "cleaned $name"
 }
 
+# The fuzz run is the feature's, not a ticket's: one worktree, one session, no
+# manifest line, since there is no run to resume and nothing to read on exit.
+fuzz_names() {
+    name=fuzz-$repo-$feature
+    branch=fuzz/$feature
+    worktree=$worktrees/$repo-$feature-fuzz
+}
+
+fuzz_start() {
+    load; fuzz_names
+    git -C "$git_dir" show "$feature:Makefile" 2>/dev/null | grep -q '^fuzz:' ||
+        die "no \`fuzz\` target on $feature; the project wires one first (/mx:project-setup)"
+    ! tmux has-session -t "=$name" 2>/dev/null || die "$name is already fuzzing; dispatch-ctl fuzz stop ends it"
+    [ -d "$worktree" ] || checkout
+    run tmux new-session -d -s "$name" -c "$worktree"
+    run tmux send-keys -t "$name" -l "make fuzz"
+    run tmux send-keys -t "$name" Enter
+    echo "fuzzing $name  worktree=$worktree  (tmux attach -t $name)"
+}
+
+fuzz_stop() {
+    load; fuzz_names
+    if tmux has-session -t "=$name" 2>/dev/null; then
+        run tmux kill-session -t "=$name"
+    else
+        echo "no session $name" >&2
+    fi
+    [ -d "$worktree" ] && run git -C "$git_dir" worktree remove --force "$worktree"
+    git -C "$git_dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$git_dir" branch -D "$branch"
+    echo "stopped $name"
+}
+
+fuzz() {
+    case ${1:-} in
+        start) fuzz_start ;;
+        stop)  fuzz_stop ;;
+        *)     die "fuzz takes start or stop" ;;
+    esac
+}
+
 cmd=${1:-}
 case $cmd in
     init)       shift; init "$@" ;;
@@ -322,6 +370,7 @@ case $cmd in
     probe)      probe ;;
     log)        shift; log "$@" ;;
     cleanup)    shift; cleanup "$@" ;;
+    fuzz)       shift; fuzz "$@" ;;
     -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
     *) die "unknown command: $cmd" ;;
 esac
