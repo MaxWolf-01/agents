@@ -1,6 +1,6 @@
 ---
 status: done
-diff: [ba9fd9f..132ae97, 983bd7c..a10309f]
+diff: [ba9fd9f..132ae97, 983bd7c..a10309f, ab5464b..ad1f748]
 ---
 
 # Implement the testing-workflow spec
@@ -147,3 +147,43 @@ The findings are the ones the first round recorded; locations now read one file 
 - A15 `Makefile:11`: `make test` runs the harden checks (about 18 seconds, five of them driving uv, mutmut and pytest in temp repositories), and `release-*` now waits on them, so a release needs a machine with `uv` and a warm cache.
 
 **Friction.** The end-to-end checks needed a fixture whose tests are not redundant against the mutation set: the first fixture's three `clamp` tests killed the same mutants, so deleting one changed nothing and the deleted-test check could not fail. A boundary function (`fits(value, limit)`, whose `<` -> `<=` mutant only one test catches) was what made the property observable. Worth knowing for anyone writing tests against harden: a suite where no single test uniquely kills a mutant cannot demonstrate that deleting a test costs anything.
+
+### Review round 2, `ab5464b..ad1f748`
+
+Addressed: C1, C3, C5, C6, C8, C9, C10, C16, C17, C18, C19.
+
+**The smell lists nudge rather than bound (C1, C3).** Both files opened as "a fixed set of smells that the axis applies", which reads as a checklist with an edge to it. They now say what they are: the smells the reviewer already knows by name, with a finding outside the list still a finding, reported in the reviewer's own words. The "bind" framing is gone from both. Redundant Example is back, carrying the reason the user gave it: a test is a line of code and a test that catches nothing new is a liability.
+
+**Harden's report has a reader (C5, C10).** Dispatch's step 5 no longer hands a raw report to the user. The orchestrator reads it and sorts every line: a survivor a test can pin and an uncovered line a test can reach are fixed on the feature branch in a commit that names the finding; a survivor whose fix is a design change, an unmeasured change, an uncovered line that wants restructuring become proposed tickets. The PR-ready line now carries that proposal, and the user rules on it and reads the diff. Harden also keeps every report it prints at `agent/harden/<utc timestamp>-<range>.txt` wherever an `agent/` directory exists, and prints where it went; `agent/harden/` joins the artefacts a dirty-tree check ignores, so a kept report never blocks the next run. improve-codebase-architecture reads the newest whole-repo report when no commit since it touched the area scoped, and runs `--whole-repo` otherwise.
+
+**Overstatement removed (C8).** A decorated entry point is testable, by calling it directly or through the framework's test client; what it costs is that setup, and what genuinely cannot reach it is the mutation tool. The testing skill and the architecture scan both say that now.
+
+**The rest.** The testing skill leads its description with the trigger (C17), gains the invariant-to-property sentence (C9) and one line on `make fuzz` (C18). SPEC-FORMAT says what prior art means: the existing tests at that seam, named, as the pattern the new ones follow (C6). project-setup drops the per-stack table for one sentence, since only PYTHON.md has tools behind those names today (C16). Harden's `--help` lost the sentences that argued a decision or named a reader; it keeps the mechanics, the exit codes, the cost line, the schema and the examples (C19).
+
+**Evidence.** `make test` → 33 passed, the new one covering the kept report in both its shapes. The memex replay, on this round's code:
+
+```
+$ make harden HARDEN=<worktree>/mx/skills/testing/harden.py ARGS="--range 2be4898..HEAD"
+targets    2: memex_md.find.x__combine, memex_md.find.x_find_notes
+mutants    53 at head, 42 at base (11s + 16s)
+SURVIVED   memex_md.find.x__combine__mutmut_1: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS or part_count > 1:
+SURVIVED   memex_md.find.x__combine__mutmut_2: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS and part_count >= 1:
+SURVIVED   memex_md.find.x__combine__mutmut_3: if AVERAGE_PARTS and part_count > 1: -> if AVERAGE_PARTS and part_count > 2:
+SURVIVED   memex_md.find.x__combine__mutmut_4: return total / part_count -> return total * part_count
+SURVIVED   memex_md.find.x_find_notes__mutmut_31: if limit < 0: -> if limit <= 0:
+SURVIVED   memex_md.find.x_find_notes__mutmut_32: if limit < 0: -> if limit < 1:
+UNCOVERED  src/memex_md/find.py: 104
+UNMEASURED src/memex_md/find.py: no mutation target on 14, 17
+UNMEASURED src/memex_md/find.py: no mutation target on 14, at the base
+pre-exists 6 survivors the base already had
+FINDINGS
+kept at /var/tmp/memex-proto/agent/harden/20260909T151724Z-2be4898..HEAD.txt
+```
+
+Run again, it keeps a second report and the first one does not make the tree dirty.
+
+**Assumptions.**
+
+- A16 `mx/skills/testing/harden.py:146`: the kept file is always the rendered text, including on a `--json` run, so a run leaves one file of one shape; its name carries the range verbatim with `/` replaced by `-`, and a whole-repo run is named `whole-repo-<sha>`.
+- A17 `mx/skills/testing/harden.py:197`: `agent/harden/` joins `mutants/`, `.coverage` and `.hypothesis/` as artefacts the dirty-tree check ignores. Without that, harden's own output would refuse the next run in any project that has not gitignored it yet.
+- A18 `mx/skills/testing/SKILL.md:42`: the skill now says harden runs when a feature's frontier empties rather than "at the review session", following C5: the orchestrator reads the report there, and what reaches the review session is its proposal.
