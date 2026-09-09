@@ -32,6 +32,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -116,19 +117,25 @@ def require_concurrency_config() -> None:
     in its coverage config, or coverage records nothing after an `await` into the engine and
     attributes the engine's own lines to the project's files. coverage warns about neither, so this
     is the one place that does; the setting is the project's, in `[tool.coverage.run]`."""
-    try:
-        import greenlet  # noqa: F401
-    except ImportError:
-        return
-    if greenlet_unnamed(coverage.Coverage().config.concurrency):
+    if project_has_greenlet(Path.cwd()) and greenlet_unnamed(coverage.Coverage().config.concurrency):
         raise SystemExit(
             "greenlet is installed and the coverage config does not name it: set "
             '`[tool.coverage.run] concurrency = ["thread", "greenlet"]` (/mx:project-setup, PYTHON.md)'
         )
 
 
-def greenlet_unnamed(concurrency: list[str] | None) -> bool:
-    return "greenlet" not in (concurrency or [])
+def project_has_greenlet(tree: Path) -> bool:
+    """Whether greenlet is the project's own, read off its lock or its environment: an importable
+    greenlet proves nothing here, since `uv run --with` layers the caller's packages over the
+    project's and this runner is started that way."""
+    lock = tree / "uv.lock"
+    if lock.exists() and re.search(r'^name = "greenlet"$', lock.read_text(), re.MULTILINE):
+        return True
+    return any((tree / ".venv").glob("lib/python*/site-packages/greenlet"))
+
+
+def greenlet_unnamed(concurrency: list[str]) -> bool:
+    return "greenlet" not in concurrency
 
 
 def test_selection() -> list[str]:
