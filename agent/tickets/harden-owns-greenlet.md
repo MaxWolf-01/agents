@@ -6,17 +6,18 @@ status: open
 
 ## What to build
 
-`make harden` measures coverage with greenlet named in coverage's concurrency setting on every project, from harden's own environment, so a project with SQLAlchemy's async engine gets a true line map without any per-project configuration and harden never inspects a project's lock file or virtualenv to decide whether to run.
+`make harden` collects a true line map on a project whose code switches stacks under coverage's tracer (SQLAlchemy's async engine, on greenlet) without any setting in the project and without inspecting the project to decide whether to run.
 
-Today harden refuses to measure a project that has greenlet installed but whose `[tool.coverage.run] concurrency` does not name it, and finds out whether greenlet is the project's by grepping `uv.lock` and globbing `.venv` (`mx/skills/testing/mutmut_runner.py`, `require_concurrency_config` and `project_has_greenlet`), because `import greenlet` inside `uv run --with` answers for harden's own packages. A tool that needs every project configured for it, and a detector to prove the configuration is missing, is the wrong shape: the measurement is harden's, so its settings are harden's.
+Coverage's `sysmon` core sees the frames the default tracer loses, and on Python 3.14 it is coverage's default. Harden sets it for its own coverage pass. Where coverage cannot use that core (Python below 3.12, a config naming a greenlet-family library), coverage prints a warning and falls back to the default core with the project's own concurrency setting, so a project that configured itself for its CI coverage is never worse off than it made itself.
+
+Today harden refuses to measure a project that has greenlet installed but whose coverage config does not name it, and decides whether greenlet is the project's by grepping `uv.lock` and globbing `.venv`. All of that goes: the setting is harden's, so it lives in harden.
 
 ## Acceptance criteria
 
-- [ ] harden carries greenlet in its own run environment and collects coverage with `thread,greenlet` concurrency unconditionally; verified on the yapit clone that `get_document`'s lines after the `await` are covered, with no coverage config in the project.
-- [ ] `require_concurrency_config`, `project_has_greenlet` and their tests are gone, along with harden's refusal message and the `--help` sentence about it.
-- [ ] PYTHON.md keeps one line for the project's own coverage runs (CI, a local `--cov`), phrased as the project's choice, not as something harden needs.
-- [ ] Verified that pytest-cov takes the setting from harden without a project config file; if it cannot, the ticket's closing comment says what harden does instead (a coverage config file it writes to its own temp dir is the fallback to try first).
+- [ ] Harden's coverage pass runs with coverage's `sysmon` core; verified on the yapit clone that the lines after the `await` in `get_document` are recorded with no coverage config in the project.
+- [ ] The detector, the refusal, their tests and the `greenlet` package the repo's test run installed for them are gone; `--help` describes the core harden uses and nothing a project has to do.
+- [ ] PYTHON.md keeps one line for a project's own coverage runs, phrased as the project's choice.
 
 ## Comments
 
-Filed from the property-tests-land-green session, 2026-09-09, on max's ruling that a tool which needs every project special-cased is worse than none.
+Filed from the property-tests-land-green session, 2026-09-09, on max's ruling that a tool which needs every project special-cased is worse than none. Rewritten the same day after `agent/show/harden-greenlet/` measured the shapes: the flag shape (`--concurrency=thread,greenlet`) carries a library name and would need a mapping for gevent and eventlet; the sysmon core carries none.
