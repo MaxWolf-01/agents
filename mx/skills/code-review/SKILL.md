@@ -61,7 +61,7 @@ For the **Standards brief**, include:
 
 - The full diff command and commit list.
 - The standards-source files from step 3 (repo docs, `SMELLS.md`, and the skill files), all by absolute path.
-- The brief: "Read every standards-source file before judging. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces. Under 400 words."
+- The brief: "Read every standards-source file before judging. Then read the standards the repo never wrote down, which are the code itself: for each kind of surface the diff adds or extends (a view, a command, an error path, a module API, a test file), find the two nearest existing instances of that same kind and read them in full. They sit outside the diff and outside its call graph, so find them by kind, not by reference. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. A finding that the diff diverges from an existing convention cites two instances of that convention by file:line and states the answer they share; without them it is not a finding. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces. Under 400 words."
 
 For the **Spec brief**, include:
 
