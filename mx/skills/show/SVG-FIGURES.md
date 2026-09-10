@@ -7,7 +7,7 @@ Two other tools own neighbouring ground. **Charts belong to `dataviz`**: anythin
 This file has two layers and they do not bind equally.
 
 - **Mechanics** are properties of the medium. They hold for any hand-placed SVG, including a deliberately strange one.
-- **The skin** is one house look: good default for structural diagrams, wrong for anything that wants its own visual argument. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin. A default aesthetic must never outrank the point of the picture.
+- **The skin** is one house look: good default for structural diagrams, wrong for anything that wants its own visual argument. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
 
 ---
 
@@ -42,6 +42,8 @@ The exception is a radial layout. Spokes running from a ring of nodes into a sha
 
 **Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. This single constraint does more than any other to stop a figure reading as machine-generated, because near-alignment is what the eye catches. The house skin uses 4.
 
+**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.5em per character in Geist, ≈0.6em in Geist Mono) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
+
 **Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
 **Look at your own render before showing anyone.** This is the step that separates a figure from a plausible-looking pile of coordinates, and no checklist substitutes for it:
@@ -67,7 +69,7 @@ One accent, two type families, hairlines, no shadows. Everything below is a defa
 | `paper-2`: secondary surface | `#ececec` | `#393e53` |
 | `ink`: primary text and stroke | `#2d3142` | `#f5f5f5` |
 | `muted`: secondary text, default arrows | `#4f5d75` | `#bfc0c0` |
-| `soft`: sublabels | `#7a8399` | `#8e98ac` |
+| `soft`: legend and zone labels only, never text inside a node | `#7a8399` | `#8e98ac` |
 | `rule`: hairlines | `rgba(45,49,66,0.12)` | `rgba(245,245,245,0.12)` |
 | `accent`: focal only | `#eb6c36` | `#f08a59` |
 | `accent-tint`: fill behind accent strokes | `rgba(235,108,54,0.08)` | `rgba(240,138,89,0.10)` |
@@ -97,18 +99,21 @@ Two families, each with one job. Mono is for content that *is* technical (ports,
 
 | Role | Family | Size |
 |---|---|---|
-| Title | Geist 600 | 1.25rem |
-| Node name | Geist 600 | 12px |
-| Sublabel | Geist Mono | 9px |
-| Eyebrow / tag | Geist Mono 500, uppercase, 0.18em tracking | 7–8px |
-| Arrow label | Geist Mono, 0.06em tracking | 8px, ≤14 chars, all caps |
-| Aside | Geist 400, `soft` | 11px |
+| Title | Geist 600, `ink` | 1.5rem |
+| Subtitle | Geist 400, `muted`, one sentence | 11px |
+| Node name | Geist 600, `ink` (`accent` on the focal node) | 12px |
+| Node role | Geist 400, `ink` | 10px |
+| Node detail | Geist Mono, `muted`, only when the content is technical; else Geist 400 `muted` | 9px / 10px |
+| Arrow label | Geist 500, `muted`, sentence case | 9px, ≤14 chars |
+| Zone label / tag | Geist 600, `soft`, sentence case | 10px |
+| Legend | Geist Mono, `muted` | 9px |
+| Aside | Geist 400, `muted` | 11px |
+
+A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished.
 
 ```html
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 ```
-
-**Chrome text states; it never sells.** The title names what the figure shows; the subtitle, when one exists, is one factual sentence. No slogans, no coined phrases, no pitch-deck cadence; a title that argues or charms instead of naming gets rewritten to just name. The same register holds for asides inside the figure: a fact worth a line, nothing more.
 
 ### Markers and page
 
@@ -120,11 +125,11 @@ Define all three markers up front, then reference by role: muted for internal fl
 </marker>
 ```
 
-Page is an eyebrow in mono, an H1 in Geist, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
+Page is an H1 in Geist, an optional one-sentence subtitle under it, no eyebrow above it, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
 
 ### What the default skin rules out
 
-Dark backgrounds with cyan or purple glow. Shadows. `border-radius` past 10px. Identical boxes for every node, which erases hierarchy. Three equal-width summary cards. Mono everywhere. Accent as a category color.
+Dark backgrounds with cyan or purple glow. Shadows. `border-radius` past 10px. Identical boxes for every node, which erases hierarchy. Three equal-width summary cards. Mono everywhere. Accent as a category color. Display serif, italics as decoration, a tagline under the title. A tracked all-caps eyebrow above the title. Middle dots and em dashes inside labels.
 
 ---
 
@@ -134,7 +139,7 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 
 **Phase banner**: a chevron strip across the top naming the stages the figure moves through, so the horizontal axis carries meaning without a single arrow. Each segment is a polygon `x,4 x+188,4 x+200,18 x+188,32 x,32 x+12,18`, the leading notch omitted on the first. Darken or lighten successive segments slightly to imply direction.
 
-**Boundary box**: a rounded rect with a hairline stroke and a 2%-ink wash enclosing what is inside one cluster, VPC, process, or trust zone, with an eyebrow label sitting in a paper-colored mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
+**Boundary box**: a rounded rect with a hairline stroke and a 2%-ink wash enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (sentence case, see Type) sitting in a paper-colored mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
 
 **Cross-cutting bar**: a full-width bar for something everything depends on: auth, logging, orchestration, a scheduler. Inside a boundary box it spans the interior; outside and below, it reads as ambient infrastructure. Connect it with dashed arrows, since its relationship to each node is the same and drawing all of them would be noise.
 

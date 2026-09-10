@@ -7,6 +7,10 @@ description: "Show, don't tell. Replace a struggling prose explanation with the 
 
 An explanation earns an artifact when prose stops carrying it. The craft is choosing the medium: ask what would make this click in one look, weigh a few candidates against the shape of the confusion, and pick deliberately; the best medium is often not the nearest familiar tool. Then produce it, look at it yourself, put it in front of the user.
 
+## Register
+
+Every artifact, in every medium, reads like a good README: it states, it never sells. A title, if there is one, names what is shown; a subtitle, if there is one, is one factual sentence. Every line of chrome and every aside carries a fact; a line that carries none is deleted. No slogans, no taglines, no coined phrases, no pitch-deck cadence; no display serif, no italics as decoration, no type chosen to look distinctive. This is the direction, not a starting point to improve on: the pull toward a punchier title or a more striking look is the failure mode, and it gets rewritten to plain on sight. Where `dataviz` taste disagrees with this, this wins.
+
 ## Media worth weighing
 
 Examples with delivery notes, an open set, not a menu; combining media is normal, and anything that carries the explanation qualifies:
@@ -14,7 +18,7 @@ Examples with delivery notes, an open set, not a menu; combining media is normal
 - **Diagram**: structure, flow, dependencies, states. Mermaid (invoke `mx:mermaid` first) when layout should be solved for you; hand-placed SVG (read `SVG-FIGURES.md`) when the figure is the artifact and deserves the control. Either way the classic families apply: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
 - **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, before/after, two rendered variants side by side.
 - **Runnable code**: the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
-- **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Invoke `frontend-design` so it looks intentional.
+- **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Read `PAGES.md`.
 - **LaTeX/TikZ**: publication-grade figures. TeX Live is fully installed: just compile, `pdftoppm` to PNG to inspect.
 - **Animation**: a process unfolding over time. Interactive JS (the reader steps and scrubs) usually beats a linear video; manim is the option for math-heavy scenes when video is the right form.
 
