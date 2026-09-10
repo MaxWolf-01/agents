@@ -61,16 +61,14 @@ Gather sufficient context, verify your assumptions and sources.
   - Dirty files sitting in the invocation checkout that aren't part of your work are ambient: notes, churn, things the user hasn't committed yet. They're invisible to you (i.e. don't mention them) unless one actually interferes (collides with your edit, blocks a checkout/merge); then name the specific conflict, not the inventory.
 - EVERY edit happens in a separate physical worktree on its own branch, mechanical one-liners included -- the invocation checkout is never an editing tree. Several agents are usually in flight; two "trivial" edits landing in the same tree is exactly the collision this prevents, so size is never a reason to skip it. Only max ("do it right here", "no wt", ...) or skill instructions override.
 - IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
-  - Never `git commit -a`/`-am`: it sweeps in every tracked file someone else modified mid-flight.
+  - Never `git commit -a`/`-am`, never `git add -u`/`-A`/`.`: they sweep in every tracked file someone else modified mid-flight. Explicit file lists.
   - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
-  - Before history-rewriting (amend, rebase), check if the commit was pushed.
-  - NEVER AMEND A COMMIT WITHOUT CHECKING WHETHER IT'S PUSHED ALREADY.
-- Never use `git add -[u|A|.]` without checking if there are files that shouldn't be committed / are not part of your work -> Prefer explicit file lists 
+  - Before history-rewriting (amend, rebase), check if the commit was pushed. NEVER AMEND WITHOUT CHECKING.
 
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones (reading an external repo, a throwaway experiment) go in /var/tmp so they don't clutter home.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 
-- Commit as you go without asking. The review gate scales with the work: truly mechanical needs none; loose work driven interactively with the user gets the light review before each batch is shown; anything else gets its full review. Then merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
+- Commit as you go without asking, reviewing per `/mx:code-review` before a batch is shown. Then merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-feature view; the detail history carries the trailers). The integration branch is the branch features branch from and merge into: usually the default branch, `dev` where that layer exists.
 - Merge commit subjects follow normal commit conventions: state what the branch as a whole delivered (`subagents: report delivery via named file`), no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
 - Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action (usually gated by the user reviewing the diffview). Committing and pushing work to a feature branch is not.
 - For releases, I almost always have a Makefile workflow that automates the mechanical parts, and avoids common mistakes, and documents the flow in code itself -- use that, before doing it manually.
@@ -107,36 +105,29 @@ Installed here, each with a `--help` to read before guessing at flags: `tre` (gi
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 
-`diffview` puts a diff in max's browser as a review page: a git range, a branch's own work since it forked (uncommitted edits included), or two directories or files against each other, on one page with a section per source. That page is the deliverable whenever the user asks to see a diff or the changes; prose recaps and bare links only accompany it. In an interactive session reach for it unprompted, as the editing starts: `--watch --open` in the background, on a stable `-o` path with the branch's `<integration>...` spec, so one self-reloading tab is the session's review surface across every round, where max comments while the work accretes. Work that arrives in finished batches (implementation delegated to subagents) gets `--open` per batch. `--notes` carries your side of the review: the judgment calls, why X beat Y, an assumption awaiting max's ruling, anchored to the lines they concern, on a file the diff leaves alone too when leaving it alone was the decision.
+`diffview` renders a diff as a review page in max's browser, and that page is the deliverable whenever the user asks to see a diff or the changes; prose recaps and bare links only accompany it. Reach for it unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Read `--help` for the source specs and the page's semantics.
 
 `claude-browser <path|url>` is the agent's browser, separate from the one max browses in: what a browser renders goes there, in front of max; `xdg-open` is for what it does not (a markdown file lands in nvim).
 
-LaTeX: full TeX Live is installed on workstations (via Home Manager), with `pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font. Just compile, no availability checks or nix-shell needed. `pdftoppm` is available to render PDFs to PNG so you can visually inspect your output.
+LaTeX: full TeX Live is on the workstations (`pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font). Just compile, no availability checks or nix-shell. `pdftoppm` renders the PDF to PNG so you can look at your output.
+
+Makefiles carry the standard commands in max's projects: read the Makefile before any dev work (tests, type checks, starting servers).
 
 `uv` is the only tool you need for Python projects:
-- NEVER USE `python ...` or `python3 ...`; ALWAYS `uv run (--with ...) (python) ...` (auto-approved), where `--with` is not necessary if the deps are already in the venv, and `python` is only needed if you e.g. want to run `python -c` or similar.
-- You will NEVER need `source .venv/bin/activate` to activate the virtual environment. Simply `uv run app.py` is *always* sufficient.
-- When working in projects with pyproject.toml ONLY add / update deps via `uv add` / `uv remove`.
-- To install the deps run `uv sync` (with the required optional deps if any, or sometimes `--all-extras`).
-- To type check: `make check` where the Makefile has it (I often use Makefiles to streamline and standardize common commands; read them when doing dev work like testing, type checking, starting servers, etc.!), else `uvx ty@latest check .` in the project.
-- For Python CLIs, always use tyro (never argparse/click/fire). **ALWAYS load `/mx:tyro-cli` before writing any CLI**; it contains critical gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong.
- - Prefer creating CLIs/scripts with tyro, for anything you might want to run more than once or that has flags you want to ablate. Save time and attention by creating proper infrastructure for your investigations, visualizations, experiments, etc.
+- NEVER `python ...` or `python3 ...`, and NEVER `source .venv/bin/activate`; ALWAYS `uv run (--with ...) (python) ...` (auto-approved). `--with` only for deps not already in the venv, `python` only for `python -c` and the like.
+- In a project with a pyproject.toml, ONLY add / update deps via `uv add` / `uv remove`; `uv sync` installs them (plus the optional extras it needs, sometimes `--all-extras`).
+- Type check with `make check` where the Makefile has it, else `uvx ty@latest check .`.
+- Python CLIs use tyro, never argparse/click/fire, and **`/mx:tyro-cli` is loaded before writing one** -- it carries gotchas (shebangs, PEP 723, docstring formatting) that are easy to get wrong. Reach for a CLI for anything you might run more than once or want to ablate flags on: proper infrastructure for investigations, visualizations and experiments saves time and attention.
 
 - !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
-- Prefer this a million times over raw curl or the webfetch tool, when fetching content for your own consumption (the webfetch tool always slop-summarizes sites for you, which is great for super duper long and noisy pages, but not for 99.9% your use-cases). 
+- Prefer it over raw curl or the webfetch tool for anything you read yourself: webfetch summarizes the page instead of giving it to you, which suits a very long noisy page and almost nothing else.
 
-Chrome extension (live browser driving) is disabled by default (context cost). When a task would genuinely benefit from it, such as interaction-heavy UI testing (drag/hover/multi-step) or ad-hoc driving/debugging of a running app in an interactive session, say so and ask max to enable it (`/chrome`, works mid-session). If the browser tools then report not-connected, run `claude-browser` (opens the Brave profile for this session's account; Brave is normally closed) and retry; no second `/chrome` needed. For static renders, stick with the headless-chromium screenshot loop.
+Chrome extension (live browser driving) is off by default, for context cost, and cannot be turned on mid-session: when a task would genuinely benefit from it (interaction-heavy UI testing, or driving a running app to debug it), say so and ask max to resume the session with `--chrome`. For static renders, stick with the headless-chromium screenshot loop.
 
 If you find a tool that would help you accomplish your task more efficiently / effectively isn't installed, you have several options:
 - Python tools: `uv run --with package command` (or `uvx package@latest`) - you shouldn't have to bother with venvs, especially for one-off commands. This is the preferred way, if the right tool exists on PyPI.
 - Nix: `nix run nixpkgs#package -- args` or `nix shell nixpkgs#pkg1 nixpkgs#pkg2 -c command`
 - Docker images: `docker run --rm image command`
-
-Practical mindset:
-- Don't work around / accept limitations of your current environment, actively seek ways to improve it.
-    - Code too ugly to implement a new feature? Point out your pain, suggest a refactor.
-    - Tool not available / permissions insufficient? Point it out, suggest a new tool or permission change.
-- Build the tools you need, strive to improve your own effectiveness, point out inefficiencies and frustrations in your workflows.
 
 </tools>
 
