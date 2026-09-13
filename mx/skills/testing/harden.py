@@ -395,7 +395,7 @@ def source_paths_of(repo: Path) -> list[str]:
 
 def run_runner(tree: Path, job: dict) -> dict:
     """The measurement runs in the project's own environment, where its tests can import it."""
-    argv = ["uv", "run", "--quiet", "--with", "mutmut~=3.7", "--with", "coverage", "--with", "pytest-cov"]
+    argv = ["uv", "run", "--quiet", "--with", "mutmut~=3.8.0", "--with", "coverage", "--with", "pytest-cov"]
     argv += ["python", str(RUNNER)]
     with tempfile.NamedTemporaryFile(suffix=".json") as report:
         job = {**job, "report_file": report.name}
