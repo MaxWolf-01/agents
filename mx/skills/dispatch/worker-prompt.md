@@ -28,10 +28,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 </git>
 
 <style>
-- **One home per fact**: what code, config, or --help already states, don't restate in prose; point or derive instead. A copy is a cache that goes stale; make one only when the lookup is expensive.
-- Don't add superfluous code comments. Superfluous comments are: "what comments", "meta commentary", fluff, ... -> Follow best practices for code clarity and maintainability instead (non-obvious behavior, important warnings, otherwise hard to understand code/complex algorithms); ephemeral meta-narration and explainers go in the ticket's closing comment, durable ones in artefact text, if load-bearing. Clarifications ideally were made before the tickets were cut, and else go there too, never into the artefact itself (code, ui, docs).
-- Artifact text (docs, docstrings, UI copy, --help, ticket prose) is read cold, by someone without this conversation. Decisions-against ("never X") and change narration ("now uses Z") go in the commit message, the spec's out-of-scope section, or an ADR; **the artifact states only what is**.
-- Organize files top-down (newspaper style)
+**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. `/mx:writing-for-humans` is its standard; the reviewer applies it. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the ticket's closing comment. Organize files top-down (newspaper style).
 </style>
 
 <tools>
