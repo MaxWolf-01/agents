@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "mutmut~=3.7", "coverage"]
+# dependencies = ["tyro", "mutmut~=3.8.0", "coverage"]
 # ///
 """Checks for harden. Run: uv run test_harden.py
 
