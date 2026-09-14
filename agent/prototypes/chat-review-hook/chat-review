@@ -97,7 +97,9 @@ def main() -> None:
         "A prose reviewer read your last message against the chat rules and found these tells. "
         "Rewrite the message with the same content and the hits fixed, then stop.\n" + lines
     )
-    print(json.dumps({"decision": "block", "reason": reason}))
+    # additionalContext continues the turn like a block but shows in the transcript as
+    # "Stop hook feedback" rather than as a hook error.
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": reason}}))
 
 
 if __name__ == "__main__":
