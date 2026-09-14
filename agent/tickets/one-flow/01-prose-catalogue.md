@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: open
 ---
 
 # One prose catalogue with rule ids and scope tags
