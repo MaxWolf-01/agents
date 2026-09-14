@@ -56,3 +56,7 @@ Prototype copy. Rules 3 to 33 are the unslop skill's catalogue, verbatim, as it 
 34. **Throat-clearing and closers.** An opener that praises or announces ("Great question", "Absolutely", "Let me explain") or a closer that offers more ("Hope this helps", "Let me know if you want me to..."). Delete; start with the answer, stop when the content stops.
 35. **Coined labels.** A catchy shorthand or proprietary-sounding name the message invents for an idea ("the brief test", "the smart zone") and then uses as if the reader knew it. Say the thing plainly, or define the term once where it first appears.
 36. **Meta-commentary about the message itself.** Sentences about how the message is structured or how it follows a style ("To keep this brief", "In short, as requested", "Here's a quick summary of what I did"). Delete; the reader sees the structure.
+37. **Nominalizations.** A verb turned into a noun with a weak verb propping it up: "a reduction in latency was achieved through the elimination of redundant lookups" becomes "removing redundant lookups cut latency". Give the action back to the verb.
+38. **Noun stacks.** Three or more nouns in a row that the reader has to unpack: "database connection pool exhaustion" becomes "the connection pool ran out of connections". Break the stack with a verb or a preposition.
+
+A bold lead-in that ends in a period and names the item ("**Schema in TypeScript.** Tables live in one file.") is not a hit under 34, 35 or 36; rule 16 permits it.
