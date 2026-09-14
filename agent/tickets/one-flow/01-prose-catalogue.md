@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 ---
 
 # One prose catalogue with rule ids and scope tags
