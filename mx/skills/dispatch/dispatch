@@ -24,12 +24,13 @@
 #            project's own setup line, run in every ticket worktree before its
 #            worker starts; without it spawn uses `make install` (under
 #            `nix develop -c` where a flake.nix exists).
-#   claim    flips <NN-slug> from open to claimed, commits that on the feature
-#            branch and pushes it, so the next spawn cuts from a tip that
-#            carries the claim. Refuses a ticket that is not open: a proposed
-#            one waits on the user's ruling, a claimed or done one is taken.
-#            A decision ticket is claimed the same way and then routed by its
-#            type; spawn is what refuses to hand one to a worker.
+#   claim    flips <NN-slug> to claimed, commits that on the feature branch and
+#            pushes it, so the next spawn cuts from a tip that carries the
+#            claim. Open and proposed alike: a proposal is built before the
+#            user rules on it (tracker conventions). Refuses a claimed or done
+#            one, which is taken. A decision ticket is claimed the same way and
+#            then routed by its type; spawn is what refuses to hand one to a
+#            worker.
 #   push     the feature branch to the host, so the next spawn cuts from its tip.
 #   prompt   writes stdin as the worker prompt for <NN-slug> on the host.
 #   ctl      runs `dispatch-ctl <args>` on the host, from the feature's scratch
@@ -152,9 +153,8 @@ claim() {
     front=$(awk 'NR==1{if($0!="---")exit;next} /^---$/{exit} {print}' "$ticket")
     status=$(sed -n 's/^status: *//p' <<<"$front" | head -1)
     case ${status:-open} in
-        open) ;;
-        proposed) die "$id is proposed: the user has not ruled it worth doing (tracker conventions); a ruling opens it" ;;
-        *) die "$id is $status, not open" ;;
+        open|proposed) ;;
+        *) die "$id is $status: only an open or proposed ticket is claimed" ;;
     esac
     grep -q '^status:' <<<"$front" || die "$ticket has no status: line in its frontmatter (tracker conventions)"
     sed -i '0,/^status:/s/^status:.*/status: claimed/' "$ticket"
