@@ -6,7 +6,7 @@ user_invocable: true
 
 Counterpart to `/mx:writing-for-agents`: that skill covers documents that instruct an agent's process; this one covers text that explains or records, read cold by whoever finds it, human or agent. A document that does both (a spec, an ADR) loads both.
 
-Invoked on a file or diff, this is a pass: apply every rule below to every sentence, fix or report each hit. Empty is a valid result.
+Invoked on a file or diff, this is a pass: every sentence against every rule of [`CATALOGUE.md`](CATALOGUE.md), the catalogue of AI prose tells, each hit fixed or reported, then the three sections below. Close with the self-audit: what still makes this read as AI generated? Cut every sentence whose deletion costs the reader nothing. Empty is a valid result.
 
 ## The cold reader
 
@@ -28,13 +28,6 @@ Every fact has one authoritative home, usually the code, config, `--help` output
 
 Cache deliberately or not at all: a copy earns its place only when the lookup is genuinely expensive, and then it names its home so the reader can check it.
 
-## Style
+## Referencing by title
 
-- Lead with the point; supporting detail after.
-- One idea per sentence. Active voice, named actors.
-- State facts directly: no throat-clearing openers, no vague declaratives ("the implications are significant"; name the implication), no meta-commentary announcing the document's own structure.
-- Plain words over coinage, but a genuinely new concept the text keeps returning to gets one term, defined once, used consistently everywhere (never rotated through synonyms).
-- Refer to a ticket, issue, or ADR by its title, in chat as much as in a file, with the id riding inside the link: `[Decide the ticket vocabulary](agent/tickets/tracker-rename/03-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.
-- Cut every sentence whose deletion costs the reader nothing.
-
-For a deep de-slop pass on longform prose, sweep against [`PATTERNS.md`](PATTERNS.md), the full catalogue of AI prose tells: phrase lists, formulaic structures, before/after examples.
+Refer to a ticket, issue, or ADR by its title, in chat as much as in a file, with the id riding inside the link: `[Decide the ticket vocabulary](agent/tickets/tracker-rename/03-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.
