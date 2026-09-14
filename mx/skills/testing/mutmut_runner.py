@@ -42,9 +42,9 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import coverage
-import mutmut
 import mutmut.__main__ as mutmut_main
-from mutmut.configuration import Config
+from mutmut.configuration import config
+from mutmut.state import state
 
 PYTEST_ORDER_ARGS = ["-p", "no:randomly", "-p", "no:random-order"]
 NO_MUTANT_PATTERN = "*no-mutant-matches-this*"
@@ -54,7 +54,7 @@ first pass is for: the map names the targets a test-only diff has to measure."""
 
 def main() -> None:
     job = json.load(sys.stdin)
-    source_paths = [str(path) for path in Config.get().source_paths]
+    source_paths = [str(path) for path in config().source_paths]
     if job["mode"] == "config":
         write_report(job, {"source_paths": source_paths})
         return
@@ -70,7 +70,7 @@ def main() -> None:
     with contextlib.redirect_stdout(sys.stderr):
         if job["test_files"]:
             collect_stats()
-            matched, covered_targets = targets_for_test_files(job["test_files"], mutmut.tests_by_mangled_function_name)
+            matched, covered_targets = targets_for_test_files(job["test_files"], state().tests_by_mangled_function_name)
             if job["derive_targets"]:
                 patterns += covered_targets
         if patterns:
@@ -120,7 +120,7 @@ def test_env(coverage_file: str) -> dict[str, str]:
 
 
 def test_selection() -> list[str]:
-    return list(Config.get().pytest_add_cli_args_test_selection)
+    return list(config().pytest_add_cli_args_test_selection)
 
 
 def patch_mutmut() -> None:
@@ -131,13 +131,13 @@ def patch_mutmut() -> None:
 
 def load_covered_lines_from_file() -> None:
     """Feed mutmut the coverage map collected by `collect_coverage`, in place of its own pre-pass."""
-    if not Config.get().mutate_only_covered_lines:
+    if not config().mutate_only_covered_lines:
         return
     data_file = os.environ["MUTMUT_COVERAGE_FILE"]
     data = coverage.CoverageData(basename=data_file)
     data.read()
     mutants = Path("mutants")
-    mutmut._covered_lines = {
+    state()._covered_lines = {
         str((mutants / source_file).absolute()): set(data.lines(str(Path(source_file).absolute())) or [])
         for source_file in mutmut_main.walk_source_files()
     }
@@ -205,7 +205,7 @@ def collect_stats() -> None:
     """Ask for the test-to-function map alone: mutmut builds it on any run, and a filter that matches
     no mutant stops the run right after."""
     run_mutmut([NO_MUTANT_PATTERN])
-    if not mutmut.tests_by_mangled_function_name:
+    if not state().tests_by_mangled_function_name:
         raise SystemExit("mutmut collected no test-to-function map, so a changed test names no target")
 
 
