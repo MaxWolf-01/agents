@@ -58,5 +58,6 @@ Prototype copy. Rules 3 to 33 are the unslop skill's catalogue, verbatim, as it 
 36. **Meta-commentary about the message itself.** Sentences about how the message is structured or how it follows a style ("To keep this brief", "In short, as requested", "Here's a quick summary of what I did"). Delete; the reader sees the structure.
 37. **Nominalizations.** A verb turned into a noun with a weak verb propping it up: "a reduction in latency was achieved through the elimination of redundant lookups" becomes "removing redundant lookups cut latency". Give the action back to the verb.
 38. **Noun stacks.** Three or more nouns in a row that the reader has to unpack: "database connection pool exhaustion" becomes "the connection pool ran out of connections". Break the stack with a verb or a preposition.
+39. **Generalities and platitudes.** A sentence that would be true of any project or any situation ("good tooling matters", "this improves maintainability", "it depends on the use case"). Replace it with the specific fact, number or consequence, or cut it.
 
 A bold lead-in that ends in a period and names the item ("**Schema in TypeScript.** Tables live in one file.") is not a hit under 34, 35 or 36; rule 16 permits it.
