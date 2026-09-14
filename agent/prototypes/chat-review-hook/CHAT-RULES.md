@@ -60,4 +60,4 @@ Prototype copy. Rules 3 to 33 are the unslop skill's catalogue, verbatim, as it 
 38. **Noun stacks.** Three or more nouns in a row that the reader has to unpack: "database connection pool exhaustion" becomes "the connection pool ran out of connections". Break the stack with a verb or a preposition.
 39. **Generalities and platitudes.** A sentence that would be true of any project or any situation ("good tooling matters", "this improves maintainability", "it depends on the use case"). Replace it with the specific fact, number or consequence, or cut it.
 
-A bold lead-in that ends in a period and names the item ("**Schema in TypeScript.** Tables live in one file.") is not a hit under 34, 35 or 36; rule 16 permits it.
+A bold lead-in is a few bold words at the start of a paragraph or bullet that name what it is about, end in a period, and are followed by the content itself: "**Schema in TypeScript.** Tables live in one file." It is a signpost for skimming, not an opener (34), a coined label (35) or meta-commentary (36); do not report it under those rules. Rule 16 says the same for the artifact side.
