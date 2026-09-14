@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 ---
 
 # A proposed ticket is buildable; the user rules on its artifact
