@@ -19,6 +19,15 @@ skill=$work/skill
 dispatch="bash $skill/dispatch"
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+# Each step's claim, as something that can fail: under `set -e` a false inside an
+# `&&` list is exempt from errexit, so a claim written that way never fails the run.
+ok() { printf '   \033[32mok\033[0m %s\n' "$1"; }
+not() { ! "$@"; }
+check() { # <claim> <command...>
+    claim=$1; shift
+    "$@" || { printf '   \033[31mFAIL\033[0m %s\n' "$claim" >&2; exit 1; }
+    ok "$claim"
+}
 
 step "the plugin's dispatch, with a stub in place of the harness, in $skill"
 mkdir -p "$skill"
@@ -69,13 +78,23 @@ step "01 on local: the first spawn on a host stages it and pushes what it cuts f
 spawn 01-warm-preset local --setup-cmd true
 
 step "02 on local: staged already, so the spawn is the spawn"
-spawn 02-cool-preset local
+spawn 02-cool-preset local > "$work/spawn-02.log" 2>&1
+cat "$work/spawn-02.log"
+# The ticket message is copied on every spawn; the scripts and `init` are what a
+# host already staged does not pay again.
+check "no copy of the scripts, no init" not grep -qE \
+    '^\+ ((cp|scp).*(dispatch-ctl|run-worker\.sh|worker-prompt\.md)|bash .*dispatch-ctl init)' "$work/spawn-02.log"
 
 step "the branch's worker prompt moves on; 03 finds an older copy staged and stages again"
+staged=$HOME/.local/state/dispatch/lamp-lamp-ui
+before=$(stat -c %i "$staged/run-worker.sh")
 printf '\nA clause the branch added after this host was staged.\n' >> "$skill/worker-prompt.md"
 spawn 03-usage-line local
-diff "$skill/worker-prompt.md" "$HOME/.local/state/dispatch/lamp-lamp-ui/worker-prompt.md" &&
-    echo "the host holds the branch's prompt, byte for byte"
+check "the host holds the branch's prompt, byte for byte" diff -q "$skill/worker-prompt.md" "$staged/worker-prompt.md"
+# A worker still running reads its runner by name: a re-stage that wrote through
+# those bytes would make its shell resume at its old offset in the new file.
+check "the re-staged runner is a new file, not the old one rewritten" \
+    [ "$before" != "$(stat -c %i "$staged/run-worker.sh")" ]
 
 step "each run recorded its host, under the common git dir"
 cat "$work/lamp/.git/dispatch/runs"
@@ -89,6 +108,8 @@ for t in 01-warm-preset 02-cool-preset 03-usage-line; do
     $dispatch ctl cleanup "$t"
 done
 git -C "$work/lamp" branch --list 'ticket/*'
+check "a cleaned-up run is forgotten, so nothing follows a ticket to a host it has left" \
+    not grep -q 'lamp-ui' "$work/lamp/.git/dispatch/runs"
 
 step "a standalone ticket dispatches from the integration branch, into its own scratch dir"
 cd "$work/lamp"
@@ -96,6 +117,8 @@ spawn tidy-readme local --setup-cmd true
 cat "$work/lamp/.git/dispatch/runs"
 ls -d "$HOME/.local/state/dispatch/lamp-lamp-ui" "$HOME/.local/state/dispatch/lamp-main"
 $dispatch fetch tidy-readme
+check "the standalone ticket was built on its own branch" \
+    git -C "$work/lamp" merge-base --is-ancestor main ticket/main/tidy-readme
 $dispatch ctl cleanup tidy-readme
 
 step "a ticket recorded on another machine: the command goes there, and only there"

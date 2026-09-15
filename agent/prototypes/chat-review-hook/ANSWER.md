@@ -8,7 +8,7 @@ Can a Stop hook that has a small model read the turn's final message against the
 
 A command hook read the Stop input, skipped the re-entry after its own block, sent the message plus a copy of the rules to a nested `claude -p` (Haiku, no tools, no settings, no plugins, no MCP servers, thinking off) and printed a block decision whose reason listed each hit as rule number, verbatim quote and fix. It failed open and logged every decision as a JSON line. A settings file wired it; `try` drove it through a real print-mode session.
 
-The hook shipped from this: [`mx/skills/writing-for-humans/chat_review.py`](../../../mx/skills/writing-for-humans/chat_review.py), registered in `mx/hooks/hooks.json` and reading the chat-scoped rules of the catalogue beside it. The prototype's script, rules copy and settings file went with it; `try` drives the shipped hook, and the measurements below are what this directory is kept for.
+The hook shipped from this: [`mx/skills/writing-for-humans/chat_review.py`](../../../mx/skills/writing-for-humans/chat_review.py), registered in `mx/hooks/hooks.json` and reading the chat-scoped rules of the catalogue beside it. The prototype's script, rules copy and settings file went with it; `try` drives the shipped hook and fails when the hook never reached the reviewer or a quoted tell survived the rewrite, and the measurements below are what this directory is kept for. The last row is the shipped hook; the rows above it are the prototype's.
 
 Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 
@@ -18,6 +18,7 @@ Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 | a short status reply | allow | 2.3 s | none |
 | the agent's own round-1 opening in this grilling | block | 3.7 s | 3: two bold lead-ins misread as throat-clearing and meta-commentary, one genuinely dense sentence |
 | live loop via `try`: outer Haiku session, sloppy prompt | block, rewrite, allow | 4.5 s for the review | 6; the rewrite dropped the opener, the closer and three of four em dashes |
+| the same loop through the shipped hook, 2026-09-15, Claude Code 2.1.243 | feedback, rewrite, allow | 5.2 s for the review | 9; every quoted tell was gone from the rewrite, which is what `try` now exits nonzero on |
 
 ## Findings
 

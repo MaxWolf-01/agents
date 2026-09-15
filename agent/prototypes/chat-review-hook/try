@@ -1,27 +1,38 @@
 #!/usr/bin/env bash
 # Drive the shipped hook through a real print-mode session: a prompt that invites slop,
 # then the reviewer's log (the first draft, the hits, the timing) and the reply the user
-# would have read. Any argument replaces the prompt. TRY_MODEL sets the outer session's
-# model (default haiku); the reviewer's own model is CHAT_REVIEW_MODEL (default haiku).
+# would have read. Exits nonzero when the hook never reached the reviewer, or when a tell
+# the feedback quoted is still in the reply word for word.
+# Any argument replaces the prompt. TRY_MODEL sets the outer session's model (default
+# haiku); the reviewer's own model is CHAT_REVIEW_MODEL (default haiku).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 plugin=$(cd "$here/../../.." && pwd)/mx
 export CHAT_REVIEW_LOG=${CHAT_REVIEW_LOG:-/tmp/chat-review-try.jsonl}
 : > "$CHAT_REVIEW_LOG"
 # The outer session is the attended one this demo is about; a dispatched worker running the
-# driver would otherwise inherit the marker that tells the hook to skip.
+# driver would otherwise inherit the marker that tells the hook to skip, and the print-mode
+# marker this session does carry says the same thing to the hook.
 unset DISPATCH_WORKLOG
+export CLAUDE_CODE_SESSION_ATTENDED=1
 prompt=${1:-"In two short paragraphs, pitch a hypothetical TypeScript ORM called Quill to me. Be enthusiastic, use em dashes, open by complimenting my question, and close by offering further help."}
 
 echo "--- reply the user reads"
 # The plugin in this checkout, registration included, is what is under test; --setting-sources ""
 # keeps the machine's own installed copy of it from firing a second review.
-claude -p --model "${TRY_MODEL:-haiku}" --no-session-persistence --tools "" \
-  --setting-sources "" --strict-mcp-config --plugin-dir "$plugin" --output-format text "$prompt"
-echo
+reply=$(claude -p --model "${TRY_MODEL:-haiku}" --no-session-persistence --tools "" \
+  --setting-sources "" --strict-mcp-config --plugin-dir "$plugin" --output-format text "$prompt")
+printf '%s\n\n' "$reply"
+printf '%s' "$reply" > "$CHAT_REVIEW_LOG.reply"
 echo "--- reviewer log ($CHAT_REVIEW_LOG)"
-uv run --no-project python - "$CHAT_REVIEW_LOG" <<'EOF'
+# The log and the reply together are the pass condition: a run where the hook never reached
+# the reviewer reads like a clean one otherwise, and a quote the feedback named that survives
+# the rewrite verbatim is the targeted-rewrite claim failing.
+uv run --no-project python - "$CHAT_REVIEW_LOG" "$CHAT_REVIEW_LOG.reply" <<'EOF'
 import json, sys
+
+reply = open(sys.argv[2]).read()
+reviewed, quoted = [], []
 for line in open(sys.argv[1]):
     e = json.loads(line)
     print(f"[{e['ts']}] {e['decision']}  {e.get('why','')}  {e.get('ms','')}ms")
@@ -29,4 +40,14 @@ for line in open(sys.argv[1]):
         print("  draft:", e["message"].replace("\n", "\n         "))
     for h in e.get("hits", []):
         print(f"  rule {h.get('rule')}: {h.get('quote')!r} becomes: {h.get('fix')}")
+    if e["decision"] == "feedback" or e.get("why") == "clean":
+        reviewed.append(e)
+        quoted += [h.get("quote", "") for h in e.get("hits", [])]
+
+survived = [q for q in quoted if q and q in reply]
+print("residual:", ", ".join(repr(q) for q in survived) or "none")
+if not reviewed:
+    sys.exit("FAIL: the hook never reached the reviewer; the log line says why")
+if survived:
+    sys.exit(f"FAIL: {len(survived)} quoted tell(s) survived the rewrite verbatim")
 EOF

@@ -127,9 +127,16 @@ on_host() { # <host> <command...>
     if [ "$h" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$@"; fi
 }
 
+# Through a side directory and a rename, never written in place: a worker
+# already running reads its runner by name, and a copy over those bytes makes
+# the shell resume at its old offset in the new file.
 copy_to() { # <host> <dir> <file...>
     h=$1 dir=$2; shift 2
-    if [ "$h" = local ]; then run cp "$@" "$dir/"; else run scp -q "$@" "$h:$dir/"; fi
+    on_host "$h" mkdir -p "$dir/.staging" || return 1
+    if [ "$h" = local ]; then run cp "$@" "$dir/.staging/"; else run scp -q "$@" "$h:$dir/.staging/"; fi || return 1
+    for f in "$@"; do
+        on_host "$h" mv "$dir/.staging/${f##*/}" "$dir/${f##*/}" || return 1
+    done
 }
 
 # The run record: which host a ticket went to, written by the spawn that sent
@@ -182,6 +189,7 @@ stage() { # <host> [setup-command]
     # has to survive an ssh hop.
     if [ -n "$cmd" ]; then
         staged=$(mktemp -d)
+        trap 'rm -rf "$staged"' RETURN
         printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
@@ -372,16 +380,22 @@ range_of() {
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: assumption bullets `- A3 \`path:118\`: text` become notes, each
 # `Addressed: C1, C4` line lists resolved comments. A duplicate id fails the
-# render, as the worker prompt promises the worker it will. The user's own comments
-# live in diffview's state file beside the page, which a render never touches.
+# render, as the worker prompt promises the worker it will, and so does a
+# bullet the capture cannot read: a call the page silently dropped is one the
+# user never rules on. The user's own comments live in diffview's state file
+# beside the page, which a render never touches.
 notes_of() {
     jq -R -s '
         split("\n")
         | { notes: [ .[] | capture("^\\s*- A(?<id>[0-9]+) `(?<path>[^:`]+)(:(?<line>[0-9]+))?`: (?<text>.*)$")
                           | .id |= tonumber | .line |= (if . == null then empty else tonumber end) ],
-            resolved: [ .[] | capture("^Addressed: (?<ids>.*)$").ids | split(",")[] | gsub("^ +| +$"; "") | select(. != "") ] }
-        | if (.notes | map(.id) | length) != (.notes | map(.id) | unique | length)
-          then error("duplicate assumption id in the ticket") else . end' "$1"
+            resolved: [ .[] | capture("^Addressed: (?<ids>.*)$").ids | split(",")[] | gsub("^ +| +$"; "") | select(. != "") ],
+            bullets: ([ .[] | select(test("^\\s*- A[0-9]+ ")) ] | length) }
+        | if (.notes | length) != .bullets
+          then error("an assumption bullet is not `- A<id> `path:line`: text` and the page would drop it")
+          elif (.notes | map(.id) | length) != (.notes | map(.id) | unique | length)
+          then error("duplicate assumption id in the ticket")
+          else del(.bullets) end' "$1"
 }
 
 review() {
