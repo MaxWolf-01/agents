@@ -69,13 +69,13 @@ echo '{"last_assistant_message":"Great question! Let me delve into this — it s
   | env -u DISPATCH_WORKLOG mx/skills/writing-for-humans/chat_review.py
 ```
 
-`CHAT_REVIEW_OFF=1` in front of it logs `skip / off` instead, and with `DISPATCH_WORKLOG` set, as a dispatched worker has it, `skip / dispatched worker`. `CHAT_REVIEW_LOG` moves the log, whose default is `~/.cache/chat-review/log.jsonl`.
+`CHAT_REVIEW_OFF=1` in front of it logs `skip / off` instead, and with `DISPATCH_WORKLOG` set, as a dispatched worker has it, `skip / dispatched worker`. `CHAT_REVIEW_LOG` moves the log, whose default is `~/logs/chat-review/log.jsonl` (amended 2026-09-15, was `~/.cache/chat-review/log.jsonl`, which the backup excludes).
 
 **Action items.**
 
 1. Release before it reaches any machine: `mx/.claude-plugin/plugin.json` is still 0.1.56 and `claude plugin update` is version-gated, so `make release-patch` and a push are what ship the hook. A live session picks up a new hooks file only on `/reload-plugins` or a restart.
 2. Rule on the reviewer's reach, which the spec set as every session with the plugin: that now includes every non-dispatch `claude -p` on the machine, each paying a nested Haiku call and a continuation. Narrowing it is one more early return.
-3. Rule on the residue, the spec's deferred question: the demo shows the rewrite clearing every quoted hit and leaving two em dashes nobody quoted. Either the reviewer quotes every instance, or a second check runs before the re-entry passes. The log answers this after a week.
+3. (amended 2026-09-15, half ruled: no second check, since the review runs once per turn and the session decides which hits to act on; how many instances the reviewer quotes stays with the log) Rule on the residue, the spec's deferred question: the demo shows the rewrite clearing every quoted hit and leaving two em dashes nobody quoted. Either the reviewer quotes every instance, or a second check runs before the re-entry passes. The log answers this after a week.
 
 **Assumptions.**
 
