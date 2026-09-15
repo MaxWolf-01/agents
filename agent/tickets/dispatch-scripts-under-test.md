@@ -20,3 +20,7 @@ Three rungs, cheapest first, and the ticket can stop at any of them where the ne
 - [ ] Each text function has a test whose expectation comes from the script's header, and a mutation of that function fails it.
 - [ ] Whatever rung the ticket stops at, the closing comment names what stays unexercised and why.
 - [ ] Demo in the closing comment: the suite run, and one mutation per rung shown failing.
+
+## Comments
+
+The figures-and-demos feature (ticket 04, 2026-09-16) deletes `agent/show/host-per-spawn/demo.sh` under the rule that a show directory retires with its work; `git log --diff-filter=D -- agent/show/host-per-spawn` finds it. Rung 1 restores it from history under a home that lasts (`tests/` beside the scripts, or `docs/`), never back under `agent/show/`.

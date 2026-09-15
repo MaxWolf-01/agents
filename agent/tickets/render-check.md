@@ -17,3 +17,7 @@ Two renderers, not one: `agent/show/one-flow/render.py` is a byte-for-byte copy 
 - [ ] `--check` passes on a tree whose PNGs were just rendered and fails, naming the file, after an edit to any figure's HTML.
 - [ ] `make check` includes it; a headless browser absent on the machine makes it skip with a line saying so, not fail.
 - [ ] Demo in the closing comment: the two runs above.
+
+## Comments
+
+The figures-and-demos feature (ticket 04, 2026-09-16) moves the README figure pipeline out of `agent/show/mx-readme-figures/` to `docs/figures/` and deletes `agent/show/one-flow/`, so there is one renderer, at the new path; `--check` covers `docs/figures/render.py` and `docs/figures/demo/build.py`.
