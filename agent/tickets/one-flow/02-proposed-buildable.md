@@ -1,5 +1,6 @@
 ---
 status: done
+diff: [3479b32a6f9e1fd4e35752d0d4617f1aacaa5243..cfe3384cf0cb77147be01f1020d9ebd5007f6e13]
 ---
 
 # A proposed ticket is buildable; the user rules on its artifact
