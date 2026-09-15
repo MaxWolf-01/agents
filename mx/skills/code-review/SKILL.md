@@ -10,7 +10,7 @@ Review of the diff between `HEAD` and a fixed point, along four axes:
 - **Spec**: does it faithfully implement the originating ticket / issue / spec?
 - **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? Spawned only when the diff touches test files.
 
-The axes run as parallel reviewers so they don't pollute each other's context; this skill aggregates their findings.
+The axes run as parallel reviewers so they don't pollute each other's context. Their reports land on disk under the range they read, and the session or worker that owns the branch acts on them (step 5).
 
 ## Process
 
@@ -18,7 +18,7 @@ The axes run as parallel reviewers so they don't pollute each other's context; t
 
 Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, default to "since the last review": the most recent commit bearing a `Workflow-stage: review` trailer (`git log --grep='^Workflow-stage: review$' -1 --format=%H`, anchored, or a commit merely *discussing* the trailer matches); when none exists, `@{upstream}` if it resolves and differs from `HEAD`, else the merge-base with the default branch. Whichever candidate is nearest `HEAD` wins. Ask only when none produces a non-empty diff.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`, and the **range**, which names the reports' directory: `echo "$(git rev-parse --short=7 <fixed-point>)..$(git rev-parse --short=7 HEAD)"`.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside the parallel reviewers.
 
@@ -48,52 +48,54 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/research/code-review-<axis>.md`."*
+Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message.
 
 Then the discipline line: *"Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
 For the **Correctness brief**, include:
 
 - The full diff command and commit list.
-- The brief: "Trace the change end to end: touched files in full, callers of changed functions, changed types/protocols/contracts, related tests. Report only findings that survive three filters: (a) it's a real problem, not an artifact of reading the diff in isolation: check surrounding code and existing patterns first; (b) you can name the concrete consequence (bug, security hole, data loss, perf regression, maintenance trap); no nameable consequence, no finding; (c) the codebase doesn't already handle it. Not findings: style the change is internally consistent about, validation for inputs that can't arrive, API semantics that match existing conventions, 'what if X' where the system prevents X. Each finding: the scenario that breaks, file:line, fix. Under 400 words."
+- The brief: "Trace the change end to end: touched files in full, callers of changed functions, changed types/protocols/contracts, related tests. Report only findings that survive three filters: (a) it's a real problem, not an artifact of reading the diff in isolation: check surrounding code and existing patterns first; (b) you can name the concrete consequence (bug, security hole, data loss, perf regression, maintenance trap); no nameable consequence, no finding; (c) the codebase doesn't already handle it. Not findings: style the change is internally consistent about, validation for inputs that can't arrive, API semantics that match existing conventions, 'what if X' where the system prevents X. Each finding: the scenario that breaks, file:line, fix."
 
 For the **Standards brief**, include:
 
 - The full diff command and commit list.
-- The standards-source files from step 3 (repo docs, `SMELLS.md`, and the skill files), all by absolute path.
-- The brief: "Read every standards-source file before judging. Then read the standards the repo never wrote down, which are the code itself: for each kind of surface the diff adds or extends (a view, a command, an error path, a module API, a test file), find the two nearest existing instances of that same kind and read them in full. They sit outside the diff and outside its call graph, so find them by kind, not by reference. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. A finding that the diff diverges from an existing convention cites two instances of that convention by file:line and states the answer they share; without them it is not a finding. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces. Under 400 words."
+- The standards-source files from step 3, `CATALOGUE.md` among them, all by absolute path.
+- The brief: "Read every standards-source file before judging. Then read the standards the repo never wrote down, which are the code itself: for each kind of surface the diff adds or extends (a view, a command, an error path, a module API, a test file), find the two nearest existing instances of that same kind and read them in full. They sit outside the diff and outside its call graph, so find them by kind, not by reference. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. A finding that the diff diverges from an existing convention cites two instances of that convention by file:line and states the answer they share; without them it is not a finding. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces."
 
 For the **Spec brief**, include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), including **Speculative Generality**: abstraction, parameters, hooks, or configurability added for needs the spec doesn't have; (c) requirements that look implemented but where the implementation looks wrong; (d) each Property the spec's Testing Decisions disposes as *reviewed*, checked against the diff by name. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), including **Speculative Generality**: abstraction, parameters, hooks, or configurability added for needs the spec doesn't have; (c) requirements that look implemented but where the implementation looks wrong; (d) each Property the spec's Testing Decisions disposes as *reviewed*, checked against the diff by name. Quote the spec line for each finding."
 
 For the **Tests brief**, spawned only when the diff touches test files, include:
 
 - The diff command and commit list.
 - `TEST-SMELLS.md` by absolute path, and the spec's **Testing Decisions** section (its path, or quoted in full when the spec is fetched from an issue).
-- The brief: "Judge what these tests catch, not whether they pass. Read the tests in full and the code under test. Report: (a) every test-smell from TEST-SMELLS.md: name it and quote the hunk; (b) tests entering at a seam the Testing Decisions does not name, and seams it names that the diff leaves untested; (c) executable spec Properties with no check in the properties directory, and reviewed ones the diff contradicts; (d) behaviour the diff adds that no test could tell from its absence. Each finding: the test, the mutation or input it would not catch, the fix. Under 400 words."
+- The brief: "Judge what these tests catch, not whether they pass. Read the tests in full and the code under test. Report: (a) every test-smell from TEST-SMELLS.md: name it and quote the hunk; (b) tests entering at a seam the Testing Decisions does not name, and seams it names that the diff leaves untested; (c) executable spec Properties with no check in the properties directory, and reviewed ones the diff contradicts; (d) behaviour the diff adds that no test could tell from its absence. Each finding: the test, the mutation or input it would not catch, the fix."
 
 ### 5. Aggregate
 
-The review is one message, written after every axis has returned. Nothing about findings goes out before that: no per-axis narration as reviewers land, no "Correctness came back clean, waiting on the others".
+The caller aggregates: the session or worker that owns the branch, once every axis has returned. Nothing about findings goes out before that, no per-axis narration as reviewers land. Confirm each expected report file is on disk before reading: an absent report is an axis to re-run, never a clean axis.
 
-Read the axes' report files, then delete them: their content lives in this message from here on.
+Read the reports per axis and give every finding one of three dispositions:
 
-That last message is the only one that reliably gets read: the reader skims to the end of the turn, copies the review to another agent to act on, or, when this skill runs as a sub-agent, receives only the final message. So it has to stand alone. Every finding, its reasoning, and the fixed point it was reviewed against belong in it; don't reference an earlier message as if it were read.
+- **Fixed**: a follow-up commit carrying `Workflow-stage: review`, never an amend, so the commit's diff is the review's measurable effect.
+- **Filed**: worth acting on, too large for that commit, so it becomes a proposed ticket (`/mx:tracker`).
+- **Declined**: the finding's premise is wrong, or the fix costs more than the finding is worth, and the entry says which. It lands anchored in the `Assumptions` block of the ticket's closing comment (`` - A7 `src/importer.py:118`: the finding, and why it stands ``; ids continue from the highest already in the ticket, per `/mx:implement`), so the ticket's review page projects it onto the line it concerns, which is where the user rules on it.
 
-Present the reports under `## Correctness`, `## Standards`, `## Spec` and `## Tests` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings; the axes are deliberately separate (see _Why separate axes_).
+Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.
 
-End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes; that's the reranking the separation exists to prevent.
+Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
 
-A clean diff gets a short review. Report the axes as they came back; empty is a valid result.
+What reaches the user, from every caller: the review page; the calls only they can make (declined findings, assumptions, open questions); the next steps and blockers. Findings the review already fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree. In the landing message that means the review page beside the demo, the user's calls under "I need from you" tagged `[Dn]`, and the range and the finding index under "Details, if you want them".
 
-Accepted findings land as a **follow-up commit**, never an amend: the commit's diff is the review's measurable effect. The session that wrote the work applies them when it's still around; any session can otherwise. A finding accepted but too large for that commit is filed as a proposed ticket (`/mx:tracker`).
+A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline`), the standards-source files by absolute path, and the Correctness and Standards briefs joined: same filters, same citation rules, one report under 600 words. A diff touching tests adds `TEST-SMELLS.md` to that reviewer's standards sources and no Tests brief: light mode has no Testing Decisions to check the tests against. The commit messages are orientation over the diff: the author's account of what each commit does, never an anchor to judge it against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Aggregate verbatim under `## Review`; the follow-up-commit rule applies as-is.
+For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline`), the standards-source files by absolute path, and the Correctness and Standards briefs joined: same filters, same citation rules, one report, written to `agent/reviews/<range>/light.md`. A diff touching tests adds `TEST-SMELLS.md` to that reviewer's standards sources and no Tests brief: light mode has no Testing Decisions to check the tests against. The commit messages are orientation over the diff: the author's account of what each commit does, never an anchor to judge it against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 The fold trades axis separation for cost, which is the right trade exactly when there is no spec whose masking you'd care about.
 
@@ -106,4 +108,4 @@ A change can pass any axis and fail another:
 - Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
 - Code that is correct, conventional and asked for, under tests that would pass without it → **every other axis passes, Tests fail.**
 
-Reporting them separately stops one axis from masking another.
+One report per axis, read per axis, stops one axis from masking another.
