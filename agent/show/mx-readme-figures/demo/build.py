@@ -22,6 +22,7 @@ from fixture import C1, C2, C3, C4, C5, C6, CONTEXT, MAKEFILE, NOTES  # noqa: E4
 
 HERE = Path(__file__).parent
 OUT = HERE.parent
+BOARD = HERE.parents[3] / "mx" / "bin" / "board"  # this checkout's board, not whichever is on PATH
 REPO = Path("/var/tmp/mx-demo/ledger")
 CHROMIUM = shutil.which("chromium")
 ENV = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com",
@@ -106,7 +107,7 @@ def render(base: str, head: str) -> tuple[Path, Path]:
                      "not read comes back with its number and the reason, so the human sees the whole "
                      "statement before anything is committed. Lifts the two parse properties.")
     board = REPO / "agent" / "board.html"
-    run("board", str(REPO / "agent" / "tickets"), "--no-watch", "--no-open")
+    run(str(BOARD), str(REPO / "agent" / "tickets"), "--no-watch", "--no-open")
     return board, review
 
 
@@ -118,19 +119,22 @@ def shoot(board: Path, review: Path) -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=2)
 
         page.goto(board.resolve().as_uri())
-        page.wait_for_selector(".view.active .mermaid svg", timeout=30_000)
-        page.wait_for_timeout(1200)
-        page.evaluate("document.querySelector('.btn[data-mode=full]').click()")
-        page.wait_for_timeout(1500)
-        page.evaluate("document.querySelector('#needs-human details').open = true")
-        page.wait_for_timeout(300)
-        band(page, "board-overview.png", "#needs-human")
-
-        page.evaluate("document.querySelector('.btn[data-mode=lanes]').click()")
-        page.evaluate("document.querySelector('#t-saved-views-05').open = true")
+        page.wait_for_selector(".btn[data-gmode].on", timeout=30_000)  # the module script has its listeners
+        # the whole tracker's graph beside the groups, the debrief entry open
+        page.evaluate("document.querySelector('.btn[data-gmode=all]').click()")
+        page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
+        page.evaluate("document.querySelector('#grp-needs .ticket').open = true")
         page.wait_for_timeout(600)
-        page.locator("#f-saved-views").screenshot(path=str(OUT / "board-feature.png"))
-        print("board-feature.png")
+        band(page, "board-overview.png", "#grp-open")
+
+        # one feature: the other hidden by its chip, the cursor on a blocked slice, its graph marked
+        page.evaluate("document.querySelector('#grp-needs .ticket').open = false")
+        page.evaluate("document.querySelector('.featchip[data-feature=csv-import]').click()")
+        page.evaluate("document.querySelector('.btn[data-gmode=feature]').click()")
+        page.evaluate("document.querySelector('#t-saved-views-03 > summary').click()")
+        page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
+        page.wait_for_timeout(600)
+        band(page, "board-feature.png", "#grp-proposed")
 
         page.goto(review.resolve().as_uri())
         page.wait_for_timeout(1500)
