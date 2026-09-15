@@ -14,8 +14,8 @@ skipped turns included, so a hook that never ran reads differently from one swit
 
 It skips the model when the message is empty, when the hook is re-entering after its own
 feedback, which is what holds the review to once per turn, and in a session nobody reads:
-CHAT_REVIEW_OFF set, or DISPATCH_WORKLOG set, which marks a dispatched worker whose chat has
-no reader.
+CHAT_REVIEW_OFF set, DISPATCH_WORKLOG set (a dispatched worker), or CLAUDE_CODE_SESSION_ATTENDED
+set to 0 (a print-mode session, which is how Claude Code marks one since 2.1.27x).
 
 Env: CHAT_REVIEW_OFF (any value turns the hook off), CHAT_REVIEW_MODEL (default haiku),
 CHAT_REVIEW_LOG (default ~/.cache/chat-review/log.jsonl).
@@ -120,6 +120,11 @@ def main() -> None:
         return
     if os.environ.get("DISPATCH_WORKLOG"):
         log(decision="skip", why="dispatched worker")
+        return
+    # Claude Code marks an attended session with 1 and a print-mode one (a diffview summary,
+    # a script's nested call) with 0; older versions set nothing, and those run the review.
+    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        log(decision="skip", why="unattended session")
         return
     hook = json.load(sys.stdin)
     message = (hook.get("last_assistant_message") or "").strip()
