@@ -192,6 +192,7 @@ def test_hits_continue_the_turn_as_feedback_carrying_each_cited_rule_once(hook, 
     ]
     (entry,) = hook(DRAFT, reviewer=lambda message, rules: hits)
     assert (entry["decision"], entry["hits"], entry["session_id"]) == ("feedback", hits, "s1")
+    assert entry["explained"] == ["3", "13"]
     assert context(capsys) == """\
 An automated review by haiku flagged these passages of your last message against the chat prose rules:
 - rule 3: "a game changer" (says it matters, not what it does)
@@ -207,8 +208,42 @@ The rules they cite:
 Revise the message where the hits hold."""
 
 
+def test_a_session_gets_each_rule_text_once(hook, capsys) -> None:
+    hook(DRAFT, reviewer=lambda message, rules: [{"rule": "3", "quote": "a game changer"}])
+    capsys.readouterr()
+    *_, entry = hook(DRAFT, reviewer=lambda message, rules: [{"rule": "3", "quote": "Great question!"}, {"rule": "13", "quote": "Here's the thing"}])
+    assert entry["explained"] == ["13"]
+    assert context(capsys) == """\
+An automated review by haiku flagged these passages of your last message against the chat prose rules:
+- rule 3: "Great question!"
+- rule 13: "Here's the thing"
+
+The rules they cite:
+- `13` **A rule for replies.** Kept.
+
+Revise the message where the hits hold."""
+    *_, entry = hook({**DRAFT, "session_id": "s2"}, reviewer=lambda message, rules: [{"rule": "3", "quote": "a game changer"}])
+    assert entry["explained"] == ["3"]  # another session has not been shown rule 3
+
+
+def test_the_rules_a_session_was_shown_are_read_back_from_its_feedback_lines(tmp_path, monkeypatch) -> None:
+    log = tmp_path / "log.jsonl"
+    lines = [
+        json.dumps({"session_id": "s1", "decision": "feedback", "explained": ["3"]}),
+        json.dumps({"session_id": "s2", "decision": "feedback", "explained": ["13"]}),
+        '{"session_id": "s1", "decision": "feedback", "explained": ["7"',  # cut short by a concurrent write
+        json.dumps({"session_id": "s1", "decision": "feedback", "explained": ["22"], "message": "about s2"}),
+    ]
+    log.write_text("\n".join(lines) + "\n")
+    monkeypatch.setattr(chat_review, "LOG", log)
+    assert chat_review.shown_rules("s1") == {"3", "22"}
+    assert chat_review.shown_rules("s2") == {"13"}  # a line that only mentions s2 belongs to s1
+    assert chat_review.shown_rules(None) == set()
+
+
 def test_feedback_citing_no_selected_rule_has_no_rules_section(hook, capsys) -> None:
-    hook(DRAFT, reviewer=lambda message, rules: [{"rule": "51", "quote": "it's"}])
+    (entry,) = hook(DRAFT, reviewer=lambda message, rules: [{"rule": "51", "quote": "it's"}])
+    assert entry["explained"] == []
     assert context(capsys) == """\
 An automated review by haiku flagged these passages of your last message against the chat prose rules:
 - rule 51: "it's"
@@ -218,7 +253,8 @@ Revise the message where the hits hold."""
 
 def test_feedback_past_the_hook_output_limit_points_at_the_catalogue_for_the_rules(hook, capsys, monkeypatch) -> None:
     monkeypatch.setattr(chat_review, "FEEDBACK_LIMIT", 200)
-    hook(DRAFT, reviewer=lambda message, rules: [{"rule": "3", "quote": "a game changer"}])
+    (entry,) = hook(DRAFT, reviewer=lambda message, rules: [{"rule": "3", "quote": "a game changer"}])
+    assert entry["explained"] == []  # no text went out, so the session is not counted as shown rule 3
     assert context(capsys) == f"""\
 An automated review by haiku flagged these passages of your last message against the chat prose rules:
 - rule 3: "a game changer"

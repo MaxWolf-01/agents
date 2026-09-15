@@ -8,7 +8,7 @@ Can a Stop hook that has a small model read the turn's final message against the
 
 A command hook read the Stop input, skipped the re-entry after its own block, sent the message plus a copy of the rules to a nested `claude -p` (Haiku, no tools, no settings, no plugins, no MCP servers, thinking off) and printed a block decision whose reason listed each hit as rule number, verbatim quote and fix. It failed open and logged every decision as a JSON line. A settings file wired it; `try` drove it through a real print-mode session.
 
-The hook shipped from this: [`mx/skills/writing-for-humans/chat_review.py`](../../../mx/skills/writing-for-humans/chat_review.py), registered in `mx/hooks/hooks.json` and reading the chat-scoped rules of the catalogue beside it. The prototype's script, rules copy and settings file went with it; `try` drives the shipped hook and fails when the hook never reached the reviewer, which on Claude Code 2.1.27x and later is every run, since those mark its print-mode session unattended. The measurements below are what this directory is kept for. The last two rows are the shipped hook; the rows above them are the prototype's.
+The hook shipped from this: [`mx/skills/writing-for-humans/chat_review.py`](../../../mx/skills/writing-for-humans/chat_review.py), registered in `mx/hooks/hooks.json` and reading the chat-scoped rules of the catalogue beside it. The prototype's script, rules copy and settings file went with it; `try` drives the shipped hook and fails when the hook never reached the reviewer, which on Claude Code 2.1.27x and later is every run, since those mark its print-mode session unattended. The measurements below are what this directory is kept for. The last three rows are the shipped hook; the rows above them are the prototype's.
 
 Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 
@@ -20,6 +20,7 @@ Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 | live loop via `try`: outer Haiku session, sloppy prompt | block, rewrite, allow | 4.5 s for the review | 6; the rewrite dropped the opener, the closer and three of four em dashes |
 | the same loop through the shipped hook, 2026-09-15, Claude Code 2.1.243 | feedback, rewrite, allow | 5.2 s for the review | 9; every quoted tell was gone from the rewrite |
 | the same prompt in an interactive session driven through tmux, 2026-09-15, Claude Code 2.1.272; each hit carries a note, and the feedback carries the text of each cited rule | feedback, revision, allow | 5.0 s for the review | 6; the revision reworded all six, the closing offer kept its shape, and the opening compliment, which no hit quoted, survived |
+| two sloppy prompts in one interactive session, then `/clear` and a third, 2026-09-15, Claude Code 2.1.272; a session is shown each rule's text once | feedback, revision, allow per turn | not measured | turn 1 cited 6 rules and carried all 6 texts; turn 2 cited rules 8, 27 and 42 and carried only 42's; `/clear` started a new session id, whose first feedback carried its rules' texts again |
 
 ## Findings
 

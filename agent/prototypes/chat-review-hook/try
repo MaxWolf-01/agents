@@ -44,7 +44,8 @@ for line in open(sys.argv[1]):
     if "message" in e:
         print("  draft:", e["message"].replace("\n", "\n         "))
     if e["decision"] == "feedback":
-        print("  feedback:", feedback(e["hits"], rules).replace("\n", "\n            "))
+        explained = {i: rules[i] for i in e["explained"] if i in rules}
+        print("  feedback:", feedback(e["hits"], explained)[0].replace("\n", "\n            "))
     reviewed = reviewed or e["decision"] == "feedback" or e.get("why") == "clean"
 
 if not reviewed:

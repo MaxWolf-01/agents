@@ -5,16 +5,20 @@
 # ///
 """Stop hook: a fresh small model reads the turn's final message against the chat-scoped rules
 of CATALOGUE.md beside this file and hands its hits back as feedback: each hit quotes a passage,
-names what is wrong with it and cites a rule, and the text of every cited rule comes along. The
-turn continues, and the session decides which hits to act on as it revises the reply.
+names what is wrong with it and cites a rule, and the text of each cited rule the session has not
+been shown yet comes along. The turn continues, and the session decides which hits to act on as
+it revises the reply.
 
 Reads the Stop hook JSON on stdin and selects the rules tagged `chat` or `both`, the selection
 CATALOGUE.md's header states. Fails open: a reviewer that errors, times out or answers in
 something other than JSON allows the turn. Every decision is one JSON line in the log, carrying
 the session id, the skipped turns included, so a hook that never ran reads differently from one
-switched off. A re-entry line keeps its reply; the first one after a session's feedback line is
-the revision, so the log shows which flagged passages the session kept. Any Stop hook's
-continuation logs a re-entry, so later ones in the same session are other hooks' turns.
+switched off. A feedback line lists the rules whose text it carried, which is how later feedback
+in the session cites them by id alone; a session that loses its context under the same id, as a
+compaction does, keeps those ids without their text. A re-entry line keeps its reply; the first
+one after a session's feedback line is the revision, so the log shows which flagged passages the
+session kept. Any Stop hook's continuation logs a re-entry, so later ones in the same session are
+other hooks' turns.
 
 It skips the model when the message is empty, when the hook is re-entering after its own
 feedback, which is what holds the review to once per turn, and in a session nobody reads:
@@ -22,7 +26,7 @@ CHAT_REVIEW_OFF set, DISPATCH_WORKLOG set (a dispatched worker), or CLAUDE_CODE_
 set to 0 (a print-mode session, which is how Claude Code marks one since 2.1.27x).
 
 Env: CHAT_REVIEW_OFF (any value turns the hook off), CHAT_REVIEW_MODEL (default haiku),
-CHAT_REVIEW_LOG (default ~/.cache/chat-review/log.jsonl).
+CHAT_REVIEW_LOG (default ~/logs/chat-review/log.jsonl).
 """
 
 import json
@@ -34,7 +38,7 @@ import time
 from pathlib import Path
 
 CATALOGUE = Path(__file__).resolve().parent / "CATALOGUE.md"
-LOG = Path(os.environ.get("CHAT_REVIEW_LOG", Path.home() / ".cache/chat-review/log.jsonl"))
+LOG = Path(os.environ.get("CHAT_REVIEW_LOG", Path.home() / "logs/chat-review/log.jsonl"))
 MODEL = os.environ.get("CHAT_REVIEW_MODEL", "haiku")
 REVIEWER_TIMEOUT_S = 45
 # Claude Code moves hook output past 10,000 characters into a file and shows the session a preview.
@@ -106,20 +110,42 @@ def rule_id(hit: dict) -> str:
     return str(hit.get("rule")).strip("` ")
 
 
-def feedback(hits: list[dict], rules: dict[str, str]) -> str:
-    """What the session reads: every hit under the id of the rule it cites, then each cited rule's
-    text once, so a rule that several hits break is explained a single time. Past FEEDBACK_LIMIT
-    the rule texts give way to the catalogue's path, which keeps the hits in front of the session."""
+def feedback(hits: list[dict], rules: dict[str, str]) -> tuple[str, list[str]]:
+    """What the session reads, and the ids of the rules whose text it carries: every hit under the
+    id of the rule it cites, then the text of each cited rule found in `rules`, once. Past
+    FEEDBACK_LIMIT the rule texts give way to the catalogue's path, which keeps the hits in front
+    of the session."""
     flagged = [
         f'- rule {rule_id(h)}: "{h.get("quote")}"' + (f' ({h["note"]})' if h.get("note") else "") for h in hits
     ]
-    cited = [rules[i] for i in dict.fromkeys(map(rule_id, hits)) if i in rules]
+    explained = [i for i in dict.fromkeys(map(rule_id, hits)) if i in rules]
     head = [f"An automated review by {MODEL} flagged these passages of your last message against the chat prose rules:", *flagged]
     tail = ["", "Revise the message where the hits hold."]
-    full = "\n".join(head + (["", "The rules they cite:", *cited] if cited else []) + tail)
+    full = "\n".join(head + (["", "The rules they cite:", *(rules[i] for i in explained)] if explained else []) + tail)
     if len(full) <= FEEDBACK_LIMIT:
-        return full
-    return "\n".join(head + ["", f"The rules they cite, by id, are in {CATALOGUE}."] + tail)
+        return full, explained
+    return "\n".join(head + ["", f"The rules they cite, by id, are in {CATALOGUE}."] + tail), []
+
+
+def shown_rules(session_id: str | None) -> set[str]:
+    """The ids of the rules whose text this session's earlier feedback carried, read from the log.
+
+    A line cut short by a concurrent write is skipped; the cost is a rule text shown twice.
+    """
+    if not session_id or not LOG.exists():
+        return set()
+    shown = set()
+    with LOG.open() as f:
+        for line in f:
+            if session_id not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("session_id") == session_id:
+                shown.update(entry.get("explained", []))
+    return shown
 
 
 def log(session_id: str | None, **entry: object) -> None:
@@ -185,10 +211,11 @@ def main() -> None:
     if not hits:
         log(session, decision="allow", why="clean", ms=ms, message=message)
         return
-    log(session, decision="feedback", hits=hits, ms=ms, message=message)
+    shown = shown_rules(session)
+    context, explained = feedback(hits, {i: text for i, text in rules_by_id(rules).items() if i not in shown})
+    log(session, decision="feedback", hits=hits, explained=explained, ms=ms, message=message)
     # additionalContext continues the turn like a block decision but shows in the transcript as
     # "Stop hook feedback" rather than as a hook error.
-    context = feedback(hits, rules_by_id(rules))
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": context}}))
 
 
