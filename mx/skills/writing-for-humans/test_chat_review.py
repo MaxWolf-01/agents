@@ -74,8 +74,10 @@ def test_a_catalogue_with_no_chat_rules_raises() -> None:
 
 
 def test_hits_are_read_out_of_surrounding_prose() -> None:
-    hit = {"rule": "13", "quote": "a dash", "fix": "a period"}
-    assert hits_from('Here you go: {"hits": [%s]}' % str(hit).replace("'", '"')) == [hit]
+    # the quote a rule-13 hit carries is an em dash, and an apostrophe is the next likeliest
+    # thing in it, so the answer goes in as the literal a model would write
+    answer = 'Here you go: {"hits": [{"rule": "13", "quote": "it doesn\u2019t \u2014 yet", "fix": "a period"}]}'
+    assert hits_from(answer) == [{"rule": "13", "quote": "it doesn\u2019t \u2014 yet", "fix": "a period"}]
     assert hits_from('{"hits": []}') == []
 
 
