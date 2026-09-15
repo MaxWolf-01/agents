@@ -4,3 +4,5 @@ agent/reviews
 scratch/
 .claude/settings.local.json
 __pycache__/
+
+agent/show/**/*.png
