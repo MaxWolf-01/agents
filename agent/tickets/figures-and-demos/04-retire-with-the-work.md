@@ -125,3 +125,109 @@ $ agent/show/figures-and-demos/04-retire-with-the-work/demo
   - Declined: the loose-branch timing (A3); "the demo never opens what it produced", since a printed transcript is its own render and this host has no display; "a failed run truncates the committed transcript" (A6).
   - Not this slice: both `(/mx:show)` pointers dangle until ticket 01 lands its promotion and show-directory text. Worth a check at integration that "kept current where it lands" ends up stated once.
 - [D5] Friction: the spec links `agent/tickets/one-tracker-per-user.md` twice and the file does not exist, so the interim's successor cannot be read from the ticket. `git rm` aborting on an unmatched pathspec is the kind of thing prose cannot be trusted on; the reviewer caught it by running the command, which is why the demo is worth more here than the rule's wording. Nothing else fought the work: `make check` and the suite (92 tests, 23s) are a fast loop.
+
+---
+
+Addressed: C1, C2, C3
+
+Amended on the same branch, `082af6b..2b15d1b`. The promotion rule is a move out of `agent/show/`, one `~/logs/agent/<repo>/` root carries what leaves an untracked tree, and this repo now obeys the rule: `agent/show/` holds `figures-and-demos` alone.
+
+**Demo**
+
+```
+$ agent/show/figures-and-demos/04-retire-with-the-work/demo
+
+== a toy repo whose one feature, soup, has shipped
+
+  .gitignore
+  README.md
+  agent/research/07-stock-timings.md
+  agent/show/soup/01-stock/demo
+  agent/show/soup/02-serve/demo
+  agent/show/soup/broth.mmd
+  agent/show/soup/broth.png
+  agent/show/soup/broth.svg
+  agent/tickets/soup/01-stock.md
+  agent/tickets/soup/02-serve.md
+  agent/tickets/soup/spec.md
+
+  agent/show/soup/broth.png is an untracked render, agent/research/07-stock-timings.md
+  an untracked note cited by 01-stock; the README links the figure where it sits
+
+== what the README needs moves out, render and source, its link repointed with it
+
+  git mv agent/show/soup/broth.svg agent/show/soup/broth.mmd docs/figures/
+  sed -i 's|agent/show/soup/broth.svg|docs/figures/broth.svg|' README.md
+
+== the tickets and the show directory leave in the same commit
+
+  git rm -r agent/tickets/soup/ agent/show/soup/
+  rm 'agent/show/soup/01-stock/demo'
+  rm 'agent/show/soup/02-serve/demo'
+  rm 'agent/tickets/soup/01-stock.md'
+  rm 'agent/tickets/soup/02-serve.md'
+  rm 'agent/tickets/soup/spec.md'
+
+  git rm -r leaves the ignored render behind, so the directory goes from disk too:
+  rm -rf agent/show/soup/
+
+  the commit:
+
+  soup: retired, the broth figure promoted to docs/
+
+    M	README.md
+    D	agent/show/soup/01-stock/demo
+    D	agent/show/soup/02-serve/demo
+    D	agent/show/soup/broth.mmd
+    D	agent/show/soup/broth.svg
+    D	agent/tickets/soup/01-stock.md
+    D	agent/tickets/soup/02-serve.md
+    D	agent/tickets/soup/spec.md
+    A	docs/figures/broth.mmd
+    A	docs/figures/broth.svg
+
+== the research notes leave the tree, moved rather than deleted
+
+  mkdir -p ~/logs/agent/toy-project/research/
+  mv agent/research/07-stock-timings.md ~/logs/agent/toy-project/research/
+
+  the note now reads at ~/logs/agent/toy-project/research/07-stock-timings.md:
+
+    # Stock timings
+
+    Bones at 90 minutes, skimmed twice.
+
+== the tree after
+
+  .gitignore
+  README.md
+  docs/figures/broth.mmd
+  docs/figures/broth.svg
+
+== what holds
+
+  ok  no ticket of the feature is left, in the tree or in HEAD
+  ok  HEAD carries no figure or demo of the feature, its slice directories included
+  ok  the show directory is off disk, the untracked render with it
+  ok  no research note is left in the tree
+  ok  the note survives the move, at ~/logs/agent/<repo>/research/
+  ok  the promoted render and its source are in the tree, and no README link points into the show directory
+  ok  removal, promotion and repointing are the same commit
+  ok  git history still finds the retired work
+
+```
+
+The repo's own retirement, which the demo models, is in the branch: `677e573` deletes one-flow's and host-per-spawn's directories, `ca707c9` moves the README's figure pipeline to `docs/figures/`, `2b15d1b` sweeps the rest. `./docs/figures/render.py` regenerates the six figures from their new home.
+
+**I need from you**
+
+- [D6] `2b15d1b` goes past the three directories you named: `decision-tickets/`, `dispatch-ctl-absorb/`, `dispatch-hub-churn/` and `harden-greenlet/` are the same case (tickets off the tracker, no reference anywhere, nothing promoted out), so "apply the rule to this repo" took them too. Revert that one commit if you wanted only the three.
+- [D7] Three ticket files outside this feature carry repointed references (A7). `03-landing-demo.md` is claimed and in flight, and standalone tickets are yours to commit from the main checkout, so these edits may land twice or conflict at merge.
+
+**Details, if you want them**
+
+- [D8] Assumptions, continuing from A6:
+  - A7 `agent/tickets/render-check.md:13`: the references into the moved and deleted directories are repointed in the commits that moved them, `render-check.md` and `dispatch-scripts-under-test.md` and `03-landing-demo.md` included, because the rule this ticket lands says every reference is repointed in that commit. What no longer exists is named as the commit that holds it.
+  - A8 `.gitignore:9`: the renders keep their old treatment at the new path (`docs/figures/*.png` ignored), and `mx/assets/` keeps the tracked PNGs the README embeds, so the move changes no PNG's status. Nothing yet regenerates the assets copies from the sources; that gap is `render-check.md`'s, and it predates this move.
+  - A9 `docs/figures/demo/build.py:25`: verified as far as this host reaches. `render.py` renders all six figures in both schemes from `docs/figures/`; `build.py` builds its demo repo and runs its suite, then stops at `diffview`, absent here, so its screenshot half is unverified beyond both computed roots resolving.
+- [D9] Friction: D5's missing `one-tracker-per-user.md` was not missing, it is on master at c443a6b where standalone tickets are committed and this branch forked before it; a worker reading only its own branch cannot tell those apart. `diffview` is not on this host, so the one script the move touches most cannot be driven end to end here; a worker host that carries the tools the repo's own figures are built with would have closed that gap. Nothing else fought this round.
