@@ -716,10 +716,12 @@ def render_page(
         for k in standalone
     )
     host_bit = f' <span class="counts">workers on {html.escape(standalone_host)}</span>' if standalone_host else ""
+    # Also when only the queue is left: its entries link to this section, and an
+    # entry outlives the ticket it rules on (a rejected proposal is deleted).
     standalone_sec = (
         f'<section id="standalone"><h2>Standalone tickets{host_bit}</h2>'
         f'<div class="tickets panel-b">{standalone_rows}</div></section>'
-        if standalone
+        if standalone or queue_entries
         else ""
     )
 

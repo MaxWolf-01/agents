@@ -13,6 +13,7 @@ indented lines.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from board import (
     load_features,
     load_needs_human,
     load_standalone,
+    render,
     render_page,
     wave_lanes,
 )
@@ -139,6 +141,27 @@ def test_the_standalone_queue_is_the_tracker_roots_own_and_not_a_ticket(tracker:
     assert '<a class="chip open" href="#standalone">standalone</a> rule on loose-idea' in page
     assert 'id="standalone"' in page
     assert "workers on agent@pc" in page
+
+
+def test_a_queue_entry_outliving_its_ticket_still_has_a_section_to_link_to(tracker: Path) -> None:
+    # the ruling on the last standalone ticket was `reject`, which deletes the file
+    (feature,), _ = load(tracker)
+    page = render_page(
+        "demo", [feature], [], load_needs_human(tracker / "needs-human.md"),
+        log="", stamp="s", stamp_src="s.js",
+    )
+    assert 'id="standalone"' in page
+    assert "workers on agent@pc" in page
+
+
+def test_render_reads_the_queue_beside_the_tickets(tracker: Path, tmp_path: Path) -> None:
+    repo = tracker.parent.parent
+    git = ["git", "-c", "user.email=t@e", "-c", "user.name=t", "-C", str(repo)]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "the tracker"], check=True)
+    out = tmp_path / "out" / "board.html"
+    render(tracker, {}, repo, out)
+    assert "rule on loose-idea" in out.read_text()
 
 
 def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:

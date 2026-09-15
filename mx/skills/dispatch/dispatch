@@ -81,6 +81,10 @@ short() { case $1 in [0-9][0-9]-*) echo "${1%%-*}" ;; *) echo "$1" ;; esac; }
 # feature directory, so the only thing that differs is where the files are.
 locate() {
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
+    # Every path below is relative to the worktree root, this one included: from
+    # a subdirectory, agent/tickets/<feature> is absent and the run would read
+    # as a standalone one.
+    cd "$repo_root" || die "cannot enter $repo_root"
     feature=$(git branch --show-current)
     [ -n "$feature" ] || die "detached HEAD; run this on the branch the ticket branches cut from"
     if [ -d "agent/tickets/$feature" ]; then
@@ -103,7 +107,13 @@ scratch_dir() {
 
 load() {
     locate
-    host=$(git config dispatch.host) || die "no worker host recorded for this repo; run: dispatch setup <host> <repo>"
+    if ! host=$(git config dispatch.host); then
+        # The keys were per feature until the host record became the repo's; a
+        # repo carrying the old ones has a host, and saying so beats "none".
+        git config "dispatch.$feature.host" >/dev/null &&
+            die "this repo records its host under the retired dispatch.$feature.host; re-run: dispatch setup <host> <repo>"
+        die "no worker host recorded for this repo; run: dispatch setup <host> <repo>"
+    fi
     repo=$(git config dispatch.repo) || die "no repo name recorded for this repo; run: dispatch setup <host> <repo>"
     scratch=$(scratch_dir)
     remote=${host//[@.]/-}
@@ -144,7 +154,7 @@ setup() {
     locate
     if [ $# -eq 0 ]; then
         host=$(git config dispatch.host) || die "nothing recorded for this repo yet; run: dispatch setup <host> <repo> [setup-command]"
-        repo=$(git config dispatch.repo)
+        repo=$(git config dispatch.repo) || die "a host is recorded for this repo but no repo name; run: dispatch setup <host> <repo>"
     else
         [ $# -ge 2 ] || die "setup takes <host> <repo> [setup-command], or nothing at all"
         host=$1 repo=$2
@@ -293,30 +303,27 @@ review() {
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
     range=$(range_of "$tip") || exit 1
 
-    specs=()
-    if is_merged "$tip"; then
-        # `diff:` is a flow list in the frontmatter, written once the branch has
-        # landed and the range is final. When absent it goes in as the last
-        # frontmatter line, away from `status:`, which the ticket branch edits
-        # too: adjacent lines would make the merge conflict. A re-render finds
-        # its range already there.
-        if ! grep -q "$range" "$ticket"; then
-            if grep -q '^diff: \[' "$ticket"; then
-                sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
-            else
-                awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
-                    mv "$ticket.tmp" "$ticket"
-            fi
-            run git commit -q -m "${prefix}$id review range" -- "$ticket"
+    # `diff:` is a flow list in the frontmatter, written once the branch has
+    # merged and its range is final. When absent it goes in as the last
+    # frontmatter line, away from `status:`, which the ticket branch edits too:
+    # adjacent lines would make the merge conflict. A re-render finds its range
+    # already there.
+    if is_merged "$tip" && ! grep -q "$range" "$ticket"; then
+        if grep -q '^diff: \[' "$ticket"; then
+            sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
+        else
+            awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
+                mv "$ticket.tmp" "$ticket"
         fi
-        while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
-    else
-        # A standalone proposal's page, rendered while its build waits for the
-        # user's ruling: the range is the branch as it stands, and the ticket
-        # stays untouched, so the merge on accept has nothing to conflict with
-        # and a rejection leaves the integration branch with only the claim.
-        specs=("$repo_root@$range")
+        run git commit -q -m "${prefix}$id review range" -- "$ticket"
     fi
+
+    # One section per round: the rounds the ticket carries, then this branch's
+    # own while it is unmerged (a standalone proposal waiting for its ruling,
+    # or a resumed worker's next round fetched before its merge).
+    specs=()
+    while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
+    grep -q "$range" "$ticket" || specs+=("$repo_root@$range")
 
     out=$diffviews/$id
     mkdir -p "$(dirname "$out")"

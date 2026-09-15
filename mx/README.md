@@ -105,7 +105,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
 | `/mx:to-tickets` | spec → tracer-bullet tickets |
 | `/mx:implement`, `/mx:testing`, `/mx:code-review` | work a ticket; what makes a test worth keeping, and `make harden`; four-axis review |
-| `/mx:dispatch` | work a feature's tickets: one orchestrator, a fresh implement per ticket, serial or in waves |
+| `/mx:dispatch` | work a feature's tickets, or a standalone one: one orchestrator, a fresh implement per ticket, serial or in waves |
 | `/mx:prototype` | throwaway code to answer a design question |
 | `/mx:to-questionnaire` | turn a decision someone else must answer into a questionnaire for them |
 | `/mx:wizard` | bash wizard walking a human through steps only they can do (credentials, dashboards, migrations) |
