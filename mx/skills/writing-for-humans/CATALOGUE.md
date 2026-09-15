@@ -96,7 +96,7 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `26` `both` **Abstract metaphor nouns.** Substrate, wedge, vector, locus, vantage, nexus, primitive (as noun), harness (as metaphor), surface (as in "API surface"), bedrock, scaffolding (as metaphor), modality, paradigm, gold-plating, ratchet (as metaphor), evacuate (for moving code), endgame, north star, flywheel. These read as technical but usually have a plainer concrete word. "Substrate" becomes "base". "Wedge in" becomes "add". "Vector" becomes "way" or "method". "Gold-plating" becomes "more than the job needs". "Ratchet" becomes the mechanism's real name or "a limit that only tightens". "Evacuate" becomes "move out". "Endgame" becomes "the last phase". Pick the concrete word.
 
-- `35` `both` **Coined labels.** A catchy or proprietary-sounding name invented for an idea ("the brief test", "the smart zone") and then used as if the reader knew it. Say the thing plainly. A genuinely new concept the text keeps returning to earns one term, defined where it first appears and used unchanged everywhere after.
+- `35` `both` **Coined labels.** A catchy or proprietary-sounding name invented for an idea ("the clarity engine", "the trust ladder") and then used as if the reader knew it. Say the thing plainly. A genuinely new concept the text keeps returning to earns one term, defined where it first appears and used unchanged everywhere after, and a term the project has defined (a glossary entry, a spec's own name for a thing) is that case already.
 
 ## Plain speech
 
