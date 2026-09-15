@@ -11,6 +11,8 @@ A ticket with no spec, `agent/tickets/<slug>.md`, is worked by the same dispatch
 
 The scripts' `--help` and the dispatch skill describe the standalone case where they describe the feature case, without a second set of commands: a standalone ticket is the feature case with the integration branch as the feature branch and the ticket root as the feature directory.
 
+A standalone ticket built while `proposed` has no feature branch to wait on, so its own ticket branch is the container: the review page renders from the fetched branch, the branch merges into the integration branch only when the user accepts on that page, and a rejection deletes the ticket and the branch with the integration branch never having seen it. Ticket 02 landed the claim rule and the reject path for features; this ticket states the standalone form of both.
+
 ## Acceptance criteria
 
 - [ ] From a checkout on the integration branch, `dispatch setup`, `claim`, `prompt`, `ctl spawn`, `wait`, `fetch` and `review` work on `agent/tickets/<slug>.md` with no feature directory, and the review page lands at `agent/diffviews/<slug>.html` where the board already looks for it.
