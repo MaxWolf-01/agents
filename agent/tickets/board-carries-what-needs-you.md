@@ -3,12 +3,14 @@ status: open
 type: grilling
 ---
 
-# The board carries what needs the user, and nothing that does not
+# The board's needs-human section: everything that needs the user, managed from there
 
 ## Question
 
-Ruled worth doing by the user during the one-flow dispatch (2026-09-15): the calls only they can make arrive in chat, per landing, as tagged "I need from you" lists, and each new landing has to restate them or they scroll away; the user cannot tell what is still current. The board is where those calls belong, organised, so a returning user reads one page: the rulings waiting on them, the suggestions agents filed (workflow and tooling improvements, what the debrief sorts today), what each landing needs driven. The needs-human queue is the seed of this and the diffview notes are not the place for it: a note per call, asking the user to dismiss things that never needed them, is the load this feature exists to cut.
+Ruled worth doing by the user during the one-flow dispatch (2026-09-15). Today the calls only the user can make arrive in chat, per landing, as tagged "I need from you" lists; each new landing restates them or they scroll away, and the user cannot tell what is still current. The board's needs-human section is where they belong, so a returning user reads one page: the rulings waiting on them with their options, the proposals agents filed (workflow and tooling improvements, what the debrief sorts today), the landings waiting to be driven.
 
-Two more from the user, same day: every entry carries a tag (`D123`, unique across the board, the way landing messages tag their calls) so a ruling can name it from anywhere; and the board may take the ruling itself, an input box per entry and an X to dismiss, so the user never has to find the session that filed it. That makes the board a served page with state, as diffview already is for comments, against a read-only render that stays simple; the trade is part of the grilling.
+Two more from the user, same day: every entry carries a tag (`D123`, unique across the board, the way landing messages tag their calls) so a ruling can name it from anywhere; and the board may take the ruling itself, an input box per entry and an X to dismiss, so the user never has to find the session that filed it. That makes the section a served page with state, as diffview already is for comments, against a read-only render that stays simple; the trade is part of the grilling. Not the diffview notes: a note per call, asking the user to dismiss things that never needed them, is the load this exists to cut.
 
-To decide, in a grilling with the board rendered: what an entry is (a ruling with its options, a landing to QA, a proposal to accept or reject), where entries come from (the closing comment's "I need from you" list, the queue file, proposed tickets), how an entry clears (a ruling on the review page, a word in chat, a ticket flip), and how the board tells a breakdown's slices from an agent's own proposals if it needs to (see the one-flow queue entry on the board and a breakdown's slices).
+Also to consider, from the user: whether tags should encode the round they came from (`A1, A2` in one message, `B1, B2` in the next) rather than one running sequence; the letters show where a call came from, the sequence is simpler.
+
+To decide, in a grilling with the board rendered: what an entry is (a ruling with its options, a landing to QA, a proposal to accept or reject), where entries come from (the closing comment's "I need from you" list, the queue file, proposed tickets), how an entry clears (a ruling on the review page, a word in chat, a ticket flip, the board's own input), and how the board shows a slice that is built and waiting for a ruling.
