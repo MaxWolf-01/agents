@@ -1,6 +1,7 @@
 ---
 status: done
 blocked-by: [04, 05]
+diff: [f2e6ed41b97e64b4256cbbcc922a1e8cdc7f0651..ff4a4842de6e3b7f5a5000708b35bfe65646614b]
 ---
 
 # The worker's whole contract lives in the worker prompt; implement is deleted
