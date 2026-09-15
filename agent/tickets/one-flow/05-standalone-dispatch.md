@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: done
 blocked-by: [02]
 ---
 
