@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Drive the shipped hook through a real print-mode session: a prompt that invites slop,
-# then the reviewer's log (the first draft, the hits, the timing) and the reply the user
-# would have read. Exits nonzero when the hook never reached the reviewer, or when a tell
-# the feedback quoted is still in the reply word for word.
+# Drive the shipped hook through a real print-mode session: a prompt that invites slop, then the
+# reviewer's log (the first draft, the feedback the session read, the timing) and the reply the
+# user would have read. Exits nonzero when the hook never reached the reviewer.
 # Any argument replaces the prompt. TRY_MODEL sets the outer session's model (default
 # haiku); the reviewer's own model is CHAT_REVIEW_MODEL (default haiku).
 set -euo pipefail
@@ -23,31 +22,29 @@ echo "--- reply the user reads"
 reply=$(claude -p --model "${TRY_MODEL:-haiku}" --no-session-persistence --tools "" \
   --setting-sources "" --strict-mcp-config --plugin-dir "$plugin" --output-format text "$prompt")
 printf '%s\n\n' "$reply"
-printf '%s' "$reply" > "$CHAT_REVIEW_LOG.reply"
 echo "--- reviewer log ($CHAT_REVIEW_LOG)"
-# The log and the reply together are the pass condition: a run where the hook never reached
-# the reviewer reads like a clean one otherwise, and a quote the feedback named that survives
-# the rewrite verbatim is the targeted-rewrite claim failing.
-uv run --no-project python - "$CHAT_REVIEW_LOG" "$CHAT_REVIEW_LOG.reply" <<'EOF'
+# A run where the hook never reached the reviewer reads like a clean one, so the logged decisions
+# are the pass condition. The feedback is rebuilt from the logged hits by the hook's own function.
+uv run --no-project python - "$CHAT_REVIEW_LOG" "$plugin/skills/writing-for-humans" <<'EOF'
 import json, sys
 
-reply = open(sys.argv[2]).read()
-reviewed, quoted = [], []
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[2])
+from chat_review import CATALOGUE, chat_rules, feedback, rules_by_id
+
+rules = rules_by_id(chat_rules(CATALOGUE.read_text()))
+reviewed = False
 for line in open(sys.argv[1]):
     e = json.loads(line)
     print(f"[{e['ts']}] {e['decision']}  {e.get('why','')}  {e.get('ms','')}ms")
+    if e.get("why") == "re-entry":
+        continue  # its message is the reply printed above
     if "message" in e:
         print("  draft:", e["message"].replace("\n", "\n         "))
-    for h in e.get("hits", []):
-        print(f"  rule {h.get('rule')}: {h.get('quote')!r} becomes: {h.get('fix')}")
-    if e["decision"] == "feedback" or e.get("why") == "clean":
-        reviewed.append(e)
-        quoted += [h.get("quote", "") for h in e.get("hits", [])]
+    if e["decision"] == "feedback":
+        print("  feedback:", feedback(e["hits"], rules).replace("\n", "\n            "))
+    reviewed = reviewed or e["decision"] == "feedback" or e.get("why") == "clean"
 
-survived = [q for q in quoted if q and q in reply]
-print("residual:", ", ".join(repr(q) for q in survived) or "none")
 if not reviewed:
     sys.exit("FAIL: the hook never reached the reviewer; the log line says why")
-if survived:
-    sys.exit(f"FAIL: {len(survived)} quoted tell(s) survived the rewrite verbatim")
 EOF

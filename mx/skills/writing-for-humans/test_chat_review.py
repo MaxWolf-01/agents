@@ -76,8 +76,8 @@ def test_a_catalogue_with_no_chat_rules_raises() -> None:
 def test_hits_are_read_out_of_surrounding_prose() -> None:
     # the quote a rule-13 hit carries is an em dash, and an apostrophe is the next likeliest
     # thing in it, so the answer goes in as the literal a model would write
-    answer = 'Here you go: {"hits": [{"rule": "13", "quote": "it doesn\u2019t \u2014 yet", "fix": "a period"}]}'
-    assert hits_from(answer) == [{"rule": "13", "quote": "it doesn\u2019t \u2014 yet", "fix": "a period"}]
+    answer = 'Here you go: {"hits": [{"rule": "13", "quote": "it doesn’t — yet", "note": "a dash as a joint"}]}'
+    assert hits_from(answer) == [{"rule": "13", "quote": "it doesn’t — yet", "note": "a dash as a joint"}]
     assert hits_from('{"hits": []}') == []
 
 
@@ -93,9 +93,12 @@ def test_an_answer_with_no_json_raises() -> None:
 
 @pytest.fixture
 def hook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Call the hook the way Claude Code does, and hand back the log it wrote."""
+    """Call the hook the way Claude Code does, on the fixture catalogue, and hand back the log it wrote."""
     log = tmp_path / "log.jsonl"
+    catalogue = tmp_path / "CATALOGUE.md"
+    catalogue.write_text(FIXTURE)
     monkeypatch.setattr(chat_review, "LOG", log)
+    monkeypatch.setattr(chat_review, "CATALOGUE", catalogue)
     for marker in SKIP_MARKERS:
         monkeypatch.delenv(marker, raising=False)
 
@@ -110,11 +113,11 @@ def hook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return call
 
 
-def unreachable(message: str) -> list[dict]:
+def unreachable(message: str, rules: str) -> list[dict]:
     raise AssertionError("the reviewer was called on a turn that should have returned first")
 
 
-DRAFT = {"last_assistant_message": "Great question! Here's the thing — it's a game changer."}
+DRAFT = {"session_id": "s1", "last_assistant_message": "Great question! Here's the thing — it's a game changer."}
 
 
 @pytest.mark.parametrize(
@@ -124,40 +127,58 @@ DRAFT = {"last_assistant_message": "Great question! Here's the thing — it's a 
         (DRAFT, {"CHAT_REVIEW_OFF": "1"}, "skip", "off"),
         (DRAFT, {"DISPATCH_WORKLOG": "/tmp/run.log"}, "skip", "dispatched worker"),
         (DRAFT, {"CLAUDE_CODE_SESSION_ATTENDED": "0"}, "skip", "unattended session"),
-        ({**DRAFT, "stop_hook_active": True}, {}, "allow", "re-entry"),
-        ({"last_assistant_message": "   "}, {}, "allow", "empty"),
+        ({"session_id": "s1", "last_assistant_message": "   "}, {}, "allow", "empty"),
     ],
 )
 def test_every_turn_the_reviewer_never_sees_says_in_the_log_why(
     hook, capsys, payload: dict, env: dict, decision: str, why: str
 ) -> None:
     (entry,) = hook(payload, **env)
-    assert (entry["decision"], entry["why"]) == (decision, why)
+    assert (entry["decision"], entry["why"], entry["session_id"]) == (decision, why, "s1")
     assert "message" not in entry  # a turn the reviewer never saw has no draft to keep
     assert capsys.readouterr().out == ""  # nothing is fed back, so the turn ends here
 
 
+def test_the_re_entry_skips_the_reviewer_and_keeps_the_revised_reply(hook, capsys) -> None:
+    revised = {"session_id": "s1", "stop_hook_active": True, "last_assistant_message": "It changes how queries compose."}
+    (entry,) = hook(revised)
+    assert (entry["decision"], entry["why"]) == ("allow", "re-entry")
+    # paired by session with the draft's feedback line, it shows which flagged passages survived
+    assert (entry["session_id"], entry["message"]) == ("s1", revised["last_assistant_message"])
+    assert capsys.readouterr().out == ""
+
+
 def test_an_attended_session_is_reviewed_and_a_clean_reply_says_so(hook, capsys) -> None:
-    (entry,) = hook(DRAFT, reviewer=lambda message: [], CLAUDE_CODE_SESSION_ATTENDED="1")
+    seen = []
+    (entry,) = hook(DRAFT, reviewer=lambda message, rules: seen.append(rules) or [], CLAUDE_CODE_SESSION_ATTENDED="1")
+    assert seen == [chat_rules(FIXTURE)]
     assert (entry["decision"], entry["why"]) == ("allow", "clean")
     assert entry["message"] == DRAFT["last_assistant_message"]
     assert capsys.readouterr().out == ""
 
 
-def test_hits_continue_the_turn_as_feedback_naming_the_rule_and_the_quote(hook, capsys) -> None:
-    hits = [{"rule": "13", "quote": "game changer", "fix": "say what it changes"}]
-    (entry,) = hook(DRAFT, reviewer=lambda message: hits)
+def test_hits_continue_the_turn_as_feedback_carrying_each_cited_rule_once(hook, capsys) -> None:
+    hits = [
+        {"rule": "3", "quote": "a game changer", "note": "says it matters, not what it does"},
+        {"rule": 3, "quote": "Here's the thing"},  # a model may answer the id as a number and leave out the note
+    ]
+    (entry,) = hook(DRAFT, reviewer=lambda message, rules: hits)
     assert (entry["decision"], entry["hits"]) == ("feedback", hits)
     out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
     assert out["hookEventName"] == "Stop"
-    assert "game changer" in out["additionalContext"] and "say what it changes" in out["additionalContext"]
+    lines = out["additionalContext"].splitlines()
+    assert '- rule 3: "a game changer" (says it matters, not what it does)' in lines
+    assert "- rule 3: \"Here's the thing\"" in lines
+    # rule 3 arrives whole and once, without its scope tag; rule 13, which no hit cites, stays out
+    assert lines.count("- `3` **A rule.** Its first line.") == 1
+    assert '  Before: "indented continuation". After: "rides with its rule".' in lines
+    assert not any("A rule for replies" in line for line in lines)
 
 
 def test_a_reviewer_that_breaks_lets_the_reply_through_and_records_the_failure(hook, capsys) -> None:
-    def broken(message: str) -> list[dict]:
+    def broken(message: str, rules: str) -> list[dict]:
         raise RuntimeError("claude exited 1")
 
     (entry,) = hook(DRAFT, reviewer=broken)
     assert entry["decision"] == "allow" and "claude exited 1" in entry["why"]
     assert capsys.readouterr().out == ""
-
