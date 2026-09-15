@@ -27,7 +27,7 @@ The provenance tag on a call in a draft spec: who settled it, or that nobody has
 _Avoid_: marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open tickets nothing gates and nobody holds.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates and nobody holds.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
@@ -61,11 +61,11 @@ The decision-ticket type for manual work that unblocks a decision without decidi
 _Avoid_: task, chore, prep
 
 **Proposed**:
-The status of a ticket an agent filed that the user has not yet ruled worth doing.
+The status of a ticket an agent filed that the user has not yet ruled on: built like an open one while the ruling waits.
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Ruling**:
-The user's answer on a proposed ticket: whether it is worth doing.
+The user's answer on a proposed ticket, made on the artifact its build produced: the ticket lands, or it and its build are deleted.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Board**:

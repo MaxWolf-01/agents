@@ -6,7 +6,7 @@
 
 Two seams: the tracker loader (a fixture tracker on disk in, ticket and queue state out) and
 the rendered page's status classes (what the loader read, drawn). The oracle is the tracker's
-MARKDOWN.md: the frontier is open, unblocked, unclaimed; a proposed ticket is not open whatever
+MARKDOWN.md: a proposed ticket sits in every view in its own colour, keeping its status whatever
 blocks it; a reference whose file no longer exists counts as done; a needs-human bullet's detail
 continues on indented lines.
 """
@@ -71,12 +71,11 @@ def by_num(feature):
     return {t.num: t for t in feature.tickets}
 
 
-def test_a_proposed_ticket_is_off_the_frontier_whatever_blocks_it(tracker: Path) -> None:
+def test_a_proposed_ticket_keeps_its_status_whatever_blocks_it(tracker: Path) -> None:
     (feature,), standalone = load(tracker)
     assert by_num(feature)["03"].status == "proposed"
     assert {k.slug: k.status for k in standalone} == {"loose-idea": "proposed", "quoted": "open", "small-chore": "open"}
-    frontier = sorted(t.num for t in feature.tickets if t.status == "open")
-    assert frontier == ["02", "05"]
+    assert sorted(t.num for t in feature.tickets if t.status == "open") == ["02", "05"]
 
 
 def test_a_ticket_waiting_on_a_proposal_is_blocked_until_the_ruling_lands_as_done(tracker: Path) -> None:
