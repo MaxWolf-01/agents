@@ -35,7 +35,7 @@ An approach or an option list an agent wrote into the ticket is an assumption to
 - One line saying what landed and what is not merged.
 - **Demo**, the built thing as close to live as its surface allows: the command driven and its transcript, the page served, a screenshot, a recorded run. Where no live surface exists yet, the closest render stands in and the comment says so.
 - **I need from you**: the calls only the user can make, each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
-- **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
+- **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
 The tags run as one sequence across both lists and never repeat: a second comment continues from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: done` flip, comes after it.
 </contract>
