@@ -129,14 +129,19 @@ on_host() { # <host> <command...>
 
 # Through a side directory and a rename, never written in place: a worker
 # already running reads its runner by name, and a copy over those bytes makes
-# the shell resume at its old offset in the new file.
+# the shell resume at its old offset in the new file. The side directory carries
+# this dispatch's pid, because two sessions staging one host share the scratch
+# dir (see scratch_dir) and a shared one would let each publish the other's
+# bytes under its own stamp.
 copy_to() { # <host> <dir> <file...>
     h=$1 dir=$2; shift 2
-    on_host "$h" mkdir -p "$dir/.staging" || return 1
-    if [ "$h" = local ]; then run cp "$@" "$dir/.staging/"; else run scp -q "$@" "$h:$dir/.staging/"; fi || return 1
+    staging=$dir/.staging.$$
+    run on_host "$h" mkdir -p "$staging" || return 1
+    if [ "$h" = local ]; then run cp "$@" "$staging/"; else run scp -q "$@" "$h:$staging/"; fi || return 1
     for f in "$@"; do
-        on_host "$h" mv "$dir/.staging/${f##*/}" "$dir/${f##*/}" || return 1
+        run on_host "$h" mv "$staging/${f##*/}" "$dir/${f##*/}" || return 1
     done
+    on_host "$h" rmdir "$staging"
 }
 
 # The run record: which host a ticket went to, written by the spawn that sent
@@ -189,12 +194,16 @@ stage() { # <host> [setup-command]
     # has to survive an ssh hop.
     if [ -n "$cmd" ]; then
         staged=$(mktemp -d)
-        trap 'rm -rf "$staged"' RETURN
+        # EXIT as well as RETURN: `die` exits the shell, and the paths that die
+        # here (a host that is down) are the ones an orchestrator retries.
+        trap 'rm -rf "$staged"' RETURN EXIT
         printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
     if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
-        [ -n "$cmd" ] && copy_to "$h" "$scratch" "$staged/setup"
+        # A new --setup-cmd is the one thing a staged host still takes, so a
+        # failure here is the spawn building worktrees with the old one.
+        [ -z "$cmd" ] || copy_to "$h" "$scratch" "$staged/setup" || die "staging the setup command on $h failed"
         return 0
     fi
     if [ "$h" = local ]; then
@@ -390,12 +399,12 @@ notes_of() {
         | { notes: [ .[] | capture("^\\s*- A(?<id>[0-9]+) `(?<path>[^:`]+)(:(?<line>[0-9]+))?`: (?<text>.*)$")
                           | .id |= tonumber | .line |= (if . == null then empty else tonumber end) ],
             resolved: [ .[] | capture("^Addressed: (?<ids>.*)$").ids | split(",")[] | gsub("^ +| +$"; "") | select(. != "") ],
-            bullets: ([ .[] | select(test("^\\s*- A[0-9]+ ")) ] | length) }
-        | if (.notes | length) != .bullets
-          then error("an assumption bullet is not `- A<id> `path:line`: text` and the page would drop it")
+            unread: [ .[] | select(test("^\\s*- A[0-9]+ ")) | select(test("^\\s*- A[0-9]+ `[^:`]+(:[0-9]+)?`: ") | not) ] }
+        | if (.unread | length) > 0
+          then error("these assumption bullets are not `- A<id> `path:line`: text`, and the page would drop them:\n" + (.unread | join("\n")))
           elif (.notes | map(.id) | length) != (.notes | map(.id) | unique | length)
           then error("duplicate assumption id in the ticket")
-          else del(.bullets) end' "$1"
+          else del(.unread) end' "$1"
 }
 
 review() {

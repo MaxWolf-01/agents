@@ -22,6 +22,8 @@ step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 # Each step's claim, as something that can fail: under `set -e` a false inside an
 # `&&` list is exempt from errexit, so a claim written that way never fails the run.
 ok() { printf '   \033[32mok\033[0m %s\n' "$1"; }
+# A command that errors counts as a passing negative here, so give `not` a test
+# whose inputs exist: `not grep -q` on a missing file passes for the wrong reason.
 not() { ! "$@"; }
 check() { # <claim> <command...>
     claim=$1; shift
@@ -117,8 +119,11 @@ spawn tidy-readme local --setup-cmd true
 cat "$work/lamp/.git/dispatch/runs"
 ls -d "$HOME/.local/state/dispatch/lamp-lamp-ui" "$HOME/.local/state/dispatch/lamp-main"
 $dispatch fetch tidy-readme
-check "the standalone ticket was built on its own branch" \
-    git -C "$work/lamp" merge-base --is-ancestor main ticket/main/tidy-readme
+# The direction that can fail: the build stays off the integration branch until
+# the ruling, so a spawn that reused `main` instead of cutting a ticket branch
+# fails here where "is main an ancestor of the tip" would still pass.
+check "the standalone build stays off the integration branch" \
+    not git -C "$work/lamp" merge-base --is-ancestor ticket/main/tidy-readme main
 $dispatch ctl cleanup tidy-readme
 
 step "a ticket recorded on another machine: the command goes there, and only there"
