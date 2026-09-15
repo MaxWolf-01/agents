@@ -52,16 +52,17 @@
 #   fetch    brings ticket/<branch>/<ticket> from the host into this repo,
 #            replacing an earlier fetch of it (ticket branches get rebased).
 #   review   once a ticket branch is fetched, before or after its merge alike:
-#            appends the branch's range to the ticket's `diff:` frontmatter and
-#            commits that on this branch, projects the ticket's assumptions
-#            into the review page's notes, renders the page under
-#            agent/diffviews, serves it, re-renders the board.
+#            projects the ticket's assumptions into the review page's notes,
+#            renders the page under agent/diffviews, serves it, re-renders the
+#            board. A merged branch's range is final, so it goes into the
+#            ticket's `diff:` frontmatter, committed on this branch; an
+#            unmerged one renders from the range as it stands.
 #
 # Ticket branches merge into this branch with --no-ff; that merge commit is how
 # `review` finds a ticket's range after the merge (its second parent is the
 # ticket tip). A standalone proposal merges only once the user has ruled on its
-# review page, so until then the page renders from the unmerged branch and the
-# integration branch carries the ticket file's own commits and nothing else.
+# review page, so until then it renders unmerged and the integration branch
+# carries its claim and nothing else.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -247,6 +248,8 @@ fetch() {
     run git fetch -q "$remote" "+$branch:$branch"
 }
 
+is_merged() { git merge-base --is-ancestor "$1" "$feature"; }
+
 # <tip> → <base>..<tip>, whether or not the ticket branch has merged yet. Before
 # the merge, merge-base against the feature branch is the answer; after it, the
 # tip is an ancestor of the feature branch and merge-base would return the tip
@@ -254,7 +257,7 @@ fetch() {
 # both ends, because cleanup deletes the branch while its commits survive.
 range_of() {
     tip=$1
-    if git merge-base --is-ancestor "$tip" "$feature"; then
+    if is_merged "$tip"; then
         merge=$(git rev-list --first-parent --merges --parents "$feature" | awk -v t="$tip" '$3 == t { print $1; exit }')
         [ -n "$merge" ] || die "$tip is on $feature but no --no-ff merge brought it there; append the range to the ticket by hand"
         echo "$(git merge-base "$merge^1" "$tip")..$tip"
@@ -290,25 +293,34 @@ review() {
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
     range=$(range_of "$tip") || exit 1
 
-    # `diff:` is a flow list in the frontmatter. When absent it goes in as the
-    # last frontmatter line, away from `status:`, which the ticket branch edits
-    # too: adjacent lines would make the merge conflict. A re-render finds its
-    # range already there.
-    if ! grep -q "$range" "$ticket"; then
-        if grep -q '^diff: \[' "$ticket"; then
-            sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
-        else
-            awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
-                mv "$ticket.tmp" "$ticket"
+    specs=()
+    if is_merged "$tip"; then
+        # `diff:` is a flow list in the frontmatter, written once the branch has
+        # landed and the range is final. When absent it goes in as the last
+        # frontmatter line, away from `status:`, which the ticket branch edits
+        # too: adjacent lines would make the merge conflict. A re-render finds
+        # its range already there.
+        if ! grep -q "$range" "$ticket"; then
+            if grep -q '^diff: \[' "$ticket"; then
+                sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
+            else
+                awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
+                    mv "$ticket.tmp" "$ticket"
+            fi
+            run git commit -q -m "${prefix}$id review range" -- "$ticket"
         fi
-        run git commit -q -m "${prefix}$id review range" -- "$ticket"
+        while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
+    else
+        # A standalone proposal's page, rendered while its build waits for the
+        # user's ruling: the range is the branch as it stands, and the ticket
+        # stays untouched, so the merge on accept has nothing to conflict with
+        # and a rejection leaves the integration branch with only the claim.
+        specs=("$repo_root@$range")
     fi
 
     out=$diffviews/$id
     mkdir -p "$(dirname "$out")"
     notes_of "$ticket" > "$out.notes.json" || exit 1
-    specs=()
-    while read -r r; do specs+=("$repo_root@$r"); done < <(sed -n 's/^diff: \[\(.*\)\]/\1/p' "$ticket" | tr ',' '\n' | tr -d ' ')
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve agent/diffviews
     run uv run "$skill/../tracker/board.py" agent/tickets --no-watch --no-open
