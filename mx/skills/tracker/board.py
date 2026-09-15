@@ -653,11 +653,11 @@ def ext_chips(refs: list[tuple[str, str]]) -> str:
     )
 
 
-def dv_link(path: str | None) -> str:
+def dv_link(path: str | None, label: str = "diff") -> str:
     if not path:
         return ""
     return (f'<a class="dv" href="{html.escape(path)}" target="_blank" '
-            f'onclick="event.stopPropagation()" title="{html.escape(path)}">diff</a>')
+            f'onclick="event.stopPropagation()" title="{html.escape(path)}">{label}</a>')
 
 
 def search_text(*parts: str) -> str:
@@ -673,18 +673,17 @@ def row(row_id: str, feature: str, num: str, title: str, status: str, badges: st
         f'<span class="title">{html.escape(title)}{dv_link(dv)}</span>'
         f'<span class="badges">{badges}</span>'
         f'<span class="chips">{chips or "<span class=deps>—</span>"}</span></summary>'
-        f'<div class="body">{body}</div></details>'
+        f'<div class="body">{f"<p class=dvline>{dv_link(dv, 'open the review page')}</p>" if dv else ""}{body}</div></details>'
     )
 
 
 def ticket_row(f: Feature, t: Ticket) -> str:
     by_num = {x.num: x for x in f.tickets}
-    badges = f'<span class="badge {t.status}">{STATUS_SYMBOL[t.status]} {t.status}</span>{kind_badge(t.kind)}'
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, badges, dep_chips(f.name, by_num, t), t.body_html, t.diffview)
+    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.diffview)
 
 
 def standalone_row(k: Standalone) -> str:
-    badges = f'<span class="badge {k.status}">{STATUS_SYMBOL[k.status]} {k.status}</span>{kind_badge(k.kind)}'
+    badges = kind_badge(k.kind)
     if k.source:
         badges += f'<span class="badge source" title="filed on branch {html.escape(k.source)}, not on the main branch">on {html.escape(k.source)}</span>'
     return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.diffview)
@@ -816,10 +815,10 @@ PAGE = Template(r"""<!doctype html>
   @media (max-width: 1100px) {
     /* half a screen: the graph above the rows, sticky, the top bar wrapping and scrolling away */
     main { grid-template-columns: 1fr; }
-    .top { position: static; height: auto; flex-wrap: wrap; padding: 6px 12px; }
+    .top { height: auto; flex-wrap: wrap; padding: 6px 12px; }
     .featnav { flex-basis: 100%; order: 1; }
     .search { width: 9rem; margin-left: auto; }
-    .side { order: -1; top: 0; max-height: 40vh; }
+    .side { order: -1; top: var(--topbar-h); max-height: 40vh; }
   }
   .ghead { display: flex; gap: .5rem; align-items: center; margin-bottom: .4rem; }
   .gname { color: var(--ink2); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -827,7 +826,7 @@ PAGE = Template(r"""<!doctype html>
   .mermaid { margin: 0; display: flex; justify-content: center; color: var(--ink3); }
   .mermaid:not(:has(svg)) { visibility: hidden; }
   .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon { stroke: var(--ink) !important; stroke-width: 2.5px !important; }
+  .side g.node.cur rect, .side g.node.cur polygon { stroke: #fff !important; stroke-width: 3px !important; filter: drop-shadow(0 0 4px #fff8); }
 
   h2 { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; font-weight: 600;
     color: var(--ink2); margin: 0; display: flex; align-items: baseline; gap: .8rem; font-family: var(--sans); }
@@ -849,18 +848,19 @@ PAGE = Template(r"""<!doctype html>
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
   .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
   .needs { background: var(--human-bg); border-color: var(--human); color: var(--human); }
-  .badge.kind { background: var(--human-bg); border-color: var(--human); color: var(--human); }
+  .badge.kind { border-color: var(--border); color: var(--ink3); border-style: dashed; }
   .badge.source { border-style: dashed; border-color: var(--claimed-br); color: var(--claimed-tx); }
 
   /* ---- ticket rows ---- */
   .ticket { border-bottom: 1px solid var(--border); }
   .ticket:last-child { border-bottom: 0; }
   .ticket.off, .ticket.miss { display: none; }
-  .ticket summary { display: grid; grid-template-columns: auto 1.6rem 1fr auto auto; gap: .8rem; align-items: baseline;
+  .ticket summary { display: grid; grid-template-columns: 9.5rem 1.6rem 1fr 8rem 5rem; gap: .8rem; align-items: baseline;
     padding: .45rem .3rem; cursor: pointer; list-style: none; }
   .ticket summary::-webkit-details-marker { display: none; }
   .ticket summary:hover { background: var(--raised); }
-  .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap; }
+  .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap;
+    justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; }
   .ticket .title { font-size: 13.5px; }
   .row-needs .title { color: var(--ink); }
@@ -871,7 +871,8 @@ PAGE = Template(r"""<!doctype html>
   .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
     color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
   .dv:hover { color: var(--ink); border-color: var(--ink3); }
-  .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; }
+  .dvline { margin: .4rem 0 0; } .dvline .dv { margin-left: 0; padding: .1rem .5rem; }
+  .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; justify-self: end; }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
   .chips { display: inline-flex; gap: .25rem; min-width: 3rem; justify-content: flex-end; flex-wrap: wrap; }
   .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
@@ -886,6 +887,7 @@ PAGE = Template(r"""<!doctype html>
   .ticket > summary { transition: background .6s, outline-color .6s; }
   .ticket.kcur > summary { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
   .ticket { scroll-margin-top: calc(var(--topbar-h) + 60px); scroll-margin-bottom: 60px; }
+  @media (max-width: 1100px) { .ticket summary { grid-template-columns: 6rem 1.6rem 1fr auto auto; } }
   .grp { scroll-margin-top: calc(var(--topbar-h) + 10px); }
 
   .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
@@ -922,7 +924,7 @@ ${groups}
 </div>
 <aside class="side" id="side">
   <div class="ghead"><span class="eyebrow">dependencies</span><span class="gname" id="gname"></span>
-    <button class="btn" id="sidefold" title="fold the graph panel (g)">▾</button></div>
+    <button class="btn" id="sidefold" title="fold the graph panel (b)">▾</button></div>
   <div class="gbody" id="gbody">
     <div class="g" data-feature="" ><div class="gnote">expand a row or move onto one (j / k)</div></div>
     ${graphs}
@@ -932,12 +934,15 @@ ${groups}
 
 <div id="help"><div class="card"><table>
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
-<tr><td><kbd>Enter</kbd> / <kbd>Space</kbd></td><td>expand / collapse the row</td></tr>
-<tr><td><kbd>c</kbd></td><td>collapse / expand the row's group</td></tr>
-<tr><td><kbd>x</kbd></td><td>collapse / expand every group</td></tr>
-<tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>previous / next group</td></tr>
+<tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>next / previous group</td></tr>
+<tr><td><kbd>gg</kbd> <kbd>G</kbd></td><td>top / bottom</td></tr>
+<tr><td><kbd>x</kbd> <kbd>o</kbd> <kbd>Enter</kbd></td><td>expand / collapse the row</td></tr>
+<tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>collapse / expand every group</td></tr>
+<tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
+<tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
-<tr><td><kbd>g</kbd></td><td>fold / unfold the graph panel</td></tr>
+<tr><td><kbd>b</kbd></td><td>fold / unfold the graph panel</td></tr>
+<tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
 </table></div></div>
@@ -1133,9 +1138,9 @@ ${groups}
   function jumpGroup(delta) {
     const gs = groups();
     if (!gs.length) return;
-    const y = scrollY + 1;
-    let i = gs.findIndex((g) => g.offsetTop > y) - 1;  // the group holding the viewport top
-    if (i < -1) i = gs.length - 1;
+    // the group holding the viewport top: the last one at or above where a jump to it would land
+    const margin = parseFloat(getComputedStyle(gs[0]).scrollMarginTop) || 0;
+    const i = gs.findLastIndex((g) => g.offsetTop <= scrollY + margin + 2);
     gs[Math.min(Math.max(i + delta, 0), gs.length - 1)].scrollIntoView({ block: "start" });
   }
 
@@ -1157,31 +1162,46 @@ ${groups}
   document.getElementById("helpbtn").addEventListener("click", () => help.classList.toggle("open"));
   help.addEventListener("click", () => help.classList.remove("open"));
 
+  // The keys are diffview's where the two pages have the same move (j/k, J/K, gg/G, x/o/Enter,
+  // X/O, z, b, /, ?), so one set of habits drives both.
+  let gPending = false, gTimer = null;
   document.addEventListener("keydown", (e) => {
     if (inField(e)) {
       if (e.key === "Escape") { search.value = ""; applyFilters(); search.blur(); }
       return;
     }
-    if (e.key === "Escape") { help.classList.remove("open"); if (cur?.open) cur.open = false; else setCur(null); return; }
-    if (e.key === "?") { help.classList.toggle("open"); return; }
-    if (e.key === "/") { e.preventDefault(); search.focus(); search.select(); return; }
-    if (e.key === "j") { e.preventDefault(); moveCur(1); return; }
-    if (e.key === "k") { e.preventDefault(); moveCur(-1); return; }
-    if (e.key === "h") { jumpGroup(-1); return; }
-    if (e.key === "l") { jumpGroup(1); return; }
-    if ((e.key === "Enter" || e.key === " ") && cur) { e.preventDefault(); cur.open = !cur.open; return; }
-    if (e.key === "c") {
-      const g = cur?.closest("details.grp") ?? groups()[0];
-      if (g) g.open = !g.open;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "g") {
+      if (gPending) { clearTimeout(gTimer); gPending = false; scrollTo(0, 0); setCur(rows()[0]); }
+      else { gPending = true; gTimer = setTimeout(() => gPending = false, 500); }
       return;
     }
-    if (e.key === "x") {
-      const anyOpen = rowsEl.querySelector("details.grp[data-state][open]");
-      for (const g of rowsEl.querySelectorAll("details.grp[data-state]")) g.open = !anyOpen;
-      return;
+    switch (e.key) {
+      case "Escape": help.classList.remove("open"); if (cur?.open) cur.open = false; else setCur(null); break;
+      case "?": help.classList.toggle("open"); break;
+      case "/": e.preventDefault(); search.focus(); search.select(); break;
+      case "j": e.preventDefault(); moveCur(1); break;
+      case "k": e.preventDefault(); moveCur(-1); break;
+      case "J": jumpGroup(1); break;
+      case "K": jumpGroup(-1); break;
+      case "G": scrollTo(0, document.body.scrollHeight); setCur(rows().at(-1), false); break;
+      case "x": case "o": case "Enter": if (cur) { e.preventDefault(); cur.open = !cur.open; } break;
+      case "X": case "O": {
+        const open = e.key === "O";
+        for (const g of rowsEl.querySelectorAll("details.grp[data-state]")) g.open = open;
+        break;
+      }
+      case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
+      case "d": { const href = cur?.querySelector("a.dv")?.href; if (href) window.open(href, "_blank"); break; }
+      case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
+      case "b": side.classList.toggle("folded"); break;
+      case "0": off.clear(); applyFilters(); break;
+      default:
+        if (/^[1-9]$$/.test(e.key)) {  // the doubled dollar is the page template's escape
+          const chip = document.querySelectorAll(".featchip")[e.key - 1];
+          if (chip) { off.has(chip.dataset.feature) ? off.delete(chip.dataset.feature) : off.add(chip.dataset.feature); applyFilters(); }
+        }
     }
-    if (e.key === "a") { mode = mode === "all" ? "feature" : "all"; showGraph(); return; }
-    if (e.key === "g") { side.classList.toggle("folded"); return; }
   });
 
   // anchor navigation: open the target ticket, move the cursor to it, flash it.
@@ -1239,6 +1259,9 @@ ${groups}
   }
   setTimeout(poll, 5_000);
 
+  // the top bar wraps on a narrow window; everything sticky below it follows its measured height
+  new ResizeObserver(([e]) => document.documentElement.style.setProperty("--topbar-h", e.target.offsetHeight + "px"))
+    .observe(document.querySelector(".top"));
   if (cur) cur.classList.add("kcur");
   applyFilters();
   if (!saved && location.hash) openTarget();

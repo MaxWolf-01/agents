@@ -224,7 +224,7 @@ def test_the_page_groups_rows_by_state_needs_me_first_and_done_folded(tracker: P
     assert '<details class="grp" id="grp-done" data-state="done"><summary>' in page
     assert '<details class="grp" id="grp-open" data-state="open" open>' in page
     assert f'class="ticket row-proposed" id="t-{FEAT}-03" data-feature="{FEAT}" data-num="03"' in page
-    assert '<span class="badges"><span class="badge proposed">' in page
+    assert f'id="t-{FEAT}-03"' in page and 'class="badge proposed"' not in page  # the group says the status; a row does not repeat it
     assert f'id="needs-{FEAT}-0" data-feature="{FEAT}"' in page
 
 
@@ -265,7 +265,8 @@ def test_a_row_links_its_review_page(tracker: Path) -> None:
     page = page_of(tracker)
     assert f'href="file://{dv / FEAT / "02-second.html"}"' in page
     assert f'href="file://{dv / "quoted.html"}"' in page
-    assert page.count('class="dv"') == 2
+    assert page.count('class="dv"') == 4  # a chip on each row, and the line at the top of each expanded ticket
+    assert '<p class=dvline><a class="dv"' in page
 
 
 def test_class_defs_cover_every_status(tracker: Path) -> None:
