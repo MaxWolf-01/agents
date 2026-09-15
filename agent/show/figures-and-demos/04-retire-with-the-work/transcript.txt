@@ -16,9 +16,9 @@
   agent/show/soup/broth.png is an untracked render, agent/research/07-stock-timings.md
   an untracked note cited by 01-stock; the README links the figure where it sits
 
-== what the README needs is promoted, and its link repointed, in the retiring commit
+== what the README needs moves out, render and source, its link repointed with it
 
-  cp agent/show/soup/broth.svg docs/figures/broth.svg
+  git mv agent/show/soup/broth.svg agent/show/soup/broth.mmd docs/figures/
   sed -i 's|agent/show/soup/broth.svg|docs/figures/broth.svg|' README.md
 
 == the tickets and the show directory leave in the same commit
@@ -26,8 +26,6 @@
   git rm -r agent/tickets/soup/ agent/show/soup/
   rm 'agent/show/soup/01-stock/demo'
   rm 'agent/show/soup/02-serve/demo'
-  rm 'agent/show/soup/broth.mmd'
-  rm 'agent/show/soup/broth.svg'
   rm 'agent/tickets/soup/01-stock.md'
   rm 'agent/tickets/soup/02-serve.md'
   rm 'agent/tickets/soup/spec.md'
@@ -47,14 +45,15 @@
     D	agent/tickets/soup/01-stock.md
     D	agent/tickets/soup/02-serve.md
     D	agent/tickets/soup/spec.md
+    A	docs/figures/broth.mmd
     A	docs/figures/broth.svg
 
 == the research notes leave the tree, moved rather than deleted
 
-  mkdir -p ~/logs/agent-research/toy-project/
-  mv agent/research/07-stock-timings.md ~/logs/agent-research/toy-project/
+  mkdir -p ~/logs/agent/toy-project/research/
+  mv agent/research/07-stock-timings.md ~/logs/agent/toy-project/research/
 
-  the note now reads at ~/logs/agent-research/toy-project/07-stock-timings.md:
+  the note now reads at ~/logs/agent/toy-project/research/07-stock-timings.md:
 
     # Stock timings
 
@@ -64,6 +63,7 @@
 
   .gitignore
   README.md
+  docs/figures/broth.mmd
   docs/figures/broth.svg
 
 == what holds
@@ -72,8 +72,8 @@
   ok  HEAD carries no figure or demo of the feature, its slice directories included
   ok  the show directory is off disk, the untracked render with it
   ok  no research note is left in the tree
-  ok  the note survives the move, at ~/logs/agent-research/<repo>/
-  ok  the promoted figure is in the tree and no README link points into the show directory
+  ok  the note survives the move, at ~/logs/agent/<repo>/research/
+  ok  the promoted render and its source are in the tree, and no README link points into the show directory
   ok  removal, promotion and repointing are the same commit
   ok  git history still finds the retired work
 

@@ -50,9 +50,9 @@ git add -A && git commit -q -m "soup: shipped"
 tree
 printf '\n  agent/show/soup/broth.png is an untracked render, agent/research/07-stock-timings.md\n  an untracked note cited by 01-stock; the README links the figure where it sits\n'
 
-step "what the README needs is promoted, and its link repointed, in the retiring commit"
+step "what the README needs moves out, render and source, its link repointed with it"
 
-sh_run "cp agent/show/soup/broth.svg docs/figures/broth.svg"
+run mv agent/show/soup/broth.svg agent/show/soup/broth.mmd docs/figures/
 sh_run "sed -i 's|agent/show/soup/broth.svg|docs/figures/broth.svg|' README.md"
 
 step "the tickets and the show directory leave in the same commit"
@@ -66,10 +66,10 @@ git show --no-renames --name-status --format='  %s' HEAD | sed 's/^\([ADM]\)/   
 
 step "the research notes leave the tree, moved rather than deleted"
 
-sh_run 'mkdir -p ~/logs/agent-research/toy-project/'
-sh_run 'mv agent/research/07-stock-timings.md ~/logs/agent-research/toy-project/'
-printf '\n  the note now reads at ~/logs/agent-research/toy-project/07-stock-timings.md:\n\n'
-sed 's/^..*$/    &/' "$HOME/logs/agent-research/toy-project/07-stock-timings.md"
+sh_run 'mkdir -p ~/logs/agent/toy-project/research/'
+sh_run 'mv agent/research/07-stock-timings.md ~/logs/agent/toy-project/research/'
+printf '\n  the note now reads at ~/logs/agent/toy-project/research/07-stock-timings.md:\n\n'
+sed 's/^..*$/    &/' "$HOME/logs/agent/toy-project/research/07-stock-timings.md"
 
 step "the tree after"
 
@@ -85,11 +85,11 @@ check "the show directory is off disk, the untracked render with it" \
     bash -c '! test -e "$0/agent/show/soup"' "$repo"
 check "no research note is left in the tree" \
     bash -c 'test -z "$(find "$0/agent/research" -type f)"' "$repo"
-check "the note survives the move, at ~/logs/agent-research/<repo>/" \
-    grep -q "90 minutes" "$HOME/logs/agent-research/toy-project/07-stock-timings.md"
-check "the promoted figure is in the tree and no README link points into the show directory" \
-    bash -c 'test -f "$0/docs/figures/broth.svg" && grep -q "docs/figures/broth.svg" "$0/README.md" &&
-             ! grep -q "agent/show/" "$0/README.md"' "$repo"
+check "the note survives the move, at ~/logs/agent/<repo>/research/" \
+    grep -q "90 minutes" "$HOME/logs/agent/toy-project/research/07-stock-timings.md"
+check "the promoted render and its source are in the tree, and no README link points into the show directory" \
+    bash -c 'test -f "$0/docs/figures/broth.svg" && test -f "$0/docs/figures/broth.mmd" &&
+             grep -q "docs/figures/broth.svg" "$0/README.md" && ! grep -q "agent/show/" "$0/README.md"' "$repo"
 check "removal, promotion and repointing are the same commit" \
     bash -c 'c=$(git -C "$0" show --no-renames --name-status --format= HEAD)
              grep -q "^A.docs/figures/broth.svg" <<<"$c" && grep -q "^D.agent/show/soup/broth.svg" <<<"$c" &&
