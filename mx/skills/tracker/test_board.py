@@ -6,8 +6,8 @@
 
 Two seams: the tracker loader (a fixture tracker on disk in, ticket and queue state out) and
 the rendered page's status classes (what the loader read, drawn). The oracle is the tracker's
-MARKDOWN.md: the frontier is open or proposed, unblocked, unclaimed; a proposed ticket keeps its
-status whatever blocks it; a reference whose file no longer exists counts as done; a needs-human bullet's detail
+MARKDOWN.md: a proposed ticket sits in every view in its own colour, keeping its status whatever
+blocks it; a reference whose file no longer exists counts as done; a needs-human bullet's detail
 continues on indented lines.
 """
 
