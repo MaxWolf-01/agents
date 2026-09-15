@@ -6,7 +6,7 @@ user_invocable: true
 
 Counterpart to `/mx:writing-for-agents`: that skill covers documents that instruct an agent's process; this one covers text that explains or records, read cold by whoever finds it, human or agent. A document that does both (a spec, an ADR) loads both.
 
-Invoked on a file or diff, this is a pass: every sentence against every rule of [`CATALOGUE.md`](CATALOGUE.md), the catalogue of AI prose tells, each hit fixed or reported, then the three sections below. Close with the self-audit: what still makes this read as AI generated? Cut every sentence whose deletion costs the reader nothing. Empty is a valid result.
+The tells themselves are [`CATALOGUE.md`](CATALOGUE.md) beside this file, every one with a stable id a finding can cite and a tag saying which media it binds. Invoked on a file or diff, this skill is a pass: read every sentence against every rule of the catalogue and against the sections below, and fix or report each hit. Then ask what still makes the text read as AI generated, and cut every sentence whose deletion would cost the reader nothing. Empty is a valid result.
 
 ## The cold reader
 
