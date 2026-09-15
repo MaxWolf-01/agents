@@ -207,7 +207,7 @@ The rules they cite:
   Before: "indented continuation". After: "rides with its rule".
 - `13` **A rule for replies.** Kept.
 
-Revise the message where the hits hold."""
+Revise the message where the hits hold. Reply with the revised message alone."""
 
 
 def test_a_session_gets_each_rule_text_once(hook, capsys) -> None:
@@ -223,7 +223,7 @@ An automated review by haiku flagged these passages of your last message against
 The rules they cite:
 - `13` **A rule for replies.** Kept.
 
-Revise the message where the hits hold."""
+Revise the message where the hits hold. Reply with the revised message alone."""
     *_, entry = hook({**DRAFT, "session_id": "s2"}, reviewer=lambda message, rules: [{"rule": "3", "quote": "a game changer"}])
     assert entry["explained"] == ["3"]  # another session has not been shown rule 3
 
@@ -250,7 +250,7 @@ def test_feedback_citing_no_selected_rule_has_no_rules_section(hook, capsys) -> 
 An automated review by haiku flagged these passages of your last message against the chat prose rules:
 - rule 51: "it's"
 
-Revise the message where the hits hold."""
+Revise the message where the hits hold. Reply with the revised message alone."""
 
 
 def test_feedback_past_the_hook_output_limit_points_at_the_catalogue_for_the_rules(hook, capsys, monkeypatch) -> None:
@@ -263,7 +263,7 @@ An automated review by haiku flagged these passages of your last message against
 
 The rules they cite, by id, are in {chat_review.CATALOGUE}.
 
-Revise the message where the hits hold."""
+Revise the message where the hits hold. Reply with the revised message alone."""
 
 
 def test_a_reviewer_that_breaks_lets_the_reply_through_and_records_the_failure(hook, capsys) -> None:
