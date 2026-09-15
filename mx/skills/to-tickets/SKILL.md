@@ -90,4 +90,4 @@ A decision ticket uses the same frontmatter plus its `type`; its body is a `## Q
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
-The tickets are worked by `/mx:dispatch`, at any size: a fresh `/mx:implement` per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type.
+The tickets are worked by `/mx:dispatch`, at any size: a fresh worker per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type.
