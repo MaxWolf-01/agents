@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 ---
 
 # Show carries the shape table: figures for decisions, demos for landings
