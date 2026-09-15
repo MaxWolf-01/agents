@@ -7,11 +7,13 @@
 Two seams: the tracker loader (a fixture tracker on disk in, ticket and queue state out) and
 the rendered page's status classes (what the loader read, drawn). The oracle is the tracker's
 MARKDOWN.md: a proposed ticket sits in every view in its own colour, keeping its status whatever
-blocks it; a reference whose file no longer exists counts as done; a needs-human bullet's detail
-continues on indented lines.
+blocks it; a reference whose file no longer exists counts as done; the needs-human.md beside a
+set of tickets is their queue rather than one of them; a needs-human bullet's detail continues on
+indented lines.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,6 +29,7 @@ from board import (
     load_features,
     load_needs_human,
     load_standalone,
+    render,
     render_page,
     wave_lanes,
 )
@@ -57,6 +60,10 @@ def tracker(tmp_path: Path) -> Path:
     ticket(root / "loose-idea.md", "proposed", blocked_by=["feat/02"])
     ticket(root / "small-chore.md", "open")
     (root / "quoted.md").write_text('---\nstatus: open\n---\n\n# Say "no limit" plainly\n')
+    (root / "needs-human.md").write_text(
+        "---\nworker-host: agent@pc\n---\n"
+        "- rule on loose-idea :: built while proposed; its page is agent/diffviews/loose-idea.html\n"
+    )
     return root
 
 
@@ -108,7 +115,7 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     lanes = wave_lanes(feature)
     assert lanes.index("proposed — awaiting ruling") > lanes.rindex("wave +")  # 04 waits on 03, which waits on 02
     assert 'card proposed"><a class="cardlink" href="#t-feat-03"' in lanes.split("proposed — awaiting ruling")[1]
-    page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, ([], None), log="", stamp="s", stamp_src="s.js")
     assert "1/4 done" in page  # the top bar: the proposal is not part of the feature's count
     assert 'feat <span class="dim">1/4</span>' in page  # the feature chip agrees
     assert '<span class="badges"><span class="badge proposed">' in page
@@ -122,6 +129,39 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     class_defs = re.search(r'const classDefs = \[([^\]]*)\]', page).group(1)
     for status in STATUS_SYMBOL:
         assert f'"{status}"' in class_defs
+
+
+def test_the_standalone_queue_is_the_tracker_roots_own_and_not_a_ticket(tracker: Path) -> None:
+    (feature,), standalone = load(tracker)
+    assert "needs-human" not in {k.slug for k in standalone}
+    page = render_page(
+        "demo", [feature], standalone, load_needs_human(tracker / "needs-human.md"),
+        log="", stamp="s", stamp_src="s.js",
+    )
+    assert '<a class="chip open" href="#standalone">standalone</a> rule on loose-idea' in page
+    assert 'id="standalone"' in page
+    assert "workers on agent@pc" in page
+
+
+def test_a_queue_entry_outliving_its_ticket_still_has_a_section_to_link_to(tracker: Path) -> None:
+    # the ruling on the last standalone ticket was `reject`, which deletes the file
+    (feature,), _ = load(tracker)
+    page = render_page(
+        "demo", [feature], [], load_needs_human(tracker / "needs-human.md"),
+        log="", stamp="s", stamp_src="s.js",
+    )
+    assert 'id="standalone"' in page
+    assert "workers on agent@pc" in page
+
+
+def test_render_reads_the_queue_beside_the_tickets(tracker: Path, tmp_path: Path) -> None:
+    repo = tracker.parent.parent
+    git = ["git", "-c", "user.email=t@e", "-c", "user.name=t", "-C", str(repo)]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "the tracker"], check=True)
+    out = tmp_path / "out" / "board.html"
+    render(tracker, {}, repo, out)
+    assert "rule on loose-idea" in out.read_text()
 
 
 def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
