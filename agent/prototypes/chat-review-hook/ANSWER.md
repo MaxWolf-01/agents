@@ -6,7 +6,9 @@ Can a Stop hook that has a small model read the turn's final message against the
 
 ## What was tried
 
-`chat-review` is a command hook: it reads the Stop input, skips the re-entry after its own block, sends the message plus `CHAT-RULES.md` to a nested `claude -p` (Haiku, no tools, no settings, no plugins, no MCP servers, thinking off) and prints a block decision whose reason lists each hit as rule number, verbatim quote and fix. It fails open and logs every decision as a JSON line. `settings.json` wires it; `try` drives it through a real print-mode session.
+A command hook read the Stop input, skipped the re-entry after its own block, sent the message plus a copy of the rules to a nested `claude -p` (Haiku, no tools, no settings, no plugins, no MCP servers, thinking off) and printed a block decision whose reason listed each hit as rule number, verbatim quote and fix. It failed open and logged every decision as a JSON line. A settings file wired it; `try` drove it through a real print-mode session.
+
+The hook shipped from this: [`mx/skills/writing-for-humans/chat-review`](../../../mx/skills/writing-for-humans/chat-review), registered in `mx/hooks/hooks.json` and reading the chat-scoped rules of the catalogue beside it. The prototype's script, rules copy and settings file went with it; `try` drives the shipped hook, and the measurements below are what this directory is kept for.
 
 Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 
@@ -25,11 +27,11 @@ Measured on 2026-09-14, Claude Code 2.1.270, Haiku 4.5:
 - **One block per turn leaves residue.** The reviewer quotes one instance per tell, the rewrite fixes what was quoted, and the re-entry is not checked. Either the reviewer lists every instance, or a second check is allowed before the re-entry passes.
 - **Startup, not the model, is the other cost.** The nested call must skip user settings, plugins, hooks and MCP servers (`--setting-sources "" --strict-mcp-config`), else startup alone is 4 s and the plugin's own Stop hook would recurse. The `CHAT_REVIEW_NESTED` guard covers recursion regardless.
 - **The user sees the draft, the feedback and the rewrite.** A Stop hook runs after the reply has streamed to the screen; continuing the turn appends the corrected reply below it. The hook now returns the hits as `additionalContext` (the transcript labels it "Stop hook feedback") instead of `decision: block` (labelled a hook error); both continue the turn the same way. The only mechanism that changes text before it is shown is MessageDisplay, which is display-only, holds the screen per batch of lines while the hook runs, and would have a small model rewrite prose unchecked; rejected for the prototype. Within a session the feedback stays in the model's context, so later replies should come out cleaner before any hook runs; whether that holds is what a week of the log will show.
-- **Sessions nobody reads should skip it.** A dispatched worker's chat is read by no one; the environment marks attended sessions (`CLAUDE_CODE_SESSION_ATTENDED`), so the hook can return early there. Not built into the prototype.
+- **Sessions nobody reads should skip it.** A dispatched worker's chat is read by no one, and the dispatch runner marks such a session by exporting `DISPATCH_WORKLOG`, so the hook can return early there. Not built into the prototype.
 
 ## Verdicts
 
-Pending the user's judgment of the prototype (one-flow, Q5). Proposals, not decisions:
+Ruled by the user in round 3 and round 4 of the one-flow grilling, and built as [The chat reviewer ships with the mx plugin](../../tickets/one-flow/03-chat-reviewer.md):
 
 - The reviewer as a command hook calling a bare, non-thinking Haiku is the shape to keep.
 - Its production home is the mx plugin's own hooks, so every machine gets it with the plugin; one environment variable turns it off.

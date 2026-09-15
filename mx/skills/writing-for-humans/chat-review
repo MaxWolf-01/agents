@@ -1,16 +1,23 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --script --quiet
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Stop hook: a fresh small model reads the turn's final message against CHAT-RULES.md
-and blocks once with the quoted hits, so the agent rewrites before the user reads it.
+"""Stop hook: a fresh small model reads the turn's final message against the chat-scoped rules
+of CATALOGUE.md beside this file, and hands the hits back as feedback, so the turn continues
+with a corrected reply.
 
-Reads the Stop hook JSON on stdin. Allows silently when the hook is re-entering after
-its own block (stop_hook_active), when the message is empty, or when the reviewer fails
-(fail open). Every decision is one JSON line in the log.
+Reads the Stop hook JSON on stdin and selects the rules tagged `chat` or `both`, the selection
+CATALOGUE.md's header states. Fails open: a reviewer that errors, times out or answers in
+something other than JSON allows the turn. Every decision it makes is one JSON line in the log.
 
-Env: CHAT_REVIEW_MODEL (default haiku), CHAT_REVIEW_LOG (default ~/.cache/chat-review/log.jsonl).
+It allows without calling a model when the message is empty and when the hook is re-entering
+after its own feedback, which is what holds the review to once per turn. It does nothing at all,
+log included, in a session nobody reads: CHAT_REVIEW_OFF set, or DISPATCH_WORKLOG set, which
+marks a dispatched worker whose chat has no reader.
+
+Env: CHAT_REVIEW_OFF (any value turns the hook off), CHAT_REVIEW_MODEL (default haiku),
+CHAT_REVIEW_LOG (default ~/.cache/chat-review/log.jsonl).
 """
 
 import json
@@ -21,17 +28,17 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+CATALOGUE = Path(__file__).resolve().parent / "CATALOGUE.md"
 LOG = Path(os.environ.get("CHAT_REVIEW_LOG", Path.home() / ".cache/chat-review/log.jsonl"))
 MODEL = os.environ.get("CHAT_REVIEW_MODEL", "haiku")
 REVIEWER_TIMEOUT_S = 45
 
-PROMPT = """You are a prose editor. Review one chat message, written by a coding agent to its user, against the numbered rules below.
+PROMPT = """You are a prose editor. Review one chat message, written by a coding agent to its user, against the rules below.
 
 Report only hits a careful human editor would flag, each quoted verbatim from the message. When in doubt, no hit. Code blocks, file paths, commands, identifiers, tables and quoted tool output are not prose: never flag them.
 
 Answer with one JSON object and nothing else:
-{"hits": [{"rule": <rule number>, "quote": "<verbatim excerpt>", "fix": "<the rewrite, in a few words>"}]}
+{"hits": [{"rule": "<rule id>", "quote": "<verbatim excerpt>", "fix": "<the rewrite, in a few words>"}]}
 No hits: {"hits": []}
 
 # Rules
@@ -44,6 +51,19 @@ No hits: {"hits": []}
 """
 
 
+def chat_rules() -> str:
+    """The rule blocks of CATALOGUE.md tagged `chat` or `both`, whole, headings dropped."""
+    kept, keep = [], False
+    for line in CATALOGUE.read_text().splitlines():
+        if line.startswith("#"):
+            keep = False
+        if line.startswith("- `"):
+            keep = line.split()[2] in ("`chat`", "`both`")
+        if keep:
+            kept.append(line)
+    return "\n".join(kept)
+
+
 def log(**entry: object) -> None:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a") as f:
@@ -51,11 +71,11 @@ def log(**entry: object) -> None:
 
 
 def review(message: str) -> list[dict]:
-    rules = (HERE / "CHAT-RULES.md").read_text()
-    prompt = PROMPT.replace("<<RULES>>", rules).replace("<<MESSAGE>>", message)
+    prompt = PROMPT.replace("<<RULES>>", chat_rules()).replace("<<MESSAGE>>", message)
     env = {**os.environ, "CHAT_REVIEW_NESTED": "1"}
-    # No settings, plugins, hooks or MCP servers: a bare reviewer starts in ~2s. Thinking off:
-    # with it on, Haiku spends ~14k output tokens and two minutes on a 300-token answer.
+    # No settings, plugins, hooks or MCP servers: a bare reviewer starts in ~2s, and this hook
+    # cannot recurse into itself. Thinking off: with it on, Haiku spends ~14k output tokens and
+    # two minutes on a 300-token answer.
     proc = subprocess.run(
         ["claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "",
          "--strict-mcp-config", "--settings", '{"alwaysThinkingEnabled": false}',
@@ -74,7 +94,11 @@ def review(message: str) -> list[dict]:
 
 
 def main() -> None:
-    if os.environ.get("CHAT_REVIEW_NESTED"):
+    # CHAT_REVIEW_NESTED marks the reviewer's own session, which loads no plugin and so should
+    # never reach this hook; it is what keeps a mistake there from recursing.
+    if os.environ.get("CHAT_REVIEW_NESTED") or os.environ.get("CHAT_REVIEW_OFF"):
+        return
+    if os.environ.get("DISPATCH_WORKLOG"):
         return
     hook = json.load(sys.stdin)
     message = (hook.get("last_assistant_message") or "").strip()
@@ -84,22 +108,22 @@ def main() -> None:
     t0 = time.monotonic()
     try:
         hits = review(message)
-    except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never blocks the user
+    except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the user
         log(decision="allow", why=f"reviewer failed: {e}", ms=int((time.monotonic() - t0) * 1000), message=message)
         return
     ms = int((time.monotonic() - t0) * 1000)
     if not hits:
         log(decision="allow", why="clean", ms=ms, message=message)
         return
-    log(decision="block", hits=hits, ms=ms, message=message)
+    log(decision="feedback", hits=hits, ms=ms, message=message)
     lines = "\n".join(f'- rule {h.get("rule")}: "{h.get("quote")}" becomes: {h.get("fix")}' for h in hits)
-    reason = (
+    feedback = (
         "A prose reviewer read your last message against the chat rules and found these tells. "
         "Rewrite the message with the same content and the hits fixed, then stop.\n" + lines
     )
-    # additionalContext continues the turn like a block but shows in the transcript as
+    # additionalContext continues the turn like a block decision but shows in the transcript as
     # "Stop hook feedback" rather than as a hook error.
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": reason}}))
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": feedback}}))
 
 
 if __name__ == "__main__":

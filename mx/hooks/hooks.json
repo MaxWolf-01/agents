@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/max/repos/github/MaxWolf-01/agents-one-flow/agent/prototypes/chat-review-hook/chat-review",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/writing-for-humans/chat-review",
             "timeout": 60,
             "statusMessage": "chat-review: a reviewer is reading the reply"
           }
