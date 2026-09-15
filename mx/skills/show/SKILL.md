@@ -26,7 +26,7 @@ Mermaid renders a figure by default, validated per `/mx:mermaid`. The craft belo
 
 ## A figure
 
-One source file with its SVG beside it, under `agent/show/<feature>/`: `landing.mmd`, `landing.svg`. Both are committed; the render is regenerated from the source whenever the decision moves. The SVG is what gets opened, since it scales with zoom where a raster does not; a PNG is rendered on demand for embedding somewhere that needs one and stays untracked. Several figures reach the user on one page only when they belong on one, as an `index.html` where every image sits at `width:100%; height:auto` so it scales there too.
+One source file with its SVG beside it, under `agent/show/<feature>/`: `landing.mmd`, `landing.svg`. Both are committed; the render is regenerated from the source whenever the decision moves. The SVG is what gets opened, since it scales with zoom where a raster does not; a PNG is rendered on demand for embedding somewhere that needs one and stays untracked. A page (`index.html`) only when more than one thing reaches the user at once — several figures, or a diagram and the sample instance beside it — and there every image sits at `width:100%; height:auto` so it scales too.
 
 ## A demo
 

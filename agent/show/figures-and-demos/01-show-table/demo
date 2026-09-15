@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# The skill change demoed the way its own table says a skill change is demoed:
+# one session driven twice, where the difference is the point.
+#
+# Both runs get the same prompt — a two-table schema decision, settled in a
+# grilling round, to be written into a spec's Decisions — and a copy of this
+# branch's mx plugin, differing only in the show skill they open: the skill as
+# it stood (`before-SKILL.md`), or the table. Each run works on a toy repo of
+# its own in a scratch directory, well away from this one, so what it knows
+# about figures it knows from its copy of the skill. What each run left on disk
+# is the comparison, and it lands under out/ beside this file.
+#
+# The prompt opens the skill by hand: the pointers that reach it from the two
+# stations on their own are tickets 02 and 03, not this one.
+set -eu
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(git -C "$here" rev-parse --show-toplevel)
+out=$here/out
+model=sonnet
+
+for cmd in claude jq git; do
+    command -v "$cmd" > /dev/null || { echo "demo needs $cmd on PATH" >&2; exit 1; }
+done
+# The render a run does goes through mermaid-cli, which otherwise downloads a
+# Chromium of its own.
+chromium=$(command -v chromium || true)
+if [ -n "$chromium" ]; then export PUPPETEER_EXECUTABLE_PATH=$chromium; fi
+
+step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+
+rm -rf "$out"; mkdir -p "$out"
+work=$(mktemp -d /tmp/show-table-demo.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+
+cp -r "$repo/mx" "$work/plugin-after"
+cp -r "$repo/mx" "$work/plugin-before"
+cp "$here/before-SKILL.md" "$work/plugin-before/skills/show/SKILL.md"
+
+prompt="/mx:show We are mid-grilling on the \`orders\` feature; its spec is at \
+agent/tickets/orders/spec.md, and this round settled one call: an order's lines live in \
+their own table. \`orders\` holds id, customer, placed_at, status; \`order_lines\` holds \
+id, order_id, sku, qty, unit_price. One order has many lines, and a line belongs to \
+exactly one order. A line's price is the price at the time of the order, not a lookup \
+into the product. Write the Decisions entry, give the decision what this station gives a \
+decision of its shape, and end your turn with one line telling me where to look."
+
+step "the prompt both runs get"
+printf '%s\n' "$prompt" | fold -s -w 78
+
+drive() { # <phase>
+    phase=$1
+    toy=$work/$phase/repo
+    mkdir -p "$toy/agent/tickets/orders"
+    cat > "$toy/agent/tickets/orders/spec.md" <<'SPEC'
+---
+status: draft
+---
+
+# Orders: taking an order and keeping it
+
+## Problem Statement
+
+An order is a row in one table today, with its lines pasted into a text column.
+
+## Decisions
+
+- **An order is placed once and never edited.** A correction is a new order that supersedes it. `(you, r1)`
+SPEC
+    git -C "$toy" init -q -b main .
+    git -C "$toy" -c user.email=toy@toy -c user.name=toy add -A
+    git -C "$toy" -c user.email=toy@toy -c user.name=toy commit -q -m "the spec after round 1"
+
+    ( cd "$toy" && printf '%s' "$prompt" | claude -p --model "$model" \
+        --plugin-dir "$work/plugin-$phase" \
+        --allowedTools "Bash Read Write Edit Glob Grep Skill TodoWrite" \
+        --output-format stream-json --verbose \
+        > "$work/$phase/stream.jsonl" 2> "$work/$phase/claude-err.txt" ) || true
+
+    jq -r --arg work "$work/" '
+        if .type == "assistant" then .message.content[] |
+            if .type == "text" then (.text | select(length > 0) | "\n" + .)
+            elif .type == "tool_use" then "· " + .name + "(" +
+                ((.input.skill // .input.command // .input.file_path // (.input | tostring))
+                 | gsub("\n"; " ") | gsub($work; "") | .[0:96]) + ")"
+            else empty end
+        elif .type == "result" then "\n— " + .result
+        else empty end' "$work/$phase/stream.jsonl" > "$out/$phase-transcript.txt"
+    cat "$out/$phase-transcript.txt"
+}
+
+step "before: the skill as it stood, with no table to look a shape up in"
+drive before
+
+step "after: the same prompt, the same plugin, this branch's skill"
+drive after
+
+step "what each run left on disk"
+for phase in before after; do
+    printf '\n%s\n' "$phase"
+    changed=$(git -C "$work/$phase/repo" status --porcelain --untracked-files=all | sed 's/^/  /')
+    echo "${changed:-  (nothing; the run left the tree as it found it)}"
+    cp "$work/$phase/repo/agent/tickets/orders/spec.md" "$out/$phase-spec.md"
+done
+if [ -d "$work/after/repo/agent/show" ]; then
+    cp -r "$work/after/repo/agent/show" "$out/after-show"
+fi
+
+step "the Decisions entry each run wrote"
+for phase in before after; do
+    printf '\n%s\n' "out/$phase-spec.md"
+    sed -n '/^## Decisions/,$p' "$out/$phase-spec.md" | tail -n +3 | fold -s -w 78 | sed 's/^/  /'
+done
+
+step "the figure the after run wrote, and the sample instance beside it"
+if [ -d "$out/after-show" ]; then
+    find "$out/after-show" -type f | sort | while read -r file; do
+        printf '\n%s' "out/${file#"$out/"}"
+        case $file in
+            # A render and a page are looked at, not read.
+            *.svg | *.png | *.html) printf ' (%s bytes)\n' "$(wc -c < "$file")" ;;
+            *) printf '\n'; fold -s -w 78 "$file" | sed 's/^/  /' ;;
+        esac
+    done
+else
+    echo "the after run wrote no show directory"
+fi
+
+step "opening what the after run produced"
+opened=$(find "$out/after-show" \( -name 'index.html' -o -name '*.svg' \) 2> /dev/null | head -1)
+if [ -z "$opened" ]; then
+    echo "the after run produced no page or SVG to open"
+elif command -v claude-browser > /dev/null; then
+    claude-browser "$opened"
+elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
+    xdg-open "$opened"
+else
+    echo "no display here, so nothing is opened: $opened"
+fi
