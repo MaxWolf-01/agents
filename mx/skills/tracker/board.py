@@ -37,11 +37,10 @@ link appears only on the machine that rendered them.
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
-render is deterministic from disk. Orchestrator state is read from the
-needs-human.md beside the tickets it belongs to, agent/tickets/<feature>/ for a
-feature and the tracker root for the standalone ones: optional YAML frontmatter
-(worker-host), then one `- summary :: markdown detail` bullet per pending entry;
-indented lines under a bullet continue its detail.
+render is deterministic from disk. The queue is read from the needs-human.md
+beside the tickets it belongs to, agent/tickets/<feature>/ for a feature and the
+tracker root for the standalone ones: one `- summary :: markdown detail` bullet
+per pending entry; indented lines under a bullet continue its detail.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections and the chosen view, only when
@@ -242,8 +241,7 @@ class Ticket:
     diffview: str | None
 
 
-# a needs-human.md: its pending entries, and the worker host its frontmatter records
-Queue = tuple[list[str], str | None]
+Queue = list[str]  # a needs-human.md: its pending entries
 
 
 @dataclass
@@ -251,7 +249,6 @@ class Feature:
     name: str
     tickets: list[Ticket]
     needs_human: list[str]
-    worker_host: str | None
     spec_status: str | None  # spec.md's status; None when the feature has no spec
 
 
@@ -280,8 +277,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) 
         if not tickets and spec_status is None:
             continue
         assert_safe_name(name)
-        needs_human, worker_host = load_needs_human(d / "needs-human.md")
-        features.append(Feature(name, tickets, needs_human, worker_host, spec_status))
+        features.append(Feature(name, tickets, load_needs_human(d / "needs-human.md"), spec_status))
     ids = [slug_id(f.name) for f in features]
     assert len(ids) == len(set(ids)), f"feature names collide as mermaid ids: {sorted(ids)}"
     return features
@@ -340,17 +336,15 @@ def spec_state(path: Path) -> str | None:
 
 def load_needs_human(path: Path) -> Queue:
     if not path.exists():
-        return [], None
-    meta, body = split_frontmatter(path.read_text())
+        return []
+    body = path.read_text()
     entries: list[str] = []
     for line in body.splitlines():
         if line.startswith("- "):
             entries.append(line[2:].strip())
         elif entries and (line[:1] in (" ", "\t") or not line.strip()):
             entries[-1] += "\n" + line.strip()
-    entries = [e.strip() for e in entries]
-    host = meta.get("worker-host")
-    return entries, str(host) if host else None
+    return [e.strip() for e in entries]
 
 
 def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path]) -> list[Ticket]:
@@ -447,7 +441,7 @@ def content_stamp(
     # keeps its stamp, so the open tab knows not to reload
     key = repr((
         project,
-        [(f.name, f.needs_human, f.worker_host, f.spec_status,
+        [(f.name, f.needs_human, f.spec_status,
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview) for k in standalone],
@@ -644,11 +638,10 @@ def render_page(
     project: str, features: list[Feature], standalone: list[Standalone], queue: Queue,
     log: str, stamp: str, stamp_src: str
 ) -> str:
-    queue_entries, standalone_host = queue
     total = sum(1 for f in features for t in f.tickets if t.status != "proposed")
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
     all_needs = [(f.name, f"#f-{f.name}", item) for f in features for item in f.needs_human]
-    all_needs += [("standalone", "#standalone", item) for item in queue_entries]
+    all_needs += [("standalone", "#standalone", item) for item in queue]
     open_standalone = sum(1 for k in standalone if k.status not in ("done", "proposed"))
     proposed = sum(1 for f in features for t in f.tickets if t.status == "proposed") + sum(
         1 for k in standalone if k.status == "proposed"
@@ -715,13 +708,12 @@ def render_page(
         f'<div class="body">{k.body_html}</div></details>'
         for k in standalone
     )
-    host_bit = f' <span class="counts">workers on {html.escape(standalone_host)}</span>' if standalone_host else ""
     # Also when only the queue is left: its entries link to this section, and an
     # entry outlives the ticket it rules on (a rejected proposal is deleted).
     standalone_sec = (
-        f'<section id="standalone"><h2>Standalone tickets{host_bit}</h2>'
+        f'<section id="standalone"><h2>Standalone tickets</h2>'
         f'<div class="tickets panel-b">{standalone_rows}</div></section>'
-        if standalone or queue_entries
+        if standalone or queue
         else ""
     )
 
@@ -749,8 +741,6 @@ def feature_section(f: Feature) -> str:
     bits = [f"spec {html.escape(f.spec_status)}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets) - counts['proposed']} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("claimed", "open", "blocked", "proposed") if counts[s]]
-    if f.worker_host:
-        bits.append(f"workers on {html.escape(f.worker_host)}")
     strip = "".join(
         f'<a class="cell {t.status}" href="#t-{f.name}-{t.num}" title="{html.escape(t.num + " " + t.title)} — {t.status}">{t.num}</a>'
         for t in f.tickets
