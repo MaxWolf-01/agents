@@ -61,7 +61,6 @@ def tracker(tmp_path: Path) -> Path:
     ticket(root / "small-chore.md", "open")
     (root / "quoted.md").write_text('---\nstatus: open\n---\n\n# Say "no limit" plainly\n')
     (root / "needs-human.md").write_text(
-        "---\nworker-host: agent@pc\n---\n"
         "- rule on loose-idea :: built while proposed; its page is agent/diffviews/loose-idea.html\n"
     )
     return root
@@ -115,7 +114,7 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     lanes = wave_lanes(feature)
     assert lanes.index("proposed — awaiting ruling") > lanes.rindex("wave +")  # 04 waits on 03, which waits on 02
     assert 'card proposed"><a class="cardlink" href="#t-feat-03"' in lanes.split("proposed — awaiting ruling")[1]
-    page = render_page("demo", [feature], standalone, ([], None), log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
     assert "1/4 done" in page  # the top bar: the proposal is not part of the feature's count
     assert 'feat <span class="dim">1/4</span>' in page  # the feature chip agrees
     assert '<span class="badges"><span class="badge proposed">' in page
@@ -140,7 +139,6 @@ def test_the_standalone_queue_is_the_tracker_roots_own_and_not_a_ticket(tracker:
     )
     assert '<a class="chip open" href="#standalone">standalone</a> rule on loose-idea' in page
     assert 'id="standalone"' in page
-    assert "workers on agent@pc" in page
 
 
 def test_a_queue_entry_outliving_its_ticket_still_has_a_section_to_link_to(tracker: Path) -> None:
@@ -151,7 +149,6 @@ def test_a_queue_entry_outliving_its_ticket_still_has_a_section_to_link_to(track
         log="", stamp="s", stamp_src="s.js",
     )
     assert 'id="standalone"' in page
-    assert "workers on agent@pc" in page
 
 
 def test_render_reads_the_queue_beside_the_tickets(tracker: Path, tmp_path: Path) -> None:
@@ -167,15 +164,15 @@ def test_render_reads_the_queue_beside_the_tickets(tracker: Path, tmp_path: Path
 def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     queue = tmp_path / "needs-human.md"
     queue.write_text(
+        # the frontmatter is a leftover: it carried the worker host until the host became a
+        # per-spawn choice, and a queue file that still has one is read the same
         "---\nworker-host: agent@pc\n---\n\n"
         "- debrief :: **fixed** a1b2c3 pins the averaging rule.\n"
         "  **proposed** 03, 04.\n\n"
         "  **left** two case-flip survivors, the value is case-insensitive.\n"
         "- Which colour :: the prototype at agent/prototypes/colour\n"
     )
-    entries, host = load_needs_human(queue)
-    assert host == "agent@pc"
-    assert entries == [
+    assert load_needs_human(queue) == [
         "debrief :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
         "Which colour :: the prototype at agent/prototypes/colour",
     ]

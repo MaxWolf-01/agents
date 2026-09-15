@@ -1,56 +1,54 @@
 #!/usr/bin/env bash
 # The orchestrator's side of one dispatch: the steps with an ordering that
-# matters and nothing in them to judge, and the one door to the worker host.
+# matters and nothing in them to judge, and the one door to the worker hosts.
 # Runs here, on the branch ticket branches cut from and merge back into: the
 # feature branch, in the feature worktree, or the repo's integration branch, in
 # the checkout you are in, for a standalone ticket (agent/tickets/<slug>.md, no
-# feature directory). `dispatch-ctl` is its counterpart on the worker host,
+# feature directory). `dispatch-ctl` is its counterpart on a worker host,
 # reached through `ctl`.
 #
-# Usage: dispatch setup [<host> <repo> [setup-command]]
-#        dispatch claim <ticket>
-#        dispatch push
-#        dispatch prompt <ticket> < prompt-file
-#        dispatch ctl <dispatch-ctl args...>
+# Usage: dispatch claim <ticket>
+#        dispatch prompt <ticket> < message-file
+#        dispatch ctl [--host <host>] [--setup-cmd <command>] <dispatch-ctl args...>
 #        dispatch wait <ticket>
 #        dispatch fetch <ticket>
+#        dispatch push
 #        dispatch review <ticket>
 #   <ticket> is <NN-slug> under a feature, or a standalone ticket's <slug>.
-#   setup    with <host> <repo>, records them for this repo in git config
-#            (dispatch.*, what every command below reads) and sets the host up;
-#            with no arguments, reuses what is recorded, which is what a second
-#            feature branch runs. Either way: adds the git remote when missing,
-#            puts this plugin version's dispatch-ctl, runner and worker prompt
-#            into this branch's scratch dir on the host, runs `dispatch-ctl
-#            init` there, records the host in the needs-human.md beside the
-#            tickets, and pushes this branch. <host> is user@host, or `local`
-#            for this machine (init pointed at this worktree). <repo> names the
-#            bare repo on the host, shared by every branch of the project.
-#            <setup-command> is the project's own setup line, recorded too and
-#            run in every ticket worktree before its worker starts; without one
-#            spawn uses `make install` (under `nix develop -c` where a
-#            flake.nix exists), which `git config --unset dispatch.setup-cmd`
-#            goes back to. The scratch dir is per branch, so each feature
-#            branch runs setup once; standalone tickets share the integration
-#            branch's and so need it once per repo.
-#   claim    flips <ticket> to claimed, commits that on this branch and
-#            pushes it, so the next spawn cuts from a tip that carries the
-#            claim. Open and proposed alike: a proposal is built before the
-#            user rules on it (tracker conventions). Refuses a claimed or done
-#            one, which is taken. A decision ticket is claimed the same way and
-#            then routed by its type; spawn is what refuses to hand one to a
-#            worker.
-#   push     this branch to the host, so the next spawn cuts from its tip.
-#   prompt   writes stdin as the ticket message for <ticket> on the host.
-#   ctl      runs `dispatch-ctl <args>` on the host, from this branch's scratch
+#   claim    flips <ticket> to claimed and commits that on this branch. Open
+#            and proposed alike: a proposal is built before the user rules on
+#            it (tracker conventions). Refuses a claimed or done one, which is
+#            taken. A decision ticket is claimed the same way and then routed
+#            by its type; spawn is what refuses to hand one to a worker.
+#   prompt   writes stdin as <ticket>'s message, here; the spawn or resume that
+#            follows carries it to the host that ticket runs on.
+#   ctl      runs `dispatch-ctl <args>` on a host, from this branch's scratch
 #            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
 #            `dispatch ctl --help` is that script's reference.
+#            --host names the host, user@host or `local` for this machine, and
+#            a spawn (or `fuzz start`) is where you name it: the run is
+#            recorded here, so wait, fetch, log, stop, resume and cleanup find
+#            a ticket's host from the ticket. `probe` with no --host polls
+#            every host this branch has run on, each line behind its host.
+#            The first spawn on a host stages it: the git remote, this plugin
+#            version's dispatch-ctl, runner and worker prompt in this branch's
+#            scratch dir there, `dispatch-ctl init`, and the push a ticket
+#            branch cuts from. A later spawn finds them staged and skips it;
+#            one that finds a version other than this plugin's stages again, so
+#            no worker starts on a stale contract.
+#            --setup-cmd is the project's own setup line, run in every ticket
+#            worktree on that host before its worker starts. The staged one
+#            stays until another --setup-cmd replaces it; with none ever given,
+#            spawn uses `make install` (under `nix develop -c` where a
+#            flake.nix exists).
 #   wait     blocks until the current run of <ticket> ends and prints its
 #            probe line (`dispatch-ctl wait`), riding out a dropped connection
-#            to the host on the way. Exit 0 on `exited`; nonzero when the run
+#            to its host on the way. Exit 0 on `exited`; nonzero when the run
 #            is `gone`, or the host stayed unreachable for two minutes.
-#   fetch    brings ticket/<branch>/<ticket> from the host into this repo,
+#   fetch    brings ticket/<branch>/<ticket> from its host into this repo,
 #            replacing an earlier fetch of it (ticket branches get rebased).
+#   push     this branch to every host this branch has run on, so a worker
+#            resumed to rebase finds the tip it is rebasing onto.
 #   review   once a ticket branch is fetched, before or after its merge alike:
 #            projects the ticket's assumptions into the review page's notes,
 #            renders the page under agent/diffviews, serves it, re-renders the
@@ -92,6 +90,17 @@ locate() {
     else
         tickets=agent/tickets diffviews=agent/diffviews prefix=
     fi
+    gitdir=$(realpath "$(git rev-parse --git-common-dir)")
+    # The bare repo on a host, its ticket worktrees and its scratch dirs all
+    # carry the repo's name, and nothing records it: the common git dir is
+    # <repo>/.git in a checkout and <repo>.git in the bare repo a host holds, so
+    # one rule reads the name off either.
+    base=${gitdir%.git}
+    repo=$(basename "${base%/}")
+    # What a dispatch keeps here, beside the history: which host each ticket's
+    # run went to, and the ticket messages waiting for a spawn to carry them.
+    state=$gitdir/dispatch
+    runs=$state/runs
 }
 
 # Per branch, because a concurrent dispatcher may be on another plugin version,
@@ -99,100 +108,91 @@ locate() {
 # under running workers; named after the repo too, because the directory is per
 # user, not per project. Standalone tickets all dispatch from the integration
 # branch, so one repo's share one.
-scratch_dir() {
+scratch_dir() { # <host>
     d=.local/state/dispatch/$repo-$feature
-    [ "$host" = local ] && d=$HOME/$d
+    [ "$1" = local ] && d=$HOME/$d
     echo "$d"
 }
 
-load() {
-    locate
-    if ! host=$(git config dispatch.host); then
-        # The keys were per feature until the host record became the repo's; a
-        # repo carrying the old ones has a host, and saying so beats "none".
-        git config "dispatch.$feature.host" >/dev/null &&
-            die "this repo records its host under the retired dispatch.$feature.host; re-run: dispatch setup <host> <repo>"
-        die "no worker host recorded for this repo; run: dispatch setup <host> <repo>"
-    fi
-    repo=$(git config dispatch.repo) || die "no repo name recorded for this repo; run: dispatch setup <host> <repo>"
-    scratch=$(scratch_dir)
-    remote=${host//[@.]/-}
-}
-
-# A command on the worker host, or here when the host is this machine. The
+# A command on a worker host, or here when the host is this machine. The
 # keepalive collapses a dead connection in ~30s, so a suspended laptop's
 # `wait` fails fast and retries instead of hanging on a connection that will
 # never speak again.
-on_host() {
-    if [ "$host" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$host" "$@"; fi
+on_host() { # <host> <command...>
+    h=$1; shift
+    if [ "$h" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$@"; fi
 }
 
-# The board shows the host beside the feature; the file is the queue it also
-# reads, so the frontmatter is added around whatever entries are there. Three
-# shapes of file: absent (created with just the frontmatter), frontmatter
-# present (the key replaced, or inserted before the closing ---), no
-# frontmatter (one prepended).
-record_host() { # <label>
-    f=$tickets/needs-human.md
-    mkdir -p "$(dirname "$f")"
-    [ -f "$f" ] || printf -- '---\n---\n' > "$f"
-    if [ "$(head -1 "$f")" = --- ]; then
-        awk -v v="$1" '
-            NR == 1 { print; next }
-            !done && /^worker-host:/ { print "worker-host: " v; seen = 1; next }
-            !done && /^---$/ { if (!seen) print "worker-host: " v; done = 1 }
-            { print }' "$f" > "$f.tmp"
-    else
-        { printf -- '---\nworker-host: %s\n---\n' "$1"; cat "$f"; } > "$f.tmp"
-    fi
-    mv "$f.tmp" "$f"
-    git add -- "$f"
-    git diff --cached --quiet -- "$f" || run git commit -q -m "${prefix}workers on $1" -- "$f"
+copy_to() { # <host> <dir> <file...>
+    h=$1 dir=$2; shift 2
+    if [ "$h" = local ]; then run cp "$@" "$dir/"; else run scp -q "$@" "$h:$dir/"; fi
 }
 
-setup() {
-    locate
-    if [ $# -eq 0 ]; then
-        host=$(git config dispatch.host) || die "nothing recorded for this repo yet; run: dispatch setup <host> <repo> [setup-command]"
-        repo=$(git config dispatch.repo) || die "a host is recorded for this repo but no repo name; run: dispatch setup <host> <repo>"
-    else
-        [ $# -ge 2 ] || die "setup takes <host> <repo> [setup-command], or nothing at all"
-        host=$1 repo=$2
-    fi
-    setup_cmd=${3:-$(git config dispatch.setup-cmd || true)}
-    # Relative to the home on either side: ssh and scp resolve it there.
-    scratch=$(scratch_dir)
-    # The setup command travels as a file named `setup`, so its quoting never
-    # has to survive an ssh hop; no argument leaves the host on its default.
+# The run record: which host a ticket went to, written by the spawn that sent
+# it there before the spawn runs, so one that dies halfway still says where to
+# look. Newest line for a name wins; the name is a ticket's number (a
+# standalone slug whole), or `fuzz` for the feature's fuzz run.
+record_run() { # <name> <host>
+    mkdir -p "$state"
+    printf '%s\t%s\t%s\n' "$feature" "$1" "$2" >> "$runs"
+}
+
+host_of() { # <name> → the host it last ran on, nothing when it never has
+    [ -f "$runs" ] || return 0
+    awk -F'\t' -v f="$feature" -v n="$1" '$1 == f && $2 == n { h = $3 } END { if (h != "") print h }' "$runs"
+}
+
+hosts_used() { # every host this branch has run on
+    [ -f "$runs" ] || return 0
+    awk -F'\t' -v f="$feature" '$1 == f && !seen[$3]++ { print $3 }' "$runs"
+}
+
+# Every command that follows a ticket lands where its run is.
+ticket_host() { # <ticket>
+    host=$(host_of "$(short "$1")")
+    [ -n "$host" ] || die "no run of $1 recorded here; spawn it: dispatch ctl --host <user@host|local> spawn $1 <model>"
+    scratch=$(scratch_dir "$host")
+}
+
+# What a host runs a worker from, and `stamp`, the digest of the copy it holds:
+# a host staged by another plugin version is staged again rather than left to
+# start a worker on a contract this branch has moved past.
+stage() { # <host> [setup-command]
+    h=$1 cmd=${2:-}
+    scratch=$(scratch_dir "$h")
     files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
-    if [ -n "$setup_cmd" ]; then
+    stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
+    # The setup command travels as a file named `setup`, so its quoting never
+    # has to survive an ssh hop.
+    if [ -n "$cmd" ]; then
         staged=$(mktemp -d)
-        printf '%s\n' "$setup_cmd" > "$staged/setup"
+        printf '%s\n' "$cmd" > "$staged/setup"
         files+=("$staged/setup")
     fi
-    if [ "$host" = local ]; then
-        run mkdir -p "$scratch"
-        [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
-        run cp "${files[@]}" "$scratch/" || die "copy into $scratch failed"
-        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
-        label=$(id -un)@$(hostname)
-    else
-        remote=${host//[@.]/-}
-        git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$host:repos/dispatch/$repo.git"
-        run on_host mkdir -p "$scratch" || die "cannot reach $host"
-        [ -n "$setup_cmd" ] || run on_host rm -f "$scratch/setup"
-        run scp -q "${files[@]}" "$host:$scratch/" || die "copy to $host:$scratch failed"
-        # init creates the bare repo the push lands in; the push gives the host a
-        # <feature> for spawn to cut ticket branches from.
-        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" || die "init on $host failed"
-        run git push -q "$remote" "$feature" || die "push to $remote failed"
-        label=$host
+    if [ "$(on_host "$h" cat "$scratch/stamp" 2>/dev/null)" = "$stamp" ]; then
+        [ -n "$cmd" ] && copy_to "$h" "$scratch" "$staged/setup"
+        return 0
     fi
-    git config dispatch.host "$host"
-    git config dispatch.repo "$repo"
-    [ -n "$setup_cmd" ] && git config dispatch.setup-cmd "$setup_cmd"
-    record_host "$label"
-    echo "host=$host  repo=$repo  scratch=$scratch  tickets=$tickets  (git config dispatch.*)"
+    if [ "$h" = local ]; then
+        run mkdir -p "$scratch"
+        copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
+    else
+        remote=${h//[@.]/-}
+        git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
+        run on_host "$h" mkdir -p "$scratch" || die "cannot reach $h"
+        copy_to "$h" "$scratch" "${files[@]}" || die "copy to $h:$scratch failed"
+        # init creates the bare repo a push lands in; until it has run, the host
+        # has nothing to cut a ticket branch from.
+        run on_host "$h" bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" || die "init on $h failed"
+    fi
+    # Last, so a staging that broke halfway is done again instead of trusted.
+    printf '%s\n' "$stamp" | on_host "$h" tee "$scratch/stamp" > /dev/null
+}
+
+push_to() { # <host>
+    [ "$1" = local ] && return 0  # a local host cuts ticket branches from this worktree
+    run git push -q "${1//[@.]/-}" "$feature" || die "push to $1 failed"
 }
 
 claim() {
@@ -210,32 +210,82 @@ claim() {
     sed -i '0,/^status:/s/^status:.*/status: claimed/' "$ticket"
     grep -q '^status: claimed$' "$ticket" || die "could not write status: claimed into $ticket"
     run git commit -q -m "${prefix}claim $id" -- "$ticket"
-    push
 }
 
 push() {
-    load
-    [ "$host" = local ] && { echo "local host: $feature is already here"; return; }
-    run git push -q "$remote" "$feature"
+    locate
+    hosts=$(hosts_used)
+    [ -n "$hosts" ] || { echo "no run recorded for $feature: no host holds it yet"; return; }
+    for h in $hosts; do push_to "$h"; done
 }
 
+# Here, not on a host: the host is named at the spawn, and a message written
+# before it would have nowhere to go.
 prompt() {
-    load
-    nn=$(short "$1")
-    if [ "$host" = local ]; then cat > "$scratch/prompt-$nn.md"; else ssh "$host" "cat > $scratch/prompt-$nn.md"; fi
+    locate
+    dir=$state/prompts/$feature
+    mkdir -p "$dir"
+    cat > "$dir/prompt-$(short "$1").md"
+}
+
+message_of() { echo "$state/prompts/$feature/prompt-$1.md"; } # <name>
+
+# Every host this branch has run on: a wave spreads over as many as it was
+# spawned on, so each worker's line goes behind the host it is on.
+probe_all() {
+    hosts=$(hosts_used)
+    [ -n "$hosts" ] || die "no run recorded for $feature; nothing has been spawned from here"
+    for h in $hosts; do
+        on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" probe | sed "s|^|$h  |"
+    done
 }
 
 ctl() {
-    load
+    locate
+    host= setup_cmd=
+    while :; do
+        case ${1:-} in
+            --host)      host=${2:-}; [ -n "$host" ] || die "--host takes user@host, or local"; shift 2 ;;
+            --setup-cmd) setup_cmd=${2:-}; [ -n "$setup_cmd" ] || die "--setup-cmd takes the project's setup line"; shift 2 ;;
+            *) break ;;
+        esac
+    done
+    sub=${1:-}
+    case $sub in
+        spawn|wait|stop|resume|log|cleanup) [ -n "${2:-}" ] || die "$sub takes a ticket"; name=$(short "$2") ;;
+        fuzz) name=fuzz ;;
+        *)    name= ;;
+    esac
+    [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
+    if [ -z "$host" ]; then
+        case $sub in
+            probe)      probe_all; return ;;
+            spawn|fuzz) die "name the host: dispatch ctl --host <user@host|local> $*" ;;
+            *)          die "no run of ${name:-$sub} recorded here; --host names the host to run this on" ;;
+        esac
+    fi
+    scratch=$(scratch_dir "$host")
+    if [ "$sub" = spawn ] || { [ "$sub" = fuzz ] && [ "${2:-}" = start ]; }; then
+        stage "$host" "$setup_cmd"
+        push_to "$host"
+        record_run "$name" "$host"
+    fi
+    if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
+        message=$(message_of "$name")
+        [ -f "$message" ] || die "no message for $2 here; write one: dispatch prompt $2 < <file>"
+        copy_to "$host" "$scratch" "$message"
+    fi
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
-    on_host env "${env[@]}" bash "$scratch/dispatch-ctl" "$@"
+    # Echoed like every other primitive, so the transcript says which host this
+    # ticket's command went to.
+    run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@"
 }
 
 wait_() {
-    load
+    locate; ticket_host "$1"
     for attempt in $(seq 8); do
-        on_host bash "$scratch/dispatch-ctl" wait "$1"
+        on_host "$host" bash "$scratch/dispatch-ctl" wait "$1"
         rc=$?
         # 255 is ssh's own: the connection, not the command. A dropped one
         # is back within a retry or two; one that stays down is a different
@@ -248,14 +298,14 @@ wait_() {
 }
 
 fetch() {
-    load
+    locate; ticket_host "$1"
     branch=ticket/$feature/$1
     if [ "$host" = local ]; then
         git rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch here"
         echo "local host: $branch is already here"
         return
     fi
-    run git fetch -q "$remote" "+$branch:$branch"
+    run git fetch -q "${host//[@.]/-}" "+$branch:$branch"
 }
 
 is_merged() { git merge-base --is-ancestor "$1" "$feature"; }
@@ -335,7 +385,6 @@ review() {
 
 cmd=${1:-}
 case $cmd in
-    setup)   shift; setup "$@" ;;
     claim)   shift; claim "$@" ;;
     push)    push ;;
     prompt)  shift; prompt "$@" ;;

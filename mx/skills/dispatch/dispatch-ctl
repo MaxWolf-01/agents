@@ -17,12 +17,14 @@
 #        dispatch-ctl cleanup <ticket>
 #        dispatch-ctl fuzz start|stop
 #   <ticket> is <NN-slug> under a feature, or a standalone ticket's <slug>.
-#   init      once per scratch dir, before the first spawn: writes `config`,
-#             creates the bare repo when missing, updates the mx plugin and
-#             prints its version. tickets-dir is where the ticket files sit in
-#             the worktree, agent/tickets/<feature> or agent/tickets for
-#             standalone ones. git-dir defaults to ~/repos/dispatch/<repo>.git
-#             and worktrees-dir to ~/repos/dispatch; a local orchestrator passes
+#   init      what staging this host runs, once per scratch dir and again
+#             whenever the orchestrator stages a different version of these
+#             scripts: writes `config`, creates the bare repo when missing,
+#             updates the mx plugin and prints its version. tickets-dir is
+#             where the ticket files sit in the worktree,
+#             agent/tickets/<feature> or agent/tickets for standalone ones.
+#             git-dir defaults to ~/repos/dispatch/<repo>.git and
+#             worktrees-dir to ~/repos/dispatch; a local orchestrator passes
 #             its own worktree and the directory beside it.
 #   spawn     cuts ticket/<feature>/<ticket> from <feature> into
 #             <worktrees-dir>/<repo>-<feature>-<ticket> when absent, sets it up
@@ -72,7 +74,10 @@
 #   config                       repo, feature, tickets dir, git dir,
 #                                worktrees dir (init)
 #   setup                        the project's setup command, one line, when
-#                                the orchestrator gave one (`dispatch setup`)
+#                                the orchestrator gave one (`dispatch ctl
+#                                --setup-cmd`)
+#   stamp                        which version of these scripts is staged here,
+#                                written by the orchestrator (`dispatch ctl`)
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
 #   <run>.status|.log            written by the runner
 #   <name>.install.log           the setup command's output
@@ -95,7 +100,7 @@ cfg() { sed -n "s/^$1=//p" "$here/config" | head -1; }
 load() {
     [ -f "$here/config" ] || die "no config in $here; run: dispatch-ctl init <repo> <feature> <tickets-dir>"
     repo=$(cfg repo) feature=$(cfg feature) tickets=$(cfg tickets) git_dir=$(cfg git) worktrees=$(cfg worktrees)
-    [ -n "$tickets" ] || die "$here/config predates the tickets dir; re-run \`dispatch setup\` from the orchestrator"
+    [ -n "$tickets" ] || die "$here/config predates the tickets dir; the orchestrator's next spawn stages this host again and rewrites it"
 }
 
 # Everything hangs off the ticket, derived in one place: the bare repo and the
