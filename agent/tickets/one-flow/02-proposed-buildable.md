@@ -55,6 +55,8 @@ printf -- '---\nstatus: draft\n---\n\n# Lamp UI\n' > agent/tickets/lamp-ui/spec.
 printf -- '---\nstatus: done\n---\n\n# The brightness slider\n' > agent/tickets/lamp-ui/01-brightness-slider.md
 printf -- '---\nstatus: proposed\n---\n\n# A warm preset beside the slider\n\nCut from 01 closing comment.\n' > agent/tickets/lamp-ui/02-warm-preset.md
 git add -A && git commit -qm "lamp-ui: tickets" && git checkout -q -b lamp-ui
+# superseded 2026-09-15: ticket 05 retired the per-feature keys and ticket 08 every recorded
+# host, so nothing reads these; a spawn names its host with `dispatch ctl --host <host>`.
 git config dispatch.lamp-ui.host local && git config dispatch.lamp-ui.scratch /tmp/ignored
 <mx>/skills/dispatch/dispatch claim 02-warm-preset
 uv run <mx>/skills/tracker/board.py agent/tickets --no-watch --no-open
