@@ -119,7 +119,7 @@ def shoot(board: Path, review: Path) -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=2)
 
         page.goto(board.resolve().as_uri())
-        page.wait_for_timeout(1200)
+        page.wait_for_selector(".btn[data-gmode].on", timeout=30_000)  # the module script has its listeners
         # the whole tracker's graph beside the groups, the debrief entry open
         page.evaluate("document.querySelector('.btn[data-gmode=all]').click()")
         page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)

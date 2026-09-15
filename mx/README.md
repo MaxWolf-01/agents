@@ -44,7 +44,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <img alt="The board: rows grouped by state, needs me first with a finished feature's debrief expanded, then the frontier; beside them the whole tracker's dependency graph across two features, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other" src="assets/board-overview.png">
 
-A feature section in the wave lanes view: what is in flight now, what each later wave unblocks, and what is proposed and waiting on a ruling.
+One feature, the other hidden by its chip; the cursor on a blocked slice, and the feature's graph beside the rows with that slice marked:
 
 <img alt="One feature on the board, the other hidden by its chip: a research ticket and a prototype ticket claimed, two blocked slices, a proposed ticket in its own group; the cursor on a ticket expanded to the question it asks, and the feature's dependency graph beside the rows with that ticket marked" src="assets/board-feature.png">
 

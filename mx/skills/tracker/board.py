@@ -20,7 +20,7 @@ expands to the ticket's text and links its review page. Feature chips in the
 top bar hide and show a feature's rows; a filter box narrows the rows to a
 word. Beside the rows a graph panel shows the dependency graph of the feature
 of the row under the cursor with that ticket marked, or the whole tracker's
-graph with its cross-feature edges. A graph draws only tickets that wait on
+graph with its cross-feature edges, hidden features left out. A graph draws only tickets that wait on
 something or are waited on: a ticket with no edge is a row, not a node. A
 proposed ticket, one the user has not ruled on, keeps its status whatever
 blocks it and is drawn in its own colour.
@@ -171,14 +171,19 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
 class Roots:
     """Where the tracker is read from.
 
-    `main` is the main checkout's tracker. `overrides` maps a feature name to the copy of
-    its directory in a worktree on the branch of that name. `branches` lists every unmerged
-    worktree's tracker root with its branch, for the standalone tickets a branch added.
+    `main` is the main checkout's tracker and `repo` that checkout's root. `branches` lists
+    every unmerged worktree's tracker root with its branch: the standalone tickets a branch
+    added are read there, and a feature directory in the worktree on the branch of its own
+    name overrides the main checkout's copy.
     """
 
     main: Path
-    overrides: dict[str, Path]
     branches: list[tuple[str, Path]]
+    repo: Path | None = None
+
+    @property
+    def overrides(self) -> dict[str, Path]:
+        return {branch: tracker / branch for branch, tracker in self.branches if (tracker / branch).is_dir()}
 
 
 def worktrees(path: Path) -> list[tuple[Path, str | None]]:
@@ -204,21 +209,17 @@ def tracker_roots(tickets_root: Path) -> Roots:
     here = tickets_root.resolve()
     wts = worktrees(here)
     if not wts:
-        return Roots(here, {}, [])
+        return Roots(here, [])
     toplevel = subprocess.run(["git", "-C", str(here), "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
     rel = here.relative_to(Path(toplevel).resolve())
     main = wts[0][0].resolve()
     landed = landed_tips(main)
-    overrides: dict[str, Path] = {}
-    branches: list[tuple[str, Path]] = []
-    for path, branch in wts[1:]:
-        if not branch or git(path, "rev-parse", branch) in landed:
-            continue
-        if (path / rel).is_dir():
-            branches.append((branch, path.resolve() / rel))
-        if (path / rel / branch).is_dir():
-            overrides[branch] = path.resolve() / rel / branch
-    return Roots(main / rel, overrides, branches)
+    branches = [
+        (branch, path.resolve() / rel)
+        for path, branch in wts[1:]
+        if branch and (path / rel).is_dir() and git(path, "rev-parse", branch) not in landed
+    ]
+    return Roots(main / rel, branches, main)
 
 
 def landed_tips(main: Path) -> set[str]:
@@ -229,14 +230,15 @@ def landed_tips(main: Path) -> set[str]:
     return {line.split()[1] for line in parents.splitlines() if len(line.split()) > 1}
 
 
-def branch_added(tracker: Path, main: Path) -> list[Path]:
+def branch_added(tracker: Path, repo: Path) -> list[Path]:
     """The *.md files at a worktree's tracker root that its branch added or changed since it left the
-    main checkout's branch, untracked ones included. A file the branch merely inherited is main's to
-    show; one main has since retired must not come back through a stale copy."""
+    main checkout's branch (`repo` is that checkout's root), untracked ones included. A file the
+    branch merely inherited is main's to show; one main has since retired must not come back through
+    a stale copy."""
     toplevel = Path(git(tracker, "rev-parse", "--show-toplevel")).resolve()
     rel = tracker.resolve().relative_to(toplevel)
     # run from the worktree root: a pathspec is relative to git's cwd, and the names come back root-relative
-    base = git(toplevel, "merge-base", "HEAD", git(main, "rev-parse", "HEAD"))
+    base = git(toplevel, "merge-base", "HEAD", git(repo, "rev-parse", "HEAD"))
     changed = git(toplevel, "diff", "--name-only", base, "--", str(rel)).splitlines()
     untracked = git(toplevel, "ls-files", "--others", "--exclude-standard", "--", str(rel)).splitlines()
     paths = {toplevel / p for p in changed + untracked if Path(p).parent == rel and p.endswith(".md")}
@@ -338,7 +340,7 @@ def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     have = {k.slug for k in standalone}
     for branch, tracker in roots.branches:
         dv = load_diffviews(tracker.parent / "diffviews")
-        for path in branch_added(tracker, root):
+        for path in branch_added(tracker, roots.repo):
             meta, _ = split_frontmatter(path.read_text())
             if path.stem in have or str(meta.get("status")) not in TICKET_STATUSES:
                 continue
@@ -353,7 +355,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
     heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
     body = body[heading.end():] if heading else body
     blocked_by = [(str(n), ref_status(roots.main, roots.overrides, str(n))) for n in meta.get("blocked-by") or []]
-    status = str(meta.get("status", "open"))
+    status = declared_status(meta, path)
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
     return Standalone(
@@ -413,7 +415,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
             Ticket(
                 num=path.name[:2],
                 title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
-                status=str(meta.get("status", "open")),
+                status=declared_status(meta, path),
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
@@ -432,6 +434,12 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
         ):
             t.status = "blocked"
     return tickets
+
+
+def declared_status(meta: dict, path: Path) -> str:
+    status = str(meta.get("status", "open"))
+    assert status in TICKET_STATUSES, f"{path}: status {status!r}; a ticket declares one of {sorted(TICKET_STATUSES)}"
+    return status
 
 
 def ticket_kind(meta: dict) -> str | None:
@@ -537,6 +545,10 @@ def node_id(ns: str, feature: str, num: str) -> str:
     return f"T_{ns}_{slug_id(feature)}_{num}"
 
 
+def standalone_id(ns: str, slug: str) -> str:
+    return f"K_{ns}_{slug_id(slug)}"
+
+
 def node_defs(ns: str, feature: str, tickets: list[Ticket], nums: set[str], ghost: set[str]) -> list[str]:
     lines = []
     for t in tickets:
@@ -561,15 +573,17 @@ def feature_graph(feature: Feature) -> str | None:
     return "\n".join(lines)
 
 
-def board_graph(features: list[Feature], standalone: list[Standalone]) -> str | None:
-    """The whole tracker's dependency graph: a subgraph per feature, standalone tickets in their own,
-    cross-feature and standalone edges drawn where both ends are on the board; edges only, as in
-    feature_graph. None when nothing waits on anything."""
+def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict | None:
+    """The whole tracker's dependency graph, as the parts the page composes for whichever features
+    are shown: per feature, and for the standalone tickets as one more, its nodes with their lines;
+    every edge with the two features it joins. Edges only, as in feature_graph; a cross-feature or
+    standalone edge is drawn where both ends are on the board, and a done ticket another feature's
+    live ticket waits on is its dashed context there too. None when nothing waits on anything."""
     ns = "b"
-    included = {f.name: visible(f.tickets) for f in features}
+    include = {f.name: visible(f.tickets)[0] for f in features}
+    ghost = {f.name: visible(f.tickets)[1] for f in features}
     shown = [k for k in standalone if k.status != "done"]
     shown_slugs = {k.slug for k in shown}
-    # a done ticket a live ticket of another feature waits on is context there too, as within a feature
     by_feature = {f.name: {t.num: t for t in f.tickets} for f in features}
     waits = [ref for f in features for t in f.tickets if t.status != "done" for ref, _ in t.ext_by]
     waits += [ref for k in shown for ref, _ in k.blocked_by]
@@ -577,49 +591,49 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> str | 
         if "/" in ref:
             src_feat, src_num = ref.rsplit("/", 1)
             src_num = normalize_num(src_num)
-            if by_feature.get(src_feat, {}).get(src_num, None) and by_feature[src_feat][src_num].status == "done":
-                included[src_feat][0].add(src_num)
-                included[src_feat][1].add(src_num)
+            if (src := by_feature.get(src_feat, {}).get(src_num)) and src.status == "done":
+                include[src_feat].add(src_num)
+                ghost[src_feat].add(src_num)
 
-    def node(ref: str) -> str | None:
+    def node(ref: str) -> tuple[str, str] | None:
+        """(feature, node id) of a blocker that is on the board."""
         if "/" in ref:
             src_feat, src_num = ref.rsplit("/", 1)
-            if normalize_num(src_num) in included.get(src_feat, (set(), set()))[0]:
-                return node_id(ns, src_feat, normalize_num(src_num))
-            return None
-        return f"K_{ns}_{slug_id(ref)}" if ref in shown_slugs else None
+            src_num = normalize_num(src_num)
+            return (src_feat, node_id(ns, src_feat, src_num)) if src_num in include.get(src_feat, set()) else None
+        return ("standalone", standalone_id(ns, ref)) if ref in shown_slugs else None
 
-    edges: list[tuple[str, str]] = []
+    edges: list[tuple[str, str, str, str]] = []  # (feature, node) --> (feature, node)
     for f in features:
-        include, _ = included[f.name]
         for t in f.tickets:
-            if t.num not in include:
+            if t.num not in include[f.name]:
                 continue
-            edges.extend((node_id(ns, f.name, b), node_id(ns, f.name, t.num)) for b in t.blocked_by if b in include)
-            edges.extend((src, node_id(ns, f.name, t.num)) for ref, _ in t.ext_by if (src := node(ref)))
+            to = (f.name, node_id(ns, f.name, t.num))
+            edges += [(f.name, node_id(ns, f.name, b), *to) for b in t.blocked_by if b in include[f.name]]
+            edges += [(*src, *to) for ref, _ in t.ext_by if (src := node(ref))]
     for k in shown:
-        edges.extend((src, f"K_{ns}_{slug_id(k.slug)}") for ref, _ in k.blocked_by if (src := node(ref)))
-    connected = {n for e in edges for n in e}
-    if not connected:
+        edges += [(*src, "standalone", standalone_id(ns, k.slug)) for ref, _ in k.blocked_by if (src := node(ref))]
+    if not edges:
         return None
-    lines = ["flowchart LR"]
+    connected = {n for _, a, _, b in edges for n in (a, b)}
+    parts: dict = {"features": [], "edges": [{"a": fa, "from": a, "b": fb, "to": b, "line": f"  {a} --> {b}"} for fa, a, fb, b in edges]}
     for f in features:
-        include, ghost = included[f.name]
-        nums = {t.num for t in f.tickets if node_id(ns, f.name, t.num) in connected}
-        if not nums:
-            continue
-        lines.append(f'  subgraph S_{ns}_{slug_id(f.name)}["{f.name}"]')
-        lines.extend(node_defs(ns, f.name, f.tickets, nums, ghost & nums))
-        lines.append("  end")
-    ks = [k for k in shown if f"K_{ns}_{slug_id(k.slug)}" in connected]
-    if ks:
-        lines.append(f'  subgraph S_{ns}__standalone["standalone"]')
-        for k in ks:
-            lines.append(f'  K_{ns}_{slug_id(k.slug)}["{STATUS_SYMBOL[k.status]} {node_label(k.title)}"]:::{k.status}')
-            lines.append(f'  click K_{ns}_{slug_id(k.slug)} "#standalone-{k.slug}"')
-        lines.append("  end")
-    lines.extend(f"  {a} --> {b}" for a, b in edges)
-    return "\n".join(lines)
+        nodes = [
+            {"id": node_id(ns, f.name, t.num), "lines": node_defs(ns, f.name, f.tickets, {t.num}, ghost[f.name] & {t.num})}
+            for t in f.tickets if node_id(ns, f.name, t.num) in connected
+        ]
+        if nodes:
+            parts["features"].append({"name": f.name, "nodes": nodes})
+    nodes = [
+        {"id": standalone_id(ns, k.slug), "lines": [
+            f'  {standalone_id(ns, k.slug)}["{STATUS_SYMBOL[k.status]} {node_label(k.title)}"]:::{k.status}',
+            f'  click {standalone_id(ns, k.slug)} "#standalone-{k.slug}"',
+        ]}
+        for k in shown if standalone_id(ns, k.slug) in connected
+    ]
+    if nodes:
+        parts["features"].append({"name": "standalone", "nodes": nodes})
+    return parts
 
 
 # ---- page -----------------------------------------------------------------
@@ -727,7 +741,9 @@ def render_page(
         graphs += f'<div class="g" data-feature="{html.escape(f.name)}" hidden>{inner}</div>'
     board = board_graph(features, standalone)
     graphs += '<div class="g" data-feature="*" hidden>' + (
-        f'<pre class="mermaid" data-key="g:*">{board}</pre>' if board else '<div class="gnote">nothing waits on anything</div>'
+        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden feature</div>'
+        f'<script type="application/json" class="parts">{json.dumps(board).replace("</", "<\\/")}</script>'
+        if board else '<div class="gnote">nothing waits on anything</div>'
     ) + "</div>"
 
     log_html = "\n".join(
@@ -823,7 +839,6 @@ PAGE = Template(r"""<!doctype html>
   .grp > summary::before { content: "▾"; color: var(--ink3); font-size: 11px; margin-right: .5rem; float: left; line-height: 1.6; }
   .grp:not([open]) > summary::before { content: "▸"; }
   .grp.empty { display: none; }
-  .grp.kcur > summary h2 { color: var(--accent); }
 
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
   .panel-b { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0 .6rem; }
@@ -955,7 +970,7 @@ ${groups}
       document.getElementById("side").classList.toggle("folded", !!saved.folded);
       scrollTo(0, saved.scroll ?? 0);
     }
-    window.boardState = { saved, off };
+    window.boardState = { saved, off, cache };
   })();
 </script>
 
@@ -1018,13 +1033,13 @@ ${groups}
   for (const el of document.querySelectorAll(".mermaid")) if (el.querySelector("svg")) nodeHover(el);
 
   // ---- state: hidden features, the cursor row, the graph mode ----
-  const { saved, off } = window.boardState;
+  const { saved, off, cache } = window.boardState;
   const rowsEl = document.getElementById("rows"), side = document.getElementById("side");
   const search = document.getElementById("search");
   let mode = saved?.mode ?? "feature";
   let cur = saved?.cur ? document.getElementById(saved.cur) : null;
   const inField = (e) => e.target.closest("input, textarea, [contenteditable]");
-  const visible = (el) => el.offsetParent !== null;
+  const visible = (el) => el.checkVisibility();  // false inside a closed group too, where offsetParent still holds
   const rows = () => [...rowsEl.querySelectorAll(".ticket")].filter(visible);
   const groups = () => [...rowsEl.querySelectorAll("details.grp")].filter(visible);
 
@@ -1041,8 +1056,38 @@ ${groups}
     }
     for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
     localStorage.setItem("board-off:" + document.title, JSON.stringify([...off]));
-    if (cur && !visible(cur)) setCur(null);  // a hidden feature takes its row, and its graph, with it
+    if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden feature takes its row, and its graph, with it
     showGraph();
+  }
+
+  // The whole tracker's graph is composed here from its parts, so a hidden feature drops out of it
+  // with its edges, and a node left without an edge goes with them. One composition per set of
+  // hidden features is rendered and kept.
+  function composeAll() {
+    const g = side.querySelector('.g[data-feature="*"]'), pre = g.querySelector(".mermaid");
+    if (!pre) return;
+    const key = "g:*:" + [...off].sort().join(",");
+    if (pre.dataset.key === key) return;
+    const parts = JSON.parse(g.querySelector(".parts").textContent);
+    const on = (f) => !off.has(f);
+    const edges = parts.edges.filter((e) => on(e.a) && on(e.b));
+    const keep = new Set(edges.flatMap((e) => [e.from, e.to]));
+    const lines = ["flowchart LR"];
+    for (const f of parts.features) {
+      const nodes = f.nodes.filter((n) => keep.has(n.id));
+      if (!on(f.name) || !nodes.length) continue;
+      lines.push('  subgraph S_b_' + f.name.replace(/[^a-zA-Z0-9]/g, "_") + '["' + f.name + '"]');
+      for (const n of nodes) lines.push(...n.lines);
+      lines.push("  end");
+    }
+    lines.push(...edges.map((e) => e.line));
+    pre.dataset.key = key;
+    pre.textContent = edges.length ? lines.join("\n") : "";
+    delete pre.dataset.src;
+    pre.hidden = !edges.length;
+    g.querySelector(".gnote").hidden = !!edges.length;
+    const hit = cache[key];
+    if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; nodeHover(pre); }
   }
 
   // The graph panel shows one pre-rendered graph at a time: the cursor row's feature, or the
@@ -1052,13 +1097,14 @@ ${groups}
     const feature = cur?.dataset.feature ?? "";
     const key = mode === "all" ? "*" : (feature === "standalone" ? "*" : feature);
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.feature !== key;
+    if (key === "*") composeAll();
     document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (feature || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
   function markNode() {
     for (const n of side.querySelectorAll("g.node.cur")) n.classList.remove("cur");
-    if (!cur) return;
+    if (!cur?.dataset.num) return;
     const g = side.querySelector(".g:not([hidden])");
     const id = cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
       : "T_" + (g?.dataset.feature === "*" ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
@@ -1071,9 +1117,17 @@ ${groups}
     showGraph();
   }
   function moveCur(delta) {
-    const list = rows();
+    const all = [...rowsEl.querySelectorAll(".ticket")], list = all.filter(visible);
     if (!list.length) return;
-    const i = list.indexOf(cur);
+    let i = list.indexOf(cur);
+    if (i < 0 && cur) {
+      // the cursor row is folded or filtered away: continue from its place in the page
+      const at = all.indexOf(cur);
+      i = delta > 0 ? list.findIndex((r) => all.indexOf(r) > at) : list.findLastIndex((r) => all.indexOf(r) < at);
+      if (i < 0) i = delta > 0 ? list.length - 1 : 0;
+      setCur(list[i]);
+      return;
+    }
     setCur(list[i < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(Math.max(i + delta, 0), list.length - 1)]);
   }
   function jumpGroup(delta) {
@@ -1119,7 +1173,6 @@ ${groups}
     if (e.key === "c") {
       const g = cur?.closest("details.grp") ?? groups()[0];
       if (g) g.open = !g.open;
-      if (cur && !visible(cur)) setCur(g, false);
       return;
     }
     if (e.key === "x") {
