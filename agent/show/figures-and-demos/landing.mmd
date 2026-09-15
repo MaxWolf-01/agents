@@ -1,14 +1,14 @@
 sequenceDiagram
-    participant W as Worker (ticket branch)
+    participant W as Worker (ticket branch, any host)
     participant O as Orchestrator (user's machine)
     participant U as User
     W->>W: build, self-review
-    W->>W: write agent/show/<feature>/demo-NN.sh
-    W->>W: run it, paste that run's output under the command
-    W->>O: closing comment: landed line, Demo, I need from you, Details
-    O->>O: dispatch review: warn if no demo file and no Demo line
-    O->>O: run demo-NN.sh here
-    O->>U: open its output beside the review page
+    W->>W: write agent/show/<feature>/NN-<slug>/demo
+    W->>W: run it, paste the command and that run's output
+    W->>O: closing comment: what landed, Demo, I need from you, Details
+    O->>O: dispatch review renders the page from the unmerged branch
+    O->>O: run the demo file on this machine
+    O->>U: open what it produced beside the review page
     U->>O: ruling: accept, amend, redo, reject
-    O->>W: amend: comments as guidance on resume
-    O->>O: accept: merge --no-ff, dependents on the frontier
+    O->>W: amend: the comments, as guidance on resume
+    O->>O: accept: merge --no-ff, dependents join the frontier

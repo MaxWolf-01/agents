@@ -26,7 +26,7 @@ A demo is one executable file, `demo`, in the show directory of the work it demo
 
 Retiring a ticket or a feature retires its show directory and the research notes its tickets cite; what a README or a PR needs is copied there in the same commit and kept current there. `(you, r5)`
 
-The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.svg), source `landing.mmd` beside it. `(figure, r3)`
+The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.svg), source `landing.mmd` beside it. `(figure, r6: redrawn to the round-5 design; it had kept the dropped landing warning and the old file name through two rounds)`
 
 ## User Stories
 
@@ -72,6 +72,7 @@ The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.sv
 - **The figure is opened before the round is read.** The session opens it (`claude-browser`, else `xdg-open`) and the round's message says so in its first line, instead of narrating the figure's content. `(you, r5)`
 - **Retired with the work, promoted deliberately.** Retiring a feature is `git rm -r` of `agent/tickets/<feature>/` and `agent/show/<feature>/` together; retiring a standalone ticket takes `agent/show/<slug>/` with it; a loose branch's show directory goes when the branch merges. Research notes the retired tickets cite are removed from disk in the same step; being untracked, they are moved to `~/logs/agent-research/<repo>/` rather than deleted, since that directory is in the restic backups and the XDG cache is not, until [One tracker for all of a user's repos](../one-tracker-per-user.md) decides whether committing them makes the move moot. `(you, r5: retire show and research at close; my call, r5: the `~/logs` interim)`
 - **Promotion is the agent's call, visible in the diff.** A figure the README or a PR description needs is copied there as a PNG, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into the PR as a code block or screenshots, a demo that asserts moved under `make check`; the copy is kept current where it lands. No ruling gates it: the user sees the diff and says so when a promotion is wrong or missing. `(you, r5)`
+- **The landing figure goes into the README** once the tickets have landed, as documentation of the flow beside the one-flow figures, through the promotion rule above: the first promotion done for real. `(you, r6)`
 
 ## Testing Decisions
 
