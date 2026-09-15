@@ -40,13 +40,13 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 <details>
 <summary><b>The board: the tracker as one page</b></summary>
 
-`board`, run from anywhere in the repo, renders every feature's dependency graph, the queue of things only you can answer, and a row per ticket. One switcher cycles every graph on the page through three views: the frontier alone, the full graph, and wave lanes. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
+`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, the queue of things only you can answer first, each row tagged with its feature and expanding to its text. Feature chips hide a feature, a filter narrows the rows, and a panel beside the rows shows the dependency graph of the feature under the cursor, or the whole tracker's. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
 
-<img alt="The board in its full view: one dependency graph across two features and the standalone tickets, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other; below it the needs-human queue, the first entry open on a finished feature's debrief" src="assets/board-overview.png">
+<img alt="The board: rows grouped by state, needs me first with a finished feature's debrief expanded, then the frontier; beside them the whole tracker's dependency graph across two features, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other" src="assets/board-overview.png">
 
 A feature section in the wave lanes view: what is in flight now, what each later wave unblocks, and what is proposed and waiting on a ruling.
 
-<img alt="One feature on the board: spec confirmed, wave lanes with a research ticket and a prototype ticket in flight, two blocked slices one and two waves out, and a proposed ticket in its own lane; the ticket rows below, one expanded to the question it asks" src="assets/board-feature.png">
+<img alt="One feature on the board, the other hidden by its chip: a research ticket and a prototype ticket claimed, two blocked slices, a proposed ticket in its own group; the cursor on a ticket expanded to the question it asks, and the feature's dependency graph beside the rows with that ticket marked" src="assets/board-feature.png">
 
 </details>
 
