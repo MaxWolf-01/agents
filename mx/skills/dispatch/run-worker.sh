@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
 # Usage: run-worker.sh <message-file> <ticket-file> <model> <run> [session-id]
-#   message-file  worker prompt, or resume guidance; sent on the first attempt only
+#   message-file  the ticket message, or resume guidance; sent on the first attempt only
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one

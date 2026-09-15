@@ -41,7 +41,7 @@
 #            then routed by its type; spawn is what refuses to hand one to a
 #            worker.
 #   push     this branch to the host, so the next spawn cuts from its tip.
-#   prompt   writes stdin as the worker prompt for <ticket> on the host.
+#   prompt   writes stdin as the ticket message for <ticket> on the host.
 #   ctl      runs `dispatch-ctl <args>` on the host, from this branch's scratch
 #            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
 #            `dispatch ctl --help` is that script's reference.

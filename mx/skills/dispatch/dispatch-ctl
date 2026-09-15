@@ -60,11 +60,13 @@
 #   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
 #                             A replacement lives in this directory too. The
 #                             contract it owes: argv is <prompt> <ticket> <model>
-#                             <run> [session-id]; within seconds of starting it
-#                             creates <run>.log beside itself, and its last act
-#                             is writing <run>.status there (key=value line,
-#                             `session=` included); on TERM the same, with
-#                             `exit=stopped`.
+#                             <run> [session-id]; it puts worker-prompt.md from
+#                             this directory into the worker's system prompt,
+#                             which is where a worker's whole contract lives;
+#                             within seconds of starting it creates <run>.log
+#                             beside itself, and its last act is writing
+#                             <run>.status there (key=value line, `session=`
+#                             included); on TERM the same, with `exit=stopped`.
 #
 # State, all plain text in this directory:
 #   config                       repo, feature, tickets dir, git dir,
