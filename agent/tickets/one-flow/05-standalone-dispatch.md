@@ -1,6 +1,7 @@
 ---
 status: done
 blocked-by: [02]
+diff: [a9117ac7a51491b2ba3f5109064acf744f6d95b5..24aa5af2517f13f482a9351ff8941d0348f07bbb]
 ---
 
 # A standalone ticket is dispatched like a feature's
