@@ -25,6 +25,7 @@ from board import (
     STATUS_SYMBOL,
     Diffviews,
     board_dag,
+    content_stamp,
     feature_dag,
     load_features,
     load_needs_human,
@@ -57,6 +58,8 @@ def tracker(tmp_path: Path) -> Path:
     ticket(feature / "03-faster-suite.md", "proposed", blocked_by=["02"])
     ticket(feature / "04-uses-fast-suite.md", "open", blocked_by=["03"])
     ticket(feature / "05-after-first.md", "open", blocked_by=["01"])
+    ticket(feature / "06-render-check.md", "proposed")  # nothing blocks it: the live case, and claimable now
+    (feature / "needs-human.md").write_text("- rule on 06 :: built while proposed; its page is agent/diffviews/feat/06-render-check.html\n")
     ticket(root / "loose-idea.md", "proposed", blocked_by=["feat/02"])
     ticket(root / "small-chore.md", "open")
     (root / "quoted.md").write_text('---\nstatus: open\n---\n\n# Say "no limit" plainly\n')
@@ -122,8 +125,8 @@ def test_proposed_tickets_are_drawn_in_every_view_in_their_own_class(tracker: Pa
     # a raw double quote in a label ends mermaid's string and breaks the whole flowchart
     assert 'K_b0_quoted["○ Say ”no limit” plainly"]' in board_dag([feature], standalone, False)
     assert "2 standalone open" in page
-    assert "2 proposed" in page
-    assert "1 blocked · 1 proposed" in page  # the feature's own counts
+    assert "3 proposed" in page
+    assert "1 blocked · 2 proposed" in page  # the feature's own counts
     assert 'class="ticket row-proposed" id="t-feat-03"' in page
     class_defs = re.search(r'const classDefs = \[([^\]]*)\]', page).group(1)
     for status in STATUS_SYMBOL:
@@ -173,6 +176,35 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
         "debrief :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
         "Which colour :: the prototype at agent/prototypes/colour",
     ]
+
+
+def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(tracker: Path) -> None:
+    """The live case: a proposal an agent filed with nothing blocking it (`/mx:tracker`)."""
+    (feature,), _ = load(tracker)
+    assert by_num(feature)["06"].status == "proposed"  # not `open`, though it is on the frontier
+    assert by_num(feature)["06"].blocked_by == []
+    lanes = wave_lanes(feature)
+    assert 'href="#t-feat-06"' in lanes.split("proposed — awaiting ruling")[1]
+    assert '06 render check"]:::proposed' in feature_dag(feature, True)
+
+
+def test_a_features_own_queue_entries_reach_the_page_under_the_features_anchor(tracker: Path) -> None:
+    (feature,), standalone = load(tracker)
+    page = render_page(
+        "demo", [feature], standalone, load_needs_human(tracker / "needs-human.md"),
+        log="", stamp="s", stamp_src="s.js",
+    )
+    assert '<a class="chip open" href="#f-feat">feat</a> rule on 06' in page
+    assert '<a class="chip open" href="#standalone">standalone</a> rule on loose-idea' in page
+    assert "● 2 need human" in page
+
+
+def test_the_stamp_the_open_tab_polls_moves_when_the_queue_does(tracker: Path) -> None:
+    (feature,), standalone = load(tracker)
+    queue = load_needs_human(tracker / "needs-human.md")
+    assert queue
+    stamped = content_stamp("demo", [feature], standalone, queue, log="")
+    assert stamped != content_stamp("demo", [feature], standalone, [], log="")
 
 
 if __name__ == "__main__":
