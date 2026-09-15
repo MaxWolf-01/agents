@@ -1,6 +1,7 @@
 ---
 status: done
 blocked-by: [01]
+diff: [290bfa51a0174580feac06872f6523ef508a067e..6785dbdd04c9f8d631dfdc9ed2dd3eb381deabe4]
 ---
 
 # The chat reviewer ships with the mx plugin
