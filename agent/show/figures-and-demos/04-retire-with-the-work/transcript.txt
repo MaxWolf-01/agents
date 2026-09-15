@@ -1,0 +1,64 @@
+
+== a toy repo whose one feature, soup, has shipped
+
+  .gitignore
+  README.md
+  agent/research/07-stock-timings.md
+  agent/show/soup/01-stock/demo
+  agent/show/soup/02-serve/demo
+  agent/show/soup/broth.mmd
+  agent/show/soup/broth.svg
+  agent/tickets/soup/01-stock.md
+  agent/tickets/soup/02-serve.md
+  agent/tickets/soup/spec.md
+
+  agent/research/07-stock-timings.md is untracked (.gitignore), cited by 01-stock
+
+== the README's link is promoted into the retiring commit
+
+  cp agent/show/soup/broth.svg docs/figures/broth.svg
+
+== the tickets and the show directory leave in one commit
+
+  git rm -r agent/tickets/soup/ agent/show/soup/
+
+  the commit:
+
+  soup: retired, the broth figure promoted to docs/
+
+    D	agent/show/soup/01-stock/demo
+    D	agent/show/soup/02-serve/demo
+    D	agent/show/soup/broth.mmd
+    D	agent/show/soup/broth.svg
+    D	agent/tickets/soup/01-stock.md
+    D	agent/tickets/soup/02-serve.md
+    D	agent/tickets/soup/spec.md
+    A	docs/figures/broth.svg
+
+== the research notes leave the tree, moved rather than deleted
+
+  mkdir -p ~/logs/agent-research/toy-project/
+  mv agent/research/07-stock-timings.md ~/logs/agent-research/toy-project/
+
+  the note now reads at ~/logs/agent-research/toy-project/07-stock-timings.md:
+
+    # Stock timings
+
+    Bones at 90 minutes, skimmed twice.
+
+== the tree after
+
+  .gitignore
+  README.md
+  docs/figures/broth.svg
+
+== what holds
+
+  ok  no ticket of the feature is left, in the tree or in HEAD
+  ok  no show directory of the feature is left, its slice directories included
+  ok  no research note is left in the tree
+  ok  the note survives the move, at ~/logs/agent-research/<repo>/
+  ok  the promoted figure is in the tree and the README's link resolves
+  ok  removal and promotion are the same commit
+  ok  git history still finds the retired work
+
