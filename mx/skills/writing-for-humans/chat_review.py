@@ -12,8 +12,9 @@ Reads the Stop hook JSON on stdin and selects the rules tagged `chat` or `both`,
 CATALOGUE.md's header states. Fails open: a reviewer that errors, times out or answers in
 something other than JSON allows the turn. Every decision is one JSON line in the log, carrying
 the session id, the skipped turns included, so a hook that never ran reads differently from one
-switched off. The re-entry line keeps the revised reply, so the log shows which flagged passages
-the session kept.
+switched off. A re-entry line keeps its reply; the first one after a session's feedback line is
+the revision, so the log shows which flagged passages the session kept. Any Stop hook's
+continuation logs a re-entry, so later ones in the same session are other hooks' turns.
 
 It skips the model when the message is empty, when the hook is re-entering after its own
 feedback, which is what holds the review to once per turn, and in a session nobody reads:
@@ -36,6 +37,8 @@ CATALOGUE = Path(__file__).resolve().parent / "CATALOGUE.md"
 LOG = Path(os.environ.get("CHAT_REVIEW_LOG", Path.home() / ".cache/chat-review/log.jsonl"))
 MODEL = os.environ.get("CHAT_REVIEW_MODEL", "haiku")
 REVIEWER_TIMEOUT_S = 45
+# Claude Code moves hook output past 10,000 characters into a file and shows the session a preview.
+FEEDBACK_LIMIT = 9_500
 
 PROMPT = """You are a prose editor. Review one chat message, written by a coding agent to its user, against the rules below.
 
@@ -105,17 +108,18 @@ def rule_id(hit: dict) -> str:
 
 def feedback(hits: list[dict], rules: dict[str, str]) -> str:
     """What the session reads: every hit under the id of the rule it cites, then each cited rule's
-    text once, so a rule that several hits break is explained a single time."""
+    text once, so a rule that several hits break is explained a single time. Past FEEDBACK_LIMIT
+    the rule texts give way to the catalogue's path, which keeps the hits in front of the session."""
     flagged = [
         f'- rule {rule_id(h)}: "{h.get("quote")}"' + (f' ({h["note"]})' if h.get("note") else "") for h in hits
     ]
     cited = [rules[i] for i in dict.fromkeys(map(rule_id, hits)) if i in rules]
-    return "\n".join(
-        [f"An automated review by {MODEL} flagged these passages of your last message against the chat prose rules:"]
-        + flagged
-        + (["", "The rules they cite:", *cited] if cited else [])
-        + ["", "Revise the message."]
-    )
+    head = [f"An automated review by {MODEL} flagged these passages of your last message against the chat prose rules:", *flagged]
+    tail = ["", "Revise the message where the hits hold."]
+    full = "\n".join(head + (["", "The rules they cite:", *cited] if cited else []) + tail)
+    if len(full) <= FEEDBACK_LIMIT:
+        return full
+    return "\n".join(head + ["", f"The rules they cite, by id, are in {CATALOGUE}."] + tail)
 
 
 def log(session_id: str | None, **entry: object) -> None:
