@@ -8,7 +8,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 </picture>
 
 <details>
-<summary><b>The whole cycle, from an idea to a shipped feature</b></summary>
+<summary><b>The whole cycle, from an intent to a shipped feature</b></summary>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
@@ -88,7 +88,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
 - **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → end the session with the frontier open (the sharp questions become decision tickets) or handoff to a fresh thread; don't push on degraded.
 - **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Grilling writes it round by round and you review each round's delta as it lands (`/mx:grilling` has the mechanics); writing it down is itself a design step. A spec assembled across sessions gets one whole-document read at the gate, for drift between sessions.
-- **The ticket breakdown is worth a look, never a wait.** to-tickets publishes the slices `proposed` and shows them on the board, and the workers start. The failure mode is easy to spot from the graph: horizontal slices (all schema, then all API, then all UI) instead of vertical ones, no feedback until the layers meet. You rule on each slice from what it built, which is where a slice too coarse to demo shows up anyway.
+- **The ticket breakdown is yours to look over while it builds.** to-tickets publishes the slices `proposed` and shows them on the board, and the workers start. The failure mode is easy to spot from the graph: horizontal slices (all schema, then all API, then all UI) instead of vertical ones, no feedback until the layers meet. You rule on each slice from what it built, which is where a slice too coarse to demo shows up anyway.
 - **The build runs while you are away.** It starts when the interview has no question left for you; every call you have not ruled on travels into the tickets as an anchored assumption and waits for you on the review page. A guess you overturn costs only the tickets built on it: the feature branch holds the speculation and the integration branch never sees it, so rejecting a ticket deletes it and its build.
 - **Implementation is the AFK part.** Day shift plans and cuts the tickets; night shift works the frontier, fresh context per ticket.
 - **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands: the worker's closing comment writes the demo as steps a stranger can run, the session holding the branch runs them on your machine and opens the result beside the review page, and you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.

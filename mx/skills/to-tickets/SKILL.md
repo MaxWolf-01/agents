@@ -1,6 +1,6 @@
 ---
 name: to-tickets
-description: "Break a grilled spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges. Runs as soon as the grilling's frontier is empty, whether or not the user has ratified the design."
+description: "Break a grilled spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges. Use as soon as the grilling's frontier is empty, ratified or not."
 ---
 
 # To Tickets
@@ -48,7 +48,7 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 ### 4. Publish the tickets
 
-Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below, `status: proposed` because the user ruled on the design and not on the slicing. Do NOT modify the spec.
+Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec. A build ticket is `proposed`: its ruling comes from what it built (`/mx:tracker`).
 
 **Name the calls each slice builds on.** A draft spec's marks (`/mx:grilling`) say which decisions are the user's and which are the agent's; the provenance line names the ones this slice rests on, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
@@ -74,12 +74,12 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 
 </ticket-template>
 
-A decision ticket uses the same frontmatter plus its `type`; its body is a `## Question` (the decision, sized to one session) in place of What-to-build and acceptance criteria.
+A decision ticket is `open` and carries its `type`: its answer is the ruling, and nothing builds from it meanwhile. Its body is a `## Question` (the decision, sized to one session) in place of What-to-build and acceptance criteria.
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
 ### 5. Show the breakdown, then dispatch
 
-Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: title, blocked by, what it delivers. Say what you would most want ruled on, so the user knows where to look: a granularity you were unsure of, an edge that may not gate anything, a pair you considered merging.
+Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: title, blocked by, what it delivers, with the granularity and the edges you are least sure of named, so the user knows where to look. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
-Nothing waits for that ruling. `/mx:dispatch` takes the frontier straight away, at any size: a fresh worker per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type. Each ticket is then ruled on from what it built, on its review page and its demo, and a rejected one is deleted with its build (`/mx:tracker`).
+`/mx:dispatch` takes it straight away, at any size: a fresh worker per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type. Each ticket is then ruled on from what it built, on its review page and its demo, and a rejected one is deleted with its build (`/mx:tracker`).
