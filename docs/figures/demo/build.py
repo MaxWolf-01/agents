@@ -22,7 +22,7 @@ from fixture import C1, C2, C3, C4, C5, C6, CONTEXT, MAKEFILE, NOTES  # noqa: E4
 
 HERE = Path(__file__).parent
 OUT = HERE.parent
-BOARD = HERE.parents[3] / "mx" / "bin" / "board"  # this checkout's board, not whichever is on PATH
+BOARD = HERE.parents[2] / "mx" / "bin" / "board"  # this checkout's board, not whichever is on PATH
 REPO = Path("/var/tmp/mx-demo/ledger")
 CHROMIUM = shutil.which("chromium")
 ENV = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com",

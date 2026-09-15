@@ -4,7 +4,7 @@ status: proposed
 
 # The dispatch scripts get a test, and the demo becomes one
 
-Cut from the whole-feature review of one-flow (Tests axis, D6 and D7): the feature rewrote 424 lines of `dispatch` and `dispatch-ctl` and `make test` reaches none of it. The one driver is `agent/show/host-per-spawn/demo.sh`, which nothing runs automatically, which stubs the runner rather than the harness, and which therefore checks the shipped `run-worker.sh` against a copy of itself. The whole-feature pass then introduced a variable collision in `copy_to` that only a demo run caught, by hand.
+Cut from the whole-feature review of one-flow (Tests axis, D6 and D7): the feature rewrote 424 lines of `dispatch` and `dispatch-ctl` and `make test` reaches none of it. The one driver was `agent/show/host-per-spawn/demo.sh`, retired with the one-flow feature and readable at `git show a2cfd9f:agent/show/host-per-spawn/demo.sh`, which nothing runs automatically, which stubs the runner rather than the harness, and which therefore checks the shipped `run-worker.sh` against a copy of itself. The whole-feature pass then introduced a variable collision in `copy_to` that only a demo run caught, by hand.
 
 ## What to build
 
