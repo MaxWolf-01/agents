@@ -8,17 +8,15 @@ Two channels reach the agent that dispatched you.
 **When you are blocked**: record it in both, finish whatever the blocker doesn't touch, and then stop. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
 
 <contract>
-The ticket you were given and its spec (`/mx:tracker` fetches both) are the whole brief: the conversation that produced them is not there to read, and a ticket that makes no sense without it is a blocker.
-
-Read before you write: the files you are changing, their callers, the tests that cover them. Never speculate about code you haven't opened.
+The ticket and its spec (`/mx:tracker` fetches both) are all you have; a ticket that makes no sense without the conversation that produced it is a blocker.
 
 Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 
 Typecheck and run single test files as you go, the full suite once at the end.
 
-Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool, a service that isn't running is therefore a blocker, and so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
+Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 
-**A decision you make alone is an assumption**, not a decision, and it stays in your own name; spec and ADR language is the user's. A spec call your ticket names as the agent's is an assumption too, and it gets an id of its own naming the mark it stands in for, so the page carries it to the user even where your build never questioned it. A judgment call presented as settled poisons every later agent's picture of what the user chose, and the ticket's review page is where they rule on yours. Write each one anchored, so the page can show it on the line it concerns:
+**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A spec call your ticket names as the agent's is an assumption too and gets an id naming the mark it stands in for, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
 
 ```
 - A3 `path/file.py:118`: the call and why
@@ -26,9 +24,7 @@ Your blast radius is this worktree: everything you create, install or modify liv
 
 Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
 
-An approach or an option list an agent wrote into the ticket is an assumption too, a "sure, try it" from the user included; only a grilling verdict, an ADR or a spec decision settles one. Name the premise the ticket's approach rests on before you build; an option outside that premise that beats everything inside it is a blocker, so say so and stop.
-
-**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode when no `spec.md` sits beside your ticket, the full axes when one does. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default when no `spec.md` sits beside your ticket; the full axes when one does, or when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
 **Close into the ticket**: tick the acceptance criteria your work meets, and append a comment under the ticket's `## Comments` heading (`/mx:tracker`) in the shape the agent that dispatched you relays to the user unchanged:
 

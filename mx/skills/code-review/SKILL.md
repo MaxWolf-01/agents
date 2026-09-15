@@ -31,7 +31,7 @@ Look for the originating spec, in this order:
 3. A spec file: a feature's `agent/tickets/<feature>/spec.md`, or `docs/`, `specs/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is, unless the work is plainly loose in-session work that never had one.
 
-A ticket is a brief, not a spec: a standalone ticket with no `spec.md` beside it is the specless case, whatever the ticket asks for, and it takes light mode. That is the same reading a worker's contract gives it ([`worker-prompt.md`](../dispatch/worker-prompt.md)), and the reason is proportion: three or four reviewers on a small diff cost more than they return.
+A standalone ticket has no spec, so it takes light mode by default, the full axes when its diff is large or touches a contract others depend on: the reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
 No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.
 
@@ -62,7 +62,7 @@ For the **Correctness brief**, include:
 For the **Standards brief**, include:
 
 - The full diff command and commit list.
-- The standards-source files from step 3, `CATALOGUE.md` among them, all by absolute path.
+- The standards-source files from step 3, all by absolute path.
 - The brief: "Read every standards-source file before judging. Then read the standards the repo never wrote down, which are the code itself: for each kind of surface the diff adds or extends (a view, a command, an error path, a module API, a test file), find the two nearest existing instances of that same kind and read them in full. They sit outside the diff and outside its call graph, so find them by kind, not by reference. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. A finding that the diff diverges from an existing convention cites two instances of that convention by file:line and states the answer they share; without them it is not a finding. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces."
 
 For the **Spec brief**, include:
@@ -91,7 +91,7 @@ Two callers hold no ticket. A bare "review this branch" anchors its declines and
 
 Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
 
-What reaches the user, from every caller: the review page; the calls only they can make (declined findings, assumptions, open questions); the next steps and blockers. Findings the review already fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree. In the landing message that means the user's calls under "I need from you" tagged `[Dn]`, and the range and the finding index under "Details, if you want them"; the review page goes beside the demo in the message the orchestrator relays, which is where a page rendered after the merge can be named.
+A review's reader is the agent that owns the branch, never the user. It fixes, files or declines each finding, and what it cannot dispose of alone (a declined finding worth a ruling, a question the review raised) it escalates through its own closing comment, under the worker contract. Findings the review fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree.
 
 A clean diff gets one line: the range, and that the axes came back empty.
 
@@ -99,7 +99,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 For specless work, or when the user asks for it. Steps 1 and 3 run unchanged; step 4 collapses to **one** subagent whose brief is the discipline line, the diff command, the **full commit messages** (`git log <fixed-point>..HEAD`, no `--oneline`), the standards-source files by absolute path, and the Correctness and Standards briefs joined: same filters, same citation rules, one report, written to `agent/reviews/<range>/light.md`. A diff touching tests adds `TEST-SMELLS.md` to that reviewer's standards sources and no Tests brief: light mode has no Testing Decisions to check the tests against. The commit messages are orientation over the diff: the author's account of what each commit does, never an anchor to judge it against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it, never Fable unless the user names it explicitly. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
-The fold trades axis separation for cost, which is the right trade exactly when there is no spec whose masking you'd care about.
+The fold trades the separate axes for cost, which is fine exactly when there is no spec for a Spec axis to check.
 
 ## Why separate axes
 
@@ -110,4 +110,4 @@ A change can pass any axis and fail another:
 - Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
 - Code that is correct, conventional and asked for, under tests that would pass without it → **every other axis passes, Tests fail.**
 
-One report per axis, read per axis, stops one axis from masking another.
+Each axis is read and disposed on its own; folding the four into one ranked list would let three passes bury the one failure.
