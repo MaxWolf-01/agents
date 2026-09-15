@@ -1,6 +1,3 @@
----
-worker-host: workbench.local
----
 
 - the shape of the view list :: `05-the-shape-of-the-view-list` is a prototype ticket, so it is yours to drive: a surface question does not sharpen when other decisions land, only against something rendered. Paste to start it:
 
