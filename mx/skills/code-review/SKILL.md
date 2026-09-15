@@ -18,7 +18,7 @@ The axes run as parallel reviewers so they don't pollute each other's context. T
 
 Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, default to "since the last review": the most recent commit bearing a `Workflow-stage: review` trailer (`git log --grep='^Workflow-stage: review$' -1 --format=%H`, anchored, or a commit merely *discussing* the trailer matches); when none exists, `@{upstream}` if it resolves and differs from `HEAD`, else the merge-base with the default branch. Whichever candidate is nearest `HEAD` wins. Ask only when none produces a non-empty diff.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`, and the **range**, which names the reports' directory: `echo "$(git rev-parse --short=7 <fixed-point>)..$(git rev-parse --short=7 HEAD)"`.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`, and the **range**, which names the reports' directory: `echo "$(git rev-parse --short=7 $(git merge-base <fixed-point> HEAD))..$(git rev-parse --short=7 HEAD)"`. The left end is the merge-base, the same point the three-dot diff reads from, so the range reconstructs what was reviewed even when the fixed point is a branch that moved since the fork.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside the parallel reviewers.
 
