@@ -30,7 +30,7 @@ Every piece of work travels one flow: an intent arrives in chat; the session gri
 | --- | --- | --- |
 | Grilling | none, one question, a full interview | the intent's ambiguity, per the grilling skill (unchanged) |
 | Brief | none, a standalone ticket, a spec sliced into tickets | the brief test below |
-| Worker | this session, a fresh worker | whether a brief exists; the host is the repo's setup, the same for a standalone ticket as for a feature `(you, r2)` |
+| Worker | this session, a fresh worker | whether a brief exists; the host is named at each spawn, the same for a standalone ticket as for a feature `(you, r10)` (amended 2026-09-15, was "the host is the repo's setup" `(you, r2)`, which the host-per-spawn decision below supersedes) |
 | Review | light, full | whether a spec exists; how a review is delivered changes, see Review delivery `(you, side)` |
 
 **The brief test** decides the second dial and thereby the third `(you, r4, wording ratified r3)`, and this paragraph is what the orient skill states, without an example table `(you, r3)`. Loose: the instruction is the change; a stranger could apply it from the chat line without reading code (a keybinding, a version bump, "rename X to Y"). Ticket: a builder must read code, choose and test, but the what fits one what-to-build plus acceptance criteria, every open choice is an implementation choice behind a settled interface, and it fits one worker. Spec: the builder would have to ask the user something, about behaviour they have taste on, an interface, a data shape, a term, or the work spans several slices. Writing the ticket is itself the test: a ticket that needs the conversation to make sense marks a decision that has not been made, and the fix is a grilling round, not a bigger brief.
@@ -139,7 +139,7 @@ Prose enforcement moves to the same shape, a reviewer reading a finished artifac
 
 ## Testing Decisions
 
-The artefacts here are skills, prompts and a hook: prose that is the logic. Every property is **reviewed**, checked against the diff by the Spec reviewer. One executable seam turned up in the build (ticket 03): the hook's rule selection, whose oracle is the catalogue header's own command, and the parse of a reviewer's answer; a test pins both and runs under `make test`. The chat reviewer's behavioural claims (one check per turn, a targeted rewrite, latency under a few seconds) are verified by running it: the prototype's `try` driver and its log are the test, and the answer file records the measurements.
+The artefacts here are skills, prompts and a hook: prose that is the logic. Every property is **reviewed**, checked against the diff by the Spec reviewer. Two executable seams turned up in the build (amended 2026-09-15, was one): ticket 03's hook, its rule selection against the oracle the catalogue header's own command states, and the parse of a reviewer's answer; and the tracker loader's reading of the standalone queue, which tickets 05 and 08 changed. Tests pin both and run under `make test`. The chat reviewer's behavioural claims (one check per turn, a targeted rewrite, latency under a few seconds) are verified by running it: the prototype's `try` driver and its log are the test, and the answer file records the measurements.
 
 ## Out of Scope
 

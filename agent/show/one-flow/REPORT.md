@@ -1,8 +1,12 @@
 # Show: one flow (round 7)
 
-Both figures redrawn against the round-7 spec, rendered to PNG in both schemes with the copied `render.py`, and looked at in both schemes: no overlaps, no clipped text. Nothing committed; nothing outside this directory touched.
+> Historical artifact as of 2026-09-15: the round-7 record of two figures. `one-flow` has since moved to
+> `agent/show/mx-readme-figures/` and both figures have been edited since; the descriptions below are what
+> they said in round 7. Kept as the reasoning trail.
 
-Look first: `/home/max/repos/github/MaxWolf-01/agents-one-flow/agent/show/one-flow/one-flow-light.png`
+Both figures redrawn against the round-7 spec, rendered to PNG in both schemes with the copied `render.py`, and looked at in both schemes: no overlaps, no clipped text.
+
+Look first: `agent/show/mx-readme-figures/one-flow-light.png`, and `agent/show/one-flow/what-changes-light.png` beside it.
 
 ## Files
 
@@ -12,12 +16,10 @@ Look first: `/home/max/repos/github/MaxWolf-01/agents-one-flow/agent/show/one-fl
 | `what-changes.html`, `what-changes-light.png`, `what-changes.png` | Eleven rows now (were seven). Corrected: implement (deleted, process in the worker prompt), the gate (strips marks, no longer holds the build), standalone ticket (same scripts and host selection, no "this machine"), the review rule (loose work gets no agent review; its page is its gate), attention (four stations: open questions in grilling rounds, demo and review page, QA, needs-human queue). Added: speculative build, the demo, review delivery, prototypes. Prose rules and best-of-N unchanged. |
 | `render.py` | Unchanged; `uv run --script render.py` regenerates all four PNGs. |
 
-All under `/home/max/repos/github/MaxWolf-01/agents-one-flow/agent/show/one-flow/`.
-
 ## Sources used
 
 The round-7 spec (`agent/tickets/one-flow/spec.md`) for every claim on the "one flow" side; the orient, dispatch, code-review, prototype and grilling skills for the "today" side.
 
 ## Not done
 
-Nothing left out. The `YOU` chips mark exactly the four stations the spec names; the spec gate chip the earlier figure carried is gone.
+Nothing left out. Two claims here did not survive the whole-feature review: the `YOU` chips mark two of the spec's four stations rather than all four, and the orchestrator bar said what needs a ruling is never asked in chat. Both are corrected in the figure.

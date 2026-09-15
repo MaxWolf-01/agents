@@ -1,13 +1,17 @@
 PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
+HOOKS := mx/hooks/hooks.json
 
 .PHONY: check test version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
 	@jq -e . $(MARKETPLACE) >/dev/null
+	@jq -e . $(HOOKS) >/dev/null
+	@jq -r '.hooks[][].hooks[].command' $(HOOKS) | tr -d '"' | sed 's|$${CLAUDE_PLUGIN_ROOT}|mx|' | \
+	  while read -r c; do [ -x "$$c" ] || { echo "$(HOOKS): $$c is not an executable file"; exit 1; }; done
 	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
-	@echo "manifests parse, bin/ answers --help"
+	@echo "manifests parse, hooks point at executables, bin/ answers --help"
 
 test:
 	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest mx/ -p no:cacheprovider

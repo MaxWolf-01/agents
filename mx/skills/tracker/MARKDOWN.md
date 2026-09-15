@@ -51,7 +51,7 @@ A superseded file (`/mx:tracker`, Supersede) is either **tombstoned** (one line 
 
 Set `status: done` when a ticket completes. Retire the files once the work has shipped:
 
-- **Standalone ticket**: `git rm agent/tickets/<slug>.md`, in the same commit as the work it describes.
+- **Standalone ticket**: `git rm agent/tickets/<slug>.md`, as its own commit once its build has merged into the integration branch. The work arrives as a `--no-ff` merge of its ticket branch and `dispatch review` writes the ticket's range after that, so no commit of the work is left to carry the removal.
 - **Feature**: `git rm -r agent/tickets/<feature-slug>/`, once the whole feature has shipped and every proposed ticket in it is ruled; an opened one that outlives the feature moves to a standalone ticket first.
 
 Git history preserves both: `git log --diff-filter=D -- agent/tickets` finds retired work. When the repo doesn't track `agent/tickets/`, git has nothing to recover from: move the file into `agent/tickets/done/` instead.

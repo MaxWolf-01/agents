@@ -6,6 +6,11 @@ diff: [a9117ac7a51491b2ba3f5109064acf744f6d95b5..24aa5af2517f13f482a9351ff8941d0
 
 # A standalone ticket is dispatched like a feature's
 
+> The host half of this ticket is superseded as of 2026-09-15 by [08-host-per-spawn](08-host-per-spawn.md):
+> `dispatch setup`, the `dispatch.*` git config and the once-per-repo host record are gone, and a spawn names
+> its host. Criteria 1 and 2 and the demo below are what they were when this slice landed; the standalone
+> branching they also cover is current. Kept as the reasoning trail.
+
 ## What to build
 
 A ticket with no spec, `agent/tickets/<slug>.md`, is worked by the same dispatch scripts as a feature's tickets: same host selection from the repo's setup, same pane, worklog, stop and resume, same fetch and review. What differs is only the branching: its ticket branch cuts from and merges into the repo's integration branch, there is no feature worktree and no feature branch, and its needs-human entries live in `agent/tickets/needs-human.md`. The host setup (the bare repo on the host, the host record) happens once per repo and is reused by every feature and every standalone ticket; a session that files a standalone ticket dispatches it from the checkout it is in, claiming by committing the status flip on the integration branch, and a collision between two sessions is an ordinary one-line conflict.
@@ -16,8 +21,8 @@ A standalone ticket built while `proposed` has no feature branch to wait on, so 
 
 ## Acceptance criteria
 
-- [x] From a checkout on the integration branch, `dispatch setup`, `claim`, `prompt`, `ctl spawn`, `wait`, `fetch` and `review` work on `agent/tickets/<slug>.md` with no feature directory, and the review page lands at `agent/diffviews/<slug>.html` where the board already looks for it.
-- [x] The host setup is recorded once per repo and reused; a second feature or standalone ticket needs no new setup.
+- [x] From a checkout on the integration branch, `dispatch setup` (superseded, see the note above), `claim`, `prompt`, `ctl spawn`, `wait`, `fetch` and `review` work on `agent/tickets/<slug>.md` with no feature directory, and the review page lands at `agent/diffviews/<slug>.html` where the board already looks for it.
+- [x] The host setup is recorded once per repo and reused; a second feature or standalone ticket needs no new setup. (superseded 2026-09-15: the host is named per spawn and nothing records it)
 - [x] The dispatch skill's setup and tick sections cover the standalone case in the same sentences as the feature case.
 - [x] Property, reviewed: one worker contract; a worker's obligations do not depend on what spawned it or where it runs.
 - [x] Property, reviewed: ticketed work always appears on the board.
@@ -99,7 +104,7 @@ To re-drive, from any checkout of this branch: `bash` the script in `/tmp/drive.
 **Assumptions**
 
 - A1 `mx/skills/dispatch/dispatch:91`: the case is read off the branch (a branch naming a ticket directory is a feature) rather than from a flag or a recorded mode. The ticket asks for one set of commands; a flag would be a second one. The cost is that a feature branch whose ticket directory does not exist yet reads as standalone, which now fails loudly on the first `claim` naming the path it tried.
-- A2 `mx/skills/dispatch/dispatch:191`: "recorded once per repo" is the host, the bare repo and the setup command (git config `dispatch.*`); the scratch dir stays per branch, because its per-feature isolation is what keeps one dispatcher's runner from replacing another's under running workers. So a second feature branch runs `dispatch setup` with no arguments, and a second standalone ticket runs nothing. See `[D1]`.
+- A2 `mx/skills/dispatch/dispatch:191`: (amended 2026-09-15, ticket 08 removed the recorded host, so only the scratch-dir half of this call is live and there is nothing left to rule on) "recorded once per repo" was the host, the bare repo and the setup command (git config `dispatch.*`); the scratch dir stays per branch, because its per-feature isolation is what keeps one dispatcher's runner from replacing another's under running workers. So a second feature branch runs `dispatch setup` with no arguments, and a second standalone ticket runs nothing. See `[D1]`.
 - A3 `mx/skills/dispatch/dispatch:252`: a standalone ticket branch is `ticket/<integration-branch>/<slug>`, e.g. `ticket/main/warm-preset`, derived by the same rule as a feature's rather than given a shape of its own.
 - A4 `mx/skills/dispatch/dispatch:212`: commits dispatch makes on the integration branch carry no prefix (`claim warm-preset`), where a feature's carry the feature's (`one-flow: claim 05-...`). A "main: " prefix would say nothing.
 - A5 `mx/skills/dispatch/dispatch:311`: the `diff:` range lands when the branch merges, not when the page renders. Found by driving it: the pre-merge write put `diff:` directly under `status:` in a frontmatter with nothing else in it, and every accept-merge then conflicted on the ticket file. This changes the feature path too, where the range is written at the same moment as before (`review` runs after the merge there).

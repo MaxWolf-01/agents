@@ -4,7 +4,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/one-flow.png">
-  <img alt="One flow in three rows, by how much of the design lands on disk: a dictated change with no brief and no worker, a standalone ticket built by a fresh worker, and a spec sliced into tickets and dispatched; the build starts once no question is left for you and never waits for you to ratify a call, and four orange chips mark the only places your attention is asked for" src="assets/one-flow-light.png">
+  <img alt="One flow in three rows, by how much of the design lands on disk: a dictated change with no brief and no worker, a standalone ticket built by a fresh worker, and a spec sliced into tickets and dispatched; the build starts once no question is left for you and never waits for you to ratify a call, and orange chips mark where your attention is asked for: a round's open questions, and the demo and review page of every landing" src="assets/one-flow-light.png">
 </picture>
 
 <details>
@@ -121,7 +121,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap` | session continuity & status |
 | `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, CLAUDE.md, specs, tickets) / artifact text read cold (docs, comments, UI copy) |
 
-Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `project-setup`, `ml`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `gh-stack`, `overview`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `uv-script`, `project-setup`, `ml`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `pr-tldr`, `gh-stack`, `expert`, `changelog`, `dependabot-triage`.
 
 ---
 

@@ -112,8 +112,10 @@ def review(message: str) -> list[dict]:
 
 def main() -> None:
     # CHAT_REVIEW_NESTED marks the reviewer's own session, which loads no plugin and so should
-    # never reach this hook; it is what keeps a mistake there from recursing.
+    # never reach this hook; it is what keeps a mistake there from recursing. Logged like the
+    # rest, because reaching it means a reviewer session is loading the plugin after all.
     if os.environ.get("CHAT_REVIEW_NESTED"):
+        log(decision="skip", why="nested")
         return
     if os.environ.get("CHAT_REVIEW_OFF"):
         log(decision="skip", why="off")
