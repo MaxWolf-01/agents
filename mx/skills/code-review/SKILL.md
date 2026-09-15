@@ -48,7 +48,7 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`."* The reports stay there: the range names them, and whoever reads the review later reads the files, not a chat message.
+Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message.
 
 Then the discipline line: *"Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
@@ -60,7 +60,7 @@ For the **Correctness brief**, include:
 For the **Standards brief**, include:
 
 - The full diff command and commit list.
-- The standards-source files from step 3 (repo docs, `SMELLS.md`, the skill files, and `CATALOGUE.md`), all by absolute path.
+- The standards-source files from step 3, `CATALOGUE.md` among them, all by absolute path.
 - The brief: "Read every standards-source file before judging. Then read the standards the repo never wrote down, which are the code itself: for each kind of surface the diff adds or extends (a view, a command, an error path, a module API, a test file), find the two nearest existing instances of that same kind and read them in full. They sit outside the diff and outside its call graph, so find them by kind, not by reference. Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any smell from SMELLS.md or rule violation from the skill files: name it and quote the hunk. A finding that the diff diverges from an existing convention cites two instances of that convention by file:line and states the answer they share; without them it is not a finding. Distinguish hard violations from judgement calls per SMELLS.md's binding rules. Skip anything tooling enforces."
 
 For the **Spec brief**, include:
@@ -77,17 +77,19 @@ For the **Tests brief**, spawned only when the diff touches test files, include:
 
 ### 5. Aggregate
 
-The caller aggregates: the session or worker that owns the branch, once every axis has returned. Nothing about findings goes out before that, no per-axis narration as reviewers land. The reports stay on disk, and the range in their path is what a later reader matches them to.
+The caller aggregates: the session or worker that owns the branch, once every axis has returned. Nothing about findings goes out before that, no per-axis narration as reviewers land. Confirm each expected report file is on disk before reading: an absent report is an axis to re-run, never a clean axis.
 
-Read them per axis and give every finding one of three dispositions:
+Read the reports per axis and give every finding one of three dispositions:
 
 - **Fixed**: a follow-up commit carrying `Workflow-stage: review`, never an amend, so the commit's diff is the review's measurable effect.
-- **Filed**: a finding worth acting on but too large for that commit becomes a proposed ticket (`/mx:tracker`).
-- **Declined**: an anchored entry in the `Assumptions` block of the ticket's closing comment (`` - A7 `src/importer.py:118`: the finding, and why it stands ``), so the ticket's review page projects it onto the line it concerns, which is where the user rules on it. A review with no ticket behind it, a bare "review this branch" where nothing is fixed, anchors its findings as notes on the review page instead.
+- **Filed**: worth acting on, too large for that commit, so it becomes a proposed ticket (`/mx:tracker`).
+- **Declined**: the finding's premise is wrong, or the fix costs more than the finding is worth, and the entry says which. It lands anchored in the `Assumptions` block of the ticket's closing comment (`` - A7 `src/importer.py:118`: the finding, and why it stands ``; ids continue from the highest already in the ticket, per `/mx:implement`), so the ticket's review page projects it onto the line it concerns, which is where the user rules on it.
 
-The closing comment then carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
+Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.
 
-What reaches the user, from every caller: the review page; the calls only they can make (declined findings, assumptions, open questions); the next steps and blockers. Findings the review already fixed, per-axis summaries and verification lists stay in the reports. In the landing message that means the review page beside the demo, the user's calls under "I need from you" tagged `[Dn]`, and the range, the report paths and what was fixed under "Details, if you want them".
+Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
+
+What reaches the user, from every caller: the review page; the calls only they can make (declined findings, assumptions, open questions); the next steps and blockers. Findings the review already fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree. In the landing message that means the review page beside the demo, the user's calls under "I need from you" tagged `[Dn]`, and the range and the finding index under "Details, if you want them".
 
 A clean diff gets one line: the range, and that the axes came back empty.
 
