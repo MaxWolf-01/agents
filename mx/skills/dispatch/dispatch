@@ -279,7 +279,7 @@ range_of() {
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: assumption bullets `- A3 \`path:118\`: text` become notes, each
 # `Addressed: C1, C4` line lists resolved comments. A duplicate id fails the
-# render, as /mx:implement promises the worker it will. The user's own comments
+# render, as the worker prompt promises the worker it will. The user's own comments
 # live in diffview's state file beside the page, which a render never touches.
 notes_of() {
     jq -R -s '

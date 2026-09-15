@@ -32,7 +32,7 @@ fi
 # claude here (someone attaching to try something).
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
-# truncates the code review closing /mx:implement.
+# truncates the code review that closes a worker's contract.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.

@@ -18,9 +18,10 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, to-tickets, implement, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
+Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, to-tickets, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
 
 Dissolved:
+- implement → the worker contract in `mx/skills/dispatch/worker-prompt.md`, which every ticket worker starts with; upstream changes to implement's process map onto that prompt, its review hand-off onto code-review.
 - to-spec → grilling writes the spec round by round; upstream changes to to-spec's template map onto grilling's `SPEC-FORMAT.md`, changes to its process onto grilling's gate.
 - wayfinder → grilling spans sessions through decision tickets on the tracker; upstream changes to wayfinder's map body map onto grilling's `SPEC-FORMAT.md`, to its ticket types onto the tracker skill, to its charting or work-through process onto grilling's Across sessions.
 

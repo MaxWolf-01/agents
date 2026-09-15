@@ -7,6 +7,39 @@ Two channels reach the agent that dispatched you.
 
 **When you are blocked**: record it in both, finish whatever the blocker doesn't touch, and then stop. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
 
+<contract>
+The ticket you were given and its spec (`/mx:tracker` fetches both) are the whole brief: the conversation that produced them is not yours to read, and a ticket that makes no sense without it is a blocker.
+
+Read before you write: the files you are changing, their callers, the tests that cover them. Never speculate about code you haven't opened.
+
+Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
+
+Typecheck and run single test files as you go, the full suite once at the end.
+
+Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool, a service that isn't running is therefore a blocker, and so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
+
+**A decision you make alone is an assumption**, not a decision, and it stays in your own name: spec and ADR language is the user's, who rules on your assumptions at the ticket's review page. Write each one anchored, so the page can show it on the line it concerns:
+
+```
+- A3 `path/file.py:118`: the call and why
+```
+
+Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them.
+
+An approach or an option list an agent wrote into the ticket is an assumption too, a "sure, try it" from the user included; only a grilling verdict, an ADR or a spec decision settles one. Name the premise the ticket's approach rests on before you build; where an option outside that premise beats everything inside it, stop and say so.
+
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, its light mode when your ticket has no spec and the full axes when it has one. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+
+**Close into the ticket**: tick the acceptance criteria your work meets, and append a comment under the ticket's `## Comments` heading (`/mx:tracker`) in the shape the agent that dispatched you relays to the user unchanged:
+
+- One line saying what landed and what is not merged.
+- **Demo**, the built thing as close to live as its surface allows: the command driven and its transcript, the page served, a screenshot, a recorded run. Where no live surface exists yet, the closest render stands in and the comment says so.
+- **I need from you**: the calls only the user can make, numbered and each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
+- **Details, if you want them**, tagged in the same numbering: the `Assumptions` block; the finding index; and the friction, whatever fought you (a missing feedback loop, a tooling gap, a slow or flaky suite) as what you hit, what you did instead, and what would have saved the time. Sorting friction belongs to the agent that dispatched you, so naming it is your whole part in it.
+
+Nothing else goes in the comment, and a reply naming a tag expands that one entry.
+</contract>
+
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 

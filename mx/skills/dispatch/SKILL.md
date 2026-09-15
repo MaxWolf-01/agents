@@ -5,7 +5,7 @@ description: "Work a feature's tickets, or a standalone ticket: one orchestrator
 
 # Dispatch
 
-You are the **single orchestrator** of one feature's ticket DAG: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until no open tickets remain. `/mx:implement` works one ticket; dispatch orchestrates N implements. You are the sole claim-writer, the only holder of the feature branch, and the only judge of done.
+You are the **single orchestrator** of one feature's ticket DAG: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until no open tickets remain. One worker works one ticket; dispatch orchestrates N workers. You are the sole claim-writer, the only holder of the feature branch, and the only judge of done.
 
 Dispatch runs downstream of `/mx:to-tickets` and is the one way tickets are worked, at any size: a feature with tickets is dispatched, a feature without them is built by the session that grilled it. The `blocked-by` DAG is what makes independence explicit and human-approved.
 
@@ -85,10 +85,10 @@ Otherwise the watchers are your wake signal: `dispatch wait` returns within seco
 
 ## Worker contract
 
-The worker prompt carries exactly this contract, concretized per ticket; a standalone ticket's path is `agent/tickets/<slug>.md`. A worker's obligations are the same whatever spawned it, so nothing else about the dispatch reaches the prompt:
+The contract itself is [`worker-prompt.md`](worker-prompt.md), which the runner appends to every worker's system prompt. What you write is the ticket, and nothing else about the dispatch: a worker's obligations are the same whatever spawned it. A standalone ticket's path is `agent/tickets/<slug>.md`.
 
 ```
-Load /mx:implement and work the ticket at agent/tickets/<feature>/<NN>-<slug>.md.
+Work the ticket at agent/tickets/<feature>/<NN>-<slug>.md.
 You own only this ticket and this worktree; the branch it was cut from and other tickets belong to the orchestrator.
 Your final act, once the implementation is committed and verified: set `status: done` in the ticket's frontmatter and commit.
 ```
