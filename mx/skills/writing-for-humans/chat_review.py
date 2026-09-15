@@ -120,7 +120,7 @@ def feedback(hits: list[dict], rules: dict[str, str]) -> tuple[str, list[str]]:
     ]
     explained = [i for i in dict.fromkeys(map(rule_id, hits)) if i in rules]
     head = [f"An automated review by {MODEL} flagged these passages of your last message against the chat prose rules:", *flagged]
-    tail = ["", "Revise the message where the hits hold."]
+    tail = ["", "Revise the message where the hits hold. Reply with the revised message alone."]
     full = "\n".join(head + (["", "The rules they cite:", *(rules[i] for i in explained)] if explained else []) + tail)
     if len(full) <= FEEDBACK_LIMIT:
         return full, explained
