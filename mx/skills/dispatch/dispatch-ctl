@@ -227,8 +227,8 @@ spawn() {
     # `=` everywhere a target is named: without it tmux falls back to prefix and
     # pattern matching, so a new-session that failed would type this line into
     # whichever session matched, one another worker holds included.
-    run tmux send-keys -t "=$name" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $run_id $session_id"
-    run tmux send-keys -t "=$name" Enter
+    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $ticket $model $run_id $session_id"
+    run tmux send-keys -t "=$name:" Enter
 
     # The runner creates the log within its first seconds; its absence means the
     # command never ran: wrong pane, dead shell, bad path.
@@ -237,7 +237,7 @@ spawn() {
         sleep 0.5
     done
     if [ ! -f "$here/$run_id.log" ]; then
-        tmux capture-pane -p -J -t "=$name" -S -15 >&2
+        tmux capture-pane -p -J -t "=$name:" -S -15 >&2
         die "no $here/$run_id.log after 15s; the pane's last lines are above"
     fi
 
@@ -356,8 +356,8 @@ fuzz_start() {
     ! tmux has-session -t "=$name" 2>/dev/null || die "$name is already fuzzing; dispatch-ctl fuzz stop ends it"
     [ -d "$worktree" ] || checkout
     run tmux new-session -d -s "$name" -c "$worktree"
-    run tmux send-keys -t "=$name" -l "make fuzz"
-    run tmux send-keys -t "=$name" Enter
+    run tmux send-keys -t "=$name:" -l "make fuzz"
+    run tmux send-keys -t "=$name:" Enter
     echo "fuzzing $name  worktree=$worktree  (tmux attach -t $name)"
 }
 
