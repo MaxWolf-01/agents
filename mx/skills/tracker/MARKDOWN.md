@@ -7,7 +7,7 @@ Tickets live as markdown files in `agent/tickets/`.
 - **Feature**: one directory per feature, `agent/tickets/<feature-slug>/`
   - `spec.md`: the work order for the whole feature, written round by round by `/mx:grilling`; frontmatter `status: draft | confirmed`, and a draft is never read as settled truth
   - `NN-<slug>.md`: tickets, build and decision alike (`/mx:tracker`, Decision tickets), numbered from `01`; written by `/mx:to-tickets`, or by any session that files a question. A feature built in the session that grilled it has none
-- **Standalone ticket**: a single file `agent/tickets/<slug>.md`, no spec: a build ticket for work that needs no design round, or a decision ticket filed for later. One that gets grilled is absorbed into its feature directory (see `/mx:grilling`).
+- **Standalone ticket**: a single file `agent/tickets/<slug>.md`, no spec: a build ticket for work that needs no design round, or a decision ticket filed for later. It is committed on the tracker repo's integration branch from the main checkout, the one file a session writes outside its worktree: every session and the board read standalone tickets from there, while a feature's own tickets ride the feature branch. One that gets grilled is absorbed into its feature directory (see `/mx:grilling`).
 - **One tracker directory.** A project whose tracker sits at `agent/tasks/` is moved before anything is filed: `git mv agent/tasks agent/tickets`, as its own commit, repointing the project's own references (CLAUDE.md, scripts).
 - **Numbering**: `NN` is an id, unique within its directory. Assign the next one by scanning the directory for the highest existing number and incrementing, never from an in-context picture of the board, which parallel sessions leave stale.
 
@@ -38,7 +38,7 @@ diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): every feature with its spec status, dependency graph and ticket rows, the standalone tickets, the needs-human queue, the review-page links; proposed tickets sit in every view as ordinary nodes and rows in their own colour, so they are triaged from the graph. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what it reads and which checkout's copy it shows.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): every ticket as a row in the group of its state (needs me, frontier, claimed, blocked, proposed, done), tagged with its feature and linking its review page; feature chips that hide a feature; a filter; and beside the rows the dependency graph of the feature under the cursor, or the whole tracker's, edges only. A proposed ticket has its own group and colour, so it is triaged from its row and stands in the graph once something waits on it. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what it reads and which checkout's copy it shows.
 
 The human runs `board`; the tab then follows every tracker change on its own. A session renders once, without opening a tab, after it changes tracker state (`board --no-watch --no-open`), so the page on disk is current for whoever opens it next.
 
