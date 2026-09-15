@@ -11,7 +11,7 @@ page (groups, rows, the attributes the page's script matches against the graph s
 oracle is the tracker's MARKDOWN.md and the board's --help: the frontier is open, unblocked,
 unclaimed; a proposed ticket is not open whatever blocks it; a reference whose file no longer
 exists counts as done; a graph draws only tickets with an edge; a standalone ticket a branch
-added is shown, one it merely inherited is not; a needs-human bullet's detail continues on
+added is shown, one it merely inherited is not; the needs-human.md beside a set of tickets is their queue, not a ticket; a needs-human bullet's detail continues on
 indented lines.
 """
 
@@ -35,6 +35,7 @@ from board import (
     load_features,
     load_needs_human,
     load_standalone,
+    render,
     render_page,
     tracker_roots,
 )
@@ -59,7 +60,7 @@ def tracker(tmp_path: Path) -> Path:
     feature = root / FEAT
     feature.mkdir(parents=True)
     (feature / "spec.md").write_text("---\nstatus: confirmed\n---\n\n# Feat\n")
-    (feature / "needs-human.md").write_text("---\nworker-host: agent@pc\n---\n- debrief :: the suite is slow, see 03\n")
+    (feature / "needs-human.md").write_text("- debrief :: the suite is slow, see 03\n")
     ticket(feature / "01-first.md", "done")
     ticket(feature / "02-second.md", "open")
     ticket(feature / "03-faster-suite.md", "proposed", blocked_by=["02"])
@@ -85,7 +86,7 @@ def by_num(feature):
 
 def page_of(root: Path) -> str:
     features, standalone = load(root)
-    return render_page("demo", features, standalone, log="", stamp="s", stamp_src="s.js")
+    return render_page("demo", features, standalone, [], log="", stamp="s", stamp_src="s.js")
 
 
 # ---- loader ---------------------------------------------------------------
@@ -127,15 +128,12 @@ def test_a_status_the_tracker_does_not_know_is_refused_with_the_file_named(track
 def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     queue = tmp_path / "needs-human.md"
     queue.write_text(
-        "---\nworker-host: agent@pc\n---\n\n"
         "- debrief :: **fixed** a1b2c3 pins the averaging rule.\n"
         "  **proposed** 03, 04.\n\n"
         "  **left** two case-flip survivors, the value is case-insensitive.\n"
         "- Which colour :: the prototype at agent/prototypes/colour\n"
     )
-    entries, host = load_needs_human(queue)
-    assert host == "agent@pc"
-    assert entries == [
+    assert load_needs_human(queue) == [
         "debrief :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
         "Which colour :: the prototype at agent/prototypes/colour",
     ]
@@ -165,7 +163,7 @@ def test_a_feature_whose_tickets_wait_on_nothing_has_no_graph(tmp_path: Path) ->
     (feature,), standalone = load(root)
     assert feature_graph(feature) is None
     assert board_graph([feature], standalone) is None
-    page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
     assert "nothing in solo waits on anything" in page
     assert "nothing waits on anything" in page
 
@@ -231,7 +229,7 @@ def test_the_page_groups_rows_by_state_needs_me_first_and_done_folded(tracker: P
 def test_a_feature_chip_carries_the_counts_as_its_tooltip(tracker: Path) -> None:
     page = page_of(tracker)
     assert (
-        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/5 done · 2 open · 2 blocked · 1 proposed · 1 need me · workers on agent@pc">'
+        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/5 done · 2 open · 2 blocked · 1 proposed · 1 need me">'
         f'<i class="dot"></i>{FEAT} <span class="dim">1/5</span></button>' in page
     )
     assert 'standalone <span class="dim">3</span>' in page
@@ -242,7 +240,7 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     String.includes, and marks the node T_f_<slug>_<num> (K_b_<slug> for a standalone ticket)
     in the graph container of the row's feature."""
     (feature,), standalone = load(tracker)
-    page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
     assert page.count(f'data-feature="{FEAT}"') == 1 + len(feature.tickets) + 1 + 1  # chip, rows, needs row, graph container
     rows = re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" data-feature="([\w-]+)" data-num="([^"]+)" data-search="([^"]*)"', page)
     assert len(rows) == len(feature.tickets) + len(standalone) + 1
@@ -320,7 +318,7 @@ def test_a_standalone_ticket_a_branch_added_is_shown_and_one_it_inherited_is_not
     assert {k.slug: k.status for k in standalone}["loose-idea"] == "proposed"
     features = load_features(tracker, roots.overrides, dv)
     assert by_num(features[0])["02"].status == "claimed"  # the feature directory is read from the worktree
-    page = render_page("demo", features, standalone, log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", features, standalone, [], log="", stamp="s", stamp_src="s.js")
     assert f'title="filed on branch {FEAT}, not on the main branch">on {FEAT}</span>' in page
 
 
@@ -348,9 +346,53 @@ def test_a_tracker_the_main_checkout_does_not_have_yet_renders_from_the_worktree
 
 def test_the_stamp_changes_with_a_standalone_ticket_source(tracker: Path) -> None:
     features, standalone = load(tracker)
-    before = content_stamp("demo", features, standalone, "")
+    before = content_stamp("demo", features, standalone, [], "")
     standalone[0].source = "some-branch"
-    assert content_stamp("demo", features, standalone, "") != before
+    assert content_stamp("demo", features, standalone, [], "") != before
+
+
+# ---- queues ---------------------------------------------------------------
+
+
+def test_the_standalone_queue_is_the_tracker_roots_own_and_not_a_ticket(tracker: Path) -> None:
+    (tracker / "needs-human.md").write_text("- rule on loose-idea :: built while proposed; its page is agent/diffviews/loose-idea.html\n")
+    features, standalone = load(tracker)
+    assert "needs-human" not in {k.slug for k in standalone}
+    queue = load_needs_human(tracker / "needs-human.md")
+    page = render_page("demo", features, standalone, queue, log="", stamp="s", stamp_src="s.js")
+    assert 'id="needs-standalone-0" data-feature="standalone"' in page
+    assert f'id="needs-{FEAT}-0" data-feature="{FEAT}"' in page
+
+
+def test_a_queue_entry_outliving_its_ticket_still_shows_with_a_chip_to_toggle_it(tracker: Path) -> None:
+    # the ruling on the last standalone ticket was `reject`, which deletes the file
+    features, _ = load(tracker)
+    page = render_page("demo", features, [], ["rule on loose-idea :: rejected"], log="", stamp="s", stamp_src="s.js")
+    assert 'id="needs-standalone-0" data-feature="standalone"' in page
+    assert '<button class="featchip" data-feature="standalone"' in page
+
+
+def test_the_stamp_the_open_tab_polls_moves_when_the_queue_does(tracker: Path) -> None:
+    features, standalone = load(tracker)
+    assert content_stamp("demo", features, standalone, ["an entry"], "") != content_stamp("demo", features, standalone, [], "")
+
+
+def test_render_reads_the_queue_beside_the_standalone_tickets(repo: Path, tracker: Path, tmp_path: Path) -> None:
+    (tracker / "needs-human.md").write_text("- rule on loose-idea :: built while proposed\n")
+    out = tmp_path / "out" / "board.html"
+    render(tracker_roots(tracker), repo, out)
+    assert "rule on loose-idea" in out.read_text()
+
+
+def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(tracker: Path) -> None:
+    """The live case: a proposal an agent filed with nothing blocking it (`/mx:tracker`)."""
+    ticket(tracker / FEAT / "07-render-check.md", "proposed")
+    (feature,), standalone = load(tracker)
+    assert by_num(feature)["07"].status == "proposed"
+    assert by_num(feature)["07"].blocked_by == []
+    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
+    proposed = page.split('id="grp-proposed"')[1].split('class="grp" id="grp-')[0]
+    assert f'id="t-{FEAT}-07"' in proposed
 
 
 if __name__ == "__main__":

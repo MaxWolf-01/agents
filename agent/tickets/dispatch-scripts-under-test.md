@@ -1,0 +1,22 @@
+---
+status: proposed
+---
+
+# The dispatch scripts get a test, and the demo becomes one
+
+Cut from the whole-feature review of one-flow (Tests axis, D6 and D7): the feature rewrote 424 lines of `dispatch` and `dispatch-ctl` and `make test` reaches none of it. The one driver is `agent/show/host-per-spawn/demo.sh`, which nothing runs automatically, which stubs the runner rather than the harness, and which therefore checks the shipped `run-worker.sh` against a copy of itself. The whole-feature pass then introduced a variable collision in `copy_to` that only a demo run caught, by hand.
+
+## What to build
+
+Three rungs, cheapest first, and the ticket can stop at any of them where the next costs more than it returns.
+
+1. `make check` runs `demo.sh` behind a `command -v tmux` guard, so a machine without tmux skips it with a line saying so.
+2. A test over the pure text functions of both scripts, each of which is text in and text out with its oracle in the script's own header comment: `short`, `scratch_dir`, `host_of`, `hosts_used`, `forget_run`, `range_of`, `notes_of`. `range_of` is the sharpest: it writes a range into a ticket's `diff:` frontmatter and commits it, so `merge^1` becoming `merge^2` puts a permanently wrong range on a review page with nothing to notice.
+3. The demo stubs `claude` on `PATH` instead of stubbing the runner, so the shipped `run-worker.sh` is what runs and its log-then-status contract is what gets checked; and `ssh localhost` stands in as the second host, which turns `push_to`'s push arm, `stage`'s scp arm and `dispatch push`'s partial-failure exit status from unexercised into exercised on one machine. Note that a tmux pane inherits the tmux server's environment rather than the client's, so a `PATH` stub needs checking against a server that is already running.
+
+## Acceptance criteria
+
+- [ ] `make check` runs the demo where tmux exists and says so where it does not.
+- [ ] Each text function has a test whose expectation comes from the script's header, and a mutation of that function fails it.
+- [ ] Whatever rung the ticket stops at, the closing comment names what stays unexercised and why.
+- [ ] Demo in the closing comment: the suite run, and one mutation per rung shown failing.

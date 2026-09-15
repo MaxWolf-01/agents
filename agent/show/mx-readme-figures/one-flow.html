@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx: one flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light dark;
+  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
+  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
+  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
+  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.10),rgba(240,138,89,.14));
+  --wash1:light-dark(rgba(45,49,66,.05),rgba(245,245,245,.06));
+  --wash2:light-dark(rgba(45,49,66,.09),rgba(245,245,245,.10));
+  --wash3:light-dark(rgba(45,49,66,.13),rgba(245,245,245,.14));
+  --wash4:light-dark(rgba(45,49,66,.17),rgba(245,245,245,.18));
+  --wash5:light-dark(rgba(45,49,66,.21),rgba(245,245,245,.22));
+  --wash-bar:light-dark(rgba(45,49,66,.05),rgba(245,245,245,.05));
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:760px; line-height:1.5; margin:0 0 24px;}
+svg{display:block; width:100%; height:auto;}
+.chev1{fill:var(--wash1);} .chev2{fill:var(--wash2);} .chev3{fill:var(--wash3);} .chev4{fill:var(--wash4);} .chev5{fill:var(--wash5);}
+.rule{stroke:var(--rule); stroke-width:1;}
+.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.card-test{fill:var(--node); stroke:var(--ink); stroke-width:1.6;}
+.card-ghost{fill:var(--paper2); stroke:var(--rule); stroke-width:1;}
+.bar{fill:var(--wash-bar); stroke:var(--muted); stroke-width:.8;}
+.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.m-muted{fill:var(--muted);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.cmd{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.q{font:500 10px 'Geist',sans-serif; fill:var(--ink);}
+.eb{font:500 8px 'Geist Mono',monospace; letter-spacing:.18em; fill:var(--muted);}
+.al{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
+.dial{font:600 10px 'Geist',sans-serif;}
+.you-box{fill:var(--accent-tint); stroke:var(--accent); stroke-width:.8;}
+.you-icon{fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+.you-text{font:600 7px 'Geist Mono',monospace; letter-spacing:.08em; fill:var(--accent);}
+.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <p class="eyebrow">mx workflow &middot; one flow</p>
+  <button class="scheme"></button>
+</header>
+<h1>The mx flow, from intent to landing</h1>
+<p class="dek">Every piece of work enters as an intent in chat and one question routes it into one of three rows: nothing to decide, a ticket, a spec. A build waits on its own branch for the user's ruling. The orange chips mark where the user's attention is asked for.</p>
+
+<svg viewBox="0 0 1200 724" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
+    </marker>
+    <g id="you">
+      <rect class="you-box" x="0" y="0" width="48" height="16" rx="4"/>
+      <g class="you-icon" transform="translate(5,2) scale(0.5)">
+        <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/>
+        <path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>
+      </g>
+      <text class="you-text" x="21" y="11.5">YOU</text>
+    </g>
+  </defs>
+
+  <!-- phase banner: the columns -->
+  <polygon class="chev1" points="64,4 332,4 344,18 332,32 64,32"/>
+  <polygon class="chev2" points="352,4 532,4 544,18 532,32 352,32 364,18"/>
+  <polygon class="chev3" points="552,4 732,4 744,18 732,32 552,32 564,18"/>
+  <polygon class="chev4" points="752,4 932,4 944,18 932,32 752,32 764,18"/>
+  <polygon class="chev5" points="952,4 1152,4 1164,18 1152,32 952,32 964,18"/>
+
+  <!-- row rules -->
+  <line class="rule" x1="64" y1="56" x2="1164" y2="56"/>
+  <line class="rule" x1="344" y1="200" x2="1164" y2="200"/>
+  <line class="rule" x1="344" y1="344" x2="1164" y2="344"/>
+  <line class="rule" x1="64" y1="560" x2="1164" y2="560"/>
+
+  <!-- connectors -->
+  <path class="flow" d="M 164,176 V 240" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 252,260 H 296 Q 304,260 304,252 V 144 Q 304,136 312,136 H 356" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 252,280 H 356" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 252,300 H 296 Q 304,300 304,308 V 416 Q 304,424 312,424 H 356" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 532,136 H 556" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 732,136 H 756" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 932,136 H 968" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 532,280 H 556" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 732,280 H 756" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 932,280 H 968" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 532,424 H 556" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 732,424 H 756" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 932,424 H 968" marker-end="url(#arrow)"/>
+
+  <!-- nodes: chat column -->
+  <rect class="card" x="76" y="96" width="176" height="80" rx="6"/>
+  <rect class="card-test" x="76" y="240" width="176" height="80" rx="6"/>
+  <rect class="bar" x="76" y="340" width="176" height="52" rx="4"/>
+  <rect class="bar" x="76" y="404" width="176" height="64" rx="4"/>
+
+  <!-- nodes: row 1, no brief -->
+  <rect class="card-ghost" x="356" y="96" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="556" y="96" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="756" y="96" width="176" height="80" rx="6"/>
+  <rect class="card" x="968" y="96" width="188" height="80" rx="6"/>
+
+  <!-- nodes: row 2, a ticket -->
+  <rect class="card" x="356" y="240" width="176" height="80" rx="6"/>
+  <rect class="card" x="556" y="240" width="176" height="80" rx="6"/>
+  <rect class="card" x="756" y="240" width="176" height="80" rx="6"/>
+  <rect class="card" x="968" y="240" width="188" height="80" rx="6"/>
+
+  <!-- nodes: row 3, a spec -->
+  <rect class="card" x="356" y="384" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="556" y="368" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="556" y="376" width="176" height="80" rx="6"/>
+  <rect class="card" x="556" y="384" width="176" height="80" rx="6"/>
+  <rect class="card" x="756" y="384" width="176" height="80" rx="6"/>
+  <rect class="card" x="968" y="384" width="188" height="80" rx="6"/>
+  <rect class="bar" x="556" y="480" width="376" height="60" rx="4"/>
+
+  <!-- dials strip -->
+  <rect class="bar" x="76" y="600" width="176" height="44" rx="4"/>
+  <rect class="bar" x="356" y="600" width="176" height="44" rx="4"/>
+  <rect class="bar" x="556" y="600" width="176" height="44" rx="4"/>
+  <rect class="bar" x="756" y="600" width="176" height="44" rx="4"/>
+
+  <!-- labels: banner -->
+  <text class="eb" x="204" y="22" text-anchor="middle">CHAT</text>
+  <text class="eb" x="448" y="22" text-anchor="middle">BRIEF</text>
+  <text class="eb" x="648" y="22" text-anchor="middle">WORKER</text>
+  <text class="eb" x="848" y="22" text-anchor="middle">REVIEW</text>
+  <text class="eb" x="1058" y="22" text-anchor="middle">LAND</text>
+
+  <!-- labels: row eyebrows -->
+  <text class="eb" x="356" y="84">NO: NOTHING TO DECIDE</text>
+  <text class="eb" x="356" y="228">YES, AND A TICKET SAYS IT ALL</text>
+  <text class="eb" x="356" y="372">YES, AND IT NEEDS A DOCUMENT</text>
+
+  <!-- labels: chat column -->
+  <text class="name" x="88" y="120">Intent in chat</text>
+  <text class="cmd" x="88" y="137">any size, any repo</text>
+  <text class="note" x="88" y="154">grilled as deep as it needs;</text>
+  <text class="note" x="88" y="167">open questions wait for you</text>
+  <use href="#you" x="196" y="104"/>
+
+  <text class="name" x="88" y="264">Loose, ticket or spec?</text>
+  <text class="q" x="88" y="282">Would a stranger need a brief</text>
+  <text class="q" x="88" y="295">to build this right?</text>
+  <text class="cmd" x="88" y="311">one decision, the agent's</text>
+
+  <text class="al" x="88" y="356">CHAT REVIEWER</text>
+  <text class="note" x="88" y="370">a small model reads every reply's prose</text>
+  <text class="note" x="88" y="383">for slop and tells; it is fixed in the turn</text>
+
+  <text class="al" x="88" y="420">SPECULATIVE BUILD</text>
+  <text class="note" x="88" y="434">starts once the agent has no question</text>
+  <text class="note" x="88" y="447">left for you; its calls build unratified</text>
+  <text class="note" x="88" y="460">you rule on the result, not the text</text>
+
+  <!-- labels: row 1 -->
+  <text class="name" x="368" y="120">No brief</text>
+  <text class="cmd" x="368" y="137">loose</text>
+  <text class="note" x="368" y="154">dictated or mechanical:</text>
+  <text class="note" x="368" y="167">a keybinding, a version bump</text>
+
+  <text class="name" x="568" y="120">This session</text>
+  <text class="cmd" x="568" y="137">no worker</text>
+  <text class="note" x="568" y="154">the chat is the context</text>
+  <text class="note" x="568" y="167">commits with the loose trailer</text>
+
+  <text class="name" x="768" y="120">No agent review</text>
+  <text class="cmd" x="768" y="137">nothing to find</text>
+  <text class="note" x="768" y="154">no judgment went in;</text>
+  <text class="note" x="768" y="167">the per-batch rule is gone</text>
+
+  <text class="name" x="980" y="120">Demo, review page</text>
+  <text class="cmd" x="980" y="137">the thing, then the diff</text>
+  <text class="note" x="980" y="154">you rule;</text>
+  <text class="note" x="980" y="167">then it merges</text>
+  <use href="#you" x="1104" y="104"/>
+
+  <!-- labels: row 2 -->
+  <text class="name" x="368" y="264">Standalone ticket</text>
+  <text class="cmd" x="368" y="281">agent/tickets/&lt;slug&gt;.md</text>
+  <text class="note" x="368" y="298">written cold, built at once</text>
+  <text class="note" x="368" y="311">on the board; you need not read it</text>
+
+  <text class="name" x="568" y="264">A fresh worker</text>
+  <text class="cmd" x="568" y="281">/mx:dispatch</text>
+  <text class="note" x="568" y="298">a fresh context window, own worktree</text>
+  <text class="note" x="568" y="311">the worker prompt is its whole contract</text>
+
+  <text class="name" x="768" y="264">Light review</text>
+  <text class="cmd" x="768" y="281">/mx:code-review, light</text>
+  <text class="note" x="768" y="298">run by the worker, reports on disk</text>
+  <text class="note" x="768" y="311">fixed or declined by the worker</text>
+
+  <text class="name" x="980" y="264">Demo, review page</text>
+  <text class="cmd" x="980" y="281">the thing, then the diff</text>
+  <text class="note" x="980" y="298">you rule on what was built;</text>
+  <text class="note" x="980" y="311">accept, amend, redo or reject</text>
+  <use href="#you" x="1104" y="248"/>
+
+  <!-- labels: row 3 -->
+  <text class="name" x="368" y="408">Spec to tickets</text>
+  <text class="cmd" x="368" y="425">grilling, then to-tickets</text>
+  <text class="note" x="368" y="442">once no question is left for you;</text>
+  <text class="note" x="368" y="455">published proposed, on the board</text>
+
+  <text class="name" x="568" y="408">A worker per ticket</text>
+  <text class="cmd" x="568" y="425">/mx:dispatch</text>
+  <text class="note" x="568" y="442">starts while proposed; own worktree</text>
+  <text class="note" x="568" y="455">one at a time or in waves</text>
+
+  <text class="name" x="768" y="408">Full review, twice</text>
+  <text class="cmd" x="768" y="425">/mx:code-review</text>
+  <text class="note" x="768" y="442">per ticket, in the worker; whole</text>
+  <text class="note" x="768" y="455">feature once built; reports on disk</text>
+
+  <text class="name" x="980" y="408">Demo, page, QA</text>
+  <text class="cmd" x="980" y="425">the thing, the diff, drive it</text>
+  <text class="note" x="980" y="442">accept, amend, redo, reject;</text>
+  <text class="note" x="980" y="455">findings become tickets</text>
+  <use href="#you" x="1104" y="392"/>
+
+  <text class="al" x="568" y="497">ONE ORCHESTRATOR &middot; /mx:dispatch &middot; CLAIMS, SPAWNS, MERGES, LANDS</text>
+  <text class="note" x="568" y="512">what needs your ruling arrives with the landing, tagged, and waits on the board's queue</text>
+  <text class="note" x="568" y="527">a build waits on its own branch for your ruling; what depends on it starts after</text>
+
+  <!-- labels: dials -->
+  <text class="eb" x="64" y="584">THE FOUR DIALS, ONE PER COLUMN</text>
+  <text class="dial" x="88" y="618">grilling</text>
+  <text class="note" x="88" y="633">none, one question, an interview</text>
+  <text class="dial" x="368" y="618">on disk</text>
+  <text class="note" x="368" y="633">none, a ticket, a spec</text>
+  <text class="dial" x="568" y="618">worker</text>
+  <text class="note" x="568" y="633">this session, a worker on a host</text>
+  <text class="dial" x="768" y="618">review</text>
+  <text class="note" x="768" y="633">none, light, full</text>
+  <text class="note" x="980" y="618">the on-disk dial sets the other two:</text>
+  <text class="note" x="980" y="631">with a ticket or a spec, a worker builds</text>
+  <text class="note" x="980" y="644">and a reviewer reads</text>
+
+  <!-- legend -->
+  <line class="rule" x1="64" y1="672" x2="1164" y2="672"/>
+  <use href="#you" x="64" y="692"/>
+  <text class="legend-text" x="120" y="703">where your attention is asked for</text>
+  <rect class="card-ghost" x="424" y="694" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="456" y="703">no fresh unit: the session itself</text>
+  <rect class="card-ghost" x="668" y="690" width="20" height="14" rx="3"/>
+  <rect class="card" x="664" y="694" width="20" height="14" rx="3"/>
+  <text class="legend-text" x="696" y="703">a worker: one fresh context per ticket</text>
+  <rect class="bar" x="952" y="694" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="984" y="703">reviewers, orchestrator</text>
+</svg>
+<script>
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
+</script>
+</body>
+</html>

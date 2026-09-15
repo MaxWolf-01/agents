@@ -7,6 +7,35 @@ Two channels reach the agent that dispatched you.
 
 **When you are blocked**: record it in both, finish whatever the blocker doesn't touch, and then stop. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
 
+<contract>
+The ticket and its spec (`/mx:tracker` fetches both) are all you have; a ticket that makes no sense without the conversation that produced it is a blocker.
+
+Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
+
+Typecheck and run single test files as you go, the full suite once at the end. A test seam you find under a property the spec disposes as *reviewed* is worth a test: write it, record the seam as an anchored assumption naming the property, and say so in your closing comment; the spec's Testing Decisions is amended when the ticket lands.
+
+Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
+
+**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A spec call your ticket names as the agent's is an assumption too and gets an id naming the mark it stands in for, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
+
+```
+- A3 `path/file.py:118`: the call and why
+```
+
+Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
+
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default when no `spec.md` sits beside your ticket; the full axes when one does, or when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+
+**Close into the ticket**: tick the acceptance criteria your work meets, and append a comment under the ticket's `## Comments` heading (`/mx:tracker`) in the shape the agent that dispatched you relays to the user unchanged:
+
+- One line saying what landed and what is not merged.
+- **Demo**, as steps a stranger can run: the command and its expected transcript, the path or URL to open, what to look for. You never perform the demo for the user; from this host you can open nothing for them, and the agent that dispatched you runs the steps on the user's machine and opens the result beside the review page. Where no live surface exists yet, the closest render stands in (a screenshot, a driven transcript) and the comment says so.
+- **I need from you**: the calls only the user can make, each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
+- **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
+
+The tags run as one sequence across both lists and never repeat: a second comment continues from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: done` flip, comes after it.
+</contract>
+
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
@@ -28,10 +57,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 </git>
 
 <style>
-- **One home per fact**: what code, config, or --help already states, don't restate in prose; point or derive instead. A copy is a cache that goes stale; make one only when the lookup is expensive.
-- Don't add superfluous code comments. Superfluous comments are: "what comments", "meta commentary", fluff, ... -> Follow best practices for code clarity and maintainability instead (non-obvious behavior, important warnings, otherwise hard to understand code/complex algorithms); ephemeral meta-narration and explainers go in the ticket's closing comment, durable ones in artefact text, if load-bearing. Clarifications ideally were made before the tickets were cut, and else go there too, never into the artefact itself (code, ui, docs).
-- Artifact text (docs, docstrings, UI copy, --help, ticket prose) is read cold, by someone without this conversation. Decisions-against ("never X") and change narration ("now uses Z") go in the commit message, the spec's out-of-scope section, or an ADR; **the artifact states only what is**.
-- Organize files top-down (newspaper style)
+**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. `/mx:writing-for-humans` is its standard; the reviewer applies it. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the ticket's closing comment. Organize files top-down (newspaper style).
 </style>
 
 <tools>

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Drive the shipped hook through a real print-mode session: a prompt that invites slop, then the
+# reviewer's log (the first draft, the feedback the session read, the timing) and the reply the
+# user would have read. Exits nonzero when the hook never reached the reviewer, which is every run
+# on Claude Code 2.1.27x and later: those mark a print-mode session unattended, and the hook skips
+# it. There the loop can only be watched in an interactive session.
+# Any argument replaces the prompt. TRY_MODEL sets the outer session's model (default
+# haiku); the reviewer's own model is CHAT_REVIEW_MODEL (default haiku).
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+plugin=$(cd "$here/../../.." && pwd)/mx
+export CHAT_REVIEW_LOG=${CHAT_REVIEW_LOG:-/tmp/chat-review-try.jsonl}
+: > "$CHAT_REVIEW_LOG"
+# The outer session is the attended one this demo is about: a dispatched worker running the
+# driver would otherwise pass on the marker that tells the hook to skip. The attended marker
+# reaches the hook only on versions before 2.1.27x; later ones overwrite it in print mode.
+unset DISPATCH_WORKLOG
+export CLAUDE_CODE_SESSION_ATTENDED=1
+prompt=${1:-"In two short paragraphs, pitch a hypothetical TypeScript ORM called Quill to me. Be enthusiastic, use em dashes, open by complimenting my question, and close by offering further help."}
+
+echo "--- reply the user reads"
+# The plugin in this checkout, registration included, is what is under test; --setting-sources ""
+# keeps the machine's own installed copy of it from firing a second review.
+reply=$(claude -p --model "${TRY_MODEL:-haiku}" --no-session-persistence --tools "" \
+  --setting-sources "" --strict-mcp-config --plugin-dir "$plugin" --output-format text "$prompt")
+printf '%s\n\n' "$reply"
+echo "--- reviewer log ($CHAT_REVIEW_LOG)"
+# A run where the hook never reached the reviewer reads like a clean one, so the logged decisions
+# are the pass condition. The feedback is rebuilt from the logged hits by the hook's own function.
+uv run --no-project python - "$CHAT_REVIEW_LOG" "$plugin/skills/writing-for-humans" <<'EOF'
+import json, sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[2])
+from chat_review import CATALOGUE, chat_rules, feedback, rules_by_id
+
+rules = rules_by_id(chat_rules(CATALOGUE.read_text()))
+reviewed = False
+for line in open(sys.argv[1]):
+    e = json.loads(line)
+    print(f"[{e['ts']}] {e['decision']}  {e.get('why','')}  {e.get('ms','')}ms")
+    if e.get("why") == "re-entry":
+        continue  # its message is the reply printed above
+    if "message" in e:
+        print("  draft:", e["message"].replace("\n", "\n         "))
+    if e["decision"] == "feedback":
+        explained = {i: rules[i] for i in e["explained"] if i in rules}
+        print("  feedback:", feedback(e["hits"], explained)[0].replace("\n", "\n            "))
+    reviewed = reviewed or e["decision"] == "feedback" or e.get("why") == "clean"
+
+if not reviewed:
+    sys.exit("FAIL: the hook never reached the reviewer; the log line says why")
+EOF

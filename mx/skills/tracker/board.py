@@ -12,7 +12,7 @@ Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
-every standalone ticket (*.md at the tracker root) and writes one
+every standalone ticket (*.md at the tracker root, the queue file aside) and writes one
 self-contained page beside the tracker, agent/board.html. The page is the
 tickets as rows grouped by state: needs me (the merged needs-human queue),
 frontier, claimed, blocked, proposed, done folded. A row carries its feature,
@@ -45,10 +45,10 @@ link appears only on the machine that rendered them.
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
-render is deterministic from disk. Per-feature orchestrator state is read from
-agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
-then one `- summary :: markdown detail` bullet per pending entry; indented lines
-under a bullet continue its detail.
+render is deterministic from disk. The queue is read from the needs-human.md
+beside the tickets it belongs to, agent/tickets/<feature>/ for a feature and the
+tracker root for the standalone ones: one `- summary :: markdown detail` bullet
+per pending entry; indented lines under a bullet continue its detail.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections, the cursor and the hidden
@@ -134,10 +134,11 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     features = load_features(root, roots.overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
+    queue = load_needs_human(root / "needs-human.md")
     log = git_log(repo)
-    stamp = content_stamp(project, features, standalone, log)
+    stamp = content_stamp(project, features, standalone, queue, log)
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js")
+    page = render_page(project, features, standalone, queue, log, stamp, out.name + ".stamp.js")
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
@@ -292,7 +293,6 @@ class Feature:
     name: str
     tickets: list[Ticket]
     needs_human: list[str]
-    worker_host: str | None
     spec_status: str | None  # spec.md's status; None when the feature has no spec
 
 
@@ -322,8 +322,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) 
         if not tickets and spec_status is None:
             continue
         assert_safe_name(name)
-        needs_human, worker_host = load_needs_human(d / "needs-human.md")
-        features.append(Feature(name, tickets, needs_human, worker_host, spec_status))
+        features.append(Feature(name, tickets, load_needs_human(d / "needs-human.md"), spec_status))
     ids = [slug_id(f.name) for f in features]
     assert len(ids) == len(set(ids)), f"feature names collide as mermaid ids: {sorted(ids)}"
     return features
@@ -336,7 +335,11 @@ def assert_safe_name(name: str) -> None:
 
 def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     root = roots.main
-    standalone = [read_standalone(p, roots, diffviews, None) for p in (sorted(root.glob("*.md")) if root.is_dir() else [])]
+    standalone = [
+        read_standalone(p, roots, diffviews, None)
+        for p in (sorted(root.glob("*.md")) if root.is_dir() else [])
+        if p.name != "needs-human.md"  # the standalone tickets' queue, beside them as a feature's is
+    ]
     have = {k.slug for k in standalone}
     for branch, tracker in roots.branches:
         dv = load_diffviews(tracker.parent / "diffviews")
@@ -389,19 +392,19 @@ def spec_state(path: Path) -> str | None:
     return str(meta.get("status", "status missing"))
 
 
-def load_needs_human(path: Path) -> tuple[list[str], str | None]:
+Queue = list[str]  # a needs-human.md: its pending entries
+
+
+def load_needs_human(path: Path) -> Queue:
     if not path.exists():
-        return [], None
-    meta, body = split_frontmatter(path.read_text())
+        return []
     entries: list[str] = []
-    for line in body.splitlines():
+    for line in path.read_text().splitlines():
         if line.startswith("- "):
             entries.append(line[2:].strip())
         elif entries and (line[:1] in (" ", "\t") or not line.strip()):
             entries[-1] += "\n" + line.strip()
-    entries = [e.strip() for e in entries]
-    host = meta.get("worker-host")
-    return entries, str(host) if host else None
+    return [e.strip() for e in entries]
 
 
 def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path]) -> list[Ticket]:
@@ -497,15 +500,16 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], log: str) -> str:
+def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], queue: Queue, log: str) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload
     key = repr((
         project,
-        [(f.name, f.needs_human, f.worker_host, f.spec_status,
+        [(f.name, f.needs_human, f.spec_status,
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview, k.source) for k in standalone],
+        queue,
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -689,10 +693,10 @@ def standalone_row(k: Standalone) -> str:
     return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.diffview)
 
 
-def needs_row(f: Feature, i: int, item: str) -> str:
+def needs_row(owner: str, i: int, item: str) -> str:
     summary, sep, detail = item.partition(" :: ")
     body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
-    return row(f"needs-{f.name}-{i}", f.name, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body)
+    return row(f"needs-{owner}-{i}", owner, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body)
 
 
 def feature_chip(f: Feature) -> str:
@@ -702,8 +706,6 @@ def feature_chip(f: Feature) -> str:
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "blocked", "proposed") if counts[s]]
     if f.needs_human:
         bits.append(f"{len(f.needs_human)} need me")
-    if f.worker_host:
-        bits.append(f"workers on {f.worker_host}")
     dot = '<i class="dot"></i>' if f.needs_human else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
@@ -712,11 +714,13 @@ def feature_chip(f: Feature) -> str:
 
 
 def render_page(
-    project: str, features: list[Feature], standalone: list[Standalone], log: str, stamp: str, stamp_src: str
+    project: str, features: list[Feature], standalone: list[Standalone], queue: Queue,
+    log: str, stamp: str, stamp_src: str
 ) -> str:
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
     for f in features:
-        rows["needs"].extend(needs_row(f, i, item) for i, item in enumerate(f.needs_human))
+        rows["needs"].extend(needs_row(f.name, i, item) for i, item in enumerate(f.needs_human))
+    rows["needs"].extend(needs_row("standalone", i, item) for i, item in enumerate(queue))
     for f in features:
         for t in f.tickets:
             rows[t.status].append(ticket_row(f, t))
@@ -730,7 +734,7 @@ def render_page(
     )
 
     chips = "".join(feature_chip(f) for f in features)
-    if standalone:
+    if standalone or queue:
         chips += f'<button class="featchip" data-feature="standalone" title="tickets without a spec">standalone <span class="dim">{len(standalone)}</span></button>'
 
     graphs = ""

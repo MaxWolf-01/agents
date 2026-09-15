@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
 # Usage: run-worker.sh <message-file> <ticket-file> <model> <run> [session-id]
-#   message-file  worker prompt, or resume guidance; sent on the first attempt only
+#   message-file  the ticket message, or resume guidance; sent on the first attempt only
 #   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
@@ -32,14 +32,14 @@ fi
 # claude here (someone attaching to try something).
 session=${resume_session:-$(cat /proc/sys/kernel/random/uuid)}
 # Print mode kills its own subagents after 600s unless this ceiling is lifted, which silently
-# truncates the code review closing /mx:implement.
+# truncates the code review that closes a worker's contract.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
-# Created here so that an empty file says the worker wrote nothing, where a missing one
-# would leave the orchestrator unable to tell that from a worklog it never got told about.
-touch "$DISPATCH_WORKLOG"
+# Opened with one line from the runner, so a log holding only that line says the worker wrote
+# nothing after starting, where a missing file would say it was never told about the log.
+printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md is written for a human at a terminal: it tells its reader to ask, and
 # describes a conversation this worker is not in. worker-prompt.md replaces it. On an isolated

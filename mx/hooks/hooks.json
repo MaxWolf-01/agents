@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/writing-for-humans/chat_review.py",
+            "timeout": 60,
+            "statusMessage": "chat-review: a reviewer is reading the reply"
+          }
+        ]
+      }
+    ]
+  }
+}
