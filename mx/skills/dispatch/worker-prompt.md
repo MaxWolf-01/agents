@@ -18,7 +18,7 @@ Typecheck and run single test files as you go, the full suite once at the end.
 
 Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool, a service that isn't running is therefore a blocker, and so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 
-**A decision you make alone is an assumption**, not a decision, and it stays in your own name; spec and ADR language is the user's. A judgment call presented as settled poisons every later agent's picture of what the user chose, and the ticket's review page is where they rule on yours. Write each one anchored, so the page can show it on the line it concerns:
+**A decision you make alone is an assumption**, not a decision, and it stays in your own name; spec and ADR language is the user's. A spec call your ticket names as the agent's is an assumption too, and it gets an id of its own naming the mark it stands in for, so the page carries it to the user even where your build never questioned it. A judgment call presented as settled poisons every later agent's picture of what the user chose, and the ticket's review page is where they rule on yours. Write each one anchored, so the page can show it on the line it concerns:
 
 ```
 - A3 `path/file.py:118`: the call and why

@@ -3,26 +3,26 @@
 File-based specs and tickets, domain glossary + ADRs, research artefacts, and session continuity for multi-session work.
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/one-flow.png">
+  <img alt="One flow in three rows, by how much of the design lands on disk: a dictated change with no brief and no worker, a standalone ticket built by a fresh worker, and a spec sliced into tickets and dispatched; the build starts once no question is left for you and never waits for you to ratify a call, and four orange chips mark the only places your attention is asked for" src="assets/one-flow-light.png">
+</picture>
+
+<details>
+<summary><b>The whole cycle, from an intent to a shipped feature</b></summary>
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
   <img alt="The full mx cycle: sharpen the idea, spec, tickets, dispatch the tickets one worker each, harden the feature and debrief, drive each landed slice, review session; the board carries every ticket, and feedback rails return new and proposed tickets, reopened decisions and new ideas, over the durable docs" src="assets/full-cycle-light.png">
 </picture>
+
+</details>
 
 <details>
 <summary><b>Every ticket holds one state, and each transition has exactly one writer</b></summary>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
-  <img alt="Ticket state: proposed, open, claimed, done, retired, with the one writer of each transition; your ruling is the only door out of proposed, and the board renders every state, the dependency graph with its frontier, and the needs-human queue" src="assets/ticket-state-light.png">
-</picture>
-
-</details>
-
-<details>
-<summary><b>Who is in the loop at each step, and in which context window</b></summary>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/main-flow.png">
-  <img alt="Idea to ship in two lanes: grilling, cutting tickets and driving the demo with the human in the loop; the spec draft rewritten each round, and one worker per ticket under a single orchestrator, with the agent alone; one unbroken context window for planning, a fresh one per ticket" src="assets/main-flow-light.png">
+  <img alt="Ticket state: proposed, open, claimed, done, retired, with the one writer of each transition; a proposed ticket is on the frontier and built like any other, your ruling lands on what it built, and the board renders every state, the dependency graph with its frontier, and the needs-human queue" src="assets/ticket-state-light.png">
 </picture>
 
 </details>
@@ -32,7 +32,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
-  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; the gate confirms the spec when the frontier is empty" src="assets/session-boundary-light.png">
+  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; an empty frontier cuts the tickets, and the calls you have not ruled on travel with them" src="assets/session-boundary-light.png">
 </picture>
 
 </details>
@@ -65,8 +65,8 @@ Every landed ticket gets one, rendered by `dispatch review` and linked from its 
 | ----------------- | ------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Glossary          | `CONTEXT.md` (repo root)             | durable, edited in place                                              | domain terminology, opinionated, with avoid-lists                                                                                                                   |
 | ADR               | `decisions/NNNN-slug.md`             | durable, append-only                                                  | one hard-to-reverse decision and why                                                                                                                                |
-| Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed at the gate; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
-| Ticket            | `agent/tickets/<feature>/NN-slug.md` | `proposed` while an agent's, until you rule; retired with its feature | one vertical slice with blocked-by edges, or, with `type: research \| prototype \| grilling \| legwork`, a decision ticket: a decision to make, answered on resolution |
+| Spec              | `agent/tickets/<feature>/spec.md`    | draft while grilling, confirmed when you rule on the calls it carries; `git rm -r` when shipped | the design: the work order for one feature                                                                                                                          |
+| Ticket            | `agent/tickets/<feature>/NN-slug.md` | `proposed` while it waits for your ruling, and built while it waits; retired with its feature | one vertical slice with blocked-by edges, or, with `type: research \| prototype \| grilling \| legwork`, a decision ticket: a decision to make, answered on resolution |
 | Standalone ticket | `agent/tickets/<slug>.md`            | deleted when done                                                     | a ticket with no spec: no design round needed, or a decision ticket for later                                                                                       |
 | Board             | `agent/board.html`                   | gitignored, re-rendered on every tracker change                       | the whole tracker as one page: features with spec status, dependency graphs, frontier, review-page links                                                            |
 | Research          | `agent/research/NN-slug.md`          | gitignored, ephemeral                                                 | one question, cited findings                                                                                                                                        |
@@ -75,22 +75,23 @@ Every landed ticket gets one, rendered by `dispatch review` and linked from its 
 
 `/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming, the board); the tracker lives in the repo, or in a workspace repo when features span repos.
 
-## The main flow: idea → ship
+## The main flow: intent → ship
 
-`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges) → `/mx:dispatch` works the tickets: a fresh worker per ticket, its contract the prompt dispatch appends to it (testing inside, code-review at the end), serial or in waves, the board as the standing view. A feature without tickets is built by the session that grilled it, from the confirmed spec.
+`/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges, cut as soon as the interview has no question left for you) → `/mx:dispatch` works the tickets: a fresh worker per ticket, its contract the prompt dispatch appends to it (testing inside, code-review at the end), serial or in waves, the board as the standing view. A feature always slices, into one ticket or many; work too small for a spec is a standalone ticket, dispatched by the same scripts.
 
-**`/mx:orient` is the map**: the main flow, its on-ramps, and when to reach for what.
+**`/mx:orient` is the map**: the brief test that routes an intent to loose work, a ticket or a spec, the main flow, its on-ramps, and when to reach for what.
 
-Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until the gate confirms it.
+Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until its frontier is empty.
 
 ## What's manual, what's AFK, and why
 
 - **Grilling is where alignment happens**: human in the loop, non-negotiable. Everything downstream trades on the shared understanding built there. External inputs (a meeting transcript, a client brief, a bug report) enter the flow here: grill through their unstated assumptions.
 - **Plan in one window, respect the smart zone.** Grilling (which writes the spec) → tickets stays in one unbroken context window; but reasoning degrades noticeably from roughly 30% of the window used, regardless of advertised size. Approaching the limit mid-planning → end the session with the frontier open (the sharp questions become decision tickets) or handoff to a fresh thread; don't push on degraded.
 - **The spec is reviewed as it is written.** A wrong line of code is one wrong line; a wrong line in a spec becomes hundreds of them, so the spec is where a look pays most. Grilling writes it round by round and you review each round's delta as it lands (`/mx:grilling` has the mechanics); writing it down is itself a design step. A spec assembled across sessions gets one whole-document read at the gate, for drift between sessions.
-- **Do review the ticket breakdown** (to-tickets quizzes you). Cheap to check, and the failure mode is easy to spot: horizontal slices (all schema, then all API, then all UI) instead of vertical ones; no feedback until the layers meet.
+- **The ticket breakdown is yours to look over while it builds.** to-tickets publishes the slices `proposed` and shows them on the board, and the workers start. The failure mode is easy to spot from the graph: horizontal slices (all schema, then all API, then all UI) instead of vertical ones, no feedback until the layers meet. You rule on each slice from what it built, which is where a slice too coarse to demo shows up anyway.
+- **The build runs while you are away.** It starts when the interview has no question left for you; every call you have not ruled on travels into the tickets as an anchored assumption and waits for you on the review page. A guess you overturn costs only the tickets built on it: the feature branch holds the speculation and the integration branch never sees it, so rejecting a ticket deletes it and its build.
 - **Implementation is the AFK part.** Day shift plans and cuts the tickets; night shift works the frontier, fresh context per ticket.
-- **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands; the agent announces what works and how to exercise it (the ticket's What-to-build + acceptance criteria), you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
+- **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands: the worker's closing comment writes the demo as steps a stranger can run, the session holding the branch runs them on your machine and opens the result beside the review page, and you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
 - **Reviews run in fresh context.** A reviewer sharing the implementer's window reviews in the dumb zone; a worker closes with code-review in clean context for a reason.
 - **Chat replies have a reviewer too.** Every session with the plugin runs a Stop hook: a small model reads the reply just written against the chat-scoped rules of `/mx:writing-for-humans`'s catalogue and hands the tells it finds back to the session, which rewrites before you act on the draft. It fails open, stays out of a dispatched worker's session, and logs every decision it makes; `CHAT_REVIEW_OFF` in the environment turns it off, and the script, `mx/skills/writing-for-humans/chat_review.py`, says where the log goes.
 - **Feedback loops are the ceiling.** Agent output quality tracks the quality of the repo's tests and typechecks. Bad output → improve the loops, not the prompt (`/mx:improve-codebase-architecture`; deep modules: design the interface, delegate the implementation).
@@ -107,7 +108,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:to-tickets` | spec → tracer-bullet tickets |
 | `/mx:testing`, `/mx:code-review` | what makes a test worth keeping, and `make harden`; four-axis review |
 | `/mx:dispatch` | work a feature's tickets, or a standalone one: one orchestrator, a fresh worker per ticket, serial or in waves |
-| `/mx:prototype` | throwaway code to answer a design question |
+| `/mx:prototype` | throwaway code when shapes are rivals or one has to be driven to be judged |
 | `/mx:to-questionnaire` | turn a decision someone else must answer into a questionnaire for them |
 | `/mx:wizard` | bash wizard walking a human through steps only they can do (credentials, dashboards, migrations) |
 | `/mx:wait-what` | that didn't land; re-pitch it in plain language |
