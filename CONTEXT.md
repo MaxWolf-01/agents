@@ -118,10 +118,6 @@ _Avoid_: mark (the provenance tag on a spec call), xfail, skip
 
 ### Sessions
 
-**Brief**:
-The prompt a subagent is started with.
-_Avoid_: brief for anything filed on the tracker
-
 **Smart zone**:
 The stretch of a context window within which reasoning stays sharp; the limit is a fraction of the window, not a feeling.
 _Avoid_: context budget, token budget

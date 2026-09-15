@@ -79,7 +79,7 @@ Every landed ticket gets one, rendered by `dispatch review` and linked from its 
 
 `/mx:grill-with-docs` (relentless interview; each round delivers the design whole and writes it to the spec; glossary terms and ADRs land as residue) → `/mx:to-tickets` (tracer-bullet vertical slices with blocking edges, cut as soon as the interview has no question left for you) → `/mx:dispatch` works the tickets: a fresh worker per ticket, its contract the prompt dispatch appends to it (testing inside, code-review at the end), serial or in waves, the board as the standing view. A feature always slices, into one ticket or many; work too small for a spec is a standalone ticket, dispatched by the same scripts.
 
-**`/mx:orient` is the map**: the brief test that routes an intent to loose work, a ticket or a spec, the main flow, its on-ramps, and when to reach for what.
+**`/mx:orient` is the map**: the question that routes an intent to loose work, a ticket or a spec, the main flow, its on-ramps, and when to reach for what.
 
 Planning that outgrows one session keeps its artefacts: the open questions leave as decision tickets, the next session claims one and grills it, and the spec grows until its frontier is empty.
 
