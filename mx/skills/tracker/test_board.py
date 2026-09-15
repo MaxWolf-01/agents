@@ -164,9 +164,6 @@ def test_render_reads_the_queue_beside_the_tickets(tracker: Path, tmp_path: Path
 def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     queue = tmp_path / "needs-human.md"
     queue.write_text(
-        # the frontmatter is a leftover: it carried the worker host until the host became a
-        # per-spawn choice, and a queue file that still has one is read the same
-        "---\nworker-host: agent@pc\n---\n\n"
         "- debrief :: **fixed** a1b2c3 pins the averaging rule.\n"
         "  **proposed** 03, 04.\n\n"
         "  **left** two case-flip survivors, the value is case-insensitive.\n"

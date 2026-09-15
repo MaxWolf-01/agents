@@ -337,9 +337,7 @@ def spec_state(path: Path) -> str | None:
 def load_needs_human(path: Path) -> Queue:
     if not path.exists():
         return []
-    # frontmatter is not part of the format; split it off anyway, for a queue file
-    # written while it carried the retired worker-host line
-    body = split_frontmatter(path.read_text())[1]
+    body = path.read_text()
     entries: list[str] = []
     for line in body.splitlines():
         if line.startswith("- "):
