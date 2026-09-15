@@ -1,11 +1,11 @@
 ---
 name: to-tickets
-description: "Break a confirmed spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges."
+description: "Break a grilled spec into a set of tracer-bullet tickets, each declaring its blocking edges, published per the tracker conventions: ticket files with blocked-by edges. Runs as soon as the grilling's frontier is empty, whether or not the user has ratified the design."
 ---
 
 # To Tickets
 
-Break a confirmed spec into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
+Break a grilled spec into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
 Publish per `/mx:tracker`'s conventions.
 
@@ -13,7 +13,7 @@ Publish per `/mx:tracker`'s conventions.
 
 ### 1. Gather context
 
-Work from the confirmed spec: the one already in the conversation, or the reference the user passes as an argument (a spec path, an issue number or URL), fetched with its full body and comments.
+Work from the spec whose frontier is empty (`/mx:grilling`, The gate): the one already in the conversation, or the reference the user passes as an argument (a spec path, an issue number or URL), fetched with its full body and comments. A draft still carrying the agent's marks is cut like any other; what the user has not ruled on travels into the tickets (step 4).
 
 ### 2. Explore the codebase (optional)
 
@@ -46,34 +46,22 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 **Cross-cutting capabilities are the second exception.** A spec property usually needs one deliberately horizontal capability ticket (the shared renderer, the error boundary) that exists so every vertical slice after it can lean on it. Schedule it early and block the slices that need it on it. Greenfield is where these are most invisible: nothing exists yet to make their absence obvious.
 
-### 4. Quiz the user
+### 4. Publish the tickets
 
-Present the proposed breakdown as a numbered list. For each ticket, show:
+Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below, `status: proposed` because the user ruled on the design and not on the slicing. Do NOT modify the spec.
 
-- **Title**: short descriptive name
-- **Blocked by**: which other tickets (if any) must complete first
-- **What it delivers**: the end-to-end behaviour this ticket makes work
-
-Ask the user:
-
-- Does the granularity feel right? (too coarse / too fine)
-- Are the blocking edges correct: does each ticket only depend on tickets that genuinely gate it?
-- Should any tickets be merged or split further?
-
-Iterate until the user approves the breakdown.
-
-### 5. Publish the tickets
-
-Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec.
+**Name the calls each slice builds on.** A draft spec's marks (`/mx:grilling`) say which decisions are the user's and which are the agent's; the provenance line names the ones this slice rests on, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
 <ticket-template>
 
 ---
-status: open
+status: proposed
 blocked-by: [NN] # omit when nothing blocks it
 ---
 
 # <Ticket title>
+
+Slice of `spec.md`, building on <the spec's calls this slice rests on, by mark and section>.
 
 ## What to build
 
@@ -90,4 +78,8 @@ A decision ticket uses the same frontmatter plus its `type`; its body is a `## Q
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
-The tickets are worked by `/mx:dispatch`, at any size: a fresh worker per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type.
+### 5. Show the breakdown, then dispatch
+
+Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: title, blocked by, what it delivers. Say what you would most want ruled on, so the user knows where to look: a granularity you were unsure of, an edge that may not gate anything, a pair you considered merging.
+
+Nothing waits for that ruling. `/mx:dispatch` takes the frontier straight away, at any size: a fresh worker per build ticket, one at a time or in waves; a decision ticket on the frontier is routed by its type. Each ticket is then ruled on from what it built, on its review page and its demo, and a rejected one is deleted with its build (`/mx:tracker`).

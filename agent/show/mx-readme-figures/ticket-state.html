@@ -57,10 +57,10 @@ text{fill:var(--ink);}
 </header>
 <h1>Every ticket holds one state, and each transition has exactly one writer.</h1>
 <p class="dek">Tickets are markdown files under <code>agent/tickets/</code>; the board is the whole tracker rendered as
-one page. An agent that spots work nobody asked for files it as <code>proposed</code>: off the frontier, in its own
-colour in every view, until you rule on it. Everything the page shows &mdash; the dependency graph, the frontier, the
-wave lanes, the review pages, the queue &mdash; is derived from those files, so the page is never a second place to
-keep state.</p>
+one page. Every ticket an agent writes is <code>proposed</code>: on the frontier and built like any other, in its own
+colour in every view, until you rule on what it produced. Everything the page shows &mdash; the dependency graph, the
+frontier, the wave lanes, the review pages, the queue &mdash; is derived from those files, so the page is never a
+second place to keep state.</p>
 
 <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -85,6 +85,8 @@ keep state.</p>
   <path class="flow" d="M 568,334 V 378" marker-end="url(#arrow)"/>
   <path class="flow" d="M 568,454 V 498" marker-end="url(#arrow)"/>
   <path class="flow" d="M 568,574 V 618" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 704,136 H 730 V 416 H 706" marker-end="url(#arrow)"/>
+  <path class="flow-accent" d="M 344,600 H 386 V 536 H 426" marker-end="url(#arrow-accent)"/>
 
   <!-- state chips -->
   <rect class="chip-accent" x="432" y="104" width="272" height="64" rx="6"/>
@@ -97,6 +99,7 @@ keep state.</p>
   <rect class="card" x="64" y="88" width="280" height="96" rx="6"/>
   <rect class="card" x="64" y="248" width="280" height="96" rx="6"/>
   <rect class="card" x="64" y="424" width="280" height="136" rx="6"/>
+  <rect class="chip-accent" x="64" y="592" width="280" height="112" rx="6"/>
 
   <!-- board panels -->
   <rect class="card" x="760" y="104" width="384" height="280" rx="6"/>
@@ -115,15 +118,15 @@ keep state.</p>
   <rect class="dagnode-proposed" x="988" y="256" width="40" height="24" rx="4"/>
 
   <!-- labels: sources -->
-  <text class="name" x="76" y="112">Any agent, on its own reading</text>
-  <text class="note" x="76" y="132">a worker: the friction it hit, a punt it left</text>
-  <text class="note" x="76" y="148">the orchestrator: a harden line no test pins,</text>
-  <text class="note" x="76" y="162">a skill or a script that misled it</text>
+  <text class="name" x="76" y="112">Any agent that writes a ticket</text>
+  <text class="note" x="76" y="132">to-tickets: every slice of a spec you grilled</text>
+  <text class="note" x="76" y="148">a worker: the friction it hit, a punt it left</text>
+  <text class="note" x="76" y="162">the orchestrator: a harden line no test pins</text>
   <text class="note" x="76" y="176">a review: a finding too large to fix there</text>
 
   <text class="name" x="76" y="272">You</text>
-  <text class="note" x="76" y="292">asked for in chat, a to-tickets cut, a</text>
-  <text class="note" x="76" y="306">grilling's decision tickets: rulings already</text>
+  <text class="note" x="76" y="292">asked for in chat, or a grilling's decision</text>
+  <text class="note" x="76" y="306">tickets: rulings already</text>
   <text class="note" x="76" y="322">silence is not a ruling</text>
 
   <text class="name" x="76" y="448">The needs-human queue</text>
@@ -134,10 +137,16 @@ keep state.</p>
   <text class="note" x="76" y="528">answered? the entry is deleted; the answer</text>
   <text class="note" x="76" y="542">lands in code or in tickets, never here</text>
 
+  <text class="name" x="76" y="616">Your ruling, on what it built</text>
+  <text class="note" x="76" y="636">the demo and the review page, never</text>
+  <text class="note" x="76" y="650">the ticket's text unless you want it</text>
+  <text class="note" x="76" y="668">accept lands it; reject deletes the</text>
+  <text class="note" x="76" y="682">ticket and the build with it</text>
+
   <!-- labels: states -->
   <text class="state" x="448" y="128">proposed</text>
-  <text class="note" x="448" y="146">an agent's reading, not yet yours; off the</text>
-  <text class="note" x="448" y="160">frontier, and dispatch's claim refuses it</text>
+  <text class="note" x="448" y="146">written, not yet ruled; on the frontier,</text>
+  <text class="note" x="448" y="160">and the claim takes it like an open one</text>
 
   <text class="state" x="448" y="288">open</text>
   <text class="note" x="448" y="306">on the tracker, nobody holds it; open +</text>
@@ -156,19 +165,21 @@ keep state.</p>
   <text class="note" x="448" y="680">the row leaves the board; history keeps it</text>
 
   <!-- labels: transitions -->
-  <text class="al-accent" x="584" y="202">YOUR RULING</text>
-  <text class="note" x="584" y="218">the only door: open, delete, or</text>
-  <text class="note" x="584" y="232">send it to grilling first</text>
+  <text class="al-accent" x="584" y="202">AN EARLY RULING</text>
+  <text class="note" x="584" y="218">open, delete, or send it to</text>
+  <text class="note" x="584" y="232">grilling; most are ruled on later</text>
 
-  <text class="al" x="584" y="352">DISPATCH CLAIM</text>
-  <text class="note" x="584" y="368">the orchestrator, sole claim-writer</text>
+  <text class="al" x="584" y="340">DISPATCH CLAIM</text>
+  <text class="note" x="584" y="352">the orchestrator, sole</text>
+  <text class="note" x="584" y="364">claim-writer; proposed and</text>
+  <text class="note" x="584" y="376">open alike</text>
 
   <text class="al" x="584" y="472">THE WORKER'S LAST ACT</text>
   <text class="note" x="584" y="488">committed and verified first</text>
 
-  <text class="al" x="584" y="592">LANDED</text>
-  <text class="note" x="584" y="606">it reads the branch against the</text>
-  <text class="note" x="584" y="620">ticket and the spec, then merges</text>
+  <text class="al" x="584" y="584">LANDED</text>
+  <text class="note" x="584" y="598">merged after a read against the</text>
+  <text class="note" x="584" y="612">ticket and the spec</text>
 
   <!-- labels: board panels -->
   <text class="name" x="772" y="128">The dependency graph</text>
@@ -176,8 +187,8 @@ keep state.</p>
   <text class="dagtag" x="824" y="300">the frontier</text>
   <text class="dagtag" x="984" y="300">proposed</text>
   <text class="note" x="772" y="330">the frontier is what can start right now, first by number</text>
-  <text class="note" x="772" y="344">wins. A proposed node keeps its colour in every view, so</text>
-  <text class="note" x="772" y="358">you triage from the picture rather than from a list.</text>
+  <text class="note" x="772" y="344">wins, proposed or open. A proposed node keeps its colour</text>
+  <text class="note" x="772" y="358">in every view, so you triage from the picture, not a list.</text>
 
   <text class="name" x="772" y="464">Also on the page</text>
   <text class="cmd" x="772" y="480">board</text>
