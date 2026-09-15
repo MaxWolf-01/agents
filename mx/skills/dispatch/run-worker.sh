@@ -37,9 +37,9 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
-# Created here so that an empty file says the worker wrote nothing, where a missing one
-# would leave the orchestrator unable to tell that from a worklog it never got told about.
-touch "$DISPATCH_WORKLOG"
+# Opened with one line from the runner, so a log holding only that line says the worker wrote
+# nothing after starting, where a missing file would say it was never told about the log.
+printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md is written for a human at a terminal: it tells its reader to ask, and
 # describes a conversation this worker is not in. worker-prompt.md replaces it. On an isolated

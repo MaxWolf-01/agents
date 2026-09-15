@@ -33,7 +33,7 @@ An approach or an option list an agent wrote into the ticket is an assumption to
 **Close into the ticket**: tick the acceptance criteria your work meets, and append a comment under the ticket's `## Comments` heading (`/mx:tracker`) in the shape the agent that dispatched you relays to the user unchanged:
 
 - One line saying what landed and what is not merged.
-- **Demo**, the built thing as close to live as its surface allows: the command driven and its transcript, the page served, a screenshot, a recorded run. Where no live surface exists yet, the closest render stands in and the comment says so.
+- **Demo**, as steps a stranger can run: the command and its expected transcript, the path or URL to open, what to look for. You never perform the demo for the user; from this host you can open nothing for them, and the agent that dispatched you runs the steps on the user's machine and opens the result beside the review page. Where no live surface exists yet, the closest render stands in (a screenshot, a driven transcript) and the comment says so.
 - **I need from you**: the calls only the user can make, each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
 - **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
