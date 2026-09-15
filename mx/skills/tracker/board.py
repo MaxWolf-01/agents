@@ -14,7 +14,7 @@ Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN; a
 proposed ticket, one the user has not ruled on, keeps its status whatever
 blocks it and is drawn in every view in its own colour) and
-every standalone ticket (*.md at the tracker root) and writes one
+every standalone ticket (*.md at the tracker root, the queue file aside) and writes one
 self-contained page beside the tracker, agent/board.html: an all-features
 dependency graph with feature subgraphs and cross-feature edges, the merged
 needs-human queue, and a section per feature (spec status, graph, wave lanes,
@@ -37,10 +37,11 @@ link appears only on the machine that rendered them.
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
-render is deterministic from disk. Per-feature orchestrator state is read from
-agent/tickets/<feature>/needs-human.md: optional YAML frontmatter (worker-host),
-then one `- summary :: markdown detail` bullet per pending entry; indented lines
-under a bullet continue its detail.
+render is deterministic from disk. Orchestrator state is read from the
+needs-human.md beside the tickets it belongs to, agent/tickets/<feature>/ for a
+feature and the tracker root for the standalone ones: optional YAML frontmatter
+(worker-host), then one `- summary :: markdown detail` bullet per pending entry;
+indented lines under a bullet continue its detail.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections and the chosen view, only when
@@ -122,10 +123,11 @@ def render(root: Path, overrides: dict[str, Path], repo: Path, out: Path) -> Non
     features = load_features(root, overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(root, overrides, diffviews) if k.slug not in overrides]
+    queue = load_needs_human(root / "needs-human.md")
     log = git_log(repo)
-    stamp = content_stamp(project, features, standalone, log)
+    stamp = content_stamp(project, features, standalone, queue, log)
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js")
+    page = render_page(project, features, standalone, queue, log, stamp, out.name + ".stamp.js")
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
@@ -240,6 +242,10 @@ class Ticket:
     diffview: str | None
 
 
+# a needs-human.md: its pending entries, and the worker host its frontmatter records
+Queue = tuple[list[str], str | None]
+
+
 @dataclass
 class Feature:
     name: str
@@ -289,6 +295,8 @@ def assert_safe_name(name: str) -> None:
 def load_standalone(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Standalone]:
     standalone = []
     for path in sorted(root.glob("*.md")) if root.is_dir() else []:
+        if path.name == "needs-human.md":  # the standalone tickets' queue, beside them as a feature's is
+            continue
         assert_safe_name(path.stem)
         meta, body = split_frontmatter(path.read_text())
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
@@ -330,7 +338,7 @@ def spec_state(path: Path) -> str | None:
     return str(meta.get("status", "status missing"))
 
 
-def load_needs_human(path: Path) -> tuple[list[str], str | None]:
+def load_needs_human(path: Path) -> Queue:
     if not path.exists():
         return [], None
     meta, body = split_frontmatter(path.read_text())
@@ -432,7 +440,9 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], log: str) -> str:
+def content_stamp(
+    project: str, features: list[Feature], standalone: list[Standalone], queue: Queue, log: str
+) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload
     key = repr((
@@ -441,6 +451,7 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview) for k in standalone],
+        queue,
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -630,11 +641,14 @@ def graph_views(
 
 
 def render_page(
-    project: str, features: list[Feature], standalone: list[Standalone], log: str, stamp: str, stamp_src: str
+    project: str, features: list[Feature], standalone: list[Standalone], queue: Queue,
+    log: str, stamp: str, stamp_src: str
 ) -> str:
+    queue_entries, standalone_host = queue
     total = sum(1 for f in features for t in f.tickets if t.status != "proposed")
     total_done = sum(1 for f in features for t in f.tickets if t.status == "done")
-    all_needs = [(f.name, item) for f in features for item in f.needs_human]
+    all_needs = [(f.name, f"#f-{f.name}", item) for f in features for item in f.needs_human]
+    all_needs += [("standalone", "#standalone", item) for item in queue_entries]
     open_standalone = sum(1 for k in standalone if k.status not in ("done", "proposed"))
     proposed = sum(1 for f in features for t in f.tickets if t.status == "proposed") + sum(
         1 for k in standalone if k.status == "proposed"
@@ -671,8 +685,8 @@ def render_page(
             + "</section>"
         )
 
-    def needs_item(feature: str, item: str) -> str:
-        chip = f'<a class="chip open" href="#f-{feature}">{html.escape(feature)}</a> '
+    def needs_item(label: str, anchor: str, item: str) -> str:
+        chip = f'<a class="chip open" href="{anchor}">{html.escape(label)}</a> '
         summary, sep, detail = item.partition(" :: ")
         if not sep:
             return f"<li>{chip}{html.escape(item)}</li>"
@@ -684,7 +698,7 @@ def render_page(
 
     needs = (
         '<section id="needs-human"><h2>Needs human</h2><ul class="needs-human">'
-        + "".join(needs_item(f, item) for f, item in all_needs)
+        + "".join(needs_item(*n) for n in all_needs)
         + "</ul></section>"
         if all_needs
         else ""
@@ -701,7 +715,13 @@ def render_page(
         f'<div class="body">{k.body_html}</div></details>'
         for k in standalone
     )
-    standalone_sec = f'<section><h2>Standalone tickets</h2><div class="tickets panel-b">{standalone_rows}</div></section>' if standalone else ""
+    host_bit = f' <span class="counts">workers on {html.escape(standalone_host)}</span>' if standalone_host else ""
+    standalone_sec = (
+        f'<section id="standalone"><h2>Standalone tickets{host_bit}</h2>'
+        f'<div class="tickets panel-b">{standalone_rows}</div></section>'
+        if standalone
+        else ""
+    )
 
     log_html = "\n".join(
         f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'

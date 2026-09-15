@@ -1,56 +1,67 @@
 #!/usr/bin/env bash
-# The orchestrator's side of one feature's dispatch: the steps with an ordering
-# that matters and nothing in them to judge, and the one door to the worker
-# host. Runs here, inside the feature worktree, on the feature branch;
-# `dispatch-ctl` is its counterpart on the worker host, reached through `ctl`.
+# The orchestrator's side of one dispatch: the steps with an ordering that
+# matters and nothing in them to judge, and the one door to the worker host.
+# Runs here, on the branch ticket branches cut from and merge back into: the
+# feature branch, in the feature worktree, or the repo's integration branch, in
+# the checkout you are in, for a standalone ticket (agent/tickets/<slug>.md, no
+# feature directory). `dispatch-ctl` is its counterpart on the worker host,
+# reached through `ctl`.
 #
-# Usage: dispatch setup <host> <repo> [setup-command]
-#        dispatch claim <NN-slug>
+# Usage: dispatch setup [<host> <repo> [setup-command]]
+#        dispatch claim <ticket>
 #        dispatch push
-#        dispatch prompt <NN-slug> < prompt-file
+#        dispatch prompt <ticket> < prompt-file
 #        dispatch ctl <dispatch-ctl args...>
-#        dispatch wait <NN-slug>
-#        dispatch fetch <NN-slug>
-#        dispatch review <NN-slug>
-#   setup    once per feature: adds the git remote when missing, puts this
-#            plugin version's dispatch-ctl, runner and worker prompt into the
-#            host's scratch dir, runs `dispatch-ctl init` there, records the
-#            host in the feature's needs-human.md and in git config
-#            (dispatch.<feature>.*, what every command below reads), and
-#            pushes the feature branch. <host> is user@host, or `local` for
-#            this machine (init pointed at this worktree). <repo> names the
-#            bare repo on the host, shared by every feature of the project;
-#            the feature is the current branch. <setup-command> is the
-#            project's own setup line, run in every ticket worktree before its
-#            worker starts; without it spawn uses `make install` (under
-#            `nix develop -c` where a flake.nix exists).
-#   claim    flips <NN-slug> to claimed, commits that on the feature branch and
+#        dispatch wait <ticket>
+#        dispatch fetch <ticket>
+#        dispatch review <ticket>
+#   <ticket> is <NN-slug> under a feature, or a standalone ticket's <slug>.
+#   setup    with <host> <repo>, records them for this repo in git config
+#            (dispatch.*, what every command below reads) and sets the host up;
+#            with no arguments, reuses what is recorded, which is what a second
+#            feature branch runs. Either way: adds the git remote when missing,
+#            puts this plugin version's dispatch-ctl, runner and worker prompt
+#            into this branch's scratch dir on the host, runs `dispatch-ctl
+#            init` there, records the host in the needs-human.md beside the
+#            tickets, and pushes this branch. <host> is user@host, or `local`
+#            for this machine (init pointed at this worktree). <repo> names the
+#            bare repo on the host, shared by every branch of the project.
+#            <setup-command> is the project's own setup line, recorded too and
+#            run in every ticket worktree before its worker starts; without one
+#            spawn uses `make install` (under `nix develop -c` where a
+#            flake.nix exists), which `git config --unset dispatch.setup-cmd`
+#            goes back to. The scratch dir is per branch, so each feature
+#            branch runs setup once; standalone tickets share the integration
+#            branch's and so need it once per repo.
+#   claim    flips <ticket> to claimed, commits that on this branch and
 #            pushes it, so the next spawn cuts from a tip that carries the
 #            claim. Open and proposed alike: a proposal is built before the
 #            user rules on it (tracker conventions). Refuses a claimed or done
 #            one, which is taken. A decision ticket is claimed the same way and
 #            then routed by its type; spawn is what refuses to hand one to a
 #            worker.
-#   push     the feature branch to the host, so the next spawn cuts from its tip.
-#   prompt   writes stdin as the worker prompt for <NN-slug> on the host.
-#   ctl      runs `dispatch-ctl <args>` on the host, from the feature's scratch
+#   push     this branch to the host, so the next spawn cuts from its tip.
+#   prompt   writes stdin as the worker prompt for <ticket> on the host.
+#   ctl      runs `dispatch-ctl <args>` on the host, from this branch's scratch
 #            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
 #            `dispatch ctl --help` is that script's reference.
-#   wait     blocks until the current run of <NN-slug> ends and prints its
+#   wait     blocks until the current run of <ticket> ends and prints its
 #            probe line (`dispatch-ctl wait`), riding out a dropped connection
 #            to the host on the way. Exit 0 on `exited`; nonzero when the run
 #            is `gone`, or the host stayed unreachable for two minutes.
-#   fetch    brings ticket/<feature>/<NN-slug> from the host into this repo,
+#   fetch    brings ticket/<branch>/<ticket> from the host into this repo,
 #            replacing an earlier fetch of it (ticket branches get rebased).
 #   review   once a ticket branch is fetched, before or after its merge alike:
 #            appends the branch's range to the ticket's `diff:` frontmatter and
-#            commits that on the feature branch, projects the ticket's
-#            assumptions into the review page's notes, renders the page under
+#            commits that on this branch, projects the ticket's assumptions
+#            into the review page's notes, renders the page under
 #            agent/diffviews, serves it, re-renders the board.
 #
-# Ticket branches merge into the feature branch with --no-ff; that merge commit
-# is how `review` finds a ticket's range after the merge (its second parent is
-# the ticket tip).
+# Ticket branches merge into this branch with --no-ff; that merge commit is how
+# `review` finds a ticket's range after the merge (its second parent is the
+# ticket tip). A standalone proposal merges only once the user has ruled on its
+# review page, so until then the page renders from the unmerged branch and the
+# integration branch carries the ticket file's own commits and nothing else.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -58,17 +69,42 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
-# Every command runs inside the feature worktree, on the feature branch.
+# The short name a prompt file and a worker's session carry, as dispatch-ctl's
+# `names` derives it too: a feature ticket's number, unique in its directory,
+# and a standalone slug whole, since it has none.
+short() { case $1 in [0-9][0-9]-*) echo "${1%%-*}" ;; *) echo "$1" ;; esac; }
+
+# Every command runs on the branch ticket branches cut from, and the branch is
+# what says which case this is: a standalone ticket is the feature case with
+# the integration branch as the feature branch and the tracker root as the
+# feature directory, so the only thing that differs is where the files are.
 locate() {
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
     feature=$(git branch --show-current)
-    [ -n "$feature" ] || die "detached HEAD; run this on the feature branch"
+    [ -n "$feature" ] || die "detached HEAD; run this on the branch the ticket branches cut from"
+    if [ -d "agent/tickets/$feature" ]; then
+        tickets=agent/tickets/$feature diffviews=agent/diffviews/$feature prefix="$feature: "
+    else
+        tickets=agent/tickets diffviews=agent/diffviews prefix=
+    fi
+}
+
+# Per branch, because a concurrent dispatcher may be on another plugin version,
+# and on a shared path its runner and worker prompt would replace this one's
+# under running workers; named after the repo too, because the directory is per
+# user, not per project. Standalone tickets all dispatch from the integration
+# branch, so one repo's share one.
+scratch_dir() {
+    d=.local/state/dispatch/$repo-$feature
+    [ "$host" = local ] && d=$HOME/$d
+    echo "$d"
 }
 
 load() {
     locate
-    host=$(git config "dispatch.$feature.host") || die "no worker host recorded for $feature; run: dispatch setup <host> <repo>"
-    scratch=$(git config "dispatch.$feature.scratch")
+    host=$(git config dispatch.host) || die "no worker host recorded for this repo; run: dispatch setup <host> <repo>"
+    repo=$(git config dispatch.repo) || die "no repo name recorded for this repo; run: dispatch setup <host> <repo>"
+    scratch=$(scratch_dir)
     remote=${host//[@.]/-}
 }
 
@@ -86,7 +122,7 @@ on_host() {
 # present (the key replaced, or inserted before the closing ---), no
 # frontmatter (one prepended).
 record_host() { # <label>
-    f=agent/tickets/$feature/needs-human.md
+    f=$tickets/needs-human.md
     mkdir -p "$(dirname "$f")"
     [ -f "$f" ] || printf -- '---\n---\n' > "$f"
     if [ "$(head -1 "$f")" = --- ]; then
@@ -100,18 +136,21 @@ record_host() { # <label>
     fi
     mv "$f.tmp" "$f"
     git add -- "$f"
-    git diff --cached --quiet -- "$f" || run git commit -q -m "$feature: workers on $1" -- "$f"
+    git diff --cached --quiet -- "$f" || run git commit -q -m "${prefix}workers on $1" -- "$f"
 }
 
 setup() {
     locate
-    host=$1 repo=$2 setup_cmd=${3:-}
-    # Relative to the home on either side: ssh and scp resolve it there. Per
-    # feature, because a concurrent dispatcher may be on another plugin
-    # version, and on a shared path its runner and worker prompt would replace
-    # this one's under running workers; named after the repo too, because the
-    # directory is per user, not per project.
-    scratch=.local/state/dispatch/$repo-$feature
+    if [ $# -eq 0 ]; then
+        host=$(git config dispatch.host) || die "nothing recorded for this repo yet; run: dispatch setup <host> <repo> [setup-command]"
+        repo=$(git config dispatch.repo)
+    else
+        [ $# -ge 2 ] || die "setup takes <host> <repo> [setup-command], or nothing at all"
+        host=$1 repo=$2
+    fi
+    setup_cmd=${3:-$(git config dispatch.setup-cmd || true)}
+    # Relative to the home on either side: ssh and scp resolve it there.
+    scratch=$(scratch_dir)
     # The setup command travels as a file named `setup`, so its quoting never
     # has to survive an ssh hop; no argument leaves the host on its default.
     files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
@@ -121,11 +160,10 @@ setup() {
         files+=("$staged/setup")
     fi
     if [ "$host" = local ]; then
-        scratch=$HOME/$scratch
         run mkdir -p "$scratch"
         [ -n "$setup_cmd" ] || run rm -f "$scratch/setup"
         run cp "${files[@]}" "$scratch/" || die "copy into $scratch failed"
-        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
         label=$(id -un)@$(hostname)
     else
         remote=${host//[@.]/-}
@@ -135,20 +173,21 @@ setup() {
         run scp -q "${files[@]}" "$host:$scratch/" || die "copy to $host:$scratch failed"
         # init creates the bare repo the push lands in; the push gives the host a
         # <feature> for spawn to cut ticket branches from.
-        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature" || die "init on $host failed"
+        run on_host bash "$scratch/dispatch-ctl" init "$repo" "$feature" "$tickets" || die "init on $host failed"
         run git push -q "$remote" "$feature" || die "push to $remote failed"
         label=$host
     fi
-    git config "dispatch.$feature.host" "$host"
-    git config "dispatch.$feature.scratch" "$scratch"
+    git config dispatch.host "$host"
+    git config dispatch.repo "$repo"
+    [ -n "$setup_cmd" ] && git config dispatch.setup-cmd "$setup_cmd"
     record_host "$label"
-    echo "host=$host  scratch=$scratch  (git config dispatch.$feature.*)"
+    echo "host=$host  repo=$repo  scratch=$scratch  tickets=$tickets  (git config dispatch.*)"
 }
 
 claim() {
     locate
     id=$1
-    ticket=agent/tickets/$feature/$id.md
+    ticket=$tickets/$id.md
     [ -f "$ticket" ] || die "no ticket at $ticket"
     front=$(awk 'NR==1{if($0!="---")exit;next} /^---$/{exit} {print}' "$ticket")
     status=$(sed -n 's/^status: *//p' <<<"$front" | head -1)
@@ -159,7 +198,7 @@ claim() {
     grep -q '^status:' <<<"$front" || die "$ticket has no status: line in its frontmatter (tracker conventions)"
     sed -i '0,/^status:/s/^status:.*/status: claimed/' "$ticket"
     grep -q '^status: claimed$' "$ticket" || die "could not write status: claimed into $ticket"
-    run git commit -q -m "$feature: claim $id" -- "$ticket"
+    run git commit -q -m "${prefix}claim $id" -- "$ticket"
     push
 }
 
@@ -171,7 +210,7 @@ push() {
 
 prompt() {
     load
-    nn=${1%%-*}
+    nn=$(short "$1")
     if [ "$host" = local ]; then cat > "$scratch/prompt-$nn.md"; else ssh "$host" "cat > $scratch/prompt-$nn.md"; fi
 }
 
@@ -242,7 +281,7 @@ notes_of() {
 review() {
     locate
     id=$1
-    ticket=agent/tickets/$feature/$id.md
+    ticket=$tickets/$id.md
     branch=ticket/$feature/$id
     if [ ! -f "$ticket" ]; then
         [ -d agent/tasks ] && die "no ticket at $ticket; agent/tasks/ is there instead, and the tracker directory is agent/tickets/: git mv it"
@@ -262,10 +301,10 @@ review() {
             awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
                 mv "$ticket.tmp" "$ticket"
         fi
-        run git commit -q -m "$feature: $id review range" -- "$ticket"
+        run git commit -q -m "${prefix}$id review range" -- "$ticket"
     fi
 
-    out=agent/diffviews/$feature/$id
+    out=$diffviews/$id
     mkdir -p "$(dirname "$out")"
     notes_of "$ticket" > "$out.notes.json" || exit 1
     specs=()
