@@ -69,7 +69,7 @@ echo '{"last_assistant_message":"Great question! Let me delve into this — it s
   | env -u DISPATCH_WORKLOG mx/skills/writing-for-humans/chat_review.py
 ```
 
-`CHAT_REVIEW_OFF=1` in front of it logs `skip / off` instead, and with `DISPATCH_WORKLOG` set, as a dispatched worker has it, `skip / dispatched worker`. `CHAT_REVIEW_LOG` moves the log, whose default is `~/.cache/chat-review/log.jsonl`.
+`CHAT_REVIEW_OFF=1` in front of it logs `skip / off` instead, and with `DISPATCH_WORKLOG` set, as a dispatched worker has it, `skip / dispatched worker`. `CHAT_REVIEW_LOG` moves the log, whose default is `~/logs/chat-review/log.jsonl` (amended 2026-09-15, was `~/.cache/chat-review/log.jsonl`, which the backup excludes).
 
 **Action items.**
 

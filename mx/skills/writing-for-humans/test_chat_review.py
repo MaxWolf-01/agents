@@ -2,11 +2,12 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest"]
 # ///
-"""Checks for the chat reviewer's three readings. Run: uv run test_chat_review.py
+"""Checks for the chat reviewer's four readings. Run: uv run test_chat_review.py
 
 The seams are the scope selection (catalogue text in, the chat-scoped rule blocks out), the
-answer parse (a model's answer in, hits out) and the decision `main` reaches (a hook payload and
-an environment in, a log line and the turn's continuation out). The oracle for the selection is
+answer parse (a model's answer in, hits out), the log read-back (log lines in, the rule ids a
+session was shown out) and the decision `main` reaches (a hook payload and an environment in, a
+log line and the turn's continuation out). The oracle for the selection is
 the awk command CATALOGUE.md's header publishes as its format contract: this test runs that
 command and demands the same bytes, so the header and the script cannot drift apart, and a
 catalogue whose bullets stop matching fails here rather than turning every reply clean. The
@@ -17,6 +18,7 @@ is where the spec reads them: it defers the residue ruling to a week of that fil
 
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -271,6 +273,15 @@ def test_a_reviewer_that_breaks_lets_the_reply_through_and_records_the_failure(h
     (entry,) = hook(DRAFT, reviewer=broken)
     assert (entry["decision"], entry["session_id"]) == ("allow", "s1") and "claude exited 1" in entry["why"]
     assert capsys.readouterr().out == ""
+
+
+def test_the_log_lands_in_the_backed_up_logs_directory_by_default(tmp_path: Path) -> None:
+    env = {k: v for k, v in os.environ.items() if k not in SKIP_MARKERS + ("CHAT_REVIEW_LOG",)}
+    env.update(HOME=str(tmp_path), CHAT_REVIEW_OFF="1")
+    script = Path(chat_review.__file__)
+    subprocess.run([sys.executable, script], input=json.dumps(DRAFT), text=True, env=env, check=True)
+    (line,) = (tmp_path / "logs/chat-review/log.jsonl").read_text().splitlines()
+    assert json.loads(line)["why"] == "off"
 
 
 def test_a_catalogue_with_no_chat_rules_lets_the_reply_through(hook, capsys) -> None:

@@ -212,7 +212,8 @@ def main() -> None:
         log(session, decision="allow", why="clean", ms=ms, message=message)
         return
     shown = shown_rules(session)
-    context, explained = feedback(hits, {i: text for i, text in rules_by_id(rules).items() if i not in shown})
+    unshown = {i: text for i, text in rules_by_id(rules).items() if i not in shown}
+    context, explained = feedback(hits, unshown)
     log(session, decision="feedback", hits=hits, explained=explained, ms=ms, message=message)
     # additionalContext continues the turn like a block decision but shows in the transcript as
     # "Stop hook feedback" rather than as a hook error.
