@@ -406,10 +406,10 @@ range_of() {
     fi
 }
 
-# The notes file is a pure projection of the ticket, rewritten whole on every
-# render: assumption bullets `- A3 \`path:118\`: text` become notes, each
-# `Addressed: C1, C4` line lists resolved comments. A duplicate id fails the
-# render, as the worker prompt promises the worker it will, and so does a
+# The notes file is a pure projection of the ticket on stdin, rewritten whole
+# on every render: assumption bullets `- A3 \`path:118\`: text` become notes,
+# each `Addressed: C1, C4` line lists resolved comments. A duplicate id fails
+# the render, as the worker prompt promises the worker it will, and so does a
 # bullet the capture cannot read: a call the page silently dropped is one the
 # user never rules on. The user's own comments live in diffview's state file
 # beside the page, which a render never touches.
@@ -424,7 +424,7 @@ notes_of() {
           then error("these assumption bullets are not `- A<id> `path:line`: text`, and the page would drop them:\n" + (.unread | join("\n")))
           elif (.notes | map(.id) | length) != (.notes | map(.id) | unique | length)
           then error("duplicate assumption id in the ticket")
-          else del(.unread) end' "$1"
+          else del(.unread) end'
 }
 
 review() {
@@ -468,7 +468,13 @@ review() {
 
     out=$diffviews/$id
     mkdir -p "$(dirname "$out")"
-    notes_of "$ticket" > "$out.notes.json" || exit 1
+    # The ticket as the worker left it: this branch's copy predates the
+    # worker's closing comment until the merge brings it in.
+    if is_merged "$tip"; then
+        notes_of < "$ticket" > "$out.notes.json" || exit 1
+    else
+        git show "$tip:$ticket" | notes_of > "$out.notes.json" || exit 1
+    fi
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve agent/diffviews
     run uv run "$skill/../tracker/board.py" agent/tickets --no-watch --no-open
