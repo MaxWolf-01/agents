@@ -1,5 +1,6 @@
 ---
-status: review
+status: done
+diff: [fde7e44efb8deffdcdde91bdcdd3375bb991c8ce..7b40b9e78e3001630fb5cdfdc54d3c1fa85f1468]
 ---
 
 # A `review` status: a build waiting for the user's ruling has its own state and its own group on the board
