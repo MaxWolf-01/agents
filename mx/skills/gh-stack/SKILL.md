@@ -4,7 +4,7 @@ description: >
   Manages stacked PRs and splits multi-part work into reviewable branches with gh-stack.
   Use for stack creation, viewing, edits, push, submit, sync, rebase, merge, or checkout;
   when asked to split or isolate work for review; whenever a user mentions a stack,
-  branch layers, dependent PRs, or gh stack; or when a stack is checked out.
+  branch layers, or gh stack; or when a stack is checked out; when work has to go through PRs, and those PRs are dependent on each ohter.
 metadata:
   author: github
   version: "0.1.0"
