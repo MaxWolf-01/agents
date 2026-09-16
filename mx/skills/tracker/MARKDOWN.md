@@ -20,7 +20,7 @@ status: proposed | open | claimed | review | done
 type: grilling # research | prototype | grilling | legwork on a decision ticket; omit on a build ticket
 blocked-by: [01, 02] # ticket numbers within the feature, qualified <feature>/NN, or a standalone ticket's slug; omit when nothing blocks it
 diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the first lands
-gh: [acme/backend#317, acme/helix#412] # the pull requests and issues the ticket produced or tracks, as owner/repo#number, in any number of repositories; omit when there are none
+gh: [owner/repo#317, owner/other-repo#412] # the pull requests and issues the ticket produced or tracks, as owner/repo#number, in any number of repositories; omit when there are none
 ```
 
 - `proposed` is the status of a ticket an agent filed that the user has not yet ruled on: an orchestrator's reading of a worker's friction or a harden line, a review session's finding too large to fix there, a punt. It is on the frontier and `claim` takes it like an open one, so what waits is the ruling and not the build: the user rules on the artifact the build produced. Its body opens with one line of provenance: what it was cut from (which closing comment, harden line, review finding, or the spec whose slice it is) and why it is worth a ticket. `open` is the status of a ticket already **ruled** and not yet built; a ticket the user asked for in conversation and a grilling's decision tickets are rulings already, and silence is not one. A `/mx:to-tickets` breakdown carries the ruling on the design alone, so its build tickets are `proposed` and each is ruled on from what it built (`/mx:to-tickets`).
