@@ -14,3 +14,7 @@ Two more from the user, same day: every entry carries a tag (`D123`, unique acro
 Also to consider, from the user: whether tags should encode the round they came from (`A1, A2` in one message, `B1, B2` in the next) rather than one running sequence; the letters show where a call came from, the sequence is simpler.
 
 To decide, in a grilling with the board rendered: what an entry is (a ruling with its options, a landing to QA, a proposal to accept or reject), where entries come from (the closing comment's "I need from you" list, the queue file, proposed tickets), how an entry clears (a ruling on the review page, a word in chat, a ticket flip, the board's own input), and how the board shows a slice that is built and waiting for a ruling.
+
+## Comments
+
+**2026-09-16** The last question, how the board shows a slice built and waiting for a ruling, is answered by the `review` status ([review-status](review-status.md)): such a slice sits in the board's needs-my-review group with its review page linked. Left for this grilling: the entries the page itself takes (tags, an input per entry, dismissal), and where the landings to drive and the proposals to rule on come from.
