@@ -98,7 +98,7 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 
 <tools>
 
-Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`.
+Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`, `job` (`/mx:tmux`).
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 

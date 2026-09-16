@@ -10,7 +10,7 @@
 # Usage: dispatch claim <ticket>
 #        dispatch prompt <ticket> < message-file
 #        dispatch ctl [--host <host>] [--setup-cmd <command>] <dispatch-ctl args...>
-#        dispatch wait <ticket>
+#        dispatch wait <ticket> [--stall SECS] [--deadline SECS]
 #        dispatch fetch <ticket>
 #        dispatch push
 #        dispatch review <ticket>
@@ -46,9 +46,11 @@
 #            spawn uses `make install` (under `nix develop -c` where a
 #            flake.nix exists).
 #   wait     blocks until the current run of <ticket> ends and prints its
-#            probe line (`dispatch-ctl wait`), riding out a dropped connection
-#            to its host on the way. Exit 0 on `exited`; nonzero when the run
-#            is `gone`, or the host stayed unreachable for two minutes.
+#            probe line (`dispatch-ctl wait`, whose flags pass straight
+#            through), riding out a dropped connection to its host on the way.
+#            Exit 0 on `exited`; nonzero when the run is `gone` (1), the
+#            worklog went silent for --stall (2), --deadline passed (5), or
+#            the host stayed unreachable for two minutes.
 #   fetch    brings ticket/<branch>/<ticket> from its host into this repo,
 #            replacing an earlier fetch of it (ticket branches get rebased).
 #   push     this branch to every host it still has a run on, so a worker
@@ -365,7 +367,7 @@ ctl() {
 wait_() {
     locate; ticket_host "$1"
     for attempt in $(seq 8); do
-        on_host "$host" bash "$scratch/dispatch-ctl" wait "$1"
+        on_host "$host" bash "$scratch/dispatch-ctl" wait "$@"
         rc=$?
         # 255 is ssh's own: the connection, not the command. A dropped one
         # is back within a retry or two; one that stays down is a different

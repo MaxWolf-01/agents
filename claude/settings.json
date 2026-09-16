@@ -474,12 +474,14 @@
     "deny": [
       "AskUserQuestion",
       "ReportFindings",
+      "ScheduleWakeup",
       "SendFeedback"
     ],
     "defaultMode": "auto"
   },
   "model": "opus",
   "skillOverrides": {
+    "loop": "off",
     "security-review": "user-invocable-only",
     "code-review": "off",
     "review": "off",

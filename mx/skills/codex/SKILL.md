@@ -16,16 +16,18 @@ Run OpenAI's Codex CLI non-interactively from Claude Code. Different model famil
 
 ## Command
 
+`<slug>` is a few words naming what you asked about (`auth-redesign`, `flaky-test`).
+
 ```sh
-_id=$(date +%s%N); codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -o "/tmp/codex-${_id}.md" "<prompt>" > "/tmp/codex-${_id}-log.md" 2>&1
+job run codex-<slug> -- codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -o "/tmp/codex-<slug>.md" "<prompt>"
 ```
 
 - `-s read-only` + `disk-full-read-access`: can read any file on disk, not write (no codebase conflicts)
-- `-o`: final answer to file. `_id` = epoch-nanosecond timestamp
+- `-o`: final answer to file, which is what you read when the wait returns
 - Model and reasoning effort ride the codex config defaults. Add `-c 'model_reasoning_effort="high"'` (or `"xhigh"`) only for especially reasoning-intensive tasks: a hard bug, a subtle design question.
-- `-C <dir>`: working directory (defaults to cwd, set when reviewing a different project)
+- Reviewing a different project: `job run --cwd <dir>` rather than codex's own `-C`, so the pane is there too if you attach.
 
-Run via Bash with `run_in_background: true`. You already have `_id` from the command; read `/tmp/codex-${_id}.md` directly. Log at `/tmp/codex-${_id}-log.md` if debugging.
+Then `job wait codex-<slug> --deadline 1800` as a background task, which wakes you when codex answers and also when it has not answered in half an hour — a `codex exec` that wedges otherwise waits until the session ends. Read `/tmp/codex-<slug>.md`, `job log codex-<slug>` if it failed, then `job rm codex-<slug>`. `/mx:tmux` has the rest.
 
 ## How to Prompt Codex
 
