@@ -17,4 +17,4 @@ To decide, in a grilling with the board rendered: what an entry is (a ruling wit
 
 ## Comments
 
-**2026-09-16** The last question, how the board shows a slice built and waiting for a ruling, is answered by the `review` status ([review-status](review-status.md)): such a slice sits in the board's needs-my-review group with its review page linked. Left for this grilling: the entries the page itself takes (tags, an input per entry, dismissal), and where the landings to drive and the proposals to rule on come from.
+**2026-09-16** The last question, how the board shows a slice built and waiting for a ruling, is answered by the `review` status ([A `review` status: a build waiting for the user's ruling has its own state and its own group on the board](review-status.md)): such a slice sits in the board's needs-my-review group with its review page linked. Left for this grilling: the entries the page itself takes (tags, an input per entry, dismissal), and where the landings to drive and the proposals to rule on come from.

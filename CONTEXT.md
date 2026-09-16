@@ -65,7 +65,7 @@ The status of a ticket an agent filed that the user has not yet ruled on: built 
 _Avoid_: backlog, suggested, draft ticket, idea
 
 **Review**:
-The status of a ticket whose build is finished and waits for the user's ruling; the board's needs-my-review group.
+The status of a ticket whose work is finished and waits for the user's ruling.
 _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:

@@ -15,11 +15,11 @@ status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
 every standalone ticket (*.md at the tracker root, the queue file aside) and writes one
 self-contained page beside the tracker, agent/board.html. The page is the
 tickets as rows grouped by state: needs me (the merged needs-human queue),
-needs my review (builds waiting for the user's ruling), frontier, claimed,
+needs my review (work waiting for the user's ruling), frontier, claimed,
 blocked, proposed, done folded. A row carries its feature, expands to the
-ticket's text, and links its review page and the pull requests and issues its
-`gh` list names. Feature chips in the top bar hide and show a feature's rows;
-a filter box narrows the rows to a word. Beside the rows a graph panel shows the dependency graph of the feature
+ticket's text, and links its review page and the pull requests and issues
+its `gh` list names. Feature chips in the top bar hide and show a feature's
+rows; a filter box narrows the rows to a word. Beside the rows a graph panel shows the dependency graph of the feature
 of the row under the cursor with that ticket marked, or the whole tracker's
 graph with its cross-feature edges, hidden features left out. A graph draws only tickets that wait on
 something or are waited on: a ticket with no edge is a row, not a node. A
@@ -75,6 +75,7 @@ import sys
 import time
 import urllib.request
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
@@ -682,7 +683,7 @@ def dv_link(path: str | None, label: str = "diff") -> str:
             f'onclick="event.stopPropagation()" title="{html.escape(path)}">{label}</a>')
 
 
-def gh_links(refs: list[str]) -> str:
+def gh_links(refs: Sequence[str]) -> str:
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
         f'<a class="dv gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
@@ -697,7 +698,7 @@ def search_text(*parts: str) -> str:
 
 def row(
     row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str,
-    dv: str | None = None, gh: list[str] = (),
+    dv: str | None = None, gh: Sequence[str] = (),
 ) -> str:
     """One ticket row: feature tag, number, title with its review page and GitHub links, badges, blocker chips; the body folded under it."""
     return (
@@ -908,6 +909,7 @@ PAGE = Template(r"""<!doctype html>
   .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
     color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
   .dv:hover { color: var(--ink); border-color: var(--ink3); }
+  .dv.gh { border-style: dashed; }
   .dvline { margin: .4rem 0 0; } .dvline .dv { margin-left: 0; padding: .1rem .5rem; }
   .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; justify-self: end; }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
@@ -1229,7 +1231,7 @@ ${groups}
         break;
       }
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
-      case "d": { const href = cur?.querySelector("a.dv")?.href; if (href) window.open(href, "_blank"); break; }
+      case "d": { const href = cur?.querySelector("a.dv:not(.gh)")?.href; if (href) window.open(href, "_blank"); break; }
       case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
       case "b": side.classList.toggle("folded"); break;
       case "0": off.clear(); applyFilters(); break;

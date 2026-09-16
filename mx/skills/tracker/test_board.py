@@ -312,6 +312,7 @@ def test_class_defs_cover_every_status(tracker: Path) -> None:
     class_defs = re.search(r'const classDefs = \[([^\]]*)\]', page).group(1)
     for status in STATUS_SYMBOL:
         assert f'"{status}"' in class_defs
+        assert f"--{status}-bg:" in page  # the classDef reads its colours off these tokens
 
 
 # ---- checkouts ------------------------------------------------------------
