@@ -474,7 +474,8 @@
     "deny": [
       "AskUserQuestion",
       "ReportFindings",
-      "SendFeedback"
+      "SendFeedback",
+      "EnterPlanMode"
     ],
     "defaultMode": "auto"
   },
