@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 ---
 
 # Retiring a ticket or feature retires its show directory and research notes
