@@ -33,7 +33,7 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 - **I need from you**: the calls only the user can make, each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
 - **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
-The tags run as one sequence across both lists and never repeat: a second comment continues from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: done` flip, comes after it.
+The tags run as one sequence across both lists and never repeat: a second comment continues from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: review` flip, comes after it.
 </contract>
 
 <workflow>

@@ -15,9 +15,10 @@
 #        dispatch push
 #        dispatch review <ticket>
 #   <ticket> is <NN-slug> under a feature, or a standalone ticket's <slug>.
-#   claim    flips <ticket> to claimed and commits that on this branch. Open
-#            and proposed alike: a proposal is built before the user rules on
-#            it (tracker conventions). Refuses a claimed or done one, which is
+#   claim    flips <ticket> to claimed and commits that on this branch. Open,
+#            proposed and review alike: a proposal is built before the user
+#            rules on it (tracker conventions), and a build sent back to its
+#            worker is claimed again. Refuses a claimed or done one, which is
 #            taken. A decision ticket is claimed the same way and then routed
 #            by its type; spawn is what refuses to hand one to a worker.
 #   prompt   writes stdin as <ticket>'s message, here; the spawn or resume that
@@ -28,8 +29,9 @@
 #            --host names the host, user@host or `local` for this machine, and
 #            a spawn (or `fuzz start`) is where you name it: the run is
 #            recorded here, so wait, fetch, log, stop, resume and cleanup find
-#            a ticket's host from the ticket, and `cleanup` forgets the run it
-#            just removed. `probe` with no --host polls every host this branch
+#            a ticket's host from the ticket; `cleanup` forgets the run it
+#            just removed, and `resume` claims a review ticket again, as
+#            `claim` would. `probe` with no --host polls every host this branch
 #            still has a run on, each line behind its host; one that cannot
 #            answer says so in place of its workers.
 #            The first spawn on a host stages it: the git remote, this plugin
@@ -56,15 +58,16 @@
 #   review   once a ticket branch is fetched, before or after its merge alike:
 #            projects the ticket's assumptions into the review page's notes,
 #            renders the page under agent/diffviews, serves it, re-renders the
-#            board. A merged branch's range is final, so it goes into the
-#            ticket's `diff:` frontmatter, committed on this branch; an
-#            unmerged one renders from the range as it stands.
+#            board, and writes the ticket's status on this branch: `review`
+#            while the branch is unmerged, `done` with its final range in the
+#            `diff:` frontmatter once it has merged. One commit either way,
+#            and none when the ticket already says so.
 #
 # Ticket branches merge into this branch with --no-ff; that merge commit is how
 # `review` finds a ticket's range after the merge (its second parent is the
-# ticket tip). A standalone proposal merges only once the user has ruled on its
-# review page, so until then it renders unmerged and the integration branch
-# carries its claim and nothing else.
+# ticket tip). A build merges only once the user has ruled on its review page,
+# so until then it renders unmerged and this branch carries the ticket's
+# status and nothing else of it.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -228,21 +231,37 @@ push_to() { # <host>
     run git push -q "${1//[@.]/-}" "$feature" || { echo "dispatch: push to $1 failed" >&2; return 1; }
 }
 
+# The status line of a ticket's frontmatter; nothing when it has none.
+ticket_status() { # <ticket-file>
+    awk 'NR==1{if($0!="---")exit;next} /^---$/{exit} {print}' "$1" | sed -n 's/^status: *//p' | head -1
+}
+
+set_status() { # <ticket-file> <status>
+    [ -n "$(ticket_status "$1")" ] || die "$1 has no status: line in its frontmatter (tracker conventions)"
+    sed -i "0,/^status:/s/^status:.*/status: $2/" "$1"
+    grep -q "^status: $2\$" "$1" || die "could not write status: $2 into $1"
+}
+
 claim() {
     locate
     id=$1
     ticket=$tickets/$id.md
     [ -f "$ticket" ] || die "no ticket at $ticket"
-    front=$(awk 'NR==1{if($0!="---")exit;next} /^---$/{exit} {print}' "$ticket")
-    status=$(sed -n 's/^status: *//p' <<<"$front" | head -1)
-    case ${status:-open} in
-        open|proposed) ;;
-        *) die "$id is $status: only an open or proposed ticket is claimed" ;;
+    status=$(ticket_status "$ticket")
+    case $status in
+        open|proposed|review) ;;
+        *) die "$id is ${status:-without a status}: only an open, proposed or review ticket is claimed" ;;
     esac
-    grep -q '^status:' <<<"$front" || die "$ticket has no status: line in its frontmatter (tracker conventions)"
-    sed -i '0,/^status:/s/^status:.*/status: claimed/' "$ticket"
-    grep -q '^status: claimed$' "$ticket" || die "could not write status: claimed into $ticket"
+    set_status "$ticket" claimed
     run git commit -q -m "${prefix}claim $id" -- "$ticket"
+}
+
+# A worker resumed on a build the user sent back holds its ticket again.
+reclaim() { # <ticket>
+    ticket=$tickets/$1.md
+    [ "$(ticket_status "$ticket")" = review ] || return 0
+    set_status "$ticket" claimed
+    run git commit -q -m "${prefix}claim $1" -- "$ticket"
 }
 
 # One host down is one host's failure: the others still get the tip, and the
@@ -339,6 +358,7 @@ ctl() {
     # ticket's command went to.
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -n "$forgets" ] && forget_run "$name"
+    [ "$sub" = resume ] && reclaim "$2"
     return 0
 }
 
@@ -419,19 +439,24 @@ review() {
     tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
     range=$(range_of "$tip") || exit 1
 
-    # `diff:` is a flow list in the frontmatter, written once the branch has
-    # merged and its range is final. When absent it goes in as the last
-    # frontmatter line, away from `status:`, which the ticket branch edits too:
-    # adjacent lines would make the merge conflict. A re-render finds its range
-    # already there.
-    if is_merged "$tip" && ! grep -q "$range" "$ticket"; then
-        if grep -q '^diff: \[' "$ticket"; then
-            sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
-        else
-            awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
-                mv "$ticket.tmp" "$ticket"
+    # The status follows the branch: waiting for the ruling while unmerged,
+    # done once merged, when the range is final too. `diff:` goes in as the
+    # last frontmatter line, away from `status:`, which the ticket branch
+    # edits too: adjacent lines would make the merge conflict.
+    if is_merged "$tip"; then
+        if ! grep -q "$range" "$ticket"; then
+            if grep -q '^diff: \[' "$ticket"; then
+                sed -i "s|^diff: \[\(.*\)\]|diff: [\1, $range]|" "$ticket"
+            else
+                awk -v line="diff: [$range]" 'NR > 1 && /^---$/ && !done { print line; done = 1 } { print }' "$ticket" > "$ticket.tmp" &&
+                    mv "$ticket.tmp" "$ticket"
+            fi
         fi
-        run git commit -q -m "${prefix}$id review range" -- "$ticket"
+        [ "$(ticket_status "$ticket")" = done ] || set_status "$ticket" done
+        git diff --quiet -- "$ticket" || run git commit -q -m "${prefix}$id landed" -- "$ticket"
+    elif [ "$(ticket_status "$ticket")" != review ]; then
+        set_status "$ticket" review
+        run git commit -q -m "${prefix}$id for review" -- "$ticket"
     fi
 
     # One section per round: the rounds the ticket carries, then this branch's
