@@ -25,6 +25,7 @@ Every fact has one authoritative home, usually the code, config, `--help` output
 - A vocabulary enumerated in a docstring *and* defined in code below → the code is the home; the docstring names the concept and points.
 - A version number or flag list hardcoded in a README → derive it: a command the reader runs, a generated include.
 - Prose describing what the adjacent five lines of code plainly show → delete.
+- One fact in two places in the same document, once where it belongs and once in passing → keep the one the reader meets in context, delete the other.
 
 Cache deliberately or not at all: a copy earns its place only when the lookup is genuinely expensive, and then it names its home so the reader can check it.
 
