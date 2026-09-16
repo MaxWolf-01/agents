@@ -9,7 +9,7 @@
 # Everything it makes is inside the work dir, plus the scratch dirs a spawn puts
 # under ~/.local/state/dispatch (named after the toy repo, removed at the end).
 # `claude` is stood in for by a stub runner, the DISPATCH_RUNNER seam: it makes
-# one commit, flips the ticket to done and writes the status line a real worker's
+# one commit, flips the ticket to review and writes the status line a real worker's
 # runner writes, so what runs here is dispatch and dispatch-ctl themselves.
 set -eu
 
@@ -43,11 +43,11 @@ message=$1 ticket=$2 model=$3 run_id=$4
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 printf '%s stub: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$here/$run_id.log"
 printf 'built by %s\n' "$run_id" >> built.txt
-sed -i '0,/^status:/s/^status:.*/status: done/' "$ticket"
+sed -i '0,/^status:/s/^status:.*/status: review/' "$ticket"
 git add -A
 git -c user.email=stub@toy -c user.name=stub commit -q -m "stub: $(basename "$ticket")"
-printf '%s stub: committed, %s is done\n' "$(date -u +%FT%TZ)" "$ticket" >> "$here/$run_id.log"
-printf 'attempts=1 exit=0 status=done session=stub-%s\n' "$run_id" > "$here/$run_id.status"
+printf '%s stub: committed, %s is up for review\n' "$(date -u +%FT%TZ)" "$ticket" >> "$here/$run_id.log"
+printf 'attempts=1 exit=0 status=review session=stub-%s\n' "$run_id" > "$here/$run_id.status"
 STUB
 
 step "a toy repo: one feature of three tickets, one standalone ticket"

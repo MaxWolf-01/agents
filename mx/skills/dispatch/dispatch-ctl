@@ -41,7 +41,9 @@
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
-#             the same prompt file holds the guidance.
+#             the same prompt file holds the guidance. A ticket the worker
+#             had flipped to review is claimed again in its worktree first,
+#             committed there, so this round's flip means what it says.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, ticket
 #             status, session id), or `gone` (runner dead, no status line:
@@ -305,6 +307,13 @@ resume() {
     fi
     session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$run_id.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
+    # The worktree's copy of the ticket says review from the last round; the
+    # runner's retry and the orchestrator's read both take a review flip as
+    # the worker finishing, so the round starts from claimed.
+    if [ "$(sed -n 's/^status: *//p' "$worktree/$ticket" | head -1)" = review ]; then
+        run sed -i '0,/^status:/s/^status:.*/status: claimed/' "$worktree/$ticket"
+        run git -C "$worktree" commit -q -m "claim $id" -- "$ticket"
+    fi
     spawn "$1" "$2" "$session"
 }
 

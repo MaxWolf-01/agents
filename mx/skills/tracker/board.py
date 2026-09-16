@@ -15,10 +15,11 @@ status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
 every standalone ticket (*.md at the tracker root, the queue file aside) and writes one
 self-contained page beside the tracker, agent/board.html. The page is the
 tickets as rows grouped by state: needs me (the merged needs-human queue),
-frontier, claimed, blocked, proposed, done folded. A row carries its feature,
-expands to the ticket's text and links its review page. Feature chips in the
-top bar hide and show a feature's rows; a filter box narrows the rows to a
-word. Beside the rows a graph panel shows the dependency graph of the feature
+needs my review (work waiting for the user's ruling), frontier, claimed,
+blocked, proposed, done folded. A row carries its feature, expands to the
+ticket's text, and links its review page and the pull requests and issues
+its `gh` list names. Feature chips in the top bar hide and show a feature's
+rows; a filter box narrows the rows to a word. Beside the rows a graph panel shows the dependency graph of the feature
 of the row under the cursor with that ticket marked, or the whole tracker's
 graph with its cross-feature edges, hidden features left out. A graph draws only tickets that wait on
 something or are waited on: a ticket with no edge is a row, not a node. A
@@ -29,7 +30,7 @@ One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
 that has a worktree on a branch named after it (how dispatch cuts a feature
 worktree) is read from that worktree instead, review pages included, so its
-claims and done flips are on the board while the feature is in flight. A
+claims and review flips are on the board while the feature is in flight. A
 worktree whose branch is already merged is ignored. A standalone ticket whose
 slug names such a feature has been absorbed into it and is not shown. A
 standalone ticket that an unmerged worktree's branch added or changed since it
@@ -74,6 +75,7 @@ import sys
 import time
 import urllib.request
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
@@ -83,9 +85,12 @@ import markdown
 import tyro
 import yaml
 
-STATUS_SYMBOL = {"done": "✓", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
-TICKET_STATUSES = {"proposed", "open", "claimed", "done"}  # what a file may declare; blocked is derived
-GROUPS = [("needs", "needs me"), ("open", "frontier"), ("claimed", "claimed"), ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done")]
+STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
+TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
+GROUPS = [
+    ("needs", "needs me"), ("review", "needs my review"), ("open", "frontier"), ("claimed", "claimed"),
+    ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done"),
+]
 
 
 @dataclass
@@ -280,10 +285,11 @@ class Diffviews:
 class Ticket:
     num: str
     title: str
-    status: str  # proposed | open | claimed | done, plus derived: blocked
+    status: str  # proposed | open | claimed | review | done, plus derived: blocked
     kind: str | None  # a decision ticket's type (research | prototype | grilling | legwork); None on a build ticket
     blocked_by: list[str]
     ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
+    gh: list[str]  # the pull requests and issues the ticket names, as owner/repo#number
     body_html: str
     diffview: str | None
 
@@ -300,9 +306,10 @@ class Feature:
 class Standalone:
     slug: str
     title: str
-    status: str  # proposed | open | claimed | done, plus derived: blocked
+    status: str  # proposed | open | claimed | review | done, plus derived: blocked
     kind: str | None
     blocked_by: list[tuple[str, str]]  # (ref "<feature>/NN" or "<slug>", status)
+    gh: list[str]
     body_html: str
     diffview: str | None
     source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
@@ -367,6 +374,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         status=status,
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
+        gh=gh_refs(meta, path),
         body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         source=source,
@@ -422,6 +430,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
+                gh=gh_refs(meta, path),
                 body_html=render_body(body, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
             )
@@ -448,6 +457,16 @@ def declared_status(meta: dict, path: Path) -> str:
 def ticket_kind(meta: dict) -> str | None:
     kind = meta.get("type")
     return str(kind) if kind else None
+
+
+GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
+
+
+def gh_refs(meta: dict, path: Path) -> list[str]:
+    refs = [str(r) for r in meta.get("gh") or []]
+    for ref in refs:
+        assert GH_REF.fullmatch(ref), f"{path}: gh reference {ref!r}; a reference is owner/repo#number"
+    return refs
 
 
 def kind_badge(kind: str | None) -> str:
@@ -506,9 +525,9 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
     key = repr((
         project,
         [(f.name, f.needs_human, f.spec_status,
-          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.body_html, t.diffview) for t in f.tickets])
+          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.body_html, k.diffview, k.source) for k in standalone],
+        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.source) for k in standalone],
         queue,
         log,
     ))
@@ -664,17 +683,29 @@ def dv_link(path: str | None, label: str = "diff") -> str:
             f'onclick="event.stopPropagation()" title="{html.escape(path)}">{label}</a>')
 
 
+def gh_links(refs: Sequence[str]) -> str:
+    # the issues URL serves a pull request too: GitHub redirects it to the pull page
+    return "".join(
+        f'<a class="dv gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
+        f'onclick="event.stopPropagation()" title="on GitHub">{html.escape(ref)}</a>'
+        for ref in refs for repo, num in [ref.split("#")]
+    )
+
+
 def search_text(*parts: str) -> str:
     return html.escape(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", " ", p) for p in parts)).strip().lower(), quote=True)
 
 
-def row(row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str, dv: str | None = None) -> str:
-    """One ticket row: feature tag, number, title, badges, blocker chips; the body folded under it."""
+def row(
+    row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str,
+    dv: str | None = None, gh: Sequence[str] = (),
+) -> str:
+    """One ticket row: feature tag, number, title with its review page and GitHub links, badges, blocker chips; the body folded under it."""
     return (
         f'<details class="ticket row-{status}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
-        f'data-search="{search_text(num, title, body)}"><summary>'
+        f'data-search="{search_text(num, title, body, *gh)}"><summary>'
         f'<span class="ftag">{html.escape(feature)}</span><span class="num">{html.escape(num)}</span>'
-        f'<span class="title">{html.escape(title)}{dv_link(dv)}</span>'
+        f'<span class="title">{html.escape(title)}{dv_link(dv)}{gh_links(gh)}</span>'
         f'<span class="badges">{badges}</span>'
         f'<span class="chips">{chips or "<span class=deps>—</span>"}</span></summary>'
         f'<div class="body">{f"<p class=dvline>{dv_link(dv, 'open the review page')}</p>" if dv else ""}{body}</div></details>'
@@ -683,14 +714,14 @@ def row(row_id: str, feature: str, num: str, title: str, status: str, badges: st
 
 def ticket_row(f: Feature, t: Ticket) -> str:
     by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.diffview)
+    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.diffview, t.gh)
 
 
 def standalone_row(k: Standalone) -> str:
     badges = kind_badge(k.kind)
     if k.source:
         badges += f'<span class="badge source" title="filed on branch {html.escape(k.source)}, not on the main branch">on {html.escape(k.source)}</span>'
-    return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.diffview)
+    return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.diffview, k.gh)
 
 
 def needs_row(owner: str, i: int, item: str) -> str:
@@ -703,10 +734,10 @@ def feature_chip(f: Feature) -> str:
     counts = Counter(t.status for t in f.tickets)
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets) - counts['proposed']} done"] if f.tickets else ["no tickets yet"]
-    bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "blocked", "proposed") if counts[s]]
+    bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
     if f.needs_human:
         bits.append(f"{len(f.needs_human)} need me")
-    dot = '<i class="dot"></i>' if f.needs_human else ""
+    dot = '<i class="dot"></i>' if f.needs_human or counts["review"] else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
         f'<span class="dim">{counts["done"]}/{len(f.tickets) - counts["proposed"]}</span></button>'
@@ -774,6 +805,7 @@ PAGE = Template(r"""<!doctype html>
     --accent: #7aa2f7; --accent-dim: #4b689f;
     --done-bg: #17251a; --done-br: #3f7a44; --done-tx: #85d18d;
     --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
+    --review-bg: #2a1622; --review-br: #9c4d78; --review-tx: #ee9ccb;
     --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
     --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
     --proposed-bg: #1d1a26; --proposed-br: #5b4f7a; --proposed-tx: #a397c4;
@@ -848,6 +880,7 @@ PAGE = Template(r"""<!doctype html>
 
   .done { background: var(--done-bg); border-color: var(--done-br); color: var(--done-tx); }
   .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
+  .review { background: var(--review-bg); border-color: var(--review-br); color: var(--review-tx); }
   .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
   .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
   .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
@@ -870,11 +903,13 @@ PAGE = Template(r"""<!doctype html>
   .row-needs .title { color: var(--ink); }
   .row-open .title { color: var(--open-tx); }
   .row-claimed .title { color: var(--claimed-tx); }
+  .row-review .title { color: var(--review-tx); }
   .row-done .title, .row-proposed .title, .row-blocked .title { color: var(--ink2); }
   .row-needs { border-left: 3px solid var(--human); margin-left: -.6rem; padding-left: calc(.6rem - 3px); }
   .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
     color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
   .dv:hover { color: var(--ink); border-color: var(--ink3); }
+  .dv.gh { border-style: dashed; }
   .dvline { margin: .4rem 0 0; } .dvline .dv { margin-left: 0; padding: .1rem .5rem; }
   .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; justify-self: end; }
   .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
@@ -993,7 +1028,7 @@ ${groups}
   // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
   // ghost = done ticket shown as context: done palette (so it never reads as
   // blocked-grey), dashed border marking it inactive
-  const classDefs = ["done", "claimed", "open", "blocked", "proposed"].map((s) =>
+  const classDefs = ["done", "review", "claimed", "open", "blocked", "proposed"].map((s) =>
     "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
   ).join("\n") + "\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
   // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
@@ -1196,7 +1231,7 @@ ${groups}
         break;
       }
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
-      case "d": { const href = cur?.querySelector("a.dv")?.href; if (href) window.open(href, "_blank"); break; }
+      case "d": { const href = cur?.querySelector("a.dv:not(.gh)")?.href; if (href) window.open(href, "_blank"); break; }
       case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
       case "b": side.classList.toggle("folded"); break;
       case "0": off.clear(); applyFilters(); break;

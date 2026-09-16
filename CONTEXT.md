@@ -64,8 +64,12 @@ _Avoid_: task, chore, prep
 The status of a ticket an agent filed that the user has not yet ruled on: built like an open one while the ruling waits.
 _Avoid_: backlog, suggested, draft ticket, idea
 
+**Review**:
+The status of a ticket whose work is finished and waits for the user's ruling.
+_Avoid_: needs ruling, pending, awaiting approval, done
+
 **Ruling**:
-The user's answer on a proposed ticket, made on the artifact its build produced: the ticket lands, or it and its build are deleted.
+The user's answer on what a ticket built, made on its review page and demo: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Board**:
@@ -83,7 +87,7 @@ _Avoid_: deprecation notice, banner
 ### Dispatch
 
 **Orchestrator**:
-The one agent that works a feature's tickets through workers: the sole claim-writer and the only judge of done.
+The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that writes `done` on the user's accept.
 _Avoid_: dispatcher, coordinator, parent
 
 **Worker**:
