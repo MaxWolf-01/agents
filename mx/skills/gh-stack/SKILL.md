@@ -12,7 +12,7 @@ metadata:
 
 # gh-stack
 
-Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying.
+Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md` and the line that points at it, which are local.
 
 `gh stack` is a [GitHub CLI](https://cli.github.com/) extension for stacked branches and pull
 requests. A stack is an ordered chain of branches rooted on a trunk, where each branch has one PR
@@ -173,8 +173,10 @@ an ancestor of the branch.
 `gh stack <command> --help` is authoritative for flags and arguments. Note that
 `gh stack help <command>` does **not** work — it prints the top-level help.
 
-Open the reference whose trigger matches the task; no need to preload all three.
+Open the reference whose trigger matches the task; no need to preload all of them.
 
+- `references/github-side.md` — read before linking PRs that already exist into a stack, before
+  merging a layer, and when the merge box says the stack is out of date.
 - `references/stack-design.md` — read before creating a stack, when deciding how many layers to
   use, what belongs in each one, or whether work belongs in a new stack.
 - `references/commands.md` — read when a command fails unexpectedly or you need its preconditions,
