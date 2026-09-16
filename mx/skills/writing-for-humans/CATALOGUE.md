@@ -114,6 +114,8 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `33` `both` **Over-compression.** Dropped articles, verbless fragments, symbol-speak, and abbreviations that make the reader decode instead of read. "Parser rejects bad date → exit 2, no write" becomes "The parser rejects a bad date, exits with code 2, and writes nothing." Write whole sentences with their articles and verbs, and spell out arrows and abbreviations.
 
+- `52` `both` **Unintroduced referent.** A definite noun phrase for a thing the text never names: "the card", "the page", "the file", where the reader has met no card, page or file. The writer has it in view and the reader is left guessing which one. Name it in full where it first appears; the short form carries it after that.
+
 - `37` `both` **Nominalizations.** A verb turned into a noun with a weak verb propping it up: "a reduction in latency was achieved through the elimination of redundant lookups" becomes "removing redundant lookups cut latency". Give the action back to the verb.
 
 - `38` `both` **Noun stacks.** Three or more nouns in a row that the reader has to unpack: "database connection pool exhaustion" becomes "the connection pool ran out of connections". Break the stack with a verb or a preposition.
