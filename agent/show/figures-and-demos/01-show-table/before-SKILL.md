@@ -1,4 +1,5 @@
 ---
+# The show skill as of 654b4af, kept as the before-input of the demo beside this file. Not current.
 name: show
 description: "Show, don't tell. Replace a struggling prose explanation with the artifact that carries it: a diagram, comparison, runnable demo, chart, figure, explainer page, video, ... Use when an explanation is ballooning in text, when the user is struggling to understand something, when they ask to see it shown rather than described, or when another skill needs an explanation artifact."
 ---
