@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 ---
 
 # A `review` status: a build waiting for the user's ruling has its own state and its own group on the board
