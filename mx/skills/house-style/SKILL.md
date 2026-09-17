@@ -9,7 +9,7 @@ The look of [mwolf.dev](https://mwolf.dev) as a floor: a quiet page, separated b
 
 ## Colour
 
-Ten tokens, each a `light-dark()` pair in `tokens.css`. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle.
+Ten tokens, each a `light-dark()` pair in `tokens.css`. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
 
 | token | job |
 | --- | --- |
@@ -26,7 +26,7 @@ Ten tokens, each a `light-dark()` pair in `tokens.css`. The page follows the sys
 
 ## Type
 
-Newsreader for text; Literata, EB Garamond and Source Serif 4 fit too; a grotesk over a sans reads as a generated page. Sizes are set per family, because x-heights differ by more than a point; the numbers are in `tokens.css`. IBM Plex Mono for content that is data: dates, numbers, field labels, table heads, code. Mono as texture reads cheap.
+Newsreader for text; Literata, EB Garamond and Source Serif 4 fit too; a grotesk over a sans reads as a generated page. Sizes are set per family, because x-heights differ by more than a point: a project that swaps the serif re-sets `--size-body` and `--leading-body` in `tokens.css`, and small text ported from a grotesk is re-measured downward, since Newsreader runs wider at the same size. IBM Plex Mono for content that is data: dates, numbers, field labels, table heads, code. Mono as texture reads cheap.
 
 Roles, so a page asks for a heading rather than a size:
 
@@ -42,15 +42,15 @@ Roles, so a page asks for a heading rather than a size:
 
 ## Habits
 
-1. **Separate with space, not with boxes.** A hairline only where two things would otherwise touch; a filled block only where something must be found. A hairline does what a shadow would, the dimmed backdrop says which layer is in front, and a word does what an icon would.
+1. **Separate with space, not with boxes.** A hairline only where two things would otherwise touch; a filled block only where something must be found. A hairline does what a shadow would, the dimmed backdrop says which layer is in front, and a word does what an icon would, except a brand mark that reads faster than its name.
 2. **Labels lowercase, never small caps.** Small type in capitals shouts, and one shouting label makes the whole palette loud.
-3. **One accent, one job.** Links and the primary action wear it; nothing else does, so the eye can trust it. A page with three accented things has two too many.
+3. **One accent, one job.** Links and the primary action wear it; nothing else does, so the eye can trust it. One meaning, however many marks carry it: a page whose accent means three things has two too many.
 
 Copy on the page is artefact text: `/mx:writing-for-humans` binds every label and every line of chrome.
 
 ## Companions
 
 - `PARTS.md`: one line per part (button, input, table, note, overlay, chart), and the Tailwind v4 mapping.
-- `demo.html`: every token, role and part rendered, with the toggle to copy. Open it to see the floor; `?theme=day` and `?theme=night` pin a scheme for a screenshot.
+- `demo.html`: every token, role and part rendered, with the toggle and the `?theme=` reading to copy. Open it to see the floor.
 
 Look at both schemes before presenting anything built on this.

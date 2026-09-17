@@ -50,7 +50,7 @@
     .button { display: inline-flex; align-items: center; height: 2.5rem; padding: 0 1rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--body); font: inherit; cursor: pointer; transition: color 150ms, border-color 150ms, background-color 150ms; }
     .button:hover { border-color: var(--accent); color: var(--accent); }
     .button.solid { background: var(--accent); border-color: var(--accent); color: var(--ground); }
-    .button.solid:hover { background: var(--accent-2); border-color: var(--accent-2); }
+    .button.solid:hover { background: color-mix(in srgb, var(--accent) 85%, var(--strong)); border-color: transparent; }
     .button.ghost { border-color: transparent; color: var(--muted); }
     .button:disabled { opacity: 0.45; pointer-events: none; }
 
