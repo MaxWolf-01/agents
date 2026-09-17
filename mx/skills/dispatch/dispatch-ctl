@@ -38,11 +38,11 @@
 #             guidance.
 #   wait      blocks until the current run of <ticket> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
-#             wait after SECS with nothing written to the worklog (exit 2) and
-#             --deadline after SECS of waiting (exit 5); both leave the worker
-#             running, since a wait that ended is a wait that ended, and what
-#             to do about a worker stuck short of exiting is the
-#             orchestrator's call. `job` runs the loop (see wait_).
+#             wait after SECS with nothing written to the worklog (exit 2),
+#             --deadline after SECS of waiting (exit 5). Both leave the worker
+#             running: a quiet worker may be wedged or may be taking its time
+#             over something hard, and telling those apart is the
+#             orchestrator's to judge from the pane.
 #   stop      ends the current run without losing it: the runner writes its
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
@@ -267,8 +267,8 @@ spawn() {
 # ssh hop dropped under it) stays registered and swallows the next signal, so
 # a channel cannot be trusted after an interrupted wait; the status file can.
 # `job wait` is that poll, shared rather than copied: the worklog is what the
-# worker writes as it goes, so its mtime is genuine progress and --stall reads
-# a worker stuck short of exiting off it. The exit codes are remapped because
+# worker writes as it goes, so its mtime is genuine progress and a --stall or
+# --deadline return is a worker worth looking at. The exit codes are remapped because
 # dispatch asks a different question than job does -- any status line means
 # the worker exited and the ticket is there to be read, whatever code claude
 # left with.

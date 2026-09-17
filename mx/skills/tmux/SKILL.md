@@ -11,9 +11,7 @@ Run a command in tmux rather than as a blocking Bash call when it takes more tha
 
 Read `job --help` before the first job of a session. It is the only home of the commands, the exit codes and the wait flags.
 
-Never hand-write the wait. An inline predicate is where the bugs are: `pgrep -f <pattern>` matches the waiting shell's own command line and loops forever, and a `tail -f | grep` for the success marker stays silent through a crash.
-
-Name jobs `<project>-<activity>`, like `nethack-setup`. The name shows up in `tmux ls`, and it stays taken until `job rm`.
+Name jobs `<project>-<activity>`, like `api-migrate` or `docs-build`. The name shows up in `tmux ls`, and it stays taken until `job rm`.
 
 ## A pane you drive yourself
 
