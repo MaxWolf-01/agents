@@ -98,13 +98,15 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 
 <tools>
 
-Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`.
+Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`, `gh-asset`.
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 
 `diffview` renders a diff as a review page in max's browser, and that page is the deliverable whenever the user asks to see a diff or the changes; prose recaps and bare links only accompany it. Reach for it unprompted as the editing starts in an interactive session: `--watch --open` in the background on a stable `-o` path, so one self-reloading tab is the review surface across every round; never `--no-auto-summary`. Work arriving in finished batches (implementation delegated to subagents) gets a render per batch. `--notes` is where your side of the review goes, and the one place the meta commentary belongs that must never reach the code: the judgment calls, why X beat Y, an assumption awaiting max's ruling. Write them short, plain and few: a page of notes does not get read. Read `--help` for the source specs and the page's semantics.
 
 `claude-browser <path|url>` opens what an agent renders for max: review pages, boards, prototypes, figures. It can open files max's own browser cannot (firejail, home whitelist), it leaves max's browser closed, and it picks the profile `--chrome` needs for this session's account (`--help`). `xdg-open` handles the rest: files a browser does not render, and pages max acts on as himself (approve, order, post, sign in).
+
+`gh-asset push <image>` turns a screenshot into a URL for a GitHub comment, PR body or issue, private repos included. Reach for it rather than asking max to drag an image in; a push cannot be withdrawn.
 
 LaTeX: full TeX Live is on the workstations (`pdflatex`/`lualatex`/`xelatex`/`latexmk`, tikz, every CTAN package and font). Just compile, no availability checks or nix-shell. `pdftoppm` renders the PDF to PNG so you can look at your output.
 
