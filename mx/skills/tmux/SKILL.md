@@ -1,11 +1,13 @@
 ---
 name: tmux
-description: "Run commands in tmux whenever they run long or need eyes on them: anything expected to take more than ~30–60s (training runs, ML experiments, builds, servers), anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
+description: "Run commands in tmux whenever they might not come back on their own or need eyes on them: builds, test suites, training runs, servers, anything over the network, anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
 ---
 
 # tmux
 
-Run a command in tmux rather than as a blocking Bash call when it takes more than ~30-60s, when its output is worth watching, or when it is interactive. The session outlives the command, the scrollback is readable by agent and human alike, and either can step in. Quick one-shot commands stay plain Bash.
+Run a command in tmux rather than as a blocking Bash call when it might not come back on its own, when its output is worth watching, or when it is interactive. The session outlives the command, the scrollback is readable by agent and human alike, and either can step in. A command that exits or fails on its own, `git status` or `cat`, stays plain Bash.
+
+How long you expect it to take is the wrong test. The command you thought would take a minute is the one that hangs on a prompt or a dead network, and that is the case this exists for.
 
 ## Anything you will wait on: `job`
 
