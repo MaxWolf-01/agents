@@ -82,7 +82,7 @@ for attempt in $(seq 1 $max_attempts); do
 
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
-    [ "$status" = done ] && break
+    [ "$status" = review ] && break
     [ "$attempt" -eq "$max_attempts" ] && break
 
     backoff=$((attempt * 30))
