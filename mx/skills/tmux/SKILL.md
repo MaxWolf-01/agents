@@ -11,17 +11,14 @@ Two shapes, and the split is whether you intend to wait on it.
 
 ## Start it and be told how it ended: `job`
 
-```
-job run  <name> -- <command...>       # returns at once
-job wait <name> --stall <secs>        # as a background task: one wake-up
-```
+**Run `job --help` before the first `job` of a session.** It is the single home of the command shapes, the exit code per outcome, and the flags that end a wait; repeating any of that here would be a copy that goes stale the next time the script changes.
 
-Everything about a job you walk away from lives in `job --help`: the exit code per outcome, `--deadline` for the job that prints in a loop and so never looks stalled, `probe`, `log`, `stop`, `rm`. Two rules that are not in it:
+Two rules that are not in it:
 
 - **Never hand-write the wait.** A predicate typed inline is where the bugs are: `pgrep -f <pattern>` matches the waiting shell's own command line and loops forever, and a `tail -f | grep` for the success marker stays silent through a crash. `job wait` is that predicate debugged once.
 - **Name it `<project>-<activity>`** (`nethack-setup`, `dotfiles-hmswitch`). The name is what shows in `tmux ls`, and it stays taken until `job rm`, so a second agent reaching for `build` gets an error rather than your log.
 
-`job run` takes the inhibitor a long job needs on a laptop, so `nosleep` is already handled. A job that must finish still belongs on a machine that will not suspend; `worker-hosts` names the ones there are, where the environment provides such a command.
+A job that must finish belongs on a machine that will not suspend; `worker-hosts` names the ones there are, where the environment provides such a command. On a laptop `job run` holds the inhibitor for you, and `--no-awake` drops it for a command that never ends — a server or a watcher otherwise keeps the machine from suspending for as long as it runs.
 
 ## Drive it yourself: raw tmux
 
@@ -47,4 +44,4 @@ Waiting on a remote job is `job` on the remote host, read over ssh. Never `tmux 
 
 ## Human access
 
-The user can always attach: `tmux attach -t <session>` locally, or `ssh host -t "tmux attach -t <session>"` remotely. A `job` session is `job-<name>`. Mention the session name when you start something they might want to watch.
+Give the user the command, not the session name: `tmux attach -t job-<name>` for a job, `tmux attach -t <session>` for a pane you made yourself, `ssh host -t "tmux attach -t <session>"` for either on a remote host. A name alone makes them assemble the command from a message that has already scrolled away.

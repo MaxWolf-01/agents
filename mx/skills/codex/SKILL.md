@@ -27,7 +27,7 @@ job run codex-<slug> -- codex exec -s read-only -c 'sandbox_permissions=["disk-f
 - Model and reasoning effort ride the codex config defaults. Add `-c 'model_reasoning_effort="high"'` (or `"xhigh"`) only for especially reasoning-intensive tasks: a hard bug, a subtle design question.
 - Reviewing a different project: `job run --cwd <dir>` rather than codex's own `-C`, so the pane is there too if you attach.
 
-Then `job wait codex-<slug> --deadline 1800` as a background task, which wakes you when codex answers and also when it has not answered in half an hour — a `codex exec` that wedges otherwise waits until the session ends. Read `/tmp/codex-<slug>.md`, `job log codex-<slug>` if it failed, then `job rm codex-<slug>`. `/mx:tmux` has the rest.
+Then `job wait codex-<slug> --deadline <secs>` as a background task. Pick the deadline from what you asked for, since a question that needs a whole codebase read is not the one that needs a single file; it is there only so a `codex exec` that wedges does not wait until the session ends. Read `/tmp/codex-<slug>.md`, `job log codex-<slug>` if it failed, then `job rm codex-<slug>`. `/mx:tmux` has the rest.
 
 ## How to Prompt Codex
 
