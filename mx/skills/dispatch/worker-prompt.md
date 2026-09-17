@@ -63,7 +63,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 <tools>
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
-`job` runs a command in tmux and reports how it ended; `job --help` is its reference, and run it before the first use. Anything that takes minutes goes through it rather than a blocking Bash call: a test suite or a build that wedges otherwise eats your whole run with nobody watching the pane, and `job wait --deadline <secs>` is what cuts it loose. Say so in your `Friction` notes when one does.
+`job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one, and use it for anything slower than about a minute. A blocking Bash call on a command that hangs costs you the rest of your run, with nobody watching the pane to notice; `job wait --deadline <secs>` ends the wait whatever the command is doing.
 
 `ast-grep` is syntax-aware and won't match inside strings/comments:
 - Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
