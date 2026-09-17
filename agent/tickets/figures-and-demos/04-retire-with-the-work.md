@@ -1,5 +1,6 @@
 ---
 status: done
+diff: [654b4afe75ab39cbc033ab7f1a7dc6fda58299d9..86a77f08521dad5f7f23a93ce1ccaa11ff7056f0]
 ---
 
 # Retiring a ticket or feature retires its show directory and research notes
