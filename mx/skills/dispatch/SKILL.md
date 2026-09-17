@@ -20,7 +20,7 @@ Two scripts beside this skill carry the mechanics, and each one's `--help` is it
 1. Fetch the spec and every ticket per `/mx:tracker`; a standalone ticket is the whole brief and has no spec.
 2. **The feature branch is the feature's integration branch, held in its own worktree.** Cut both from the repo's integration branch (`git worktree add ../<repo>-<feature> -b <feature>`); the checkout you were invoked in never switches branches. Ticket branches cut from the feature branch and merge back into it; the repo's integration branch sees the feature only as one `--no-ff` merge when the spec ships. A standalone ticket has neither branch nor worktree to cut: you dispatch it from the checkout you are in, on the integration branch its ticket branch cuts from and merges back into at the ruling (tick step 1).
 3. **One orchestrator per feature, and check the neighbours.** Other orchestrators may run concurrently on other features. Before the first wave, scan `agent/tickets/` for other features' open and claimed tickets. A cross-feature `blocked-by` edge touching this feature is a hard serialize signal: mechanical, grep for qualified references. Beyond that, judge: where another feature's design space or file surface overlaps this one's, warn the user and let them decide whether to serialize; small merge conflicts at integration are fine, a shared design space is not (that's one feature wearing two names). Sessions dispatching standalone tickets are neighbours of the same kind, each claiming its own on the integration branch, where a collision is an ordinary one-line conflict.
-4. Run the tick loop under `/loop` with no interval (self-paced). Worker exits drive the ticks, not a fixed cadence (tick step 5). A standalone ticket's loop is one ticket wide.
+4. A standalone ticket's loop is one ticket wide.
 
 ## The tick
 
@@ -64,7 +64,7 @@ For each ticket in the wave:
 
 1. `dispatch claim <NN-slug>`: it flips the status and commits on the feature branch (you are the sole claim-writer); the spawn pushes the tip the ticket branch cuts from, so a newly-unblocked ticket gets its blockers' landed code.
 2. Write the ticket message (Worker contract) and hand it over: `dispatch prompt <NN-slug> < <file>`.
-3. `dispatch ctl --host <host> spawn <NN-slug> <model>` with the host's permission mode in the environment, then arm the watcher: `dispatch wait <NN-slug>` as a background task. The first spawn on a host stages it (the scripts, the bare repo, the push) and needs `claude` authenticated there with the `mx` plugin installed; a project whose install is neither `make install` nor `nix develop -c make install` also needs `--setup-cmd '<its setup line>'` on that host's first spawn. The worker's model is explicit: Opus by default, Sonnet by your judgment for a small or trivial ticket, never Fable unless the user names it explicitly for this run, and never simply inherited from the orchestrator's own model; the judgment calls (wave planning, merges, verification) stay with you.
+3. `dispatch ctl --host <host> spawn <NN-slug> <model>` with the host's permission mode in the environment, then arm the watcher: `dispatch wait <NN-slug> --deadline <secs>` as a background task, the deadline being the longest you are willing to go without checking on it. The first spawn on a host stages it (the scripts, the bare repo, the push) and needs `claude` authenticated there with the `mx` plugin installed; a project whose install is neither `make install` nor `nix develop -c make install` also needs `--setup-cmd '<its setup line>'` on that host's first spawn. The worker's model is explicit: Opus by default, Sonnet by your judgment for a small or trivial ticket, never Fable unless the user names it explicitly for this run, and never simply inherited from the orchestrator's own model; the judgment calls (wave planning, merges, verification) stay with you.
 
 ### 5. Stop or sleep
 
@@ -84,7 +84,7 @@ Frontier empty and everything landed → close the feature out, in order:
 
 Frontier empty with tickets left, every one a decision ticket, a build in `review`, or blocked on one of those → the feature waits on the human: report which questions and rulings, and stop the loop; the answers reopen it.
 
-Otherwise the watchers are your wake signal: `dispatch wait` returns within seconds of the worker's exit, so the scheduled wakeup is a long fallback heartbeat (1200s+), never a poll. It exists for what a watcher can't catch: a worker wedged short of exiting, a human who interrupted the pane.
+Otherwise the watchers are your wake signal. `dispatch wait` returns within seconds of a worker's exit, and returns on its `--deadline` when nothing has happened by then, which a plain wait would sit through until the session ended. A watcher back on its deadline hands you a decision rather than a finished worker. Read the pane, then resume the worker, stop it, or re-arm with a longer window.
 
 ## Worker contract
 

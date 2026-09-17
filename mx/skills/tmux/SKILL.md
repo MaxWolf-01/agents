@@ -1,28 +1,33 @@
 ---
 name: tmux
-description: "Run commands in tmux whenever they run long or need eyes on them: anything expected to take more than ~30–60s (training runs, ML experiments, builds, servers), anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases; the human can attach and step in at any time."
+description: "Run commands in tmux whenever they might not come back on their own or need eyes on them: builds, test suites, training runs, servers, anything over the network, anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
 ---
 
 # tmux
 
-A command runs in tmux, never as a blocking one-shot Bash call, when any of these hold: it runs longer than ~30–60s, its live output is worth watching (training progress, monitoring), or it's interactive (sudo prompts, REPLs, wizards). The session survives independently, scrollback is readable by agent and human alike, and either can step in mid-run. Quick one-shot commands (`ssh host cat file`, a fast build) stay plain Bash: the criteria decide, not the transport.
+Run a command in tmux rather than as a blocking Bash call when it might not come back on its own, when its output is worth watching, or when it is interactive. The session outlives the command, the scrollback is readable by agent and human alike, and either can step in. A command that exits or fails on its own, `git status` or `cat`, stays plain Bash.
 
-## Sessions
+How long you expect it to take is the wrong test. The command you thought would take a minute is the one that hangs on a prompt or a dead network, and that is the case this exists for.
 
-- One session per job, named for the activity: `tmux new-session -d -s <activity>` (e.g. `train-resnet`); a taken name makes it fail, so pick another. Tell the user the name.
-- Kill only what you created, by name: `tmux kill-session -t <name>`. Never `kill-server`: the user's server hosts their shells, editors, and every other agent. Throwaway servers for tests get their own socket, `tmux -L <label> ...`, and die with `tmux -L <label> kill-server`. `TMUX_TMPDIR` is not isolation inside a pane: `$TMUX` already names the socket and wins.
-- Send a command: `tmux send-keys -t <session> -l 'command'` then `tmux send-keys -t <session> Enter`
-- Read output: `tmux capture-pane -p -J -t <session> -S -50` (`-J` joins wrapped lines)
+## Anything you will wait on: `job`
 
-## Long jobs
+Read `job --help` before the first job of a session. It is the only home of the commands, the exit codes and the wait flags.
 
-A job that must finish belongs on a machine that isn't going to suspend; `worker-hosts` names the ones there are, where the environment provides such a command.
+Name jobs `<project>-<activity>`, like `api-migrate` or `docs-build`. The name shows up in `tmux ls`, and it stays taken until `job rm`.
 
-For what has to run on a laptop, prefix it with `nosleep`: `nosleep uv run train.py`. Idle suspend counts keyboard and mouse input, not CPU load, so a detached tmux pane crunching for an hour looks exactly as idle as an empty desk and gets suspended out from under you. `nosleep` holds a systemd inhibitor for the job's lifetime (idle, sleep, and the lid switch) and releases it on exit; it is a no-op where there's nothing to inhibit.
+## A pane you drive yourself
 
-## Remote (SSH)
+A REPL, a wizard, a sudo prompt, an app you poke at while watching it. Nothing here ends, so there is no completion to wait on and `job` buys nothing.
 
-Always quote the full tmux command so spaces survive the remote shell:
+- One session per job, named for the activity: `tmux new-session -d -s <activity>`. A taken name fails the command, so pick another.
+- Kill only what you created: `tmux kill-session -t <name>`. Never `kill-server`; that server holds the user's shells, editors and every other agent. A throwaway server for a test gets its own socket, `tmux -L <label> ...`, and dies with `tmux -L <label> kill-server`. Inside a pane `$TMUX` already names the socket and beats `TMUX_TMPDIR`.
+- Send: `tmux send-keys -t <session> -l 'command'`, then `tmux send-keys -t <session> Enter`.
+- Read: `tmux capture-pane -p -J -t <session> -S -50`, where `-J` joins wrapped lines.
+- Poll before you type. `bin/tmux-wait-for-text` waits for a prompt to appear; racing it sends input into nothing.
+
+## Remote
+
+Quote the whole tmux command so spaces survive the remote shell, one command per ssh call. A chained remote command that starts the tmux server holds the call open until it times out.
 
 ```
 ssh host "tmux send-keys -t <session> -l 'command'"
@@ -30,14 +35,8 @@ ssh host "tmux send-keys -t <session> Enter"
 ssh host "tmux capture-pane -p -J -t <session> -S -50"
 ```
 
-One command per ssh call. A chained remote command that starts the tmux server inherits the connection's stdout and holds the call open until it times out.
+Wait on a remote job with `job` on that host, read over ssh. Never `tmux wait-for`. Suspend the laptop and the ssh call dies while the remote waiter lives on, the signal wakes that orphan, and the next waiter on the channel hears nothing. `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` collapses dead connections fast.
 
-Waiting on a remote job (`ssh host tmux wait-for <channel>`) is a hint, not proof. Suspend the laptop and the ssh call dies while the remote `tmux wait-for` lives on; the signal then wakes that orphan, and a new waiter on the same channel never hears it. Add `-o ServerAliveInterval=15 -o ServerAliveCountMax=2` to collapse dead connections fast, and learn whether the job finished from its own end state on the host (a status file, a pid), never from a channel that was waited on across a connection that died.
+## Attaching
 
-## Interactive prompts
-
-Poll for the prompt before sending input; don't race it. Use `bin/tmux-wait-for-text` where available, or loop on `capture-pane` until the expected text (sudo prompt, confirmation, wizard question) appears, then send.
-
-## Human access
-
-The user can always attach directly: `tmux attach -t <session>` locally, or `ssh host -t "tmux attach -t <session>"` remotely; mention the session name when you start something they might want to watch.
+Give the user the command, not the session name: `tmux attach -t job-<name>`, `tmux attach -t <session>` for a pane you made yourself, or `ssh host -t "tmux attach -t <session>"` for either on a remote host.

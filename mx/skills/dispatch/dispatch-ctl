@@ -9,7 +9,7 @@
 #
 # Usage: dispatch-ctl init <repo> <feature> <tickets-dir> [git-dir] [worktrees-dir]
 #        dispatch-ctl spawn <ticket> <model> [session-id]
-#        dispatch-ctl wait <ticket>
+#        dispatch-ctl wait <ticket> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <ticket>
 #        dispatch-ctl resume <ticket> <model>
 #        dispatch-ctl probe
@@ -20,6 +20,7 @@
 #   init      what staging this host runs, once per scratch dir and again
 #             whenever the orchestrator stages a different version of these
 #             scripts: writes `config`, creates the bare repo when missing,
+#             fetches `job` into ~/.local/bin when the host has none,
 #             updates the mx plugin and prints its version. tickets-dir is
 #             where the ticket files sit in the worktree,
 #             agent/tickets/<feature> or agent/tickets for standalone ones.
@@ -36,7 +37,12 @@
 #             resumes that conversation on the same file, which then holds the
 #             guidance.
 #   wait      blocks until the current run of <ticket> ends, then prints its
-#             probe line: exit 0 on `exited`, 1 on `gone`.
+#             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
+#             wait after SECS with nothing written to the worklog (exit 2),
+#             --deadline after SECS of waiting (exit 5). Both leave the worker
+#             running: a quiet worker may be wedged or may be taking its time
+#             over something hard, and telling those apart is the
+#             orchestrator's to judge from the pane.
 #   stop      ends the current run without losing it: the runner writes its
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
@@ -93,6 +99,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-$here/run-worker.sh}
 mode=${DISPATCH_PERMISSION_MODE:-auto}
+job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch-ctl: $1" >&2; exit 1; }
@@ -164,6 +171,15 @@ init() {
     # this host authenticates nowhere, and ticket-branch churn stays off the
     # project's remote, where branch pushes would fire CI.
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
+    # `job` runs the wait loop (wait_). Fetched rather than staged beside this
+    # script, and from a public repo, so the host still authenticates nowhere.
+    # One already here is left alone: on the orchestrator's own machine that
+    # file is managed by home-manager and its directory is read-only.
+    if ! command -v job >/dev/null; then
+        mkdir -p "$HOME/.local/bin"
+        run curl -fsSL "$job_url" -o "$HOME/.local/bin/job" || die "could not fetch job from $job_url; dispatch-ctl wait runs its loop"
+        chmod +x "$HOME/.local/bin/job"
+    fi
     # A running worker keeps the version directory it started with (old
     # versions stay in the plugin cache), so this changes only workers started
     # from here on. A failed update leaves the installed version, said out loud.
@@ -250,15 +266,34 @@ spawn() {
 # The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an
 # ssh hop dropped under it) stays registered and swallows the next signal, so
 # a channel cannot be trusted after an interrupted wait; the status file can.
+# `job wait` is that poll, shared rather than copied: the worklog is what the
+# worker writes as it goes, so its mtime is genuine progress and a --stall or
+# --deadline return is a worker worth looking at. The exit codes are remapped because
+# dispatch asks a different question than job does -- any status line means
+# the worker exited and the ticket is there to be read, whatever code claude
+# left with.
 wait_() {
-    load; names "$1"
+    load; names "$1"; shift
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name in the manifest"
-    while [ "$(run_state "$run_id" "$run_runner")" = running ]; do
-        sleep 10
-    done
+    pid=$(runner_pid "$run_id" "$run_runner")
+    if [ -z "$pid" ] && [ ! -f "$here/$run_id.status" ]; then
+        state_line "$name" "$run_id" "$run_runner"
+        return 1
+    fi
+    job=$(command -v job || echo "$HOME/.local/bin/job")
+    [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
+    "$job" wait --status "$here/$run_id.status" --log "$here/$run_id.log" \
+        ${pid:+--pid "$pid"} --interval 10 "$@" >/dev/null
+    rc=$?
     state_line "$name" "$run_id" "$run_runner"
-    [ -f "$here/$run_id.status" ]
+    case $rc in
+        0|1) return 0 ;;
+        4)   return 1 ;;
+        2)   echo "$name: worklog silent; the worker is still running" >&2; return 2 ;;
+        5)   echo "$name: still running when the wait's deadline passed" >&2; return 5 ;;
+        *)   return "$rc" ;;
+    esac
 }
 
 probe() {

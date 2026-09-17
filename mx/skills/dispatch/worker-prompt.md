@@ -63,6 +63,8 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 <tools>
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
+`job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. How long you expect it to take is the wrong test, because the command you thought would take a minute is the one that hangs, and a blocking Bash call on it costs you the rest of your run with nobody watching the pane. `job wait --deadline <secs>` ends the wait whatever the command is doing.
+
 `ast-grep` is syntax-aware and won't match inside strings/comments:
 - Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
 - Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
