@@ -20,4 +20,4 @@ Two renderers, not one: `agent/show/one-flow/render.py` is a byte-for-byte copy 
 
 ## Comments
 
-The figures-and-demos feature (ticket 04, 2026-09-16) moves the README figure pipeline out of `agent/show/mx-readme-figures/` to `docs/figures/` and deletes `agent/show/one-flow/`, so there is one renderer, at the new path; `--check` covers `docs/figures/render.py` and `docs/figures/demo/build.py`.
+The figures-and-demos feature (ticket 04, 2026-09-16) moves the README figure pipeline out of `agent/show/mx-readme-figures/` to `docs/figures/` and deletes `agent/show/one-flow/`, so there is one renderer, at the new path; `--check` covers `docs/figures/render.py` and `docs/figures/board-fixture/build.py`.
