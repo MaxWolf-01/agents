@@ -9,7 +9,8 @@ How each part wears the tokens; `demo.html` renders every line, and its styleshe
 - **Pill**: a lowercase mono word in a hairline capsule, the only fully rounded shape; active is accent fill with ground text. A filter row is pills that stay visible, so three words on the page beat a dropdown that hides two.
 - **Input, textarea, select**: hairline on `ground-2`, radius `--radius`, focus turns the border accent. Label and hint are `v-meta`; an error is `v-meta` in accent-2.
 - **Switch**: a hairline track and a hollow dot; checked is an accent dot on a wash track. A filled track would be the loudest thing on the page.
-- **Table**: a rule under the head, hairlines between rows, nothing vertical. Heads are `v-meta`; numbers `v-num`, right-aligned.
+- **Scheme toggle**: one icon in muted, a sun by day and a moon by night, accent on hover; no label and no switch. It sets `data-theme` on the root.
+- **Table**: a rule under the head, hairlines between rows, nothing vertical. Heads are `v-meta`; numbers `v-num`, right-aligned. A table wider than the measure leaves the column and takes the page width at full size.
 - **Note**: a 2px bar on the left (edge; accent-2 for caution), `v-small` muted text, and a `v-meta` title only when the note has a name.
 - **Figure, code**: the filled boxes: hairline on `ground-2`, radius `--radius`; the caption `v-small` muted, its source in `v-num`. Code dims comments to muted and does no other highlighting.
 - **Heading anchor**: a `¶` in accent that appears on hover, so the margin stays clean while reading.
@@ -17,7 +18,8 @@ How each part wears the tokens; `demo.html` renders every line, and its styleshe
 - **Steps, definitions, footnotes**: step numbers in `v-num` muted, in a margin column beside the text; a term in `v-h3` with its definition in muted under a hairline; footnotes as a list under a hairline, numbers in accent.
 - **Overlay** (dialog, menu, tooltip, toast): the same ground, a hairline, radius `--radius`. The dialog backdrop is strong at 40% and does the layering; a highlighted menu item is wash with accent text.
 - **Chart**: hand-drawn SVG in the page's ink. Grid lines are edge, the baseline muted, the data body ink, and the one series that carries the point accent with the wash under it.
-- **Diagram**: node names in the serif, a detail line in mono only when it is data (a path, a command, a value). Every box is a hairline; weight comes from the stroke colour (edge, muted, body) and from whether the box is filled with `ground-2` at all. A zone is a hairline with its label in a ground-coloured mask, and one node wears the accent.
+- **Two-valued data** (hit and miss, added and removed): the first value sits on `wash`, the second on accent-2 at 18%, its line number or marker in accent-2 at weight 500. Green and red stay outside the palette, for the one case where a convention outranks it, such as a diff.
+- **Diagram**: node names in the serif, a detail line in mono only when it is data (a path, a command, a value). Every box is a hairline; weight comes from the stroke colour (edge, muted, body) and from whether the box is filled with `ground-2` at all. A zone is a hairline filled with `wash-ink`, its label in a ground-coloured mask; a phase banner ramps the same mix from 6% to 22%; one node wears the accent.
 - **Motion**: colour transitions at 150ms, overlays fade at 200ms, nothing else moves.
 - **Focus**: a 2px accent outline, 3px off the element.
 

@@ -9,7 +9,7 @@ The look of [mwolf.dev](https://mwolf.dev) as a floor: a quiet page, separated b
 
 ## Colour
 
-Ten tokens, each a `light-dark()` pair in `tokens.css`. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
+Eleven tokens in `tokens.css`, the colours as `light-dark()` pairs. The page follows the system scheme; `data-theme="day"` or `"night"` on the root pins it, and that attribute is the whole toggle. Any page built on this reads `?theme=day|night` and sets the attribute from it, so a screenshot can pin a scheme.
 
 | token | job |
 | --- | --- |
@@ -21,7 +21,8 @@ Ten tokens, each a `light-dark()` pair in `tokens.css`. The page follows the sys
 | `strong` | headings and emphasis |
 | `accent` | links, the primary action, the one focal mark |
 | `wash` | the fill under an accent stroke, the highlighted row |
-| `accent-2` | caution and errors |
+| `wash-ink` | a zone's fill; a banner's ramp is the same mix of muted, 6% to 22% |
+| `accent-2` | caution, errors, and the second value of two-valued data |
 | `mark` | text selection |
 
 ## Type
