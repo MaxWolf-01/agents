@@ -10,11 +10,13 @@
 # this file, failures included.
 #
 # What stands in for what, so the transcript is read for what it does show:
-#   - `claude`, by a stub runner on dispatch-ctl's DISPATCH_RUNNER seam, as the
-#     host-per-spawn demo did before it: it makes the commits a worker makes.
-#     What runs below is `dispatch` and `dispatch-ctl` themselves.
+#   - `claude`, by a stub runner on dispatch-ctl's DISPATCH_RUNNER seam: it
+#     makes the commits a worker makes, so what runs below is `dispatch` and
+#     `dispatch-ctl` themselves. The precedent is the host-per-spawn demo, in
+#     git history since that feature retired: `git log --diff-filter=D --
+#     agent/show/host-per-spawn` finds the commit that removed it.
 #   - `diffview`, `uv` and the board, by stubs on PATH: the review page is
-#     ticket 02's and this demo neither renders nor reads one.
+#     `diffview`'s and nothing below renders or reads one.
 #   - `job stage`, by a shim, for as long as the staged mode is missing from the
 #     `job` on this host. It is the mode's whole body: the session created, the
 #     line `job run` would type typed, and the Enter withheld. The run below
@@ -132,8 +134,12 @@ else
 # Enter left to the user. Every other subcommand is the real job's.
 set -eu
 real=@JOB@
-[ "${1:-}" = stage ] || exec "$real" "$@"
-shift
+case ${1:-} in
+    stage) shift ;;
+    # Advertised, because a caller asks `job --help` whether the mode is there.
+    -h | --help | "") "$real" "$@"; echo "  stage  <name> [--cwd DIR] -- <command>: the session and the line, no Enter"; exit 0 ;;
+    *) exec "$real" "$@" ;;
+esac
 name=$1; shift
 cwd=$PWD
 [ "${1:-}" = --cwd ] && { cwd=$2; shift 2; }
@@ -194,7 +200,8 @@ step "the landing: dispatch review stages the demo, and runs nothing"
 $dispatch review 01-warm-preset
 
 wt=$work/lamp-lamp-ui-01-warm-preset
-session=job-lamp-lamp-ui-01-demo
+demo_job=lamp-lamp-ui-01-demo
+session=job-$demo_job
 pane=$(tmux capture-pane -p -J -t "=$session:")
 printf '\n  the pane of %s, as the user finds it:\n\n' "$session"
 printf '%s\n' "$pane" | sed 's/^/    | /'
@@ -212,20 +219,25 @@ check "the build is off the feature branch until the user rules" \
 
 step "a second landing of the same ticket restages rather than colliding"
 
+# The round that would move the branch under a staging is an amend, whose next
+# `dispatch fetch` unstages before it writes the ref. That needs the two hosts
+# this machine does not have, so what is driven here is the same ticket landed
+# twice: the worktree kept, the session replaced.
 before=$(tmux display-message -p -t "=$session:" '#{session_id}')
 $dispatch review 01-warm-preset > /dev/null
-check "the worktree is the one already there" test -d "$wt"
+check "the worktree is the one already there, and at the branch's tip" \
+    bash -c 'test "$(git -C "$1" rev-parse HEAD)" = "$(git rev-parse ticket/lamp-ui/01-warm-preset)"' _ "$wt"
 check "the session is a new one, the old one gone with its job" \
     bash -c 'test "$1" != "$(tmux display-message -p -t "=$2:" "#{session_id}")"' _ "$before" "$session"
 
 step "the user presses Enter, on their own machine and when they choose"
 
 tmux send-keys -t "=$session:" Enter
-job wait lamp-lamp-ui-01-demo --deadline 60
+job wait "$demo_job" --deadline 60
 printf '\n  what the demo wrote, beside itself in the ticket branch:\n\n'
 sed 's/^/    /' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 check "the run is an ordinary job, its log and status where every job's are" \
-    test -s "$HOME/.local/state/jobs/lamp-lamp-ui-01-demo/status"
+    test -s "$JOB_STATE_DIR/$demo_job/status"
 
 step "the ruling: accept, so the branch merges and the demo is over"
 
@@ -237,7 +249,7 @@ check "the ticket is done, with its range" \
     bash -c 'grep -q "^status: done$" "$1" && grep -q "^diff: \[" "$1"' _ agent/tickets/lamp-ui/01-warm-preset.md
 check "the demo session is gone" bash -c '! tmux has-session -t "=$1" 2> /dev/null' _ "$session"
 check "the worktree is gone, so the ticket branch is free to delete" not test -d "$wt"
-check "no job of it is left on file" not test -e "$HOME/.local/state/jobs/lamp-lamp-ui-01-demo"
+check "no job of it is left on file" not test -e "$JOB_STATE_DIR/$demo_job"
 
 printf '\n  the landed demo is still in the tree, findable without reading anything:\n\n'
 (cd "$work/lamp-lamp-ui" && find agent/show -type f -perm -u+x | sed 's/^/    /')

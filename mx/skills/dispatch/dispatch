@@ -29,13 +29,12 @@
 #            --host names the host, user@host or `local` for this machine, and
 #            a spawn (or `fuzz start`) is where you name it: the run is
 #            recorded here, so wait, fetch, log, stop, resume and cleanup find
-#            a ticket's host from the ticket; `cleanup` forgets the run it
-#            just removed and ends that ticket's staged demo here, session and
-#            worktree, whichever way the user ruled; `resume` claims a review
-#            ticket again, as `claim` would. `probe` with no --host polls every
-#            host this branch
-#            still has a run on, each line behind its host; one that cannot
-#            answer says so in place of its workers.
+#            a ticket's host from the ticket; `cleanup` forgets the run it just
+#            removed and ends that ticket's staged demo here, session and
+#            worktree; `resume` claims a review ticket again, as `claim` would.
+#            `probe` with no --host polls every host this branch still has a run
+#            on, each line behind its host; one that cannot answer says so in
+#            place of its workers.
 #            The first spawn on a host stages it: the git remote, this plugin
 #            version's dispatch-ctl, runner and worker prompt in this branch's
 #            scratch dir there, `dispatch-ctl init`, and the push a ticket
@@ -54,7 +53,9 @@
 #            worklog went silent for --stall (2), --deadline passed (5), or
 #            the host stayed unreachable for two minutes.
 #   fetch    brings ticket/<branch>/<ticket> from its host into this repo,
-#            replacing an earlier fetch of it (ticket branches get rebased).
+#            replacing an earlier fetch of it (ticket branches get rebased) and
+#            ending the staged demo of the round before, whose worktree would
+#            otherwise hold the branch the fetch writes.
 #   push     this branch to every host it still has a run on, so a worker
 #            resumed to rebase finds the tip it is rebasing onto. A host that
 #            refuses the push is reported and the rest still get it; the exit
@@ -67,15 +68,17 @@
 #            `diff:` frontmatter once it has merged. One commit either way,
 #            and none when the ticket already says so.
 #            While the branch is unmerged it also stages the ticket's demo for
-#            the user's own hand: the ticket branch checked out beside this
-#            worktree as <repo>-<feature>-<ticket>, and the show directory's
-#            `demo` typed unrun at the prompt of a detached tmux session,
-#            job-<repo>-<feature>-<short>-demo, through `job`'s staged mode.
-#            The user presses Enter when they choose and nothing runs before
-#            they do. The worktree is checked out, not set up, so a demo
-#            needing more than the repo finds whatever the user's machine has
-#            installed. A ticket branch carrying no demo stages nothing and
-#            says which path it looked at.
+#            the user to run: the ticket branch checked out beside this worktree
+#            as <repo>-<feature>-<ticket>, and the show directory's `demo` typed
+#            unrun at the prompt of a detached tmux session named
+#            job-<repo>-<feature>-<ticket>-demo, through `job`'s staged mode;
+#            both are named by the ticket's number where it has one. The user
+#            presses Enter when they choose and nothing runs before they do. The
+#            worktree is checked out, not set up, so a demo needing more than the
+#            repo finds whatever the user's machine has installed. Anything that
+#            stops the staging -- no demo on the branch, one committed
+#            unexecutable, a `job` without the mode -- says so and leaves the
+#            rest of the landing standing.
 #
 # Ticket branches merge into this branch with --no-ff; that merge commit is how
 # `review` finds a ticket's range after the merge (its second parent is the
@@ -395,51 +398,82 @@ fetch() {
     locate; ticket_host "$1"
     branch=ticket/$feature/$1
     if [ "$host" = local ]; then
+        # The worker's own worktree is the one a staging here reused, and the
+        # worker is the one that moves it: nothing to unstage.
         git rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch here"
         echo "local host: $branch is already here"
         return
     fi
+    # A fetch is the next round of this ticket arriving, so the round before it
+    # stops waiting: git refuses to fetch into a branch a worktree holds, and a
+    # staged session that outlived the fetch would run the previous round's file.
+    unstage_demo "$1"
     run git fetch -q "${host//[@.]/-}" "+$branch:$branch"
 }
 
-# What a ticket's demo is called on both sides of the staging: `job` takes
-# letters, digits, dot, dash and underscore, so a feature branch with a slash in
-# it would otherwise be refused a session outright.
+# What a ticket's demo is called on both sides of the staging. The worktree path
+# is dispatch-ctl's `names` derivation and has to stay it: on a local host that
+# path is the worker's own worktree, which is what makes the staging reuse it
+# rather than check the branch out twice.
 demo_names() { # <ticket>
     demo_path=$show/$1/demo
+    demo_branch=ticket/$feature/$1
     demo_worktree=$(dirname "$repo_root")/$repo-$feature-$1
-    demo_job=$(printf '%s' "$repo-$feature-$(short "$1")-demo" | tr -c 'A-Za-z0-9._-' '-')
+    demo_job=$repo-$feature-$(short "$1")-demo
     demo_session=job-$demo_job
 }
 
-# The demo waiting for the user's own hand: the ticket branch beside this
-# worktree, and its `demo` typed at a prompt with the Enter left to them. The
-# staged mode is `job`'s, so the run they start is an ordinary job and its log
-# and status land where every job's do.
+# A directory is a ticket's worktree only if it has that branch checked out;
+# anything else there is someone's, and neither staged into nor removed.
+holds_ticket() { [ "$(git -C "$1" rev-parse --abbrev-ref HEAD 2> /dev/null)" = "$2" ]; }
+
+not_staged() { echo "dispatch: $1; nothing staged" >&2; } # <why>
+
+# The demo left waiting for the user to run: the ticket branch beside this
+# worktree, and its `demo` typed at a prompt with the Enter theirs to press. The
+# staged mode is `job`'s, so what they start is an ordinary job and its log and
+# status land where every job's do. Every way of not staging ends the same way,
+# said out loud and carried on from: the status is written and the page rendered
+# by the time this runs, and a landing whose session did not open is not a
+# failed landing.
 stage_demo() { # <ticket> <tip>
     demo_names "$1"
-    if ! git cat-file -e "$2:$demo_path" 2>/dev/null; then
-        echo "dispatch: no $demo_path on ticket/$feature/$1; nothing staged" >&2
-        return 0
+    # Mode as well as presence: a demo committed 100644 stages fine and fails
+    # with "permission denied" under the user's own Enter.
+    case $(git ls-tree "$2" -- "$demo_path" | cut -c1-6) in
+        100755) ;;
+        "")     not_staged "no $demo_path on $demo_branch"; return 0 ;;
+        *)      not_staged "$demo_path on $demo_branch is not executable"; return 0 ;;
+    esac
+    job --help 2> /dev/null | grep -qw stage ||
+        { not_staged "the \`job\` here has no staged mode (\`job --help\`)"; return 0; }
+    if [ -e "$demo_worktree" ]; then
+        holds_ticket "$demo_worktree" "$demo_branch" ||
+            { not_staged "$demo_worktree is not $demo_branch"; return 0; }
+    else
+        run git worktree add "$demo_worktree" "$demo_branch" ||
+            { not_staged "could not check $demo_branch out at $demo_worktree"; return 0; }
     fi
-    command -v job > /dev/null || die "no \`job\` on this machine; it is what holds the staged session"
-    [ -d "$demo_worktree" ] || run git worktree add "$demo_worktree" "ticket/$feature/$1" ||
-        die "could not check $1 out at $demo_worktree"
-    # A second landing of the same ticket restages rather than colliding with
-    # the session the first one left: job names are unique until `job rm`.
+    # Not echoed, unlike the one in unstage_demo: job names are unique until
+    # `job rm`, and on a first landing this is a name nothing has taken.
     job rm "$demo_job" > /dev/null 2>&1
-    run job stage "$demo_job" --cwd "$demo_worktree" -- "./$demo_path" || die "could not stage $demo_job"
+    run job stage "$demo_job" --cwd "$demo_worktree" -- "./$demo_path" ||
+        { not_staged "\`job stage $demo_job\` failed"; return 0; }
     echo "demo staged unrun in tmux session $demo_session: $demo_worktree/$demo_path"
 }
 
-# The ruling ends the demo, accept or reject alike, so the ticket branch is free
-# to be deleted and no worktree outlives the build it showed.
+# The staging ends when the round it showed does: at the ruling for accept, redo
+# and reject, which all reach `ctl cleanup`, and at the fetch of the next round
+# for amend, since git refuses to fetch into a branch a worktree holds.
 unstage_demo() { # <ticket>
     demo_names "$1"
-    job rm "$demo_job" 2> /dev/null
-    # A local worker's own worktree is this same path, and its cleanup on the
-    # host side removes it first; whoever gets there second finds it gone.
-    [ -d "$demo_worktree" ] && run git worktree remove --force "$demo_worktree"
+    # `job rm` kills the session and forgets the run; the session is what is
+    # left to kill when the staging registered no run to forget.
+    run job rm "$demo_job" ||
+        { tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"; }
+    # On a local host the worker's own cleanup removes this same worktree first,
+    # so whoever gets there second finds it gone.
+    holds_ticket "$demo_worktree" "$demo_branch" && run git worktree remove --force "$demo_worktree"
     return 0
 }
 
