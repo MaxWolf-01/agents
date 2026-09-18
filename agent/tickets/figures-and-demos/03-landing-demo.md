@@ -1,6 +1,7 @@
 ---
-status: review
+status: done
 blocked-by: [01]
+diff: [a1fefa8b24fef7b9eb7d4752c591947a2b4bda4a..524df30440589a8e5b265c5d41ef1075fdbc9182]
 ---
 
 # A landing stages the demo file in a tmux session on the user's machine
