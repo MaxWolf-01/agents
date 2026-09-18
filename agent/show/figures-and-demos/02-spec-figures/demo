@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# The skill change demoed the way the table says a process change is demoed:
-# one round driven twice, where the difference is the point.
+# The skill change demoed the way `/mx:show`'s table says a process change is
+# demoed: one round driven twice, where the difference is the point.
 #
 # Both runs get the same prompt, the user's answer to the one question a toy
 # `orders` spec left open, which settles a two-table schema, and a copy of this
 # branch's mx plugin, differing only in the grilling skill and spec format they
-# carry: the pair as it stood (`before/`), or this branch's. Neither prompt says
-# figure, diagram or show: whether the round draws one is what the two skills
-# decide. Each run works on a toy repo of its own in a scratch directory, well
-# away from this one. What each round committed, what it left on disk and the
-# first line of its message are the comparison, and it lands under out/ beside
-# this file.
+# carry: the pair as it stood (`before-SKILL.md`, `before-SPEC-FORMAT.md`), or
+# this branch's. The prompt never says figure, diagram or show: whether the
+# round draws one is what the two skills decide. Each run gets a scratch root of
+# its own, well away from this one, holding one plugin and one toy repo, so
+# neither session can read the skill the other was given or the round it
+# delivered. What each round committed, what it left on disk and the first line
+# of its message are the comparison, and it lands under out/ beside this file.
 #
 # What a run costs, since it is the same file the session on the user's machine
 # runs: two non-interactive Sonnet sessions against a logged-in `claude`, ten
@@ -35,6 +36,7 @@ if [ -n "$chromium" ]; then export PUPPETEER_EXECUTABLE_PATH=$chromium; fi
 work=$(mktemp -d /tmp/spec-figures-demo.XXXXXX)
 outw=$work/out
 mkdir -p "$outw"
+roots=
 published=
 publish() { # out/ is replaced wholesale as the run ends, failure included
     [ -n "$published" ] && return 0
@@ -42,18 +44,17 @@ publish() { # out/ is replaced wholesale as the run ends, failure included
     rm -rf "$out"
     mv "$outw" "$out"
 }
-trap 'publish; rm -rf "$work"' EXIT
+cleanup() {
+    publish
+    rm -rf "$work" ${roots:-}
+}
+trap cleanup EXIT
 
 if [ -t 1 ]; then
     step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 else
     step() { printf '\n== %s\n' "$*"; }
 fi
-
-cp -r "$repo/mx" "$work/plugin-after"
-cp -r "$repo/mx" "$work/plugin-before"
-cp "$here/before/SKILL.md" "$work/plugin-before/skills/grilling/SKILL.md"
-cp "$here/before/SPEC-FORMAT.md" "$work/plugin-before/skills/grilling/SPEC-FORMAT.md"
 
 prompt="/mx:grilling Round 1 asked how an order keeps its lines: (a) a text column on \
 \`orders\`, (b) a table of their own. q1 -> b. \`orders\` keeps id, customer, placed_at, \
@@ -68,7 +69,16 @@ failed=
 
 drive() { # <phase>
     phase=$1
-    toy=$work/$phase/repo
+    root=$(mktemp -d "/tmp/spec-figures-$phase.XXXXXX")
+    roots="$roots $root"
+    eval "root_$phase=\$root"
+    cp -r "$repo/mx" "$root/plugin"
+    if [ "$phase" = before ]; then
+        cp "$here/before-SKILL.md" "$root/plugin/skills/grilling/SKILL.md"
+        cp "$here/before-SPEC-FORMAT.md" "$root/plugin/skills/grilling/SPEC-FORMAT.md"
+    fi
+
+    toy=$root/repo
     mkdir -p "$toy/agent/tickets/orders"
     cat > "$toy/agent/tickets/orders/spec.md" <<'SPEC'
 ---
@@ -97,16 +107,20 @@ and reported on.
 - **An order is placed once and never edited.** A correction is a new order that supersedes it. `(you, r1)`
 - **How an order keeps its lines.** `(open → Q1)`
 SPEC
-    # The feature's branch and worktree are the round's, not the round's to make.
+    # The toy repo starts on the feature branch the round commits onto, and
+    # carries its own identity and signing, since the round commits by itself
+    # and the host's git config is none of the demo's business.
     git -C "$toy" init -q -b orders .
-    toygit() { git -C "$toy" -c user.email=toy@toy -c user.name=toy -c commit.gpgsign=false "$@"; }
-    toygit add -A
-    toygit commit -q -m "the spec after round 1"
-    toygit tag round1
+    git -C "$toy" config user.email toy@toy
+    git -C "$toy" config user.name toy
+    git -C "$toy" config commit.gpgsign false
+    git -C "$toy" add -A
+    git -C "$toy" commit -q -m "the spec after round 1"
+    git -C "$toy" tag round1
 
     set +e
     ( cd "$toy" && printf '%s' "$prompt" | claude -p --model "$model" \
-        --plugin-dir "$work/plugin-$phase" \
+        --plugin-dir "$root/plugin" \
         --setting-sources "" --strict-mcp-config \
         --allowedTools "Bash Read Write Edit Glob Grep Skill TodoWrite" \
         --output-format stream-json --verbose \
@@ -115,25 +129,38 @@ SPEC
     set -e
 
     # The round's message is the result, and its first line is what this ticket
-    # put a rule on; the tool calls and the thinking between them are how the
-    # round got there, and the message is left out of the transcript so it is
-    # read once, below, rather than three times.
-    jq -r 'select(.type == "result") | .result' "$outw/$phase-stream.jsonl" \
+    # put a rule on. The transcript is cut at the last tool call, so it holds the
+    # tool calls and the thinking between them, which is how the round got there,
+    # and the message is read once, below, however many copies the stream carries.
+    jq -r 'select(.type == "result") | .result // empty' "$outw/$phase-stream.jsonl" \
         > "$outw/$phase-message.txt"
-    jq -r --arg work "$work/" --rawfile message "$outw/$phase-message.txt" '
-        select(.type == "assistant") | .message.content[] |
-            if .type == "text" then
-                (.text | select(length > 0) | select(rtrimstr("\n") != ($message | rtrimstr("\n"))) | "\n" + .)
-            elif .type == "tool_use" then "· " + .name + "(" +
-                ((.input.skill // .input.command // .input.file_path // (.input | tostring))
-                 | gsub("\n"; " ") | gsub($work; "") | .[0:96]) + ")"
-            else empty end' "$outw/$phase-stream.jsonl" > "$outw/$phase-transcript.txt"
+    jq -s -r --arg root "$root/" '
+        (to_entries | map(select(.value.type == "assistant"
+            and (.value.message.content | any(.type == "tool_use"))) | .key) | last) as $lastcall
+        | to_entries[]
+        | select($lastcall != null and .key <= $lastcall and .value.type == "assistant")
+        | .value.message.content[]
+        | if .type == "text" then (.text | select(length > 0) | "\n" + .)
+          elif .type == "tool_use" then "· " + .name + "(" +
+              ((.input.skill // .input.command // .input.file_path // (.input | tostring))
+               | gsub("\n"; " ") | gsub($root; "") | .[0:96]) + ")"
+          else empty end' "$outw/$phase-stream.jsonl" > "$outw/$phase-transcript.txt"
     cat "$outw/$phase-transcript.txt"
 
-    # A session that never ran leaves the same empty transcript as one that
-    # chose to draw nothing, and the second is a result about the skill.
-    if [ "$rc" -ne 0 ] || [ ! -s "$outw/$phase-transcript.txt" ]; then
-        printf '\nthe %s session did not run (claude exited %s). Its stderr:\n' "$phase" "$rc"
+    # A round the plugin never drove is a round out of the model's own head, and
+    # it looks exactly like the real thing at exit 0.
+    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
+            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:grilling") != null)' \
+            "$outw/$phase-stream.jsonl" > /dev/null; then
+        printf '\nthe %s session never loaded the plugin at %s, so its round is nothing to do with this skill.\n' \
+            "$phase" "$root/plugin"
+        failed=$phase
+    fi
+
+    # A session that never ran leaves the same empty message as one that chose to
+    # say nothing, and the second is a result about the skill.
+    if [ "$rc" -ne 0 ] || [ ! -s "$outw/$phase-message.txt" ]; then
+        printf '\nthe %s session delivered no round (claude exited %s). Its stderr:\n' "$phase" "$rc"
         tail -5 "$outw/$phase-stderr.txt" | sed 's/^/  /'
         failed=$phase
     fi
@@ -147,7 +174,7 @@ drive after
 
 if [ -n "$failed" ]; then
     echo >&2
-    echo "FAILED: the $failed session did not run, so nothing here compares the two rounds." >&2
+    echo "FAILED: the $failed session, so nothing here compares the two rounds." >&2
     echo "Its transcript and stderr are in out/; the rest of the demo is skipped." >&2
     exit 1
 fi
@@ -155,18 +182,19 @@ fi
 step "what each round committed, and what it left uncommitted"
 for phase in before after; do
     printf '\n%s\n' "$phase"
-    committed=$(git -C "$work/$phase/repo" log --all ^round1 \
+    eval "toy=\$root_$phase/repo"
+    committed=$(git -C "$toy" log --all ^round1 \
         --format='  %h %s' --name-only | sed '/^[^ ]/s/^/    /')
     echo "${committed:-  (the round committed nothing)}"
-    left=$(git -C "$work/$phase/repo" status --porcelain --untracked-files=all | sed 's/^/  /')
+    left=$(git -C "$toy" status --porcelain --untracked-files=all | sed 's/^/  /')
     [ -n "$left" ] && printf '%s\n' "  uncommitted:" "$left"
-    cp "$work/$phase/repo/agent/tickets/orders/spec.md" "$outw/$phase-spec.md"
-    if [ -d "$work/$phase/repo/agent/show" ]; then
-        cp -r "$work/$phase/repo/agent/show" "$outw/$phase-show"
+    cp "$toy/agent/tickets/orders/spec.md" "$outw/$phase-spec.md"
+    if [ -d "$toy/agent/show" ]; then
+        cp -r "$toy/agent/show" "$outw/$phase-show"
     fi
 done
 
-step "the Decisions entry each round wrote for the lines"
+step "the Decisions entry for the lines, as each round left it"
 for phase in before after; do
     printf '\n%s\n' "out/$phase-spec.md"
     sed -n '/^## Decisions/,/^## /p' "$outw/$phase-spec.md" | tail -n +3 | sed '/^## /d' | fold -s -w 78 | sed 's/^/  /'
