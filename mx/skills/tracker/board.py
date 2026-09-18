@@ -18,7 +18,9 @@ tickets as rows grouped by state: needs me (the merged needs-human queue),
 needs my review (work waiting for the user's ruling), frontier, claimed,
 blocked, proposed, done folded. A row carries its feature, expands to the
 ticket's text, and links its review page and the pull requests and issues
-its `gh` list names. Feature chips in the top bar hide and show a feature's
+its `gh` list names. A click on a row's number copies the absolute path of
+the file the row was read from: the ticket, or for a needs-me entry its
+needs-human.md. Feature chips in the top bar hide and show a feature's
 rows; a filter box narrows the rows to a word. Beside the rows a graph panel shows the dependency graph of the feature
 of the row under the cursor with that ticket marked, or the whole tracker's
 graph with its cross-feature edges, hidden features left out. A graph draws only tickets that wait on
@@ -292,13 +294,22 @@ class Ticket:
     gh: list[str]  # the pull requests and issues the ticket names, as owner/repo#number
     body_html: str
     diffview: str | None
+    path: Path  # the file read, in whichever checkout holds the feature
+
+
+@dataclass
+class Queue:
+    """A needs-human.md: where it is, and its pending entries."""
+
+    path: Path
+    entries: list[str]
 
 
 @dataclass
 class Feature:
     name: str
     tickets: list[Ticket]
-    needs_human: list[str]
+    needs_human: Queue
     spec_status: str | None  # spec.md's status; None when the feature has no spec
 
 
@@ -312,6 +323,7 @@ class Standalone:
     gh: list[str]
     body_html: str
     diffview: str | None
+    path: Path
     source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
 
 
@@ -377,6 +389,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         gh=gh_refs(meta, path),
         body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
+        path=path,
         source=source,
     )
 
@@ -400,19 +413,16 @@ def spec_state(path: Path) -> str | None:
     return str(meta.get("status", "status missing"))
 
 
-Queue = list[str]  # a needs-human.md: its pending entries
-
-
 def load_needs_human(path: Path) -> Queue:
     if not path.exists():
-        return []
+        return Queue(path, [])
     entries: list[str] = []
     for line in path.read_text().splitlines():
         if line.startswith("- "):
             entries.append(line[2:].strip())
         elif entries and (line[:1] in (" ", "\t") or not line.strip()):
             entries[-1] += "\n" + line.strip()
-    return [e.strip() for e in entries]
+    return Queue(path, [e.strip() for e in entries])
 
 
 def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path]) -> list[Ticket]:
@@ -433,6 +443,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 gh=gh_refs(meta, path),
                 body_html=render_body(body, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
+                path=path,
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -525,9 +536,9 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
     key = repr((
         project,
         [(f.name, f.needs_human, f.spec_status,
-          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview) for t in f.tickets])
+          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.source) for k in standalone],
+        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source) for k in standalone],
         queue,
         log,
     ))
@@ -697,14 +708,14 @@ def search_text(*parts: str) -> str:
 
 
 def row(
-    row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str,
+    row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str, path: Path,
     dv: str | None = None, gh: Sequence[str] = (),
 ) -> str:
-    """One ticket row: feature tag, number, title with its review page and GitHub links, badges, blocker chips; the body folded under it."""
+    """One ticket row: feature tag, number (a click copies `path`), title with its review page and GitHub links, badges, blocker chips; the body folded under it."""
     return (
         f'<details class="ticket row-{status}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
-        f'data-search="{search_text(num, title, body, *gh)}"><summary>'
-        f'<span class="ftag">{html.escape(feature)}</span><span class="num">{html.escape(num)}</span>'
+        f'data-search="{search_text(num, title, body, *gh)}" data-path="{html.escape(str(path))}"><summary>'
+        f'<span class="ftag">{html.escape(feature)}</span><span class="num" title="copy {html.escape(str(path))} (y)">{html.escape(num)}</span>'
         f'<span class="title">{html.escape(title)}{dv_link(dv)}{gh_links(gh)}</span>'
         f'<span class="badges">{badges}</span>'
         f'<span class="chips">{chips or "<span class=deps>—</span>"}</span></summary>'
@@ -714,20 +725,20 @@ def row(
 
 def ticket_row(f: Feature, t: Ticket) -> str:
     by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.diffview, t.gh)
+    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.path, t.diffview, t.gh)
 
 
 def standalone_row(k: Standalone) -> str:
     badges = kind_badge(k.kind)
     if k.source:
         badges += f'<span class="badge source" title="filed on branch {html.escape(k.source)}, not on the main branch">on {html.escape(k.source)}</span>'
-    return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.diffview, k.gh)
+    return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.path, k.diffview, k.gh)
 
 
-def needs_row(owner: str, i: int, item: str) -> str:
+def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
     summary, sep, detail = item.partition(" :: ")
     body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
-    return row(f"needs-{owner}-{i}", owner, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body)
+    return row(f"needs-{owner}-{i}", owner, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body, queue)
 
 
 def feature_chip(f: Feature) -> str:
@@ -735,9 +746,9 @@ def feature_chip(f: Feature) -> str:
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets) - counts['proposed']} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    if f.needs_human:
-        bits.append(f"{len(f.needs_human)} need me")
-    dot = '<i class="dot"></i>' if f.needs_human or counts["review"] else ""
+    if f.needs_human.entries:
+        bits.append(f"{len(f.needs_human.entries)} need me")
+    dot = '<i class="dot"></i>' if f.needs_human.entries or counts["review"] else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
         f'<span class="dim">{counts["done"]}/{len(f.tickets) - counts["proposed"]}</span></button>'
@@ -750,8 +761,8 @@ def render_page(
 ) -> str:
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
     for f in features:
-        rows["needs"].extend(needs_row(f.name, i, item) for i, item in enumerate(f.needs_human))
-    rows["needs"].extend(needs_row("standalone", i, item) for i, item in enumerate(queue))
+        rows["needs"].extend(needs_row(f.name, i, item, f.needs_human.path) for i, item in enumerate(f.needs_human.entries))
+    rows["needs"].extend(needs_row("standalone", i, item, queue.path) for i, item in enumerate(queue.entries))
     for f in features:
         for t in f.tickets:
             rows[t.status].append(ticket_row(f, t))
@@ -765,7 +776,7 @@ def render_page(
     )
 
     chips = "".join(feature_chip(f) for f in features)
-    if standalone or queue:
+    if standalone or queue.entries:
         chips += f'<button class="featchip" data-feature="standalone" title="tickets without a spec">standalone <span class="dim">{len(standalone)}</span></button>'
 
     graphs = ""
@@ -898,7 +909,8 @@ PAGE = Template(r"""<!doctype html>
   .ticket summary:hover { background: var(--raised); }
   .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap;
     justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; }
+  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; cursor: copy; }
+  .ticket .num:hover { color: var(--accent); }
   .ticket .title { font-size: 13.5px; }
   .row-needs .title { color: var(--ink); }
   .row-open .title { color: var(--open-tx); }
@@ -932,6 +944,12 @@ PAGE = Template(r"""<!doctype html>
   .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
   .hash { color: var(--claimed-tx); }
   .footmeta { color: var(--ink3); font-size: 11.5px; font-family: var(--mono); margin-top: .8rem; }
+
+  #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 50; max-width: 90vw;
+    background: var(--raised); border: 1px solid var(--border-strong); border-radius: 6px; padding: .3rem .8rem;
+    font: 12px var(--mono); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: 1; }
 
   #help { position: fixed; inset: 0; z-index: 100; background: rgba(10,11,13,.7); display: none; align-items: center; justify-content: center; }
   #help.open { display: flex; }
@@ -979,12 +997,14 @@ ${groups}
 <tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>collapse / expand every group</td></tr>
 <tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
 <tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
+<tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
 <tr><td><kbd>b</kbd></td><td>fold / unfold the graph panel</td></tr>
 <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
 </table></div></div>
+<div id="toast" role="status"></div>
 
 <script>
   // Synchronous state restore, before first paint. The module below waits on the
@@ -1191,11 +1211,29 @@ ${groups}
   for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => { mode = b.dataset.gmode; showGraph(); });
   document.getElementById("sidefold").addEventListener("click", () => side.classList.toggle("folded"));
   search.addEventListener("input", applyFilters);
-  // a click on a row's summary moves the cursor there, so the graph follows the mouse too
+  // a click on a row's summary moves the cursor there, so the graph follows the mouse too;
+  // one on its number copies the row's path instead of folding the row
   rowsEl.addEventListener("click", (e) => {
     const t = e.target.closest(".ticket");
-    if (t && e.target.closest("summary")) setCur(t, false);
+    if (!t || !e.target.closest("summary")) return;
+    if (e.target.closest(".ticket > summary > .num")) { e.preventDefault(); copyPath(t); }
+    setCur(t, false);
   });
+
+  const toast = document.getElementById("toast");
+  let toastTimer = null;
+  function copyPath(t) {
+    const path = t?.dataset.path;
+    if (!path) return;
+    const say = (text) => {
+      toast.textContent = text;
+      toast.classList.add("on");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
+    };
+    // navigator.clipboard is absent outside a secure context
+    (navigator.clipboard?.writeText(path) ?? Promise.reject()).then(() => say("copied " + path), () => say("could not copy " + path));
+  }
 
   const help = document.getElementById("help");
   document.getElementById("helpbtn").addEventListener("click", () => help.classList.toggle("open"));
@@ -1232,6 +1270,7 @@ ${groups}
       }
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
       case "d": { const href = cur?.querySelector("a.dv:not(.gh)")?.href; if (href) window.open(href, "_blank"); break; }
+      case "y": copyPath(cur); break;
       case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
       case "b": side.classList.toggle("folded"); break;
       case "0": off.clear(); applyFilters(); break;
