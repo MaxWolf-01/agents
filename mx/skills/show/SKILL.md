@@ -1,30 +1,30 @@
 ---
 name: show
-description: "Show, don't tell: the medium a thing is judged in, chosen by its shape. Use when writing a spec's Decisions or an ADR, when closing or landing a piece of work, when an explanation is ballooning in prose, when the user asks to see a thing rather than read about it, or when another skill needs an artifact."
+description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does. A figure, a demo, a diagram, a driven run, an explainer page. Use when writing a spec's Decisions or an ADR, when closing or landing a piece of work, when an explanation is ballooning in prose, when someone has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show
 
-A thing is judged in front of a render. The table decides the medium from the shape of what is to be judged: a **figure** for a decision being stated, a **demo** for a change that has landed, either for an explanation prose has stopped carrying. Look up the shape, build what the row names, look at it yourself, put it in front of the user.
+A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Look up the shape of the thing in the table, build what the row names, look at it yourself, put it in front of the reader.
 
 ## The table
 
 | Shape | Figure, for a decision being stated | Demo, for a change that landed |
 | --- | --- | --- |
-| A schema, a record, an API: a new entity or relation, a row, a document, a payload | ER diagram; a record shape gets a sample instance beside it, a CSV row or a JSON line | the serialized instance the change now writes; for an API, a request and its response |
+| A schema, a record, an API: a new entity or relation, a row, a document, a payload | ER diagram for the entities and their relations, and a sample instance of the record they hold beside it: a CSV row, a JSON line | the serialized instance the change now writes; for an API, a request and its response |
 | An exchange or a flow: three or more parties, an ordering that matters, a long or interactive run | sequence diagram | the flow driven: a recording, a walkthrough the demo starts, or a tmux pane to attach to |
 | A state with named transitions | state chart | none |
 | A new or moved module boundary | dependency diagram | none |
-| A prompt, a skill, a process change | none | a driven session transcript, before and after where the difference is the point |
-| A script, a hook, a CLI | none | the invocation and the output it produced, `--help` for a CLI |
-| A page or a UI | none | the page opened, or a screenshot per state |
+| A prompt, a skill, a process change | an excerpt of the session it would produce, or that session role-played as a stand-in | a driven session transcript, before and after where the difference is the point |
+| A script, a hook, a CLI | example invocations, or the interface with sample outputs | the real invocation and the output it produced, `--help` for a CLI |
+| A page or a UI | none | the page opened, a screenshot per state, a tutorial that walks the reader through it, or a recording |
 | A config or a keybinding | none | the setting or the keystroke, and what it does |
 
-Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, are answers: nothing is built, and no slot is ever padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
+Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, mean nothing is owed: no slot is ever padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
 
 A **before/after** is the shape that crosses the rows: a decision or a change that moves something already there is shown as the two side by side, whatever else its row gives it.
 
-Mermaid renders a figure by default, validated per `/mx:mermaid`. The craft below overrides that default wherever a better medium beats it.
+The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is usually what it wants.
 
 ## Where it goes
 
@@ -35,6 +35,8 @@ An artifact goes to the show directory of the work it serves, committed with tha
 One source file named for what it shows, with its SVG beside it: `<name>.mmd` and `<name>.svg`. Both are committed, and the render is regenerated from the source whenever the decision moves. The SVG is what gets opened, since it scales with zoom where a raster does not; a PNG is rendered on demand for embedding somewhere that needs one and stays untracked. A mermaid render carries the renderer's own colour scheme, and the both-schemes rule under Produce and present binds a page you author, not a renderer's output. A page (`index.html`) is for more than one thing at once, several figures, or a diagram and the sample instance beside it, and there every image sits at `width:100%; height:auto` so it scales too.
 
 ## A demo
+
+A demo is built to be read: it makes the change easy to see and understand for someone who did not write it. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
 
 One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it.
 
@@ -68,4 +70,4 @@ An artifact with a build loop (a manim video, a multi-section explainer, anythin
 
 ## Promotion
 
-A figure, or a demo's output, that a README or a PR description needs is copied there on your own judgment, in the same commit, and kept current where it lands: a PNG in the README, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into the PR as a code block or screenshots, a demo that asserts moved under `make check`. The copy is visible in the diff, so no ruling gates it.
+A figure, or a demo's output, that a README or a PR description needs moves to where that document's assets live, `mx/assets/` for this repo's README: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into a PR as a code block or screenshots, a demo that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.
