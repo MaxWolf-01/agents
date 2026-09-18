@@ -7,7 +7,7 @@ Two other tools own neighbouring ground. **Charts belong to `dataviz`**: anythin
 This file has two layers and they do not bind equally.
 
 - **Mechanics** are properties of the medium. They hold for any hand-placed SVG, including a deliberately strange one.
-- **The skin** is one house look: good default for structural diagrams, wrong for anything that wants its own visual argument. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
+- **The skin** is the house style, `/mx:house-style`, worn by a figure: its tokens and type, plus the node treatments and markers below. A figure that sits on GitHub's dark theme wears [`GITHUB-SKIN.md`](GITHUB-SKIN.md) instead. When the figure should look nothing like a systems diagram, keep the mechanics and drop the skin; the register in `SKILL.md` stays either way. A default aesthetic must never outrank the point of the picture.
 
 ---
 
@@ -42,7 +42,7 @@ The exception is a radial layout. Spokes running from a ring of nodes into a sha
 
 **Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. This single constraint does more than any other to stop a figure reading as machine-generated, because near-alignment is what the eye catches. The house skin uses 4.
 
-**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.5em per character in Geist, ≈0.6em in Geist Mono) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
+**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span, since Newsreader runs wider than a grotesk in lowercase) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
 
 **Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
@@ -59,77 +59,65 @@ Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space,
 
 ## The skin
 
-One accent, two type families, hairlines, no shadows. Everything below is a default to inherit or replace wholesale, but replace it as a set, because the pieces are balanced against each other.
+The house style on a figure. Load `/mx:house-style` and inline its `tokens.css` into the file; the tokens, the type roles and the three habits are its, and only what a figure adds is here. Replace as a set, because the pieces are balanced against each other.
 
 ### Tokens
 
-| Role | Light | Dark |
-|---|---|---|
-| `paper`: page background, default node fill | `#f5f5f5` | `#2d3142` |
-| `paper-2`: secondary surface | `#ececec` | `#393e53` |
-| `ink`: primary text and stroke | `#2d3142` | `#f5f5f5` |
-| `muted`: secondary text, default arrows | `#4f5d75` | `#bfc0c0` |
-| `soft`: legend and zone labels only, never text inside a node | `#7a8399` | `#8e98ac` |
-| `rule`: hairlines | `rgba(45,49,66,0.12)` | `rgba(245,245,245,0.12)` |
-| `accent`: focal only | `#eb6c36` | `#f08a59` |
-| `accent-tint`: fill behind accent strokes | `rgba(235,108,54,0.08)` | `rgba(240,138,89,0.10)` |
-| `link`: HTTP/API/external | `#2e5aa8` | `#6a95d8` |
+| Figure role | House token |
+|---|---|
+| page background, mask rects | `ground` |
+| default node fill, code and figure surfaces | `ground-2` |
+| primary text and the strongest stroke | `body` |
+| secondary text, default arrows, zone and legend labels | `muted` |
+| hairlines | `edge` |
+| focal only | `accent` |
+| fill behind an accent stroke | `wash` |
+| zone fill; a banner ramps the same mix 6% to 22% | `wash-ink` |
+| a security boundary, a caution | `accent-2` |
 
-Implement each token as one CSS custom property holding a `light-dark()` pair, under `color-scheme: light dark`:
+The scheme is `data-theme="day"` or `"night"` on the root, read from `?theme=` for a screenshot, and the toggle is the house one: a sun by day and a moon by night, on the page's header row, right-aligned with the content. `demo.html` in the house-style skill carries both to copy. Initialize from `matchMedia('(prefers-color-scheme: dark)')` when the query is absent. Render both schemes and look at both; a standalone `.svg` has no script, so it gets both renders and no toggle.
 
-```css
-:root { color-scheme: light dark; --paper: light-dark(#f5f5f5, #2d3142); /* ... */ }
-```
+**The accent is editorial, not a signalling system.** One meaning per figure, however many marks carry it, chosen as the thing the reader should look at first. If you want the accent to mean four things, you have not yet decided what the figure is about. Everything else is ink or muted.
 
-The pair resolves against the element's used color scheme, so `color-scheme` alone drives the whole figure and each token keeps one definition. Three consequences:
-
-- **Toggle**: one hairline-bordered button that flips `document.documentElement.style.colorScheme` between `light` and `dark`, labelled with the scheme it switches *to*. Initialize the state from `matchMedia('(prefers-color-scheme: dark)')` so the first view matches the reader's system setting. It belongs on the page's header row, right-aligned with the content; `position: fixed` to a viewport corner strands it in the margin on a wide window.
-- **Render**: headless chromium ignores `--force-dark-mode` and `--blink-settings=preferredColorScheme` once `color-scheme` is declared, so pin it instead: screenshot twice, injecting `<style>:root{color-scheme:light}</style>` and then the `dark` variant, and look at both.
-- **Standalone `.svg`**: no scripting, so no toggle; it still carries the `light-dark()` tokens and gets both renders.
-
-**The accent is editorial, not a signalling system.** One or two elements per figure, chosen as the thing the reader should look at first. On five elements it signals nothing. If you want to accent four things, you have not yet decided what the figure is about. Everything else is ink, muted, or soft.
-
-Node treatments: focal is `accent-tint` on `accent`; a service or step is white on `ink`; a store is `ink @ 0.05` on `muted`; an external system is `ink @ 0.03` on `ink @ 0.30`; an optional or async node is `ink @ 0.02` on `ink @ 0.20` dashed `4,3`; a security boundary is `accent @ 0.05` on `accent @ 0.50` dashed `4,4`.
+Node treatments: focal is `wash` on `accent`; a service or step is `ground-2` on `body`; a store is `ground-2` on `muted`; an external system is unfilled on `muted`; an optional or async node is unfilled on `edge` dashed `4,3`; a security boundary is unfilled on `accent-2` dashed `4,4`. Four weights come from the stroke colour and from whether the box is filled at all; every stroke is a hairline.
 
 Strokes 0.8 / 1 / 1.2. Radius 4 on tags, 6 on nodes, 8 on containers. Never a `box-shadow`; borders do that job.
 
 ### Type
 
-Two families, each with one job. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions), never as a blanket "developer" texture, which is the single fastest way to make a figure look generated.
+The house roles, at figure sizes. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions) and for labels; a node's name is not data. Labels are lowercase.
 
 | Role | Family | Size |
 |---|---|---|
-| Title | Geist 600, `ink` | 1.5rem |
-| Subtitle | Geist 400, `muted`, one sentence | 11px |
-| Node name | Geist 600, `ink` (`accent` on the focal node) | 12px |
-| Node role | Geist 400, `ink` | 10px |
-| Node detail | Geist Mono, `muted`, only when the content is technical; else Geist 400 `muted` | 9px / 10px |
-| Arrow label | Geist 500, `muted`, sentence case | 9px, ≤14 chars |
-| Zone label / tag | Geist 600, `soft`, sentence case | 10px |
-| Legend | Geist Mono, `muted` | 9px |
-| Aside | Geist 400, `muted` | 11px |
+| Title | `v-title` | as the role sets it |
+| Subtitle | serif 400, `muted`, one sentence | 13px |
+| Node name | serif 600, `body` (`accent` on the focal node) | 12px |
+| Node role | serif 400, `body` | 10px |
+| Node detail | mono, `muted`, only when the content is technical; else serif 400 `muted` | 9px / 10px |
+| Arrow label | serif 400, `muted`, lowercase | 10px, ≤14 chars |
+| Zone label / tag / eyebrow | `v-meta` at 9px, lowercase | 9px |
+| Legend | `v-meta` at 9px | 9px |
+| Aside | serif 400, `muted` | 11px |
 
-A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished.
+A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished. Small text ported from a grotesk is re-measured downward: Newsreader runs wider in lowercase at the same size.
 
-```html
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-```
+The font link is the one in the house-style `demo.html` head.
 
 ### Markers and page
 
-Define all three markers up front, then reference by role: muted for internal flow, accent for the primary path, link-blue for HTTP and external calls. Dashed (`stroke-dasharray="5,4"`) means optional, async, return, or passive; it changes meaning, not routing.
+Define both markers up front, then reference by role: muted for internal flow, accent for the primary path. An HTTP or external call is muted and labelled; a third colour for it would be a category colour. Dashed (`stroke-dasharray="5,4"`) means optional, async, return, or passive; it changes meaning, not routing.
 
 ```svg
 <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-  <polygon points="0 0, 8 3, 0 6" fill="{muted}"/>
+  <polygon points="0 0, 8 3, 0 6" fill="var(--muted)"/>
 </marker>
 ```
 
-Page is an H1 in Geist, an optional one-sentence subtitle under it, no eyebrow above it, the SVG sitting directly on the paper with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
+Page is an H1 in `v-title`, an optional one-sentence subtitle under it, no eyebrow above it, the SVG sitting directly on the ground with no container chrome, and a legend as a horizontal strip below a hairline at the bottom, never floating inside the drawing, where it collides with the nodes. Add ~60px of `viewBox` height for it. The SVG carries `width:100%; height:auto` and scales with its `viewBox`; a pixel `max-width` only shrinks the figure into a corner of a wide window.
 
-### What the default skin rules out
+### What the skin rules out
 
-Dark backgrounds with cyan or purple glow. Shadows. `border-radius` past 10px. Identical boxes for every node, which erases hierarchy. Three equal-width summary cards. Mono everywhere. Accent as a category color. Display serif, italics as decoration, a tagline under the title. A tracked all-caps eyebrow above the title. Middle dots and em dashes inside labels.
+Dark backgrounds with cyan or purple glow. Shadows. `border-radius` past 10px. Identical boxes for every node, which erases hierarchy. Three equal-width summary cards. Mono everywhere. Accent as a category color. Italics as decoration, a tagline under the title. A tracked all-caps eyebrow above the title. Middle dots and em dashes inside labels.
 
 ---
 
@@ -166,7 +154,7 @@ Everything else is layout convention, a few lines each.
 - **Quadrant**: two labelled axes with named poles, items as dots with labels outside the plot. The consultant variant names all four cells and drops the dots.
 - **Venn**: 3 circles maximum, label the intersections rather than the circles when the overlap is the point.
 - **Pyramid / funnel**: ranked tiers or drop-off. Widths to scale when they encode a quantity, equal when they encode rank only.
-- **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the desaturated series palette (sage `#7c8f6f`, dusty blue `#5e7a9b`, mustard `#b8915a`, rust `#9c6b50`, slate `#6e6479`) at 0.18 fill opacity.
+- **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in a desaturated series palette (sage `#7c8f6f`, dusty blue `#5e7a9b`, mustard `#b8915a`, rust `#9c6b50`, slate `#6e6479`) at 0.18 fill opacity: the one figure that reaches outside the house palette, because five series cannot share two colours.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
 
 ---
