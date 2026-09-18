@@ -295,3 +295,7 @@ Assumptions
 ```
 
 - [D11] Friction, on top of [D7]. A driven session can read the installed plugin straight off disk, whatever `--plugin-dir` and `--setting-sources ""` load: this round's before run ran `grep -rl station /home/agent/.claude/plugins/marketplaces/.../mx/skills/`. It found nothing that mattered, since the installed copy is the old skill and the before run wanted the old skill, but a run that reads the machine's installed plugin while standing in for a branch's is a hole in the comparison that no flag closes. The other cost is the loop: a wording change in a skill is only observable by driving a session against it, five minutes a go, and the two clauses this round owes to a run rather than to a reader (the sample instance, and the figure source named for what it shows in the last round) are both cases where reading the text did not predict what a session would do with it.
+
+Addressed: C1, C2
+
+**2026-09-18** Accepted on the second round with two wording fixes, applied on the feature branch by the orchestrator after the merge: the promotion destination reads generically, a `docs/` or `assets/` directory the document already reads from, since the skill serves every repo (C2); the learning case drops its "usually" (C1).

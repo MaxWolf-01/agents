@@ -24,7 +24,7 @@ Shape decides, never size: a one-column change gets no figure, a two-table schem
 
 A **before/after** is the shape that crosses the rows: a decision or a change that moves something already there is shown as the two side by side, whatever else its row gives it.
 
-The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is usually what it wants.
+The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
 
 ## Where it goes
 
@@ -70,4 +70,4 @@ An artifact with a build loop (a manim video, a multi-section explainer, anythin
 
 ## Promotion
 
-A figure, or a demo's output, that a README or a PR description needs moves to where that document's assets live, `mx/assets/` for this repo's README: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into a PR as a code block or screenshots, a demo that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.
+A figure, or a demo's output, that a README or a PR description needs moves to where that document's assets live, a `docs/` or `assets/` directory the document already reads from: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into a PR as a code block or screenshots, a demo that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.
