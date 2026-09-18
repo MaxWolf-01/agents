@@ -73,12 +73,13 @@
 #            unrun at the prompt of a detached tmux session named
 #            job-<repo>-<feature>-<ticket>-demo, through `job`'s staged mode;
 #            both are named by the ticket's number where it has one. The user
-#            presses Enter when they choose and nothing runs before they do. The
-#            worktree is checked out, not set up, so a demo needing more than the
-#            repo finds whatever the user's machine has installed. Anything that
-#            stops the staging -- no demo on the branch, one committed
-#            unexecutable, a `job` without the mode -- says so and leaves the
-#            rest of the landing standing.
+#            starts it, so a demo meant to be watched is watched from its first
+#            line. The worktree is a plain checkout with no install step run in
+#            it, so the demo has what the user's machine already has and nothing
+#            more. A ticket whose closing comment says the diff is the demo has
+#            nothing to stage. Anything that stops a staging -- no demo on the
+#            branch, one committed unexecutable, a `job` without the mode -- says
+#            so and leaves the rest of the landing standing.
 #
 # Ticket branches merge into this branch with --no-ff; that merge commit is how
 # `review` finds a ticket's range after the merge (its second parent is the

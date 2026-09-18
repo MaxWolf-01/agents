@@ -55,7 +55,7 @@ The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.sv
 
 - A figure states the decision as it stands in the spec; a figure whose decision moved is re-rendered in the same round, never left standing.
 - A figure's source is committed; its raster render is regenerated and never tracked (this repo ignores `agent/show/**/*.png` already).
-- Every landing, whatever its size, has one `demo` file in its show directory, and the demo's output in the comment or message is pasted from a run of that file under the command that ran it.
+- Every landing whose change has a shape the table gives a demo has one `demo` file in its show directory, and the demo's output in the comment or message is pasted from a run of that file under the command, with the file's absolute path; a landing with no such shape says in its Demo line that the diff is the demo `(you, r9: not every change wants a demo; the absolute path)`.
 - A demo file takes no arguments and runs from its branch on any host where the project is installed; what it produces lands beside it.
 - No show directory and no research note outlives the ticket or feature it served; a figure a README or PR needs is copied there and kept current there.
 - A slot is never padded: a spec with no decision of a listed shape has no figure, and the table's absence of a row is a valid result.
