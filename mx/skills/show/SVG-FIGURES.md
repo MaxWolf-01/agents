@@ -90,14 +90,16 @@ The house roles, at figure sizes. Mono is for content that *is* technical (ports
 | Role | Family | Size |
 |---|---|---|
 | Title | `v-title` | as the role sets it |
-| Subtitle | serif 400, `muted`, one sentence | 13px |
-| Node name | serif 600, `body` (`accent` on the focal node) | 12px |
-| Node role | serif 400, `body` | 10px |
-| Node detail | mono, `muted`, only when the content is technical; else serif 400 `muted` | 9px / 10px |
-| Arrow label | serif 400, `muted`, lowercase | 10px, ≤14 chars |
-| Zone label / tag / eyebrow | `v-meta` at 9px, lowercase | 9px |
-| Legend | `v-meta` at 9px | 9px |
-| Aside | serif 400, `muted` | 11px |
+| Subtitle | serif 400, `muted`, one sentence | 15px |
+| Node name | serif 600, `body` (`accent` on the focal node) | 14px |
+| Node role | serif 400, `body` | 13px |
+| Node detail | mono, `muted`, only when the content is technical; else serif 400 `muted` | 12px / 13px |
+| Arrow label | serif 400, `muted`, lowercase | 12px, ≤14 chars |
+| Zone label / tag / eyebrow | `v-meta`, lowercase | 13px |
+| Legend | `v-meta` | 13px |
+| Aside | serif 400, `muted` | 13px |
+
+These are floors, not targets: a label that does not fit gets a wider box, never a smaller size.
 
 A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished. Small text ported from a grotesk is re-measured downward: Newsreader runs wider in lowercase at the same size.
 

@@ -10,7 +10,7 @@ How each part wears the tokens; `demo.html` renders every line, and its styleshe
 - **Input, textarea, select**: hairline on `ground-2`, radius `--radius`, focus turns the border accent. Label and hint are `v-meta`; an error is `v-meta` in accent-2.
 - **Switch**: a hairline track and a hollow dot; checked is an accent dot on a wash track. A filled track would be the loudest thing on the page.
 - **Scheme toggle**: one icon in muted, a sun by day and a moon by night, accent on hover; no label and no switch. It sets `data-theme` on the root.
-- **Table**: a rule under the head, hairlines between rows, nothing vertical. Heads are `v-meta`; numbers `v-num`, right-aligned. A table wider than the measure leaves the column and takes the page width at full size.
+- **Table**: a rule under the head, hairlines between rows, nothing vertical. Heads are `v-meta`; numbers `v-num`, right-aligned. A table wider than the measure leaves the column and takes the page width at full size; a head that still wraps wants fewer columns, since `v-meta` has one size and does not step down.
 - **Note**: a 2px bar on the left (edge; accent-2 for caution), `v-small` muted text, and a `v-meta` title only when the note has a name.
 - **Figure, code**: the filled boxes: hairline on `ground-2`, radius `--radius`; the caption `v-small` muted, its source in `v-num`. Code dims comments to muted and does no other highlighting.
 - **Heading anchor**: a `¶` in accent that appears on hover, so the margin stays clean while reading.

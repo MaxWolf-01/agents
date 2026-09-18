@@ -12,10 +12,10 @@
 :root {
   color-scheme: light dark;
 
-  --ground: light-dark(#f7e9d5, #1a1714);
-  --ground-2: light-dark(#f1dfc6, #201c18);
-  --edge: light-dark(#d4c2aa, #4a433b);
-  --muted: light-dark(#6b6259, #b0a89e);
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
   --body: light-dark(#37261d, #ede3d2);
   --strong: light-dark(#22140b, #faf2dc);
   --accent: light-dark(#426724, #6ea444);
