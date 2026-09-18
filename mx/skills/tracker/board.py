@@ -45,9 +45,9 @@ agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
 and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
 link appears only on the machine that rendered them. Every render asks
 `diffview --serve` for the address the pages answer on, so a click from the
-board opens a page that saves comments, and a server that has idled out since
-the last render is up again. Where they cannot be served the link is the file,
-which the page itself says is read-only.
+board opens a page that saves comments. A server exiting is itself a change to
+re-render on, so a watching board keeps its links live; where the pages cannot
+be served the link is the file, which the page itself says is read-only.
 
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
@@ -71,6 +71,7 @@ Examples:
 """
 
 import datetime
+import functools
 import hashlib
 import html
 import json
@@ -140,6 +141,7 @@ def find_tracker(start: Path) -> Path:
 def render(roots: "Roots", repo: Path, out: Path) -> None:
     project = repo.name
     root = roots.main
+    serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     diffviews = serve_diffviews(root.parent / "diffviews")
     features = load_features(root, roots.overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
@@ -174,15 +176,14 @@ def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
     """What the board read last, as a value to compare: the tracker's files in every checkout that
     contributes to it, the review pages beside them, and the commit the log comes from.
 
-    A hidden file beside the pages is the bookkeeping of whatever serves them, which moves when a
-    server starts or exits; the board reads none of it, so neither is a change to re-render for.
+    A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
+    the render that follows is what puts the pages back on an address that answers.
     """
     dirs = [roots.main, roots.main.parent / "diffviews"]
     dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
     return (git(repo, "rev-parse", "HEAD"),) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
-        for d in dirs if d.is_dir() for f in sorted(d.rglob("*"))
-        if f.is_file() and not f.name.startswith(".") for st in [f.stat()]
+        for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
 
 
@@ -408,6 +409,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
     )
 
 
+@functools.cache
 def serve_diffviews(root: Path) -> Diffviews:
     """The review pages under `root`, on the address diffview answers for them.
 

@@ -6,3 +6,5 @@ scratch/
 __pycache__/
 
 agent/show/**/*.png
+agent/board.html*
+agent/diffviews/

@@ -428,17 +428,17 @@ def test_a_row_copies_the_path_of_the_file_the_board_read(repo: Path, tracker: P
     assert paths["needs-standalone-0"] == str(tracker / "needs-human.md")
 
 
-def test_the_watcher_reads_the_pages_and_not_the_bookkeeping_of_what_serves_them(repo: Path, tracker: Path) -> None:
-    """A render asks diffview to serve the review pages, which leaves its marker and lock beside
-    them; the board reads neither, so a server starting or exiting is no reason to re-render."""
+def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
+    """A page server exits a while after the last page closes, rewriting the marker it left beside
+    the pages; noticing that is what gets the next render, which is what serves them again."""
     dv = tracker.parent / "diffviews"
     dv.mkdir(parents=True)
+    (dv / "quoted.html").write_text("<html>")
+    marker = dv / ".serve.json"
+    marker.write_text('{"port": 54321, "pid": 1234}')  # what a live server leaves beside the pages
     roots = tracker_roots(tracker)
     before = tracker_snapshot(roots, repo)
-    (dv / ".serve.lock").write_text("")
-    (dv / ".serve.json").write_text('{"port": 54321}')
-    assert tracker_snapshot(roots, repo) == before
-    (dv / "quoted.html").write_text("<html>")
+    marker.write_text('{"port": 54321}')  # the pid dropped, as a server does on its way out
     assert tracker_snapshot(roots, repo) != before
 
 
