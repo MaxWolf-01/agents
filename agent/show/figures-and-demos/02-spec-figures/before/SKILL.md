@@ -1,0 +1,64 @@
+---
+# The grilling skill as of a1fefa8, kept as the before-input of the demo beside this file. Not current.
+name: grilling
+description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a feature, whose design lands in the spec as it settles, over as many sessions as the frontier takes. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
+---
+
+Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for designs and features.
+
+Map the design as a **design tree**: every decision branches into the decisions that hang off it. The **frontier** is every decision whose prerequisites are already settled: what can be decided _now_ without guessing at answers you haven't heard yet. Work the tree in **rounds**: each round delivers the design as it stands and the frontier's open questions, then waits for the user's answers.
+
+## The round
+
+**A big idea's first round is breadth-first**: fan out across the whole space before going deep on any thread, so the frontier and the fog are both visible from round one and the questions that are already sharp separate from the ones that are not.
+
+**The design first.** One coherent whole, as it currently stands, sketched past the frontier to the leaves under your best calls, so the user judges shape and consequences instead of reconstructing them from answers. Every call carries who made it: `(you, rN)` settled by the user in round N (`(you, <ticket name>)` when a decision ticket settled it), `(my call)` yours and vetoable, `(open → Qn)` put to a question below, `(fog)` where nothing can be sketched yet. Argue each call as the best expert in that field would: what they'd concretely choose here, what they'd reject about your current pick and why; make the call that expert would judge correct, never the one that satisfies the stated constraints most cheaply.
+
+When more than one design survives that bar, deliver each with the questions that refine it, then the questions that choose between them: the trade-offs one pays and the other doesn't. That second level is where the framing of the problem gets decided explicitly, since rival designs usually embody rival readings of it. A rival whole joins only under the same bar as an option: one you would defend.
+
+**Then the questions**, only where two live options survive expert judgment. Each names the part of the design it would change, and that part carries its `(open → Qn)` mark: a question's decision is always visible in the design.
+
+```
+❓ **Q1**: **<the decision, as a question>**
+   ➡️ **(a)** <the option you recommend>
+      **(b)** <option>
+      **(c)** <option>
+
+💡 <why you'd pick it, and what it costs, argued as the best expert in the field would>
+```
+
+The question line states the decision and nothing else. The arrow marks the winner where it sits, so no scanning; every reason, consequence and preference lives under the 💡. Labelled options make answering cheap (`q1 -> a`, sharpened where they disagree). A decision over an open range takes concrete candidate values as its options.
+
+Offer only options you would defend. Two live options beat three padded with one you dismiss in the same breath. **One live option means it is not a question**: it is a fact to look up, or a call to make in the design and mark as yours. Ask a yes/no only when both sides are named and both are live; a question shaped "accept my proposal?" leaves the user rubber-stamping.
+
+Entangled decisions split (`Q1` and `Q1b`, with the dependency named under the 💡) or become combined options. Never one question carrying two halves. Reach for a table when 3+ options differ along shared axes _and_ why-not-the-others is load-bearing: same `❓` line, a row per option with the `➡️` on the recommended one, columns for the axes that separate them. Two options fit the default: a table's columns demand content, and a demanded cell gets filler.
+
+**The answers.** The user reacts to the whole: vetoes or amends calls by name, answers questions by number. A `(my call)` the user has not ruled on stays unconfirmed and is re-listed at the end of every round until they rule on it or ratify the rest in one word; silence never ratifies. A call that reached the spec, an ADR or the glossary without the user ruling on it gets its unconfirmed mark back, put there by you, not reported to the user to pass on. Each round's answers reshape the tree: settled decisions push the frontier outward and unblock what depended on them. Recompute the frontier and deliver the next round. A question whose answer depends on another still open belongs to a later round.
+
+## The spec
+
+In a repo, the design lives in the spec from the first round that has one, published per `/mx:tracker` (`agent/tickets/<feature>/spec.md`), frontmatter `status: draft`, in the shape of [SPEC-FORMAT.md](SPEC-FORMAT.md); user stories grow from round one, since that is where misunderstandings show. Rewrite it at the end of each round (skip a round when you must clarify first or the picture is mid-flip), open it on the review surface (`diffview --watch --open <base>.. -o agent/diffviews/<feature>/spec.html`: `<base>` is the previous round's commit, or `<integration>...` in round one; the pinned sha keeps the page whole across the round's commits, the fixed path keeps the comments across rounds) so the user reads this round's delta rather than the whole document or the whole branch, and commit the round's state when the answers arrive, on a branch named after the feature, in a worktree of its own, merged `--no-ff` so the integration branch shows one entry. The draft changes only through a round the user is in: a research finding or a prototype verdict is proposed in a round before it lands in the file. The spec stays textual; a visual that would help a round is a `/mx:show` artefact, linked or embedded. Outside a repo, the design is a section of the message instead.
+
+A standalone ticket (`agent/tickets/<slug>.md`, a build ticket or a decision ticket filed for later) that gets grilled is absorbed: its text becomes the problem statement. Then the file is deleted, unless another ticket blocks on its slug or it should stay on the frontier for a worker: then it moves into the feature directory as the next free `NN-<slug>.md`, and every `blocked-by` naming the old slug (grep `agent/tickets/`) is repointed to `<feature>/NN`.
+
+## Facts and decisions
+
+Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, web, tools), look it up rather than asking. A fact needing real investigation (external docs, APIs, knowledge bases) → fire a background `/mx:research` agent and keep grilling: only the questions that depend on its findings wait for a later round; ask the rest of the frontier now. A question only answerable, or better answered, by seeing or running something → propose a `/mx:prototype` detour, or file it as a decision ticket (`type: prototype`, per `/mx:tracker`) when the detour cannot run in this session. The _decisions_ are the user's: put each to them and wait.
+
+## Fog and scope
+
+`(fog)` marks in-scope work whose question cannot yet be stated; it lives in the spec's Fog section, written as loosely or as fully as the view allows. A question that can be stated is a decision ticket per `/mx:tracker`, even while it is blocked. Fog is coarser than a ticket: leave it unsliced, since one patch graduates into several tickets, or none, once an answer sharpens it, and resolving a question is the only thing that graduates fog.
+
+The Solution fixes the scope: work past it is out of scope, not fog; a ticket found to sit past it is closed, with one line in Out of Scope giving the reason, and never graduates.
+
+## The gate
+
+The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the draft current; a draft that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then hand the design to `/mx:to-tickets`. A question the design does not hinge on, one that is naturally its own feature, leaves as a standalone decision ticket so the rest can be cut; one the design hinges on holds the gate.
+
+The marks stay on until the user rules. Walk the unconfirmed list with them whenever they are there: what they ratify loses its mark, and a whole document ratified is `status: confirmed`. What they have not ruled on travels into the tickets as the assumptions their workers carry, anchored to the lines they shape, and the user rules on it from the review page of what it built; a mark is stripped when they do, in whichever session is holding the spec. Capturing what was settled (glossary terms, decisions worth an ADR) goes through `/mx:domain-modelling`; the spec references ADRs, it doesn't restate them.
+
+## Across sessions
+
+Nobody decides up front whether a grilling fits one session; the frontier either drains or it doesn't. When a session ends with questions still open, they leave the conversation as decision tickets per `/mx:tracker`: questions that share their context go in one ticket, sized to one session of grilling. A ticket carries the questions with their options as the last round put them (the recommendation and its argument too, when the round had one) and names the spec sections its answers may rewrite. The spec's `(open → Qn)` marks become `(open → <ticket name>)`; `(fog)` stays in Fog; the spec stays `draft`.
+
+A fresh session reads the spec top-down: Problem Statement, Solution, the marks (in Decisions and wherever else they sit), Fog, plus the open tickets; the middle sections when a ticket touches them. It claims a ticket per `/mx:tracker`, reads the ticket's Comments first (the answer, or the user's instinct about it, may already sit there), and grills it as a round like any other. The answer lands on the ticket as the user gave it (their reason when they gave one, none invented), and the spec sections the ticket names are rewritten in the same session, each call marked `(you, <ticket name>)`.
