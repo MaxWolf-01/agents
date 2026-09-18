@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # dependencies = ["pytest", "tyro", "pyyaml", "markdown"]
 # ///
 """Checks for the board's reading of a tracker. Run: uv run test_board.py
