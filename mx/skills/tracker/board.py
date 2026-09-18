@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # dependencies = ["tyro", "pyyaml", "markdown"]
 # ///
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
@@ -732,7 +732,7 @@ def standalone_row(k: Standalone) -> str:
     badges = kind_badge(k.kind)
     if k.source:
         badges += f'<span class="badge source" title="filed on branch {html.escape(k.source)}, not on the main branch">on {html.escape(k.source)}</span>'
-    return row(f"standalone-{k.slug}", "standalone", "·", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.path, k.diffview, k.gh)
+    return row(f"standalone-{k.slug}", "standalone", "--", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.path, k.diffview, k.gh)
 
 
 def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
@@ -909,8 +909,10 @@ PAGE = Template(r"""<!doctype html>
   .ticket summary:hover { background: var(--raised); }
   .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap;
     justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; cursor: copy; }
-  .ticket .num:hover { color: var(--accent); }
+  /* the number copies the row's path: its click target is the whole cell, row padding included */
+  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; cursor: copy; white-space: nowrap;
+    padding: .45rem .3rem; margin: -.45rem -.3rem; border: 1px solid transparent; border-radius: 5px; }
+  .ticket .num:hover { color: var(--accent); background: var(--raised); border-color: var(--border-strong); }
   .ticket .title { font-size: 13.5px; }
   .row-needs .title { color: var(--ink); }
   .row-open .title { color: var(--open-tx); }
