@@ -43,7 +43,11 @@ slug; a copy a branch merely inherited from the main branch is not read twice.
 A ticket row links its diffview review page when one has been rendered:
 agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
 and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
-link appears only on the machine that rendered them.
+link appears only on the machine that rendered them. Every render asks
+`diffview --serve` for the address the pages answer on, so a click from the
+board opens a page that saves comments, and a server that has idled out since
+the last render is up again. Where they cannot be served the link is the file,
+which the page itself says is read-only.
 
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
@@ -75,7 +79,6 @@ import re
 import subprocess
 import sys
 import time
-import urllib.request
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -137,7 +140,7 @@ def find_tracker(start: Path) -> Path:
 def render(roots: "Roots", repo: Path, out: Path) -> None:
     project = repo.name
     root = roots.main
-    diffviews = load_diffviews(root.parent / "diffviews")
+    diffviews = serve_diffviews(root.parent / "diffviews")
     features = load_features(root, roots.overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
@@ -157,12 +160,7 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     while True:
         try:
             roots = tracker_roots(tickets_root)
-            dirs = [roots.main, roots.main.parent / "diffviews"]
-            dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
-            snapshot = (git(repo, "rev-parse", "HEAD"),) + tuple(
-                (str(f), st.st_mtime_ns, st.st_size)
-                for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
-            )
+            snapshot = tracker_snapshot(roots, repo)
             if snapshot != seen:
                 if seen is not None:
                     render(roots, repo, out)
@@ -170,6 +168,22 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
         except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
             print(f"board: {e}; retrying", file=sys.stderr)
         time.sleep(2)
+
+
+def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
+    """What the board read last, as a value to compare: the tracker's files in every checkout that
+    contributes to it, the review pages beside them, and the commit the log comes from.
+
+    A hidden file beside the pages is the bookkeeping of whatever serves them, which moves when a
+    server starts or exits; the board reads none of it, so neither is a change to re-render for.
+    """
+    dirs = [roots.main, roots.main.parent / "diffviews"]
+    dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
+    return (git(repo, "rev-parse", "HEAD"),) + tuple(
+        (str(f), st.st_mtime_ns, st.st_size)
+        for d in dirs if d.is_dir() for f in sorted(d.rglob("*"))
+        if f.is_file() and not f.name.startswith(".") for st in [f.stat()]
+    )
 
 
 # ---- which checkout's tracker ---------------------------------------------
@@ -334,7 +348,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) 
     for name in names:
         d = overrides.get(name, root / name)
         # an in-flight feature's review pages are rendered and served from its own worktree
-        dv = load_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
+        dv = serve_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
         tickets = load_tickets(d, dv, dv.root / name, root, overrides)
         spec_status = spec_state(d / "spec.md")
         # a directory with neither tickets nor a spec is not a feature (agent/tickets/done/, say)
@@ -361,7 +375,7 @@ def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     ]
     have = {k.slug for k in standalone}
     for branch, tracker in roots.branches:
-        dv = load_diffviews(tracker.parent / "diffviews")
+        dv = serve_diffviews(tracker.parent / "diffviews")
         for path in branch_added(tracker, roots.repo):
             meta, _ = split_frontmatter(path.read_text())
             if path.stem in have or str(meta.get("status")) not in TICKET_STATUSES:
@@ -394,16 +408,27 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
     )
 
 
-def load_diffviews(root: Path) -> Diffviews:
-    """Probe the marker's port: a server killed without cleanup leaves one naming nothing."""
+def serve_diffviews(root: Path) -> Diffviews:
+    """The review pages under `root`, on the address diffview answers for them.
+
+    `diffview --serve` is idempotent and prints that address, so the port stays diffview's
+    to decide; asking on every render is also what brings back a server that has idled out
+    since the last one.
+    """
+    if not root.is_dir():
+        return Diffviews(root, None)
     try:
-        port = json.loads((root / ".serve.json").read_text())["port"]
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/.health", timeout=1) as answer:
-            if json.loads(answer.read())["root"] == str(root.resolve()):
-                return Diffviews(root, f"http://127.0.0.1:{port}")
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    return Diffviews(root, None)
+        done = subprocess.run(["diffview", "--serve", str(root)], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:  # no diffview on this machine, so no server for its pages either
+        return Diffviews(root, None)
+    except subprocess.TimeoutExpired:
+        print(f"board: diffview --serve {root} did not come back; linking the pages as files", file=sys.stderr)
+        return Diffviews(root, None)
+    address = re.search(r"https?://\S+", done.stdout) if done.returncode == 0 else None
+    if not address:
+        print(f"board: diffview left {root} unserved, so its pages are read-only: {(done.stderr or done.stdout).strip()}", file=sys.stderr)
+        return Diffviews(root, None)
+    return Diffviews(root, address.group().rstrip("/"))
 
 
 def spec_state(path: Path) -> str | None:
