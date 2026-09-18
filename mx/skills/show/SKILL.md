@@ -36,7 +36,7 @@ One source file named for what it shows, with its SVG beside it: `<name>.mmd` an
 
 ## A demo
 
-A demo is built to be read: it makes the change easy to see and understand for someone who did not write it. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
+A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A wall of commands and their output is the material a demo is made from, not the demo. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
 
 One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it.
 
