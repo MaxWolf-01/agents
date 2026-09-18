@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 ---
 
 # The board opens a ticket's review page served, so a review starts from the board
