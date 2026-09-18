@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>house style: four rulings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../../../mx/skills/house-style/tokens.css">
+  <style>
+    .page { max-width: 72rem; margin: 0 auto; padding: 0 2rem; }
+    .row { display: flex; align-items: center; gap: 2rem; padding: 1rem 0; border-bottom: 1px solid var(--edge); }
+    .row label { margin-left: auto; display: flex; align-items: center; gap: 0.625rem; }
+    .hero { padding: 3rem 0 2rem; }
+    .hero .v-lead { margin-top: 1.5rem; }
+    main section { margin-top: 3.5rem; }
+    .measure { max-width: var(--measure); }
+    .muted { color: var(--muted); }
+    p { margin: 0; }
+    .divider { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .divider::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
+    .question { margin-bottom: 1.5rem; }
+    .options { display: grid; gap: 2.5rem; align-items: start; }
+    .options.two { grid-template-columns: 1fr 1fr; }
+    .options.three { grid-template-columns: 1fr 1fr 1fr; }
+    .option { display: grid; gap: 0.75rem; align-content: start; }
+    .option > .v-meta:first-child { color: var(--body); }
+    .options + .options { margin-top: 2.5rem; }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    thead { border-bottom: 1px solid var(--edge); }
+    tbody tr + tr { border-top: 1px solid color-mix(in srgb, var(--edge) 60%, transparent); }
+    th, td { padding: 0.5rem 1.25rem 0.5rem 0; vertical-align: baseline; font-weight: 400; }
+    th:last-child, td:last-child { padding-right: 0; }
+    .num { text-align: right; }
+    .pick { background: var(--wash); }
+
+    .switch { display: inline-flex; align-items: center; height: 1.25rem; width: 2.25rem; padding: 3px; box-sizing: border-box; border: 1px solid var(--edge); border-radius: 999px; background: none; cursor: pointer; }
+    .switch[aria-checked="true"] { border-color: var(--accent); background: var(--wash); }
+    .switch i { display: block; width: 0.75rem; height: 0.75rem; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--muted) 70%, transparent); box-sizing: border-box; transition: transform 150ms; }
+    .switch[aria-checked="true"] i { transform: translateX(1rem); border-color: var(--accent); background: var(--accent); }
+
+    pre { margin: 0; padding: 0.75rem 0; overflow: hidden; font: 400 0.8rem/1.6 var(--font-mono); border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); }
+    pre span { display: block; padding: 0 0.75rem; white-space: pre; }
+    pre b { font-weight: 400; color: var(--muted); display: inline-block; width: 3em; }
+    .hit { background: var(--hit); }
+    .miss { background: var(--miss); }
+    .miss b { color: var(--miss-n); font-weight: 500; }
+    .hl { background: var(--wash); }
+
+    .zone { position: relative; border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.5rem 1rem 1rem; }
+    .zone > .v-meta { position: absolute; top: -0.6rem; left: 0.75rem; padding: 0 0.4rem; background: var(--ground); }
+    .zone.washed { background: color-mix(in srgb, var(--muted) 6%, transparent); }
+    .zone.washed > .v-meta { background: var(--ground); }
+    .nodes { display: flex; gap: 0.75rem; }
+    .node { flex: 1; border: 1px solid var(--muted); border-radius: var(--radius); background: var(--ground-2); padding: 0.5rem 0.75rem; }
+    .banner { display: flex; gap: 2px; margin-top: 1rem; }
+    .banner span { flex: 1; padding: 0.25rem 0; text-align: center; }
+    .banner.flat span { background: color-mix(in srgb, var(--muted) 10%, transparent); }
+    .banner.ramp span:nth-child(1) { background: color-mix(in srgb, var(--muted) 6%, transparent); }
+    .banner.ramp span:nth-child(2) { background: color-mix(in srgb, var(--muted) 10%, transparent); }
+    .banner.ramp span:nth-child(3) { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+    .banner.ramp span:nth-child(4) { background: color-mix(in srgb, var(--muted) 18%, transparent); }
+    .banner.ramp span:nth-child(5) { background: color-mix(in srgb, var(--muted) 22%, transparent); }
+
+    .note { border-left: 2px solid var(--accent-2); padding: 0.25rem 0 0.25rem 1rem; }
+    .note.filled { background: var(--wash-2); padding: 0.75rem 1rem; border-radius: 0 var(--radius) var(--radius) 0; }
+    .err { color: var(--accent-2); }
+    tr.bad td { background: var(--wash-2); }
+
+    .wide { margin-top: 1rem; }
+    .wide.shrunk { max-width: var(--measure); font-size: 0.85em; }
+    .wide.shrunk .v-meta { font-size: 0.72rem; }
+    .breakout { width: 100%; }
+    .v-meta-sm { font-size: 0.6875rem; }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <div class="row">
+      <span class="v-h3">house style</span>
+      <span class="v-small muted">four rulings</span>
+      <label>
+        <span class="v-small muted" id="scheme-name">day</span>
+        <button class="switch" role="switch" aria-checked="false" aria-label="night scheme" id="scheme"><i></i></button>
+      </label>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="hero">
+      <h1 class="v-title">Four rulings, shown</h1>
+      <p class="v-meta">night text · data colour · four additions · a wide table</p>
+      <p class="v-lead muted measure">Each row is one question with its options side by side; the line over each option names it. The first section only differs at night, and the highlighted code line in the third only by day, so flip the switch in the header.</p>
+    </div>
+
+    <section id="night">
+      <div class="divider"><span class="v-meta">1 · night text</span></div>
+      <p class="question measure">Secondary text at night, the muted role. The value now, and two lighter candidates; the contrast ratio on the page ground is in each label. Day is the same in all three.</p>
+      <div class="options three">
+        <div class="option" style="--muted: light-dark(#6b6259, #948e87)">
+          <p class="v-meta">now · #948e87 · 5.5:1</p>
+          <p class="v-small muted">Green: recorded as run. Sand: run by the test (replacing line 1424 with raise fails it) and recorded as not run. Across documents.py that is 15 statements, across yapit 19.</p>
+          <p class="v-meta">h-0114 · 1998-07-12 · 2050 m · hochschwab</p>
+          <p class="muted">The memex column is one coverage pass; harden runs it once per report, then hundreds of mutant runs without coverage.</p>
+        </div>
+        <div class="option" style="--muted: light-dark(#6b6259, #a39c93)">
+          <p class="v-meta">a · #a39c93 · 6.6:1</p>
+          <p class="v-small muted">Green: recorded as run. Sand: run by the test (replacing line 1424 with raise fails it) and recorded as not run. Across documents.py that is 15 statements, across yapit 19.</p>
+          <p class="v-meta">h-0114 · 1998-07-12 · 2050 m · hochschwab</p>
+          <p class="muted">The memex column is one coverage pass; harden runs it once per report, then hundreds of mutant runs without coverage.</p>
+        </div>
+        <div class="option" style="--muted: light-dark(#6b6259, #b0a89e)">
+          <p class="v-meta">b · #b0a89e · 7.6:1</p>
+          <p class="v-small muted">Green: recorded as run. Sand: run by the test (replacing line 1424 with raise fails it) and recorded as not run. Across documents.py that is 15 statements, across yapit 19.</p>
+          <p class="v-meta">h-0114 · 1998-07-12 · 2050 m · hochschwab</p>
+          <p class="muted">The memex column is one coverage pass; harden runs it once per report, then hundreds of mutant runs without coverage.</p>
+        </div>
+      </div>
+      <p class="question measure" style="margin-top: 2.5rem">Hairlines at night. The edge value now and one lighter candidate, on a table and a box.</p>
+      <div class="options two">
+        <div class="option" style="--edge: light-dark(#d4c2aa, #3a342e)">
+          <p class="v-meta">now · #3a342e · 1.5:1</p>
+          <table>
+            <thead><tr><th class="v-meta">field</th><th class="v-meta">value</th></tr></thead>
+            <tbody><tr><td class="v-meta">collected</td><td>1998-07-12</td></tr><tr><td class="v-meta">altitude</td><td><span class="v-num">2050</span> m</td></tr><tr><td class="v-meta">substrate</td><td>limestone scree</td></tr></tbody>
+          </table>
+          <div class="zone"><span class="v-meta">agent/board.html</span><div class="nodes"><div class="node v-small">proposed</div><div class="node v-small">open</div><div class="node v-small">claimed</div></div></div>
+        </div>
+        <div class="option" style="--edge: light-dark(#d4c2aa, #4a433b)">
+          <p class="v-meta">a · #4a433b · 1.8:1</p>
+          <table>
+            <thead><tr><th class="v-meta">field</th><th class="v-meta">value</th></tr></thead>
+            <tbody><tr><td class="v-meta">collected</td><td>1998-07-12</td></tr><tr><td class="v-meta">altitude</td><td><span class="v-num">2050</span> m</td></tr><tr><td class="v-meta">substrate</td><td>limestone scree</td></tr></tbody>
+          </table>
+          <div class="zone"><span class="v-meta">agent/board.html</span><div class="nodes"><div class="node v-small">proposed</div><div class="node v-small">open</div><div class="node v-small">claimed</div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="data">
+      <div class="divider"><span class="v-meta">2 · colour that carries data</span></div>
+      <p class="question measure">The coverage figure from the harden page: lines the tracer recorded as run, and lines it lost. Three ways to colour the same six lines.</p>
+      <div class="options three">
+        <div class="option" style="--hit: color-mix(in srgb, var(--accent) 15%, transparent); --miss: color-mix(in srgb, var(--accent-2) 18%, transparent); --miss-n: var(--accent-2)">
+          <p class="v-meta">moss and sand, as rendered</p>
+          <pre><span class="hit"><b>1421</b>async def get_document(doc_id, db, user):</span><span class="hit"><b>1422</b>    """Public docs need no auth."""</span><span class="hit"><b>1423</b>    doc = await _get(doc_id, db)</span><span class="miss"><b>1424</b>    owner = user and doc.user_id == user.id</span><span class="miss"><b>1425</b>    return DocumentDetail(</span><span class="miss"><b>1426</b>        id=doc.id,</span></pre>
+        </div>
+        <div class="option" style="--hit: color-mix(in srgb, var(--accent) 28%, transparent); --miss: color-mix(in srgb, var(--accent-2) 32%, transparent); --miss-n: var(--accent-2)">
+          <p class="v-meta">moss and sand, stronger</p>
+          <pre><span class="hit"><b>1421</b>async def get_document(doc_id, db, user):</span><span class="hit"><b>1422</b>    """Public docs need no auth."""</span><span class="hit"><b>1423</b>    doc = await _get(doc_id, db)</span><span class="miss"><b>1424</b>    owner = user and doc.user_id == user.id</span><span class="miss"><b>1425</b>    return DocumentDetail(</span><span class="miss"><b>1426</b>        id=doc.id,</span></pre>
+        </div>
+        <div class="option" style="--hit: light-dark(rgb(46 160 67 / 0.18), rgb(63 185 80 / 0.22)); --miss: light-dark(rgb(207 34 46 / 0.16), rgb(248 81 73 / 0.22)); --miss-n: light-dark(#a40e26, #ff7b72)">
+          <p class="v-meta">green and red, outside the palette</p>
+          <pre><span class="hit"><b>1421</b>async def get_document(doc_id, db, user):</span><span class="hit"><b>1422</b>    """Public docs need no auth."""</span><span class="hit"><b>1423</b>    doc = await _get(doc_id, db)</span><span class="miss"><b>1424</b>    owner = user and doc.user_id == user.id</span><span class="miss"><b>1425</b>    return DocumentDetail(</span><span class="miss"><b>1426</b>        id=doc.id,</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="additions">
+      <div class="divider"><span class="v-meta">3 · four additions</span></div>
+      <p class="question measure">Each pair is the skill as it is, then with one token or step added. Left is what an agent gets today; right is what it asked for.</p>
+
+      <div class="options two">
+        <div class="option">
+          <p class="v-meta">zone and banner: hairline only, flat banner</p>
+          <div class="zone"><span class="v-meta">agent/board.html</span><div class="nodes"><div class="node v-small">proposed</div><div class="node v-small">open</div><div class="node v-small">claimed</div></div></div>
+          <div class="banner flat v-meta"><span>chat</span><span>brief</span><span>worker</span><span>review</span><span>land</span></div>
+        </div>
+        <div class="option">
+          <p class="v-meta">a neutral ink wash: zone at 6%, banner 6 to 22%</p>
+          <div class="zone washed"><span class="v-meta">agent/board.html</span><div class="nodes"><div class="node v-small">proposed</div><div class="node v-small">open</div><div class="node v-small">claimed</div></div></div>
+          <div class="banner ramp v-meta"><span>chat</span><span>brief</span><span>worker</span><span>review</span><span>land</span></div>
+        </div>
+      </div>
+
+      <div class="options two" style="--wash-2: light-dark(rgb(103 72 6 / 0.12), rgb(205 183 138 / 0.16))">
+        <div class="option">
+          <p class="v-meta">caution and a failing row: bar and text only</p>
+          <div class="note"><p class="v-small muted">Historical artefact: the tracker this page describes was replaced in v0.1.40.</p></div>
+          <table>
+            <thead><tr><th class="v-meta">shape</th><th class="v-meta num">lines</th><th class="v-meta">detector</th></tr></thead>
+            <tbody><tr><td>default</td><td class="num v-num">10 of 12</td><td class="err v-meta">loses two</td></tr><tr><td>project config names greenlet</td><td class="num v-num">12</td><td class="v-meta">lock grep</td></tr></tbody>
+          </table>
+        </div>
+        <div class="option">
+          <p class="v-meta">wash-2: the caution colour at 12% as a fill</p>
+          <div class="note filled"><p class="v-small muted">Historical artefact: the tracker this page describes was replaced in v0.1.40.</p></div>
+          <table>
+            <thead><tr><th class="v-meta">shape</th><th class="v-meta num">lines</th><th class="v-meta">detector</th></tr></thead>
+            <tbody><tr class="bad"><td>default</td><td class="num v-num">10 of 12</td><td class="err v-meta">loses two</td></tr><tr><td>project config names greenlet</td><td class="num v-num">12</td><td class="v-meta">lock grep</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="options two">
+        <div class="option" style="--wash: light-dark(rgb(66 103 36 / 0.1), rgb(110 164 68 / 0.15))">
+          <p class="v-meta">a highlighted line on a code surface: wash at 10% by day</p>
+          <pre><span><b>12</b>figure-2a:</span><span class="hl"><b>13</b>    uv run python -u experiments/train.py --seed 42</span><span><b>14</b></span></pre>
+        </div>
+        <div class="option" style="--wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.15))">
+          <p class="v-meta">wash at 16% by day, night unchanged</p>
+          <pre><span><b>12</b>figure-2a:</span><span class="hl"><b>13</b>    uv run python -u experiments/train.py --seed 42</span><span><b>14</b></span></pre>
+        </div>
+      </div>
+
+      <div class="options two">
+        <div class="option">
+          <p class="v-meta">five table heads at the meta size, 13px</p>
+          <table>
+            <thead><tr><th class="v-meta">to-tickets</th><th class="v-meta">review session, orient S5</th><th class="v-meta">tracker</th><th class="v-meta">dispatch</th><th class="v-meta">board</th></tr></thead>
+            <tbody><tr><td>slices</td><td>rules</td><td>publishes</td><td>claims</td><td>renders</td></tr></tbody>
+          </table>
+        </div>
+        <div class="option">
+          <p class="v-meta">a small step, 11px</p>
+          <table>
+            <thead><tr><th class="v-meta v-meta-sm">to-tickets</th><th class="v-meta v-meta-sm">review session, orient S5</th><th class="v-meta v-meta-sm">tracker</th><th class="v-meta v-meta-sm">dispatch</th><th class="v-meta v-meta-sm">board</th></tr></thead>
+            <tbody><tr><td>slices</td><td>rules</td><td>publishes</td><td>claims</td><td>renders</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="wide">
+      <div class="divider"><span class="v-meta">4 · a table wider than the measure</span></div>
+      <p class="question measure">The seven-column table from the harden page. Kept inside the measure with its type stepped down, or let out to the page width at full size.</p>
+      <p class="v-meta">inside the measure, type at 85%</p>
+      <div class="wide shrunk">
+        <table>
+          <thead><tr><th class="v-meta">shape</th><th class="v-meta num">get_document</th><th class="v-meta num">documents.py</th><th class="v-meta num">yapit</th><th class="v-meta">project config</th><th class="v-meta">detector</th><th class="v-meta num">memex, 156 tests</th></tr></thead>
+          <tbody>
+            <tr><td>default</td><td class="num v-num">10 of 12</td><td class="num v-num">235 of 678</td><td class="num v-num">2362</td><td>none</td><td>none</td><td class="num v-num">5.1 s</td></tr>
+            <tr><td>project config names greenlet (now)</td><td class="num v-num">12</td><td class="num v-num">250</td><td class="num v-num">2381</td><td>required per project</td><td>lock grep + venv glob</td><td class="num v-num">5.2 s</td></tr>
+            <tr class="pick"><td>coverage run --concurrency, harden supplies greenlet</td><td class="num v-num">12</td><td class="num v-num">250</td><td class="num v-num">2381</td><td>none</td><td>none</td><td class="num v-num">8.1 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="v-meta" style="margin-top: 2.5rem">out to the page width, full size</p>
+      <div class="wide breakout">
+        <table>
+          <thead><tr><th class="v-meta">shape</th><th class="v-meta num">get_document</th><th class="v-meta num">documents.py</th><th class="v-meta num">yapit</th><th class="v-meta">project config</th><th class="v-meta">detector</th><th class="v-meta num">memex, 156 tests</th></tr></thead>
+          <tbody>
+            <tr><td>default</td><td class="num v-num">10 of 12</td><td class="num v-num">235 of 678</td><td class="num v-num">2362</td><td>none</td><td>none</td><td class="num v-num">5.1 s</td></tr>
+            <tr><td>project config names greenlet (now)</td><td class="num v-num">12</td><td class="num v-num">250</td><td class="num v-num">2381</td><td>required per project</td><td>lock grep + venv glob</td><td class="num v-num">5.2 s</td></tr>
+            <tr class="pick"><td>coverage run --concurrency, harden supplies greenlet</td><td class="num v-num">12</td><td class="num v-num">250</td><td class="num v-num">2381</td><td>none</td><td>none</td><td class="num v-num">8.1 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="page" style="padding: 4rem 0"><p class="v-small muted">Tokens from mx/skills/house-style/tokens.css on the house-style branch; the candidates are inline overrides on their own column.</p></footer>
+
+  <script>
+    const root = document.documentElement
+    const theme = new URLSearchParams(location.search).get("theme")
+    const dark = theme ? theme === "night" : matchMedia("(prefers-color-scheme: dark)").matches
+    const set = (night) => {
+      root.dataset.theme = night ? "night" : "day"
+      document.getElementById("scheme").setAttribute("aria-checked", night)
+      document.getElementById("scheme-name").textContent = night ? "night" : "day"
+    }
+    document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+    set(dark)
+  </script>
+</body>
+</html>
