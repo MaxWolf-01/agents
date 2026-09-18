@@ -1,3 +1,4 @@
+<!-- The spec format as of a1fefa8, kept as the before-input of the demo beside this file. Not current. -->
 # Spec format
 
 The spec is the work order for one feature: what `/mx:to-tickets` slices and a ticket's worker reads. Published per `/mx:tracker` (`agent/tickets/<feature>/spec.md`), written round by round during grilling, in the vocabulary of `CONTEXT.md`; decisions that pass the ADR gate live in `decisions/` and the spec references them without restating them.
@@ -43,8 +44,6 @@ The decisions made, each marked with the round or decision ticket that settled i
 - Specific interactions
 
 Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
-
-Several of those bullets name a shape that `/mx:show`'s table gives a figure. The decision's entry links that figure and states what the figure cannot: the why, and the rejected alternative.
 
 Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
