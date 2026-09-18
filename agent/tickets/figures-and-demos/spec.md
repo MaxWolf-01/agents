@@ -80,7 +80,7 @@ The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.sv
 
 ## Testing Decisions
 
-Prose in skills has no executable seam; every property is **reviewed**. The Spec axis checks a spec diff for a listed shape without its figure and a closing comment for a demo whose output has no run behind it; the orchestrator's landing read checks that the demo file exists and runs; the retire step in `/mx:tracker` names the show directory and the research notes, so a retirement that leaves them is a Spec finding.
+Prose in skills has no executable seam; every property is **reviewed**. The Spec axis checks a spec diff for a listed shape without its figure and a closing comment for a demo whose output has no run behind it; the orchestrator's landing read checks that the demo file exists and that the worker's own run of it is pasted in the closing comment, and stages it without running it (round 8); the retire step in `/mx:tracker` names the show directory and the research notes, so a retirement that leaves them is a Spec finding.
 
 ## Out of Scope
 
