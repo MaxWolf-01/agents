@@ -1,6 +1,7 @@
 ---
-status: review
+status: done
 blocked-by: [01]
+diff: [a1fefa8b24fef7b9eb7d4752c591947a2b4bda4a..ba03de991d6757b974df1bbdca5934c1ca2666de]
 ---
 
 # A grilling round draws its figures, opens them first, and re-renders them as the design moves
