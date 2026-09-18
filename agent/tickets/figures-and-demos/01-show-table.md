@@ -1,5 +1,5 @@
 ---
-status: done
+status: review
 ---
 
 # Show carries the shape table: figures for decisions, demos for landings
@@ -169,3 +169,129 @@ Assumptions
 
 - [D6] Findings, review range `654b4af..6c01f6e`, three axes (correctness, standards, spec), reports under `agent/reviews/`, which die with the worktree. Fixed in `fe1cd19` unless marked: a failed session indistinguishable from an empty result; only the after run's artefacts collected; an arbitrary file opened at the end; ANSI bold in text meant to be pasted; chromium found under one name only; toy commits breaking under `commit.gpgsign`; the host's settings loading into both runs; em dashes in the skill, the demo and a commit message; sibling tickets named by number; the placement rule and commit gate lost with the cut; `out/` a convention only `.gitignore` knew; the description restating the table; the demo's cost unstated; ADRs unreached by the table; "a long or interactive run" dropped from the flow row; the sample instance made compulsory for every schema; a figure cell that would have had to be invented; the colour-scheme conflict. Declined: unrestricted `Bash` (A4, [D2]), the marker's placement (A6), the `demo` directory collision ([D4]). Left for their owners: orient and the README ([D1]), and two notes the reports carry for the sibling tickets, that 02 owns "re-rendered, never left standing" beyond the re-render half the skill states, and 03 owns "every landing has one demo" and the pasted-from-a-run rule.
 - [D7] Friction. The skill's own rules are only observable by running a session against them, so every wording change costs a five-minute driven run to see; two clauses (A5, and the figure source named for what it shows) exist only because a run was watched, and both came after the reviewers had passed the text. A cheap way to drive one prompt against a branch's plugin and diff what two versions of a skill produce would have paid for itself here. Two reviewers ran the demo concurrently in the same worktree and their runs interleaved in `out/`; the run now publishes `out/` wholesale at the end, which hides the interleaving rather than preventing it. `--setting-sources ""` is what keeps a driven session from reading the host's own `CLAUDE.md`; it is in one prototype in this repo and nowhere in the skills, and the spec review is what surfaced it.
+
+**2026-09-16**
+
+Addressed: C1, C2, C3, C4, C5, C6, C7, C8
+
+`0a6fb22` on the same branch. The skill is no longer framed on judgment: the opening says a thing is understood in front of a render, whether someone is ruling on it, grilling it, reviewing it or learning how it works, and the description leads with what the skill builds and why before the branches that reach it (C1, C2). Three rows gained a figure where they read `none`, since the figure station is reached when the thing does not exist yet: a prompt or skill change gets an excerpt of the session it would produce or that session role-played as a stand-in, a script or CLI gets example invocations or its interface with sample outputs, and a page gets a tutorial or a recording beside the shot (C3, C4, C5). What a demo is for is now stated where the demo is defined: it is built to be read, and a run that prints pass or fail is a test, which needs no audience (C3). The rows are examples, not the boundary, with the learning case and its distill-style page named (C6), and the mermaid default line is gone (C7).
+
+Promotion now moves rather than copies, per the spec's round 7: the render, its source and the script that regenerates it travel together to where the document's assets live, every reference repointed in the same commit, because no show directory outlives its work.
+
+One clause is from a run rather than a comment. The review round had made the sample instance conditional on "a record shape"; the next run read a two-table schema as not one and shipped the ER diagram alone, which is this ticket's first acceptance criterion missed. The cell now names the two halves and what each is for, and the run after it produced both again.
+
+**Demo**
+
+```
+./agent/show/figures-and-demos/01-show-table/demo
+```
+
+Unchanged since the last round, rerun against this round's skill. What that run printed, abridged:
+
+```
+== before: the skill as it stood, with no table to look a shape up in
+· Read(before/repo/agent/tickets/orders/spec.md)
+· Bash(find / -type d -iname "grilling*" 2>/dev/null)
+· Read(plugin-before/skills/grilling/SKILL.md)
+· Read(plugin-before/skills/grilling/SPEC-FORMAT.md)
+· Bash(which diffview 2>/dev/null; diffview --help 2>&1 | head -20)
+· Edit(before/repo/agent/tickets/orders/spec.md)
+
+Look at `agent/tickets/orders/spec.md:14`.
+
+== after: the same prompt, the same plugin, this branch's skill
+· Read(after/repo/agent/tickets/orders/spec.md)
+
+No show directory yet. This decision is a schema/record shape: two related
+tables plus a sample instance. Per the table that gets an ER diagram and a
+sample instance beside it. Let me invoke the mermaid skill before building
+the figure.
+· Skill(mx:mermaid)
+· Write(after/repo/agent/show/orders/order-lines/schema.mmd)
+· Bash(bash plugin-after/skills/mermaid/tools/validate.sh .../schema.mmd)
+· Bash(npx -y @mermaid-js/mermaid-cli ... -o schema.svg)
+· Write(after/repo/agent/show/orders/order-lines/index.html)
+· Bash(chromium --headless ... --screenshot=/tmp/light.png)
+· Read(/tmp/light.png)
+· Edit(after/repo/agent/tickets/orders/spec.md)
+
+Look at `agent/show/orders/order-lines/index.html`.
+
+== what each run left on disk
+
+before
+   M agent/tickets/orders/spec.md
+
+after
+   M agent/tickets/orders/spec.md
+  ?? agent/show/orders/order-lines/index.html
+  ?? agent/show/orders/order-lines/schema.mmd
+  ?? agent/show/orders/order-lines/schema.svg
+
+== the Decisions entry each run wrote
+
+out/before-spec.md
+  - **An order's lines live in their own table, not a text column.** `orders`
+  holds `id`, `customer`, `placed_at`, `status`; `order_lines` holds `id`,
+  `order_id`, `sku`, `qty`, `unit_price`. One order has many lines, a line
+  belongs to exactly one order. A line's `unit_price` is captured at order
+  time, not looked up from the product. `(you, r2)`
+
+out/after-spec.md
+  - **An order's lines live in their own table, `order_lines`, not a text
+  column on `orders`.** ... `unit_price` is the price at the time the order
+  was placed, copied onto the line, never a lookup into the product, so a
+  later price change on the product cannot alter a past order. `(you, r2)`
+  [Figure](../../show/orders/order-lines/index.html)
+
+== the figures each run wrote, and the sample instance beside them
+
+before
+  (no show directory; this run built no figure)
+
+after
+
+out/after-show/orders/order-lines/index.html (4214 bytes)
+
+out/after-show/orders/order-lines/schema.mmd
+  erDiagram
+      orders {
+          int id PK
+          string customer
+          datetime placed_at
+          string status
+      }
+      order_lines {
+          int id PK
+          int order_id FK
+          string sku
+          int qty
+          decimal unit_price
+      }
+      orders ||--o{ order_lines : lines
+
+out/after-show/orders/order-lines/schema.svg (39823 bytes)
+
+== opening what the after run produced
+no display here, so nothing is opened: .../out/after-show/orders/order-lines/index.html
+```
+
+The page that last line opens on your machine carries the ER diagram and, under it, the sample instance: one `orders` row as JSON, its two `order_lines` rows, and one sentence making the snapshot rule concrete ("The product catalog now prices WIDGET-12 at 15.25. The line still reads 14.50, the price on 2026-09-14"). The before run wrote prose into the spec and built nothing.
+
+**I need from you**
+
+- [D8] The promotion rule says "where that document's assets live, `mx/assets/` for this repo's README", not `docs/figures/` as your comment had it: this repo has no `docs/`, and `mx/README.md` embeds `assets/one-flow.png` and its siblings, which is `mx/assets/`. Say the word if `docs/figures/` is where you want them to move to instead, since that is a move of the existing figures, not just a wording change.
+- [D9] `status: review` is not one of the four states the tracker's frontmatter lists (`proposed | open | claimed | done`), and nothing in dispatch or the tracker writes it. I set it as you asked; either the board knows the state and `MARKDOWN.md` does not, or the flow means `claimed` here.
+- [D1] still stands, and is now sharper: the promotion rule contradicts `mx/skills/orient/SKILL.md:22` and `mx/README.md:74` on two facts rather than one, the path and the retire lifecycle.
+
+**Details, if you want them**
+
+- [D10] Two more assumptions, on top of A1 to A7 above:
+
+```
+Assumptions
+- A8 `mx/skills/show/SKILL.md:23`: "a shape with no row" now means nothing is owed rather than nothing is built, so it sits beside the rows-are-examples paragraph without contradicting it: the table never compels a slot to be filled, and it never forbids an artifact it does not name.
+- A9 `mx/skills/show/SKILL.md:73`: the promotion destination is named as `mx/assets/`, the directory this repo's README actually reads from. Raised as [D8].
+```
+
+- [D11] Friction, on top of [D7]. A driven session can read the installed plugin straight off disk, whatever `--plugin-dir` and `--setting-sources ""` load: this round's before run ran `grep -rl station /home/agent/.claude/plugins/marketplaces/.../mx/skills/`. It found nothing that mattered, since the installed copy is the old skill and the before run wanted the old skill, but a run that reads the machine's installed plugin while standing in for a branch's is a hole in the comparison that no flag closes. The other cost is the loop: a wording change in a skill is only observable by driving a session against it, five minutes a go, and the two clauses this round owes to a run rather than to a reader (the sample instance, and the figure source named for what it shows in the last round) are both cases where reading the text did not predict what a session would do with it.
