@@ -59,7 +59,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 ### Update CONTEXT.md inline
 
-When a term is resolved, update `CONTEXT.md` right there. Don't batch these up; capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+When a term is resolved, update `CONTEXT.md` right there. Don't batch these up; capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md). An entry is written when `glossary-lint` passes on the file.
 
 `CONTEXT.md` is a glossary and nothing else. Right after a decision settles, the freshly-agreed mechanism feels like the definition. It isn't: the ADR or design doc you just wrote is its home. Touch an entry only when the term's meaning moved, not its implementation.
 
