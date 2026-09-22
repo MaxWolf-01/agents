@@ -87,7 +87,7 @@ _Avoid_: deprecation notice, banner
 ### Dispatch
 
 **Orchestrator**:
-The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that writes `done` on the user's accept.
+The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that marks a ticket done on the user's accept.
 _Avoid_: dispatcher, coordinator, parent
 
 **Worker**:

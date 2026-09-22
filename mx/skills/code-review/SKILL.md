@@ -43,7 +43,7 @@ Anything in the repo that documents how code should be written: `CLAUDE.md`, `CO
 - [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source in light mode whenever the diff touches tests.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
-- [`CONTEXT-FORMAT.md`](../domain-modelling/CONTEXT-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
+- [`CONTEXT-FORMAT.md`](../domain-modelling/CONTEXT-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules, and `glossary-lint` runs on every touched glossary, its findings reported as violations. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
 
 ### 4. Spawn the reviewers in parallel
 
