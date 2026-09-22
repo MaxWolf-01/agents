@@ -74,6 +74,7 @@ step "the prompt both runs get"
 printf '%s\n' "$prompt" | fold -s -w 78
 
 failed=
+why=
 
 drive() { # <phase>
     phase=$1
@@ -81,7 +82,11 @@ drive() { # <phase>
     roots="$roots $root"
     eval "root_$phase=\$root"
     cp -r "$repo/mx" "$root/plugin"
-    [ "$phase" = before ] && cp "$here/before-SKILL.md" "$root/plugin/skills/show/SKILL.md"
+    want=$repo/mx/skills/show/SKILL.md
+    [ "$phase" = before ] && want=$here/before-SKILL.md && cp "$want" "$root/plugin/skills/show/SKILL.md"
+    # The copy is the whole comparison, so the arm is asked what it holds.
+    cmp -s "$want" "$root/plugin/skills/show/SKILL.md" ||
+        { echo "the $phase arm's plugin does not hold $want" >&2; exit 1; }
 
     toy=$root/repo
     mkdir -p "$toy/agent/tickets/orders"
@@ -126,22 +131,26 @@ SPEC
         else empty end' "$outw/$phase-stream.jsonl" > "$outw/$phase-transcript.txt"
     cat "$outw/$phase-transcript.txt"
 
-    # A run the plugin never drove is a run out of the model's own head, and it
-    # looks exactly like the real thing at exit 0.
-    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
-            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:show") != null)' \
-            "$outw/$phase-stream.jsonl" > /dev/null; then
-        printf '\nthe %s session never loaded the plugin at %s, so its run is nothing to do with this skill.\n' \
-            "$phase" "$root/plugin"
-        failed=$phase
-    fi
-
     # A session that never ran leaves the same empty transcript as one that
     # chose to build nothing, and the second is a result about the skill.
     if [ "$rc" -ne 0 ] || [ ! -s "$outw/$phase-transcript.txt" ]; then
         printf '\nthe %s session did not run (claude exited %s). Its stderr:\n' "$phase" "$rc"
         tail -5 "$outw/$phase-stderr.txt" | sed 's/^/  /'
         failed=$phase
+        why="the $phase session did not run"
+        return 0
+    fi
+
+    # A run the plugin never drove is a run out of the model's own head, and it
+    # looks exactly like the real thing at exit 0. Read after the run check, so
+    # an empty stream is reported as the session it was, not as a plugin miss.
+    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
+            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:show") != null)' \
+            "$outw/$phase-stream.jsonl" > /dev/null; then
+        printf '\nthe %s session never loaded the plugin at %s, so its run is nothing to do with this skill.\n' \
+            "$phase" "$root/plugin"
+        failed=$phase
+        why="the $phase session ran without the plugin"
     fi
 }
 
@@ -153,7 +162,7 @@ drive after
 
 if [ -n "$failed" ]; then
     echo >&2
-    echo "FAILED: the $failed session did not run, so nothing here compares the two skills." >&2
+    echo "FAILED: $why, so nothing here compares the two skills." >&2
     echo "Its transcript and stderr are in out/; the rest of the demo is skipped." >&2
     exit 1
 fi
@@ -197,6 +206,7 @@ step "opening what the after run produced"
 # The page holds the diagram and its sample instance together, so it wins over a
 # bare render whenever the run built one.
 rel=$(cd "$outw" && find after-show -name 'index.html' 2> /dev/null | sort | head -1)
+[ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.html' 2> /dev/null | sort | head -1)
 [ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.svg' 2> /dev/null | sort | head -1)
 publish
 if [ -z "$rel" ]; then

@@ -234,8 +234,8 @@ step "the user presses Enter, on their own machine and when they choose"
 
 tmux send-keys -t "=$session:" Enter
 job wait "$demo_job" --deadline 60
-check "the Enter ran it, and it wrote its file" \
-    test -s "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
+check "the Enter ran it, and it wrote what the preset says" \
+    grep -q 'warm: 2700K' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 printf '\n  what the demo wrote, beside itself in the ticket branch:\n\n'
 sed 's/^/    /' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 check "the run is an ordinary job, its log and status where every job's are" \
