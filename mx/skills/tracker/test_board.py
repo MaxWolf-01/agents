@@ -11,7 +11,8 @@ page (groups, rows, the attributes the page's script matches against the graph s
 oracle is the tracker's MARKDOWN.md and the board's --help: the frontier is open, unblocked,
 unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
 user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
-is a link to GitHub; a row copies the absolute path of the file it was read from; a reference whose file no longer exists counts as done; a graph draws only
+is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
+is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
 tickets with an edge; a standalone ticket a branch added is shown, one it merely inherited is
 not; the needs-human.md beside a set of tickets is their queue, not a ticket; a needs-human
 bullet's detail continues on indented lines.
@@ -40,11 +41,14 @@ from board import (
     load_standalone,
     render,
     render_page,
+    serve_diffviews,
     tracker_roots,
+    tracker_snapshot,
 )
 
 FEAT = "feat-a"  # a hyphen, so a slugged id and the raw name can be told apart
 NO_QUEUE = Queue(Path("needs-human.md"), [])
+STUB_ADDRESS = "http://127.0.0.1:54321"
 
 
 def ticket(path: Path, status: str, blocked_by: list[str] | None = None, kind: str | None = None, gh: list[str] | None = None) -> None:
@@ -78,6 +82,21 @@ def tracker(tmp_path: Path) -> Path:
     ticket(root / "small-chore.md", "open")
     (root / "quoted.md").write_text(f'---\nstatus: open\nblocked-by: [{FEAT}/01]\n---\n\n# Say "no limit" plainly\n')
     return root
+
+
+@pytest.fixture
+def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A diffview that records its arguments and answers as the real one does on --serve."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "diffview"
+    stub.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" > "$0.args"\n'
+        f'echo "diffview: serving $2 at {STUB_ADDRESS}/  (exits 30 minutes after the last page closes)"\n'
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    return stub
 
 
 def load(root: Path):
@@ -309,6 +328,31 @@ def test_a_row_links_its_review_page(tracker: Path) -> None:
     assert '<p class=dvline><a class="dv"' in page
 
 
+def test_a_row_links_its_review_page_on_the_address_diffview_serves(tracker: Path, stub_diffview: Path) -> None:
+    """A page opened as a file is read-only, so a review that starts from the board has to land on
+    the served one, at the address diffview names for that directory of pages."""
+    dv = tracker.parent / "diffviews"
+    (dv / FEAT).mkdir(parents=True)
+    (dv / FEAT / "02-second.html").write_text("<html>")
+    (dv / "quoted.html").write_text("<html>")
+    diffviews = serve_diffviews(dv)
+    assert Path(f"{stub_diffview}.args").read_text().split() == ["--serve", str(dv)]
+    features = load_features(tracker, {}, diffviews)
+    standalone = load_standalone(Roots(tracker, []), diffviews)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert f'href="{STUB_ADDRESS}/{FEAT}/02-second.html"' in page
+    assert f'href="{STUB_ADDRESS}/quoted.html"' in page
+
+
+def test_a_review_page_nothing_serves_is_linked_as_the_file_it_is(tracker: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A machine without diffview has the pages but no server for them."""
+    dv = tracker.parent / "diffviews"
+    (dv / FEAT).mkdir(parents=True)
+    (dv / FEAT / "02-second.html").write_text("<html>")
+    monkeypatch.setenv("PATH", str(tmp_path / "no-tools"))
+    assert serve_diffviews(dv).link(dv / FEAT, "02-*.html") == f"file://{dv / FEAT / '02-second.html'}"
+
+
 def test_class_defs_cover_every_status(tracker: Path) -> None:
     page = page_of(tracker)
     class_defs = re.search(r'const classDefs = \[([^\]]*)\]', page).group(1)
@@ -382,6 +426,20 @@ def test_a_row_copies_the_path_of_the_file_the_board_read(repo: Path, tracker: P
     assert paths["standalone-filed-on-branch"] == str(branch_root / "filed-on-branch.md")
     assert paths["standalone-quoted"] == str(tracker / "quoted.md")
     assert paths["needs-standalone-0"] == str(tracker / "needs-human.md")
+
+
+def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
+    """A page server exits a while after the last page closes, rewriting the marker it left beside
+    the pages; noticing that is what gets the next render, which is what serves them again."""
+    dv = tracker.parent / "diffviews"
+    dv.mkdir(parents=True)
+    (dv / "quoted.html").write_text("<html>")
+    marker = dv / ".serve.json"
+    marker.write_text('{"port": 54321, "pid": 1234}')  # what a live server leaves beside the pages
+    roots = tracker_roots(tracker)
+    before = tracker_snapshot(roots, repo)
+    marker.write_text('{"port": 54321}')  # the pid dropped, as a server does on its way out
+    assert tracker_snapshot(roots, repo) != before
 
 
 def test_a_worktree_on_a_landed_branch_is_ignored(repo: Path, tracker: Path) -> None:

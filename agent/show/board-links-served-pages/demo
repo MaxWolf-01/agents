@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# The board links a review page at the address diffview serves it on, so a review can start
+# from the board: a one-ticket tracker, its review page, the board, and the link fetched.
+set -euo pipefail
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)
+command -v diffview >/dev/null || { echo "this demo needs diffview on PATH"; exit 1; }
+
+demo=$(mktemp -d)
+trap 'rm -rf "$demo"' EXIT        # the page server stops itself once the tree it serves is gone
+export DIFFVIEW_IDLE_SECONDS=60   # a demo's server is not worth the half hour a review gets
+
+say() { printf '\n== %s\n' "$*"; }
+git_() { git -C "$demo" -c user.name=demo -c user.email=demo@example.com "$@"; }
+
+say "a tracker with one ticket in review, under $demo"
+mkdir -p "$demo/agent/tickets"
+cat > "$demo/login.py" <<'EOF'
+def login(user, password):
+    return user in USERS
+EOF
+git_ init -q -b main
+git_ add -A
+git_ commit -qm "login"
+cat > "$demo/login.py" <<'EOF'
+def login(user, password):
+    return check(USERS[user], password)
+EOF
+cat > "$demo/agent/tickets/fix-login.md" <<'EOF'
+---
+status: review
+---
+
+# Login checks the password
+
+Anyone could sign in as anyone.
+EOF
+git_ add -A
+git_ commit -qm "fix-login: check the password"
+
+say "the review page, as dispatch renders one when the work comes back"
+page=$demo/agent/diffviews/fix-login.html
+mkdir -p "$(dirname "$page")"
+diffview "$demo@HEAD~1..HEAD" -o "$page" --no-open --no-auto-summary
+
+say "the board"
+uv run "$repo/mx/skills/tracker/board.py" "$demo/agent/tickets" --no-watch --no-open
+
+say "the address the board put on the ticket's row"
+address=$(grep -o 'href="http://127[^"]*fix-login\.html"' "$demo/agent/board.html" | head -1 | cut -d'"' -f2)
+if [ -z "$address" ]; then
+    echo "no served link on the board; it links these:"
+    grep -o 'class="dv" href="[^"]*"' "$demo/agent/board.html"
+    exit 1
+fi
+echo "$address"
+curl -s -o /dev/null -w 'fetched: HTTP %{http_code}, %{size_download} bytes\n' "$address"
+
+say "a comment on that page, saved the way the page saves one"
+curl -s -o /dev/null -w 'posted: HTTP %{http_code}\n' -X POST -H "Origin: ${address%/*}" \
+    --data '{"savedAt":1,"writer":"demo","comments":[{"id":1,"text":"this wants a test"}],"nextId":2,"verdict":[],"seen":[]}' \
+    "$address.state.json"
+echo "beside the page:"
+cat "$page.state.json"
+echo
