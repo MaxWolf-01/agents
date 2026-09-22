@@ -50,12 +50,17 @@ tickets:
     priority: 2
     size: M
     brief: A `review` script now starts the reviewers and collects their reports; the skill keeps only the judgment. Every worker's self-review runs through it.
+    why: Every review, the workers' included, runs through it.
+    asks:
+      - tag: D10
+        text: "**Give the Tests reviewer its own checkout?** A scratch `git worktree` inside its report folder, where it may break code on purpose and run the tests, so it finds tests that miss bugs again without touching the worker's tree. Goes with the amend that drops the two-at-a-time cap."
   every-property-gets-a-criterion:
     name: Every spec property reaches a ticket
     theme: review
     priority: 2
     size: S
     brief: Splitting a spec into tickets now fails when a property lands in no ticket. Specs number their properties P1, P2 so tickets can cite them.
+    why: Twenty minutes, and every later breakdown checks itself.
   harden-has-no-target:
     name: A make harden target for this repo
     theme: review
@@ -82,6 +87,10 @@ tickets:
     priority: 1
     size: M
     brief: The whole-feature review fixed 39 findings. Seven spec lines still state older decisions, two of them real questions. Accepting it lets the feature merge.
+    why: Accepting it merges the feature and frees the four figure tickets and the dispatch drawing.
+    asks:
+      - tag: D9
+        text: "**Cut a release once the feature merges?** The worker hosts run the older plugin until then; one `make release-patch` and a push covers everything in flight."
   render-check:
     name: Stale figure images fail the check
     theme: figures
@@ -139,6 +148,13 @@ tickets:
     size: S
     brief: Run one prompt against two versions of a skill and diff what the sessions did. The ticket needs rewriting first.
 
+  runner-resumes-early-stops:
+    name: Resume a worker that stopped early
+    theme: dispatch
+    priority: 2
+    size: XS
+    brief: A worker that exits cleanly while its ticket still says claimed has stopped early; the runner resumes it with `continue`.
+
   # bigger questions
   skills-holistic-pass:
     name: A pass over all the skills
@@ -176,3 +192,15 @@ tickets:
     priority: 4
     size: XS
     brief: Three are filed; two wait for your OK to post.
+
+# PROTOTYPE: a ticket that would be filed as proposed, in place of the queue entry that asked whether to file it
+virtual:
+  runner-resumes-early-stops:
+    title: The runner resumes a worker that stopped early
+    status: proposed
+    body: |
+      Cut from the figures-and-demos close-out, 2026-09-22: the whole-feature review's worker exited twice with exit 0 while its ticket still said `claimed`, both times ending its turn while its own demo runs were going. `run-worker.sh` retries only on a nonzero exit, so the orchestrator resumed it by hand.
+
+      ## What to build
+
+      The runner reads the ticket's status after a clean exit; a ticket still `claimed` is resumed with `continue`, counted against the same attempt budget as a crash.

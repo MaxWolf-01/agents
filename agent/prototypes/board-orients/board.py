@@ -110,7 +110,8 @@ GROUPS = [
 # ---- PROTOTYPE additions ----
 PROTO = Path(__file__).resolve().parent
 SCRATCH = Path("/var/tmp/board-orients-proto")
-FIX = yaml.safe_load((PROTO / "fixture.yaml").read_text())["tickets"]
+_FIXTURE = yaml.safe_load((PROTO / "fixture.yaml").read_text())
+FIX, VIRTUAL = _FIXTURE["tickets"], _FIXTURE.get("virtual", {})
 SESSIONS = json.loads((SCRATCH / "sessions.json").read_text()) if (SCRATCH / "sessions.json").exists() else {}
 SIZE_RANK = {"XS": 0, "S": 1, "M": 2, "L": 3, "XL": 4}
 HITL = {"grilling", "prototype"}
@@ -168,22 +169,43 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     features = load_features(root, roots.overrides, diffviews)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
-    standalone += [read_standalone(p, roots, diffviews, "sample") for p in sorted((PROTO / "fixtures").glob("*.md"))]
+    standalone += branch_filed(root, {k.slug for k in standalone}) + virtual_tickets(root)
     for f in features:
         for t in f.tickets:
             enrich(t, f"{f.name}/{t.num}", t.path.parent.parent.parent / "show" / f.name / t.path.stem)
     for k in standalone:
         enrich(k, k.slug, root.parent / "show" / k.slug)
-    queue = load_needs_human(root / "needs-human.md")
     log = git_log(repo)
-    stamp = content_stamp(project, features, standalone, queue, log)
+    stamp = content_stamp(project, features, standalone, Queue(root / "needs-human.md", []), log)
     out.parent.mkdir(parents=True, exist_ok=True)
-    for v in VARIANTS:
-        page_out = out.with_name(f"{out.stem}-{v}.html")
-        page = render_page(project, features, standalone, queue, log, stamp, page_out.name + ".stamp.js", v)
-        page_out.write_text(page)
-        Path(str(page_out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
-        print(page_out)
+    out.write_text(render_page(project, features, standalone, log, stamp, out.name + ".stamp.js"))
+    Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
+    print(out)
+
+
+REVIEW_BRANCH = "ticket/figures-and-demos/06-whole-feature-review"
+
+
+def branch_filed(root: Path, have: set[str]) -> list["Standalone"]:
+    """PROTOTYPE: the standalone tickets the final review filed on its own branch, not on master until it merges."""
+    repo = root.parent.parent
+    names = subprocess.run(["git", "-C", str(repo), "ls-tree", "--name-only", REVIEW_BRANCH, "agent/tickets/"], capture_output=True, text=True).stdout.split()
+    out = []
+    for name in names:
+        slug = Path(name).stem
+        if not name.endswith(".md") or slug in have or slug == "needs-human":
+            continue
+        meta, body = split_frontmatter(subprocess.run(["git", "-C", str(repo), "show", f"{REVIEW_BRANCH}:{name}"], capture_output=True, text=True).stdout)
+        head = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+        out.append(Standalone(slug, head.group(1).strip() if head else slug, str(meta.get("status", "open")), ticket_kind(meta), [], [],
+                              markdown.markdown(body[head.end():] if head else body, extensions=["fenced_code", "tables"]), None, root / f"{slug}.md", "new"))
+    return out
+
+
+def virtual_tickets(root: Path) -> list["Standalone"]:
+    """PROTOTYPE: a ticket the fixture stands in for, one that would be filed rather than asked about in a queue."""
+    return [Standalone(slug, v["title"], v.get("status", "proposed"), None, [], [], markdown.markdown(v.get("body", "")), None, root / f"{slug}.md", "not filed yet")
+            for slug, v in VIRTUAL.items()]
 
 
 def enrich(t: "Ticket | Standalone", tid: str, show: Path) -> None:
@@ -195,6 +217,8 @@ def enrich(t: "Ticket | Standalone", tid: str, show: Path) -> None:
     t.demo = show / "demo" if (show / "demo").is_file() else None
     t.calls = need_calls(branch_text(t, tid)) if t.status == "review" else []
     t.tid = tid
+    t.name, t.why = fx.get("name"), fx.get("why")
+    t.asks = [(a["tag"], a["text"]) for a in fx.get("asks", [])]
 
 
 def branch_text(t: "Ticket | Standalone", tid: str) -> str:
@@ -379,6 +403,9 @@ class Ticket:
     demo: Path | None = None
     calls: list = None
     tid: str = ""
+    name: str | None = None
+    why: str | None = None
+    asks: list = None
 
 
 @dataclass
@@ -418,6 +445,9 @@ class Standalone:
     demo: Path | None = None
     calls: list = None
     tid: str = ""
+    name: str | None = None
+    why: str | None = None
+    asks: list = None
 
 
 def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Feature]:
@@ -777,33 +807,29 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 
 # ---- page -----------------------------------------------------------------
 
+SIZE_LABEL = {"XS": "10 min", "S": "20 min", "M": "1 h", "L": "half a day", "XL": "several sessions"}
+MINUTES = {"XS": 10, "S": 20, "M": 60, "L": 240, "XL": 480}
+GROUPS_V3 = [("needs", "needs me"), ("open", "frontier"), ("claimed", "claimed"), ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done")]
+WORDS = "no one two three four five six seven eight nine ten eleven twelve".split()
+
+
+def words(n: int) -> str:
+    return WORDS[n] if n < len(WORDS) else str(n)
+
 
 def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
-    local = "".join(
-        f'<a class="chip {by_num[b].status}" href="#t-{feature}-{b}">{b}</a>' for b in t.blocked_by
-    )
+    local = "".join(f'<a class="chip {by_num[b].status}" href="#t-{feature}-{b}">{b}</a>' for b in t.blocked_by)
     return local + ext_chips(t.ext_by)
 
 
 def ext_chips(refs: list[tuple[str, str]]) -> str:
-    return "".join(
-        f'<a class="chip {s}" href="{ref_anchor(ref)}" title="external blocker">{html.escape(ref)}</a>'
-        for ref, s in refs
-    )
-
-
-def dv_link(path: str | None, label: str = "diff") -> str:
-    if not path:
-        return ""
-    return (f'<a class="dv" href="{html.escape(path)}" target="_blank" '
-            f'onclick="event.stopPropagation()" title="{html.escape(path)}">{label}</a>')
+    return "".join(f'<a class="chip {s}" href="{ref_anchor(ref)}" title="waits on {html.escape(ref)}">{html.escape(ref)}</a>' for ref, s in refs)
 
 
 def gh_links(refs: Sequence[str]) -> str:
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
-        f'<a class="dv gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
-        f'onclick="event.stopPropagation()" title="on GitHub">{html.escape(ref)}</a>'
+        f'<a class="gh" href="https://github.com/{repo}/issues/{num}" target="_blank">{html.escape(ref)}</a>'
         for ref in refs for repo, num in [ref.split("#")]
     )
 
@@ -820,428 +846,386 @@ def plain(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", inline_md(text))).strip()
 
 
-def copy_btn(label: str, payload: str, title: str, cls: str = "") -> str:
-    return (f'<button class="cp {cls}" data-copy="{html.escape(payload, quote=True)}" '
-            f'onclick="event.stopPropagation(); event.preventDefault()" title="{html.escape(title)}">{label}</button>')
+def copy_btn(label: str, payload: str, title: str) -> str:
+    return f'<button class="copy" data-copy="{html.escape(payload, quote=True)}" title="{html.escape(title)}">{label}</button>'
 
 
-def call_line(t, tag: str, text: str) -> str:
-    """What a copy of one call yields: the tag and the question, so a fresh session knows what is being answered."""
-    return f"{t.tid} {tag} ({t.path}): {plain(text)}\nMy ruling: "
+def split_call(md: str) -> tuple[str, str]:
+    """A call's headline and the rest: its bold lead-in where it has one, else its first sentence."""
+    m = re.match(r"\*\*(.+?)\*\*[\s.,:;]*(.*)", md, re.S)
+    if m:
+        return m.group(1).rstrip(".:"), m.group(2)
+    m = re.match(r"(.+?[.?])\s+(.*)", md, re.S)
+    return (m.group(1), m.group(2)) if m else (md, "")
 
 
-def calls_html(t) -> str:
-    items = "".join(
-        f'<li>{copy_btn(html.escape(f"{t.tid} {tag}"), call_line(t, tag, text), "copy the call with its question, to paste into any session", "tag")} {inline_md(text)}</li>'
-        for tag, text in t.calls
-    )
-    return f'<ul class="calls">{items}</ul>'
+def call_payload(t, tag: str, head: str) -> str:
+    return f"{t.tid} {tag}, in {t.path}: {plain(head)}\nMy answer: "
 
 
-def pri_badges(t) -> str:
-    out = f'<span class="badge pri p{t.priority}" title="priority, the agent\'s reading">P{t.priority}</span>' if t.priority else '<span class="badge pri none" title="no priority yet">P?</span>'
-    if t.size:
-        out += f'<span class="badge size" title="your time on it: XS under 15 min, S half an hour, M an hour or two, L half a day, XL several sessions">{t.size}</span>'
-    return out
+def open_calls(t) -> list[tuple[str, str]]:
+    return (t.calls or []) + (t.asks or [])
 
 
-def when(ts: str | None) -> str:
-    return ts[5:16].replace("T", " ") if ts else "?"
+def needs_me(t) -> bool:
+    """Waiting on the user: a build to rule on, a design session with them, or a question the ticket cannot pass."""
+    return t.status == "review" or (t.kind in HITL and t.status in ("open", "proposed") and (t.priority or 9) <= 2) or bool(t.asks)
 
 
-def extras_body(t) -> str:
+def kind_word(t) -> str:
+    if t.status == "review":
+        return "rule on the build"
+    if t.kind == "prototype":
+        return "judge a prototype"
+    if t.kind in HITL:
+        return "design session"
+    return "your answer"
+
+
+def minutes(t) -> int:
+    return MINUTES.get(t.size or "", 20)
+
+
+def sort_key(t) -> tuple:
+    return (t.priority or 9, minutes(t), (t.name or t.title).lower())
+
+
+def calls_summary(t) -> str:
+    rows = []
+    for tag, text in open_calls(t):
+        head, _ = split_call(text)
+        rows.append(f'<li><span class="tag">{tag}</span><span class="head">{inline_md(head)}</span>'
+                    f'{copy_btn("copy", call_payload(t, tag, head), "copy the question with its tag, to answer in any session")}</li>')
+    return f'<ol class="calls">{"".join(rows)}</ol>' if rows else ""
+
+
+def body_html(t, ticket_body: str) -> str:
     parts = []
+    if t.name and t.name != t.title:
+        parts.append(f'<p class="fulltitle">{html.escape(t.title)}</p>')
+    calls = open_calls(t)
+    if calls:
+        lis = "".join(
+            f'<li><span class="tag">{tag}</span><div><p class="head">{inline_md(head)}</p>'
+            + (f'<p class="rest">{inline_md(rest)}</p>' if rest.strip() else "") + "</div></li>"
+            for tag, text in calls for head, rest in [split_call(text)]
+        )
+        parts.append(f'<section><p class="label">calls</p><ol class="calls-full">{lis}</ol></section>')
     if t.sessions:
         lis = "".join(
-            f'<li>{copy_btn("resume", f"cd {s["cwd"]} && claude --resume {s["id"]}", "copy the resume command")}'
-            f' <b>{html.escape(s["title"])}</b> <span class="dim">{when(s["first"])} → {when(s["last"])} · {html.escape(Path(s["cwd"]).name)}</span></li>'
+            f'<li><span class="stitle">{html.escape(s["title"])}</span><span class="when">{s["first"][5:10]} to {s["last"][5:10]}</span>'
+            f'{copy_btn("copy resume", f"cd {s["cwd"]} && claude --resume {s["id"]}", "copy the command that resumes this session")}</li>'
             for s in reversed(t.sessions)
         )
-        parts.append(f'<div class="xblock"><h4>sessions on this machine</h4><ul>{lis}</ul></div>')
+        parts.append(f'<section><p class="label">sessions on this machine</p><ul class="sessions">{lis}</ul></section>')
     if t.demo or t.show:
-        demo = (f'<p>{copy_btn("copy", str(t.demo), "copy the demo path")} demo <code>{html.escape(str(t.demo))}</code></p>' if t.demo else "")
-        files = "".join(f'<a class="dv" href="file://{html.escape(str(p))}" target="_blank" onclick="event.stopPropagation()">{html.escape(p.name)}</a>' for p in t.show if p.name != "demo")
-        parts.append(f'<div class="xblock"><h4>artefacts</h4>{demo}{f"<p>{files}</p>" if files else ""}</div>')
+        demo = f'<li><code>{html.escape(str(t.demo))}</code>{copy_btn("copy path", str(t.demo), "copy the demo path")}</li>' if t.demo else ""
+        files = "".join(f'<li><a href="file://{html.escape(str(p))}" target="_blank">{html.escape(p.name)}</a></li>' for p in t.show if p.name != "demo")
+        parts.append(f'<section><p class="label">artefacts</p><ul class="artefacts">{demo}{files}</ul></section>')
+    parts.append(f'<section class="ticket-text"><p class="label">ticket</p><div class="prose-s">{ticket_body}</div></section>')
     return "".join(parts)
 
 
-def row(
-    row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str, path: Path,
-    dv: str | None = None, gh: Sequence[str] = (), t=None, show_calls: bool = False, cls: str = "", title_html: str | None = None,
-) -> str:
-    """One ticket row: feature tag, number (a click copies `path`), title with its links, badges, blocker chips,
-    then the brief (and, where asked, the open calls) under the title; the body folded under it."""
-    under = ""
-    if t is not None and t.brief:
-        under += f'<span class="brief">{html.escape(t.brief)}</span>'
-    if t is not None and show_calls and t.calls:
-        under += calls_html(t)
-    extra = extras_body(t) if t is not None else ""
+def row(row_id: str, feature: str, num: str, t, chips: str, group: str) -> str:
+    """One ticket row: feature, number (a click copies the file's path), name and brief, its links, your time and
+    its priority, blocker chips; a ticket waiting on the user lists its open calls under it; the rest folds."""
+    name = t.name or t.title
+    meta = []
+    if t.diffview:
+        meta.append(f'<a class="rp" href="{html.escape(t.diffview)}" target="_blank">review page</a>')
+    if group == "needs":
+        meta.append(f'<span class="kind">{kind_word(t)}</span>')
+    elif t.kind:
+        meta.append(f'<span class="kind">{kind_word(t) if t.kind in HITL else html.escape(t.kind)}</span>')
+    if getattr(t, "source", None):
+        meta.append(f'<span class="kind">{html.escape(t.source)}</span>')
+    meta.append(f'<span class="size" title="your time on it">{SIZE_LABEL.get(t.size or "", "")}</span>')
+    meta.append(f'<span class="pri" title="priority, the agent\'s reading">{f"p{t.priority}" if t.priority else ""}</span>')
+    brief = f'<span class="brief">{inline_md(t.brief)}</span>' if t.brief else ""
+    calls = calls_summary(t) if group == "needs" else ""
     return (
-        f'<details class="ticket row-{status} {cls}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
-        f'data-search="{search_text(num, title, body, *gh, (t.brief or "") if t is not None else "")}" data-path="{html.escape(str(path))}"><summary>'
-        f'<span class="ftag">{html.escape(feature)}</span><span class="num" title="copy {html.escape(str(path))} (y)">{html.escape(num)}</span>'
-        f'<span class="title">{title_html or html.escape(title)}{dv_link(dv)}{gh_links(gh)}</span>'
-        f'<span class="badges">{badges}</span>'
-        f'<span class="chips">{chips or "<span class=deps>—</span>"}</span>{under}</summary>'
-        f'<div class="body">{f"<p class=dvline>{dv_link(dv, 'open the review page')}</p>" if dv else ""}{extra}{body}</div></details>'
+        f'<details class="ticket" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
+        f'data-search="{search_text(num, name, t.title, t.brief or "", t.body_html, *t.gh)}" data-path="{html.escape(str(t.path))}"><summary>'
+        f'<span class="ftag">{html.escape(feature)}</span>'
+        f'<span class="num" title="copy the path of {html.escape(str(t.path))} (y)">{html.escape(num)}</span>'
+        f'<span class="main"><span class="title">{html.escape(name)}</span>{gh_links(t.gh)}{brief}</span>'
+        f'<span class="meta">{"".join(meta)}</span>'
+        f'<span class="chips">{chips}</span>{calls}</summary>'
+        f'<div class="body">{body_html(t, t.body_html)}</div></details>'
     )
-
-
-STATE_BADGE = {"review": "to rule on", "open": "frontier", "claimed": "in progress", "blocked": "blocked", "proposed": "proposed", "done": "done"}
-
-
-def ticket_badges(t, state_badge: bool) -> str:
-    out = pri_badges(t) + kind_badge(t.kind)
-    if state_badge:
-        label = "session with you" if t.kind in HITL and t.status in ("open", "proposed") else STATE_BADGE.get(t.status, t.status)
-        out += f'<span class="badge st {t.status}">{label}</span>'
-    if getattr(t, "source", None) == "sample":
-        out += '<span class="badge source" title="a real ticket as it stood in review, loaded from the prototype\'s fixtures">sample</span>'
-    elif getattr(t, "source", None):
-        out += f'<span class="badge source" title="filed on branch {html.escape(t.source)}, not on the main branch">on {html.escape(t.source)}</span>'
-    return out
-
-
-def ticket_row(f: Feature, t: Ticket, show_calls: bool = False, state_badge: bool = False, cls: str = "") -> str:
-    by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, ticket_badges(t, state_badge), dep_chips(f.name, by_num, t),
-               t.body_html, t.path, t.diffview, t.gh, t, show_calls, cls)
-
-
-def standalone_row(k: Standalone, show_calls: bool = False, state_badge: bool = False, cls: str = "") -> str:
-    return row(f"standalone-{k.slug}", "standalone", "--", k.title, k.status, ticket_badges(k, state_badge), ext_chips(k.blocked_by),
-               k.body_html, k.path, k.diffview, k.gh, k, show_calls, cls)
-
-
-def call_row(feature: str, t, tag: str, text: str, anchor: str) -> str:
-    """Variant B: one question as its own row; the ticket it belongs to is one click away."""
-    title_html = f'{copy_btn(html.escape(f"{t.tid} {tag}"), call_line(t, tag, text), "copy the call with its question, to paste into any session", "tag")} {inline_md(text)}'
-    body = f'<p><a href="#{anchor}">{html.escape(t.title)}</a></p>' + (f"<p>{html.escape(t.brief)}</p>" if t.brief else "")
-    return row(f"call-{slug_id(t.tid)}-{tag}", feature, tag, plain(text), "needs", pri_badges(t), "", body, t.path, t.diffview, (), None, False, "", title_html)
-
-
-def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
-    summary, sep, detail = item.partition(" :: ")
-    body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
-    return row(f"needs-{owner}-{i}", owner, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body, queue)
 
 
 def feature_chip(f: Feature) -> str:
     counts = Counter(t.status for t in f.tickets)
-    bits = [f"spec {f.spec_status}"] if f.spec_status else []
-    bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
-    bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    if f.needs_human.entries:
-        bits.append(f"{len(f.needs_human.entries)} need me")
-    dot = '<i class="dot"></i>' if f.needs_human.entries or counts["review"] else ""
-    return (
-        f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
-        f'<span class="dim">{counts["done"]}/{len(f.tickets)}</span></button>'
+    total = len(f.tickets)
+    title = f"spec {f.spec_status}" if f.spec_status else ""
+    return (f'<button class="pill" data-feature="{html.escape(f.name)}" title="{html.escape(title)}">{html.escape(f.name)}'
+            f' <span class="count">{counts["done"]}/{total}</span></button>')
+
+
+def brief_panel(features: list[Feature], all_tickets: list, anchor: dict) -> str:
+    live = [t for t in all_tickets if t.status != "done"]
+    mine = sorted([t for t in live if needs_me(t)], key=sort_key)
+    builds = [t for t in mine if t.status == "review"]
+    sessions = [t for t in mine if t.kind in HITL and t.status != "review"]
+    answers = len([t for t in live if t.asks and t.status != "review"])  # a build's own questions are part of its ruling
+    running = [t for t in live if t.status == "claimed" and not t.kind]
+    said = []
+    if builds:
+        said.append(f"{words(len(builds)).capitalize()} build{'s' if len(builds) != 1 else ''} wait for your ruling")
+    if sessions:
+        said.append(f"{words(len(sessions))} design session{'s' if len(sessions) != 1 else ''} for you")
+    if answers:
+        said.append(f"{words(answers)} ticket{'s wait' if answers != 1 else ' waits'} on an answer from you")
+    lead = (", ".join(said[:-1]) + (" and " if len(said) > 1 else "") + said[-1] + ". ") if said else "Nothing waits on you. "
+    lead += (f"{words(len(running)).capitalize()} build{'s are' if len(running) != 1 else ' is'} in progress." if running else "No agent is working.")
+    total = sum(minutes(t) for t in mine)
+    picks = [t for t in mine if t.why][:3] or mine[:3]
+    lis = "".join(
+        f'<li><a href="#{anchor[id(t)]}">{html.escape(t.name or t.title)}</a><span class="size">{SIZE_LABEL.get(t.size or "", "")}</span>'
+        + (f'<p class="why">{inline_md(t.why)}</p>' if t.why else "") + "</li>"
+        for t in picks
     )
+    h, m = divmod(total, 60)
+    return (f'<section class="brief-panel"><p class="label">brief</p><p class="lead">{html.escape(lead)}</p>'
+            f'<p class="label next-label">next <span class="total">about {h} h{f" {m} min" if m else ""} waits on you</span></p><ol class="next">{lis}</ol></section>')
 
 
-def needs_me(t) -> bool:
-    """Waiting on the user: a build to rule on, or a decision ticket that needs a session with them."""
-    return t.status == "review" or (t.kind in HITL and t.status in ("open", "proposed"))
-
-
-def sort_key(t) -> tuple:
-    return (t.priority or 9, SIZE_RANK.get(t.size or "", 9), t.title.lower())
-
-
-def variant_groups(variant: str) -> list[tuple[str, str]]:
-    if variant == "A":
-        return [("needs", "needs me"), ("open", "frontier"), ("claimed", "in progress"), ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done")]
-    if variant == "B":
-        return [("needs", "needs me: one row per question"), ("review", "needs my review"), ("open", "frontier"), ("claimed", "in progress"),
-                ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done")]
-    return [("p1", "P1 · now"), ("p2", "P2 · next"), ("p3", "P3 · soon"), ("p4", "P4 · later"), ("p5", "P5 · someday"),
-            ("p9", "no priority yet"), ("done", "done")]
-
-
-def render_page(
-    project: str, features: list[Feature], standalone: list[Standalone], queue: Queue,
-    log: str, stamp: str, stamp_src: str, variant: str = "A",
-) -> str:
-    groups_def = variant_groups(variant)
-    items: dict[str, list[tuple[tuple, str]]] = {state: [] for state, _ in groups_def}
-    top = (-1,)
+def render_page(project: str, features: list[Feature], standalone: list[Standalone], log: str, stamp: str, stamp_src: str) -> str:
+    rows: dict[str, list[tuple[tuple, str]]] = {state: [] for state, _ in GROUPS_V3}
+    anchor: dict[int, str] = {}
+    everything = []
     for f in features:
-        items["needs" if variant != "C" else "p1"].extend((top, needs_row(f.name, i, item, f.needs_human.path)) for i, item in enumerate(f.needs_human.entries))
-    items["needs" if variant != "C" else "p1"].extend((top, needs_row("standalone", i, item, queue.path)) for i, item in enumerate(queue.entries))
-    everything = [(f, t) for f in features for t in f.tickets] + [(None, k) for k in standalone]
-    for f, t in everything:
-        render_one = (lambda **kw: ticket_row(f, t, **kw)) if f is not None else (lambda **kw: standalone_row(t, **kw))
-        anchor = f"t-{f.name}-{t.num}" if f is not None else f"standalone-{t.slug}"
-        feature = f.name if f is not None else "standalone"
-        if variant == "A":
-            group = "needs" if needs_me(t) else t.status
-            items[group].append((sort_key(t), render_one(show_calls=True, state_badge=group == "needs")))
-        elif variant == "B":
-            if t.status == "review":
-                items["review"].append((sort_key(t), render_one()))
-                items["needs"].extend((sort_key(t) + (tag,), call_row(feature, t, tag, text, anchor)) for tag, text in t.calls)
-            elif needs_me(t):
-                items["needs"].append((sort_key(t), render_one(state_badge=True)))
-            else:
-                items[t.status].append((sort_key(t), render_one()))
-        else:
-            group = "done" if t.status == "done" else f"p{t.priority or 9}"
-            mine = needs_me(t)
-            items[group].append(((0 if mine else 1,) + sort_key(t), render_one(show_calls=True, state_badge=True, cls="mine" if mine else "")))
-    rows = {state: [h for _, h in sorted(v, key=lambda x: x[0])] for state, v in items.items()}
+        by_num = {x.num: x for x in f.tickets}
+        for t in f.tickets:
+            group = "needs" if t.status != "done" and needs_me(t) else t.status
+            anchor[id(t)] = f"t-{f.name}-{t.num}"
+            rows[group].append((sort_key(t), row(anchor[id(t)], f.name, t.num, t, dep_chips(f.name, by_num, t), group)))
+            everything.append(t)
+    for k in standalone:
+        group = "needs" if k.status != "done" and needs_me(k) else k.status
+        anchor[id(k)] = f"standalone-{k.slug}"
+        rows[group].append((sort_key(k), row(anchor[id(k)], "standalone", "--", k, ext_chips(k.blocked_by), group)))
+        everything.append(k)
     groups = "".join(
         f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
-        f'<summary><h2>{label} <span class="n">{len(rows[state])}</span></h2></summary>'
-        f'<div class="tickets panel-b">{"".join(rows[state])}</div></details>'
-        for state, label in groups_def if rows[state]
+        f'<summary><span class="label">{label}</span><span class="n">{len(rows[state])}</span><span class="rule"></span></summary>'
+        f'<div class="tickets">{"".join(h for _, h in sorted(rows[state], key=lambda x: x[0]))}</div></details>'
+        for state, label in GROUPS_V3 if rows[state]
     )
-
     chips = "".join(feature_chip(f) for f in features)
-    if standalone or queue.entries:
-        chips += f'<button class="featchip" data-feature="standalone" title="tickets without a spec">standalone <span class="dim">{len(standalone)}</span></button>'
+    if standalone:
+        chips += f'<button class="pill" data-feature="standalone" title="tickets without a spec">standalone <span class="count">{len(standalone)}</span></button>'
 
     graphs = ""
     for f in features:
         src = feature_graph(f)
-        inner = f'<pre class="mermaid" data-key="g:{f.name}">{src}</pre>' if src else f'<div class="gnote">nothing in {html.escape(f.name)} waits on anything</div>'
+        inner = f'<pre class="mermaid" data-key="g:{f.name}">{src}</pre>' if src else f'<p class="gnote">nothing in {html.escape(f.name)} waits on anything</p>'
         graphs += f'<div class="g" data-feature="{html.escape(f.name)}" hidden>{inner}</div>'
     board = board_graph(features, standalone)
     graphs += '<div class="g" data-feature="*" hidden>' + (
-        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden feature</div>'
+        f'<pre class="mermaid" data-key="g:*"></pre><p class="gnote" hidden>every ticket with an edge is in a hidden feature</p>'
         f'<script type="application/json" class="parts">{json.dumps(board).replace("</", "<\\/")}</script>'
-        if board else '<div class="gnote">nothing waits on anything</div>'
+        if board else '<p class="gnote">nothing waits on anything</p>'
     ) + "</div>"
-
     log_html = "\n".join(
         f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
         for line in log.strip().splitlines()
     )
-    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
-    keys = list(VARIANTS)
-    i = keys.index(variant)
-    switcher = (
-        f'<div id="proto-switch"><a href="board-{keys[i - 1]}.html" id="proto-prev">←</a>'
-        f'<span><b>{variant}</b> · {html.escape(VARIANTS[variant])}</span>'
-        f'<a href="board-{keys[(i + 1) % len(keys)]}.html" id="proto-next">→</a></div>'
-    )
-    return PAGE.substitute(
-        project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
-        footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src), switcher=switcher,
-    )
+    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
+    subs = {
+        "PROJECT": html.escape(project), "CHIPS": chips, "GROUPS": groups, "GRAPHS": graphs, "LOG": log_html,
+        "FOOTMETA": footmeta, "STAMP": stamp, "STAMP_SRC": html.escape(stamp_src), "BRIEF": brief_panel(features, everything, anchor),
+        "TOKENS": TOKENS,
+    }
+    page = PAGE
+    for k, v in subs.items():
+        page = page.replace("{{" + k + "}}", v)
+    return page
 
 
-PAGE = Template(r"""<!doctype html>
+TOKENS = (Path.home() / ".claude/plugins/cache/MaxWolf-01/mx/0.1.69/skills/house-style/tokens.css").read_text()
+
+PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>board — ${project}</title>
+<title>board · {{PROJECT}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+  // the scheme before first paint: ?theme= pins it for a screenshot, else the system's
+  (() => {
+    const q = new URLSearchParams(location.search).get("theme");
+    const saved = localStorage.getItem("board-theme");
+    const night = q ? q === "night" : saved ? saved === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = night ? "night" : "day";
+  })();
+</script>
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #141519; --panel: #1b1d23; --raised: #22252c; --border: #2c303a; --border-strong: #3a4050;
-    --ink: #d6dae2; --ink2: #9aa1af; --ink3: #6a7180; --edge: #4d5665;
-    --accent: #7aa2f7; --accent-dim: #4b689f;
-    --done-bg: #17251a; --done-br: #3f7a44; --done-tx: #85d18d;
-    --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
-    --review-bg: #2a1622; --review-br: #9c4d78; --review-tx: #ee9ccb;
-    --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
-    --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
-    --proposed-bg: #1d1a26; --proposed-br: #5b4f7a; --proposed-tx: #a397c4;
-    --human: #e5534b; --human-bg: #291414; --flash: #2a2214;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --topbar-h: 46px;
-  }
+{{TOKENS}}
   * { box-sizing: border-box; }
-  html { scrollbar-color: #3a3f4b var(--bg); }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
-  a { color: var(--accent); text-decoration: none; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .dim { color: var(--ink3); font-weight: 400; }
-  .eyebrow, .badge, .num, .deps, .chip, .log, .mermaid, .featchip, .ftag, .search, .n, .gname, .gnote, .keys { font-family: var(--mono); }
+  :root { --size-body: 15px; --leading-body: 1.5; --topbar-h: 52px; }
+  p { margin: 0; }
+  .mono, .ftag, .num, .meta, .chip, .pill, .label, .n, .tag, .copy, .when, .size, .gnote, .log, .footmeta, .search, .btn, kbd { font-family: var(--font-mono); }
 
-  /* ---- sticky topbar: identity, feature chips, filter, graph mode ---- */
-  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 12px; align-items: center; height: var(--topbar-h);
-    padding: 0 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px);
-    border-bottom: 1px solid var(--border); }
-  .top h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
-  .top .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink3); }
-  .featnav { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
-  .featchip { font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; background: none;
-    color: var(--ink2); white-space: nowrap; cursor: pointer; display: inline-flex; gap: .3em; align-items: center; }
-  .featchip:hover { color: var(--ink); border-color: var(--border-strong); }
-  .featchip.off { opacity: .45; text-decoration: line-through; }
-  .dot { display: inline-block; width: .5em; height: .5em; border-radius: 50%; background: var(--human); }
-  .search { background: var(--raised); border: 1px solid var(--border); color: var(--ink); font-size: 12px; padding: 3px 8px;
-    border-radius: 6px; width: 15rem; }
-  .search:focus { outline: 1px solid var(--accent-dim); }
-  .modes { display: flex; gap: 4px; }
-  .btn { background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px;
-    cursor: pointer; color: var(--ink2); font-size: 12.5px; white-space: nowrap; font-family: var(--sans); }
-  .btn:hover { color: var(--ink); border-color: var(--border-strong); }
-  .btn.on { color: var(--accent); border-color: var(--accent-dim); }
+  /* ---- top bar: name, feature filters, filter box, graph mode, scheme ---- */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1.25rem; align-items: center; min-height: var(--topbar-h);
+    padding: .5rem 1.5rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
+  .top .name { font-weight: 600; color: var(--strong); font-size: 1.05rem; white-space: nowrap; }
+  .top .name span { color: var(--muted); font-weight: 400; }
+  .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .pill { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: none; font-size: .78rem;
+    color: var(--muted); cursor: pointer; white-space: nowrap; transition: color 150ms, border-color 150ms; }
+  .pill:hover { color: var(--accent); border-color: var(--accent); }
+  .pill .count { opacity: .75; }
+  .pill.off { opacity: .45; text-decoration: line-through; }
+  .search { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); color: var(--body);
+    font-size: .8rem; padding: .3rem .6rem; width: 13rem; }
+  .search:focus { outline: none; border-color: var(--accent); }
+  .btn { background: none; border: 0; color: var(--muted); font-size: .8rem; cursor: pointer; padding: .2rem .35rem; transition: color 150ms; }
+  .btn:hover, .btn.on { color: var(--accent); }
+  .scheme { display: inline-flex; }
+  [data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
 
-  /* ---- rows beside the graph panel; one column when the window is narrow ---- */
-  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 38%); gap: 1rem; padding: .6rem 1.25rem 6rem; align-items: start; }
-  .side { position: sticky; top: calc(var(--topbar-h) + 8px); max-height: calc(100vh - var(--topbar-h) - 16px); overflow: auto;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; }
+  /* ---- rows beside the side column ---- */
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(20rem, 30rem); gap: 3rem; padding: 1.5rem 1.5rem 6rem; align-items: start; max-width: 110rem; margin: 0 auto; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } .side { position: static; max-height: none; } }
+
+  .grp { margin-bottom: 2.25rem; }
+  .grp > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem; padding: .25rem 0 .75rem; }
+  .grp > summary::-webkit-details-marker { display: none; }
+  .grp .label { color: var(--body); }
+  .grp .n { color: var(--muted); font-size: .78rem; }
+  .grp .rule { flex: 1; height: 1px; background: var(--edge); }
+  .grp.empty { display: none; }
+  .label { font-size: .8rem; color: var(--muted); }
+
+  .ticket { border-top: 1px solid var(--edge); scroll-margin-top: calc(var(--topbar-h) + 60px); }
+  .ticket:first-child { border-top: 0; }
+  .ticket.off, .ticket.miss { display: none; }
+  .ticket > summary { display: grid; grid-template-columns: 8.5rem 2rem minmax(0, 1fr) auto 4.5rem; column-gap: 1rem; align-items: baseline;
+    padding: .7rem .5rem; cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms; }
+  .ticket > summary::-webkit-details-marker { display: none; }
+  .ticket > summary:hover { background: var(--wash-ink); }
+  .ticket.kcur > summary { background: var(--wash); }
+  .ticket.flash > summary { background: var(--wash); }
+  .ftag { font-size: .72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num { font-size: .78rem; color: var(--muted); text-align: right; cursor: copy; }
+  .num:hover { color: var(--accent); }
+  .main { display: grid; gap: .1rem; min-width: 0; }
+  .title { color: var(--strong); font-size: 1.02rem; }
+  .brief { color: var(--muted); font-size: .9rem; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticket[open] .brief { white-space: normal; }
+  .gh { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); margin-left: .6rem; }
+  .gh:hover { color: var(--accent); }
+  .meta { display: flex; gap: .9rem; align-items: baseline; justify-content: flex-end; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+  .meta .rp { color: var(--accent); }
+  .meta .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .meta .pri { min-width: 1.4rem; text-align: right; }
+  .chips { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
+  .chip { font-size: .72rem; color: var(--body); }
+  .chip.done { color: var(--muted); text-decoration: line-through; }
+
+  /* the open calls of a ticket waiting on the user, under its name */
+  ol.calls { grid-column: 3 / -1; list-style: none; margin: .55rem 0 .1rem; padding: 0; display: grid; gap: .35rem; }
+  ol.calls li { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) auto; gap: .6rem; align-items: baseline; font-size: .9rem; }
+  .tag { font-size: .72rem; color: var(--muted); }
+  .head { color: var(--body); }
+  .head code, .brief code, .rest code, .prose-s code { font-size: .82em; background: var(--ground-2); padding: 0 .25em; border-radius: 3px; }
+  .copy { border: 0; background: none; padding: 0; font-size: .72rem; color: var(--muted); cursor: pointer; transition: color 150ms; white-space: nowrap; }
+  .copy:hover { color: var(--accent); }
+
+  /* ---- a row, opened ---- */
+  .body { padding: .5rem .5rem 1.5rem 13rem; display: grid; gap: 1.4rem; max-width: calc(13.5rem + 46rem); }
+  .body > section { min-width: 0; }
+  .body .label { margin-bottom: .45rem; }
+  .fulltitle { color: var(--muted); font-style: italic; }
+  ol.calls-full { list-style: none; margin: 0; padding: 0; display: grid; gap: .9rem; }
+  ol.calls-full li { display: grid; grid-template-columns: 2.2rem 1fr; gap: .6rem; align-items: baseline; }
+  ol.calls-full .rest { color: var(--muted); font-size: .9rem; margin-top: .2rem; }
+  ul.sessions, ul.artefacts { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+  ul.sessions li, ul.artefacts li { display: flex; gap: 1rem; align-items: baseline; }
+  .stitle { flex: 1; }
+  .when { font-size: .74rem; color: var(--muted); }
+  ul.artefacts code { flex: 1; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+  ul.artefacts a { color: var(--accent); }
+  .prose-s { max-width: 46rem; color: var(--body); }
+  .prose-s > * + * { margin-top: .8em; }
+  .prose-s h2 { font-size: 1rem; font-weight: 600; color: var(--strong); margin-top: 1.4em; }
+  .prose-s a { color: var(--accent); }
+  .prose-s pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); padding: .6rem .8rem; overflow-x: auto; font-size: .8rem; }
+  .prose-s pre code { background: none; padding: 0; }
+  .prose-s ul, .prose-s ol { padding-left: 1.2em; }
+
+  /* ---- the side column: the brief, then the dependencies ---- */
+  .side { position: sticky; top: calc(var(--topbar-h) + 1.5rem); max-height: calc(100vh - var(--topbar-h) - 3rem); overflow: auto;
+    border-left: 1px solid var(--edge); padding-left: 2rem; display: grid; gap: 2.25rem; }
+  .brief-panel .lead { margin-top: .5rem; color: var(--body); font-size: 1.02rem; }
+  .brief-panel .next-label { margin-top: 1.4rem; display: flex; justify-content: space-between; }
+  .brief-panel .total { color: var(--muted); }
+  ol.next { margin: .6rem 0 0; padding-left: 1.2em; display: grid; gap: .7rem; }
+  ol.next li::marker { color: var(--muted); font-family: var(--font-mono); font-size: .8rem; }
+  ol.next a { color: var(--accent); }
+  ol.next .size { float: right; font-size: .74rem; color: var(--muted); }
+  ol.next .why { color: var(--muted); font-size: .9rem; margin-top: .1rem; }
+  .ghead { display: flex; gap: .5rem; align-items: baseline; }
+  .ghead .gname { color: var(--muted); font-size: .8rem; flex: 1; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .side.folded .gbody { display: none; }
-  @media (max-width: 1100px) {
-    /* half a screen: the graph above the rows, sticky, the top bar wrapping and scrolling away */
-    main { grid-template-columns: 1fr; }
-    .top { height: auto; flex-wrap: wrap; padding: 6px 12px; }
-    .featnav { flex-basis: 100%; order: 1; }
-    .search { width: 9rem; margin-left: auto; }
-    .side { order: -1; top: var(--topbar-h); max-height: 40vh; }
-  }
-  .ghead { display: flex; gap: .5rem; align-items: center; margin-bottom: .4rem; }
-  .gname { color: var(--ink2); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gnote { color: var(--ink3); font-size: 12px; padding: .4rem .2rem; }
-  .mermaid { margin: 0; display: flex; justify-content: center; color: var(--ink3); }
+  .gnote { color: var(--muted); font-size: .78rem; padding: .4rem 0; }
+  .mermaid { margin: .5rem 0 0; display: flex; justify-content: center; }
   .mermaid:not(:has(svg)) { visibility: hidden; }
   .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon { stroke: #fff !important; stroke-width: 3px !important; filter: drop-shadow(0 0 4px #fff8); }
+  .side g.node.cur rect, .side g.node.cur polygon { stroke-width: 2.5px !important; }
 
-  h2 { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; font-weight: 600;
-    color: var(--ink2); margin: 0; display: flex; align-items: baseline; gap: .8rem; font-family: var(--sans); }
-  h2::after { content: ""; flex: 1; border-top: 1px solid var(--border); align-self: center; }
-  h2 .n { letter-spacing: 0; font-size: 11.5px; color: var(--ink3); font-weight: 400; }
-  .grp { margin-bottom: 1.2rem; }
-  .grp > summary { list-style: none; cursor: pointer; padding: .5rem 0 .5rem; }
-  .grp > summary::-webkit-details-marker { display: none; }
-  .grp > summary::before { content: "▾"; color: var(--ink3); font-size: 11px; margin-right: .5rem; float: left; line-height: 1.6; }
-  .grp:not([open]) > summary::before { content: "▸"; }
-  .grp.empty { display: none; }
+  #grp-log .log { margin: 0; font-size: .78rem; line-height: 1.8; color: var(--body); white-space: pre-wrap; }
+  .hash { color: var(--muted); }
+  .footmeta { color: var(--muted); font-size: .74rem; margin-top: 1rem; }
 
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
-  .panel-b { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0 .6rem; }
-
-  .done { background: var(--done-bg); border-color: var(--done-br); color: var(--done-tx); }
-  .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
-  .review { background: var(--review-bg); border-color: var(--review-br); color: var(--review-tx); }
-  .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
-  .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
-  .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
-  .needs { background: var(--human-bg); border-color: var(--human); color: var(--human); }
-  .badge.kind { border-color: var(--border); color: var(--ink3); border-style: dashed; }
-  .badge.source { border-style: dashed; border-color: var(--claimed-br); color: var(--claimed-tx); }
-
-  /* ---- ticket rows ---- */
-  .ticket { border-bottom: 1px solid var(--border); }
-  .ticket:last-child { border-bottom: 0; }
-  .ticket.off, .ticket.miss { display: none; }
-  .ticket summary { display: grid; grid-template-columns: 9.5rem 1.6rem 1fr 8rem 5rem; gap: .8rem; align-items: baseline;
-    padding: .45rem .3rem; cursor: pointer; list-style: none; }
-  .ticket summary::-webkit-details-marker { display: none; }
-  .ticket summary:hover { background: var(--raised); }
-  .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap;
-    justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  /* the number copies the row's path: its click target is the whole cell, row padding included */
-  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; cursor: copy; white-space: nowrap;
-    padding: .45rem .3rem; margin: -.45rem -.3rem; border: 1px solid transparent; border-radius: 5px; }
-  .ticket .num:hover { color: var(--accent); background: var(--raised); border-color: var(--border-strong); }
-  .ticket .title { font-size: 13.5px; }
-  .row-needs .title { color: var(--ink); }
-  .row-open .title { color: var(--open-tx); }
-  .row-claimed .title { color: var(--claimed-tx); }
-  .row-review .title { color: var(--review-tx); }
-  .row-done .title, .row-proposed .title, .row-blocked .title { color: var(--ink2); }
-  .row-needs { border-left: 3px solid var(--human); margin-left: -.6rem; padding-left: calc(.6rem - 3px); }
-  .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
-    color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
-  .dv:hover { color: var(--ink); border-color: var(--ink3); }
-  .dv.gh { border-style: dashed; }
-  .dvline { margin: .4rem 0 0; } .dvline .dv { margin-left: 0; padding: .1rem .5rem; }
-  .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; justify-self: end; }
-  .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
-  .chips { display: inline-flex; gap: .25rem; min-width: 3rem; justify-content: flex-end; flex-wrap: wrap; }
-  .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
-  .deps { color: var(--ink3); font-size: 12px; }
-  .ticket .body { padding: .2rem 1rem 1rem 3rem; font-size: 13px; color: var(--ink);
-    border-left: 3px solid var(--border); margin: 0 0 .8rem .6rem; max-width: 80ch; }
-  .ticket .body h2 { text-transform: none; letter-spacing: 0; font-size: 13.5px; color: var(--ink); margin: 1rem 0 .3rem; }
-  .ticket .body h2::after { display: none; }
-  .ticket .body code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem; font-size: .85em; font-family: var(--mono); }
-  .ticket .body pre code { display: block; padding: .6rem .8rem; overflow-x: auto; }
-  .ticket.flash > summary { background: var(--flash); outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-  .ticket > summary { transition: background .6s, outline-color .6s; }
-  .ticket.kcur > summary { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-  .ticket { scroll-margin-top: calc(var(--topbar-h) + 60px); scroll-margin-bottom: 60px; }
-  @media (max-width: 1100px) { .ticket summary { grid-template-columns: 6rem 1.6rem 1fr auto auto; } }
-  .grp { scroll-margin-top: calc(var(--topbar-h) + 10px); }
-
-  .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
-  .hash { color: var(--claimed-tx); }
-  .footmeta { color: var(--ink3); font-size: 11.5px; font-family: var(--mono); margin-top: .8rem; }
-
-  #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 50; max-width: 90vw;
-    background: var(--raised); border: 1px solid var(--border-strong); border-radius: 6px; padding: .3rem .8rem;
-    font: 12px var(--mono); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ground);
+    border: 1px solid var(--edge); border-radius: var(--radius); padding: .35rem .9rem; font: .78rem var(--font-mono); color: var(--muted);
+    opacity: 0; transition: opacity 200ms; pointer-events: none; max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #toast.on { opacity: 1; }
-
-  #help { position: fixed; inset: 0; z-index: 100; background: rgba(10,11,13,.7); display: none; align-items: center; justify-content: center; }
+  #help { position: fixed; inset: 0; z-index: 100; background: color-mix(in srgb, var(--strong) 40%, transparent); display: none; align-items: center; justify-content: center; }
   #help.open { display: flex; }
-  #help .card { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 20px 26px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
-  #help table { border-collapse: collapse; font-size: 13px; }
-  #help td { padding: 3px 14px 3px 0; }
-  #help kbd { font-family: var(--mono); background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; font-size: 12px; }
-
-  /* ---- PROTOTYPE additions ---- */
-  .ticket summary { grid-template-columns: 9.5rem 2.4rem 1fr auto 5rem; row-gap: .15rem; }
-  .ticket summary .brief { grid-column: 3 / -1; color: var(--ink2); font-size: 12.5px; line-height: 1.45; max-width: 90ch; }
-  .ticket summary .calls { grid-column: 3 / -1; margin: .1rem 0; padding: 0; list-style: none; font-size: 12.5px; max-width: 100ch; }
-  .calls li { margin: .25rem 0; color: var(--ink); }
-  .calls code, .title code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem; font-size: .85em; font-family: var(--mono); }
-  .cp { font-family: var(--mono); font-size: 10.5px; background: var(--raised); color: var(--ink2); border: 1px solid var(--border-strong);
-    border-radius: 4px; padding: 0 .35rem; cursor: copy; white-space: nowrap; }
-  .cp:hover { color: var(--accent); border-color: var(--accent-dim); }
-  .cp.tag { color: var(--human); border-color: var(--human); background: var(--human-bg); }
-  .badge.pri { border-color: var(--border-strong); color: var(--ink2); }
-  .badge.pri.p1 { border-color: var(--human); color: var(--human); }
-  .badge.pri.p2 { border-color: var(--claimed-br); color: var(--claimed-tx); }
-  .badge.pri.none { border-style: dashed; color: var(--ink3); }
-  .badge.size { border-color: var(--border); color: var(--ink2); }
-  .ticket.mine { border-left: 3px solid var(--human); margin-left: -.6rem; padding-left: calc(.6rem - 3px); }
-  .xblock { margin: .6rem 0 .8rem; }
-  .xblock h4 { margin: 0 0 .25rem; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink3); font-weight: 600; }
-  .xblock ul { list-style: none; padding: 0; margin: 0; } .xblock li { margin: .25rem 0; } .xblock p { margin: .25rem 0; }
-  #proto-switch { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; gap: 14px;
-    align-items: center; background: #f5d76e; color: #1a1a1a; border-radius: 99px; padding: 6px 18px; font: 13px var(--sans);
-    box-shadow: 0 4px 18px rgba(0,0,0,.5); }
-  #proto-switch a { color: #1a1a1a; font-weight: 700; font-size: 17px; }
+  #help .card { background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.25rem 1.5rem; }
+  #help table { border-collapse: collapse; font-size: .9rem; }
+  #help td { padding: .2rem 1rem .2rem 0; }
+  kbd { font-size: .78rem; border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; color: var(--body); }
 </style>
 </head>
-<body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
+<body data-stamp="{{STAMP}}" data-stamp-src="{{STAMP_SRC}}">
 <div class="top">
-  <span class="eyebrow">board</span>
-  <h1>${project}</h1>
-  <nav class="featnav" id="featnav">${chips}</nav>
-  <input class="search" id="search" type="search" placeholder="filter  (/)" autocomplete="off">
-  <div class="modes" id="modes">
-    <button class="btn" data-gmode="feature" title="graph of the feature under the cursor (a)">feature</button>
-    <button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button>
-    <button class="btn" id="helpbtn" title="keyboard help (?)">?</button>
-  </div>
+  <span class="name">board <span>{{PROJECT}}</span></span>
+  <nav class="featnav" id="featnav">{{CHIPS}}</nav>
+  <input class="search" id="search" type="search" placeholder="filter  /" autocomplete="off">
+  <button class="btn" data-gmode="feature" title="graph of the feature under the cursor (a)">feature</button>
+  <button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button>
+  <button class="btn" id="helpbtn" title="keys (?)">?</button>
+  <button class="btn scheme" id="scheme" title="switch colour scheme">
+    <svg class="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+  </button>
 </div>
 <main>
 <div class="rows" id="rows">
-${groups}
-<details class="grp" id="grp-log"><summary><h2>recent commits</h2></summary>
-  <pre class="panel log">${log}</pre>
-  <p class="footmeta">${footmeta}</p>
+{{GROUPS}}
+<details class="grp" id="grp-log"><summary><span class="label">recent commits</span><span class="rule"></span></summary>
+  <pre class="log">{{LOG}}</pre>
+  <p class="footmeta">{{FOOTMETA}}</p>
 </details>
 </div>
 <aside class="side" id="side">
-  <div class="ghead"><span class="eyebrow">dependencies</span><span class="gname" id="gname"></span>
-    <button class="btn" id="sidefold" title="fold the graph panel (b)">▾</button></div>
-  <div class="gbody" id="gbody">
-    <div class="g" data-feature="" ><div class="gnote">expand a row or move onto one (j / k)</div></div>
-    ${graphs}
-  </div>
+  {{BRIEF}}
+  <section>
+    <div class="ghead"><p class="label">dependencies</p><span class="gname" id="gname"></span>
+      <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
+    <div class="gbody" id="gbody">
+      {{GRAPHS}}
+    </div>
+  </section>
 </aside>
 </main>
 
@@ -1249,49 +1233,35 @@ ${groups}
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
 <tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>next / previous group</td></tr>
 <tr><td><kbd>gg</kbd> <kbd>G</kbd></td><td>top / bottom</td></tr>
-<tr><td><kbd>x</kbd> <kbd>o</kbd> <kbd>Enter</kbd></td><td>expand / collapse the row</td></tr>
-<tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>collapse / expand every group</td></tr>
+<tr><td><kbd>x</kbd> <kbd>o</kbd> <kbd>Enter</kbd></td><td>open / close the row</td></tr>
+<tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>close / open every group</td></tr>
 <tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
 <tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
-<tr><td><kbd>b</kbd></td><td>fold / unfold the graph panel</td></tr>
+<tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
 <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
 </table></div></div>
 <div id="toast" role="status"></div>
-${switcher}
 
 <script>
-  // Synchronous state restore, before first paint. The module below waits on the
-  // mermaid import; doing any of this there makes every reload visibly collapse
-  // the groups and drop expanded tickets for a beat.
+  // Synchronous state restore, before first paint.
   (() => {
-    let saved = null, cache = {};
-    try {
-      saved = JSON.parse(sessionStorage.getItem("board-view") ?? "null");
-      cache = JSON.parse(sessionStorage.getItem("board-svg") ?? "{}");
-    } catch {}
-    // window.name survives navigation in every browser: the fallback carrier
-    if (!saved && window.name.startsWith("board:")) {
-      try { ({ saved = null, cache = {} } = JSON.parse(window.name.slice(6))); } catch {}
-    }
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem("board-view") ?? "null"); } catch {}
+    if (!saved && window.name.startsWith("board:")) { try { ({ saved = null } = JSON.parse(window.name.slice(6))); } catch {} }
     const off = new Set(JSON.parse(localStorage.getItem("board-off:" + document.title) ?? "[]"));
-    for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
+    for (const b of document.querySelectorAll(".pill")) b.classList.toggle("off", off.has(b.dataset.feature));
     for (const t of document.querySelectorAll(".ticket")) t.classList.toggle("off", off.has(t.dataset.feature));
-    // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid
-    for (const el of document.querySelectorAll(".mermaid")) {
-      const hit = cache[el.dataset.key];
-      if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
-    }
     if (saved) {
       for (const d of document.querySelectorAll("details.grp")) d.open = saved.groups?.includes(d.id) ?? d.open;
       for (const id of saved.open ?? []) document.getElementById(id)?.setAttribute("open", "");
       document.getElementById("side").classList.toggle("folded", !!saved.folded);
       scrollTo(0, saved.scroll ?? 0);
     }
-    window.boardState = { saved, off, cache };
+    window.boardState = { saved, off };
   })();
 </script>
 
@@ -1300,67 +1270,52 @@ ${switcher}
   import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs";
   mermaid.registerLayoutLoaders(elkLayouts);
 
-  const css = getComputedStyle(document.body);
-  const v = (name) => css.getPropertyValue(name).trim();
-  // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
-  // ghost = done ticket shown as context: done palette (so it never reads as
-  // blocked-grey), dashed border marking it inactive
-  const classDefs = ["done", "review", "claimed", "open", "blocked", "proposed"].map((s) =>
-    "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
-  ).join("\n") + "\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
-  // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
-  // mode only when its measured width equals the wrap width exactly, and the
-  // measurement misses by a fraction of a pixel at any page zoom other than 100%
-  // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
-  // every long label stays on one line and clips (mermaid-js/mermaid#7794).
-  // SVG labels wrap by mermaid's own measure.
-  mermaid.initialize({
-    startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
-    elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
-    themeVariables: {
-      fontFamily: v("--mono"), fontSize: "13px",
-      primaryColor: v("--panel"), primaryTextColor: v("--ink"),
-      primaryBorderColor: v("--border"), lineColor: v("--edge"),
-      clusterBkg: v("--panel"), clusterBorder: v("--border-strong"),
-      titleColor: v("--ink2"),
-    },
-  });
+  // Mermaid bakes colours into the SVG, and the tokens are light-dark() pairs a custom property never resolves,
+  // so each token is read off a probe element in the scheme on show.
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.append(probe);
+  const rgb = (name) => { probe.style.color = `var(${name})`; return getComputedStyle(probe).color.match(/[\d.]+/g).map(Number); };
+  // mermaid's classDef parser takes no rgba(), so a translucent token is laid over the ground and written as hex
+  const hex = ([r, g, b, a = 1], [R, G, B] = [0, 0, 0]) =>
+    "#" + [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+  function setupMermaid() {
+    const ground = rgb("--ground");
+    const c = Object.fromEntries(["ground", "ground-2", "edge", "muted", "body", "strong", "accent", "wash"].map((n) => [n, hex(rgb("--" + n), ground)]));
+    const cls = {
+      review: [c.wash, c.accent, c.strong, ""], open: [c["ground-2"], c.body, c.body, ""], claimed: [c["ground-2"], c.muted, c.body, ""],
+      blocked: [c.ground, c.edge, c.muted, ""], proposed: [c.ground, c.muted, c.body, ",stroke-dasharray:4 3"],
+      done: [c.ground, c.edge, c.muted, ""], ghost: [c.ground, c.edge, c.muted, ",stroke-dasharray:2 3"],
+    };
+    window.classDefs = Object.entries(cls).map(([s, [f, st, tx, ex]]) => `  classDef ${s} fill:${f},stroke:${st},color:${tx}${ex}`).join("\n");
+    mermaid.initialize({
+      startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
+      elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
+      themeVariables: { fontFamily: "Newsreader, Georgia, serif", fontSize: "14px", primaryColor: c.ground, primaryTextColor: c.body,
+        primaryBorderColor: c.edge, lineColor: c.muted, clusterBkg: c.ground, clusterBorder: c.edge, titleColor: c.muted },
+    });
+  }
+  setupMermaid();
 
   let seq = 0;
   async function renderGraphs() {
-    // mermaid.render (string -> svg), never mermaid.run: run's in-DOM processing
-    // contaminates across the page's many diagrams, render is hermetic per call.
-    // Only the graph on show renders; the others wait for their turn.
     for (const el of document.querySelectorAll(".g:not([hidden]) .mermaid")) {
-      if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
-      el.dataset.src = el.textContent;
-      const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
+      if (el.querySelector("svg")) continue;
+      el.dataset.src = el.dataset.src ?? el.textContent;
+      if (!el.dataset.src.trim()) continue;
+      const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + window.classDefs);
       el.innerHTML = svg;
-      nodeHover(el);
     }
     markNode();
   }
 
-  // Every node carries its full title as a native tooltip.
-  function nodeHover(root) {
-    for (const n of root.querySelectorAll("g.node")) {
-      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      // each wrapped row is its own tspan with no space at the boundary, so join the rows
-      const rows = [...n.querySelectorAll(".text-outer-tspan")].map((r) => r.textContent.trim());
-      t.textContent = (rows.length ? rows.join(" ") : n.textContent).replace(/\s+/g, " ").trim();
-      n.prepend(t);
-    }
-  }
-  for (const el of document.querySelectorAll(".mermaid")) if (el.querySelector("svg")) nodeHover(el);
-
-  // ---- state: hidden features, the cursor row, the graph mode ----
-  const { saved, off, cache } = window.boardState;
+  const { saved, off } = window.boardState;
   const rowsEl = document.getElementById("rows"), side = document.getElementById("side");
   const search = document.getElementById("search");
   let mode = saved?.mode ?? "feature";
   let cur = saved?.cur ? document.getElementById(saved.cur) : null;
   const inField = (e) => e.target.closest("input, textarea, [contenteditable]");
-  const visible = (el) => el.checkVisibility();  // false inside a closed group too, where offsetParent still holds
+  const visible = (el) => el.checkVisibility();
   const rows = () => [...rowsEl.querySelectorAll(".ticket")].filter(visible);
   const groups = () => [...rowsEl.querySelectorAll("details.grp")].filter(visible);
 
@@ -1375,20 +1330,17 @@ ${switcher}
       g.querySelector(".n").textContent = n;
       g.classList.toggle("empty", n === 0);
     }
-    for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
+    for (const b of document.querySelectorAll(".pill")) b.classList.toggle("off", off.has(b.dataset.feature));
     localStorage.setItem("board-off:" + document.title, JSON.stringify([...off]));
-    if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden feature takes its row, and its graph, with it
+    if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);
     showGraph();
   }
 
-  // The whole tracker's graph is composed here from its parts, so a hidden feature drops out of it
-  // with its edges, and a node left without an edge goes with them. One composition per set of
-  // hidden features is rendered and kept.
   function composeAll() {
     const g = side.querySelector('.g[data-feature="*"]'), pre = g.querySelector(".mermaid");
     if (!pre) return;
     const key = "g:*:" + [...off].sort().join(",");
-    if (pre.dataset.key === key) return;
+    if (pre.dataset.key === key && pre.dataset.src !== undefined) return;
     const parts = JSON.parse(g.querySelector(".parts").textContent);
     const on = (f) => !off.has(f);
     const edges = parts.edges.filter((e) => on(e.a) && on(e.b));
@@ -1403,23 +1355,18 @@ ${switcher}
     }
     lines.push(...edges.map((e) => e.line));
     pre.dataset.key = key;
-    pre.textContent = edges.length ? lines.join("\n") : "";
-    delete pre.dataset.src;
+    pre.dataset.src = edges.length ? lines.join("\n") : "";
+    pre.innerHTML = "";
     pre.hidden = !edges.length;
     g.querySelector(".gnote").hidden = !!edges.length;
-    const hit = cache[key];
-    if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; nodeHover(pre); }
   }
 
-  // The graph panel shows one pre-rendered graph at a time: the cursor row's feature, or the
-  // whole tracker. Switching shows another element and marks another node; nothing re-renders,
-  // so moving between rows of one feature never flickers.
   function showGraph() {
     const feature = cur?.dataset.feature ?? "";
-    const key = mode === "all" ? "*" : (feature === "standalone" ? "*" : feature);
+    const key = mode === "all" || !feature || feature === "standalone" ? "*" : feature;
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.feature !== key;
     if (key === "*") composeAll();
-    document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (feature || "");
+    document.getElementById("gname").textContent = key === "*" ? "whole tracker" : feature;
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
@@ -1442,7 +1389,6 @@ ${switcher}
     if (!list.length) return;
     let i = list.indexOf(cur);
     if (i < 0 && cur) {
-      // the cursor row is folded or filtered away: continue from its place in the page
       const at = all.indexOf(cur);
       i = delta > 0 ? list.findIndex((r) => all.indexOf(r) > at) : list.findLastIndex((r) => all.indexOf(r) < at);
       if (i < 0) i = delta > 0 ? list.length - 1 : 0;
@@ -1454,56 +1400,51 @@ ${switcher}
   function jumpGroup(delta) {
     const gs = groups();
     if (!gs.length) return;
-    // the group holding the viewport top: the last one at or above where a jump to it would land
-    const margin = parseFloat(getComputedStyle(gs[0]).scrollMarginTop) || 0;
-    const i = gs.findLastIndex((g) => g.offsetTop <= scrollY + margin + 2);
+    const i = gs.findLastIndex((g) => g.offsetTop <= scrollY + 80);
     gs[Math.min(Math.max(i + delta, 0), gs.length - 1)].scrollIntoView({ block: "start" });
   }
 
   document.getElementById("featnav").addEventListener("click", (e) => {
-    const b = e.target.closest(".featchip"); if (!b) return;
+    const b = e.target.closest(".pill"); if (!b) return;
     off.has(b.dataset.feature) ? off.delete(b.dataset.feature) : off.add(b.dataset.feature);
     applyFilters();
   });
   for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => { mode = b.dataset.gmode; showGraph(); });
   document.getElementById("sidefold").addEventListener("click", () => side.classList.toggle("folded"));
   search.addEventListener("input", applyFilters);
-  // a click on a row's summary moves the cursor there, so the graph follows the mouse too;
-  // one on its number copies the row's path instead of folding the row
-  rowsEl.addEventListener("click", (e) => {
-    const t = e.target.closest(".ticket");
-    if (!t || !e.target.closest("summary")) return;
-    if (e.target.closest(".ticket > summary > .num")) { e.preventDefault(); copyPath(t); }
-    setCur(t, false);
-  });
 
   const toast = document.getElementById("toast");
   let toastTimer = null;
-  function copyPath(t) {
-    const path = t?.dataset.path;
-    if (!path) return;
-    const say = (text) => {
-      toast.textContent = text;
-      toast.classList.add("on");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
-    };
-    // navigator.clipboard is absent outside a secure context
-    (navigator.clipboard?.writeText(path) ?? Promise.reject()).then(() => say("copied " + path), () => say("could not copy " + path));
-  }
+  const say = (text) => { toast.textContent = text; toast.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("on"), 1600); };
+  const copyText = (text, what) => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => say("copied " + what), () => say("could not copy"));
+
+  // a click on a row's number copies its path; a copy button copies its payload; links inside a row open, the row stays as it was
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-copy]");
+    if (b) { e.preventDefault(); e.stopPropagation(); copyText(b.dataset.copy, b.textContent.trim() === "copy" ? "the question" : b.textContent.trim().replace("copy ", "the ")); return; }
+    const t = e.target.closest(".ticket");
+    if (!t || !e.target.closest(".ticket > summary")) return;
+    if (e.target.closest("a")) { setCur(t, false); return; }
+    if (e.target.closest(".num")) { e.preventDefault(); copyText(t.dataset.path, "the path"); }
+    setCur(t, false);
+  }, true);
 
   const help = document.getElementById("help");
   document.getElementById("helpbtn").addEventListener("click", () => help.classList.toggle("open"));
   help.addEventListener("click", () => help.classList.remove("open"));
 
-  // The keys are diffview's where the two pages have the same move (j/k, J/K, gg/G, x/o/Enter,
-  // X/O, z, b, /, ?), so one set of habits drives both.
+  document.getElementById("scheme").addEventListener("click", () => {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === "night" ? "day" : "night";
+    localStorage.setItem("board-theme", root.dataset.theme);
+    setupMermaid();
+    for (const el of document.querySelectorAll(".mermaid")) el.innerHTML = "";
+    renderGraphs();
+  });
+
   let gPending = false, gTimer = null;
   document.addEventListener("keydown", (e) => {
-    if (inField(e)) {
-      if (e.key === "Escape") { search.value = ""; applyFilters(); search.blur(); }
-      return;
-    }
+    if (inField(e)) { if (e.key === "Escape") { search.value = ""; applyFilters(); search.blur(); } return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "g") {
       if (gPending) { clearTimeout(gTimer); gPending = false; scrollTo(0, 0); setCur(rows()[0]); }
@@ -1520,38 +1461,29 @@ ${switcher}
       case "K": jumpGroup(-1); break;
       case "G": scrollTo(0, document.body.scrollHeight); setCur(rows().at(-1), false); break;
       case "x": case "o": case "Enter": if (cur) { e.preventDefault(); cur.open = !cur.open; } break;
-      case "X": case "O": {
-        const open = e.key === "O";
-        for (const g of rowsEl.querySelectorAll("details.grp[data-state]")) g.open = open;
-        break;
-      }
+      case "X": case "O": { const open = e.key === "O"; for (const g of rowsEl.querySelectorAll("details.grp[data-state]")) g.open = open; break; }
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
-      case "d": { const href = cur?.querySelector("a.dv:not(.gh)")?.href; if (href) window.open(href, "_blank"); break; }
-      case "y": copyPath(cur); break;
+      case "d": { const href = cur?.querySelector("a.rp")?.href; if (href) window.open(href, "_blank"); break; }
+      case "y": if (cur) copyText(cur.dataset.path, "the path"); break;
       case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
       case "b": side.classList.toggle("folded"); break;
       case "0": off.clear(); applyFilters(); break;
       default:
-        if (/^[1-9]$$/.test(e.key)) {  // the doubled dollar is the page template's escape
-          const chip = document.querySelectorAll(".featchip")[e.key - 1];
+        if (/^[1-9]$/.test(e.key)) {
+          const chip = document.querySelectorAll(".pill")[e.key - 1];
           if (chip) { off.has(chip.dataset.feature) ? off.delete(chip.dataset.feature) : off.add(chip.dataset.feature); applyFilters(); }
         }
     }
   });
 
-  // anchor navigation: open the target ticket, move the cursor to it, flash it.
-  // A click on an in-page link (a graph node, a chip) runs it directly, so the
-  // flash fires again when the hash is already the target's and hashchange stays silent.
   function openTarget(hash = location.hash) {
     const el = document.getElementById(hash.slice(1));
     if (!el) return;
     for (let d = el; d; d = d.parentElement) if (d.tagName === "DETAILS") d.open = true;
     if (el.classList.contains("ticket")) setCur(el, false);
     el.scrollIntoView({ block: "start" });
-    el.classList.remove("flash");
-    void el.offsetWidth;
-    el.classList.add("flash");
-    setTimeout(() => el.classList.remove("flash"), 2000);
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1500);
   }
   window.addEventListener("hashchange", () => openTarget());
   document.addEventListener("click", (e) => {
@@ -1567,57 +1499,26 @@ ${switcher}
       open: [...document.querySelectorAll("details.ticket[open]")].map((d) => d.id).filter(Boolean),
       scroll: scrollY,
     };
-    const svgs = {};
-    for (const el of document.querySelectorAll(".mermaid")) {
-      if (el.querySelector("svg")) svgs[el.dataset.key] = { src: el.dataset.src, svg: el.innerHTML };
-    }
-    try {
-      sessionStorage.setItem("board-view", JSON.stringify(state));
-      sessionStorage.setItem("board-svg", JSON.stringify(svgs));
-    } catch {}
-    try { window.name = "board:" + JSON.stringify({ saved: state, cache: svgs }); } catch {}
+    try { sessionStorage.setItem("board-view", JSON.stringify(state)); } catch {}
+    try { window.name = "board:" + JSON.stringify({ saved: state }); } catch {}
   }
-
-  // Reload only when the renderer wrote different content. fetch() is blocked on
-  // file://, but a classic script tag isn't — so poll the sidecar stamp file the
-  // renderer writes beside this page.
   function poll() {
     const s = document.createElement("script");
     s.src = document.body.dataset.stampSrc + "?" + Date.now();
-    s.onload = () => {
-      s.remove();
-      if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
-      else setTimeout(poll, 5_000);
-    };
-    s.onerror = () => { saveState(); location.reload(); };  // no sidecar: stay current the blunt way
+    s.onload = () => { s.remove(); if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); } else setTimeout(poll, 5000); };
+    s.onerror = () => { s.remove(); setTimeout(poll, 5000); };
     document.head.append(s);
   }
-  setTimeout(poll, 5_000);
+  setTimeout(poll, 5000);
 
-  // the top bar wraps on a narrow window; everything sticky below it follows its measured height
-  new ResizeObserver(([e]) => document.documentElement.style.setProperty("--topbar-h", e.target.offsetHeight + "px"))
-    .observe(document.querySelector(".top"));
+  new ResizeObserver(([e]) => document.documentElement.style.setProperty("--topbar-h", e.target.offsetHeight + "px")).observe(document.querySelector(".top"));
   if (cur) cur.classList.add("kcur");
   applyFilters();
   if (!saved && location.hash) openTarget();
-
-  // PROTOTYPE: copy buttons (a call with its question, a resume command, a demo path) and the variant switcher's arrow keys
-  document.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-copy]"); if (!b) return;
-    e.preventDefault(); e.stopPropagation();
-    const text = b.dataset.copy;
-    const say = (m) => { toast.textContent = m; toast.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("on"), 1800); };
-    (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => say("copied: " + text.split("\n")[0]), () => say("could not copy"));
-  }, true);
-  document.addEventListener("keydown", (e) => {
-    if (inField(e) || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "ArrowLeft") document.getElementById("proto-prev")?.click();
-    if (e.key === "ArrowRight") document.getElementById("proto-next")?.click();
-  });
 </script>
 </body>
 </html>
-""")
+"""
 
 
 if __name__ == "__main__":
