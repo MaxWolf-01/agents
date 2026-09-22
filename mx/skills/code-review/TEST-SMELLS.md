@@ -1,6 +1,6 @@
 # The test-smell baseline
 
-Test smells the Tests axis knows by name, and the Standards axis in light mode when the diff touches tests. Naming is all the list does: a test that is wrong in a way no entry covers is a finding too. The two rules that shape a smell in [`SMELLS.md`](SMELLS.md) shape these as well.
+Test smells the axis reading the tests knows by name, whichever axis the review handed them to. Naming is all the list does: a test that is wrong in a way no entry covers is a finding too. The two rules that shape a smell in [`SMELLS.md`](SMELLS.md) shape these as well.
 
 Each smell reads *what it is* → *how to fix*; match it against the diff:
 

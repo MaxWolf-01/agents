@@ -35,17 +35,17 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 
 ### 3. What binds the review
 
-The standards sources are the script's to gather, and the brief it writes beside each report is the record of which ones bound this review:
+The standards sources are the script's to gather, and the brief it writes for each axis is the record of which ones bound this review:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
 - [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source whenever the diff touches tests and no Tests axis runs.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, commands, output styles, prompt templates).
-- The repo's own standards documents, at its root: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, `PRINCIPLES.md`. A repo that keeps them anywhere else is a repo whose reviewers never see them.
+- The repo's own standards documents, at its root and only there: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, `PRINCIPLES.md`.
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference; it takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`), and a zero exit means every report landed, while a nonzero one names the axis that left none and the command to re-run it. The judgment it leaves you is `--model`: Opus by default, Sonnet when the diff is small or trivial, never Fable unless the user names it for this review. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
+`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--model`: Opus by default, Sonnet when the diff is small or trivial, never Fable unless the user names it for this review. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
 
 ### 5. Aggregate
 
@@ -67,9 +67,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-For specless work, or when the user asks for it: `--light` folds the axes into one reviewer, since there is no spec for a Spec axis to check and no Testing Decisions to check tests against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
-
-The fold trades the separate axes for cost, which is fine exactly when there is no spec for a Spec axis to check.
+For specless work, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where there is no spec for a Spec axis to check and no Testing Decisions to check the tests against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 

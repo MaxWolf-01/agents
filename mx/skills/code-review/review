@@ -27,11 +27,8 @@
 # the reports' paths are this script's own output. Exit 1 names an axis whose
 # report never arrived, to re-run with --axes.
 #
-# The reviewers run on `--permission-mode manual` with allow rules for reading,
-# for git and for the report directory: probed against this host, that is the
-# strictest mode a reviewer's report still lands under, `auto` denies every
-# tool in print mode, and `acceptEdits` would let a reviewer edit the tree its
-# siblings are reading.
+# A reviewer runs on `--permission-mode manual`: allowed to read, to run git,
+# and to write inside the report directory, and nothing else.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -87,7 +84,7 @@ touched=$(git diff --name-only "$base" "$head")
 # process document is: two questions the diff answers.
 touches() { printf '%s\n' "$touched" | grep -Eq "$1"; }
 touches '(^|/)(tests?|spec)/|(^|/)(test_[^/]+|conftest)\.py$|_test\.(py|go|ts|js|rs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.java$' && tests=1 || tests=
-touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)(skills|commands|agents|output-styles|briefs)/|prompt[^/]*\.md$' && process=1 || process=
+touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|(^|/)\.?claude/(commands|agents|output-styles)/|prompt[^/]*\.md$' && process=1 || process=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
@@ -133,7 +130,7 @@ mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 # for the light axis both briefs it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
 render() { # <axis>
-    local axis=$1 parts text sources_block commits left
+    local axis=$1 parts part text one sources_block commits left
     parts="preamble $axis"
     sources_block=$standards
     commits=$(git log --oneline "$base..$head")
@@ -144,20 +141,23 @@ render() { # <axis>
                commits=$(git log "$base..$head") ;;
         tests) sources_block=$test_smells ;;
     esac
-    text=$(for part in $parts; do cat "$templates/$part.md"; echo; done)
-    # Against the templates, before anything is substituted into them: a
-    # commit message that happens to hold a placeholder is text under review,
-    # never an instruction to this script.
-    left=$(printf '%s' "$text" | grep -o '{{[A-Z_]*}}' | sort -u |
-        grep -vE '^\{\{(REPORT|DIFF_COMMAND|COMMITS|STANDARDS|SPEC)\}\}$' | tr '\n' ' ')
-    [ -z "$left" ] || die "briefs/$axis.md asks for $left which this script does not substitute"
-    text=${text//'{{REPORT}}'/$dir/$axis.md}
-    text=${text//'{{DIFF_COMMAND}}'/$diff_cmd}
-    text=${text//'{{STANDARDS}}'/$sources_block}
-    text=${text//'{{SPEC}}'/$spec}
-    # Last, so no substitution runs over the commit messages.
-    text=${text//'{{COMMITS}}'/$commits}
-    printf '%s\n' "$text"
+    text=
+    for part in $parts; do
+        [ -f "$templates/$part.md" ] || die "briefs/$part.md, part of the $axis brief, is not there"
+        one=$(cat "$templates/$part.md")
+        one=${one//'{{REPORT}}'/$dir/$axis.md}
+        one=${one//'{{DIFF_COMMAND}}'/$diff_cmd}
+        one=${one//'{{STANDARDS}}'/$sources_block}
+        one=${one//'{{SPEC}}'/$spec}
+        left=$(printf '%s' "$one" | grep -o '{{[A-Z_]*}}' | sort -u | grep -v '^{{COMMITS}}$' | tr '\n' ' ')
+        [ -z "$left" ] || die "briefs/$part.md asks for ${left% }, which this script does not substitute"
+        # The commit messages go in last, and are checked over above: a message
+        # that happens to hold a placeholder is text under review, never an
+        # instruction to this script.
+        one=${one//'{{COMMITS}}'/$commits}
+        text=$text$one$'\n\n'
+    done
+    printf '%s' "$text"
 }
 
 # Every brief before any reviewer, so a broken template fails the run rather
@@ -200,5 +200,7 @@ if [ ${#missing[@]} -gt 0 ]; then
     for axis in "${missing[@]}"; do
         echo "review: the $axis axis left no report at $dir/$axis.md; its output is $dir/$axis.log" >&2
     done
-    die "re-run what is missing: review $fixed --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model"
+    # The merge-base rather than the caller's fixed point, and before HEAD
+    # moves: a re-run after a commit lands its report under another range.
+    die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model"
 fi

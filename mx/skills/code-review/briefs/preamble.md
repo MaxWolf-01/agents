@@ -4,7 +4,7 @@ Write your finished report to `{{REPORT}}`. That file is the whole delivery, rea
 
 Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies.
 
-The diff under review, both ends pinned, the left one the merge-base:
+The diff under review, its left end the merge-base:
 
 ```
 {{DIFF_COMMAND}}
