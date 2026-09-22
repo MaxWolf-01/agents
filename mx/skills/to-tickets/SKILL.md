@@ -46,7 +46,7 @@ Each disposition names its property by the id the spec gave it, on one line of t
 - Property P7, unsliced: why no single slice can hold it
 ```
 
-The third is what the slicing signal above leaves behind: a property that holds across the feature rather than inside any one slice, written where the other dispositions are, so a property nobody built reads differently from one no slice could hold. A property left undisposed is a feature nobody builds, and step 4's check is what names it.
+The third is for the property the slicing signal above cannot resolve, one that holds across the feature rather than inside any one slice: it goes where the other dispositions go, so a property nobody built reads differently from one no slice could hold. A property left undisposed is a feature nobody builds, and step 4's check is what names it.
 
 **Stamp floors.** A ticket building a surface with a promoted floor (see the spec's Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
 
