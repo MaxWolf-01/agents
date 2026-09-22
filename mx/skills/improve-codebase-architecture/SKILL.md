@@ -14,8 +14,6 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 ## Process
 
-Steps 1 and 2 run in one background agent: the report is drawn from the same reading as the scan, and this session keeps its window for step 3. Fork (`/mx:fork`) when the direction lives in this conversation; otherwise brief a fresh agent with the direction, if any, and have it run steps 1 and 2 of this skill.
-
 ### 1. Scan
 
 **Scope before you scan: YAGNI.** Deepening a module pays off by making future changes to it easier, so put extra weight on the parts of the codebase that have recently changed. Decide *where* to look before you look:
@@ -55,7 +53,7 @@ and one **top recommendation**: which candidate you'd tackle first and why.
 
 ### 2. Build the report
 
-Read [REPORT.md](REPORT.md), then build the report with `/mx:show`, slug `architecture-review-<date>`.
+Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 3. The fork's directive: read [REPORT.md](REPORT.md), build the report with `/mx:show`, slug `architecture-review-<date>`, and report the page's path.
 
 ### 3. Grilling loop
 
