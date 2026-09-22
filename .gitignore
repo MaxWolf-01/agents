@@ -8,3 +8,5 @@ __pycache__/
 agent/show/**/*.png
 docs/figures/*.png
 agent/show/**/out/
+agent/board.html*
+agent/diffviews/

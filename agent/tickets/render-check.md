@@ -21,3 +21,5 @@ Two renderers, not one: `agent/show/one-flow/render.py` is a byte-for-byte copy 
 ## Comments
 
 The figures-and-demos feature (ticket 04, 2026-09-16) moves the README figure pipeline out of `agent/show/mx-readme-figures/` to `docs/figures/` and deletes `agent/show/one-flow/`, so there is one renderer, at the new path; `--check` covers `docs/figures/render.py` and `docs/figures/board-fixture/build.py`.
+
+**2026-09-18** Ticket 05 of figures-and-demos (its friction) found the copy from `docs/figures/*.png` into `mx/assets/` is by hand and nothing checks a scheme copied one way only. Whatever `--check` becomes, an `--install` that does the copy, or the copy inside `render.py`, belongs to the same script.

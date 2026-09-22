@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # dependencies = ["pytest", "tyro", "pyyaml", "markdown"]
 # ///
 """Checks for the board's reading of a tracker. Run: uv run test_board.py
@@ -11,7 +11,8 @@ page (groups, rows, the attributes the page's script matches against the graph s
 oracle is the tracker's MARKDOWN.md and the board's --help: the frontier is open, unblocked,
 unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
 user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
-is a link to GitHub; a reference whose file no longer exists counts as done; a graph draws only
+is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
+is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
 tickets with an edge; a standalone ticket a branch added is shown, one it merely inherited is
 not; the needs-human.md beside a set of tickets is their queue, not a ticket; a needs-human
 bullet's detail continues on indented lines.
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from board import (
     STATUS_SYMBOL,
     Diffviews,
+    Queue,
     Roots,
     board_graph,
     content_stamp,
@@ -39,10 +41,14 @@ from board import (
     load_standalone,
     render,
     render_page,
+    serve_diffviews,
     tracker_roots,
+    tracker_snapshot,
 )
 
 FEAT = "feat-a"  # a hyphen, so a slugged id and the raw name can be told apart
+NO_QUEUE = Queue(Path("needs-human.md"), [])
+STUB_ADDRESS = "http://127.0.0.1:54321"
 
 
 def ticket(path: Path, status: str, blocked_by: list[str] | None = None, kind: str | None = None, gh: list[str] | None = None) -> None:
@@ -78,6 +84,21 @@ def tracker(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A diffview that records its arguments and answers as the real one does on --serve."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "diffview"
+    stub.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" > "$0.args"\n'
+        f'echo "diffview: serving $2 at {STUB_ADDRESS}/  (exits 30 minutes after the last page closes)"\n'
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    return stub
+
+
 def load(root: Path):
     dv = Diffviews(root.parent / "diffviews", None)
     features = load_features(root, {}, dv)
@@ -91,7 +112,7 @@ def by_num(feature):
 
 def page_of(root: Path) -> str:
     features, standalone = load(root)
-    return render_page("demo", features, standalone, [], log="", stamp="s", stamp_src="s.js")
+    return render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
 
 
 # ---- loader ---------------------------------------------------------------
@@ -147,7 +168,7 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
         "  **left** two case-flip survivors, the value is case-insensitive.\n"
         "- Which colour :: the prototype at agent/prototypes/colour\n"
     )
-    assert load_needs_human(queue) == [
+    assert load_needs_human(queue).entries == [
         "debrief :: **fixed** a1b2c3 pins the averaging rule.\n**proposed** 03, 04.\n\n**left** two case-flip survivors, the value is case-insensitive.",
         "Which colour :: the prototype at agent/prototypes/colour",
     ]
@@ -177,7 +198,7 @@ def test_a_feature_whose_tickets_wait_on_nothing_has_no_graph(tmp_path: Path) ->
     (feature,), standalone = load(root)
     assert feature_graph(feature) is None
     assert board_graph([feature], standalone) is None
-    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     assert "nothing in solo waits on anything" in page
     assert "nothing waits on anything" in page
 
@@ -258,7 +279,7 @@ def test_a_feature_with_a_build_in_review_and_no_queue_still_gets_the_dot(tmp_pa
     (root / "solo").mkdir(parents=True)
     ticket(root / "solo" / "01-only.md", "review")
     (feature,), standalone = load(root)
-    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     assert '<button class="featchip" data-feature="solo" title="0/1 done · 1 review"><i class="dot"></i>solo' in page
 
 
@@ -280,7 +301,7 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     String.includes, and marks the node T_f_<slug>_<num> (K_b_<slug> for a standalone ticket)
     in the graph container of the row's feature."""
     (feature,), standalone = load(tracker)
-    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     assert page.count(f'data-feature="{FEAT}"') == 1 + len(feature.tickets) + 1 + 1  # chip, rows, needs row, graph container
     rows = re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" data-feature="([\w-]+)" data-num="([^"]+)" data-search="([^"]*)"', page)
     assert len(rows) == len(feature.tickets) + len(standalone) + 1
@@ -305,6 +326,31 @@ def test_a_row_links_its_review_page(tracker: Path) -> None:
     assert f'href="file://{dv / "quoted.html"}"' in page
     assert page.count('class="dv"') == 4  # a chip on each row, and the line at the top of each expanded ticket
     assert '<p class=dvline><a class="dv"' in page
+
+
+def test_a_row_links_its_review_page_on_the_address_diffview_serves(tracker: Path, stub_diffview: Path) -> None:
+    """A page opened as a file is read-only, so a review that starts from the board has to land on
+    the served one, at the address diffview names for that directory of pages."""
+    dv = tracker.parent / "diffviews"
+    (dv / FEAT).mkdir(parents=True)
+    (dv / FEAT / "02-second.html").write_text("<html>")
+    (dv / "quoted.html").write_text("<html>")
+    diffviews = serve_diffviews(dv)
+    assert Path(f"{stub_diffview}.args").read_text().split() == ["--serve", str(dv)]
+    features = load_features(tracker, {}, diffviews)
+    standalone = load_standalone(Roots(tracker, []), diffviews)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert f'href="{STUB_ADDRESS}/{FEAT}/02-second.html"' in page
+    assert f'href="{STUB_ADDRESS}/quoted.html"' in page
+
+
+def test_a_review_page_nothing_serves_is_linked_as_the_file_it_is(tracker: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A machine without diffview has the pages but no server for them."""
+    dv = tracker.parent / "diffviews"
+    (dv / FEAT).mkdir(parents=True)
+    (dv / FEAT / "02-second.html").write_text("<html>")
+    monkeypatch.setenv("PATH", str(tmp_path / "no-tools"))
+    assert serve_diffviews(dv).link(dv / FEAT, "02-*.html") == f"file://{dv / FEAT / '02-second.html'}"
 
 
 def test_class_defs_cover_every_status(tracker: Path) -> None:
@@ -359,8 +405,41 @@ def test_a_standalone_ticket_a_branch_added_is_shown_and_one_it_inherited_is_not
     assert {k.slug: k.status for k in standalone}["loose-idea"] == "proposed"
     features = load_features(tracker, roots.overrides, dv)
     assert by_num(features[0])["02"].status == "claimed"  # the feature directory is read from the worktree
-    page = render_page("demo", features, standalone, [], log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     assert f'title="filed on branch {FEAT}, not on the main branch">on {FEAT}</span>' in page
+
+
+def test_a_row_copies_the_path_of_the_file_the_board_read(repo: Path, tracker: Path) -> None:
+    """A feature in flight is read from its worktree and a ticket filed on a branch exists only
+    there, so the main checkout's copy is the wrong path to hand to a session."""
+    branch_root = repo.parent / "wt" / "agent" / "tickets"
+    ticket(branch_root / "filed-on-branch.md", "open")
+    (tracker / "needs-human.md").write_text("- rule on loose-idea :: built while proposed\n")
+    roots = tracker_roots(tracker)
+    dv = Diffviews(tracker.parent / "diffviews", None)
+    features = load_features(tracker, roots.overrides, dv)
+    standalone = load_standalone(roots, dv)
+    page = render_page("demo", features, standalone, load_needs_human(tracker / "needs-human.md"), log="", stamp="s", stamp_src="s.js")
+    paths = dict(re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" [^>]*data-path="([^"]*)"', page))
+    assert paths[f"t-{FEAT}-02"] == str(branch_root / FEAT / "02-second.md")
+    assert paths[f"needs-{FEAT}-0"] == str(branch_root / FEAT / "needs-human.md")
+    assert paths["standalone-filed-on-branch"] == str(branch_root / "filed-on-branch.md")
+    assert paths["standalone-quoted"] == str(tracker / "quoted.md")
+    assert paths["needs-standalone-0"] == str(tracker / "needs-human.md")
+
+
+def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
+    """A page server exits a while after the last page closes, rewriting the marker it left beside
+    the pages; noticing that is what gets the next render, which is what serves them again."""
+    dv = tracker.parent / "diffviews"
+    dv.mkdir(parents=True)
+    (dv / "quoted.html").write_text("<html>")
+    marker = dv / ".serve.json"
+    marker.write_text('{"port": 54321, "pid": 1234}')  # what a live server leaves beside the pages
+    roots = tracker_roots(tracker)
+    before = tracker_snapshot(roots, repo)
+    marker.write_text('{"port": 54321}')  # the pid dropped, as a server does on its way out
+    assert tracker_snapshot(roots, repo) != before
 
 
 def test_a_worktree_on_a_landed_branch_is_ignored(repo: Path, tracker: Path) -> None:
@@ -387,9 +466,9 @@ def test_a_tracker_the_main_checkout_does_not_have_yet_renders_from_the_worktree
 
 def test_the_stamp_changes_with_a_standalone_ticket_source(tracker: Path) -> None:
     features, standalone = load(tracker)
-    before = content_stamp("demo", features, standalone, [], "")
+    before = content_stamp("demo", features, standalone, NO_QUEUE, "")
     standalone[0].source = "some-branch"
-    assert content_stamp("demo", features, standalone, [], "") != before
+    assert content_stamp("demo", features, standalone, NO_QUEUE, "") != before
 
 
 # ---- queues ---------------------------------------------------------------
@@ -408,14 +487,16 @@ def test_the_standalone_queue_is_the_tracker_roots_own_and_not_a_ticket(tracker:
 def test_a_queue_entry_outliving_its_ticket_still_shows_with_a_chip_to_toggle_it(tracker: Path) -> None:
     # the ruling on the last standalone ticket was `reject`, which deletes the file
     features, _ = load(tracker)
-    page = render_page("demo", features, [], ["rule on loose-idea :: rejected"], log="", stamp="s", stamp_src="s.js")
+    queue = Queue(tracker / "needs-human.md", ["rule on loose-idea :: rejected"])
+    page = render_page("demo", features, [], queue, log="", stamp="s", stamp_src="s.js")
     assert 'id="needs-standalone-0" data-feature="standalone"' in page
     assert '<button class="featchip" data-feature="standalone"' in page
 
 
 def test_the_stamp_the_open_tab_polls_moves_when_the_queue_does(tracker: Path) -> None:
     features, standalone = load(tracker)
-    assert content_stamp("demo", features, standalone, ["an entry"], "") != content_stamp("demo", features, standalone, [], "")
+    path = tracker / "needs-human.md"
+    assert content_stamp("demo", features, standalone, Queue(path, ["an entry"]), "") != content_stamp("demo", features, standalone, Queue(path, []), "")
 
 
 def test_render_reads_the_queue_beside_the_standalone_tickets(repo: Path, tracker: Path, tmp_path: Path) -> None:
@@ -431,7 +512,7 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
     (feature,), standalone = load(tracker)
     assert by_num(feature)["08"].status == "proposed"
     assert by_num(feature)["08"].blocked_by == []
-    page = render_page("demo", [feature], standalone, [], log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", [feature], standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     proposed = page.split('id="grp-proposed"')[1].split('class="grp" id="grp-')[0]
     assert f'id="t-{FEAT}-08"' in proposed
 
