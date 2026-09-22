@@ -24,3 +24,5 @@ Three rungs, cheapest first, and the ticket can stop at any of them where the ne
 ## Comments
 
 The figures-and-demos feature (ticket 04, 2026-09-16) deletes `agent/show/host-per-spawn/demo.sh` under the rule that a show directory retires with its work; `git log --diff-filter=D -- agent/show/host-per-spawn` finds it. Rung 1 restores it from history under a home that lasts (`tests/` beside the scripts, or `docs/`), never back under `agent/show/`.
+
+**2026-09-22** Ruled by the user on review-launcher's D5: rung 2 covers `mx/skills/code-review/review` too, whose text functions `touches`, `bullets` and `render` are text in and text out like the ones above and have no test; that ticket checked the script through `--help` alone. The script exists once review-launcher merges.
