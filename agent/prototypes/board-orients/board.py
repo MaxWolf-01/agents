@@ -193,8 +193,18 @@ def enrich(t: "Ticket | Standalone", tid: str, show: Path) -> None:
     t.sessions = [s for s in SESSIONS.get(tid, SESSIONS.get(t.path.stem, [])) if s.get("cwd")]
     t.show = sorted(p for p in show.rglob("*") if p.is_file() and "/out/" not in str(p)) if show.is_dir() else []
     t.demo = show / "demo" if (show / "demo").is_file() else None
-    t.calls = need_calls(t.path.read_text()) if t.status == "review" else []
+    t.calls = need_calls(branch_text(t, tid)) if t.status == "review" else []
     t.tid = tid
+
+
+def branch_text(t: "Ticket | Standalone", tid: str) -> str:
+    """The ticket as its own branch has it: a worker's closing comment lands there, and the branch
+    the board reads carries only the status flip until the build merges."""
+    repo = Path(git(t.path.parent, "rev-parse", "--show-toplevel"))
+    base = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    branch = f"ticket/{base}/{t.path.stem}"
+    done = subprocess.run(["git", "-C", str(repo), "show", f"{branch}:{t.path.relative_to(repo)}"], capture_output=True, text=True)
+    return done.stdout if done.returncode == 0 else t.path.read_text()
 
 
 def need_calls(text: str) -> list[tuple[str, str]]:
