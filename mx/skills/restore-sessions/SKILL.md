@@ -14,26 +14,15 @@ Find and classify Claude Code sessions from a project's session directory. Produ
 - User wants to find unfinished work from a time range
 - User needs session IDs for continuation (`claude --resume <id>`)
 
-## Session Directory
-
-Claude Code stores sessions as `.jsonl` files in:
-```
-~/.claude/projects/<project-path-with-dashes>/*.jsonl
-```
-
-Determine the correct project path from the current working directory. The path encoding replaces `/` with `-` and strips the leading slash. Example: `/home/max/repos/code/yapit` → `-home-max-repos-code-yapit`.
-
 ## Process
 
 ### 1. Run the scanner
 
 ```bash
-uv run <skill-dir>/scripts/scan_sessions.py <sessions_dir> --days <N> --exclude <current_session_id>
+uv run <skill-dir>/scripts/scan_sessions.py --days <N>
 ```
 
-Its `--help` has the flags and the schema of what it prints; the classification below reads those fields.
-
-**Always pass `--exclude` with the current session's ID.** The user is invoking this skill from the current session, so any text they pasted as search context will appear in the current session's jsonl; matching it is useless and confusing. The current (active) session is always the most recently written file: `ls -t <sessions_dir>/*.jsonl | head -1`, and its stem is the id.
+Run from the project's directory, it reads that project's sessions. Its `--help` has the flags, which sessions it reads and skips, and the schema of what it prints; the classification below reads those fields.
 
 If the user asks for "the last 100 sessions or the last 10 days, whichever is greater," run with `--days 10` first; if that returns fewer than 100, run again with `--sessions 100`.
 

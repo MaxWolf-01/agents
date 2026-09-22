@@ -5,9 +5,12 @@
 # ///
 """Summarise Claude Code sessions for triage: what each one was about and whether it ended.
 
-Reads the *.jsonl session files directly in one project's sessions directory
-(~/.claude/projects/<project-path-with-dashes>/), skipping subagent transcripts
-(they sit in subdirectories) and files under 3KB (empty or trivial sessions).
+Reads the *.jsonl session files directly in one project's sessions directory, skipping
+subagent transcripts (they sit in subdirectories), files under 3KB (empty or trivial
+sessions), and the session running the scan ($CLAUDE_CODE_SESSION_ID). The directory
+defaults to the current directory's: its path with every non-alphanumeric character
+turned into a dash, under $CLAUDE_CONFIG_DIR/projects/, which is ~/.claude/projects/
+when CLAUDE_CONFIG_DIR is unset.
 
 JSON schema (stdout), one object per session, newest first:
 
@@ -27,12 +30,14 @@ JSON schema (stdout), one object per session, newest first:
 
 Examples:
 
-    uv run scan_sessions.py ~/.claude/projects/-home-max-repos-foo --days 10
-    uv run scan_sessions.py ~/.claude/projects/-home-max-repos-foo --sessions 100 --exclude <id>
+    uv run scan_sessions.py --days 10
+    uv run scan_sessions.py --sessions 100 --exclude <id>
     uv run scan_sessions.py <dir> --days 7 | jq '.[] | select(.interrupted)'
 """
 
 import json
+import os
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -44,8 +49,8 @@ import tyro
 
 @dataclass
 class Args:
-    sessions_dir: Annotated[Path, tyro.conf.Positional]
-    """One project's sessions directory under ~/.claude/projects/."""
+    sessions_dir: Annotated[Path | None, tyro.conf.Positional, tyro.conf.arg(metavar="DIR")] = None
+    """One project's sessions directory; the current directory's project when omitted."""
 
     days: int = 0
     """Only sessions modified within the last N days; 0 for no limit."""
@@ -219,10 +224,13 @@ def scan_session(filepath: Path) -> dict | None:
 
 
 def main(args: Args) -> None:
-    exclude_ids = set(args.exclude)
+    sessions_dir = args.sessions_dir or project_sessions_dir(Path.cwd())
+    if not sessions_dir.is_dir():
+        sys.exit(f"no sessions directory at {sessions_dir}")
+    exclude_ids = set(args.exclude) | {os.environ.get("CLAUDE_CODE_SESSION_ID", "")}
     # Top-level files only: subagent transcripts sit in <session-id>/subagents/.
     candidates = [
-        f for f in args.sessions_dir.glob("*.jsonl")
+        f for f in sessions_dir.glob("*.jsonl")
         if not f.name.endswith(".wakatime") and f.stem not in exclude_ids
     ]
     candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
@@ -235,6 +243,11 @@ def main(args: Args) -> None:
 
     results = [r for f in candidates if (r := scan_session(f))]
     json.dump(results, sys.stdout, indent=2)
+
+
+def project_sessions_dir(project: Path) -> Path:
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    return config_dir / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(project))
 
 
 if __name__ == "__main__":
