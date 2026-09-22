@@ -29,13 +29,13 @@ Use these terms exactly; each entry's _Avoid_ list names the substitutes to stee
 
 ## Principles
 
-- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts; they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface.
+- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts; they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface; an internal seam stays out of the interface even when tests use it.
 - **The deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
 - **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape. Two shapes keep that true: dependencies are passed in, not constructed inside; results are returned, not produced as side effects. Either one broken means a test needs setup past the interface.
 - **Three questions before an interface is final**: can I reduce the number of methods? Can I simplify the parameters? Can I hide more complexity inside? Each "yes" is depth left on the table.
-- **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it.
+- **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it (typically production and test); a single-adapter seam is just indirection.
 
 ## Going deeper
 
-- **Deepening a cluster given its dependencies**, in [DEEPENING.md](DEEPENING.md): dependency categories, seam discipline, and replace-don't-layer testing.
+- **Deepening a cluster given its dependencies**, in [DEEPENING.md](DEEPENING.md): dependency categories and replace-don't-layer testing.
 - **Exploring alternative interfaces**, in [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
