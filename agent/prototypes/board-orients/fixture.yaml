@@ -1,0 +1,119 @@
+# PROTOTYPE data, throwaway. What the build would read from each ticket (`priority`, `size`
+# in frontmatter, the `## Brief` section), written here so the prototype touches no ticket.
+# Priority is the agent's reading of the user's 2026-09-22 ordering (group A first, then D,
+# C, B; the big grillings later). Size is the user's time: the review, QA or grilling it takes.
+
+tickets:
+  # group A: the board a returning user reads
+  priority-and-size:
+    priority: 1
+    size: S
+    brief: Tickets get a priority and a size, and the board sorts by them. Size measures your time on the ticket, not the build's.
+  ticket-brief-and-artefacts:
+    priority: 1
+    size: M
+    brief: Every ticket opens with a short brief written for you, and the board links what the ticket produced (figures, the demo) so you never hunt through agent/show.
+  board-carries-what-needs-you:
+    priority: 1
+    size: M
+    brief: One section of the board lists everything waiting on you, each call tagged so you can answer it from any session, and clears itself once answered.
+  ticket-sessions:
+    priority: 1
+    size: S
+    brief: The board lists the sessions that worked on a ticket, with a button that copies the command to resume one, so you can close tmux panes freely.
+  gh-live-state:
+    priority: 1
+    size: XS
+    brief: A GitHub link on a ticket shows whether the PR is open, merged or has changes requested, so you don't open each one to find out.
+
+  # group D: efficiency and workflow
+  review-launcher:
+    priority: 2
+    size: S
+    brief: Code review gets a script that spawns the four reviewers, so the skill keeps only the judgment calls. Every worker's self-review runs through it.
+  every-property-gets-a-criterion:
+    priority: 2
+    size: XS
+    brief: When a spec is cut into tickets, a script checks that every property in the spec landed in some ticket's acceptance criteria. Seven of one-flow's fifteen slipped through.
+  dispatch-shown:
+    priority: 2
+    size: M
+    brief: One page showing the whole dispatch flow, the ticket states and every command each role types, so you can spot what's doubled before simplifying it. Waits for figures-and-demos.
+  figures-and-demos/06:
+    priority: 2
+    size: S
+    brief: The last review of the figures-and-demos feature as a whole, before it merges to master.
+
+  # group C: figures
+  render-check:
+    priority: 3
+    size: XS
+    brief: A check that fails when a committed figure image no longer matches its source, and a flag that copies the images into mx/assets.
+  ticket-state-figure-review:
+    priority: 3
+    size: XS
+    brief: The README's ticket-state figure still lacks the review state; add it and re-render.
+  svg-guide-vs-figure-set:
+    priority: 3
+    size: S
+    brief: The SVG guide forbids three things every README figure does. Look at the renders and decide which side is wrong.
+  loose-work-review-page:
+    priority: 3
+    size: XS
+    brief: The workflow says loose work gets a review page, but only your own config says how. Either the plugin ships the command or it names diffview as a dependency.
+
+  # group B: dispatch scripts
+  dispatch-scripts-under-test:
+    priority: 4
+    size: S
+    brief: The dispatch scripts get tests; today nothing runs them automatically, and a bug in the review-range function would put a wrong range on a review page silently.
+  dispatch-comments:
+    priority: 4
+    size: XS
+    brief: About a third of each dispatch script is comments explaining the workflow; cut them to short notes on what the code does.
+  skill-driver:
+    priority: 4
+    size: S
+    brief: A script that runs one prompt against two versions of a skill and diffs what the sessions did. Needs rewriting first; the demos it names are gone.
+
+  # quick calls and legwork
+  one-flow-open-rulings:
+    priority: 4
+    size: XS
+    brief: Three small calls left from one-flow, about the prose rules and the board. Recommendations are in the ticket.
+  mutmut-upstream-issues:
+    priority: 4
+    size: XS
+    brief: Two more mutmut bugs to report upstream; three are filed. Needs your OK to post.
+
+  # bigger design sessions
+  skills-holistic-pass:
+    priority: 3
+    size: XL
+    brief: Read every skill and help text as a whole and cut what's doubled, too broad or in the wrong file. Best after dispatch-shown.
+  comment-density-ceiling:
+    priority: 4
+    size: M
+    brief: A lint that fails a file whose comments outnumber a ceiling, measured from code you already accept.
+  one-tracker-per-user:
+    priority: 4
+    size: L
+    brief: One tracker repo for all your projects, with research and show artefacts committed. The cost to weigh is that a feature's tickets stop living beside its code.
+  best-of-n:
+    priority: 5
+    size: L
+    brief: Several workers build the same ticket and an agent merges the best of them into one branch. The hard part is making the variants actually differ.
+  retro-semi-automated:
+    priority: 5
+    size: L
+    brief: Retrospectives that read indexed sessions and propose workflow fixes with little of your attention. Not grilled yet.
+
+  # samples: two real tickets as they stood in review, shown to test the "needs me" shapes
+  board-links-served-pages:
+    priority: 2
+    size: XS
+    brief: The board links each review page as a served address, so you can comment from the board.
+  05-readme-figure:
+    priority: 2
+    size: S
+    brief: The README shows the landing (worker, orchestrator, you) as a step-by-step sequence figure.
