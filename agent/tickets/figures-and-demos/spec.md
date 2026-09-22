@@ -28,7 +28,7 @@ At the landing the demo is staged, not run: the ticket branch gets a worktree be
 
 Retiring a ticket or a feature retires its show directory and the research notes its tickets cite; what a README or a PR needs is copied there in the same commit and kept current there. `(you, r5)`
 
-The landing as a sequence: [landing.svg](../../show/figures-and-demos/landing.svg), source `landing.mmd` beside it. `(figure, r6: redrawn to the round-5 design; it had kept the dropped landing warning and the old file name through two rounds)`
+The landing as a sequence: [landing.html](../../../docs/figures/landing.html), which draws itself in either colour scheme when opened. `(figure, r6: redrawn to the round-5 design; it had kept the dropped landing warning and the old file name through two rounds. Promoted into the README by ticket 05 and redrawn in that page's house style, so this is the one copy)`
 
 ## User Stories
 

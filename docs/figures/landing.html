@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mx: a landing</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light dark;
+  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
+  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
+  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
+  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
+}
+body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
+.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
+.dek{font-size:13px; color:var(--muted); max-width:760px; line-height:1.5; margin:0 0 24px;}
+.dek code{font:500 12px 'Geist Mono',monospace;}
+svg{display:block; width:100%; height:auto;}
+.mask{fill:var(--paper);}
+.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
+.card-you{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
+.life{stroke:var(--rule); stroke-width:1.2; stroke-dasharray:4 5;}
+.life-you{stroke:var(--accent); stroke-width:1.2; stroke-dasharray:4 5; opacity:.45;}
+.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.flow-you{fill:none; stroke:var(--accent); stroke-width:1.4;}
+.alt{fill:none; stroke:var(--accent); stroke-width:1; opacity:.55;}
+.alt-sep{stroke:var(--accent); stroke-width:.8; stroke-dasharray:5 4; opacity:.4;}
+.tab{fill:var(--accent-tint); stroke:var(--accent); stroke-width:.8;}
+.m-muted{fill:var(--muted);}
+.m-accent{fill:var(--accent);}
+text{fill:var(--ink);}
+.name{font:600 12px 'Geist',sans-serif;}
+.who{font:500 8px 'Geist Mono',monospace; letter-spacing:.08em; fill:var(--muted);}
+.msg{font:500 11px 'Geist',sans-serif;}
+.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
+.mono{font:500 10px 'Geist Mono',monospace;}
+.mono-note{font:400 9px 'Geist Mono',monospace; fill:var(--soft);}
+.band{font:500 9px 'Geist Mono',monospace; letter-spacing:.16em; fill:var(--muted);}
+.ruling{font:600 9px 'Geist Mono',monospace; letter-spacing:.12em; fill:var(--accent);}
+.rule{stroke:var(--rule); stroke-width:1;}
+.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
+.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
+.scheme:hover{color:var(--ink);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <p class="eyebrow">mx workflow &middot; a landing</p>
+  <button class="scheme"></button>
+</header>
+<h1>A landing: the demo the worker writes, the session that stages it, the ruling that ends it.</h1>
+<p class="dek">The worker leaves one executable <code>demo</code> file beside its slice and pastes its own run into the closing
+comment. The orchestrator renders the review page from the unmerged branch and stages that file in a tmux session, the command
+typed and the Enter withheld. Nothing runs on your machine, and nothing merges, before you say so.</p>
+
+<svg viewBox="0 0 1200 976" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
+    </marker>
+    <marker id="arrow-you" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="m-accent"/>
+    </marker>
+  </defs>
+
+  <!-- lifelines -->
+  <line class="life" x1="180" y1="72" x2="180" y2="896"/>
+  <line class="life" x1="600" y1="72" x2="600" y2="896"/>
+  <line class="life-you" x1="1020" y1="72" x2="1020" y2="896"/>
+
+  <!-- participants -->
+  <rect class="card" x="60" y="20" width="240" height="52" rx="6"/>
+  <text class="name" x="180" y="44" text-anchor="middle">Worker</text>
+  <text class="who" x="180" y="60" text-anchor="middle">ONE TICKET, ITS OWN BRANCH, ANY HOST</text>
+  <rect class="card" x="480" y="20" width="240" height="52" rx="6"/>
+  <text class="name" x="600" y="44" text-anchor="middle">Orchestrator</text>
+  <text class="who" x="600" y="60" text-anchor="middle">THE FEATURE BRANCH, YOUR MACHINE</text>
+  <rect class="card-you" x="900" y="20" width="240" height="52" rx="6"/>
+  <text class="name" x="1020" y="44" text-anchor="middle">You</text>
+  <text class="who" x="1020" y="60" text-anchor="middle">QA AND THE RULING</text>
+
+  <!-- band: the build -->
+  <line class="rule" x1="60" y1="106" x2="1140" y2="106"/>
+  <rect class="mask" x="56" y="97" width="236" height="18"/>
+  <text class="band" x="60" y="110">THE BUILD &middot; WHILE YOU ARE AWAY</text>
+
+  <path class="flow" d="M 180,138 H 210 V 158 H 186" marker-end="url(#arrow)"/>
+  <text class="msg" x="224" y="142">build, self-review</text>
+  <text class="note" x="224" y="156">the acceptance criteria, then a review in fresh context</text>
+
+  <path class="flow" d="M 180,190 H 210 V 210 H 186" marker-end="url(#arrow)"/>
+  <text class="msg" x="224" y="194">write the demo: <tspan class="mono">agent/show/&lt;feature&gt;/NN-&lt;slug&gt;/demo</tspan></text>
+  <text class="note" x="224" y="208">one executable file, no arguments; what it produces lands beside it</text>
+
+  <path class="flow" d="M 180,242 H 210 V 262 H 186" marker-end="url(#arrow)"/>
+  <text class="msg" x="224" y="246">run it</text>
+  <text class="note" x="224" y="260">the command and that run's output are pasted, not written from the head</text>
+
+  <path class="flow" d="M 184,296 H 594" marker-end="url(#arrow)"/>
+  <rect class="mask" x="248" y="278" width="420" height="16"/>
+  <text class="msg" x="256" y="290">closing comment: what landed &middot; Demo &middot; I need from you &middot; Details</text>
+
+  <!-- band: the landing -->
+  <line class="rule" x1="60" y1="328" x2="1140" y2="328"/>
+  <rect class="mask" x="56" y="319" width="150" height="18"/>
+  <text class="band" x="60" y="332">THE LANDING</text>
+
+  <path class="flow" d="M 600,360 H 630 V 380 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="364"><tspan class="mono">dispatch review</tspan></text>
+  <text class="note" x="644" y="378">the review page, rendered from the branch nothing has merged</text>
+
+  <path class="flow" d="M 600,412 H 630 V 432 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="416">the ticket's worktree, beside the feature's</text>
+  <text class="note" x="644" y="430">the demo staged in a tmux session named after the ticket: the command typed, no Enter</text>
+
+  <path class="flow-you" d="M 604,466 H 1014" marker-end="url(#arrow-you)"/>
+  <rect class="mask" x="664" y="448" width="300" height="16"/>
+  <text class="msg" x="672" y="460">the page open, the message naming the session</text>
+
+  <!-- band: the ruling -->
+  <line class="rule" x1="60" y1="498" x2="1140" y2="498"/>
+  <rect class="mask" x="56" y="489" width="128" height="18"/>
+  <text class="band" x="60" y="502">THE RULING</text>
+
+  <path class="flow-you" d="M 1020,530 H 990 V 550 H 1014" marker-end="url(#arrow-you)"/>
+  <text class="msg" x="976" y="534" text-anchor="end">Enter, when you choose</text>
+  <text class="note" x="976" y="548" text-anchor="end">the demo runs on your machine and opens what it produces</text>
+
+  <path class="flow-you" d="M 1016,584 H 606" marker-end="url(#arrow-you)"/>
+  <rect class="mask" x="748" y="566" width="152" height="16"/>
+  <text class="msg" x="756" y="578">the ruling, one of four</text>
+
+  <!-- the four rulings -->
+  <rect class="alt" x="100" y="608" width="1000" height="234" rx="8"/>
+  <rect class="tab" x="100" y="608" width="84" height="20" rx="4"/>
+  <text class="ruling" x="112" y="622">RULING</text>
+
+  <text class="ruling" x="112" y="654">ACCEPT</text>
+  <path class="flow" d="M 600,646 H 630 V 666 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="650"><tspan class="mono">merge --no-ff</tspan>, then the project's verification</text>
+  <text class="note" x="644" y="664">the ticket is done, and its dependents join the frontier</text>
+  <line class="alt-sep" x1="100" y1="680" x2="1100" y2="680"/>
+
+  <text class="ruling" x="112" y="708">AMEND</text>
+  <path class="flow" d="M 596,710 H 186" marker-end="url(#arrow)"/>
+  <rect class="mask" x="248" y="692" width="308" height="16"/>
+  <text class="msg" x="256" y="704">your comments on the page, as guidance on resume</text>
+  <rect class="mask" x="248" y="714" width="308" height="14"/>
+  <text class="note" x="256" y="724">the same branch revises and flips to review again</text>
+  <line class="alt-sep" x1="100" y1="742" x2="1100" y2="742"/>
+
+  <text class="ruling" x="112" y="764">REDO</text>
+  <path class="flow" d="M 600,756 H 630 V 776 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="760">the build discarded, the ticket kept</text>
+  <text class="note" x="644" y="774">back to open with your reason, for a fresh worker</text>
+  <line class="alt-sep" x1="100" y1="790" x2="1100" y2="790"/>
+
+  <text class="ruling" x="112" y="812">REJECT</text>
+  <path class="flow" d="M 600,804 H 630 V 824 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="808">the ticket and its build go together</text>
+  <text class="note" x="644" y="822">the reason is the commit message that removes it</text>
+
+  <path class="flow" d="M 600,868 H 630 V 888 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="872">the demo session killed, the worktree removed</text>
+  <text class="note" x="644" y="886">on every ruling but amend, whose next fetch unstages it</text>
+
+  <!-- legend -->
+  <line class="rule" x1="60" y1="928" x2="1140" y2="928"/>
+  <line class="flow" x1="60" y1="952" x2="100" y2="952" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="108" y="955">a message between parties</text>
+  <path class="flow" d="M 300,944 H 320 V 958 H 306" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="344" y="955">work a party does on its own</text>
+  <line class="flow-you" x1="600" y1="952" x2="640" y2="952" marker-end="url(#arrow-you)"/>
+  <text class="legend-text" x="648" y="955">where your attention is asked for</text>
+</svg>
+<script>
+const root = document.documentElement, button = document.querySelector('.scheme');
+let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const apply = () => {
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  button.textContent = dark ? 'Light' : 'Dark';
+  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+};
+button.addEventListener('click', () => { dark = !dark; apply(); });
+apply();
+</script>
+</body>
+</html>

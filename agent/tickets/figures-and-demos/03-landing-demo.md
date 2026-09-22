@@ -12,7 +12,7 @@ Slice of `spec.md`, building on Solution (you, r4, r8), Decisions "The demo is o
 
 A worker closing a ticket writes the demo file in the ticket's show directory, runs it, and pastes the command and that run's output into the closing comment's Demo line, the medium per the table; a heavy demo goes to a fresh agent with a brief. The orchestrator landing the ticket adds the ticket branch's worktree beside the feature's, named after the ticket, and stages the demo through `job`: one detached tmux session named after the ticket, its working directory in that worktree, the demo's path typed and Enter not sent; the landing message names the session. The user runs it when they choose, and the demo opens what it produces. The ruling kills the session and removes the worktree, whichever way it goes. A demo that is missing or does not run under the worker's own hand goes back to the worker before the ruling, as a missed acceptance criterion does. A session landing loose work writes the same file under the branch's show directory, stages it the same way, and its landing message carries the same Demo line. The worker contract, the dispatch scripts and tick, orient's landing and loose steps, and the landing message shape in the output style say this in one sentence each and point at `/mx:show` for the medium; the worktree and the staging are steps of the `dispatch` script, since nothing in them is judgment.
 
-The landing as a sequence, drawn for this spec: `agent/show/figures-and-demos/landing.svg`.
+The landing as a sequence, drawn for this spec: `docs/figures/landing.html`, promoted there by ticket 05.
 
 ## Acceptance criteria
 

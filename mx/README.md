@@ -59,6 +59,18 @@ Every landed ticket gets one, rendered by `dispatch review` and linked from its 
 
 </details>
 
+<details>
+<summary><b>A landing: the demo the worker writes, the session that stages it, the ruling that ends it</b></summary>
+
+Every slice's demo is at the same path, `agent/show/<feature>/NN-<slug>/demo`, so `fd -t x '^demo$' agent/show` finds each one a week later, with no comment to read first.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/landing.png">
+  <img alt="A landing as a sequence between the worker, the orchestrator and you: the worker builds, writes the demo file beside its slice and runs it, and its closing comment carries that run; the orchestrator renders the review page from the unmerged branch and stages the demo in a tmux session with the command typed and no Enter; you press Enter when you choose, and rule accept, amend, redo or reject, every one of them but amend killing the session and removing the worktree" src="assets/landing-light.png">
+</picture>
+
+</details>
+
 ## Artefacts
 
 | Object            | Location                             | Lifecycle                                                             | Content                                                                                                                                                             |
@@ -91,7 +103,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 - **The ticket breakdown is yours to look over while it builds.** to-tickets publishes the slices `proposed` and shows them on the board, and the workers start. The failure mode is easy to spot from the graph: horizontal slices (all schema, then all API, then all UI) instead of vertical ones, no feedback until the layers meet. You rule on each slice from what it built, which is where a slice too coarse to demo shows up anyway.
 - **The build runs while you are away.** It starts when the interview has no question left for you; every call you have not ruled on travels into the tickets as an anchored assumption and waits for you on the review page. Each build waits on its own branch for your ruling (accept, amend, redo or reject): nothing merges before you rule, and a ticket's dependents start only after you accept it.
 - **Implementation is the AFK part.** Day shift plans and cuts the tickets; night shift works the frontier, fresh context per ticket.
-- **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands: the worker's closing comment writes the demo as steps a stranger can run, the session holding the branch runs them on your machine and opens the result beside the review page, and you drive it while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
+- **QA is where you impose taste, per landed slice.** Manual, deliberately: automate the idea, the planning, *and* the QA and you get slop. Every ticket is a tracer bullet, demoable the moment it lands: the worker leaves one executable `demo` file beside its slice and pastes its own run of it into the closing comment, `dispatch review` stages that file in a tmux session named after the ticket with the command typed and the Enter left to you, and you drive it beside the review page while the remaining frontier keeps running. Findings become new tickets with blocking edges; the board absorbs them.
 - **Reviews run in fresh context.** A reviewer sharing the implementer's window reviews in the dumb zone; a worker closes with code-review in clean context for a reason.
 - **Chat replies have a reviewer too.** Every session with the plugin runs a Stop hook: a small model reads the reply just written against the chat-scoped rules of `/mx:writing-for-humans`'s catalogue and hands the tells it finds, with the rules they break, back to the session, which weighs them and revises the reply before you act on the draft. It fails open, stays out of a dispatched worker's session, and logs every decision it makes; `CHAT_REVIEW_OFF` in the environment turns it off, and the script, `mx/skills/writing-for-humans/chat_review.py`, says where the log goes.
 - **Feedback loops are the ceiling.** Agent output quality tracks the quality of the repo's tests and typechecks. Bad output → improve the loops, not the prompt (`/mx:improve-codebase-architecture`; deep modules: design the interface, delegate the implementation).
