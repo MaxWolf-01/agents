@@ -11,7 +11,7 @@ Fetch the PR, then run `/mx:code-review` with the PR's merge-base as fixed point
 ## Process
 
 1. **Fetch the PR**: `gh pr view <n>` (title, description), `gh pr view <n> --comments` (prior discussion), `gh pr view <n> --json baseRefName,headRefName`.
-2. **Get the code locally**: if the head branch isn't already checked out here, clone the repo fresh to `/tmp` and `gh pr checkout <n>` there. Never switch the branch of the checkout you were invoked in; other agents share it.
+2. **Get the code locally**: if the head branch isn't already checked out here, clone the repo fresh and `gh pr checkout <n>` in the clone. Never switch the branch of the checkout you were invoked in; other agents share it.
 3. **Run `/mx:code-review`** with:
    - fixed point = the PR's base branch (the three-dot diff lands on the merge-base),
    - the PR title + description + any linked issues as the spec source,

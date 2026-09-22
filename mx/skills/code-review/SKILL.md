@@ -50,7 +50,7 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message. Where the diff is in a checkout other than the one you were invoked in, a `/tmp` clone of a PR for one, write that path absolute and inside your own checkout, so the reports outlive the clone.
+Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message. Where the diff is in a checkout other than the one you were invoked in, a fresh clone of a PR for one, write that path absolute and inside your own checkout, so the reports outlive the clone.
 
 Then the discipline line: *"Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
