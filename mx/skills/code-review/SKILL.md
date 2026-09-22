@@ -38,7 +38,7 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 The standards sources are the script's to gather, and the brief it writes for each axis is the record of which ones bound this review:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
-- [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source whenever the diff touches tests and no Tests axis runs.
+- [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a standards source for whoever reads the tests when no Tests axis runs, the one light reviewer included.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, commands, output styles, prompt templates).
 - The repo's own standards documents, at its root and only there: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, `PRINCIPLES.md`.
