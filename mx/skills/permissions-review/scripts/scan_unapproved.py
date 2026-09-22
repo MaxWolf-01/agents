@@ -25,16 +25,17 @@ Totals go to stderr.
 
 Examples:
 
-    uv run scan_unapproved.py ~/.claude/projects/ ~/.claude/settings.json
-    uv run scan_unapproved.py ~/.claude/projects/-home-max-myproject/ global.json project.json --days 60
-    uv run scan_unapproved.py ~/.claude/projects/ ~/.claude/settings.json --show-auto-approved
+    uv run scan_unapproved.py
+    uv run scan_unapproved.py global.json project.json --sessions-dir <one project's dir> --days 60
+    uv run scan_unapproved.py --show-auto-approved
 """
 
 import json
+import os
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
 from pathlib import Path
@@ -96,11 +97,11 @@ SPLIT_OPERATORS = ("&&", "||")
 
 @dataclass
 class Args:
-    sessions_dir: Annotated[Path, tyro.conf.Positional]
-    """Claude sessions directory. Scanned recursively, so ~/.claude/projects/ covers every project."""
+    settings: Annotated[list[Path], tyro.conf.Positional] = field(default_factory=list)
+    """Settings JSON file(s) holding the permission allowlist. Default: the Claude config directory's settings.json ($CLAUDE_CONFIG_DIR, else ~/.claude), plus .claude/settings.json here when it exists."""
 
-    settings: Annotated[list[Path], tyro.conf.Positional]
-    """Settings JSON file(s) containing the permission allowlist."""
+    sessions_dir: Annotated[Path | None, tyro.conf.arg(metavar="DIR")] = None
+    """Claude sessions directory, scanned recursively. Default: the Claude config directory's projects/, every project."""
 
     days: int = 30
     """Scan sessions modified within the last N days."""
@@ -110,9 +111,15 @@ class Args:
 
 
 def main(args: Args) -> None:
-    patterns = load_allowlist(*args.settings)
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    project_settings = Path(".claude/settings.json")
+    settings = args.settings or [
+        config_dir / "settings.json",
+        *([project_settings] if project_settings.is_file() else []),
+    ]
+    patterns = load_allowlist(*settings)
     cutoff = (datetime.now() - timedelta(days=args.days)).timestamp()
-    commands = scan_sessions(args.sessions_dir, cutoff)
+    commands = scan_sessions(args.sessions_dir or config_dir / "projects", cutoff)
 
     blocked: Counter[str] = Counter()
     auto_approved: Counter[str] = Counter()

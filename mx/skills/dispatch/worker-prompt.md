@@ -39,7 +39,7 @@ The tags run as one sequence across both lists and never repeat: a second commen
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Use the glossary's vocabulary in everything you write; Your output must not contradict an ADR -- escalate if it's a (real) blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
@@ -65,12 +65,14 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 
 `job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. How long you expect it to take is the wrong test, because the command you thought would take a minute is the one that hangs, and a blocking Bash call on it costs you the rest of your run with nobody watching the pane. `job wait --deadline <secs>` ends the wait whatever the command is doing.
 
-`ast-grep` is syntax-aware and won't match inside strings/comments:
-- Find pattern: `ast-grep --pattern 'console.log($$$ARGS)' --lang js`
-- Replace: `ast-grep --pattern 'OLD($X)' --rewrite 'NEW($X)' --lang py`
+`ast-grep` is syntax-aware search and rewrite that never matches inside strings or comments; read its `--help` before guessing at flags.
+
+The Makefile carries the project's standard commands: read it before running tests, type checks or servers.
+
+`uv` is the only tool you need for a Python project: `uv run (--with ...) (python) ...`, never `python` or an activated venv, and dependencies change only through `uv add` / `uv remove`. Python CLIs use tyro, and `/mx:tyro-cli` is loaded before writing one.
 
 - !! Access any (non-paywalled/gated) website as clean markdown via curl + defuddle.md/<url> !!
-- Prefer this a million times over raw curl or the webfetch tool, when fetching content for your own consumption (the webfetch tool always slop-summarizes sites for you, which is great for super duper long and noisy pages, but not for 99.9% your use-cases).
+- Prefer it over raw curl or the webfetch tool for anything you read yourself: webfetch summarizes the page instead of giving it to you, which suits a very long noisy page and almost nothing else.
 
 </tools>
 
@@ -93,5 +95,6 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 - Assess constructs by the artifacts they produce, not the experience of authoring them.
 - Strictly separate what from how.
 - Represent data as data.
+- Abstractions should emerge from concrete implementations, not precede them.
 
 </taste>
