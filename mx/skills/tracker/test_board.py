@@ -174,6 +174,14 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     ]
 
 
+def test_a_directory_with_neither_a_ticket_nor_a_spec_is_not_a_feature(tracker: Path) -> None:
+    (tracker / "scratch").mkdir()
+    (tracker / "notes").mkdir()
+    (tracker / "notes" / "thinking.md").write_text("# what the suite is for\n")
+    features, _ = load(tracker)
+    assert [f.name for f in features] == [FEAT]
+
+
 # ---- graphs ---------------------------------------------------------------
 
 
