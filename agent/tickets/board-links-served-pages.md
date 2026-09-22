@@ -1,5 +1,6 @@
 ---
-status: review
+status: done
+diff: [f7ddec3b4660b5030d7a5b067226fc182d0ea491..1c3c3a9dbd1ee7c749c9efa042adc6ee775ba38c]
 ---
 
 # The board opens a ticket's review page served, so a review starts from the board
