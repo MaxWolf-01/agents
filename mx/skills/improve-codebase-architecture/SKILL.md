@@ -14,7 +14,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 ## Process
 
-### 1. Explore
+### 1. Scan
 
 **Scope before you scan: YAGNI.** Deepening a module pays off by making future changes to it easier, so put extra weight on the parts of the codebase that have recently changed. Decide *where* to look before you look:
 
@@ -23,7 +23,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 Read the project's domain glossary (`CONTEXT.md`) and any ADRs in the area you're touching first.
 
-Then spawn an `Explore` subagent to walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
+Then walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
@@ -37,34 +37,27 @@ Harden reads the same friction as a measurement (`/mx:testing`): read the newest
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
-### 2. Present candidates as an HTML report
-
-Write a self-contained HTML file to the `~/tmp/architecture-review` directory so nothing lands in the repo, falling back to `/tmp`, and write to `<tmpdir>/architecture-review/<project/repo name>-<slug>-<timestamp>.html` so each run gets a fresh, recognizable file. Open it for the user and tell them the absolute path.
-
-The report uses **Tailwind via CDN** for layout and styling, and **Mermaid via CDN** for diagrams where a graph/flow/sequence reliably communicates the structure. Mix Mermaid with hand-crafted CSS/SVG visuals: use Mermaid when relationships are graph-shaped (call graphs, dependencies, sequences), and hand-built divs/SVG when you want something more editorial (mass diagrams, cross-sections, collapse animations). Each candidate gets a **before/after visualisation**. Be visual.
-
-For each candidate, render a card with:
+The scan is done when every candidate carries:
 
 - **Files**: which files/modules are involved
 - **Problem**: why the current architecture is causing friction
-- **Solution**: plain English description of what would change
+- **Solution**: plain English description of what would change; the interface itself is designed in step 3, with the user
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
-- **Before / After diagram**: side-by-side, custom-drawn, illustrating the shallowness and the deepening
-- **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge
+- **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
+- **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
+- **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. Don't list every theoretical refactor an ADR forbids.
 
-End the report with a **Top recommendation** section: which candidate you'd tackle first and why.
+and one **top recommendation**: which candidate you'd tackle first and why.
 
 **Use CONTEXT.md vocabulary for the domain, and the `/mx:codebase-design` vocabulary for the architecture.** If `CONTEXT.md` defines "Order," talk about "the Order intake module", not "the FooBarHandler," and not "the Order service."
 
-**ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly in the card (e.g. a warning callout: _"contradicts ADR-0007, but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
+### 2. Build the report
 
-See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram patterns, and styling guidance.
-
-Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
+Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 3. The fork's directive: build the report [REPORT.md](REPORT.md) describes.
 
 ### 3. Grilling loop
 
-Once the user picks a candidate, run `/mx:grilling` to walk the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+When the report lands, ask the user which candidate they want to explore. Once they pick one, run `/mx:grilling` to walk the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
 Side effects happen inline as decisions crystallize; run `/mx:domain-modelling` to keep the domain model current as you go:
 
