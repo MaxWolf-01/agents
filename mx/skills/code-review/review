@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# One code review's mechanics: a `claude -p` reviewer per axis, each on the
+# brief composed from the templates in briefs/, each leaving a report the
+# caller reads. `/mx:code-review` is the judgment around it: which fixed
+# point, where the spec is, light or full, and what to do with the findings.
+#
+# Usage: review <fixed-point> [--axes correctness,standards,spec,tests]
+#               [--spec <path>] [--light] [--model <model>] [--out <dir>]
+#   <fixed-point>  the commit, branch or tag the diff is measured from. The
+#                  diff is the three-dot one, so it starts at the merge-base
+#                  with HEAD, and the range naming the reports' directory is
+#                  <merge-base>..<HEAD>, both short. Uncommitted work is not
+#                  in it.
+#   --axes   which axes to run, one brief each. Default: correctness and
+#            standards, plus spec when --spec names one, plus tests when the
+#            diff touches test files too. An axis is a file in briefs/.
+#   --spec   the spec, ticket or issue body the work was asked for, as a file;
+#            an issue is fetched to one first. The spec and tests axes both
+#            read it, so both need this.
+#   --light  one reviewer over the correctness and standards briefs joined,
+#            for work with no spec to check, reporting as the `light` axis.
+#   --model  every reviewer's model, `opus` by default, `sonnet` under --light.
+#   --out    where the range directories go, default <repo>/agent/reviews.
+# Reports land in <out>/<range>/<axis>.md, the brief each reviewer read and its
+# transcript beside them, and their paths are this script's output. Exit 1
+# names an axis whose report never arrived, to re-run with --axes.
+# Env:
+#   REVIEW_PERMISSION_MODE  the reviewers' --permission-mode, `acceptEdits`
+#                           unless a dispatch run's own mode is in the
+#                           environment: a reviewer reads history and files and
+#                           writes one report, which its allow rules cover.
+set -u
+
+skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+briefs=$skill/briefs
+mode=${REVIEW_PERMISSION_MODE:-${DISPATCH_PERMISSION_MODE:-acceptEdits}}
+# A reviewer is a whole session reading a diff end to end; two at a time keeps
+# the box and the rate limit out of the review's way.
+concurrency=2
+
+die() { echo "review: $1" >&2; exit 1; }
+help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
+
+case ${1:-} in
+    -h|--help) help; exit 0 ;;
+    ""|-*)     help >&2; exit 1 ;;
+esac
+fixed=$1; shift
+
+axes= spec= light= model= out=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --axes)  axes=${2:-};  [ -n "$axes" ]  || die "--axes takes a comma-separated list of axes"; shift 2 ;;
+        --spec)  spec=${2:-};  [ -n "$spec" ]  || die "--spec takes a path"; shift 2 ;;
+        --model) model=${2:-}; [ -n "$model" ] || die "--model takes a model alias or id"; shift 2 ;;
+        --out)   out=${2:-};   [ -n "$out" ]   || die "--out takes a directory"; shift 2 ;;
+        --light) light=1; shift ;;
+        *) die "unknown argument: $1" ;;
+    esac
+done
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
+cd "$root" || die "cannot enter $root"
+git rev-parse --verify -q "$fixed" >/dev/null || die "$fixed does not resolve in $root"
+base=$(git merge-base "$fixed" HEAD) || die "$fixed and HEAD have no merge-base"
+range="$(git rev-parse --short=7 "$base")..$(git rev-parse --short=7 HEAD)"
+diff_cmd="git diff $fixed...HEAD"
+git diff --quiet "$base" HEAD && die "$diff_cmd is empty; nothing to review"
+git diff --quiet HEAD -- || echo "review: uncommitted changes in $root are not part of $range" >&2
+
+touched=$(git diff --name-only "$base" HEAD)
+# What a test file is called in the languages this workflow meets, and what a
+# process document is: two questions the diff answers, so neither is the
+# caller's to decide.
+touches() { printf '%s\n' "$touched" | grep -Eq "$1"; }
+touches '(^|/)(tests?|spec)/|(^|/)(test_[^/]+|conftest)\.py$|_test\.(py|go|ts|js|rs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.java$' && tests=1 || tests=
+touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|prompt[^/]*\.md$' && process=1 || process=
+
+if [ -n "$light" ]; then
+    [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
+    [ -z "$spec" ] || die "--light has no Spec axis; run the full axes with a spec, or drop --spec"
+    axes=light
+elif [ -z "$axes" ]; then
+    axes=correctness,standards
+    [ -n "$spec" ] && axes=$axes,spec
+    [ -n "$spec" ] && [ -n "$tests" ] && axes=$axes,tests
+fi
+axis_list=${axes//,/ }
+for axis in $axis_list; do
+    [ -f "$briefs/$axis.md" ] || die "no axis named $axis: briefs/$axis.md is not there"
+    case $axis in
+        spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against the spec: pass --spec <path>" ;;
+    esac
+done
+if [ -n "$spec" ]; then
+    [ -f "$spec" ] || die "no spec file at $spec"
+    spec=$(realpath "$spec")
+fi
+[ -n "$model" ] || case " $axis_list " in *" light "*) model=sonnet ;; *) model=opus ;; esac
+
+# Everything that documents how code is written here: the baselines this
+# workflow carries, and the repo's own, which live at its root.
+sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
+[ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
+for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
+    [ -f "$root/$f" ] && sources+=("$root/$f")
+done
+bullets() { for f in "$@"; do [ -f "$f" ] || die "$f, a standards source, is not there"; printf -- '- %s\n' "$(realpath "$f")"; done; }
+standards=$(bullets "${sources[@]}") || exit 1
+# The test-smell baseline is the Tests axis's own source, and a standards
+# source for the one light reviewer whenever the diff touches tests.
+standards_tests=$(bullets "$skill/TEST-SMELLS.md") || exit 1
+standards_light=$standards
+[ -n "$tests" ] && standards_light=$standards$'\n'$standards_tests
+
+dir=$out
+[ -n "$dir" ] || dir=$root/agent/reviews
+dir=$dir/$range
+mkdir -p "$dir" || die "cannot create $dir"
+dir=$(cd "$dir" && pwd)
+
+# The brief a reviewer reads, whole: the preamble, the axis's own template, and
+# for the light axis both briefs it folds together. The templates hold every
+# word of it; substituted in are this review's range, sources and paths.
+render() { # <axis>
+    local axis=$1 parts text sources_block commits left
+    case $axis in
+        light) parts="preamble correctness standards light"
+               sources_block=$standards_light
+               # Full messages, so the one reviewer gets the author's account
+               # of the work as orientation over the diff.
+               commits=$(git log "$base..HEAD") ;;
+        tests) parts="preamble $axis"
+               sources_block=$standards_tests
+               commits=$(git log --oneline "$base..HEAD") ;;
+        *)     parts="preamble $axis"
+               sources_block=$standards
+               commits=$(git log --oneline "$base..HEAD") ;;
+    esac
+    text=$(for part in $parts; do cat "$briefs/$part.md"; echo; done)
+    text=${text//'{{REPORT}}'/$dir/$axis.md}
+    text=${text//'{{DIFF_COMMAND}}'/$diff_cmd}
+    text=${text//'{{COMMITS}}'/$commits}
+    text=${text//'{{STANDARDS}}'/$sources_block}
+    text=${text//'{{SPEC}}'/$spec}
+    left=$(printf '%s' "$text" | grep -o '{{[A-Z_]*}}' | sort -u | tr '\n' ' ')
+    [ -z "$left" ] || die "briefs/$axis.md asks for $left, which this script does not substitute"
+    printf '%s\n' "$text"
+}
+
+# Every brief before any reviewer, so a broken template fails the run rather
+# than one axis of it.
+for axis in $axis_list; do render "$axis" > "$dir/$axis.brief.md" || exit 1; done
+
+reviewer() { # <axis>
+    local axis=$1 rc
+    claude -p --model "$model" --permission-mode "$mode" \
+        --allowedTools Read Grep Glob "Bash(git *)" "Edit(/$dir/**)" \
+        < "$dir/$axis.brief.md" > "$dir/$axis.log" 2>&1
+    rc=$?
+    echo "review: the $axis reviewer exited $rc" >&2
+}
+
+echo "review: $range, ${axis_list// /, } on $model, $concurrency at a time; reports in $dir" >&2
+running=0
+for axis in $axis_list; do
+    reviewer "$axis" &
+    running=$((running + 1))
+    if [ "$running" -ge "$concurrency" ]; then wait -n; running=$((running - 1)); fi
+done
+wait
+
+# An absent report is an axis to re-run, never a clean axis, which is what this
+# exit status is for.
+missing=()
+for axis in $axis_list; do
+    if [ -s "$dir/$axis.md" ]; then echo "$dir/$axis.md"; else missing+=("$axis"); fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    for axis in "${missing[@]}"; do
+        echo "review: the $axis axis left no report at $dir/$axis.md; its transcript is $dir/$axis.log" >&2
+    done
+    die "re-run what is missing: review $fixed --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model"
+fi
