@@ -5,35 +5,37 @@
 # point, where the spec is, light or full, and what to do with the findings.
 #
 # Usage: review <fixed-point> [--axes correctness,standards,spec,tests]
-#               [--spec <path>] [--light] [--model <model>] [--out <dir>]
-#   <fixed-point>  the commit, branch or tag the diff is measured from. The
-#                  diff is the three-dot one, so it starts at the merge-base
-#                  with HEAD, and the range naming the reports' directory is
-#                  <merge-base>..<HEAD>, both short. Uncommitted work is not
-#                  in it.
-#   --axes   which axes to run, one brief each. Default: correctness and
-#            standards, plus spec when --spec names one, plus tests when the
-#            diff touches test files too. An axis is a file in briefs/.
-#   --spec   the spec, ticket or issue body the work was asked for, as a file;
-#            an issue is fetched to one first. The spec and tests axes both
-#            read it, so both need this.
+#               [--spec <path>] [--light] [--model <model>]
+#   <fixed-point>  the commit, branch or tag the diff is measured from. What
+#                  the reviewers get is the three-dot diff with both ends
+#                  pinned to SHAs, so it holds still while they read and
+#                  stays what the range says: <merge-base>..<HEAD>, short.
+#                  Uncommitted work is in no part of it.
+#   --axes   which axes to run, one brief each, two axes at a time. Default:
+#            correctness and standards, plus spec when --spec names one, plus
+#            tests when the diff touches test files too. An axis is a file in
+#            briefs/, and a repo with no spec runs two of the four.
+#   --spec   what the work was asked for, as a file: the ticket, the spec, an
+#            issue body fetched to one, and whatever discussion the reviewers
+#            should not reopen. The spec and tests axes both read it, so both
+#            need it.
 #   --light  one reviewer over the correctness and standards briefs joined,
 #            for work with no spec to check, reporting as the `light` axis.
 #   --model  every reviewer's model, `opus` by default, `sonnet` under --light.
-#   --out    where the range directories go, default <repo>/agent/reviews.
-# Reports land in <out>/<range>/<axis>.md, the brief each reviewer read and its
-# transcript beside them, and their paths are this script's output. Exit 1
-# names an axis whose report never arrived, to re-run with --axes.
-# Env:
-#   REVIEW_PERMISSION_MODE  the reviewers' --permission-mode, `acceptEdits`
-#                           unless a dispatch run's own mode is in the
-#                           environment: a reviewer reads history and files and
-#                           writes one report, which its allow rules cover.
+# Reports land in <repo>/agent/reviews/<range>/<axis>.md, the brief each
+# reviewer read under briefs/ beside them and its output in <axis>.log, and
+# the reports' paths are this script's own output. Exit 1 names an axis whose
+# report never arrived, to re-run with --axes.
+#
+# The reviewers run on `--permission-mode manual` with allow rules for reading,
+# for git and for the report directory: probed against this host, that is the
+# strictest mode a reviewer's report still lands under, `auto` denies every
+# tool in print mode, and `acceptEdits` would let a reviewer edit the tree its
+# siblings are reading.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-briefs=$skill/briefs
-mode=${REVIEW_PERMISSION_MODE:-${DISPATCH_PERMISSION_MODE:-acceptEdits}}
+templates=$skill/briefs
 # A reviewer is a whole session reading a diff end to end; two at a time keeps
 # the box and the rate limit out of the review's way.
 concurrency=2
@@ -47,34 +49,45 @@ case ${1:-} in
 esac
 fixed=$1; shift
 
-axes= spec= light= model= out=
+axes= spec= light= model=
 while [ $# -gt 0 ]; do
     case $1 in
         --axes)  axes=${2:-};  [ -n "$axes" ]  || die "--axes takes a comma-separated list of axes"; shift 2 ;;
         --spec)  spec=${2:-};  [ -n "$spec" ]  || die "--spec takes a path"; shift 2 ;;
         --model) model=${2:-}; [ -n "$model" ] || die "--model takes a model alias or id"; shift 2 ;;
-        --out)   out=${2:-};   [ -n "$out" ]   || die "--out takes a directory"; shift 2 ;;
         --light) light=1; shift ;;
         *) die "unknown argument: $1" ;;
     esac
 done
+# Before the cd below, so a relative path means what the caller typed.
+if [ -n "$spec" ]; then
+    [ -f "$spec" ] || die "no spec file at $spec"
+    spec=$(realpath "$spec")
+fi
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
 cd "$root" || die "cannot enter $root"
 git rev-parse --verify -q "$fixed" >/dev/null || die "$fixed does not resolve in $root"
 base=$(git merge-base "$fixed" HEAD) || die "$fixed and HEAD have no merge-base"
-range="$(git rev-parse --short=7 "$base")..$(git rev-parse --short=7 HEAD)"
-diff_cmd="git diff $fixed...HEAD"
-git diff --quiet "$base" HEAD && die "$diff_cmd is empty; nothing to review"
-git diff --quiet HEAD -- || echo "review: uncommitted changes in $root are not part of $range" >&2
+# Both ends pinned here, once: the reviewers read minutes later, and a session
+# that commits meanwhile would otherwise move HEAD under them, leaving a report
+# filed under a range it did not read.
+head=$(git rev-parse HEAD)
+range="$(git rev-parse --short=7 "$base")..$(git rev-parse --short=7 "$head")"
+diff_cmd="git diff $base $head"
+git diff --quiet "$base" "$head" && die "$diff_cmd is empty; nothing to review"
+# Untracked files as much as modified ones, since work that is all new files
+# would otherwise pass in silence; the reports are this script's own output,
+# not work, so they stay out of it.
+[ -z "$(git status --porcelain -- ':!agent/reviews')" ] ||
+    echo "review: uncommitted changes in $root are not part of $range" >&2
 
-touched=$(git diff --name-only "$base" HEAD)
+touched=$(git diff --name-only "$base" "$head")
 # What a test file is called in the languages this workflow meets, and what a
-# process document is: two questions the diff answers, so neither is the
-# caller's to decide.
+# process document is: two questions the diff answers.
 touches() { printf '%s\n' "$touched" | grep -Eq "$1"; }
 touches '(^|/)(tests?|spec)/|(^|/)(test_[^/]+|conftest)\.py$|_test\.(py|go|ts|js|rs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.java$' && tests=1 || tests=
-touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|prompt[^/]*\.md$' && process=1 || process=
+touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)(skills|commands|agents|output-styles|briefs)/|prompt[^/]*\.md$' && process=1 || process=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
@@ -87,19 +100,16 @@ elif [ -z "$axes" ]; then
 fi
 axis_list=${axes//,/ }
 for axis in $axis_list; do
-    [ -f "$briefs/$axis.md" ] || die "no axis named $axis: briefs/$axis.md is not there"
+    [ -f "$templates/$axis.md" ] || die "no axis named $axis: briefs/$axis.md is not there"
     case $axis in
         spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against the spec: pass --spec <path>" ;;
     esac
 done
-if [ -n "$spec" ]; then
-    [ -f "$spec" ] || die "no spec file at $spec"
-    spec=$(realpath "$spec")
-fi
 [ -n "$model" ] || case " $axis_list " in *" light "*) model=sonnet ;; *) model=opus ;; esac
 
 # Everything that documents how code is written here: the baselines this
-# workflow carries, and the repo's own, which live at its root.
+# workflow carries, and the repo's own, which it reads at the root and nowhere
+# else.
 sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
 [ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
 for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
@@ -108,55 +118,65 @@ done
 bullets() { for f in "$@"; do [ -f "$f" ] || die "$f, a standards source, is not there"; printf -- '- %s\n' "$(realpath "$f")"; done; }
 standards=$(bullets "${sources[@]}") || exit 1
 # The test-smell baseline is the Tests axis's own source, and a standards
-# source for the one light reviewer whenever the diff touches tests.
-standards_tests=$(bullets "$skill/TEST-SMELLS.md") || exit 1
-standards_light=$standards
-[ -n "$tests" ] && standards_light=$standards$'\n'$standards_tests
+# source for whoever reads the tests when no Tests axis runs: the one light
+# reviewer, or a standards reviewer on a diff with no spec behind it.
+test_smells=$(bullets "$skill/TEST-SMELLS.md") || exit 1
+case " $axis_list " in
+    *" tests "*) ;;
+    *) [ -n "$tests" ] && standards=$standards$'\n'$test_smells ;;
+esac
 
-dir=$out
-[ -n "$dir" ] || dir=$root/agent/reviews
-dir=$dir/$range
-mkdir -p "$dir" || die "cannot create $dir"
-dir=$(cd "$dir" && pwd)
+dir=$root/agent/reviews/$range
+mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 
 # The brief a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis both briefs it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
 render() { # <axis>
     local axis=$1 parts text sources_block commits left
+    parts="preamble $axis"
+    sources_block=$standards
+    commits=$(git log --oneline "$base..$head")
     case $axis in
         light) parts="preamble correctness standards light"
-               sources_block=$standards_light
                # Full messages, so the one reviewer gets the author's account
                # of the work as orientation over the diff.
-               commits=$(git log "$base..HEAD") ;;
-        tests) parts="preamble $axis"
-               sources_block=$standards_tests
-               commits=$(git log --oneline "$base..HEAD") ;;
-        *)     parts="preamble $axis"
-               sources_block=$standards
-               commits=$(git log --oneline "$base..HEAD") ;;
+               commits=$(git log "$base..$head") ;;
+        tests) sources_block=$test_smells ;;
     esac
-    text=$(for part in $parts; do cat "$briefs/$part.md"; echo; done)
+    text=$(for part in $parts; do cat "$templates/$part.md"; echo; done)
+    # Against the templates, before anything is substituted into them: a
+    # commit message that happens to hold a placeholder is text under review,
+    # never an instruction to this script.
+    left=$(printf '%s' "$text" | grep -o '{{[A-Z_]*}}' | sort -u |
+        grep -vE '^\{\{(REPORT|DIFF_COMMAND|COMMITS|STANDARDS|SPEC)\}\}$' | tr '\n' ' ')
+    [ -z "$left" ] || die "briefs/$axis.md asks for $left which this script does not substitute"
     text=${text//'{{REPORT}}'/$dir/$axis.md}
     text=${text//'{{DIFF_COMMAND}}'/$diff_cmd}
-    text=${text//'{{COMMITS}}'/$commits}
     text=${text//'{{STANDARDS}}'/$sources_block}
     text=${text//'{{SPEC}}'/$spec}
-    left=$(printf '%s' "$text" | grep -o '{{[A-Z_]*}}' | sort -u | tr '\n' ' ')
-    [ -z "$left" ] || die "briefs/$axis.md asks for $left, which this script does not substitute"
+    # Last, so no substitution runs over the commit messages.
+    text=${text//'{{COMMITS}}'/$commits}
     printf '%s\n' "$text"
 }
 
 # Every brief before any reviewer, so a broken template fails the run rather
-# than one axis of it.
-for axis in $axis_list; do render "$axis" > "$dir/$axis.brief.md" || exit 1; done
+# than one axis of it. An earlier run's report goes at the same time: the range
+# is the same for the same branch state, and a stale report left in place would
+# read as this run's.
+for axis in $axis_list; do
+    render "$axis" > "$dir/briefs/$axis.md" || exit 1
+    rm -f "$dir/$axis.md"
+done
 
 reviewer() { # <axis>
     local axis=$1 rc
-    claude -p --model "$model" --permission-mode "$mode" \
-        --allowedTools Read Grep Glob "Bash(git *)" "Edit(/$dir/**)" \
-        < "$dir/$axis.brief.md" > "$dir/$axis.log" 2>&1
+    # Echoed whole, redirections included, so the transcript holds the command
+    # that produced a report, or the one that produced nothing.
+    local cmd=(claude -p --model "$model" --permission-mode manual
+        --allowedTools Read Grep Glob "Bash(git *)" "Edit(/$dir/**)")
+    echo "+ ${cmd[*]} < $dir/briefs/$axis.md > $dir/$axis.log" >&2
+    "${cmd[@]}" < "$dir/briefs/$axis.md" > "$dir/$axis.log" 2>&1
     rc=$?
     echo "review: the $axis reviewer exited $rc" >&2
 }
@@ -178,7 +198,7 @@ for axis in $axis_list; do
 done
 if [ ${#missing[@]} -gt 0 ]; then
     for axis in "${missing[@]}"; do
-        echo "review: the $axis axis left no report at $dir/$axis.md; its transcript is $dir/$axis.log" >&2
+        echo "review: the $axis axis left no report at $dir/$axis.md; its output is $dir/$axis.log" >&2
     done
     die "re-run what is missing: review $fixed --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model"
 fi

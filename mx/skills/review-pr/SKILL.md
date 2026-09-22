@@ -14,6 +14,5 @@ Fetch the PR, then run `/mx:code-review` with the PR's merge-base as fixed point
 2. **Get the code locally**: if the head branch isn't already checked out here, clone the repo fresh and `gh pr checkout <n>` in the clone. Never switch the branch of the checkout you were invoked in; other agents share it.
 3. **Run `/mx:code-review`** with:
    - fixed point = the PR's base branch (the three-dot diff lands on the merge-base),
-   - the PR title + description + any linked issues as the spec source,
-   - prior review discussion passed to the reviewers, so settled points aren't relitigated.
+   - one spec file holding the PR title, description, any linked issues, and the prior review discussion, so settled points aren't relitigated: the reviewers read what it says and nothing else of the thread.
 4. **Report**: code-review's step 5 is the delivery, on its branch for a PR the caller does not own: every finding is one of the user's calls, and `**What it does**: 1–2 sentences, end to end.` opens the message. A clean PR gets a short review; don't invent concerns to fill space.
