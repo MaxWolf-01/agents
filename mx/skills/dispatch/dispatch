@@ -71,15 +71,18 @@
 #            the user to run: the ticket branch checked out beside this worktree
 #            as <repo>-<feature>-<ticket>, and the show directory's `demo` typed
 #            unrun at the prompt of a detached tmux session named
-#            job-<repo>-<feature>-<ticket>-demo, through `job`'s staged mode;
-#            both are named by the ticket's number where it has one. The user
+#            job-<repo>-<feature>-<NN>-demo, through `job`'s staged mode: the
+#            session is named by the ticket's number where it has one, the
+#            worktree by its whole id, as every ticket worktree is. The user
 #            starts it, so a demo meant to be watched is watched from its first
 #            line. The worktree is a plain checkout with no install step run in
 #            it, so the demo has what the user's machine already has and nothing
-#            more. A ticket whose closing comment says the diff is the demo has
-#            nothing to stage. Anything that stops a staging -- no demo on the
-#            branch, one committed unexecutable, a `job` without the mode -- says
-#            so and leaves the rest of the landing standing.
+#            more. Anything that stops a staging says so and leaves the rest of
+#            the landing standing: no demo on the branch, one committed
+#            unexecutable, a `job` without the mode or no `job` at all. A ticket
+#            whose closing comment says the diff is the demo has none to stage,
+#            and reads the same here as one that lost its demo; the closing
+#            comment is what tells the two apart.
 #
 # Ticket branches merge into this branch with --no-ff; that merge commit is how
 # `review` finds a ticket's range after the merge (its second parent is the
@@ -443,9 +446,11 @@ stage_demo() { # <ticket> <tip>
     # with "permission denied" under the user's own Enter.
     case $(git ls-tree "$2" -- "$demo_path" | cut -c1-6) in
         100755) ;;
-        "")     not_staged "no $demo_path on $demo_branch"; return 0 ;;
+        "")     not_staged "no $demo_path on $demo_branch, whether the diff is the demo or the demo is missing"; return 0 ;;
         *)      not_staged "$demo_path on $demo_branch is not executable"; return 0 ;;
     esac
+    command -v job > /dev/null ||
+        { not_staged "no \`job\` on PATH here"; return 0; }
     job --help 2> /dev/null | grep -qw stage ||
         { not_staged "the \`job\` here has no staged mode (\`job --help\`)"; return 0; }
     if [ -e "$demo_worktree" ]; then
@@ -455,8 +460,8 @@ stage_demo() { # <ticket> <tip>
         run git worktree add "$demo_worktree" "$demo_branch" ||
             { not_staged "could not check $demo_branch out at $demo_worktree"; return 0; }
     fi
-    # Not echoed, unlike the one in unstage_demo: job names are unique until
-    # `job rm`, and on a first landing this is a name nothing has taken.
+    # Not echoed: job names are unique until `job rm`, and on a first landing
+    # this is a name nothing has taken.
     job rm "$demo_job" > /dev/null 2>&1
     run job stage "$demo_job" --cwd "$demo_worktree" -- "./$demo_path" ||
         { not_staged "\`job stage $demo_job\` failed"; return 0; }
@@ -469,8 +474,9 @@ stage_demo() { # <ticket> <tip>
 unstage_demo() { # <ticket>
     demo_names "$1"
     # `job rm` kills the session and forgets the run; the session is what is
-    # left to kill when the staging registered no run to forget.
-    run job rm "$demo_job" ||
+    # left to kill when the staging registered no run to forget. Not echoed,
+    # as in stage_demo: every ticket is unstaged, most of them never staged.
+    job rm "$demo_job" > /dev/null 2>&1 ||
         { tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"; }
     # On a local host the worker's own cleanup removes this same worktree first,
     # so whoever gets there second finds it gone.
