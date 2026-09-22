@@ -216,6 +216,10 @@ def enrich(t: "Ticket | Standalone", tid: str, show: Path) -> None:
     fx = FIX.get(tid) or FIX.get(t.path.stem) or {}
     text = branch_text(t, tid) if t.status == "review" else (t.path.read_text() if t.path.is_file() else "")
     meta, body = split_frontmatter(text)
+    if t.status == "review" and body:
+        head = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+        rest = body[head.end():] if head else body
+        t.body_html = render_body(rest, tid.split("/")[0]) if "/" in tid else markdown.markdown(rest, extensions=["fenced_code", "tables"])
     t.priority = meta.get("priority", fx.get("priority"))
     t.size = meta.get("size", fx.get("size"))
     t.brief = section(body, "Brief") or fx.get("brief")
@@ -286,7 +290,7 @@ def branch_text(t: "Ticket | Standalone", tid: str) -> str:
     """The ticket as its own branch has it: a worker's closing comment lands there, and the branch
     the board reads carries only the status flip until the build merges."""
     repo = Path(git(t.path.parent, "rev-parse", "--show-toplevel"))
-    base = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    base = tid.split("/")[0] if "/" in tid else git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     branch = f"ticket/{base}/{t.path.stem}"
     done = subprocess.run(["git", "-C", str(repo), "show", f"{branch}:{t.path.relative_to(repo)}"], capture_output=True, text=True)
     return done.stdout if done.returncode == 0 else t.path.read_text()
@@ -997,7 +1001,8 @@ def calls_summary(t) -> str:
 def body_html(t, ticket_body: str) -> str:
     parts = []
     if t.name and t.name != t.title:
-        parts.append(f'<p class="fulltitle">{html.escape(t.title)}</p>')
+        parts.append(f'<p class="fulltitle">{inline_md(t.title)}</p>')
+    ticket_body = re.sub(r"<h2>Brief</h2>.*?(?=<h2|\Z)", "", ticket_body, flags=re.S)
     calls = open_calls(t)
     if calls:
         lis = "".join(
@@ -1072,7 +1077,7 @@ def brief_panel(features: list[Feature], all_tickets: list, anchor: dict) -> str
     mine = sorted([t for t in live if needs_me(t)], key=sort_key)
     builds = [t for t in mine if t.status == "review"]
     sessions = [t for t in mine if t.kind in HITL and t.status != "review"]
-    answers = len([t for t in live if t.asks and t.status != "review"])  # a build's own questions are part of its ruling
+    answers = len([t for t in live if kind_of(t) == "answer"])  # a build's own questions are part of its ruling
     running = [t for t in live if t.status == "claimed" and not t.kind]
     said = []
     if builds:
@@ -1295,7 +1300,8 @@ PAGE = r"""<!doctype html>
     --c-slate: light-dark(#52627f, #9aaacb); --c-teal: light-dark(#1d6f69, #74d0c8); --c-gold: light-dark(#7d5f16, #d9b36f);
     --c-purple: light-dark(#6546b3, #b8a4ff); --c-orange: light-dark(#9a5516, #ffc387); --c-rose: light-dark(#a3453c, #fabeb4);
   }
-  .ticket > summary { grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr) 5.2rem 6.2rem 3rem; column-gap: .9rem; }
+  .ticket > summary { grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr) 5.2rem 6.2rem minmax(3rem, max-content); column-gap: .9rem; }
+  .chips { flex-wrap: nowrap; white-space: nowrap; }
   ol.calls { grid-column: 4 / -1; }
   .body { padding-left: calc(7rem + 2rem + 7.6rem + 2.7rem + .5rem); max-width: calc(19.8rem + 46rem); }
   .kindtag, .pri, .time, .src { font-family: var(--font-mono); font-size: .72rem; white-space: nowrap; justify-self: start; }
@@ -1309,7 +1315,9 @@ PAGE = r"""<!doctype html>
     background: color-mix(in srgb, var(--c) 12%, transparent); }
   .pri.p1 { --c: var(--c-pink); } .pri.p2 { --c: var(--c-lav); } .pri.p3 { --c: var(--c-blue); } .pri.p4 { --c: var(--c-slate); }
   .pri.p5 { background: none; }
-  .titleline { display: flex; gap: .7rem; align-items: baseline; flex-wrap: wrap; }
+  .titleline { display: flex; gap: .7rem; align-items: baseline; min-width: 0; }
+  .titleline .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .titleline > a, .titleline > .src { flex: none; }
   .rp { font-family: var(--font-mono); font-size: .72rem; color: var(--accent); }
   .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
   .src { color: var(--c-teal); }
