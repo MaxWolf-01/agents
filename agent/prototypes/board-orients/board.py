@@ -213,7 +213,7 @@ def need_calls(text: str) -> list[tuple[str, str]]:
     if len(block) < 2:
         return []
     body = re.split(r"\n\*\*[A-Z][^*]*\*\*", block[1], maxsplit=1)[0]
-    return [(m.group(1), m.group(2).strip()) for m in re.finditer(r"^\s*-\s*\[(D\d+)\]\s*(.+)$", body, re.MULTILINE)]
+    return [(m.group(1), m.group(2).strip()) for m in re.finditer(r"^\s*(?:[-*]|\d+\.)\s*`?\[(D\d+)\]`?\s*(.+)$", body, re.MULTILINE)]
 
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
