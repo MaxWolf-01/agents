@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 ---
 
 # A script launches the code-review axes; the skill keeps only the judgment
