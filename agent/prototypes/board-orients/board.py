@@ -110,9 +110,11 @@ GROUPS = [
 # ---- PROTOTYPE additions ----
 PROTO = Path(__file__).resolve().parent
 SCRATCH = Path("/var/tmp/board-orients-proto")
-_FIXTURE = yaml.safe_load((PROTO / "fixture.yaml").read_text())
+_FIXTURE = yaml.safe_load(Path(os.environ.get("BOARD_PROTO_FIXTURE") or PROTO / "fixture.yaml").read_text())
 FIX, VIRTUAL = _FIXTURE["tickets"], _FIXTURE.get("virtual", {})
-SESSIONS = json.loads((SCRATCH / "sessions.json").read_text()) if (SCRATCH / "sessions.json").exists() else {}
+SESSIONS = json.loads((SCRATCH / "sessions.json").read_text()) if (SCRATCH / "sessions.json").exists() and not os.environ.get("BOARD_PROTO_FIXTURE") else {}
+# a demo tracker's sessions have no transcript on this machine; this file stands in for the transcript lookup
+STANDIN = json.loads(Path(os.environ["BOARD_PROTO_SESSIONS"]).read_text()) if os.environ.get("BOARD_PROTO_SESSIONS") else {}
 SIZE_RANK = {"XS": 0, "S": 1, "M": 2, "L": 3, "XL": 4}
 HITL = {"grilling", "prototype"}
 VARIANTS = {
@@ -209,16 +211,75 @@ def virtual_tickets(root: Path) -> list["Standalone"]:
 
 
 def enrich(t: "Ticket | Standalone", tid: str, show: Path) -> None:
-    """PROTOTYPE: what the build reads from the ticket file, git log and the show directory."""
+    """PROTOTYPE: what the build reads from the ticket file, git log and the show directory. A real ticket does
+    not carry priority, size or a brief yet, so the fixture fills those in where the file is silent."""
     fx = FIX.get(tid) or FIX.get(t.path.stem) or {}
-    t.priority, t.size, t.brief = fx.get("priority"), fx.get("size"), fx.get("brief")
-    t.sessions = [s for s in SESSIONS.get(tid, SESSIONS.get(t.path.stem, [])) if s.get("cwd")]
+    text = branch_text(t, tid) if t.status == "review" else (t.path.read_text() if t.path.is_file() else "")
+    meta, body = split_frontmatter(text)
+    t.priority = meta.get("priority", fx.get("priority"))
+    t.size = meta.get("size", fx.get("size"))
+    t.brief = section(body, "Brief") or fx.get("brief")
+    t.name = meta.get("name", fx.get("name"))
+    t.why = fx.get("why")
+    t.calls = open_questions(text) if t.status != "done" else []
+    t.asks = [(a["tag"], a["text"]) for a in fx.get("asks", [])]
+    t.sessions = trailer_sessions(t) or [s for s in SESSIONS.get(tid, SESSIONS.get(t.path.stem, [])) if s.get("cwd")]
     t.show = sorted(p for p in show.rglob("*") if p.is_file() and "/out/" not in str(p)) if show.is_dir() else []
     t.demo = show / "demo" if (show / "demo").is_file() else None
-    t.calls = need_calls(branch_text(t, tid)) if t.status == "review" else []
     t.tid = tid
-    t.name, t.why = fx.get("name"), fx.get("why")
-    t.asks = [(a["tag"], a["text"]) for a in fx.get("asks", [])]
+
+
+def section(body: str, heading: str) -> str | None:
+    """The text under a `## <heading>` of the ticket, up to the next heading."""
+    m = re.search(rf"^##\s+{heading}\s*\n(.*?)(?=^##\s|\Z)", body, re.S | re.M)
+    return m.group(1).strip() or None if m else None
+
+
+def open_questions(text: str) -> list[tuple[str, str]]:
+    """The tagged calls under the ticket's last "I need from you", less those a `Ruled: D2, D5` line has answered."""
+    ruled = {tag for line in re.findall(r"^Ruled:\s*(.+)$", text, re.M) for tag in re.findall(r"D\d+", line)}
+    return [(tag, q) for tag, q in need_calls(text) if tag not in ruled]
+
+
+def trailer_sessions(t: "Ticket | Standalone") -> list[dict]:
+    """The sessions whose commits changed the ticket file, read from their `Session:` trailers on every branch,
+    with the title and directory their transcript on this machine records. A session with no transcript here
+    (a worker on another host) is left out: it is not one the user resumes."""
+    if not t.path.parent.is_dir():
+        return []
+    top = subprocess.run(["git", "-C", str(t.path.parent), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if top.returncode:
+        return []
+    repo = Path(top.stdout.strip())
+    log = subprocess.run(
+        ["git", "-C", str(repo), "log", "--all", "--format=%aI%x09%(trailers:key=Session,valueonly,separator=%x20)", "--", str(t.path.relative_to(repo))],
+        capture_output=True, text=True,
+    ).stdout
+    seen: dict[str, dict] = {}
+    for line in log.splitlines():
+        when, _, ids = line.partition("\t")
+        for sid in ids.split():
+            s = seen.setdefault(sid, {"id": sid, "first": when, "last": when})
+            s["first"], s["last"] = min(s["first"], when), max(s["last"], when)
+    out = [s | info for sid, s in seen.items() if (info := transcript_info(sid))]
+    return sorted(out, key=lambda s: s["first"])
+
+
+@functools.cache
+def transcript_info(sid: str) -> dict | None:
+    """A session's title (the /rename name, else Claude Code's own) and working directory, from its transcript."""
+    if sid in STANDIN:
+        return STANDIN[sid]
+    for path in (Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"):
+        title = custom = cwd = None
+        for line in path.open():
+            if '"ai-title"' in line or '"customTitle"' in line or (cwd is None and '"cwd"' in line):
+                e = json.loads(line)
+                title = e.get("aiTitle") or title
+                custom = e.get("customTitle") or custom
+                cwd = cwd or e.get("cwd")
+        return {"title": custom or title or "untitled", "cwd": cwd}
+    return None
 
 
 def branch_text(t: "Ticket | Standalone", tid: str) -> str:
@@ -812,6 +873,22 @@ MINUTES = {"XS": 10, "S": 20, "M": 60, "L": 240, "XL": 480}
 GROUPS_V3 = [("needs", "needs me"), ("open", "frontier"), ("claimed", "claimed"), ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done")]
 WORDS = "no one two three four five six seven eight nine ten eleven twelve".split()
 
+KIND = {  # what a row asks of the user, in the words the row shows and what its tooltip explains
+    "review": ("to rule on", "A worker finished this. Open the review page and the demo, then accept, amend, redo or reject it."),
+    "answer": ("your answer", "The ticket cannot go on until you answer the questions under it."),
+    "design": ("design session", "A decision to talk through with you. Nothing gets built on it until it is settled."),
+    "prototype": ("prototype", "A decision taken by looking at something built to compare. You judge the render."),
+    "research": ("research", "An agent investigates on its own. You read the finding when it lands."),
+    "legwork": ("legwork", "Work that unblocks a decision: an agent does it, or hands you a checklist."),
+    "build": ("build", "An agent builds this on its own. It comes back to you as a build to rule on."),
+}
+PRI_WORD = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
+PRI_TIP = ("Priority, the agent's reading of what you have said. Tell it to change one.\n"
+           "p1 now: this session or today\np2 next: this week\np3 soon: once the next ones are done\n"
+           "p4 later: when there is room\np5 someday: parked")
+SIZE_TIP = ("Your time on this ticket, not the agent's: reading the diff or the design, trying the demo, deciding.\n"
+            "XS under 15 min\nS about 20 min\nM about an hour\nL half a day\nXL several sessions")
+
 
 def words(n: int) -> str:
     return WORDS[n] if n < len(WORDS) else str(n)
@@ -847,7 +924,7 @@ def plain(text: str) -> str:
 
 
 def copy_btn(label: str, payload: str, title: str) -> str:
-    return f'<button class="copy" data-copy="{html.escape(payload, quote=True)}" title="{html.escape(title)}">{label}</button>'
+    return f'<button class="copy" data-copy="{html.escape(payload, quote=True)}" data-tip="{html.escape(title)}">{label}</button>'
 
 
 def split_call(md: str) -> tuple[str, str]:
@@ -867,19 +944,37 @@ def open_calls(t) -> list[tuple[str, str]]:
     return (t.calls or []) + (t.asks or [])
 
 
-def needs_me(t) -> bool:
-    """Waiting on the user: a build to rule on, a design session with them, or a question the ticket cannot pass."""
-    return t.status == "review" or (t.kind in HITL and t.status in ("open", "proposed") and (t.priority or 9) <= 2) or bool(t.asks)
-
-
-def kind_word(t) -> str:
+def kind_of(t) -> str:
     if t.status == "review":
-        return "rule on the build"
-    if t.kind == "prototype":
-        return "judge a prototype"
-    if t.kind in HITL:
-        return "design session"
-    return "your answer"
+        return "review"
+    if open_calls(t) and t.status != "done":
+        return "answer"
+    return {"grilling": "design", "prototype": "prototype", "research": "research", "legwork": "legwork"}.get(t.kind or "", "build")
+
+
+def needs_me(t) -> bool:
+    """Waiting on the user: a build to rule on, a ticket stopped on a question, a near design session."""
+    kind = kind_of(t)
+    near = (t.priority or 9) <= 2 and t.status in ("open", "proposed")
+    return t.status != "done" and (kind in ("review", "answer") or (kind in ("design", "prototype") and near))
+
+
+def kind_tag(t) -> str:
+    kind = kind_of(t)
+    word, tip = KIND[kind]
+    return f'<span class="kindtag k-{kind}" data-tip="{html.escape(tip)}">{word}</span>'
+
+
+def time_tag(t) -> str:
+    if not t.size:
+        return '<span class="time"></span>'
+    return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZE_LABEL[t.size]}</span>'
+
+
+def pri_tag(t) -> str:
+    if not t.priority:
+        return '<span class="pri"></span>'
+    return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRI_TIP)}">p{t.priority} {PRI_WORD.get(t.priority, "")}</span>'
 
 
 def minutes(t) -> int:
@@ -927,29 +1022,22 @@ def body_html(t, ticket_body: str) -> str:
 
 
 def row(row_id: str, feature: str, num: str, t, chips: str, group: str) -> str:
-    """One ticket row: feature, number (a click copies the file's path), name and brief, its links, your time and
-    its priority, blocker chips; a ticket waiting on the user lists its open calls under it; the rest folds."""
+    """One ticket row, every field in a fixed column: feature, number (a click copies the file's path), what the
+    row asks of the user, name with its links and brief, your time, priority, blockers. A ticket waiting on the
+    user lists its open questions under it; the rest folds."""
     name = t.name or t.title
-    meta = []
-    if t.diffview:
-        meta.append(f'<a class="rp" href="{html.escape(t.diffview)}" target="_blank">review page</a>')
-    if group == "needs":
-        meta.append(f'<span class="kind">{kind_word(t)}</span>')
-    elif t.kind:
-        meta.append(f'<span class="kind">{kind_word(t) if t.kind in HITL else html.escape(t.kind)}</span>')
-    if getattr(t, "source", None):
-        meta.append(f'<span class="kind">{html.escape(t.source)}</span>')
-    meta.append(f'<span class="size" title="your time on it">{SIZE_LABEL.get(t.size or "", "")}</span>')
-    meta.append(f'<span class="pri" title="priority, the agent\'s reading">{f"p{t.priority}" if t.priority else ""}</span>')
+    links = (f'<a class="rp" href="{html.escape(t.diffview)}" target="_blank">review page</a>' if t.diffview else "") + gh_links(t.gh)
+    source = f'<span class="src">{html.escape(t.source)}</span>' if getattr(t, "source", None) else ""
     brief = f'<span class="brief">{inline_md(t.brief)}</span>' if t.brief else ""
     calls = calls_summary(t) if group == "needs" else ""
     return (
         f'<details class="ticket" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
         f'data-search="{search_text(num, name, t.title, t.brief or "", t.body_html, *t.gh)}" data-path="{html.escape(str(t.path))}"><summary>'
         f'<span class="ftag">{html.escape(feature)}</span>'
-        f'<span class="num" title="copy the path of {html.escape(str(t.path))} (y)">{html.escape(num)}</span>'
-        f'<span class="main"><span class="title">{html.escape(name)}</span>{gh_links(t.gh)}{brief}</span>'
-        f'<span class="meta">{"".join(meta)}</span>'
+        f'<span class="num" data-tip="Click to copy this ticket\'s path (y)">{html.escape(num)}</span>'
+        f'{kind_tag(t)}'
+        f'<span class="main"><span class="titleline"><span class="title">{html.escape(name)}</span>{links}{source}</span>{brief}</span>'
+        f'{time_tag(t)}{pri_tag(t)}'
         f'<span class="chips">{chips}</span>{calls}</summary>'
         f'<div class="body">{body_html(t, t.body_html)}</div></details>'
     )
@@ -961,6 +1049,22 @@ def feature_chip(f: Feature) -> str:
     title = f"spec {f.spec_status}" if f.spec_status else ""
     return (f'<button class="pill" data-feature="{html.escape(f.name)}" title="{html.escape(title)}">{html.escape(f.name)}'
             f' <span class="count">{counts["done"]}/{total}</span></button>')
+
+
+def reason(t, features: list[Feature], all_tickets: list) -> str | None:
+    """Why a ticket is picked next, stated from the tracker: what accepting it lets happen."""
+    def refs(x) -> list[str]:  # the other-feature and standalone tickets x waits on
+        return [r for r, _ in (x.ext_by if isinstance(x, Ticket) else x.blocked_by)]
+
+    waiting = [x for x in all_tickets if isinstance(t, Standalone) and t.slug in refs(x)]
+    for f in features:
+        if any(x is t for x in f.tickets):
+            if all(x.status == "done" for x in f.tickets if x is not t):
+                return f"The last open ticket of {f.name}: accepting it lets the feature merge."
+            waiting = [x for x in f.tickets if t.num in x.blocked_by] + [x for x in all_tickets if f"{f.name}/{t.num}" in refs(x)]
+    if waiting:
+        return f"{words(len(waiting)).capitalize()} ticket{'s wait' if len(waiting) != 1 else ' waits'} on it."
+    return None
 
 
 def brief_panel(features: list[Feature], all_tickets: list, anchor: dict) -> str:
@@ -980,10 +1084,11 @@ def brief_panel(features: list[Feature], all_tickets: list, anchor: dict) -> str
     lead = (", ".join(said[:-1]) + (" and " if len(said) > 1 else "") + said[-1] + ". ") if said else "Nothing waits on you. "
     lead += (f"{words(len(running)).capitalize()} build{'s are' if len(running) != 1 else ' is'} in progress." if running else "No agent is working.")
     total = sum(minutes(t) for t in mine)
-    picks = [t for t in mine if t.why][:3] or mine[:3]
+    # within a priority, what accepting lets happen goes first, then the cheapest
+    picks = sorted(mine, key=lambda t: (t.priority or 9, 0 if (t.why or reason(t, features, all_tickets)) else 1, minutes(t)))[:3]
     lis = "".join(
-        f'<li><a href="#{anchor[id(t)]}">{html.escape(t.name or t.title)}</a><span class="size">{SIZE_LABEL.get(t.size or "", "")}</span>'
-        + (f'<p class="why">{inline_md(t.why)}</p>' if t.why else "") + "</li>"
+        f'<li><div class="pickline">{kind_tag(t)}<a href="#{anchor[id(t)]}">{html.escape(t.name or t.title)}</a>{time_tag(t)}</div>'
+        + (f'<p class="why">{inline_md(why)}</p>' if (why := t.why or reason(t, features, all_tickets)) else "") + "</li>"
         for t in picks
     )
     h, m = divmod(total, 60)
@@ -1184,6 +1289,52 @@ PAGE = r"""<!doctype html>
   .hash { color: var(--muted); }
   .footmeta { color: var(--muted); font-size: .74rem; margin-top: 1rem; }
 
+  /* ---- v4: kinds, priority and time get colours from the mwolf.dev callouts, in fixed columns ---- */
+  :root {
+    --c-pink: light-dark(#8e4a82, #d9a2d0); --c-lav: light-dark(#5a53c2, #afaaff); --c-blue: light-dark(#2a6aa3, #85baeb);
+    --c-slate: light-dark(#52627f, #9aaacb); --c-teal: light-dark(#1d6f69, #74d0c8); --c-gold: light-dark(#7d5f16, #d9b36f);
+    --c-purple: light-dark(#6546b3, #b8a4ff); --c-orange: light-dark(#9a5516, #ffc387); --c-rose: light-dark(#a3453c, #fabeb4);
+  }
+  .ticket > summary { grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr) 5.2rem 6.2rem 3rem; column-gap: .9rem; }
+  ol.calls { grid-column: 4 / -1; }
+  .body { padding-left: calc(7rem + 2rem + 7.6rem + 2.7rem + .5rem); max-width: calc(19.8rem + 46rem); }
+  .kindtag, .pri, .time, .src { font-family: var(--font-mono); font-size: .72rem; white-space: nowrap; justify-self: start; }
+  .kindtag { --c: var(--muted); color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); border-radius: 4px; padding: 0 .4rem; }
+  .k-review { --c: var(--c-gold); } .k-answer { --c: var(--c-rose); } .k-design { --c: var(--c-purple); }
+  .k-prototype { --c: var(--c-orange); } .k-research { --c: var(--c-blue); } .k-legwork { --c: var(--c-slate); }
+  .k-build { background: none; border-color: transparent; padding-left: 0; }
+  .time { color: var(--c-teal); justify-self: end; }
+  .pri { --c: var(--muted); color: var(--c); justify-self: start; padding: 0 .45rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--c) 12%, transparent); }
+  .pri.p1 { --c: var(--c-pink); } .pri.p2 { --c: var(--c-lav); } .pri.p3 { --c: var(--c-blue); } .pri.p4 { --c: var(--c-slate); }
+  .pri.p5 { background: none; }
+  .titleline { display: flex; gap: .7rem; align-items: baseline; flex-wrap: wrap; }
+  .rp { font-family: var(--font-mono); font-size: .72rem; color: var(--accent); }
+  .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .src { color: var(--c-teal); }
+  .meta { display: none; }
+  /* buttons read as buttons, filters as pills, copy as a small outlined button */
+  .copy { border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; background: var(--ground); }
+  .copy:hover { border-color: var(--accent); }
+  .pill { background: var(--ground-2); }
+  .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: var(--radius); overflow: visible; }
+  .seg .btn { padding: .2rem .7rem; border-radius: 0; }
+  .seg .btn.on { background: var(--wash); color: var(--accent); }
+  .seg .btn + .btn { border-left: 1px solid var(--edge); }
+  .pickline { display: grid; grid-template-columns: 7.6rem minmax(0, 1fr) auto; gap: .6rem; align-items: baseline; }
+  ol.next { padding-left: 0; list-style: none; }
+  ol.next a { color: var(--strong); }
+  ol.next a:hover { color: var(--accent); }
+  ol.next .why { padding-left: 8.2rem; }
+  /* a tooltip that says what a mark means, styled like the page */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% + .4rem); left: 0;
+    width: max-content; max-width: 24rem; white-space: pre-line; background: var(--ground); color: var(--body);
+    border: 1px solid var(--edge); border-radius: var(--radius); padding: .5rem .7rem; font: .76rem/1.55 var(--font-mono);
+    text-decoration: none; pointer-events: none; }
+  .time[data-tip]:hover::after, .pri[data-tip]:hover::after, .copy[data-tip]:hover::after { left: auto; right: 0; }
+
   #toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ground);
     border: 1px solid var(--edge); border-radius: var(--radius); padding: .35rem .9rem; font: .78rem var(--font-mono); color: var(--muted);
     opacity: 0; transition: opacity 200ms; pointer-events: none; max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1201,8 +1352,7 @@ PAGE = r"""<!doctype html>
   <span class="name">board <span>{{PROJECT}}</span></span>
   <nav class="featnav" id="featnav">{{CHIPS}}</nav>
   <input class="search" id="search" type="search" placeholder="filter  /" autocomplete="off">
-  <button class="btn" data-gmode="feature" title="graph of the feature under the cursor (a)">feature</button>
-  <button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button>
+  <span class="seg" data-tip="The dependency graph: the feature of the row you are on, or the whole tracker (a)"><button class="btn" data-gmode="feature">feature</button><button class="btn" data-gmode="all">all</button></span>
   <button class="btn" id="helpbtn" title="keys (?)">?</button>
   <button class="btn scheme" id="scheme" title="switch colour scheme">
     <svg class="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
