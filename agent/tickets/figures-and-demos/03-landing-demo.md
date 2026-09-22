@@ -6,7 +6,7 @@ diff: [a1fefa8b24fef7b9eb7d4752c591947a2b4bda4a..524df30440589a8e5b265c5d41ef107
 
 # A landing stages the demo file in a tmux session on the user's machine
 
-Slice of `spec.md`, building on Solution (you, r4, r8), Decisions "The demo is one file named `demo`" (you, r4, r5), "The landing stages the demo in a tmux session" (you, r8), "Loose work demos the same way" (you, r4), "The rows" (agent's call, r2 to r5), "A heavy artefact goes to a fresh agent with a brief" (you, r4). The staged mode of `job` this leans on lands in dotfiles before this ticket starts (Decisions, "The staged mode of `job` lives in dotfiles"); a worker cannot add it.
+Slice of `spec.md`, building on Solution (you, r4, r8), Decisions "The demo is one file named `demo`" (you, r4, r5), "The landing stages the demo in a tmux session" (you, r8), "Loose work demos the same way" (you, r4; folded into "The demo is one file named \`demo\`" at r5), "The rows" (agent's call, r2 to r5), "A heavy artefact goes to a fresh agent with a brief" (you, r4). The staged mode of `job` this leans on lands in dotfiles before this ticket starts (Decisions, "The staged mode of `job` lives in dotfiles"); a worker cannot add it.
 
 ## What to build
 
