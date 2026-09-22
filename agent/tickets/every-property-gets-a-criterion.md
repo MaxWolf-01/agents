@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 ---
 
 # to-tickets checks that every spec Property lands in some slice's criteria
