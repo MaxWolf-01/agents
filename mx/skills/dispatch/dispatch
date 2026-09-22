@@ -474,10 +474,14 @@ stage_demo() { # <ticket> <tip>
 unstage_demo() { # <ticket>
     demo_names "$1"
     # `job rm` kills the session and forgets the run; the session is what is
-    # left to kill when the staging registered no run to forget. Not echoed,
-    # as in stage_demo: every ticket is unstaged, most of them never staged.
-    job rm "$demo_job" > /dev/null 2>&1 ||
-        { tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"; }
+    # left to kill when the staging registered no run to forget. Its own output
+    # is suppressed, since every ticket is unstaged and most were never staged,
+    # and the line below says so when there was something to undo.
+    if job rm "$demo_job" > /dev/null 2>&1; then
+        echo "unstaged the demo in $demo_session"
+    else
+        tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"
+    fi
     # On a local host the worker's own cleanup removes this same worktree first,
     # so whoever gets there second finds it gone.
     holds_ticket "$demo_worktree" "$demo_branch" && run git worktree remove --force "$demo_worktree"
