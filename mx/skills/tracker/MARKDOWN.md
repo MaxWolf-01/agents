@@ -57,10 +57,10 @@ A ticket is `done` once the user's accept merged it. Retire the files once the w
 - **Feature**: `git rm -r agent/tickets/<feature-slug>/ agent/show/<feature-slug>/`, once the whole feature has shipped and every proposed ticket in it is ruled; an opened one that outlives the feature moves to a standalone ticket first.
 - **Loose branch**: `git rm -r agent/show/<branch>/` on the branch itself, so the merge that lands the work carries the removal; there is no ticket beside it to retire.
 
-The renders beside the figure sources are untracked (`agent/show/**/*.png`), so `git rm -r` leaves the directory standing with them inside: `rm -rf` what it leaves.
+The untracked renders beside the figure sources survive `git rm -r`, which leaves the directory standing with them inside: `rm -rf` what it leaves.
 
 The research notes (`agent/research/`) the retired tickets cite leave the tree in the same step. Untracked, they are moved rather than deleted: `mkdir -p ~/logs/agent/<repo>/research/ && mv agent/research/<NN>-<slug>.md ~/logs/agent/<repo>/research/`, where the backups reach them and a later session reading the repo does not.
 
-What a README, a PR or the build still needs is promoted out of `agent/show/` in the same commit, to where that document's assets live (`docs/figures/` for a README's figures), and kept current there (`/mx:show`): the render, the source it came from, and the script that regenerates it, with every reference to them repointed in that commit. A show directory lives as long as the ticket, feature or branch it belongs to and no longer, so nothing is left in it for a live document to read.
+What a README, a PR or the build still needs is promoted out of `agent/show/` in the same commit (`/mx:show`, Promotion), so a show directory lives as long as the ticket, feature or branch it belongs to and no longer, and nothing is left in it for a live document to read.
 
 Git history preserves what it tracked: `git log --diff-filter=D -- agent/tickets agent/show` finds retired work. When the repo doesn't track `agent/tickets/`, git has nothing to recover from: the tickets take the research notes' route, `mv` to `~/logs/agent/<repo>/tickets/`, so a grep of the tree and an agent reading it find only live work.
