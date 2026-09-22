@@ -20,7 +20,7 @@ A thing is understood in front of a render: someone sees what it is and what it 
 | A page or a UI | none | the page opened, a screenshot per state, a tutorial that walks the reader through it, or a recording |
 | A config or a keybinding | none | the setting or the keystroke, and what it does |
 
-Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, mean nothing is owed: no slot is ever padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
+Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, mean nothing is owed: no slot is ever padded to have something in it. A change that hits no row owes no demo, and the landing that carries it says so in one line: the diff is the demo. Every document takes this table, an ADR included, and most ADRs hit no row.
 
 A **before/after** is the shape that crosses the rows: a decision or a change that moves something already there is shown as the two side by side, whatever else its row gives it.
 
@@ -32,13 +32,18 @@ An artifact goes to the show directory of the work it serves, committed with tha
 
 ## A figure
 
-One source file named for what it shows, with its SVG beside it: `<name>.mmd` and `<name>.svg`. Both are committed, and the render is regenerated from the source whenever the decision moves. The SVG is what gets opened, since it scales with zoom where a raster does not; a PNG is rendered on demand for embedding somewhere that needs one and stays untracked. A mermaid render carries the renderer's own colour scheme, and the both-schemes rule under Produce and present binds a page you author, not a renderer's output. A page (`index.html`) is for more than one thing at once, several figures, or a diagram and the sample instance beside it, and there every image sits at `width:100%; height:auto` so it scales too.
+Two file shapes, chosen by how the picture is made.
+
+- **A diagram whose layout mermaid solves**: one source file named for what it shows with its SVG beside it, `<name>.mmd` and `<name>.svg`, both committed. The SVG is what gets opened, since it scales with zoom where a raster does not. A mermaid render carries the renderer's own colour scheme, so the both-schemes rule under Produce and present does not reach it.
+- **A picture whose coordinates you place yourself**: one self-contained HTML file ([`SVG-FIGURES.md`](SVG-FIGURES.md)), which draws itself in either scheme from that one source. A figure heading for a document wants this shape, since the document needs both schemes and a renderer of its own reads the file.
+
+Either way the render is regenerated from the source whenever the decision moves, and a PNG for embedding is rendered on demand and stays untracked beside its source; a document in the tree that embeds one tracks its own copy where it reads it (Promotion, below). A page (`index.html`) holds more than one thing at once, several figures, or a diagram and the sample instance beside it, and there every image sits at `width:100%; height:auto` so it scales too.
 
 ## A demo
 
 A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A wall of commands and their output is the material a demo is made from, not the demo. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
 
-One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it.
+One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: the inputs it reads and the helpers two demos share sit beside it in the same directory.
 
 Running it is the whole demo. It writes what it produces, a transcript, a sample file, a screenshot, into `out/` beside itself, untracked because the next run regenerates it, and it opens what it produced when a display is there, so a worker on a headless host runs it for the files and the session on the user's machine runs it for the opening. It runs from a fresh checkout of its branch on any host where the project is installed, carrying nothing from the session that wrote it, and it says so when it fails rather than printing an empty result. The fixed name is what makes every demo findable and runnable without reading anything first: `fd -t x '^demo$' agent/show`.
 

@@ -42,9 +42,9 @@ The decisions made, each marked with the round or decision ticket that settled i
 - API contracts
 - Specific interactions
 
-Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+Several of those bullets name a shape `/mx:show`'s table gives a figure to. The decision's entry links that figure and states what the figure cannot: the why, and the rejected alternative.
 
-Several of those bullets name a shape that `/mx:show`'s table gives a figure. The decision's entry links that figure and states what the figure cannot: the why, and the rejected alternative.
+Do NOT include specific file paths or code snippets. They may end up being outdated very quickly. A link to a figure or a prototype is not one of these.
 
 Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 
