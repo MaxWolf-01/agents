@@ -37,12 +37,13 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Four files join these as standards sources, each passed by absolute path:
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Five files join these as standards sources, each passed by absolute path:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
 - [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source in light mode whenever the diff touches tests.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
+- [`CONTEXT-FORMAT.md`](../domain-modelling/CONTEXT-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
 
 ### 4. Spawn the reviewers in parallel
 
