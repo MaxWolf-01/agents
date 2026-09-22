@@ -1,6 +1,6 @@
 # Report
 
-What the page carries; `/mx:show` builds it.
+What the page carries; `/mx:show` builds it, slug `architecture-review-<date>`.
 
 - **Header**: repo name, date, and a legend for the diagram marks (module, seam, leakage, deep module). The candidates follow directly.
 - **One card per candidate**, titled with the deepening it proposes ("Collapse the Order intake pipeline"): strength and dependency category as badges; the files; problem and solution in one sentence each; benefits as bullets of six words or fewer, each named in glossary terms (_"locality: bugs concentrate in one module"_, _"leverage: one interface, N call sites"_); an ADR conflict as a callout. The before/after diagram is the centrepiece: if it needs a paragraph to be understood, redraw the diagram.

@@ -53,7 +53,7 @@ and one **top recommendation**: which candidate you'd tackle first and why.
 
 ### 2. Build the report
 
-Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 3. The fork's directive: read [REPORT.md](REPORT.md), build the report with `/mx:show`, slug `architecture-review-<date>`, and report the page's path.
+Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the build loop stays out of this session, which grills from that same reading in step 3. The fork's directive: build the report [REPORT.md](REPORT.md) describes.
 
 ### 3. Grilling loop
 
