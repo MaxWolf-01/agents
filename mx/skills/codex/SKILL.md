@@ -16,7 +16,7 @@ Run OpenAI's Codex CLI non-interactively from Claude Code. Different model famil
 
 ## Command
 
-`<slug>` is a few words naming what you asked about (`auth-redesign`, `flaky-test`).
+`<slug>` is the repo's name and a few words naming what you asked about (`agents-auth-redesign`, `memex-flaky-test`).
 
 ```sh
 job run codex-<slug> -- codex exec -s read-only -c 'sandbox_permissions=["disk-full-read-access"]' -o "/tmp/codex-<slug>.md" "<prompt>"

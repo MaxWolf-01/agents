@@ -36,7 +36,7 @@ Lay it out with a clean hierarchy, top to bottom:
 
 Choose scenarios that demonstrate the awkward cases (the happy path, a tricky edge case, an attempt at something that should be illegal), the ones hard to reason about on paper.
 
-Keep it beautiful but restrained: clean typography, generous spacing, one accent colour; nothing that competes with the state and the buttons.
+It wears `/mx:house-style`, its `tokens.css` inlined so the file stays self-contained; nothing on the page competes with the state and the buttons.
 
 ### 4. Hand it over
 
