@@ -210,7 +210,7 @@ printf '%s\n' "$pane" > "$out/staged-pane.txt"
 check "the ticket branch is checked out beside the feature worktree" \
     bash -c 'test "$(git -C "$1" rev-parse --abbrev-ref HEAD)" = ticket/lamp-ui/01-warm-preset' _ "$wt"
 check "the demo's path is typed at the session's prompt" \
-    grep -q 'agent/show/lamp-ui/01-warm-preset/demo' <<< "$pane"
+    grep -qE '(^|[[:space:]])\./agent/show/lamp-ui/01-warm-preset/demo[[:space:]]*$' <<< "$pane"
 check "nothing ran it: the demo has produced nothing yet" not test -e "$wt/agent/show/lamp-ui/01-warm-preset/out"
 check "the ticket waits for the ruling on the feature branch" \
     grep -q '^status: review$' agent/tickets/lamp-ui/01-warm-preset.md
@@ -234,6 +234,8 @@ step "the user presses Enter, on their own machine and when they choose"
 
 tmux send-keys -t "=$session:" Enter
 job wait "$demo_job" --deadline 60
+check "the Enter ran it, and it wrote its file" \
+    test -s "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 printf '\n  what the demo wrote, beside itself in the ticket branch:\n\n'
 sed 's/^/    /' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 check "the run is an ordinary job, its log and status where every job's are" \
