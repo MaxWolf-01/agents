@@ -1,6 +1,7 @@
 ---
-status: review
+status: done
 blocked-by: [02, 03]
+diff: [d2d6c8986263a1549caab50077799946a962247b..11775955a30e977cc4bd9bad3cda450c19945003]
 ---
 
 # The README shows the landing as a sequence, promoted from this feature's figure
