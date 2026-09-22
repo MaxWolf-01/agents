@@ -6,8 +6,11 @@
 #
 # Three states of the same breakdown, the check run on each:
 #   1. as it shipped, before properties carried ids
-#   2. numbered, each criterion stamped with the property it paraphrases: the gap
-#      the whole-feature review found, now as findings that name it
+#   2. numbered, each criterion stamped with the property it paraphrases: five of
+#      the seven properties the whole-feature review found in no slice, now as
+#      findings that name them, plus the criterion naming no property at all. The
+#      other two of the seven are criteria that quoted half their property; an id
+#      names a property whole, so the check reads them as claimed
 #   3. the gap closed: every property disposed of, the check clean
 #
 # Everything it writes is inside the work dir.
@@ -16,11 +19,27 @@ set -eu
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 check=$repo/mx/bin/property-coverage
-retired=1f26781  # the commit that retired one-flow; its parent still holds the files
-work=${1:-$(mktemp -d /tmp/property-coverage.XXXX)}/one-flow
+retired=1f26781462b1eadfc2131233b9e5cb15890fc933  # retired one-flow; its parent still holds the files
+root=${1:-$(mktemp -d /tmp/property-coverage.XXXX)}
+work=$root/one-flow
+summary=$root/summary.txt
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-run() { printf '$ property-coverage %s\n' "$1"; "$check" "$1" || true; }
+
+# Each state's claim, as something that can fail: the check ends on its own summary of
+# what it read, and its exit code says whether the breakdown is publishable. A state
+# that stops matching fails the demo here rather than printing different text.
+run() { # <expected exit> <expected summary>
+    printf '$ property-coverage %s\n' "$work"
+    code=0
+    "$check" "$work" 2>"$summary" || code=$?
+    cat "$summary"
+    last=$(tail -1 "$summary")
+    [ "$code" = "$1" ] && [ "$last" = "$2" ] || {
+        printf 'FAIL: expected exit %s on %s\n' "$1" "$2" >&2
+        exit 1
+    }
+}
 
 mkdir -p "$work"
 for f in spec 01-prose-catalogue 02-proposed-buildable 03-chat-reviewer 04-review-delivery \
@@ -29,7 +48,7 @@ for f in spec 01-prose-catalogue 02-proposed-buildable 03-chat-reviewer 04-revie
 done
 
 step "1. as it shipped: fifteen properties, twelve criteria, no ids anywhere"
-run "$work"
+run 1 "0 properties, 0 disposed of, 1 finding"
 
 step "2. the spec numbered P1..P15, each criterion stamped with the property it paraphrases"
 uv run --quiet python - "$work" <<'PY'
@@ -49,8 +68,9 @@ for i, line in enumerate(lines):
         lines[i] = f"- P{n} {line[2:]}"
 spec.write_text("\n".join(lines) + "\n")
 
-# Each shipped criterion, and the property it paraphrases. The last is the one that
-# paraphrases no property at all: its author reached for the id after the spec's last.
+# Each shipped criterion, and the property it paraphrases. The last paraphrases no
+# property at all, so the demo gives it an id past the spec's last, to show what the
+# check says about a criterion naming a property that does not exist.
 STAMP = [
     ("a rule about prose lives in one catalogue", "P8"),
     ("nothing built on a guess reaches the integration branch", "P12"),
@@ -70,7 +90,7 @@ for ticket in sorted(work.glob("[0-9][0-9]-*.md")):
         text = re.sub(rf"^(- \[.\] )Property, (reviewed: {re.escape(phrase)})", rf"\1Property {id}, \2", text, flags=re.M)
     ticket.write_text(text)
 PY
-run "$work"
+run 1 "15 properties, 10 disposed of, 6 findings"
 
 step "3. the five properties that reached no ticket disposed of, the sixteenth criterion dropped"
 uv run --quiet python - "$work" <<'PY'
@@ -99,9 +119,13 @@ DROP = "Property P16, reviewed: the implement skill addresses only the worker"
 for name, additions in ADD.items():
     ticket = work / name
     lines = [line for line in ticket.read_text().splitlines() if DROP not in line]
-    last = max(i for i, line in enumerate(lines) if line.startswith("- ["))
+    # into the acceptance criteria, where the check reads claims: a bullet further
+    # down, under the ticket's closing comment, disposes of nothing.
+    start = lines.index("## Acceptance criteria")
+    end = next(i for i, line in enumerate(lines[start + 1 :], start + 1) if line.startswith("## "))
+    last = max(i for i, line in enumerate(lines[start:end], start) if line.startswith("- "))
     ticket.write_text("\n".join(lines[: last + 1] + additions + lines[last + 1 :]) + "\n")
 PY
-run "$work"
+run 0 "15 properties, 15 disposed of, 0 findings"
 
 step "the breakdown this check would have passed is in $work"

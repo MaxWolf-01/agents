@@ -12,7 +12,7 @@ The ticket and its spec (`/mx:tracker` fetches both) are all you have; a ticket 
 
 Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 
-Typecheck and run single test files as you go, the full suite once at the end. A test seam you find under a property the spec disposes as *reviewed* is worth a test: write it, record the seam as an anchored assumption naming the property, and say so in your closing comment; the spec's Testing Decisions is amended when the ticket lands.
+Typecheck and run single test files as you go, the full suite once at the end. A test seam you find under a property the spec disposes as *reviewed* is worth a test: write it, record the seam as an anchored assumption naming the property by its id, and say so in your closing comment; the spec's Testing Decisions is amended when the ticket lands.
 
 Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 

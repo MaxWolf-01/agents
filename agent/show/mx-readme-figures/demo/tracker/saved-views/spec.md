@@ -25,8 +25,8 @@ opens by link for anyone on the same account.
 
 ## Properties
 
-- A reopened view restores every filter it was saved with, including the dates.
-- A view's link survives a rename.
+- P1 A reopened view restores every filter it was saved with, including the dates.
+- P2 A view's link survives a rename.
 
 ## Decisions
 

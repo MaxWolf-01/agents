@@ -15,4 +15,6 @@ naming the slice that lifts it.
 
 - [x] a generator that draws whole statements, not raw strings
 - [x] `parse_report` and `commit_import` exist as stubs, so the suite collects
-- [x] properties 1 and 2 name `02`, property 3 names `04`
+- [x] Property P1, executable: at `parse_report`, lifted by `02`
+- [x] Property P2, executable: at `parse_report`, lifted by `02`
+- [x] Property P3, executable: at `commit_import`, lifted by `04`
