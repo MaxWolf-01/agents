@@ -1,0 +1,148 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["playwright", "tyro"]
+# ///
+"""Walk the demo tracker's dependency graph from the side column's preview to the graph at full
+size, over the board and in a window of its own.
+
+Builds the demo tracker, renders its board, then drives a browser through the three moves and
+prints what the board did at each: the overlay opened on the whole tracker's graph, a node clicked
+there closing it on that ticket's row, the window of its own opened beside the board, and a node
+clicked there moving the board while the window stays where it is. The board it leaves behind is
+the one to open and do it by hand.
+
+Examples:
+
+    demo
+    demo --scheme night --tracker /tmp/my-graph-demo
+"""
+
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+import tyro
+from playwright.sync_api import sync_playwright
+
+HERE = Path(__file__).parent
+TRACKER = HERE.parents[3] / "mx" / "skills" / "tracker"
+ROW = "t-csv-import-02"  # the demo tracker's build in review, so the board opens on a feature with a graph
+NODE = "#t-csv-import-04"  # a ticket with an edge, so it is a node in the feature graph and the whole tracker's
+
+
+@dataclass
+class Args:
+    tracker: Path = Path("/tmp/board-graph-demo")
+    """Where the demo tracker and its board are built. Rebuilt from scratch on every run."""
+    scheme: Literal["day", "night"] = "day"
+    """The colour scheme the walkthrough is driven in. The board's own switch, or the t key, has the other."""
+
+
+def run(*args: object, **kwargs) -> None:
+    done = subprocess.run([str(a) for a in args], capture_output=True, text=True, **kwargs)
+    assert done.returncode == 0, f"{args[0]} failed: {done.stderr[-2000:]}"
+
+
+def node_click(frame, where: str) -> None:
+    """Click the node for NODE, wherever the graph is drawn."""
+    attr = "els => els.map((a) => a.getAttribute('href') || a.getAttribute('xlink:href'))"
+    hrefs = frame.eval_on_selector_all(f"{where} a", attr)
+    assert NODE in hrefs, f"no node for {NODE} in {where}"
+    frame.locator(f"{where} a").nth(hrefs.index(NODE)).click()
+
+
+def walk(board: Path, scheme: str) -> list[str]:
+    """The three moves, each followed by what the board made of it."""
+    said = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+        page = browser.new_context(viewport={"width": 1500, "height": 900}).new_page()
+        page.goto(f"{board.as_uri()}?theme={scheme}#{ROW}", wait_until="networkidle")
+        page.wait_for_selector(".side .mermaid svg")
+        preview = page.evaluate("document.querySelector('.side .mermaid svg').getBoundingClientRect().width")
+        said.append(f"The preview beside the rows draws the csv-import graph {preview:.0f}px wide, which is the column it is given.")
+
+        page.click("#gopen")
+        page.wait_for_selector("#gfull .gsvg svg")
+        page.click("#gfull [data-gmode=all]")
+        page.wait_for_selector("#gfull .gsvg g.node.cur")
+        over = page.evaluate("""() => {
+          const svg = document.querySelector('#gfull .gsvg svg'), box = document.querySelector('#gfull .gfbody');
+          return {width: svg.getBoundingClientRect().width, nodes: svg.querySelectorAll('g.node').length,
+                  marked: svg.querySelectorAll('g.node.cur').length, over: box.scrollWidth - box.clientWidth,
+                  name: document.querySelector('#gfull .gname').textContent};
+        }""")
+        said.append(
+            f"`full` opens the same graph over the board, and the switch in the overlay's head puts it on the"
+            f" {over['name']}: {over['nodes']} nodes, {over['width']:.0f}px wide, {over['over']:.0f}px of it past"
+            f" the edge of the box, which scrolls and drags to pan. {over['marked']} node is ringed: the row the cursor is on."
+        )
+
+        node_click(page, "#gfull .gsvg")
+        page.wait_for_timeout(300)
+        landed = page.evaluate("""() => ({open: document.getElementById('gfull').classList.contains('open'),
+                                         cur: document.querySelector('.ticket.kcur')?.id})""")
+        said.append(
+            f"A click on the node for {NODE[1:]} {'left the overlay open' if landed['open'] else 'closed the overlay'}"
+            f" and left the board on {landed['cur']}."
+        )
+
+        with page.expect_popup() as popped:
+            page.click("#gwinopen")
+        win = popped.value
+        win.set_viewport_size({"width": 900, "height": 700})
+        win.wait_for_selector(".gfbody g.node.cur")
+        said.append(
+            "`window` opens the same view in a window of its own, to sit beside the board:"
+            f" {win.evaluate('document.querySelectorAll(\".gfbody g.node\").length')} nodes in the"
+            f" {win.inner_text('.gname')} graph, in the board's own scheme."
+        )
+
+        win.click("[data-gmode=feature]")
+        win.wait_for_timeout(600)
+        said.append(
+            f"The switch in that window moves the board's own graph with it: the window is on"
+            f" {win.inner_text('.gname')!r} and the board's preview says {page.inner_text('#gname')!r}."
+        )
+
+        node_click(win, ".gfbody")
+        page.wait_for_timeout(300)
+        said.append(
+            f"A click on the node for {NODE[1:]} there moves the board behind it to"
+            f" {page.evaluate('document.querySelector(\".ticket.kcur\")?.id')}, and the window"
+            f" {'stays open' if not win.is_closed() else 'closed with it'}."
+        )
+        browser.close()
+    return said
+
+
+def main(args: Args) -> None:
+    shutil.rmtree(args.tracker, ignore_errors=True)
+    run("uv", "run", TRACKER / "demo_tracker.py", args.tracker)
+    board = args.tracker / "agent" / "board.html"
+    run("uv", "run", TRACKER / "board.py", args.tracker / "agent" / "tickets", "--no-watch", "--no-open",
+        env={**os.environ, "CLAUDE_CONFIG_DIR": str(args.tracker / "claude")})
+    print(f"\nThe board: {board}\n")
+    for n, line in enumerate(walk(board, args.scheme), start=1):
+        print(f"  {n}. {line}")
+    print(f"""
+Open the board above and do the same by hand. The graph beside the rows is a preview: click it, or
+`full` in its head, or press f, and the same graph opens at full size over the board. Drag it to
+pan, switch between the row's feature and the whole tracker in the overlay's own head, and click a
+node: the overlay closes on that ticket's row.
+
+`window` in either head, or w, puts the same view in a window of its own, to drag beside the board.
+It follows the board's cursor, its switch and its colour scheme, and a click on a node there moves
+the board behind it without closing the window. Closing the board leaves the window saying so.
+
+The scheme switch in the top bar, or t, puts all three through the other scheme; ?theme=day and
+?theme=night on the address pin one. The before-and-after of all of it, in both schemes, is
+figure.html beside this script.""")
+
+
+if __name__ == "__main__":
+    main(tyro.cli(Args, description=__doc__))

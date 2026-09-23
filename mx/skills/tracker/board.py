@@ -2206,7 +2206,9 @@ ${groups}
     const key = mode === "all" ? "*" : (feature === "standalone" ? "*" : feature);
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.feature !== key;
     if (key === "*") composeAll();
-    document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (feature || "");
+    const gname = document.getElementById("gname");
+    // the column is narrow enough to cut a feature name short, so the whole one is on hover
+    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (feature || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
@@ -2264,7 +2266,7 @@ ${groups}
   async function paintFull() {
     if (!full.classList.contains("open")) return;
     const g = shownGraph();
-    full.querySelector(".gname").textContent = g.name;
+    full.querySelector(".gname").title = full.querySelector(".gname").textContent = g.name;
     full.querySelector(".gnote").textContent = g.note;
     full.querySelector(".gnote").hidden = !!g.src;
     full.querySelector(".gsvg").innerHTML = g.src ? await svgFor(g.src) : "";
@@ -2342,7 +2344,7 @@ ${groups}
         if (key !== drawn) {
           drawn = key;
           document.documentElement.dataset.theme = g.theme;
-          document.querySelector(".gname").textContent = g.name;
+          document.querySelector(".gname").title = document.querySelector(".gname").textContent = g.name;
           for (const el of document.querySelectorAll("[data-gmode]")) el.classList.toggle("on", el.dataset.gmode === g.mode);
           note.textContent = g.note;
           note.hidden = !!g.src;
