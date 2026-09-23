@@ -6,7 +6,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 demo=/var/tmp/board-orients-demo
-bash "$demo/build.sh" >/dev/null
+"$here/../../prototypes/board-orients/demo-tracker/build.sh" "$demo" >/dev/null
 
 # a copy of the board with two rows opened: the question-stopped ticket and a build in review
 sed -e 's/<details class="ticket" id="t-csv-import-02"/<details open class="ticket" id="t-csv-import-02"/' \
