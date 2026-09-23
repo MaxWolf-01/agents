@@ -65,7 +65,7 @@ PANELS = {
         "the same column once the session has written one",
         [
             (".btext p", "Written by a <code>claude -p</code> session that was given the tracker as the board reads it and read the repo from there: the commits, the tickets' own files, what is under <code>agent/show</code>. What it says is what reading those tells you and the rows do not."),
-            (".bwhen", "When it was written, to the day and the hour; hovering gives the year, and says that a tracker change is sent to that same session at most once every five minutes and that it retires after an hour idle."),
+            (".bwhen", "When it was written, to the day and the hour; hovering gives the year, and says that a ticket's status changing is sent to that same session five minutes after the tracker goes quiet, at most one briefing every ten minutes, and that it retires after an hour idle."),
             (".btext li", "Three picks with a reason each, and under them the line that says which can run at the same time, so dispatching a wave is one decision."),
             (".ghead", "The graph is where it was, under the briefing."),
         ],

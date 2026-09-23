@@ -22,7 +22,7 @@ from pathlib import Path
 GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")  # a reference as a ticket writes it: owner/repo#number
 
 # The spec asks for "a short lifetime" and gives no number: five minutes is 07-github-state's pick,
-# the window the briefing debounces a burst of tracker changes into.
+# the quiet window the briefing waits out before a ping (briefing.QUIET).
 LIFETIME = datetime.timedelta(minutes=5)
 TIMEOUT = 20  # seconds a render waits for GitHub before going on without it, this slice's pick too
 

@@ -1,10 +1,11 @@
 """The board briefing: the session that writes it, and what a tracker change does to that session.
 
 A fresh `claude -p` session explores the repo and writes where things stand and the next picks; the
-board's watcher keeps it current by sending each tracker change to that same session with
-`--resume`, debounced, until the session retires and the next change starts a new one. This holds
-the cache file the session's state lives in, beside the rendered board, the rule that decides a
-change's fate, and the two runs of the model behind it.
+board's watcher keeps it current by sending each change of a ticket's status to that same session
+with `--resume`, five minutes after the last status to move and no sooner than a briefing every ten
+minutes, until the session retires and the next change starts a new one. This holds the cache file the
+session's state lives in, beside the rendered board, the rule that decides a change's fate, and the
+two runs of the model behind it.
 
 The session is given a short prompt of its own rather than the one the user's own sessions carry,
 and tools that only read: it runs unattended, on the repo the board is rendered from.
@@ -19,14 +20,17 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DEBOUNCE = timedelta(minutes=5)  # a burst of tracker changes reaches the session as one ping; the spec allows five to ten
+QUIET = timedelta(minutes=5)  # a status change is pinged out once the tracker has been this long without another
+CADENCE = timedelta(minutes=10)  # and no run of the session is started sooner than this after the one before it
 # The prompt cache's lifetime, which is what a ping rereads the session's context at: a run of the
 # command below reports its input under `cache_creation.ephemeral_1h_input_tokens` and nothing
 # under the five-minute one, so it is the hour-long cache this is set against.
 IDLE = timedelta(hours=1)
-PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: two hours of a tracker changing every window
+PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
+MODEL = "claude-opus-5-5"  # what the briefing is written by, and how hard it thinks: the spec's Decisions under "The board briefing"
+EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The list is what the
 # run allows on top of the machine's own settings, which stand whatever it says, so the three that
 # write are named as denied rather than left out.
@@ -92,23 +96,31 @@ def cache_path(board: Path) -> Path:
 
 
 def on_change(cached: Briefing | None, changed_at: datetime, now: datetime) -> str:
-    """What a tracker change last seen at `changed_at`, read at `now`, does to the session the cache
-    file holds:
-    "ping" it with a note of what changed, "wait" out the debounce window, or retire it and write a
-    "fresh" briefing from a new session. A pure function of the cache file's state, the change's
-    time and the clock.
+    """What a ticket's status, last seen changing at `changed_at` and read at `now`, does to the
+    session the cache file holds:
+    "ping" it with a note of what changed, "wait" for the tracker to go quiet or for the cadence to
+    come round, or retire it and write a "fresh" briefing from a new session. A pure function of the
+    cache file's state, the change's time and the clock.
 
-    The session's own last activity is the window's start, so the pings of a tracker changing all
-    day are one a window and no more, and the same field, an hour untouched, is what retires it.
+    The two windows are the spec's Decisions under "The board briefing": a ping waits until nothing
+    has changed status for QUIET, so a dispatch wave that flips four tickets in a minute is one ping,
+    and no run is started sooner than CADENCE after the last one, so a tracker moving all afternoon
+    costs six briefings an hour at most. The same last activity, an hour untouched, retires it.
 
     A change the session already has is what a retired session is read against first: retirement is
     the next change's business, and a board watching a tracker that has not moved since the morning
-    would otherwise explore it again on the hour, all night, for the same change."""
-    if cached is not None and cached.last_activity >= changed_at:
-        return "wait"  # this change reached it already, in the note of an earlier one
-    if cached is None or retired(cached, now):
+    would otherwise explore it again on the hour, all night, for the same change. A board with no
+    briefing at all writes one straight away, quiet tracker or not: it is the board a returning user
+    opens, and the change it is waiting on is the week they were away."""
+    if cached is None:
         return "fresh"
-    return "wait" if now - cached.last_activity < DEBOUNCE else "ping"
+    if cached.last_activity >= changed_at:
+        return "wait"  # this change reached it already, in the note of an earlier one
+    if now - changed_at < QUIET:
+        return "wait"  # the tracker is still moving; the ping carries what settles
+    if now - cached.last_activity < CADENCE:
+        return "wait"  # the cadence governs a retired session too: a fresh exploration is the dearer run of the two
+    return "fresh" if retired(cached, now) else "ping"
 
 
 def retired(cached: Briefing, now: datetime) -> bool:
@@ -126,14 +138,20 @@ def available() -> bool:
 
 
 def settings() -> str:
-    """What the run is given instead of the user's own: no memory, and their global CLAUDE.md left
-    out. The user's sessions carry their memory files and hooks; a briefing session is none of their
-    conversations, and the repo's own CLAUDE.md is the one thing about it worth reading.
+    """What the run is given instead of the user's own: no memory, their global CLAUDE.md left out,
+    and the stock output style. The user's sessions carry their memory files, their hooks and a
+    style that shapes a reply for them at a terminal; a briefing session is none of their
+    conversations and writes a column, and the repo's own CLAUDE.md is the one thing about it worth
+    reading.
 
     Read when the run is assembled rather than when this file is imported: the config directory is
     where the board reads transcripts from (board.TRANSCRIPTS), and a watcher outlives its start."""
     config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-    return json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(config / "CLAUDE.md")]})
+    return json.dumps({
+        "autoMemoryEnabled": False,
+        "claudeMdExcludes": [str(config / "CLAUDE.md")],
+        "outputStyle": "default",  # the user's own shapes a reply for them at a terminal; this one writes a column
+    })
 
 
 def first(state: str, repo: Path, now: datetime) -> Briefing | None:
@@ -182,8 +200,8 @@ def ask(args: list[str], repo: Path) -> dict | None:
         return None
     try:
         done = subprocess.run(
-            [COMMAND, *args, "--output-format", "json", "--allowedTools", TOOLS, "--disallowedTools", DENIED,
-             "--settings", settings()],
+            [COMMAND, *args, "--model", MODEL, "--effort", EFFORT, "--output-format", "json",
+             "--allowedTools", TOOLS, "--disallowedTools", DENIED, "--settings", settings()],
             cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
