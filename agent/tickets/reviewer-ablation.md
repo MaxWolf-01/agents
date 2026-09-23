@@ -7,6 +7,8 @@ priority: 4
 
 Asked for by max on 2026-09-23, at low priority, while the session-page spec moved the prose review from the chat reply onto the turn record (`session-page/spec.md`, Producing the pages). The turn review ships with Opus 5.5 at medium effort and without an ablation; this ticket measures what the choice of model, effort, prompt and context actually buys, and gives a way to re-measure when a new model ships.
 
+Max 23-09-26;1900: I think we prlly should just use opus everywhere by default, just yk use the thinking budget for steering the cost/test time compute. Tho for session index and diffview summary, sonnet might be fine. tho idk, if 5.5 can write / communicate better... why not opus low effort... we can do a cost comparison too. prlly it's not that much, and like prices and plan limits keep getting better anyways? kinda. idk.
+
 ## What to build
 
 One command that runs a matrix of reviewer configurations over a labelled set of texts and reports, per configuration and per catalogue rule, the share of findings that are valid, marginal and false, recall against the labelled faults, the cost and the time. The axes are the model, the reasoning effort from low to max, the prompt's version, and the context the reviewer sees (the text alone, or with the session's earlier turns and the user's messages). The set is the chat-review audit's, extended with turn records once the session page produces them.
