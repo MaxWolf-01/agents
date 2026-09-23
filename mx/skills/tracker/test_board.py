@@ -1499,15 +1499,19 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
     assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
 
 
+FILED = "b4c5d6e7-1111-4111-8111-111111111111"  # filed both tickets, before either moved
+GRILLED = "b4c5d6e7-2222-4222-8222-222222222222"  # grilled them into the feature, which moved them
+LATER = "b4c5d6e7-3333-4333-8333-333333333333"  # worked on one after it left the feature again
+
+
 @pytest.fixture
 def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """(the tracker, its repo) of two tickets that moved: one standalone ticket grilled into a
     feature, and one grilled in that later left it again under a name of its own.
 
-    The cast, so a session listed on either ticket names the path and the commit it worked under:
-    HERE files both, AWAY is a worker on another host that edits one under its first path, NAMED
-    grills them into the feature and then cherry-picks a commit back, the user's own `git mv` takes
-    one out again under no session at all, and NEW works on it where it lands.
+    Beside the three sessions named above, AWAY edits one under its first path, so a carried session
+    the board cannot resume has somewhere to show; and the move out of the feature is the user's own
+    `git mv`, under no session at all.
     """
     repo = tmp_path / "the ledger"
     root = repo / "agent" / "tickets"
@@ -1515,25 +1519,25 @@ def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     demo_git(repo, "init", "-q", "-b", "master")
     ticket(root / "split-rows.md", "open")
     ticket(root / "name-columns.md", "open")
-    demo_commit(repo, HERE, "2026-09-14T10:00:00+02:00", "two csv tickets filed", "agent/tickets")
+    demo_commit(repo, FILED, "2026-09-14T10:00:00+02:00", "two csv tickets filed", "agent/tickets")
     append(root / "split-rows.md", "\nOne row per transaction.\n")
     demo_commit(repo, AWAY, "2026-09-15T11:00:00+02:00", "split-rows: one row per transaction", "agent/tickets")
 
     demo_git(repo, "mv", "agent/tickets/split-rows.md", "agent/tickets/csv-import/02-split-rows.md")
     demo_git(repo, "mv", "agent/tickets/name-columns.md", "agent/tickets/csv-import/01-name-columns.md")
-    demo_commit(repo, NAMED, "2026-09-16T09:00:00+02:00", "csv-import: grilled, two slices", "agent/tickets")
+    demo_commit(repo, GRILLED, "2026-09-16T09:00:00+02:00", "csv-import: grilled, two slices", "agent/tickets")
     append(root / "csv-import" / "01-name-columns.md", "\nThe header row names the bank.\n")
-    # written in the grilling and cherry-picked over after the move: the walk reaches it last and
-    # its date is the earliest NAMED has on the file
-    demo_commit(repo, NAMED, "2026-09-15T16:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
+    # written during the grilling and cherry-picked over after the move, so the walk reaches it
+    # after the commit whose date it has to widen the span back from
+    demo_commit(repo, GRILLED, "2026-09-15T16:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
 
     demo_git(repo, "mv", "agent/tickets/csv-import/01-name-columns.md", "agent/tickets/header-row.md")
     demo_git(repo, "commit", "-q", "-m", "header-row: out of csv-import")  # moved by hand, no session
     append(root / "header-row.md", "\nAsked once per bank.\n")
-    demo_commit(repo, NEW, "2026-09-19T08:00:00+02:00", "header-row: asked once per bank", "agent/tickets")
+    demo_commit(repo, LATER, "2026-09-19T08:00:00+02:00", "header-row: asked once per bank", "agent/tickets")
 
     written = tmp_path / "claude" / "projects"
-    for sid, title in ((HERE, "Filing the csv tickets"), (NAMED, "Grilling csv-import"), (NEW, "The header row")):
+    for sid, title in ((FILED, "Filing the csv tickets"), (GRILLED, "Grilling csv-import"), (LATER, "The header row")):
         write_transcript(written, sid, str(repo), title)
     monkeypatch.setattr(board, "TRANSCRIPTS", written)
     return root, repo
@@ -1545,13 +1549,13 @@ def test_a_ticket_that_moved_lists_the_sessions_from_under_its_old_path(moved: t
     root, repo = moved
     once = ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)
     assert [(s.id, s.first, s.last) for s in once] == [
-        (HERE, "2026-09-14", "2026-09-14"), (NAMED, "2026-09-16", "2026-09-16"),
+        (FILED, "2026-09-14", "2026-09-14"), (GRILLED, "2026-09-16", "2026-09-16"),
     ], "the session that filed it as agent/tickets/split-rows.md worked on this ticket"
     twice = ticket_sessions(root / "header-row.md", repo)
     assert [(s.id, s.first, s.last) for s in twice] == [
-        (HERE, "2026-09-14", "2026-09-14"),
-        (NAMED, "2026-09-15", "2026-09-16"),
-        (NEW, "2026-09-19", "2026-09-19"),
+        (FILED, "2026-09-14", "2026-09-14"),
+        (GRILLED, "2026-09-15", "2026-09-16"),
+        (LATER, "2026-09-19", "2026-09-19"),
     ], "standalone, then the feature's 01, then standalone again, the move itself under no session"
 
 
@@ -1573,12 +1577,12 @@ def test_a_move_on_one_branch_leaves_the_sessions_on_the_path_another_branch_sti
     root, repo = moved
     demo_git(repo, "checkout", "-q", "-b", "ticket/master/split-rows")
     demo_git(repo, "mv", "agent/tickets/csv-import/02-split-rows.md", "agent/tickets/split-rows.md")
-    demo_commit(repo, NEW, "2026-09-21T10:00:00+02:00", "split-rows: out of csv-import", "agent/tickets")
+    demo_commit(repo, LATER, "2026-09-21T10:00:00+02:00", "split-rows: out of csv-import", "agent/tickets")
     demo_git(repo, "checkout", "-q", "master")
-    assert [s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)] == [HERE, NAMED], (
+    assert [s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)] == [FILED, GRILLED], (
         "the path master still holds the ticket at, whose board the move has not reached"
     )
-    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [HERE, NAMED, NEW]
+    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [FILED, GRILLED, LATER]
 
 
 def test_a_ticket_born_at_a_path_another_left_lists_only_its_own_sessions(moved: tuple[Path, Path]) -> None:
@@ -1586,8 +1590,21 @@ def test_a_ticket_born_at_a_path_another_left_lists_only_its_own_sessions(moved:
     that moved away."""
     root, repo = moved
     ticket(root / "split-rows.md", "open")  # a second ticket, named for the gap the first one left
-    demo_commit(repo, NEW, "2026-09-20T10:00:00+02:00", "split-rows: filed again", "agent/tickets")
-    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [NEW]
+    demo_commit(repo, LATER, "2026-09-20T10:00:00+02:00", "split-rows: filed again", "agent/tickets")
+    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [LATER]
+
+
+def test_a_ticket_moved_onto_a_path_another_left_carries_its_own_sessions_alone(moved: tuple[Path, Path]) -> None:
+    """A path one ticket left is not the ticket that moves into it: the arriving ticket brings the
+    sessions from where it came and none of what the path held before."""
+    root, repo = moved
+    ticket(root / "duplicate-rule.md", "open")  # a ticket of its own, filed where nothing had been
+    demo_commit(repo, LATER, "2026-09-20T09:00:00+02:00", "duplicate-rule: filed", "agent/tickets")
+    demo_git(repo, "mv", "agent/tickets/duplicate-rule.md", "agent/tickets/name-columns.md")
+    demo_git(repo, "commit", "-q", "-m", "duplicate-rule: renamed for the column it rules on")
+    assert [s.id for s in ticket_sessions(root / "name-columns.md", repo)] == [LATER], (
+        "the sessions that worked on the ticket that was at this path until the grilling moved it"
+    )
 
 
 def test_a_commit_message_line_that_names_no_file_does_not_stop_the_walk(moved: tuple[Path, Path]) -> None:
@@ -1596,8 +1613,8 @@ def test_a_commit_message_line_that_names_no_file_does_not_stop_the_walk(moved: 
     root, repo = moved
     append(root / "header-row.md", "\nThe bank is asked for once.\n")
     demo_git(repo, "add", "--", "agent/tickets")
-    demo_git(repo, "commit", "-q", "-m", "header-row: the bank is asked for once", "-m", f"Session: {NEW}\n  resumed")
-    assert [s.id for s in ticket_sessions(root / "header-row.md", repo)] == [HERE, NAMED, NEW]
+    demo_git(repo, "commit", "-q", "-m", "header-row: the bank is asked for once", "-m", f"Session: {LATER}\n  resumed")
+    assert [s.id for s in ticket_sessions(root / "header-row.md", repo)] == [FILED, GRILLED, LATER]
 
 
 def test_the_sessions_of_every_ticket_come_from_one_pass_over_the_repo(

@@ -1266,7 +1266,6 @@ def session_log(repo: Path) -> dict[str, dict[str, tuple[str, str]]]:
             if status.startswith("R"):
                 carry(changed.get(paths[0], {}), changed.setdefault(name, {}))
                 vacated.add(paths[0])
-            vacated.discard(name)
             carry({sid: (date, date) for sid in sessions}, changed.setdefault(name, {}))
     return changed
 
