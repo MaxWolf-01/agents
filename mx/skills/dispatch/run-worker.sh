@@ -41,12 +41,14 @@ export DISPATCH_WORKLOG="$here/$run_id.log"
 # nothing after starting, where a missing file would say it was never told about the log.
 printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
 
-# The user CLAUDE.md is written for a human at a terminal: it tells its reader to ask, and
-# describes a conversation this worker is not in. worker-prompt.md replaces it. On an isolated
-# worker host that path holds nothing anyway, and the exclusion is inert.
+# The user CLAUDE.md and output style are written for a human at a terminal: they tell their
+# reader to ask and how to shape a reply, for a conversation this worker is not in.
+# worker-prompt.md replaces them. On an isolated worker host neither is set, and both lines are
+# inert.
 settings=$(cat <<EOF
 {
   "claudeMdExcludes": ["${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"],
+  "outputStyle": "default",
   "autoMemoryEnabled": false
 }
 EOF
