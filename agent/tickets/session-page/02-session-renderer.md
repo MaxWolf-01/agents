@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 2
+size: M
 blocked-by: [01]
 ---
 
 # A session directory renders into its session page
+
+## Brief
+
+A session directory and its transcript render into the session page: the title, brief and resume command, the open questions under them, then the turns newest first with each user message whole behind one click.
 
 Slice of `spec.md`, building on its Decisions under The session page (a container of links, the layout, the keys, only questions ask) and The turn record (fields in a ticket's shape, records written once, the session record, the user's message read from the transcript), and on its Floors.
 

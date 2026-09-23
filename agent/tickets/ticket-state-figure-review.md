@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 3
+size: XS
 blocked-by: [figures-and-demos/04]
 ---
 
 # The README's ticket-state figure shows the review state
+
+## Brief
+
+The README's ticket-state figure draws `done` as the worker's flip, the reading the review status retired, and its alt text lists four statuses where the tracker has five. Its three labels for the needs-human queue go the same way, since this feature retired it.
 
 Cut from the review of [A `review` status: a build waiting for the user's ruling has its own state and its own group on the board](review-status.md): the figure still draws `done` as the worker's flip, the reading that ticket retired, and its alt text lists four statuses where the tracker has five. Filed rather than fixed there because the figures-and-demos feature is moving the figure pipeline while its ticket 04 waits for a ruling: the figure is edited once, at its new home.
 

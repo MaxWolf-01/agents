@@ -1,6 +1,8 @@
 ---
 status: open
 type: grilling
+priority: 2
+size: M
 ---
 
 # How every unattended `claude` run is launched: model, effort and context

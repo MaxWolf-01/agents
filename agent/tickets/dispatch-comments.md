@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 3
+size: XS
 ---
 
 # The dispatch scripts' comments say what the code does, briefly
+
+## Brief
+
+About half of the two dispatch scripts is comment, much of it workflow prose whose home is the skills. A pass that leaves each comment saying what the code beside it does.
 
 Cut from the user's review of the one-flow branch (C11, C12): about half of `mx/skills/dispatch/dispatch` and `dispatch-ctl` is comment, and much of it describes the workflow (why a proposal waits, what the user rules on) rather than what the script does. The workflow's home is the dispatch and tracker skills; the script's `--help` describes its commands, and an inline comment gives a reader the context to follow the code without parsing all of it.
 

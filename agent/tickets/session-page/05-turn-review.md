@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 3
+size: S
 blocked-by: [04]
 ---
 
 # The turn record's prose gets a light review before the page renders
+
+## Brief
+
+A turn record's prose gets a light review against the writing catalogue before the page renders, and the chat-reply reviewer it replaces retires.
 
 Slice of `spec.md`, building on its Decisions under Producing the pages: Review, and The reviewer's harness.
 

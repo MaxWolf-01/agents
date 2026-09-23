@@ -20,7 +20,7 @@ The user added, on 2026-09-23: speculation today stops at the leaves, so a paren
 
 Filed on the user's request on 2026-09-23, split out of [One contract for tickets and specs](ticket-file-contract.md) to keep that rewrite's scope to the data model. It blocks on that rewrite because it edits the same skills (grilling, orient) in the vocabulary that rewrite settles.
 
-## Question
+## Questions
 
 1. **The gate between building and grilling.** What the agent checks before it builds instead of asking: whether it can state the intent, its properties and a first shape without a question only the user can answer, or something else. Options sketched by the agent, frame unconfirmed.
 2. **The first render.** What the speculative build shows the user: the built thing with its demo, a prototype, or a figure of the shape before any code, depending on the intent.

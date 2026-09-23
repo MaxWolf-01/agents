@@ -1,11 +1,17 @@
 ---
 status: open
 type: grilling
+priority: 4
+size: L
 ---
 
 # Best-of-N: several workers build one ticket, one result is chosen
 
-## Question
+## Brief
+
+Several workers build one ticket and one result lands, synthesised by an agent rather than picked by you. Open: when a ticket gets variants, who synthesises from what evidence, and what becomes of the losers.
+
+## Questions
 
 Filed from the one-flow grilling (round 1, Q3; sharpened in round 2): the flow should stay open to spending compute for quality, several workers building the same ticket and one result landing. Grill after one-flow ships, against its unit (one ticket, one worker, one branch, one review page), which is the seam this plugs into at spawn and at landing.
 

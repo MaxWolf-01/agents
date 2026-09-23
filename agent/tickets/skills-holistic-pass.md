@@ -1,11 +1,17 @@
 ---
 status: open
 type: grilling
+priority: 2
+size: L
 ---
 
 # A holistic pass over the skills and help texts: one home, the right altitude, the right file
 
-## Question
+## Brief
+
+The skills, the worker contract, the output style and the scripts' help texts have grown feature by feature, and reviewing one diff at a time glosses over what only a read of the whole shows: what is doubled, what could be a pointer, what sits in the wrong file.
+
+## Questions
 
 Ruled by the user in chat, 2026-09-18, for after figures-and-demos ships: the skills, the worker contract, the output style and the scripts' `--help` texts have grown over several features, and a review of one diff at a time glosses over what only a read of the whole shows. The pass asks, for every sentence: is it stated twice, could it be a pointer, is it too broad or too specific, could it go, and does it sit in the right file among the global system prompt, a skill's description, a skill's body and a script's help. One case to settle in it: a script whose help an agent always reads before calling it might have that help loaded as skill text instead, so the read is not a separate step; a script with branches, called only sometimes, keeps its help where it is.
 

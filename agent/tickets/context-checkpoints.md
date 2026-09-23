@@ -1,6 +1,8 @@
 ---
 status: open
 type: grilling
+priority: 2
+size: S
 ---
 
 # A long session hears where its context stands

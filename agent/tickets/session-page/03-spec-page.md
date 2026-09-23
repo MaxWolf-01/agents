@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 2
+size: M
 blocked-by: [02]
 ---
 
 # A spec renders into its spec page, figures inside and the round's changes marked
+
+## Brief
+
+A spec renders into its own page: its figures shown in place, its provenance marks as tags, and every block the round changed marked where it sits. It replaces diffview for specs.
 
 Slice of `spec.md`, building on its Decisions under The spec page (the spec rendered, a link into the feature's show directory is a figure, it replaces diffview for specs, in this feature as its own slice) and Where it lives (`spec.html` beside `spec.md`, untracked), and on its Floors.
 

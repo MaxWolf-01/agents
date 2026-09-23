@@ -1,9 +1,15 @@
 ---
 status: open
+priority: 3
+size: S
 blocked-by: [figures-and-demos/06]
 ---
 
 # The grid's words in /mx:show
+
+## Brief
+
+The ways an explanation can show a thing, as words you and an agent both ask with: the level (concept, code, output) against the form (as it is, how it changed). They land in `/mx:show` and the glossary.
 
 Asked for by max on 2026-09-22, in the session-page grilling (its Q1: the words land on their own, ahead of the page). Starts once `figures-and-demos` has merged into master, since that feature rewrites `/mx:show` around its shape table and this change sits on top of it.
 

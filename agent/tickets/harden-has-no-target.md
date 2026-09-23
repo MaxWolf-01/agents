@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 2
+size: XS
 ---
 
 # `make harden` is prescribed and this repo has no target for it
+
+## Brief
+
+`/mx:dispatch` runs `make harden` at every feature's close-out, and this repo's Makefile has no such target, so every mutation survivor here is found by hand.
 
 Cut from the whole-feature review of figures-and-demos (`6c9ce66..5a322f6`), Tests axis. `/mx:dispatch` step 3 says `make harden ARGS="--integration-branch ..."` runs once from the feature worktree when the frontier empties, and `/mx:testing` says the same. `mx/bin/harden` exists and answers `--help`. This repo's `Makefile` has `check`, `test`, `version` and three release targets, and `make -n harden` says there is no rule to make it.
 

@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 4
+size: XS
 ---
 
 # A worker host keeps the `job` it was first given
+
+## Brief
+
+A worker host keeps the first `job` it was given, so a later `job` feature reads there as missing rather than stale; `dispatch-ctl init` refreshes it, or says what would.
 
 Cut from the figures-and-demos whole-feature review (ticket 06). `dispatch-ctl init` fetches `job` into `~/.local/bin` only when `command -v job` finds none (`dispatch-ctl:178`), so a host installed once keeps that copy for good. agent@pc was set up before `job stage` landed in the dotfiles on 2026-09-18, and every landing dispatched there since has printed "the `job` here has no staged mode; nothing staged" while the mode existed on the orchestrator's side.
 

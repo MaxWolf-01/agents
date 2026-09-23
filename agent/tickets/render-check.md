@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 3
+size: XS
 ---
 
 # `render.py --check`: a committed figure must match its source
+
+## Brief
+
+A committed figure can drift from the HTML it was rendered from, and did: the README shipped a PNG one edit stale. `--check` re-renders every figure and fails on a stale one, inside `make check`.
 
 Cut from ticket 07's closing comment (one-flow): a committed PNG has no check that it matches the HTML beside it. The worker shipped `mx/assets/one-flow.png` rendered before the last edit to its source and caught it only by rendering the README by hand for the demo.
 

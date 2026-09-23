@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 2
+size: S
 ---
 
 # The session page's executable properties, as checks at their three seams
+
+## Brief
+
+The session page's executable properties as checks at their three seams, before the code behind them exists, so each later slice lands against a check it did not write.
 
 Slice of `spec.md`, building on its Testing Decisions (three seams, which properties are executable) and on the turn record and session record shapes in its Decisions. The build starts once `board-orients` has merged (spec, Around it).
 

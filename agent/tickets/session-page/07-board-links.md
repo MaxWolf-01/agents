@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 3
+size: XS
 blocked-by: [02, 03]
 ---
 
 # The board links each listed session's page and each feature's spec page
+
+## Brief
+
+The board links each listed session's page and each feature's spec page, where one has been rendered.
 
 Slice of `spec.md`, building on its Decisions under Around it: the board, and the build starting once `board-orients` has merged.
 

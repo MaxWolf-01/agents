@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 3
+size: S
 ---
 
 # A spec diff and a landing get read for the figure and the demo they owe
+
+## Brief
+
+The review's Spec axis finds a spec decision that owes a figure and has none, and a Demo line that lost its demo; a grilling round that skips its figure is read by nothing today.
 
 Cut from the whole-feature review of figures-and-demos (`6c9ce66..5a322f6`). The feature's Testing Decisions rests its enforcement on one sentence: "The Spec axis checks a spec diff for a listed shape without its figure and a closing comment for a demo whose output has no run behind it". The figure half was never built. `mx/skills/code-review/` is untouched by the branch: its Spec brief is the generic four-part brief, and neither it nor `SMELLS.md` mentions a figure, a demo or `/mx:show`'s table. No slice owned it, and the user story it serves (spec, story 16) is the one that says the rule has to apply "against the finished artefact and not only while drafting".
 

@@ -1,8 +1,14 @@
 ---
 status: open
+priority: 3
+size: M
 ---
 
 # Take in the kept claude.ai skills: document skills listed by name only, struktogramm as a show companion, a harvest of the rest
+
+## Brief
+
+The six claude.ai skills kept when the skill sync went off: the four document skills installed as user skills listed by name only, struktogramm redone as a companion of `/mx:show`, and a harvest of what the other two teach.
 
 Asked for by the user in chat, 2026-09-23. The claude.ai skill sync is off (`13acff5`, `syncClaudeAiSkills: false`): its 14 skills cost ~3k tokens on every request and none were used (`agent/research/09-skill-token-usage.md`). The user kept six in `~/tmp/claude-ai-synced-skills-2026-09-23/`, a scratch directory: docx, pdf, pptx, xlsx, skill-creator, struktogramm.
 

@@ -1,11 +1,17 @@
 ---
 status: open
 type: grilling
+priority: 3
+size: M
 ---
 
 # Comment density in a diff gets a mechanical ceiling
 
-## Question
+## Brief
+
+Comment density keeps arriving above what you call reasonable, because a rule read while generating washes out and this one is a count a script can make. Settles what is counted, where the ceiling sits and which rung enforces it.
+
+## Questions
 
 Ruled worth grilling by the user in chat, 2026-09-15. The failure: a PR the user expected to be small came back long, and its author's own account was half a comment line per line of code; the in-repo instance is [The dispatch scripts' comments say what the code does, briefly](dispatch-comments.md), where about half of `dispatch` and `dispatch-ctl` is comment. The prose rules already say what a comment may say (`/mx:writing-for-humans`, one home per fact), the Standards reviewer applies them, and the density keeps arriving: a rule read while generating washes out (PRINCIPLES.md, 1), and this one is a count a script can make, like a cyclomatic-complexity lint.
 

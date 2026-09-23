@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 2
+size: S
 ---
 
 # The dispatch scripts get a test, and the demo becomes one
+
+## Brief
+
+`make test` reaches none of the 400 lines of dispatch scripts, and the one driver checks the shipped runner against a copy of itself. Three rungs of coverage, cheapest first, stopping where the next costs more than it returns.
 
 Cut from the whole-feature review of one-flow (Tests axis, D6 and D7): the feature rewrote 424 lines of `dispatch` and `dispatch-ctl` and `make test` reaches none of it. The one driver is `agent/show/host-per-spawn/demo.sh`, which nothing runs automatically, which stubs the runner rather than the harness, and which therefore checks the shipped `run-worker.sh` against a copy of itself. The whole-feature pass then introduced a variable collision in `copy_to` that only a demo run caught, by hand.
 

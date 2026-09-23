@@ -36,7 +36,7 @@ As of board-orients' chain (tickets 01 to 10, unmerged) plus master:
 
 Each reader carries its own reading of a rule that lives in prose elsewhere, and each writer is an agent reading that prose while generating, which is the rung PRINCIPLES.md §1 says washes out.
 
-## Question
+## Questions
 
 1. **Where the format lives, once.** Options sketched by the agent, frame unconfirmed:
    - (a) One parser module in the tracker skill that every reader imports or calls. The format's prose shrinks to a pointer and an example, and the parser's tests are the format's spec.

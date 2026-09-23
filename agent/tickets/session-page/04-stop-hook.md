@@ -1,9 +1,15 @@
 ---
 status: proposed
+priority: 2
+size: S
 blocked-by: [02, 03]
 ---
 
 # The Stop hook renders the pages as each turn ends, and sends back what does not belong
+
+## Brief
+
+One hook renders the pages as each turn ends, and sends the agent back when its record does not parse or its answer went to the chat instead of the page.
 
 Slice of `spec.md`, building on its Decisions under Producing the pages (the Stop hook, one fixed renderer, the main session waits for its artifacts, created lazily, where it lives), and on its Properties.
 

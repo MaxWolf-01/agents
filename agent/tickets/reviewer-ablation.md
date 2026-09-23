@@ -1,9 +1,14 @@
 ---
 status: open
+size: M
 priority: 4
 ---
 
 # Ablate the prose reviewer against labelled replies
+
+## Brief
+
+The turn-record prose reviewer ships on one model at one effort with nothing measured. One command runs the matrix over labelled texts and reports validity, recall, cost and time, so a new model can be re-measured.
 
 Asked for by max on 2026-09-23, at low priority, while the session-page spec moved the prose review from the chat reply onto the turn record (`session-page/spec.md`, Producing the pages). The turn review ships with Opus 5.5 at medium effort and without an ablation; this ticket measures what the choice of model, effort, prompt and context actually buys, and gives a way to re-measure when a new model ships.
 

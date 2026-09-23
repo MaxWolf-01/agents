@@ -1,9 +1,15 @@
 ---
 status: open
+priority: 2
+size: M
 blocked-by: [figures-and-demos/06]
 ---
 
 # The dispatch and job machinery, shown: the flow, and what each role types
+
+## Brief
+
+The dispatch machinery as one artefact: the states a ticket passes through with the one writer of each, and every command both roles type for one ticket from claim to retirement. You read it to see what is doubled before a pass that simplifies it.
 
 Ruled worth doing by the user in chat, 2026-09-18, reviewing figures-and-demos ticket 03: the landing, the staged demo, the ticket states and `job` have grown past what a diff conveys, and the user wants to see the whole before a pass that simplifies it.
 

@@ -20,7 +20,7 @@ Filed on the user's idea on 2026-09-23, from board-orients 05's D1 (a landed bui
 - **board-orients 05** lists a ticket's sessions from `Session:` commit trailers, and shows only those with a transcript on this machine.
 - `dispatch ctl probe` answers the same question for one feature, from its worktree.
 
-## Question
+## Questions
 
 1. **One listing, two faces.** What produces the list of workers in flight, once, so that the board and a terminal command read the same thing? A shared script whose output both read, the board calling `dispatch ps`, or something else.
 2. **What the board shows.** A group of its own, a mark on the ticket's row, or a line in the opened ticket beside its sessions. And what the copy button copies: the ssh-and-attach command, read-only, as `dispatch attach` does.

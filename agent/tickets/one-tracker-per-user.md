@@ -1,11 +1,17 @@
 ---
 status: open
 type: grilling
+priority: 3
+size: L
 ---
 
 # One tracker for all of a user's repos, with research and show artefacts committed
 
-## Question
+## Brief
+
+One workspace repo holding every project's tracker, with research and show artefacts committed, as your work setup already runs. The cost to weigh is that a feature's tickets would stop moving with its code.
+
+## Questions
 
 Raised by the user in the figures-and-demos grilling, 2026-09-16, and ruled worth grilling on its own. The work setup already runs this way: one agents repo for the organisation spans every code repo, and everything is committed, so nothing has to be sorted into tracked and untracked and a retired artefact is a `git rm` with history behind it. The personal repos keep a tracker each, `agent/research/` gitignored, `agent/show/` committed only once approved, and the failure that follows is on record: an agent picks up an old research or show artefact as current and corrects the design toward it.
 

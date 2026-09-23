@@ -1,9 +1,15 @@
 ---
 status: open
 type: legwork
+priority: 4
+size: XS
 ---
 
 # Report the mutation-tooling defects upstream
+
+## Brief
+
+Five mutation-tooling defects the harden script works around; three are filed upstream, the skipped decorated functions and the unbudgeted setup time are not. Each fix that lands deletes a workaround.
 
 Filed from the testing-workflow grilling; the harden script works around each of these, and an upstream fix would delete the workaround. File each with `/mx:upstream-issue`, minimal repro from the prototype clones (`/var/tmp/memex-proto`, `/var/tmp/yapit-proto`) and the research snapshots `agent/research/04`, `05`, `07`.
 

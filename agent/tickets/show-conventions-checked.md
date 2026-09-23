@@ -1,8 +1,14 @@
 ---
 status: proposed
+priority: 3
+size: S
 ---
 
 # The show conventions get a mechanical check
+
+## Brief
+
+The show conventions as one check in `make check`: a show directory per live piece of work, a demo per landed ticket, no tracked renders beside their sources, demos that run.
 
 Cut from the whole-feature review of figures-and-demos (`6c9ce66..5a322f6`), Tests axis. The feature fixed conventions that are cheap to read mechanically and that nothing reads. Each is a spec Property the Testing Decisions disposes as *reviewed*, and the review found a live violation of one of them on the branch (`agent/show/house-style-rulings/`, whose loose work had shipped on master), which no slice had seen.
 
