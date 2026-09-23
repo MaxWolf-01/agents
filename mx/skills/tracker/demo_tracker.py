@@ -4,7 +4,8 @@
 # dependencies = ["tyro"]
 # ///
 """Build the demo tracker the board's checks render: a git repo for a fictional bookkeeping CLI,
-"ledger", whose tickets exercise every element the board shows.
+"ledger", whose tickets exercise every element the board shows: every ticket status, every decision
+type, every priority and every size, so that each of a row's marks is laid out somewhere.
 
 Two features (a confirmed spec with six slices, a draft spec with three tickets, two of them
 decisions), eight standalone tickets covering every decision type, two builds waiting on a ruling
@@ -403,6 +404,38 @@ size: XS
 ## What to build
 
 Proposed by a worker's closing comment: the help order cost it a search.
+""")
+    write(repo / "agent/tickets/reconcile-statements.md", """---
+status: open
+priority: 4
+size: L
+---
+
+# Reconcile a bank statement
+
+## Brief
+
+Tick off a month's transactions against the bank's own statement, so the ledger is known to agree with the bank.
+
+## What to build
+
+A side-by-side view of the two, matching on date and amount, with the unmatched rows listed.
+""")
+    write(repo / "agent/tickets/storage-rewrite.md", """---
+status: open
+priority: 5
+size: XL
+---
+
+# One file per year
+
+## Brief
+
+The single ledger file grows without bound; splitting it per year keeps a decade of books openable, and every command has to learn the new layout.
+
+## What to build
+
+Proposed from the QIF exporter's grilling: the exporter blocks on the same layout question.
 """)
     write(repo / "agent/tickets/upgrade-python.md", """---
 status: done

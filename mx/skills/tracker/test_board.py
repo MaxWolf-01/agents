@@ -29,6 +29,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,11 @@ NO_QUEUE = Queue(Path("needs-human.md"), [])
 STUB_ADDRESS = "http://127.0.0.1:54321"
 
 
-def ticket(path: Path, status: str, blocked_by: list[str] | None = None, kind: str | None = None, gh: list[str] | None = None) -> None:
+def ticket(
+    path: Path, status: str, blocked_by: list[str] | None = None, kind: str | None = None,
+    gh: list[str] | None = None, priority: int | None = None, size: str | None = None,
+    brief: str | None = None, name: str | None = None,
+) -> None:
     lines = ["---", f"status: {status}"]
     if kind:
         lines.append(f"type: {kind}")
@@ -74,8 +79,15 @@ def ticket(path: Path, status: str, blocked_by: list[str] | None = None, kind: s
         lines.append(f"blocked-by: [{', '.join(blocked_by)}]")
     if gh:
         lines.append(f"gh: [{', '.join(gh)}]")
+    if priority:
+        lines.append(f"priority: {priority}")
+    if size:
+        lines.append(f"size: {size}")
     title = path.stem.split("-", 1)[1] if path.stem[:2].isdigit() else path.stem
-    lines += ["---", "", f"# {title.replace('-', ' ')}", "", "Cut from the worker's closing comment on 01: the `suite` is slow.", ""]
+    lines += ["---", "", f"# {name or title.replace('-', ' ')}", ""]
+    if brief:
+        lines += ["## Brief", "", brief, ""]
+    lines += ["## What to build", "", "Cut from the worker's closing comment on 01: the `suite` is slow.", ""]
     path.write_text("\n".join(lines))
 
 
@@ -283,8 +295,8 @@ def test_the_page_groups_rows_by_state_needs_me_first_and_done_folded(tracker: P
 def test_a_feature_chip_carries_the_counts_as_its_tooltip(tracker: Path) -> None:
     page = page_of(tracker)
     assert (
-        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/6 done · 2 open · 1 review · 2 blocked · 1 proposed · 1 need me">'
-        f'<i class="dot"></i>{FEAT} <span class="dim">1/6</span></button>' in page
+        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/7 done · 2 open · 1 review · 2 blocked · 1 proposed · 1 need me">'
+        f'<i class="dot"></i>{FEAT} <span class="dim">1/7</span></button>' in page
     )
     assert 'standalone <span class="dim">3</span>' in page
 
@@ -302,8 +314,9 @@ def test_a_gh_reference_is_a_link_on_the_row_and_in_its_search_text(tracker: Pat
     ticket(tracker / "quoted.md", "open", gh=["acme/coding#137"])
     page = page_of(tracker)
     assert (
-        '<a class="dv gh" href="https://github.com/acme/backend/issues/317" target="_blank" onclick="event.stopPropagation()" title="on GitHub">acme/backend#317</a>'
-        '<a class="dv gh" href="https://github.com/acme/helix/issues/412"' in page
+        '<a class="gh" href="https://github.com/acme/backend/issues/317" target="_blank" '
+        'onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">acme/backend#317</a>'
+        '<a class="gh" href="https://github.com/acme/helix/issues/412"' in page
     )
     assert 'href="https://github.com/acme/coding/issues/137"' in page
     searches = dict(re.findall(r'id="([\w-]+)" data-feature="[\w-]+" data-num="[^"]+" data-search="([^"]*)"', page))
@@ -321,7 +334,7 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     rows = re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" data-feature="([\w-]+)" data-num="([^"]+)" data-search="([^"]*)"', page)
     assert len(rows) == len(feature.tickets) + len(standalone) + 1
     searches = {row_id: html.unescape(search) for row_id, _, _, search in rows}  # the script reads the attribute unescaped
-    assert searches[f"t-{FEAT}-03"] == "03 faster suite cut from the worker's closing comment on 01: the suite is slow."
+    assert searches[f"t-{FEAT}-03"] == "03 faster suite what to build cut from the worker's closing comment on 01: the suite is slow."
     assert all(s == s.lower() and "<" not in s for s in searches.values())
     graph = re.search(rf'<div class="g" data-feature="{FEAT}" hidden><pre class="mermaid" data-key="g:{FEAT}">(.*?)</pre>', page, re.S).group(1)
     for row_id, feat, num, _ in rows:
@@ -339,8 +352,7 @@ def test_a_row_links_its_review_page(tracker: Path) -> None:
     page = page_of(tracker)
     assert f'href="file://{dv / FEAT / "02-second.html"}"' in page
     assert f'href="file://{dv / "quoted.html"}"' in page
-    assert page.count('class="dv"') == 4  # a chip on each row, and the line at the top of each expanded ticket
-    assert '<p class=dvline><a class="dv"' in page
+    assert page.count('class="rp"') == 2  # once per row (the spec's Decisions), on the name's line
 
 
 def test_a_row_links_its_review_page_on_the_address_diffview_serves(tracker: Path, stub_diffview: Path) -> None:
@@ -368,12 +380,18 @@ def test_a_review_page_nothing_serves_is_linked_as_the_file_it_is(tracker: Path,
     assert serve_diffviews(dv).link(dv / FEAT, "02-*.html") == f"file://{dv / FEAT / '02-second.html'}"
 
 
-def test_class_defs_cover_every_status(tracker: Path) -> None:
+def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
+    """The graph's colours are baked into the SVG by mermaid, so the page hands it one classDef per
+    status, each mixed from the house tokens in the scheme on show."""
     page = page_of(tracker)
-    class_defs = re.search(r'const classDefs = \[([^\]]*)\]', page).group(1)
-    for status in STATUS_SYMBOL:
-        assert f'"{status}"' in class_defs
-        assert f"--{status}-bg:" in page  # the classDef reads its colours off these tokens
+    classes = re.search(r"const cls = \{(.*?)\s*\};", page, re.S).group(1)
+    read = set(re.findall(r'c(?:\.|\[")([\w-]+)', classes))
+    for status in [*STATUS_SYMBOL, "ghost"]:
+        assert re.search(rf"\b{status}: \[", classes), f"the graph draws no {status} node"
+    assert read, "the classDefs name no token"
+    for token in read:
+        assert f"--{token}: light-dark(" in page, f"the graph reads --{token}, which the page does not declare"
+    assert not re.search(r":\s*\[\s*[\"']?#", classes), "a status is drawn in a literal colour, not the house ink"
 
 
 # ---- checkouts ------------------------------------------------------------
@@ -421,7 +439,7 @@ def test_a_standalone_ticket_a_branch_added_is_shown_and_one_it_inherited_is_not
     features = load_features(tracker, roots.overrides, dv)
     assert by_num(features[0])["02"].status == "claimed"  # the feature directory is read from the worktree
     page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
-    assert f'title="filed on branch {FEAT}, not on the main branch">on {FEAT}</span>' in page
+    assert f'data-tip="Filed on branch {FEAT}, not on the main branch.">on {FEAT}</span>' in page
 
 
 def test_a_row_copies_the_path_of_the_file_the_board_read(repo: Path, tracker: Path) -> None:
@@ -530,6 +548,242 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
     page = render_page("demo", [feature], standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
     proposed = page.split('id="grp-proposed"')[1].split('class="grp" id="grp-')[0]
     assert f'id="t-{FEAT}-08"' in proposed
+
+
+# ---- rows ------------------------------------------------------------------
+# The marks' words come from the spec, not from board.py: these literals are the spec's own
+# ("The ticket file": XS under 15 min ... XL several sessions; priority 1 to 5 named now, next,
+# soon, later, someday; "The board": what the row asks is one of seven words).
+SIZE_WORDS = {"XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"), "M": ("1 h", "about an hour"),
+              "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions")}
+PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
+ASK_WORDS = {"review": "to rule on", "answer": "your answer", "design": "design session",
+             "prototype": "prototype", "research": "research", "legwork": "legwork", "build": "build"}
+MARKS = {"ftag", "num", "asks", "time", "pri", "chip", "rp", "gh", "src"}
+
+
+def rows_of(page: str) -> dict[str, str]:
+    """Each ticket row's markup, by row id, in the order the page lists them."""
+    found = re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"(.*?)</details>', page, re.S)
+    return {row_id: body for row_id, body in found}
+
+
+class Marks(HTMLParser):
+    """Every element of a row that carries a class, with the words it shows and the words it says
+    on hover. A mark that clips its text holds it in an inner element, so the text of a mark is
+    everything under it."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.open: list[tuple[str, list]] = []
+        self.found: list[list] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        got = dict(attrs)
+        entry = [(got.get("class") or "").split()[0] if got.get("class") else "", [], got.get("data-tip")]
+        self.open.append((tag, entry))
+        self.found.append(entry)
+
+    def handle_endtag(self, tag: str) -> None:
+        for i in range(len(self.open) - 1, -1, -1):
+            if self.open[i][0] == tag:
+                del self.open[i:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        for _, entry in self.open:
+            entry[1].append(data)
+
+
+def marks_on(row: str) -> list[tuple[str, str, str | None]]:
+    """(mark, the words it shows, the words it says on hover) for every mark on a row."""
+    reader = Marks()
+    reader.feed(row)
+    return [(mark, "".join(text).strip(), tip) for mark, text, tip in reader.found]
+
+
+def tips_on(row: str) -> dict[str, str]:
+    """The hover words of each mark on a row, by mark."""
+    return {mark: tip for mark, _, tip in marks_on(row) if mark in MARKS and tip}
+
+
+def test_a_rows_marks_are_read_from_the_ticket_file(tmp_path: Path) -> None:
+    """The spec's Decisions on the ticket file: priority and size in frontmatter, the H1 as the
+    short name, the brief from `## Brief`. A ticket whose file is silent shows its row without
+    those marks rather than inventing them."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-map-columns.md", "open", priority=1, size="M",
+           name="Map columns once per bank", brief="You tell the importer once which column holds the `date`.")
+    ticket(root / "ledger" / "02-silent.md", "open")
+    (feature,), _ = load(root)
+    mapped, silent = feature.tickets
+    assert (mapped.priority, mapped.size) == (1, "M")
+    assert mapped.title == "Map columns once per bank", "the H1 is the short name"
+    assert mapped.brief == "You tell the importer once which column holds the <code>date</code>."
+    assert (silent.priority, silent.size, silent.brief) == (None, None, "")
+    page = render_page("demo", [feature], [], NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    rows = rows_of(page)
+    shown = {mark: text for mark, text, _ in marks_on(rows["t-ledger-01"]) if mark in MARKS}
+    assert shown["time"] == "1 h" and shown["pri"] == "p1 now"
+    assert "Map columns once per bank" in rows["t-ledger-01"]
+    assert "which column holds the <code>date</code>" in rows["t-ledger-01"]
+    assert {mark for mark, _, _ in marks_on(rows["t-ledger-02"])}.isdisjoint({"time", "pri", "brief"})
+    assert "## Brief" not in page and "<h2>Brief</h2>" not in page, "the brief has one home, and it is the row"
+    # the brief is searchable, since the filter is how a reader narrows to a word they remember
+    assert "which column holds the date" in html.unescape(
+        re.search(r'id="t-ledger-01" [^>]*data-search="([^"]*)"', page).group(1)
+    )
+
+
+def test_a_priority_or_size_the_tracker_does_not_know_is_refused_with_the_file_named(tracker: Path) -> None:
+    ticket(tracker / FEAT / "02-second.md", "open", priority=9)
+    with pytest.raises(AssertionError, match=r"02-second\.md: priority 9"):
+        load(tracker)
+    ticket(tracker / FEAT / "02-second.md", "open", size="HUGE")
+    with pytest.raises(AssertionError, match=r"02-second\.md: size 'HUGE'"):
+        load(tracker)
+
+
+def test_every_size_and_priority_shows_the_word_the_spec_gives_it(tmp_path: Path) -> None:
+    """Five sizes and five priorities, each on a row of its own: the words the user reads are the
+    spec's, and the tip's own definition of a mark stays in step with the word beside it."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    for i, size in enumerate(SIZE_WORDS, start=1):
+        ticket(root / "ledger" / f"0{i}-sized.md", "open", size=size, priority=i)
+    (feature,), _ = load(root)
+    page = render_page("demo", [feature], [], NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    rows = rows_of(page)
+    for i, (size, (word, means)) in enumerate(SIZE_WORDS.items(), start=1):
+        row = rows[f"t-ledger-0{i}"]
+        shown = {mark: text for mark, text, _ in marks_on(row) if mark in MARKS}
+        assert shown["time"] == word, f"{size} reads {shown['time']!r}"
+        assert shown["pri"] == f"p{i} {PRIORITY_WORDS[i]}"
+        tips = tips_on(row)
+        assert f"{size} {means}" in tips["time"], f"the time's words leave {size} out"
+        assert f"p{i} {PRIORITY_WORDS[i]}:" in tips["pri"], f"the priority's words leave p{i} out"
+
+
+def columns_for(page: str, selector: str) -> dict[str, str]:
+    """The width in characters the page gives each of a row's fixed columns, for the whole board
+    (`:root`) or for one group; empty when that selector narrows none of them."""
+    block = re.search(rf"{re.escape(selector)} \{{\n((?:    --col-.*\n)+)  \}}", page)
+    return dict(re.findall(r"--col-(\w+): calc\((\d+) \*", block.group(1))) if block else {}
+
+
+def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_path: Path) -> None:
+    """The name and the brief take what the row has spare, so a column is measured from the marks:
+    the closed vocabularies for what a row asks, the time and the priority, the tracker's own names
+    and references for the feature tag and the blockers, and each group's own three, since a group
+    of quick unblocked tickets has no use for the width an XL one needs."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-quick.md", "review", priority=2, size="S")
+    ticket(root / "ledger" / "02-long-haul.md", "open", priority=5, size="XL", blocked_by=["01"])
+    # a standalone ticket writes its blocker qualified, which is the widest a reference gets
+    ticket(root / "waits-on-the-haul.md", "open", priority=3, size="M", blocked_by=["ledger/02"])
+    features, standalone = load(root)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert columns_for(page, ":root") == {
+        "ftag": str(len("standalone")),  # longer than the one feature's name
+        "num": str(len("--")),
+        "asks": str(len("design session")),  # the widest of the spec's seven words
+        "time": str(len("several sessions")),
+        "pri": str(len("p5 someday")),
+        "chips": str(len("ledger/02")),
+    }
+    # the group whose only ticket is an S at p2 with nothing waiting on it leaves the rest of that
+    # width to the name and the brief
+    assert columns_for(page, "#grp-review") == {"time": str(len("20 min")), "pri": str(len("p2 next")), "chips": "0"}
+    # the group that holds the XL ticket keeps the board's width for every one of the three
+    # the group holding the XL ticket and the widest reference narrows none of the three
+    narrowed = columns_for(page, "#grp-blocked")
+    assert narrowed == {}, f"the blocked group narrows {sorted(narrowed)}, though its rows are the widest of each"
+
+
+def test_rows_sort_by_priority_then_by_the_users_time_within_a_group(tmp_path: Path) -> None:
+    """The spec's Decision: the user reads a group top down. A ticket whose frontmatter says
+    neither sorts after the ones that do, since nothing is known about what it costs."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-slow-p1.md", "open", priority=1, size="L")
+    ticket(root / "ledger" / "02-quick-p2.md", "open", priority=2, size="XS")
+    ticket(root / "ledger" / "03-quick-p1.md", "open", priority=1, size="XS")
+    ticket(root / "ledger" / "04-silent.md", "open")
+    ticket(root / "ledger" / "05-p1-no-size.md", "open", priority=1)
+    (root / "aa-p3-standalone.md").write_text("---\nstatus: open\npriority: 3\nsize: S\n---\n\n# A chore\n")
+    features, standalone = load(root)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert list(rows_of(page)) == [
+        "t-ledger-03", "t-ledger-01", "t-ledger-05", "t-ledger-02", "standalone-aa-p3-standalone", "t-ledger-04",
+    ]
+
+
+def test_the_stamp_the_open_tab_polls_moves_when_a_ticket_is_reprioritised(tracker: Path) -> None:
+    """An edit the page shows but the ticket's status does not: the open tab reloads on it or it
+    never arrives."""
+    features, standalone = load(tracker)
+    before = content_stamp("demo", features, standalone, NO_QUEUE, "")
+    ticket(tracker / FEAT / "02-second.md", "open", priority=1, size="XS", brief="Why it matters, cold.")
+    features, standalone = load(tracker)
+    assert content_stamp("demo", features, standalone, NO_QUEUE, "") != before
+
+
+def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The spec's seven words, each against the fixture ticket that earns it: a build in review
+    asks for a ruling, a decision ticket asks for the session its type names, and a build ticket
+    asks nothing of the user."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    rows = rows_of(out.read_text())
+    expected = {
+        "t-csv-import-02": "review",  # status: review, a build waiting on a ruling
+        "standalone-speed-up-tests": "review",
+        "standalone-retire-legacy-exporter": "design",  # type: grilling
+        "t-saved-views-03": "prototype",
+        "t-saved-views-01": "research",
+        "standalone-pick-a-date-library": "research",
+        "standalone-staging-credentials": "legwork",
+        "t-csv-import-01": "build",  # no type, not in review
+        "standalone-flaky-upload-test": "build",
+    }
+    for row_id, kind in expected.items():
+        shown = {mark: text for mark, text, _ in marks_on(rows[row_id]) if mark in MARKS}
+        assert shown["asks"] == ASK_WORDS[kind], f"{row_id} asks {shown['asks']!r}, not {ASK_WORDS[kind]!r}"
+        assert f'class="asks a-{kind}"' in rows[row_id]
+
+
+def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The spec's reviewed Property "Every mark explains itself", at the seam its Testing Decisions
+    names for rows and marks: the demo tracker in, the page's rows out. Every mark that carries
+    text says what it means, and says it about itself; that the words then paint on hover is the
+    layout check's (test_board_layout.py)."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    page = out.read_text()
+    seen = set()
+    for row_id, row in rows_of(page).items():
+        for mark, text, tip in marks_on(row):
+            if mark not in MARKS or not text:
+                continue
+            seen.add(mark)
+            assert tip and len(tip.split()) >= 4, f"{row_id}: the {mark} mark {text!r} says {tip!r}"
+    assert seen == MARKS - {"src"}, "no standalone ticket in the fixture was filed on a branch"
+    # each mark's words are about that mark: the time's say whose time it is, the priority's who set it
+    row = rows_of(page)["t-csv-import-02"]
+    tips = tips_on(row)
+    assert "never the agent's" in tips["time"] and "priority" not in tips["time"]
+    assert "an agent's reading" in tips["pri"] and "Your time" not in tips["pri"]
+    assert "review page" in tips["rp"] and "GitHub" in tips["gh"]
+    assert str(demo.root / "csv-import" / "02-map-columns.md") in tips["num"], "a copy button shows what it copies"
+    assert "feature" in tips["ftag"]
+    # a blocker says which ticket it waits on and whether that one is done (spec, The board)
+    assert 'data-tip="Waits on 01, done.">01</a>' in page
+    assert 'data-tip="Waits on 02, not done yet.">02</a>' in page
+    assert 'data-tip="Waits on csv-import/04, not done yet.">csv-import/04</a>' in page
+    # a queue entry is not a ticket, and its own words say so
+    assert "has no ticket of its own yet" in tips_on(rows_of(page)["needs-standalone-0"])["asks"]
 
 
 # ---- properties -----------------------------------------------------------
@@ -666,13 +920,35 @@ def test_the_board_renders_without_the_model_and_says_the_absence_once(repo: Pat
     assert absences(out.read_text(), "model") == 1
 
 
-def test_the_board_renders_with_no_review_page_server_and_links_its_pages_as_files(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_the_board_renders_with_no_review_page_server_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     dv = tracker.parent / "diffviews"
     dv.mkdir(parents=True)
     (dv / "quoted.html").write_text("<html>")
     out = tmp_path / "board.html"
     render(tracker_roots(tracker), repo, out)
-    assert f'href="file://{dv / "quoted.html"}"' in out.read_text()
+    page = out.read_text()
+    assert f'href="file://{dv / "quoted.html"}"' in page, "the pages stay linked, as the files they are"
+    assert absences(page, "review-page-server") == 1
+
+
+def test_a_board_whose_review_pages_are_served_says_no_absence(tracker: Path, stub_diffview: Path) -> None:
+    dv = tracker.parent / "diffviews"
+    dv.mkdir(parents=True)
+    (dv / "quoted.html").write_text("<html>")
+    diffviews = serve_diffviews(dv)
+    features = load_features(tracker, {}, diffviews)
+    standalone = load_standalone(Roots(tracker, []), diffviews)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert f'href="{STUB_ADDRESS}/quoted.html"' in page
+    assert absences(page, "review-page-server") == 0
+
+
+def test_a_tracker_with_no_review_pages_rendered_says_nothing_about_the_server(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """Nothing has been sent for review yet, so there is no page a server could be answering for:
+    the absence the Property names is the server for pages that exist."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(tracker), repo, out)
+    assert absences(out.read_text(), "review-page-server") == 0
 
 
 @pytest.mark.xfail(strict=True, reason="the board asks GitHub nothing yet; lifted by 07-github-state")
