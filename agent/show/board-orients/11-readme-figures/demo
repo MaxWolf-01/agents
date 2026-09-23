@@ -5,12 +5,12 @@
 # ///
 """Shoot the README's two board screenshots again, and say what is in them.
 
-The four PNGs the README embeds are not a mockup: they are a headless browser's shot of `board`
-rendering a demo tracker that lives under `docs/figures/board-fixture/`. This runs that pipeline
-end to end, puts the four fresh renders in `out/` beside this file, compares each against the copy
-committed under `mx/assets/`, and leaves the live board open for you to drive.
+The four PNGs the README embeds come out of a headless browser shooting `board` as it renders a
+demo tracker that lives under `docs/figures/board-fixture/`. This runs that pipeline end to end,
+puts the four fresh renders in `out/` beside this file, and leaves the live board they are shots of
+open for you to drive.
 
-Takes about ten seconds. Needs `chromium` and `uv`, nothing else.
+Takes about ten seconds. Needs `chromium`, `git` and `uv` on PATH.
 """
 
 import os
@@ -23,10 +23,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 OUT = HERE / "out"
-BUILD = ROOT / "docs" / "figures" / "board-fixture" / "build.py"
 FIGURES = ROOT / "docs" / "figures"
+sys.path.insert(0, str(FIGURES / "board-fixture"))
+
+import build  # noqa: E402
+
+BUILD = Path(build.__file__)
 ASSETS = ROOT / "mx" / "assets"
-BOARD = Path("/var/tmp/mx-demo/ledger/agent/board.html")  # where build.py leaves the render it shot
+BOARD = build.REPO / "agent" / "board.html"  # the render the shots are of, where build.py leaves it
 SHOTS = ["board-overview-light.png", "board-overview.png", "board-feature-light.png", "board-feature.png"]
 
 WHERE_TO_LOOK = """
@@ -38,9 +42,10 @@ The overview shot, top to bottom
   a row's marks  what it asks of you, then the name with its brief under it, then your time on it
                  (15 min, 1 h) and its priority (p1 now, p3 soon). Hover any of them on the live
                  board below: each says in words what it means and who sets it.
-  the column     the briefing at the head of it, naming the next three picks with your own time on
-                 each, over a preview of the whole tracker's dependency graph. The preview is a
-                 preview: "full" opens it over the board, "window" beside it.
+  the column     the briefing at the head of it: where things stand, then three picks with a
+                 reason each, written by a model that read this tracker's repo. Under it a preview
+                 of the whole tracker's dependency graph, which "full" opens over the board at
+                 full size and "window" opens beside it.
 
 The feature shot
   csv-import is hidden by its chip, and saved-views 03 is opened: a ticket reads as blocks now,
@@ -48,7 +53,9 @@ The feature shot
 
 What the fixture tracker had to gain for any of that to show: a priority and a size in frontmatter,
 a `## Brief` under the H1, and a `## Questions` item on the three tickets that wait on you. Its two
-`needs-human.md` queues are gone, their entries moved onto the tickets they belong to.
+`needs-human.md` queues are gone, their entries moved onto the tickets they belong to. The briefing
+is one a session really wrote on this tracker, kept in `briefing.json` beside `build.py`, so the
+shot costs no model run and says the same thing every time.
 """
 
 
@@ -67,16 +74,11 @@ def main() -> None:
     if done.returncode:
         sys.exit(f"\nbuild.py failed ({done.returncode}):\n{done.stderr[-2000:]}")
 
-    print("\nThe four renders, against the copies the README embeds:\n")
+    print("\nThe four renders, beside the copies the README embeds:\n")
     for name in SHOTS:
         fresh, committed = FIGURES / name, ASSETS / name
         shutil.copy(fresh, OUT / name)
-        same = committed.exists() and committed.read_bytes() == fresh.read_bytes()
-        was = "same bytes as mx/assets" if same else \
-              "DIFFERS from mx/assets" if committed.exists() else "not in mx/assets yet"
-        print(f"  {name:28} {size_of(fresh):>10}  {fresh.stat().st_size / 1024:6.0f} KiB   {was}")
-    print("\n  (sub-pixel text rendering differs between machines, so a render off another host"
-          "\n   differs in bytes while saying the same thing; what matters is what it shows.)")
+        print(f"  {name:28} {size_of(fresh):>10} fresh, {size_of(committed):>10} in mx/assets")
 
     print(WHERE_TO_LOOK)
     print(f"the board those shots are of   {BOARD}")
@@ -85,7 +87,7 @@ def main() -> None:
     print(f"the README's before and after  {HERE / 'figure.html'}")
 
     opener = os.environ.get("DIFFVIEW_BROWSER") or shutil.which("xdg-open")
-    if opener and os.environ.get("DISPLAY"):
+    if opener and (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         for page in (BOARD, HERE / "figure.html"):
             subprocess.Popen([opener, str(page)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:

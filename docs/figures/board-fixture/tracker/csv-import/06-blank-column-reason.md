@@ -9,14 +9,12 @@ size: XS
 ## Brief
 
 The reason a rejected line carries is what the mapping screen shows the account holder, and no test
-tells "date is blank" from "payee is blank". Cut from this feature's debrief, where a mutant
-survived on exactly that string.
+tells "date is blank" from "payee is blank".
 
 ## What to build
 
-The parse-report test asserts the reason a rejected line carries, not only its
-line number. That string is what the mapping screen shows the account holder,
-and it is the whole reason the rejected line was kept rather than dropped.
+Cut from this feature's debrief, where a mutant survived on exactly that string: the parse-report
+test asserts the reason a rejected line carries, not only its line number.
 
 ## Acceptance criteria
 

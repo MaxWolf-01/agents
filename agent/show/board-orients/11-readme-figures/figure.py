@@ -22,6 +22,7 @@ import html
 import io
 import re
 import subprocess
+from functools import cache
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,8 +47,8 @@ NOTES = {
          "questions with nowhere to hang. A row is a feature chip, a name and a fold mark, and says nothing "
          "about what it asks of the reader, how much of their time it wants, or how much it matters."),
         ('<div class="alt">alt: The board: rows grouped',
-         "Both screenshots are the night board alone, where the five other figures in this README ship a day "
-         "render and a night one and let the reader's own setting pick."),
+         "Both screenshots are the night board alone, where five of the six other figures in this README ship "
+         "a day render and a night one and let the reader's own setting pick."),
         ('<div class="shot" data-of="One feature on the board',
          "Below the fold mark, an opened ticket is the paragraph its file holds. The alt text calls it "
          "<em>the question it asks</em>, and no question on it is one the board knows about."),
@@ -57,14 +58,15 @@ NOTES = {
          "The prose names the one group everything waiting on you is in, what a row carries, the copy button "
          "on each question, the briefing and the graph preview. The rebuild link points at "
          "<code>docs/figures/board-fixture/build.py</code>, which is what shot these."),
-        ('<div class="shot" data-of="The board: needs me at the top',
+        ('<div class="shot" data-of="The board: the needs-me group',
          "Three tickets in needs me, each with its <code>D1</code> question under it and a copy button beside "
          "it, under a group-wide <em>copy all 3 questions</em>. Every row says what it asks of you (to rule "
-         "on, prototype, your answer), your time on it and its priority, and the briefing names the next "
-         "three picks beside them."),
-        ('<div class="alt">alt: The board: needs me',
-         "Both schemes ship, as for every other figure here; the switch at the top of this page puts the "
-         "panel through the other one."),
+         "on, prototype, your answer), your time on it and its priority. Beside them the briefing, written "
+         "by a model that read this tracker's repo, with a reason under each pick and a line saying which "
+         "can run as one wave."),
+        ('<div class="alt">alt: The board: the needs-me group',
+         "Both schemes ship, as for five of the six other figures here; the day / night switch at the top of "
+         "this page puts the panel through the other one."),
         ('<div class="shot" data-of="One feature on the board',
          "The opened ticket reads as blocks: its question with the detail under it, what to build, and the "
          "acceptance criteria as a checklist."),
@@ -87,7 +89,10 @@ NOTES = {
          "The alt text lists every status the tracker knows, and the needs-me group the questions feed."),
     ],
 }
-SECTIONS = {"board": "The board", "state": "Every ticket holds"}
+SECTIONS = {  # per comparison: the heading over it, and the words the README's <summary> opens with
+    "board": ("The board section", "The board"),
+    "state": ("The ticket-state figure", "Every ticket holds"),
+}
 
 
 @dataclass
@@ -104,12 +109,13 @@ def at(ref: str | None, path: str) -> str:
                           capture_output=True, text=True, check=True).stdout
 
 
+@cache
 def render_png(ref: str | None, name: str) -> str:
     """One of mx/assets' renders as a data URI, from the tree the panel belongs to.
 
-    The README ships its renders at twice the width a screen reads them at, and eight of those
-    inline would make this one file larger than every other figure in the tree put together, so
-    each is resampled to the width a panel actually draws it at.
+    The README ships its renders at twice the width a screen reads them at, so each is resampled
+    to the width a panel draws it at and re-encoded; ten full README sections inline still make
+    this the heaviest figure in the tree, at about twice 07, 08 and 09 together.
     """
     if ref is None:
         data = (ROOT / "mx" / "assets" / name).read_bytes()
@@ -140,8 +146,11 @@ def inline(md: str, ref: str | None) -> str:
     """
     def shot(day: str, night: str, alt: str) -> str:
         alt = html.escape(alt)
-        return (f'<div class="shot" data-of="{alt}"><img class="day" src="{render_png(ref, day)}" alt="{alt}">'
-                f'<img class="night" src="{render_png(ref, night)}" alt="{alt}">'
+        # one render for both schemes is one <img>: the README that ships a single PNG shows the
+        # same picture whatever the reader's setting, and so does the panel
+        images = "".join(f'<img class="{scheme}" src="{render_png(ref, name)}" alt="{alt}">'
+                         for scheme, name in ({"": day} if day == night else {"day": day, "night": night}).items())
+        return (f'<div class="shot" data-of="{alt}">{images}'
                 f'<div class="alt">alt: {alt}</div></div>')
 
     def from_picture(m: re.Match) -> str:
@@ -163,7 +172,7 @@ def panel(which: str, side: str, what: str, body: str) -> str:
         out = out.replace(anchor, f'<span class="mk">{n}</span>{anchor}', 1)
     items = "".join(f'<li><span class="mk">{n}</span><span>{note}</span></li>'
                     for n, (_, note) in enumerate(notes, 1))
-    return (f'<figure class="panel"><figcaption class="head"><b>{side}</b> {what}</figcaption>'
+    return (f'<figure class="panel" data-side="{side}"><figcaption class="head"><b>{side}</b> {what}</figcaption>'
             f'<div class="readme">{out}</div><ol class="notes">{items}</ol></figure>')
 
 
@@ -172,10 +181,10 @@ def build(args: Args) -> str:
     text = {side: at(ref, README) for side, ref in trees.items()}
     what = {"before": "as master has it", "after": "as this branch has it"}
     panels = ""
-    for which, heading in SECTIONS.items():
-        panels += f'<h2>{"The board section" if which == "board" else "The ticket-state figure"}</h2>'
+    for which, (heading, summary) in SECTIONS.items():
+        panels += f"<h2>{heading}</h2>"
         for side, ref in trees.items():
-            panels += panel(which, side, what[side], inline(section(text[side], heading), ref))
+            panels += panel(which, side, what[side], inline(section(text[side], summary), ref))
     return PAGE.replace("${panels}", panels)
 
 
@@ -225,6 +234,12 @@ a { color: var(--accent); }
   background: none; border: 1px solid var(--edge); border-radius: 4px; padding: .2rem .5rem; cursor: pointer; }
 .switch:hover { color: var(--accent); border-color: var(--accent); }
 .panel { margin: 2rem 0 0; }
+[data-side="before"] .panel[data-side="after"], [data-side="after"] .panel[data-side="before"] { display: none; }
+.seg { display: inline-flex; gap: 0; margin-left: 1rem; }
+.seg .switch { margin: 0; border-radius: 0; margin-left: -1px; }
+.seg .switch:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg .switch:last-child { border-radius: 0 4px 4px 0; }
+.seg .switch.on { color: var(--strong); border-color: var(--accent); background: var(--ground-2); }
 .head { color: var(--muted); margin-bottom: .6rem; }
 .head b { color: var(--strong); font-weight: 600; font-family: var(--font-mono); font-size: .9rem; }
 .readme { border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.25rem 1.5rem;
@@ -247,10 +262,23 @@ a { color: var(--accent); }
 <h1>The README's board section, before and after</h1>
 <p class="lead">The mx README as master has it and as this branch has it, rendered from its own
 markdown with the screenshots each version points at, and each image's alt text under it. A badge
-sits at the start of what its note is about, and the notes follow the panel.</p>
+sits at the start of what its note is about, and the notes follow the panel. The two sides are
+stacked; <b>before</b> and <b>after</b> above put one in the other's place, to flip between
+them without scrolling.</p>
 <p class="lead">Built by <code>figure.py</code> beside this file. The pipeline that shoots the
 screenshots is <code>demo</code>, beside it.</p>
 <button class="switch" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'night' ? 'day' : 'night'">day / night</button>
+<span class="seg" id="sides">
+  <button class="switch" data-show="before">before</button>
+  <button class="switch" data-show="after">after</button>
+  <button class="switch on" data-show="both">both</button>
+</span>
+<script>
+  for (const b of document.querySelectorAll("#sides .switch")) b.addEventListener("click", () => {
+    document.documentElement.dataset.side = b.dataset.show;
+    for (const other of document.querySelectorAll("#sides .switch")) other.classList.toggle("on", other === b);
+  });
+</script>
 ${panels}
 </div>
 </body>

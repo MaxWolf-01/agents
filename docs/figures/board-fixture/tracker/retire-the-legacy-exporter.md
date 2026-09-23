@@ -13,8 +13,8 @@ screen was rewritten. Deleting it is a few lines; being sure nothing calls it is
 
 ## What to build
 
-Cut from a worker's closing comment on `csv-import/02`: `export_csv` and every
-test of it go, once nothing in the tree imports it.
+Cut from a worker's closing comment on `csv-import/02`: `export_csv` and every test of it go, once
+nothing in the tree imports it.
 
 ## Acceptance criteria
 
