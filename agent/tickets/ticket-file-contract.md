@@ -16,13 +16,14 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 
 ## Properties
 
-(you, r5; P2's reach open → Q6)
+(you, r5 and r6)
 
 - P1 Text a writer put in a machine-read part of a ticket is read whole or refused with its file and line, never dropped.
-- P2 Every machine-read construct has one parser, and every script reads tickets through it.
+- P2 Every machine-read construct has one parser, in the `tracker` command, and every script reads and writes tickets through that command.
 - P3 A reference (`parent`, `blocked-by`, `<slug>#P<n>`) that names no ticket or property is refused with its file and line.
 - P4 Wherever a worker or a reviewer is given a ticket's context, it is the ticket's body plus every ancestor's body, assembled by one function. The correctness and standards reviewers are given none on purpose: they judge the diff against the code alone.
 - P5 No skill, script or glossary entry distinguishes tickets by kind beyond whether a ticket has child tickets and whether it needs the user in the loop.
+- P6 Retiring never loses anything irrecoverably: a tracked file leaves by `git rm`, so history keeps it; an untracked file is moved out of the repo to `~/logs`, unless it is a render whose generating source is tracked, which alone may be deleted. Deleting anything else takes the user saying so.
 
 ## Decisions
 
@@ -47,25 +48,23 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 - Research lands in the ticket that asked for it: the gist, the sources, the answers its criteria asked for. Extra detail too long for the ticket goes to `agent/research/`, only when there is some; what the user has to see or understand is a `/mx:show` artifact. `/mx:research` is trimmed to that. (you, r3 and r4)
 - `/mx:to-tickets` is overhauled, possibly into a companion file of the tracker skill read when a ticket is split into child tickets. (you, r4; where it lands is the prose worker's call)
 
-**The parser**
+**The tracker command**
 
-- One parser, a script in the tracker skill on PATH, called by every script that reads tickets: `board.py`, `property_coverage.py`, `dispatch` (`notes_of`, the `^status:` reads), `dispatch-ctl`, `run-worker.sh`. (you, r1)
-- A mismatch is refused at commit, by a git pre-commit hook that runs the parser over the staged ticket files, and again by every reader, each naming the file and line. (you, r3) The hook is installed per repo: `/mx:project-setup` wires it, and dispatch wires it into the repo it stages on a worker host. (you, r4)
+- One `tracker` command in the tracker skill, on PATH, owns every mechanical operation on ticket files, reads and writes: the check, a field, the whole tracker as data, a ticket's context, the frontier, filing, status changes along the tracker's transitions, recording a ruling, retiring. Every script that touches tickets goes through it: `board.py`, `property_coverage.py`, `dispatch` (`notes_of`, its status reads and writes), `dispatch-ctl`, `run-worker.sh`. The ticket body stays prose the agent writes. (you, r1 and r6)
+- `tracker --help` states the function (subcommands, flags, arguments, what each returns or refuses); the tracker skill states the concepts and the flow; neither repeats the other. The skill can embed the `--help` output so it loads with the skill. The skill shrinks to at least half its size. (you, r6)
+- Retiring runs the tracker's recipe and prints each step it ran; the commit stays with the caller. (you, r6)
+- A mismatch is refused at commit, by a git pre-commit hook that runs `tracker`'s own check over the staged ticket files, and again by every reader, each naming the file and line. Since the hook fires on every commit, no skill has to tell an agent to run the check. (you, r3 and r6) The hook is installed per repo: `/mx:project-setup` wires it, and dispatch wires it into the repo it stages on a worker host. (you, r4)
 
 **The build**
 
-- Three child tickets: the parser and its tests first; then, in parallel, the scripts moved onto the parser and the new model, and the prose (tracker, grilling, to-tickets, orient, dispatch, code-review, the worker contract, the glossary) in one worker. This ticket's own close-out review is the pass over the whole output. (you, r2)
+- Three child tickets: the `tracker` command and its tests first; then, in parallel, the scripts moved onto the parser and the new model, and the prose (tracker, grilling, to-tickets, orient, dispatch, code-review, the worker contract, the glossary) in one worker. This ticket's own close-out review is the pass over the whole output. (you, r2)
 - The live tracker is converted by the scripts ticket's worker, with judgment, not by a migration script: each feature's `spec.md` becomes a top-level ticket and its `NN-slug.md` tickets its child tickets. (you, r2)
 - The last step of this ticket's close-out is one cleanup commit that brings the whole tracker in order: work that shipped without being retired (`figures-and-demos`, for one) is retired, stale tickets are closed or rewritten. (you, r5)
 - The build starts from master once board-orients has merged, and the child tickets were written against the master before it: each worker reads what board-orients landed first (it removed the needs-human queue files, for one). (you, r2)
 
-## Open questions
-
-- **Q6: how far the parser reaches.** Whether it only reads and checks ticket files, or becomes a `tracker` command every mechanical tracker operation goes through (filing, status changes, rulings, the frontier, retiring), with the tracker skill keeping only the judgment. Drawn at `agent/show/ticket-file-contract/tracker-cli.html`.
-
 ## Testing seams
 
-The parser's command line is the one seam. P1 to P3 are executable there, as checks over generated ticket files, built by the parser's own ticket. P4 is executable at the same seam once the context assembly exists. P5 is reviewed: by each child ticket's review and by this ticket's close-out. (my call, r3)
+`tracker`'s command line is the one seam. P1 to P4 and P6 are executable there, as checks over generated ticket files and fixture trackers, built by `tracker-command-and-commit-check`. P5 is reviewed: by each child ticket's review and by this ticket's close-out. (my call, r3)
 
 ## The incident
 
