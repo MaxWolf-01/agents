@@ -61,6 +61,7 @@ from board import (
     tracker_roots,
     tracker_snapshot,
 )
+import briefing
 import github
 from briefing import DEBOUNCE, Briefing, cache_path
 from demo_tracker import S1, S2, S3, S4, Demo, build as build_demo
@@ -574,6 +575,11 @@ PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
 ASK_WORDS = {"review": "to rule on", "answer": "your answer", "design": "design session",
              "prototype": "prototype", "research": "research", "legwork": "legwork", "build": "build"}
 MARKS = {"ftag", "num", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag", "qhead", "copier"}
+# What a row holds that is not a mark: the boxes the marks sit in, and the prose a reader reads
+# rather than decodes, the ticket's own name among it (its hover words are the name in full, for a
+# row too narrow to show it). Everything else on a row explains itself, which is what makes the
+# check below catch a mark a later slice adds rather than skip it.
+NOT_MARKS = {"main", "titleline", "title", "meta", "chips", "brief", "qs", "q", "clip"}
 
 
 def rows_of(page: str) -> dict[str, str]:
@@ -832,9 +838,10 @@ def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: P
     page = out.read_text()
     seen = set()
     for row_id, row in rows_of(page).items():
-        for mark, text, tip in marks_on(row):
-            if mark not in MARKS or not text:
-                continue
+        for mark, text, tip in marks_on(summary_of(row)):
+            if mark in NOT_MARKS or not mark or not text:
+                continue  # the summary itself, and the code spans markdown leaves inside prose
+            assert mark in MARKS, f"{row_id}: {mark!r} is a mark this check has never seen, or a box to exempt"
             seen.add(mark)
             assert tip and len(tip.split()) >= 4, f"{row_id}: the {mark} mark {text!r} says {tip!r}"
     assert seen == MARKS - {"src"}, "no standalone ticket in the fixture was filed on a branch"
@@ -1061,17 +1068,22 @@ def test_a_near_design_session_is_in_needs_me_with_no_question_written_down(tmp_
     page = render_page("demo", features, standalone, log="", stamp="s", stamp_src="s.js")
     assert rows_in(page, "needs") == {"t-ledger-01"}
     assert questions_on(rows_of(page)["t-ledger-04"]) == [], "a question left on a done ticket is a leftover, not a call"
+    assert copiers(page) == [], "the done group grew a copy-all for a question no row on the board shows"
 
 
-def test_every_copy_button_on_the_board_shows_what_it_copies(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The spec's reviewed Property, at the loader-and-page seam its Testing Decisions names: the
     words a button shows on hover are what its click puts on the clipboard, cut off only where they
-    run long."""
+    run long.
+
+    The tracker is the one with its transcripts where this machine keeps its own, since the button
+    that copies a resume command is only drawn for a session the board can name, and a check that
+    rendered without them would hold the Property for four kinds of button out of five."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
     page = out.read_text()
     found = copiers(page)
-    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "democopy"}
+    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "democopy", "resume"}
     for which, text, said, tip in found:
         what, _, shown = tip.partition("\n\n")
         assert len(what.split()) >= 4 and "copy" in what, f"the {which} button says {what!r} of the click"
@@ -1081,12 +1093,17 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(demo: Demo, tmp_pat
             assert len(shown) <= 260, f"the {which} button spills {len(shown)} characters into the row"
         else:
             assert shown == text, f"the {which} button shows {shown!r} and copies {text!r}"
-        if which == "qgroup":  # the board's worth of them: the note counts what the text holds
+        # the note the page shows once a click has landed names what it landed, in the terms that
+        # button's own text is in: the file for the three that copy a path, a count for the board's
+        # worth of questions, the session for the one that copies a command
+        if which == "qgroup":
             assert said == f"{sum(line.startswith('- [D') for line in text.splitlines())} questions"
+        elif which == "resume":
+            assert said.removeprefix("the command resuming ") not in ("", said)
         else:
             assert text.splitlines()[0].rsplit("/", 1)[-1] in said, f"the {which} button's note says {said!r}"
     # the copy button the row already had says the same of itself (02-rows)
-    assert str(demo.root / "flaky-upload-test.md") in tips_on(rows_of(page)["standalone-flaky-upload-test"])["num"]
+    assert str(transcribed.root / "flaky-upload-test.md") in tips_on(rows_of(page)["standalone-flaky-upload-test"])["num"]
 
 
 def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tickets_path(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1867,6 +1884,88 @@ def test_a_watched_board_re_renders_on_a_briefing_the_session_rewrote(
     assert "Two builds wait on your ruling." in briefing_of(out.read_text())
 
 
+def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_session(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The watcher's own reason to exist, which the pass above leaves out: a ticket file moves and
+    the page follows it, with the session that writes the briefing told what moved."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(tracker), repo, out)  # as main() does before it starts watching
+    watching, session = Seen(), board.Briefer(repo, out)
+    watching = look(watching, session, tracker, repo, out)
+    rendered = out.stat().st_mtime_ns
+
+    ticket(tracker / "new-chore.md", "open")
+    look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "a ticket filed under the tracker never reached the page"
+    assert "standalone-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
+    assert session.changed_at is not None, "the briefing session was never told the tracker moved"
+
+
+def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """Two slices share one `elif`: the briefing's re-render and GitHub's answer running out. Only
+    the second is a render that asks GitHub again, so only it is done with the answer it asked
+    about. A briefing landing inside the answer's lifetime that armed the clock would leave it
+    armed against an answer no later render replaces, and a merged pull request would read as open
+    on a quiet tracker for as long as the board watched it."""
+    path_with("gh", 'echo "{}"')
+    out = tmp_path / "board.html"
+    render(tracker_roots(tracker), repo, out)
+    watching, session = Seen(), board.Briefer(repo, out)
+    watching = look(watching, session, tracker, repo, out)
+    assert watching.asked, "the render before the watch asked GitHub about the references on the board"
+
+    when = datetime.now().astimezone()
+    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
+    watching = look(watching, session, tracker, repo, out)
+    assert watching.armed is None, "the briefing's re-render took GitHub's answer as one it had asked about"
+    assert run_out(watching.asked - github.LIFETIME, watching.armed), "so nothing would ever ask again"
+
+
+def test_a_run_of_the_model_that_answers_nothing_reaches_the_open_tab(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The note says the briefing is the board's own count, and a tab reloads on the stamp alone.
+    A run that answers nothing writes no cache file, so neither the stamp nor the watcher has
+    anything to move with, and the note reaches the file and never the reader."""
+    claude = path_with("claude", "echo '{}'")  # on the machine, and answering nothing
+    out = tmp_path / "board.html"
+    stamp = lambda: Path(str(out) + ".stamp.js").read_text()  # noqa: E731
+    render(tracker_roots(tracker), repo, out)
+    before = stamp()
+    assert absences(out.read_text(), "model") == 0, "the model is here and nothing has failed yet"
+
+    watching, session = Seen(), board.Briefer(repo, out)
+    watching = look(watching, session, tracker, repo, out)  # the first pass starts the run
+    assert session.running
+    session.running.join(30)
+    assert len(runs(claude)) == 1 and briefing.SILENT, "the run that answered nothing said nothing of itself"
+
+    look(watching, session, tracker, repo, out)
+    assert stamp() != before, "the open tab has no reason to reload"
+    assert absences(out.read_text(), "model") == 1 and "it answered nothing" in out.read_text()
+
+
+def test_a_quiet_pass_of_the_watcher_makes_no_model_call(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The Property at the seam that can fail it. A render has no path to the model at all, so the
+    cost the Property is about is the watcher's: a pass over a tracker that has not moved, with the
+    model on the machine and a briefing already written, runs nothing."""
+    claude = path_with("claude", "echo '{}'")
+    out = tmp_path / "board.html"
+    when = datetime.now().astimezone()
+    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
+    watching, session = Seen(), board.Briefer(repo, out)
+    for _ in range(2):
+        watching = look(watching, session, tracker, repo, out)
+    if session.running:
+        session.running.join(30)
+    assert runs(claude) == [], "an unchanged tracker has nothing to tell the briefing session"
+
+
 def test_githubs_answer_arms_the_watchers_clock_once_per_answer() -> None:
     """The other thing a quiet pass looks at. An answer that has had its render is done with:
     a render that does not ask (a tracker that has stopped naming any reference) leaves the same
@@ -1911,6 +2010,7 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
     watcher.tick(roots, tracker_snapshot(roots, repo), at + DEBOUNCE + timedelta(seconds=1))
     watcher.running.join(30)
     assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the window after it"
+    assert f"--resume {written.session}" in runs(claude)[1], "the window's change started a fresh exploration"
     assert Briefing.read(cache_path(out)) == written, "a run that answered nothing writes nothing"
     assert watcher.told == told, "what the session was told about waits for the run that reaches it"
     cache_path(out).unlink()  # and with no briefing to fall back on, the page says why there is none
@@ -2133,6 +2233,59 @@ def test_a_tracker_with_no_review_pages_rendered_says_nothing_about_the_server(r
     out = tmp_path / "board.html"
     render(tracker_roots(tracker), repo, out)
     assert absences(out.read_text(), "review-page-server") == 0
+
+
+def test_a_done_blocker_is_the_same_dashed_context_whichever_kind_it_is(tmp_path: Path) -> None:
+    """The whole tracker's graph draws a done ticket a live one waits on as its dashed context.
+    A standalone ticket is one of those: dropping it takes the edge with it, and a reader looking
+    at the graph to see what a ticket rests on gets a complete answer for one kind and silence for
+    the other."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-waits-on-a-chore.md", "open", blocked_by=["done-chore"])
+    ticket(root / "ledger" / "02-waits-on-a-feature.md", "open", blocked_by=["other/01"])
+    (root / "other").mkdir()
+    ticket(root / "other" / "01-landed.md", "done")
+    ticket(root / "done-chore.md", "done")
+    features, standalone = load(root)
+    parts = board_graph(features, standalone)
+    assert parts, "nothing waits on anything"
+    lines = [line for part in parts["features"] for node in part["nodes"] for line in node["lines"]]
+    ghosts = [line for line in lines if ":::ghost" in line]
+    assert len(ghosts) == 2, f"one kind of done blocker is drawn and the other is not: {ghosts}"
+    drawn = {edge["line"].strip() for edge in parts["edges"]}
+    assert len(drawn) == 2, f"an edge into a done blocker was dropped with it: {drawn}"
+
+
+def test_an_external_reference_counts_once_however_the_ticket_file_wrote_it(tmp_path: Path) -> None:
+    """A blocking reference is `<feature>/NN` with two digits by convention, and a ticket file that
+    writes one digit means the same ticket. The board's graph reads it that way; the count behind
+    the briefing's next picks has to agree, or the page contradicts itself."""
+    root = tmp_path / "agent" / "tickets"
+    for feature in ("hub", "dep"):
+        (root / feature).mkdir(parents=True)
+    ticket(root / "hub" / "01-the-hub.md", "open")
+    ticket(root / "dep" / "01-short.md", "open", blocked_by=["hub/1"])
+    ticket(root / "dep" / "02-padded.md", "open", blocked_by=["hub/01"])
+    features, standalone = load(root)
+    assert board.waited_on(features, standalone)["hub/01"] == 2, "the two spellings counted as two tickets"
+
+
+def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_ticket(
+    demo: Demo, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The second half of the reviewed Property "the board keeps no side file about a ticket". The
+    three files a render writes beside the page are a content hash, GitHub's own answer keyed by
+    the reference it was asked about, and the briefing: none is about a ticket, and the next cache
+    added beside the board is what this names."""
+    out = tmp_path / "beside" / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    beside = sorted(p.name for p in out.parent.iterdir())
+    assert beside == ["board.html", "board.html.github.json", "board.html.stamp.js"]
+    paths = [str(t.path) for f in load_features(demo.root, {}, Diffviews(demo.root, None), demo.repo) for t in f.tickets]
+    for sidecar in beside[1:]:
+        held = (out.parent / sidecar).read_text()
+        assert not any(path in held for path in paths), f"{sidecar} holds a ticket's own file"
 
 
 def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
