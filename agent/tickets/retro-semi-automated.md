@@ -9,7 +9,7 @@ size: M
 
 ## Brief
 
-When a feature closes, its debrief ticket (board-orients 15) lists the feature's sessions and commit range; the retro is the debrief's step that has subagents read those sessions, commits and diffs for recurring patterns, roadblocks, and workflow or tooling that fought the agents, and files what it finds as proposed tickets. This grilling designs that step together with the debrief ticket, before 15 is built.
+When a feature closes, its debrief ticket ([The debrief is a ticket](debrief-ticket.md), moved out of board-orients) lists the feature's sessions and commit range; the retro is the debrief's step that has subagents read those sessions, commits and diffs for recurring patterns, roadblocks, and workflow or tooling that fought the agents, and files what it finds as proposed tickets. This grilling designs that step together with the debrief ticket, before that ticket is built.
 
 Rough intent, not yet grilled. Retros don't happen today. Wanted: a way to run them with little attention, combining Victor Taelin's optmem idea with the session index (`~/.dotfiles/bin/session-index`), so a retro reads indexed sessions rather than one live conversation.
 
