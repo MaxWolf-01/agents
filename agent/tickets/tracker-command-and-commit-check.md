@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 parent: ticket-file-contract
 priority: 1
 size: L
