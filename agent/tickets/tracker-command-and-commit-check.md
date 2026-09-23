@@ -52,7 +52,9 @@ The pre-commit hook is a few lines that run `tracker`'s check over the staged fi
 ## Questions
 
 - [D1] **The commit hook is not installed in this repo.** `tracker hook` writes into the hooks directory git points at, which on this worker host is one bare repo's, shared by every dispatch worktree on it: installing it here would have run the check over every other worker's commits, on tickets still written in the old shape. The mechanism is built and checked end to end against a fixture repo, and the demo's third panel is a real `git commit` refused; what is left is one `tracker hook` in your own checkout, which is yours to run now or to leave until the tracker is converted (A6).
+  - Ruled 2026-09-23: stays as built; the hook is installed in your own checkout once the tracker is converted.
 - [D2] **A reference that names no ticket is refused, where the tracker conventions count a missing one as done.** The parent ticket's P3 refuses any dangling `parent`, `blocked-by` or `<slug>#P<n>`; MARKDOWN.md's Ticket state says "A reference whose file no longer exists counts as `done`, a deleted proposal included". Both cannot hold. As built P3 wins: `retire` drops the edges onto what it retires and refuses while a ticket that stays cites a property of one leaving, so nothing is left dangling (A4). The cost is that rejecting a proposal now means dropping the edges onto it in the same commit, which the hook will say. The other reading keeps MARKDOWN.md's rule and takes `blocked-by` out of P3's reach.
+  - Ruled 2026-09-23: P3 stands, as built. The gap it leaves, a rejected ticket every other one still names, is `tracker drop`.
 - [D3] **A ticket the user is in the loop for is done by your ruling alone.** `done` otherwise needs the ticket's branch merged, or every child ticket done. A grilling or a piece of legwork produces conversation and rounds on somebody else's branch, so under those two rules it could never reach `done` and could never be retired. As built, a ticket carrying `needs-user: true` takes your ruling as the landing (A5). The alternative is that it gets a branch like any other build, which would make every grilling carry an empty one.
 
 ## Comments
@@ -99,3 +101,27 @@ It builds a throwaway tracker out of the corpus and drives the real command over
   - The parent ticket's P3 and `MARKDOWN.md`'s Ticket state contradict each other outright (D2), and nothing in the ticket said which wins. A build can pick, but the pick is a rule change that reaches the prose sibling and the orchestrator's reject step.
   - `tracker hook` writes into the hooks directory shared by every worktree of a repo. On a dispatch worker host that is the whole bare repo, so a worker cannot install a hook without reaching into every other worker's commits (D1). Anything that has a worker install a repo-wide hook wants an isolated clone, or a hook that only fires for the worktree that installed it.
   - The four-axis review took about 25 minutes of wall clock against a 1,100-line diff, which is most of what this ticket spent waiting. The Tests axis's mutation run was worth all of it: it found the eight fixtures that could not tell the fix from the bug, which no amount of reading had.
+
+Addressed: D1, D2, D3
+
+`tracker drop <slug>` landed on the same branch, in `1c04735`: the reject ruling as one command. It `git rm`s the ticket, drops the `blocking` edges onto it from the tickets that stay, prints each step and leaves the commit to the caller, so the reason for the rejection goes in that message and git history holds the file and the reason together; `--help` says so in a line. It refuses a `done` ticket, which is `retire`'s, and refuses while a ticket that stays names it as its parent or cites one of its properties, the way retiring already refuses a citation. D1 and D3 are as they were, and the rulings on D1 and D2 are written under their questions.
+
+**Demo**
+
+```
+$ /home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/show/tracker-command-and-commit-check/demo
+wrote /home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/show/tracker-command-and-commit-check/out/tracker-command.html
+no display here; open the file above to read it
+```
+
+The page has a panel for it now, the eighth: a proposal dropped, the edge onto it gone from the ticket that waited on it while the edge it still has stays, and a shipped ticket refused because taking shipped work out is retiring, which is the panel after.
+
+**Details, if you want them**
+
+- [D7] Assumptions, continuing the block above
+  - A16 `mx/skills/tracker/tracker.py:512`: `drop` takes the ticket alone and refuses while any ticket that stays names it as its parent, rather than taking the child tickets with it as `retire` does. A rejection is a ruling on one ticket, and child tickets of a rejected one are their own rulings; dropping them unasked would delete work the user never ruled on.
+  - A17 `mx/skills/tracker/tracker.py:524`: the guard against uncommitted changes is now shared with `retire`, so the message both print says "a file that leaves" rather than "a retired file".
+  - A18 `mx/skills/tracker/tracker.py:518`: `drop` leaves a show directory or a research note the dropped ticket owns where it is. The reject ruling discards the build with `git branch -D`, so what a rejected ticket produced lives on that branch and not in the tracker's copy; anything that did reach this branch is the caller's to remove in the same commit.
+- [D8] The round
+  - The suite is 336 passing, `make check` and `render-lint` clean. Seven checks cover `drop`: the four statuses it takes, the edges it sweeps and the one it leaves, the file in history and the removal staged, and each of the three refusals.
+  - Nothing else moved: the review's findings from the first round stand as `842be04` left them, and D3 and D5 are as built.
