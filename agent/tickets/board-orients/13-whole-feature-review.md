@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 blocked-by: [07, 08, 09, 11]
 priority: 2
 size: S
