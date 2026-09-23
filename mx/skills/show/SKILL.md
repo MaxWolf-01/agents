@@ -9,22 +9,24 @@ A thing is understood in front of a render: someone sees what it is and what it 
 
 ## The table
 
-| Shape | Figure, for a decision being stated | Demo, for a change that landed |
+| Shape | Figure | Demo |
 | --- | --- | --- |
 | A schema, a record, an API: a new entity or relation, a row, a document, a payload | ER diagram for the entities and their relations, and a sample instance of the record they hold beside it: a CSV row, a JSON line | the serialized instance the change now writes; for an API, a request and its response |
 | An exchange or a flow: three or more parties, an ordering that matters, a long or interactive run | sequence diagram | the flow driven: a recording, a walkthrough the demo starts, or a tmux pane to attach to |
 | A state with named transitions | state chart | none |
 | A new or moved module boundary | dependency diagram | none |
-| A prompt, a skill, a process change | an excerpt of the session it would produce, or that session role-played as a stand-in | a driven session transcript, before and after where the difference is the point |
+| A prompt, a skill, a process change | the before and after of what an agent writes: a session driven each way, or one role-played as a stand-in where the change is not built yet | none |
 | A script, a hook, a CLI | example invocations, or the interface with sample outputs | the real invocation and the output it produced, `--help` for a CLI |
-| A page or a UI | a prototype of it (`/mx:prototype`), a rough render to judge before the page is built | the page opened, a screenshot per state, a tutorial that walks the reader through it, or a recording |
+| A page or a UI | before it exists, a prototype of it (`/mx:prototype`); once it does, renders of the old and the new state from the two branches, toggled or side by side, each with numbered where-to-look notes | the page opened, a screenshot per state, or a recording |
 | A config or a keybinding | none | the setting or the keystroke, and what it does |
 
-Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, mean nothing is owed: no slot is ever padded to have something in it. A change of no shape the table gives a demo owes none, and the landing that carries it says so in one line: the diff is the demo. Every document takes this table, an ADR included, and most ADRs hit no row.
+A **figure** explains through a drawing: a decision before anything exists, and a comparison the built thing cannot show on its own, above all a before and after. A **demo** is the built thing itself, running.
 
-The page row is the one whose figure is another skill's artefact: `/mx:prototype` owns how it is built and where it lives, and the decision links it the way it links a figure.
+Which a delivered change owes follows from what it is. A change to something that was already there gets **both**: the before-and-after figure, and the demo of the new state. A new thing with no before gets the demo alone. A decision, and a change whose effect cannot be run, gets the figure alone. A change of no shape the table names gets neither, and the landing that carries it says so in one line: the diff is the demo.
 
-A **before/after** is the shape that crosses the rows: a decision or a change that moves something already there is shown as the two side by side, whatever else its row gives it.
+Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none means nothing is owed there: no slot is ever padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
+
+The page row is the one whose figure can be another skill's artefact: `/mx:prototype` owns how a prototype is built and where it lives, and the decision links it the way it links a figure.
 
 The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
 
@@ -43,7 +45,7 @@ Either way the render is regenerated from the source whenever the decision moves
 
 ## A demo
 
-A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A wall of commands and their output is the material a demo is made from, not the demo. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
+A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A demo walks its reader through what it shows, tutorial style: where to look, what each thing on screen is, and what changed marked as changed. A wall of commands and their output is the material a demo is made from, not the demo, and the running thing with a paragraph beside it is not one either: "open the board and click two rows" leaves the reader to find the change. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
 
 One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: what it reads sits beside it in the same directory.
 
