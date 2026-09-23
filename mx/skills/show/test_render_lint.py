@@ -10,10 +10,10 @@ here exhibits one condition, and the oracle is what a reader sees on it: two lab
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
 its title off, which is a finding that never fails a run; and text a clip leaves nothing of,
-like the text a folded disclosure holds, is hidden on purpose, while an element with no box of
-its own hides its text by visibility and not by opacity, which has nothing to act on. Text the
-browser renders late, or lays out below the first screen, is measured. A box cuts off only what
-it is the containing block of, the page itself included.
+like the text a folded disclosure holds, is hidden on purpose. An element with no box of its own
+hides its text by visibility, and not by opacity, which has no box to act on. Text the browser
+renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
+off only what it is the containing block of, the page itself included.
 
 A run launches Chromium, so these take a second or two each.
 """
@@ -39,17 +39,34 @@ TWO_LABELS = """
 </div>
 """
 
+# Two screens of a layout sized in vh, which grows under the viewport the run resizes: the
+# labels land below the height the page first asked for.
+TWO_SCREENS = """
+<style>.hero { height: 100vh; position: relative }</style>
+<section class="hero"><span style="position:absolute;left:40px;top:50%">The first screen</span></section>
+<section class="hero">
+  <span style="position:absolute;left:40px;top:50%">Row label one</span>
+  <span style="position:absolute;left:40px;top:calc(50% + 2px)">Row label two</span>
+</section>
+"""
+
 
 def lint(tmp_path: Path, body: str, crops: Path | None = None) -> tuple[int, list[dict]]:
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
     run = subprocess.run([str(LINT), str(page), "--json", *(["--crops", str(crops)] if crops else [])], capture_output=True, text=True)
-    assert run.returncode in (0, 1), run.stderr
+    assert run.returncode in (0, 1) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
 
 
 def kinds(findings: list[dict]) -> list[str]:
     return [f["kind"] for f in findings]
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    """A PNG's pixel width and height, out of the IHDR chunk its header opens with."""
+    header = path.read_bytes()[16:24]
+    return int.from_bytes(header[:4]), int.from_bytes(header[4:])
 
 
 def test_two_labels_drawn_over_each_other_collide(tmp_path):
@@ -192,7 +209,7 @@ def test_a_positioned_box_does_clip_what_it_holds(tmp_path):
 
 
 def test_a_box_that_holds_what_it_positions_clips_it_however_it_holds_it(tmp_path):
-    held = "perspective:500px", "backdrop-filter:blur(1px)", "translate:0 0"
+    held = "perspective:500px", "backdrop-filter:blur(1px)", "translate:0 0", "offset-path:circle(1px)", "will-change:Transform"
     code, findings = lint(
         tmp_path,
         "".join(
@@ -234,13 +251,25 @@ def test_the_page_does_not_clip_what_it_keeps_in_the_viewport(tmp_path):
     assert code == 1
 
 
-def test_the_page_does_not_clip_what_a_viewport_sized_layout_puts_below_the_fold(tmp_path):
+def test_a_page_that_scrolls_down_shows_what_a_viewport_sized_layout_puts_below_the_fold(tmp_path):
+    code, findings = lint(tmp_path, "<style>body { overflow-x: hidden }</style>" + TWO_SCREENS)
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
+def test_a_page_that_cannot_scroll_down_hides_it(tmp_path):
+    code, findings = lint(tmp_path, "<style>html { overflow: hidden }</style>" + TWO_SCREENS)
+    assert findings == []
+    assert code == 0
+
+
+def test_a_page_that_scrolls_sideways_shows_what_stands_off_to_the_right(tmp_path):
     code, findings = lint(
         tmp_path,
-        f"""
-        <style>body {{ overflow-x: hidden }} .hero {{ height: 100vh; position: relative }}</style>
-        <section class="hero"><span style="position:absolute;left:40px;top:50%">The first screen</span></section>
-        <section class="hero">{TWO_LABELS.format(one=10, two=12)}</section>
+        """
+        <style>html { overflow-y: hidden } body { width: 3000px }</style>
+        <span style="position:absolute;left:2000px;top:20px">Off to the right A</span>
+        <span style="position:absolute;left:2000px;top:22px">Off to the right B</span>
         """,
     )
     assert kinds(findings) == ["overlap"]
@@ -268,21 +297,15 @@ def test_a_box_holds_what_will_change_says_it_will_position_and_not_what_merely_
 
 
 def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
-    code, findings = lint(
-        tmp_path,
-        """
-        <style>.hero { height: 100vh; position: relative }</style>
-        <section class="hero"><span style="position:absolute;left:40px;top:50%">The first screen</span></section>
-        <section class="hero">
-          <span style="position:absolute;left:40px;top:50%">Row label one</span>
-          <span style="position:absolute;left:40px;top:calc(50% + 2px)">Row label two</span>
-        </section>
-        """,
-        crops=tmp_path / "crops",
-    )
+    code, findings = lint(tmp_path, TWO_SCREENS, crops=tmp_path / "crops")
     assert code == 1
-    assert [Path(f["crop"]).name for f in findings] == ["page-01-overlap.png"]
-    assert (tmp_path / "crops" / "page-01-overlap.png").exists()
+    crop = tmp_path / "crops" / "page-01-overlap.png"
+    assert [Path(f["crop"]).name for f in findings] == [crop.name]
+    # The finding's box and the 24px margin around it, to the pixel the screenshot rounds to,
+    # so a crop clamped to a sliver of the first screen fails here rather than passing as a
+    # file that exists.
+    box, (wide, tall) = findings[0]["box"], png_size(crop)
+    assert abs(wide - (box["w"] + 48)) <= 1 and abs(tall - (box["h"] + 48)) <= 1, (wide, tall, box)
 
 
 def test_a_scrolling_box_cuts_nothing_off(tmp_path):

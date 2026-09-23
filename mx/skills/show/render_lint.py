@@ -67,31 +67,34 @@ MEASURE = r"""
   // viewport's frame. The properties are the ones Chrome answers yes for, probed one at a time;
   // container-type, will-change: opacity and will-change: content-visibility read like they
   // belong and do not, and will-change is matched whole, since transform-origin is not transform.
-  const WILL_HOLD = new Set(['transform', 'translate', 'rotate', 'scale', 'perspective', 'filter', 'backdrop-filter', 'contain', 'transform-style', 'offset-path'])
-  const wants = (cs, what) => cs.willChange.split(',').some((w) => what.has ? what.has(w.trim()) : w.trim() === what)
+  const WILL_HOLD = ['transform', 'translate', 'rotate', 'scale', 'perspective', 'filter', 'backdrop-filter', 'contain', 'transform-style', 'offset-path']
+  const wants = (cs, ...names) => cs.willChange.toLowerCase().split(',').some((w) => names.includes(w.trim()))
   const holds = (cs, pos) =>
     (pos === 'absolute' && (cs.position !== 'static' || wants(cs, 'position'))) ||
     cs.transform !== 'none' || cs.translate !== 'none' || cs.rotate !== 'none' || cs.scale !== 'none' ||
-    cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' ||
+    cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' || cs.offsetPath !== 'none' ||
     cs.transformStyle === 'preserve-3d' || cs.contentVisibility !== 'visible' ||
-    /paint|layout|strict|content/.test(cs.contain) || wants(cs, WILL_HOLD)
+    /paint|layout|strict|content/.test(cs.contain) || wants(cs, ...WILL_HOLD)
+  // How far a clipping edge reaches: a box the reader can scroll shows everything inside it, one
+  // that cannot stops at its own frame.
+  const far = (overflow, frame, whole) => (['hidden', 'clip'].includes(overflow) ? frame : Math.max(frame, whole))
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
   // it cannot scroll say how much they cut off.
   const clip = (el, r) => {
     let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
-      // Overflow on the root elements is the viewport's, which cuts every box on the page and
-      // reaches past the element's own; body hands its overflow up only while html has none.
-      // The viewport is as tall as the page here, since --width's resize gave the page the
-      // height it asked for, and a page whose own height follows the viewport's outgrows it.
+      // Overflow on the root elements is the viewport's, which cuts every box on the page rather
+      // than only what its own border box holds; body hands its overflow up only while html has
+      // none. The viewport was resized to the page's height, and a page whose own height follows
+      // the viewport's outgrows that, so the clip reaches the rest only where the root scrolls.
       const root = a === document.documentElement || (a === document.body && getComputedStyle(document.documentElement).overflowX === 'visible')
       if (a !== el && !root && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
       pos = cs.position
       if (cs.overflowX === 'visible' || cs.display === 'inline') continue
       const ab = a.getBoundingClientRect()
       const c = root
-        ? { left: 0, top: 0, right: innerWidth, bottom: Math.max(innerHeight, document.documentElement.scrollHeight) }
+        ? { left: 0, top: 0, right: far(cs.overflowX, innerWidth, document.documentElement.scrollWidth), bottom: far(cs.overflowY, innerHeight, document.documentElement.scrollHeight) }
         : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
       if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY))
         cut = Math.max(cut, c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
