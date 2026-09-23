@@ -669,3 +669,19 @@ def test_retiring_a_file_with_changes_no_commit_holds_is_refused_before_anything
     said = run(repo, "retire", "one-flow")
     assert said.code == 1 and "git history is what keeps a retired file" in said.err
     assert path.exists()
+
+
+def test_a_ticket_read_by_path_is_read_in_the_tracker_its_directory_holds(corpus: Path, tickets: Path) -> None:
+    """A path names a file, and the file names a tracker: the ancestry is read from beside it."""
+    read = json.loads(run(corpus, "data", str(tickets / "board-orients-workflow.md")).out)["tickets"][0]
+    assert read["ancestors"] == ["board-orients"]
+
+
+def test_a_section_keeps_the_code_the_ticket_fenced_in_it(tickets: Path, repo: Path) -> None:
+    """A fence holds a shape the ticket quotes, which is not one of the ticket's own bullets and is
+    still the ticket's own words."""
+    ticket(tickets, "one-flow", "## Questions\n\n- [D1] **Ask?** Its detail.\n\n## Comments\n\n"
+                                "```markdown\n- [D1] **A shape it quotes** rather than asks.\n```\n")
+    read = json.loads(run(repo, "data", "one-flow").out)["tickets"][0]
+    assert [q["tag"] for q in read["questions"]] == ["D1"], "the fenced item is quoted, not asked"
+    assert "- [D1] **A shape it quotes** rather than asks." in read["sections"][-1]["text"]

@@ -236,11 +236,14 @@ def read(path: Path, text: str) -> Ticket:
     refusals: list[Refusal] = []
     meta, at, body_line, body = frontmatter(path, text, refusals)
     lines = [(body_line + n, line) for n, line in enumerate(unfenced(body).splitlines())]
+    # the bullets and headings are found in the unfenced text, where a shape the ticket quotes is
+    # not one of its own; a section's words are the file's own lines, fences and all
+    raw = {body_line + n: line for n, line in enumerate(body.splitlines())}
 
     title = next((TITLE.match(line).group(1) for _, line in lines if TITLE.match(line)), None)
     if title is None:
         refusals.append(Refusal(path, body_line, "no `# ` heading; the H1 is the ticket's short name, which a board row shows"))
-    written = sections(lines)
+    written = sections(lines, raw)
     if not any(section.heading.lower() == "brief" for section in written):
         refusals.append(Refusal(path, body_line, "no `## Brief` section; the brief is what a row tells the user, reading cold"))
 
@@ -284,25 +287,26 @@ def frontmatter(path: Path, text: str, refusals: list[Refusal]) -> tuple[dict, d
     return meta, at, block.count("\n") + 4, match.group(2)
 
 
-def sections(lines: Sequence[tuple[int, str]]) -> list[Section]:
+def sections(lines: Sequence[tuple[int, str]], raw: dict[int, str]) -> list[Section]:
     """The `## ` sections in file order; what stands above the first of them is no section's."""
     found: list[Section] = []
     opened: tuple[str, int, list[tuple[int, str]]] | None = None
     for number, line in lines:
         if heading := HEADING.match(line):
             if opened:
-                found.append(shut(opened))
+                found.append(shut(opened, raw))
             opened = (heading.group(1), number, [])
         elif opened:
             opened[2].append((number, line))
     if opened:
-        found.append(shut(opened))
+        found.append(shut(opened, raw))
     return found
 
 
-def shut(opened: tuple[str, int, list[tuple[int, str]]]) -> Section:
+def shut(opened: tuple[str, int, list[tuple[int, str]]], raw: dict[int, str]) -> Section:
     heading, line, lines = opened
-    return Section(heading=heading, line=line, text="\n".join(raw for _, raw in lines).strip("\n"), bullets=bullets(lines))
+    text = "\n".join(raw[number] for number, _ in lines).strip("\n")
+    return Section(heading=heading, line=line, text=text, bullets=bullets(lines))
 
 
 def section_named(written: Sequence[Section], name: str) -> list[Section]:
@@ -724,8 +728,9 @@ def data(source: Annotated[str, tyro.conf.Positional] = "") -> int:
     """
     if source == "-" or (source and source.endswith(".md")):
         path = Path("-.md") if source == "-" else Path(source)
-        ticket = read(path, sys.stdin.read() if source == "-" else path.read_text())
-        tracker = tracker_of(path.parent, {path: ticket.body})
+        text = sys.stdin.read() if source == "-" else path.read_text()
+        ticket = read(path, text)
+        tracker = tracker_of(path.parent, {path: text})
         refuse(ticket.refusals)
         print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker)]}, indent=2))
         return 0
@@ -1127,6 +1132,9 @@ def cli(argv: Sequence[str]) -> int:
     """The command line as a call: what `main` runs, answering with the code it would exit on."""
     try:
         return app.cli(args=list(argv), description=__doc__, config=(tyro.conf.OmitArgPrefixes,)) or 0
+    except OSError as missing:
+        print(f"tracker: refused: {missing}", file=sys.stderr)
+        return 1
     except Refused as no:
         said = str(no)
         print(f"tracker: refused:\n{said}" if "\n" in said else f"tracker: refused: {said}", file=sys.stderr)
