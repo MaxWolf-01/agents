@@ -39,12 +39,21 @@ S2 = "b52e7d10-9a3c-4f68-8e17-3c9b2a5d4e81"  # orchestrating csv-import
 S3 = "c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12"  # loose triage
 S4 = "d9e1b2c3-7f40-4a5b-8c6d-2e3f4a5b6c7d"  # a worker on agent@pc: no transcript here
 
-TRANSCRIBED = {  # the sessions whose transcript is on this machine: what the board shows for each
-    S1: {"title": "Grilling the CSV import", "ai_title": "Grilling the CSV import", "cwd": "/home/max/repos/ledger"},
-    S2: {"title": "Dispatching csv-import, wave 1", "ai_title": "Wave 1 of csv-import",
-         "renamed": "Dispatching csv-import, wave 1", "cwd": "/home/max/repos/ledger-csv-import"},
-    S3: {"title": "Triage after the holidays", "ai_title": "Triage after the holidays", "cwd": "/home/max/repos/ledger"},
-}
+def local_sessions(repo: Path) -> dict[str, dict]:
+    """The sessions this machine has a transcript of, and what the board shows for each: the title,
+    and the directory the session ran in.
+
+    Two of them ran in the ledger itself, which is the repo this builds, so their resume command is
+    one that can be run. The third ran in a feature worktree dispatch has since removed, which is
+    where every locally dispatched session ends up: its directory is gone and it is resumable all
+    the same.
+    """
+    return {
+        S1: {"title": "Grilling the CSV import", "ai_title": "Grilling the CSV import", "cwd": str(repo)},
+        S2: {"title": "Dispatching csv-import, wave 1", "ai_title": "Wave 1 of csv-import",
+             "renamed": "Dispatching csv-import, wave 1", "cwd": f"{repo}-csv-import"},
+        S3: {"title": "Triage after the holidays", "ai_title": "Triage after the holidays", "cwd": str(repo)},
+    }
 
 
 @dataclass(frozen=True)
@@ -65,7 +74,7 @@ def build(dest: Path) -> Demo:
         shutil.rmtree(stale, ignore_errors=True)
     # claude/ is a CLAUDE_CONFIG_DIR of its own, so the board reads the fixture's sessions by
     # pointing at it and the demo's resume commands are the ones the fixture's transcripts answer
-    demo = Demo(repo, repo / "agent" / "tickets", repo / "claude" / "projects", TRANSCRIBED)
+    demo = Demo(repo, repo / "agent" / "tickets", repo / "claude" / "projects", local_sessions(repo))
     write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nclaude/\n")
     git(repo, "init", "-q", "-b", "master")
 
@@ -84,7 +93,7 @@ def build(dest: Path) -> Demo:
     build_in_review(repo)
     stopped_on_questions(repo)
     review_pages(repo)
-    transcripts(demo.transcripts)
+    transcripts(demo.transcripts, demo.sessions)
     return demo
 
 
@@ -591,14 +600,14 @@ def review_pages(repo: Path) -> None:
         write(repo / page, f"<!doctype html>\n<title>{Path(page).stem}</title>\n<p>the diff, as diffview renders it\n")
 
 
-def transcripts(root: Path) -> None:
+def transcripts(root: Path, sessions: dict[str, dict]) -> None:
     """The transcript of each session this machine has one for; the fourth is a worker on another
     host and has none here.
 
     S2 also carries the `/rename` name, so a reader has both to tell apart; the other two have only
     Claude Code's own title, which is what every transcript on this machine carries.
     """
-    for sid, info in TRANSCRIBED.items():
+    for sid, info in sessions.items():
         transcript(root, sid, info["cwd"], info["ai_title"], info.get("renamed"))
 
 

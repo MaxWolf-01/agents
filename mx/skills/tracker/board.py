@@ -387,7 +387,6 @@ class Ticket:
     size: str | None = None  # XS | S | M | L | XL, the user's time on it
     brief: str = ""  # the ## Brief section, as inline HTML
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
-    sessions: list["Session"] = field(default_factory=list)  # the sessions that committed on it, oldest first
 
 
 @dataclass
@@ -422,7 +421,6 @@ class Standalone:
     size: str | None = None
     brief: str = ""
     questions: list["Question"] = field(default_factory=list)
-    sessions: list["Session"] = field(default_factory=list)
 
 
 def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, repo: Path | None) -> list[Feature]:
@@ -478,7 +476,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         status = "blocked"
     written = ticket_body(body, status, roots.repo, None, path)
     asked = questions_of(written, body)
-    worked = ticket_sessions(path, roots.repo) if roots.repo else []
+    worked = ticket_sessions(path, roots.repo)
     return Standalone(
         slug=path.stem,
         title=name or path.stem.replace("-", " "),
@@ -494,7 +492,6 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         size=ticket_size(meta, path),
         brief=brief,
         questions=asked,
-        sessions=worked,
     )
 
 
@@ -549,7 +546,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
         blockers = meta.get("blocked-by") or []
         written = ticket_body(body, status, repo, feature_dir.name, path)
         asked = questions_of(written, body)
-        worked = ticket_sessions(path, repo) if repo else []
+        worked = ticket_sessions(path, repo)
         tickets.append(
             Ticket(
                 num=path.name[:2],
@@ -566,7 +563,6 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 size=ticket_size(meta, path),
                 brief=brief,
                 questions=asked,
-                sessions=worked,
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -871,25 +867,35 @@ class Session:
 
     @property
     def resume(self) -> str:
-        """The command that picks the session up where it left off, in the directory it ran in."""
+        """The command that picks the session up where it left off, in the directory it ran in.
+
+        The directory is gone once dispatch has cleaned up the worktree a session ran in, and the
+        session is still there: `claude --resume` finds it from wherever it is run, so what the
+        vanished directory costs is the `cd`, not the resume.
+        """
+        if not self.cwd or not Path(self.cwd).is_dir():
+            return f"claude --resume {self.id}"
         return f"cd {shlex.quote(self.cwd)} && claude --resume {self.id}"
 
 
-def ticket_sessions(path: Path, repo: Path, transcripts: Path | None = None) -> list[Session]:
+def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = None) -> list[Session]:
     """The sessions whose commits changed the ticket file, from the `Session:` trailers on every
     branch, oldest first. A session with no transcript under `transcripts` (TRANSCRIPTS, this
-    machine's, by default) is a worker on another host and is left out: the user cannot resume it."""
+    machine's, by default) is a worker on another host and is left out: the user cannot resume it.
+    """
+    if repo is None or (name := repo_name(path)) is None:  # a tracker outside any checkout
+        return []
     found = []
-    for sid, (first, last) in session_log(repo).get(log_key(path), {}).items():
+    for sid, (first, last) in session_log(repo).get(name, {}).items():
         if written := transcript(sid, transcripts or TRANSCRIPTS):
             title, cwd = written
             found.append(Session(sid, title or sid, cwd, first, last))
     return found
 
 
-# one record per commit, its files under it: the date the session wrote it, and the trailers it
-# signed it with (several where a squash carried two sessions' work into one commit)
-SESSION_LOG = f"--format=%x00%as%x00%(trailers:key={SESSION_TRAILER},valueonly,separator=%x1f)%x00"
+# one record per commit, its files under it: the date the session wrote it, and the session that
+# signed it
+SESSION_LOG = f"--format=%x1e%as %(trailers:key={SESSION_TRAILER},valueonly,separator=%x20)"
 
 
 @functools.cache
@@ -897,24 +903,36 @@ def session_log(repo: Path) -> dict[str, dict[str, tuple[str, str]]]:
     """Which sessions changed which file, and the dates of each session's first and last commit on
     it, oldest session first: one pass over every branch of the repo.
 
-    A file is keyed by its own name under its directory's, which is how every checkout of the repo
-    names it: a feature read from its worktree is the same file to git as the main checkout's.
+    The dates are min and max rather than the ends of the walk, which is in commit order while the
+    dates are the author's: a cherry-picked commit would otherwise leave a range running backwards.
     """
     changed: dict[str, dict[str, tuple[str, str]]] = {}
     # a commit's own account of which session made it, written by the prepare-commit-msg hook
-    written = git(repo, "log", "--all", "--reverse", "--name-only", SESSION_LOG).split("\0")
-    for date, trailers, names in zip(written[1::3], written[2::3], written[3::3]):
-        for sid in filter(None, trailers.split("\x1f")):
-            for name in names.split("\n"):
-                if name.strip():
-                    on_file = changed.setdefault(log_key(Path(name)), {})
-                    on_file[sid] = (on_file.get(sid, (date, date))[0], date)
+    written = git(repo, "log", "--all", "--reverse", "--name-only", SESSION_LOG)
+    for record in filter(None, written.split("\x1e")):  # git()'s strip eats the leading separator
+        head, _, names = record.partition("\n")
+        date, *sessions = head.split()
+        for sid in sessions:
+            for name in filter(None, names.split("\n")):
+                first, last = changed.setdefault(name, {}).get(sid, (date, date))
+                changed[name][sid] = (min(first, date), max(last, date))
     return changed
 
 
-def log_key(path: Path) -> str:
-    """A file as the log keys it: its own name under its directory's."""
-    return f"{path.parent.name}/{path.name}"
+def repo_name(path: Path) -> str | None:
+    """The file as git names it: its path from the top of the checkout that holds it, which is the
+    name every worktree of the repo gives it and the name the log prints. None outside a checkout."""
+    top = toplevel(path.parent)
+    return str(path.resolve().relative_to(top)) if top else None
+
+
+@functools.cache
+def toplevel(directory: Path) -> Path | None:
+    """The top of the checkout `directory` is in, or None where it is in none."""
+    done = subprocess.run(
+        ["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    )
+    return Path(done.stdout.strip()).resolve() if done.returncode == 0 else None
 
 
 TITLES = ("customTitle", "aiTitle")  # a session's /rename name, else Claude Code's own
@@ -922,12 +940,12 @@ TITLES = ("customTitle", "aiTitle")  # a session's /rename name, else Claude Cod
 
 def transcript(session: str, transcripts: Path) -> tuple[str, str] | None:
     """(the session's title, the directory it ran in) from its transcript on this machine, or None
-    where it has none: a worker on another host, whose session the user cannot resume."""
+    where this machine has no transcript of it. The newest transcript answers, since a session
+    resumed in another directory writes a second one."""
     written = sorted(transcripts.glob(f"*/{session}.jsonl"), key=lambda p: p.stat().st_mtime)
     if not written:
         return None
-    title, cwd = read_transcript(written[-1], written[-1].stat().st_size)
-    return (title, cwd) if cwd else None
+    return read_transcript(written[-1], written[-1].stat().st_size)
 
 
 @functools.cache
@@ -940,7 +958,7 @@ def read_transcript(path: Path, size: int) -> tuple[str, str]:
     titles: dict[str, str] = {}
     cwd = ""
     for line in path.read_text(errors="replace").splitlines():
-        if not any(mark in line for mark in ("Title", '"cwd"')):
+        if not any(key in line for key in (*TITLES, "cwd")):
             continue
         try:
             record = json.loads(line)
@@ -960,8 +978,9 @@ def absence_note(source: str, words: str) -> str:
 # ---- an opened ticket -----------------------------------------------------
 
 
-def ticket_blocks(body: str, feature: str | None, asked: Sequence[Question], show: Path,
-                  worked: Sequence[Session] = ()) -> str:
+def ticket_blocks(
+    body: str, feature: str | None, asked: Sequence[Question], show: Path, worked: Sequence[Session]
+) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
     order the file writes them, the comments folded away as history.
@@ -1044,9 +1063,9 @@ WHEN_TIP = "When this session first committed on the ticket, and when it last di
 
 
 def sessions_block(worked: Sequence[Session]) -> str:
-    """The sessions whose commits changed the ticket, each with the command that resumes it: every
-    one of them has a transcript on this machine, so every one of them resumes. A worker on another
-    host is not here, and a ticket no session has committed on has no block."""
+    """The sessions that worked on the ticket, each with the command that resumes it. The label says
+    on this machine because that is the list: a worker on another host is not in it (ticket_sessions),
+    and a ticket no session has committed on has no block at all."""
     if not worked:
         return ""
     items = "".join(
@@ -1056,7 +1075,7 @@ def sessions_block(worked: Sequence[Session]) -> str:
         + "</li>"
         for session in worked
     )
-    return block("sessions", f'<ul class="sessions">{items}</ul>')
+    return block("sessions on this machine", f'<ul class="sessions">{items}</ul>')
 
 
 def worked_on(session: Session) -> str:

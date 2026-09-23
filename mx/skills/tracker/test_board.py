@@ -1120,11 +1120,12 @@ def test_an_opened_ticket_reads_as_blocks_in_one_order(transcribed: Demo, tmp_pa
     """The build in review, which has one of every block: its questions, the sessions that worked
     on it, its artefacts, then its own sections as the file writes them, the comments last and
     folded."""
-    demo = transcribed
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
     row = rows_of(out.read_text())["t-csv-import-02"]
-    assert labels_of(row) == ["questions", "sessions", "artefacts", "what to build", "acceptance criteria", "comments"]
+    assert labels_of(row) == [
+        "questions", "sessions on this machine", "artefacts", "what to build", "acceptance criteria", "comments",
+    ]
     # the brief is the row's own: read before anything is opened, and written once
     assert "You tell the importer once" in summary_of(row)
     assert "You tell the importer once" not in body_of(row)
@@ -1279,39 +1280,55 @@ def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, trac
 
 HERE = "f1e2d3c4-1111-4111-8111-111111111111"  # committed on the main branch and on the ticket's own
 AWAY = "f1e2d3c4-2222-4222-8222-222222222222"  # a worker on another host: no transcript on this machine
-NAMED = "f1e2d3c4-3333-4333-8333-333333333333"  # committed on the ticket branch only, and was renamed by hand
+NAMED = "f1e2d3c4-3333-4333-8333-333333333333"  # committed on the ticket branch only, renamed by hand, its worktree gone
+NEW = "f1e2d3c4-4444-4444-8444-444444444444"  # committed before Claude Code had titled it
+LOOKALIKE = "agent/show/demo/tickets/map-columns.md"  # same name, same directory name, another file
 
 
 @pytest.fixture
 def worked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
-    """(the tracker, its repo) of a ticket three sessions committed on, one of them only on the
-    ticket's own branch and one of them a worker on another host, beside a ticket committed before
-    any session put its id on a commit. This machine's transcripts are the two it has."""
-    repo = tmp_path / "ledger"
+    """(the tracker, its repo) of a ticket four sessions committed on: one on the main branch, one
+    only on the ticket's own branch, one a worker on another host, one too new to have a title.
+    Beside it, a ticket committed before any session put its id on a commit, and a file elsewhere in
+    the repo with the ticket's own name under a directory of the ticket's own name.
+
+    The repo's path carries a space, which a resume command has to survive. It uses the demo
+    tracker's git helpers rather than this file's, since only those pin a commit's date.
+    """
+    repo = tmp_path / "the ledger"
     root = repo / "agent" / "tickets"
     root.mkdir(parents=True)
     demo_git(repo, "init", "-q", "-b", "master")
     ticket(root / "map-columns.md", "open")
     demo_commit(repo, HERE, "2026-09-14T10:00:00+02:00", "map-columns: filed", "agent/tickets")
-    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nOne mapping per bank.\n")
+    append(root / "map-columns.md", "\nOne mapping per bank.\n")
     demo_commit(repo, HERE, "2026-09-16T09:00:00+02:00", "map-columns: one mapping per bank", "agent/tickets")
 
     demo_git(repo, "checkout", "-q", "-b", "ticket/master/map-columns")
-    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nRead from the header row.\n")
+    append(root / "map-columns.md", "\nRead from the header row.\n")
     demo_commit(repo, AWAY, "2026-09-17T11:00:00+02:00", "map-columns: the mapping step", "agent/tickets")
-    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nAsked once per bank.\n")
+    append(root / "map-columns.md", "\nAsked once per bank.\n")
     demo_commit(repo, NAMED, "2026-09-18T12:00:00+02:00", "map-columns: for review", "agent/tickets")
+    append(root / "map-columns.md", "\nThe header row names the bank.\n")
+    demo_commit(repo, NEW, "2026-09-19T08:00:00+02:00", "map-columns: the header row names the bank", "agent/tickets")
     demo_git(repo, "checkout", "-q", "master")
 
     ticket(root / "view-list.md", "open")
     demo_git(repo, "add", "--", "agent/tickets")
     demo_git(repo, "commit", "-q", "-m", "view-list: filed before the hook")
+    put(repo / LOOKALIKE, "---\nstatus: open\n---\n\n# A fixture tracker's own ticket\n")
+    demo_commit(repo, HERE, "2026-09-20T10:00:00+02:00", "a demo tracker for the docs", "agent/show")
 
     written = tmp_path / "claude" / "projects"
     write_transcript(written, HERE, str(repo), "Ledger imports")
-    write_transcript(written, NAMED, "/home/max/repos/ledger-map-columns", "Wave 1 of csv-import", "Mapping the Sparkasse export")
+    write_transcript(written, NAMED, str(tmp_path / "gone"), "Wave 1 of csv-import", "Mapping the Sparkasse export")
+    write_transcript(written, NEW, str(repo), "")
     monkeypatch.setattr(board, "TRANSCRIPTS", written)
     return root, repo
+
+
+def append(path: Path, text: str) -> None:
+    path.write_text(path.read_text() + text)
 
 
 def sessions_in(row: str) -> list[tuple[str, str, str]]:
@@ -1327,66 +1344,101 @@ def sessions_in(row: str) -> list[tuple[str, str, str]]:
 
 
 def test_a_tickets_sessions_come_from_the_trailers_on_every_branch(worked: tuple[Path, Path]) -> None:
-    """The one that worked on the ticket branch is listed beside the one that worked on master:
-    a build's commits are on its own branch until the merge. The worker on another host is not,
-    and a ticket no trailer names has no sessions at all."""
+    """The one that worked on the ticket branch is listed beside the one that worked on master: a
+    build's commits are on its own branch until the merge. The worker on another host is not, a
+    ticket no trailer names has no sessions, and a file the ticket merely shares a name with is
+    another file."""
     root, repo = worked
     listed = ticket_sessions(root / "map-columns.md", repo)
-    assert [s.id for s in listed] == [HERE, NAMED], "oldest first, and AWAY has no transcript on this machine"
-    assert [(s.first, s.last) for s in listed] == [("2026-09-14", "2026-09-16"), ("2026-09-18", "2026-09-18")]
-    assert [s.cwd for s in listed] == [str(repo), "/home/max/repos/ledger-map-columns"]
+    assert [s.id for s in listed] == [HERE, NAMED, NEW], "oldest first, and AWAY has no transcript on this machine"
+    assert [(s.first, s.last) for s in listed] == [
+        ("2026-09-14", "2026-09-16"), ("2026-09-18", "2026-09-18"), ("2026-09-19", "2026-09-19"),
+    ], f"HERE's later commit was on {LOOKALIKE}, which is not this ticket"
     assert ticket_sessions(root / "view-list.md", repo) == [], "no trailer says which session committed it"
 
 
 def test_a_session_shows_the_name_it_was_given_over_the_one_it_was_written(worked: tuple[Path, Path]) -> None:
-    """The title is the session's `/rename` name where it has one, else Claude Code's own."""
+    """The title is the session's `/rename` name where it has one, else Claude Code's own, else the
+    id, which is all a session has before its first title is written."""
     root, repo = worked
     titles = {s.id: s.title for s in ticket_sessions(root / "map-columns.md", repo)}
-    assert titles == {HERE: "Ledger imports", NAMED: "Mapping the Sparkasse export"}
+    assert titles == {HERE: "Ledger imports", NAMED: "Mapping the Sparkasse export", NEW: NEW}
 
 
-def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(worked: tuple[Path, Path], tmp_path: Path) -> None:
+def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """What the user reads to recognise the session they want, and clicks to close their tmux panes:
-    the title, the days it committed on the ticket, and the command that picks it up again."""
+    the title, the days it committed on the ticket, and the command that picks it up again. The one
+    whose working directory dispatch has since removed is resumed where the reader stands."""
     root, repo = worked
     out = tmp_path / "board.html"
     render(tracker_roots(root), repo, out)
     rows = rows_of(out.read_text())
     assert sessions_in(rows["standalone-map-columns"]) == [
-        ("Ledger imports", "2026-09-14 → 2026-09-16", f"cd {repo} && claude --resume {HERE}"),
-        ("Mapping the Sparkasse export", "2026-09-18", f"cd /home/max/repos/ledger-map-columns && claude --resume {NAMED}"),
+        ("Ledger imports", "2026-09-14 → 2026-09-16", f"cd '{repo}' && claude --resume {HERE}"),
+        ("Mapping the Sparkasse export", "2026-09-18", f"claude --resume {NAMED}"),
+        (NEW, "2026-09-19", f"cd '{repo}' && claude --resume {NEW}"),
     ]
-    assert "sessions" in labels_of(rows["standalone-map-columns"])
-    assert "sessions" not in labels_of(rows["standalone-view-list"]), "no trailer names a session, so nothing is said"
+    assert "sessions on this machine" in labels_of(rows["standalone-map-columns"])
+    assert "sessions on this machine" not in labels_of(rows["standalone-view-list"]), "no trailer names a session"
     assert AWAY not in out.read_text(), "the worker on another host is left out, not shown unresumable"
     assert absences(out.read_text(), "transcripts") == 0, "this machine has its transcripts"
 
 
-def test_the_button_that_resumes_a_session_shows_the_command_it_copies(worked: tuple[Path, Path], tmp_path: Path) -> None:
-    """The spec's reviewed Property, at the button this slice adds: the board's own check of it
-    renders a tracker whose sessions have no transcript here, so it reaches no resume button."""
+def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The board reads the log again on every render, as it does the ticket branches: a session
+    working while the board watches is on the ticket by the next one."""
     root, repo = worked
     out = tmp_path / "board.html"
     render(tracker_roots(root), repo, out)
+    assert [title for title, _, _ in sessions_in(rows_of(out.read_text())["standalone-view-list"])] == []
+    append(root / "view-list.md", "\nThe list is a sidebar.\n")
+    demo_commit(repo, HERE, "2026-09-21T10:00:00+02:00", "view-list: the list is a sidebar", "agent/tickets")
+    render(tracker_roots(root), repo, out)
+    assert [title for title, _, _ in sessions_in(rows_of(out.read_text())["standalone-view-list"])] == ["Ledger imports"]
+
+
+def test_the_button_that_resumes_a_session_shows_the_command_it_copies(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The spec's reviewed Property, at the button this slice adds: what it says on hover is what
+    the click puts on the clipboard, and its note names the session the way the reader knows it."""
+    root, repo = worked
+    out = tmp_path / "board.html"
+    render(tracker_roots(root), repo, out)
+    listed = sessions_in(rows_of(out.read_text())["standalone-map-columns"])
     found = [c for c in copiers(rows_of(out.read_text())["standalone-map-columns"]) if c[0] == "resume"]
-    assert len(found) == 2
-    for _, text, said, tip in found:
+    assert len(found) == len(listed)
+    for (_, text, said, tip), (title, _, command) in zip(found, listed):
         what, _, shown = tip.partition("\n\n")
-        assert shown == text, f"the button shows {shown!r} and copies {text!r}"
-        assert "copy" in what and "resume" in what
-        assert text.split("--resume ")[1] not in said, "the note names the session as the reader knows it"
+        assert len(what.split()) >= 4 and "copy" in what, f"the button says {what!r} of the click"
+        assert shown == text == command, f"the button shows {shown!r} and copies {text!r}"
+        assert title in said, f"the note says {said!r} of a session the reader knows as {title!r}"
 
 
-def test_the_demo_trackers_ticket_lists_the_two_sessions_this_machine_can_resume(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_a_resume_command_longer_than_a_button_shows_is_cut_where_every_other_one_is(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """A working directory nested deep enough to run past what a button shows: the words are cut
+    with an ellipsis, as a question's are, rather than spilling into the row."""
+    root, repo = worked
+    deep = repo / ("one-mapping-per-bank-" * 6)
+    deep.mkdir()
+    write_transcript(board.TRANSCRIPTS, HERE, str(deep), "Ledger imports")
+    out = tmp_path / "board.html"
+    render(tracker_roots(root), repo, out)
+    (resume, *_) = [c for c in copiers(rows_of(out.read_text())["standalone-map-columns"]) if c[0] == "resume"]
+    _, text, _, tip = resume
+    shown = tip.partition("\n\n")[2]
+    assert str(deep) in text and len(text) > board.COPY_CAP, "the command has to run long for the cut to show"
+    assert shown.endswith("\u2026") and text.startswith(shown[:-1])
+
+
+def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The fixture's build in review: four sessions on its commits, the two with a transcript here
-    listed with their titles, the worker on another host left out."""
+    listed with their titles, the worker on another host left out. The second ran in a worktree
+    dispatch has since removed, so its command resumes it where the reader stands."""
     out = tmp_path / "board.html"
     render(tracker_roots(transcribed.root), transcribed.repo, out)
     row = rows_of(out.read_text())["t-csv-import-02"]
     assert sessions_in(row) == [
-        ("Grilling the CSV import", "2026-09-14", f"cd /home/max/repos/ledger && claude --resume {S1}"),
-        ("Dispatching csv-import, wave 1", "2026-09-17 → 2026-09-18",
-         f"cd /home/max/repos/ledger-csv-import && claude --resume {S2}"),
+        ("Grilling the CSV import", "2026-09-14", f"cd {transcribed.repo} && claude --resume {S1}"),
+        ("Dispatching csv-import, wave 1", "2026-09-17 → 2026-09-18", f"claude --resume {S2}"),
     ]
     assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
 

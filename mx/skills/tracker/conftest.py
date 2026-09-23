@@ -27,6 +27,15 @@ def demo(tmp_path_factory: pytest.TempPathFactory) -> Demo:
     return build(tmp_path_factory.mktemp("demo-tracker"))
 
 
+@pytest.fixture(autouse=True)
+def fresh_caches() -> None:
+    """The caches a render clears, cleared per check too: they are keyed by a repo or a transcript,
+    and the fixtures hand out a new one of each per check while the process lives on."""
+    board.session_log.cache_clear()
+    board.read_transcript.cache_clear()
+    board.toplevel.cache_clear()
+
+
 @pytest.fixture
 def transcribed(demo: Demo, monkeypatch: pytest.MonkeyPatch) -> Demo:
     """The demo tracker with its transcripts where this machine keeps its own, so the sessions its
