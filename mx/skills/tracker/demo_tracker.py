@@ -11,7 +11,7 @@ Two features (a confirmed spec with six slices, a draft spec with three tickets,
 decisions), nine standalone tickets covering every decision type, two builds waiting on a ruling
 on their ticket branches with their questions there, one build stopped on two questions of which
 one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
-a needs-human queue, review pages beside the tickets, demo scripts and a figure under agent/show,
+review pages beside the tickets, demo scripts and a figure under agent/show,
 and four sessions on the commits: three with a transcript under the transcripts directory this
 writes, one worker on another host with none.
 
@@ -314,6 +314,7 @@ The old QIF exporter has three users left and blocks the storage rewrite; decide
 ## Questions
 
 - [D1] **Drop it, keep it read-only, or move its users to the CSV export?** Dropping it costs three users an export they run monthly; keeping it read-only keeps the storage rewrite waiting.
+- [D2] **Ask the three users what they export QIF for.** Whether the CSV export already covers it is the thing nobody here knows, and only you can ask them.
 """)
     write(repo / "agent/tickets/pick-a-date-library.md", """---
 status: open
@@ -371,8 +372,6 @@ The importer can only be tried against real exports with sandbox access; someone
 
 Sign up for the sandbox, store the key in the test secrets.
 """)
-    # the queue the board reads until the spec's ticket 10 migrates it into the tickets it belongs to
-    write(repo / "agent/tickets/needs-human.md", "- the QIF exporter's three users :: ask them what they export it for, before retire-legacy-exporter is decided\n")
     write(repo / "agent/tickets/speed-up-tests.md", """---
 status: open
 priority: 2
