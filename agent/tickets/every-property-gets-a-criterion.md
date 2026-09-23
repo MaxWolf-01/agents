@@ -1,5 +1,6 @@
 ---
-status: review
+status: done
+diff: [7123d631084aa5c3f1d0dba336d4d22bef92c804..d4e1eca990f55da217aa8f233ffaa485fff42435]
 ---
 
 # to-tickets checks that every spec Property lands in some slice's criteria
