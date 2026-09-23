@@ -418,7 +418,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, 
         dv = serve_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
         tickets = load_tickets(d, dv, dv.root / name, root, overrides, repo)
         spec_status = spec_state(d / "spec.md")
-        # a directory with neither tickets nor a spec is not a feature (agent/tickets/done/, say)
+        # a directory with neither tickets nor a spec is not a feature (a stray scratch dir, say)
         if not tickets and spec_status is None:
             continue
         assert_safe_name(name)

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Retiring a shipped feature, driven end to end on a toy repo: the tickets, the
+# show directory and the research notes leave together, the untracked render
+# goes from disk with them, and the figure the README needs is promoted and its
+# link repointed in the same commit. The commands are the ones `/mx:tracker`
+# Retire states; each is printed as it runs.
+#
+# No arguments. The toy repo and the home the notes move into are both inside a
+# temp dir, removed at the end; the transcript is printed and written to
+# out/ beside this file, failures included.
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+work=$(mktemp -d -t retire-with-the-work.XXXX)
+trap 'rm -rf "$work"' EXIT
+
+repo=$work/toy-project
+export HOME=$work/home # the sandbox the notes are moved into
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null # no hooks or identity from the host
+git() { command git -C "$repo" -c user.email=demo@toy -c user.name=demo "$@"; }
+# The skill states its commands against the repo root, so each one is printed in
+# that form and run against the toy repo through the wrapper above.
+run() { printf '  git %s\n' "$*"; git "$@" | sed 's/^/  /'; }
+sh_run() { printf '  %s\n' "$*"; (cd "$repo" && eval "$*"); }
+
+step() { printf '\n== %s\n\n' "$*"; }
+tree() { (cd "$repo" && find . -path ./.git -prune -o -type f -print | sed 's|^\./||' | LC_ALL=C sort | sed 's/^/  /'); }
+check() { # <claim> <command...>
+    claim=$1; shift
+    "$@" || { printf '  FAIL %s\n' "$claim"; exit 1; }
+    printf '  ok  %s\n' "$claim"
+}
+
+main() {
+
+step "a toy repo whose one feature, soup, has shipped"
+
+mkdir -p "$HOME" "$repo"/{agent/tickets/soup,agent/show/soup/01-stock,agent/show/soup/02-serve,agent/research,docs/figures}
+git init -q
+printf 'agent/research\nagent/show/**/*.png\n' > "$repo/.gitignore"
+printf '# Soup\n\nThe stock, then the service.\n' > "$repo/agent/tickets/soup/spec.md"
+for t in 01-stock 02-serve; do printf -- '---\nstatus: done\n---\n\n# %s\n' "$t" > "$repo/agent/tickets/soup/$t.md"; done
+printf 'flowchart LR\n  bones --> broth --> bowl\n' > "$repo/agent/show/soup/broth.mmd"
+printf '<svg xmlns="http://www.w3.org/2000/svg"><text y="20">bones -> broth -> bowl</text></svg>\n' > "$repo/agent/show/soup/broth.svg"
+printf 'PNG of the same, rendered on demand\n' > "$repo/agent/show/soup/broth.png"
+for t in 01-stock 02-serve; do printf '#!/usr/bin/env bash\necho "%s ran"\n' "$t" > "$repo/agent/show/soup/$t/demo"; chmod +x "$repo/agent/show/soup/$t/demo"; done
+printf '# Toy project\n\nHow the stock becomes a bowl: ![the broth](agent/show/soup/broth.svg)\n' > "$repo/README.md"
+printf '# Stock timings\n\nBones at 90 minutes, skimmed twice.\n' > "$repo/agent/research/07-stock-timings.md"
+git add -A && git commit -q -m "soup: shipped"
+tree
+printf '\n  agent/show/soup/broth.png is an untracked render, agent/research/07-stock-timings.md\n  an untracked note cited by 01-stock; the README links the figure where it sits\n'
+
+step "what the README needs moves out, render and source, its link repointed with it"
+
+run mv agent/show/soup/broth.svg agent/show/soup/broth.mmd docs/figures/
+sh_run "sed -i 's|agent/show/soup/broth.svg|docs/figures/broth.svg|' README.md"
+
+step "the tickets and the show directory leave in the same commit"
+
+run rm -r agent/tickets/soup/ agent/show/soup/
+printf '\n  git rm -r leaves the ignored render behind, so the directory goes from disk too:\n'
+sh_run "rm -rf agent/show/soup/"
+git add -A && git commit -q -m "soup: retired, the broth figure promoted to docs/"
+printf '\n  the commit:\n\n'
+git show --no-renames --name-status --format='  %s' HEAD | sed 's/^\([ADM]\)/    \1/'
+
+step "the research notes leave the tree, moved rather than deleted"
+
+sh_run 'mkdir -p ~/logs/agent/toy-project/research/'
+sh_run 'mv agent/research/07-stock-timings.md ~/logs/agent/toy-project/research/'
+printf '\n  the note now reads at ~/logs/agent/toy-project/research/07-stock-timings.md:\n\n'
+sed 's/^..*$/    &/' "$HOME/logs/agent/toy-project/research/07-stock-timings.md"
+
+step "the tree after"
+
+tree
+
+step "what holds"
+
+check "no ticket of the feature is left, in the tree or in HEAD" \
+    bash -c '! test -e "$0/agent/tickets/soup" && ! git -C "$0" cat-file -e HEAD:agent/tickets/soup 2>/dev/null' "$repo"
+check "HEAD carries no figure or demo of the feature, its slice directories included" \
+    bash -c '! git -C "$0" cat-file -e HEAD:agent/show/soup 2>/dev/null' "$repo"
+check "the show directory is off disk, the untracked render with it" \
+    bash -c '! test -e "$0/agent/show/soup"' "$repo"
+check "no research note is left in the tree" \
+    bash -c 'test -z "$(find "$0/agent/research" -type f)"' "$repo"
+check "the note survives the move, at ~/logs/agent/<repo>/research/" \
+    grep -q "90 minutes" "$HOME/logs/agent/toy-project/research/07-stock-timings.md"
+check "the promoted render and its source are in the tree, and no README link points into the show directory" \
+    bash -c 'test -f "$0/docs/figures/broth.svg" && test -f "$0/docs/figures/broth.mmd" &&
+             grep -q "docs/figures/broth.svg" "$0/README.md" && ! grep -q "agent/show/" "$0/README.md"' "$repo"
+check "removal, promotion and repointing are the same commit" \
+    bash -c 'c=$(git -C "$0" show --no-renames --name-status --format= HEAD)
+             grep -q "^A.docs/figures/broth.svg" <<<"$c" && grep -q "^D.agent/show/soup/broth.svg" <<<"$c" &&
+             grep -q "^M.README.md" <<<"$c"' "$repo"
+check "git history still finds the retired work" \
+    bash -c 'git -C "$0" log --diff-filter=D --format=%s -- agent/tickets agent/show | grep -q retired' "$repo"
+
+printf '\n'
+}
+
+mkdir -p "$here/out"
+main 2>&1 | tee "$here/out/transcript.txt"
