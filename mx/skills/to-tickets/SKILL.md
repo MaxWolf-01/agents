@@ -60,18 +60,26 @@ The first two words are the spec's dispositions. The third is the breakdown's ow
 
 Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec, beyond numbering properties an older spec left without ids (`/mx:grilling`, SPEC-FORMAT): an id is bookkeeping, not design. A build ticket is `proposed`: its ruling comes from what it built (`/mx:tracker`).
 
+Each ticket's **priority** comes from what the user has said about the feature and the slice's place in it, and its **size** is the user's own time on the slice, which for most of them is reading the closing comment and driving the demo (`/mx:tracker`, The ticket file).
+
 **Name the calls each slice builds on.** A draft spec's marks (`/mx:grilling`) say which decisions are the user's and which are the agent's; the provenance line names the ones this slice rests on, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
 <ticket-template>
 
 ---
 status: proposed
+priority: <1 to 5>
+size: <XS | S | M | L | XL>
 blocked-by: [NN] # omit when nothing blocks it
 ---
 
-# <Ticket title>
+# <The slice's short name, a few words>
 
-Slice of `spec.md`, building on <the spec's calls this slice rests on, by mark and section>.
+## Brief
+
+<Two or three sentences for the user, read cold: what this slice is and why it matters.>
+
+Slice of `spec.md`, building on <the spec's calls this slice rests on, by spec mark and section>.
 
 ## What to build
 
@@ -84,7 +92,7 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 
 </ticket-template>
 
-A decision ticket is `open` and carries its `type`: its answer is the ruling, and nothing builds from it meanwhile. Its body is a `## Question` (the decision, sized to one session) in place of What-to-build and acceptance criteria.
+A decision ticket is `open` and carries its `type`: its answer is the ruling, and nothing builds from it meanwhile. Its body is its `## Questions` (the decision, sized to one session) in place of What-to-build and acceptance criteria.
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
 

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Renders the demo tracker's board against real pull requests and issues in two repositories, twice
+# in a row, and counts the queries the two renders cost. With `gh` logged in the links wear the
+# state GitHub gives them; without it they stay bare and the page says why once.
+#
+# Usage: demo [--stubbed] [tracker directory]
+#   --stubbed  answer the board's query from references.json beside this script, with the states
+#              those three references were in on 2026-09-23, so the states show without a `gh` login.
+set -euo pipefail
+
+stubbed=""
+[[ ${1:-} == --stubbed ]] && { stubbed=1; shift; }
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$here/../../../..
+refs=$here/references.json
+tracker=${1:-/tmp/board-gh-demo}
+uv run "$root/mx/skills/tracker/demo_tracker.py" "$tracker" >/dev/null
+
+# the three references, in two repositories, that this demo and figure.py both show
+while IFS=$'\t' read -r path list; do
+    sed -i "s|^gh: .*|gh: [$list]|" "$tracker/agent/tickets/$path"
+done < <(jq -r '.refs | to_entries[] | "\(.key)\t\(.value | join(", "))"' "$refs")
+
+calls=$tracker/gh.calls
+rm -f "$calls"
+mkdir -p "$tracker/bin"
+if [[ -n $stubbed ]]; then
+    jq -c .answer "$refs" >"$tracker/answer.json"
+    # a gh that records what the board asks of it and answers from the file
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec cat "%s"\n' "$calls" "$tracker/answer.json" >"$tracker/bin/gh"
+else
+    # a gh that records what the board asks of it and hands the call to the real one
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec %s "$@"\n' "$calls" "$(command -v gh || echo /bin/false)" >"$tracker/bin/gh"
+fi
+chmod +x "$tracker/bin/gh"
+export PATH=$tracker/bin:$PATH
+
+"$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
+"$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
+
+# what the board made of the answer is what the board wrote down, so the line below reads it back
+cache=$tracker/agent/board.html.github.json
+if [[ -n $stubbed ]]; then
+    answered_by="references.json beside this script, as those three stood on 2026-09-23"
+elif [[ -z $(jq -r .missing "$cache") ]]; then
+    answered_by="GitHub itself"
+else
+    answered_by="nothing: GitHub was out of reach, and the page says so once"
+fi
+
+cat <<TEXT
+
+Answering from $answered_by.
+GraphQL queries sent for those two renders: $(grep -c graphql "$calls" 2>/dev/null || echo 0)
+
+What the board cached beside the page, which is what the second render read:
+
+$(sed 's/^/    /' "$cache")
+
+Open the page above. Two rows in the needs-me group name references: "Map columns once per bank"
+carries cli/cli#1 and cli/cli#2 to the right of its name, after the review page link, and "A
+faster test suite" carries anthropics/claude-code#96304.
+
+Those three marks are what this slice changed. Until it, all three were the same muted grey, and
+hovering any of them said the same sentence: "A pull request or issue this ticket names, on
+GitHub." Now cli/cli#1 is purple and says "A merged pull request on GitHub.", cli/cli#2 is struck
+through and says "A closed issue on GitHub.", and the issue is in the accent and says "An open
+issue on GitHub." Nothing else on either row moved. The scheme switch in the top bar puts the
+three through the night scheme.
+
+Where the board could not ask, for want of gh, its auth or the network, those three go back to the
+grey they were, with the sentence they had, and one note above the rows carries what gh itself said.
+
+figure.html beside this script is those three states side by side, live: the board before this
+slice, the board now, and the board now with GitHub out of reach, each row lifted out of a real
+render with a note per link.
+TEXT

@@ -1,9 +1,16 @@
 ---
 status: done
+priority: 1
+size: M
 blocked-by: [01]
 ---
 
 # Upload a statement and see what it read
+
+## Brief
+
+The first slice an account holder can drive: a CSV goes in and a report comes back, naming every
+line the mapping could not read. Nothing is stored yet, so a wrong mapping costs nothing.
 
 ## What to build
 

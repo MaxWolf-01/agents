@@ -19,12 +19,12 @@ One turn of grilling: the design as it stands with the frontier's questions, the
 _Avoid_: iteration, pass
 
 **Call**:
-One design decision as the spec states it, carrying a mark that says who settled it.
+One design decision as the spec states it, carrying a spec mark that says who settled it.
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
-**Mark**:
+**Spec mark**:
 The provenance tag on a call in a draft spec: who settled it, or that nobody has yet.
-_Avoid_: marker, annotation, tag, label
+_Avoid_: mark (bare; a row mark is one too), marker, annotation, tag, label
 
 **Frontier**:
 What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates and nobody holds.
@@ -72,9 +72,37 @@ _Avoid_: needs ruling, pending, awaiting approval, done
 The user's answer on what a ticket built, made on its review page and demo: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
+**Ticket question**:
+A decision only the user can make, asked as part of the ticket it concerns.
+_Avoid_: ask, call (a call is a spec's decision), needs-human entry, queue item
+
+**Needs-me group**:
+The board's one group for every ticket whose next step is the user's own time.
+_Avoid_: needs my review, needs human, inbox
+
+**Ticket brief**:
+The few sentences under a ticket's name that tell the user, reading cold, what the ticket is and why it matters.
+_Avoid_: summary, description, tldr
+
+**Board briefing**:
+The board's own account of where the tracker stands and what to take up next, written by a model.
+_Avoid_: brief (a ticket's), digest, status report
+
+**Ticket priority**:
+The agent's reading of how soon a ticket matters to the user, from now to someday.
+_Avoid_: urgency, rank, importance
+
+**Ticket size**:
+How much of the user's time a ticket will take, never the agent's.
+_Avoid_: effort, estimate, points
+
 **Board**:
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
 _Avoid_: dashboard
+
+**Row mark**:
+One tag on a board row, carrying a single fact about the ticket for scanning.
+_Avoid_: mark (bare; a spec mark is one too), badge, pill, label
 
 **Retire**:
 Take a shipped feature's or ticket's record out of the live tracker; history keeps it.
@@ -118,7 +146,7 @@ _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
 **Expected failure**:
 The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
-_Avoid_: mark (the provenance tag on a spec call), xfail, skip
+_Avoid_: mark (a spec mark or a row mark), xfail, skip
 
 ### Sessions
 

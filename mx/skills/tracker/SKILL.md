@@ -5,7 +5,7 @@ description: "Tracker conventions: where specs and tickets live, how they are pu
 
 # Tracker
 
-Tickets are markdown files in `agent/tickets/`: [MARKDOWN.md](MARKDOWN.md) has the layout, the state, the board. The tracker sits in the repo it plans, or, when features span repos or the tickets stay out of a shared repo, in a workspace repo that holds the clones as untracked directories and the tracker beside them.
+Tickets are markdown files in `agent/tickets/`: [MARKDOWN.md](MARKDOWN.md) has the layout, the ticket file, the state, the board. The tracker sits in the repo it plans, or, when features span repos or the tickets stay out of a shared repo, in a workspace repo that holds the clones as untracked directories and the tracker beside them.
 
 ## Provenance
 
