@@ -344,18 +344,18 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
 
 
 def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(tracker: Path) -> None:
-    """The graph beside the rows is a preview: the page carries a second view of the same graph,
-    over the board, and builds a third in a window of its own. Both are drawn from the preview's
-    own sources, so the page holds one copy of each graph however many views show it, and both
-    carry the feature/whole-tracker switch, which is what makes it work in all three."""
+    """The ids the page's script and the browser checks address the full size views by, and the one
+    markup both of those views wear (board.GRAPH_VIEW), so the overlay over the board and the window
+    of its own cannot drift apart. What either draws, and what a click on it does, is the browser's
+    to say (test_board_layout.py)."""
     page = page_of(tracker)
     for opener in ("gopen", "gwinopen", "gwinfull", "gclose"):  # from the preview, and to the window
         assert f'id="{opener}"' in page, opener
-    overlay = re.search(r'<div id="gfull">.*?</div></div>\n\n<div id="help"', page, re.S).group(0)
-    assert re.findall(r'data-gmode="(\w+)"', overlay) == ["feature", "all"]
-    assert 'class="mermaid"' not in overlay, "the overlay carries a graph source of its own"
-    # one source per feature that has a graph, plus the whole tracker's, and no more
-    assert page.count('<pre class="mermaid"') == 2
+    for view in (board.OVERLAY, board.GRAPH_WINDOW):
+        assert re.findall(r'data-gmode="(\w+)"', view) == ["feature", "all"]
+        assert view.count('<div class="gsvg">') == 1
+    assert board.OVERLAY in page, "the overlay wears markup of its own"
+    assert json.dumps(board.GRAPH_WINDOW).replace("</", "<\\/") in page, "the window is built from markup of its own"
 
 
 def test_a_row_links_its_review_page(tracker: Path) -> None:

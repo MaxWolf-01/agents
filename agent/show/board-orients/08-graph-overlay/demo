@@ -37,7 +37,7 @@ NODE = "#t-csv-import-04"  # a ticket with an edge, so it is a node in the featu
 @dataclass
 class Args:
     tracker: Path = Path("/tmp/board-graph-demo")
-    """Where the demo tracker and its board are built. Rebuilt from scratch on every run."""
+    """Where the demo tracker and its board are built, rebuilt on every run."""
     scheme: Literal["day", "night"] = "day"
     """The colour scheme the walkthrough is driven in. The board's own switch, or the t key, has the other."""
 
@@ -47,7 +47,7 @@ def run(*args: object, **kwargs) -> None:
     assert done.returncode == 0, f"{args[0]} failed: {done.stderr[-2000:]}"
 
 
-def node_click(frame, where: str) -> None:
+def click_node(frame, where: str) -> None:
     """Click the node for NODE, wherever the graph is drawn."""
     attr = "els => els.map((a) => a.getAttribute('href') || a.getAttribute('xlink:href'))"
     hrefs = frame.eval_on_selector_all(f"{where} a", attr)
@@ -82,7 +82,7 @@ def walk(board: Path, scheme: str) -> list[str]:
             f" the edge of the box, which scrolls and drags to pan. {over['marked']} node is ringed: the row the cursor is on."
         )
 
-        node_click(page, "#gfull .gsvg")
+        click_node(page, "#gfull .gsvg")
         page.wait_for_timeout(300)
         landed = page.evaluate("""() => ({open: document.getElementById('gfull').classList.contains('open'),
                                          cur: document.querySelector('.ticket.kcur')?.id})""")
@@ -103,13 +103,13 @@ def walk(board: Path, scheme: str) -> list[str]:
         )
 
         win.click("[data-gmode=feature]")
-        win.wait_for_timeout(600)
+        win.wait_for_function("document.querySelector('.gname').textContent !== 'whole tracker'")
         said.append(
             f"The switch in that window moves the board's own graph with it: the window is on"
             f" {win.inner_text('.gname')!r} and the board's preview says {page.inner_text('#gname')!r}."
         )
 
-        node_click(win, ".gfbody")
+        click_node(win, ".gfbody")
         page.wait_for_timeout(300)
         said.append(
             f"A click on the node for {NODE[1:]} there moves the board behind it to"
@@ -121,7 +121,7 @@ def walk(board: Path, scheme: str) -> list[str]:
 
 
 def main(args: Args) -> None:
-    shutil.rmtree(args.tracker, ignore_errors=True)
+    assert shutil.which("chromium"), "no chromium to drive the board with"
     run("uv", "run", TRACKER / "demo_tracker.py", args.tracker)
     board = args.tracker / "agent" / "board.html"
     run("uv", "run", TRACKER / "board.py", args.tracker / "agent" / "tickets", "--no-watch", "--no-open",

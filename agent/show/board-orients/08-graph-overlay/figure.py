@@ -51,7 +51,7 @@ PANELS = {
         "the same column now: the same graph, as a preview of one that opens",
         [
             (".side .mermaid svg g.node", "The preview is unchanged, and a click anywhere on it that is not a node opens the graph at full size."),
-            ("#gopen", "<b>full</b> opens it over the board, and so does the <kbd>f</kbd> key or <code>#graph</code> on the address."),
+            ("#gopen", "<b>full</b> opens it over the board, and so does the <kbd>f</kbd> key or <code>?graph</code> on the address."),
             ("#gwinopen", "<b>window</b> opens the same view in a window of its own, to sit beside the board; <kbd>w</kbd> does too."),
         ],
     ),
@@ -61,7 +61,7 @@ PANELS = {
             ("#gfull .gsvg g.node", "The graph at the size mermaid drew it for: the labels are the board's body text. Wider than the window, so the box scrolls, and a drag anywhere pans it."),
             ("#gfull .seg", "The feature and whole-tracker switch, in the overlay's own head because the overlay covers the top bar. It moves the preview and the window with it."),
             ("#gfull .gsvg g.node.cur", "The row the board's cursor is on, ringed, which is how a graph this size stays a map of where you are."),
-            ("#gwinfull", "From here the same graph moves into a window of its own; <b>close</b> or <kbd>Esc</kbd> goes back to the board. A click on a node closes the overlay on that ticket's row."),
+            ("#gwinfull", "<b>window</b> here moves the graph into a window of its own and gives the board back; <b>close</b> or <kbd>Esc</kbd> gives it back without one. A click on a node closes the overlay on that ticket's row."),
         ],
     ),
     "window": (
@@ -93,7 +93,7 @@ def board_at(ref: str, work: Path) -> Path:
     """The board as `ref` had it, with the rest of its directory, since the board imports its siblings."""
     tree = work / "before-tree"
     tree.mkdir(parents=True, exist_ok=True)
-    tar = subprocess.run(["git", "-C", str(ROOT), "archive", ref, "mx/skills/tracker"], capture_output=True)
+    tar = run("git", "-C", str(ROOT), "archive", ref, "mx/skills/tracker", text=False)
     run("tar", "-x", "-C", str(tree), input=tar.stdout, text=False)
     return tree / "mx" / "skills" / "tracker" / "board.py"
 
@@ -124,6 +124,7 @@ def shot(page: Page, png: Path, notes: list[tuple[str, str]], clip_to: str | Non
 def capture(before: Path, after: Path, work: Path, scheme: str) -> dict:
     """The four panels in one scheme, each driven to the state it shows."""
     shots = {}
+    assert shutil.which("chromium"), "no chromium to render the board with"
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
         page = browser.new_context(viewport=WIDE).new_page()
@@ -159,13 +160,19 @@ def panel(key: str, schemes: dict[str, dict]) -> str:
         f'<img class="{scheme}" src="data:image/png;base64,{base64.b64encode(shots[key]["png"].read_bytes()).decode()}" alt="{what}">'
         for scheme, shots in schemes.items()
     )
+    # the two schemes differ in ink alone, so one set of badges serves both images; the check is
+    # that they were measured to the same places, rather than an assumption that they would be
+    places = [shots[key]["badges"] for shots in schemes.values()]
+    assert all(abs(a - b) < 0.002 for one, other in zip(*places) for a, b in zip(one, other)), (
+        f"the {key} panel lays out differently in the two schemes: {places}"
+    )
     badges = "".join(
         f'<span class="mk over" style="left: {x:.3%}; top: {y:.3%}">{n + 1}</span>'
-        for n, (x, y) in enumerate(schemes["day"][key]["badges"])
+        for n, (x, y) in enumerate(places[0])
     )
     items = "".join(f'<li><span class="mk">{n + 1}</span><span>{note}</span></li>' for n, (_, note) in enumerate(notes))
     return (
-        f'<figure class="panel"><figcaption><b>{key}</b> — {what}</figcaption>'
+        f'<figure class="panel"><figcaption><b>{key}</b> {what}</figcaption>'
         f'<div class="shot">{images}{badges}</div><ol class="notes">{items}</ol></figure>'
     )
 

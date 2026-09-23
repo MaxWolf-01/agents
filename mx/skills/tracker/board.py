@@ -65,12 +65,12 @@ graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
 
-That panel is a preview. The same graph opens at full size over the board, from
-the panel itself, the `full` button, the `f` key or the address's #graph, and in
-a window of its own beside the board from `window` or `w`; both scroll and drag
-to pan, take the feature and whole-tracker switch, and go to a ticket's row when
-a node is clicked, the overlay closing on it and the window leaving the board to
-move behind it.
+That panel is a preview. The `full` button, or ?graph on the address, opens the
+same graph at its own size over the board; `window` opens it in a window of its
+own, to sit beside the board. Both scroll and drag to pan, and both carry the
+feature and whole-tracker switch. A click on a node in the overlay closes it on
+that ticket's row; a click on a node in the window leaves the window where it is
+and moves the board to that row.
 
 One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
@@ -1539,6 +1539,7 @@ def render_page(
     )
     footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS,
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
         columns=row_columns(features, standalone, grouped), absences="".join(absences(features, standalone, gh)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
@@ -1635,6 +1636,100 @@ def absences(features: list[Feature], standalone: list[Standalone], gh: github.A
     if gh.missing:
         said.append(absence_note("github", gh.missing))
     return said
+
+
+# The full size graph, as the overlay over the board and the window of its own both wear it: one
+# head with the feature/whole-tracker switch and whatever that view adds, over one box holding
+# either a note or the drawing. Two views of one thing, so one markup and one script for both.
+GRAPH_VIEW = Template(
+    '<div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>'
+    '<span class="seg"><button class="btn" data-gmode="feature" title="${feature_says}">feature</button>'
+    '<button class="btn" data-gmode="all" title="${all_says}">all</button></span>${extra}</div>'
+    '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>'
+)
+OVERLAY = GRAPH_VIEW.substitute(
+    feature_says="the graph of the row's feature (a)", all_says="the whole tracker's graph (a)",
+    extra='<button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>'
+          '<button class="btn" id="gclose" title="back to the board (Esc)">close</button>',
+)
+# the window has no keys of its own, so its switch says what it does without naming one
+GRAPH_WINDOW = GRAPH_VIEW.substitute(
+    feature_says="the graph of the row the board is on", all_says="the whole tracker's graph",
+    extra='<span class="gorphan">the board this followed is gone</span>',
+)
+
+# What the two views do, run in the board's page and again in the window's: the window is another
+# document, and once the board has reloaded once it is another origin too, so nothing it calls can
+# live in the board's script. One home here, two realms at run time.
+VIEW_JS = r"""
+  const hrefOf = (a) => a && (a.getAttribute("href") ?? a.getAttribute("xlink:href"));
+
+  function markCur(root, id) {
+    for (const n of root.querySelectorAll("g.node.cur")) n.classList.remove("cur");
+    if (id) root.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+  }
+
+  // A graph at full size is wider than the box it sits in, so the box is dragged as well as
+  // scrolled. The click a drag ends with is swallowed wherever it lands, or a pan that finished
+  // over a node would open that node, and one that finished on the overlay's backdrop would close
+  // the overlay.
+  function pannable(el) {
+    const doc = el.ownerDocument;
+    let from = null, swallow = false;
+    el.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      from = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: 0 };
+      e.preventDefault();  // no text or node selection under the drag
+    });
+    doc.addEventListener("mousemove", (e) => {
+      if (!from) return;
+      from.moved = Math.max(from.moved, Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y));
+      el.classList.toggle("panning", from.moved > 4);
+      el.scrollLeft = from.left - (e.clientX - from.x);
+      el.scrollTop = from.top - (e.clientY - from.y);
+    });
+    doc.addEventListener("mouseup", () => {
+      if (!from) return;
+      swallow = from.moved > 4;
+      el.classList.remove("panning");
+      from = null;
+    });
+    doc.addEventListener("click", (e) => {
+      if (!swallow) return;
+      swallow = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+  }
+
+  // A node at full size takes the board to its row: the overlay closes on it, the window of its own
+  // stays where it is and the board moves behind it.
+  function nodeClicks(el, go) {
+    el.addEventListener("click", (e) => {
+      const href = hrefOf(e.target.closest("a"));
+      if (href?.startsWith("#")) { e.preventDefault(); go(href); }
+    });
+  }
+  function attach(el, go) { pannable(el); nodeClicks(el, go); }
+
+  // One paint for both views. A view whose key has not moved keeps its drawing, and with it
+  // whatever the reader had panned to; only the mark on the cursor's node moves.
+  function paintView(root, view, last) {
+    const name = root.querySelector(".gname");
+    name.title = name.textContent = view.name;
+    for (const b of root.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === view.mode);
+    const body = root.querySelector(".gfbody"), svg = body.querySelector(".gsvg");
+    if (view.key !== last) {
+      const note = body.querySelector(".gnote");
+      note.textContent = view.note;
+      note.hidden = !!view.svg;
+      svg.innerHTML = view.svg;
+      body.scrollTo(0, 0);
+    }
+    markCur(svg, view.cur);
+    return view.key;
+  }
+"""
 
 
 PAGE = Template(r"""<!doctype html>
@@ -1779,8 +1874,6 @@ ${columns}
     background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); }
   .gfhead { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
     padding: .45rem .8rem; border-bottom: 1px solid var(--edge); }
-  .gfhead .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
   /* safe centring: a graph that fits sits in the middle of the box, one that does not starts at
      the edge the scroll starts from rather than having its first node cut off */
   .gfbody { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 1rem;
@@ -1994,20 +2087,14 @@ ${groups}
     <button class="btn" id="gopen" title="the graph at full size, over the board (f)">full</button>
     <button class="btn" id="gwinopen" title="the graph at full size, in a window of its own beside the board (w)">window</button>
     <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
-  <div class="gbody" id="gbody">
+  <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
     <div class="g" data-feature=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
   </div>
 </aside>
 </main>
 
-<div id="gfull"><div class="card">
-  <div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>
-    <span class="seg"><button class="btn" data-gmode="feature" title="the graph of the row's feature (a)">feature</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
-    <button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>
-    <button class="btn" id="gclose" title="back to the board (Esc)">close</button></div>
-  <div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>
-</div></div>
+<div id="gfull"><div class="card">${overlay}</div></div>
 
 <div id="help"><div class="card"><table>
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
@@ -2067,6 +2154,10 @@ ${groups}
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
   import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs";
   mermaid.registerLayoutLoaders(elkLayouts);
+
+  // What the two full size views do, shared with the window of its own, which runs its own copy
+  // (board.VIEW_JS).
+${viewjs}
 
   // Mermaid bakes the colours into the SVG, and a light-dark() token never resolves through
   // getPropertyValue, so every colour is read off a probe element in the scheme on show, and read
@@ -2212,6 +2303,8 @@ ${groups}
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
+  function setMode(m) { mode = m; showGraph(); }
+
   // the cursor row's node in the graph on show, which carries the namespace that graph was built
   // with: f for one feature's own, b for the whole tracker composed from its parts
   function curNode() {
@@ -2220,10 +2313,6 @@ ${groups}
     return cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
       : "T_" + (composed ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
   }
-  function markCur(root, id) {
-    for (const n of root.querySelectorAll("g.node.cur")) n.classList.remove("cur");
-    if (id) root.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
-  }
   function markNode() { markCur(side, curNode()); }
 
   // ---- the graph at full size: over the board, or in a window of its own ----
@@ -2231,9 +2320,10 @@ ${groups}
   // its own, drawn again from the preview's source so that a node keeps the id and the "#t-..."
   // link the board matches a row by. A drawing is kept per source and scheme, so opening and
   // closing costs one render of each graph rather than one per opening.
-  const full = document.getElementById("gfull"), fullBody = full.querySelector(".gfbody");
+  const full = document.getElementById("gfull");
   const fullCache = {};
   let gwin = null;  // the window of its own, while one is open
+  let fullKey = null, viewSeq = 0;
 
   // what the preview is showing, as the two full size views need it
   function shownGraph() {
@@ -2263,15 +2353,24 @@ ${groups}
     return fullCache[key];
   }
 
+  // The whole of what a full size view shows, drawing included, so the window of its own is sent a
+  // picture rather than a source it has no mermaid to draw.
+  async function viewOf(g) {
+    return {
+      key: [g.name, g.mode, g.theme, g.src, g.note].join("|"), name: g.name, mode: g.mode,
+      theme: g.theme, note: g.note, cur: g.cur, svg: g.src ? await svgFor(g.src) : "",
+    };
+  }
+
+  // Paint whichever full size views are open. The sequence number is what keeps a slow drawing
+  // from landing after a faster one started later: mermaid resolves in whatever order it finishes.
   async function paintFull() {
-    if (!full.classList.contains("open")) return;
-    const g = shownGraph();
-    full.querySelector(".gname").title = full.querySelector(".gname").textContent = g.name;
-    full.querySelector(".gnote").textContent = g.note;
-    full.querySelector(".gnote").hidden = !!g.src;
-    full.querySelector(".gsvg").innerHTML = g.src ? await svgFor(g.src) : "";
-    markCur(fullBody, g.cur);
-    fullBody.scrollTo(0, 0);
+    if (!full.classList.contains("open") && !gwin) return;
+    const me = ++viewSeq;
+    const view = await viewOf(shownGraph());
+    if (me !== viewSeq) return;
+    if (full.classList.contains("open")) fullKey = paintView(full, view, fullKey);
+    sendView(view);
   }
 
   function openFull(on) {
@@ -2279,109 +2378,85 @@ ${groups}
     if (on) paintFull();
   }
 
-  // A graph at full size is wider than the box it sits in, so the box is dragged as well as
-  // scrolled. A drag that moved is not a click, or every pan that ended over a node would open it.
-  function pannable(el) {
-    const doc = el.ownerDocument;
-    let from = null, moved = 0;
-    el.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
-      from = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
-      moved = 0;
-      e.preventDefault();  // no text or node selection under the drag
-    });
-    doc.addEventListener("mousemove", (e) => {
-      if (!from) return;
-      moved = Math.max(moved, Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y));
-      el.classList.toggle("panning", moved > 4);
-      el.scrollLeft = from.left - (e.clientX - from.x);
-      el.scrollTop = from.top - (e.clientY - from.y);
-    });
-    doc.addEventListener("mouseup", () => { from = null; });
-    el.addEventListener("click", (e) => {
-      if (moved <= 4) return;
-      e.preventDefault();
-      e.stopPropagation();
-      el.classList.remove("panning");
-    }, true);
+  attach(full.querySelector(".gfbody"), (href) => { openFull(false); openTarget(href); });
+
+  // ---- the window of its own ----
+  // It talks to the board by message rather than by reaching into it. The board is a file:// page,
+  // so its origin is opaque and a reload mints another one: from the reload on, the window's
+  // `opener.<anything>` throws and the board's own handle on the window is gone. A message crosses
+  // either way regardless, so the window says hello on a timer and the board answers whoever asked,
+  // which is how the two find each other again after every re-render.
+  function sendView(view) {
+    try {
+      if (gwin && !gwin.closed) gwin.postMessage({ graph: "view", view }, "*");
+    } catch { gwin = null; }
   }
 
-  // A node at full size takes the board to its row: the overlay closes on it, the window of its
-  // own leaves the board to move behind it.
-  function nodeClicks(el, go) {
-    el.addEventListener("click", (e) => {
-      const a = e.target.closest("a");
-      const href = a && (a.getAttribute("href") ?? a.getAttribute("xlink:href"));
-      if (!href || !href.startsWith("#")) return;
-      e.preventDefault();
-      go(href);
-    });
-  }
-  function attach(el, go) { pannable(el); nodeClicks(el, go); }
-  attach(fullBody, (href) => { openFull(false); openTarget(href); });
-
-  function setMode(m) { mode = m; showGraph(); }
-
-  // The window of its own reads the board through this and paints itself, rather than being
-  // painted by the board: the board reloads whenever the tracker changes, and a handler the board
-  // gave the window before that reload would go on calling a page nobody is looking at.
-  window.boardGraph = { state: shownGraph, svg: svgFor, setMode, goto: (href) => openTarget(href), attach, markCur };
-
-  const WINDOW_JS = `
-    const body = document.querySelector(".gfbody"), note = body.querySelector(".gnote"), svg = body.querySelector(".gsvg");
-    const board = () => { try { return opener && !opener.closed ? opener.boardGraph : null; } catch { return null; } };
-    board()?.attach(body, (href) => board()?.goto(href));
-    for (const b of document.querySelectorAll("[data-gmode]"))
-      b.addEventListener("click", () => board()?.setMode(b.dataset.gmode));
-    let drawn = null, marked = null;
-    setInterval(async () => {
-      const b = board();
-      document.documentElement.dataset.orphan = b ? "" : "1";
-      if (!b) return;
-      const g = b.state(), key = [g.name, g.mode, g.theme, g.src, g.note].join("|");
-      if (key === drawn && g.cur === marked) return;  // a cursor that moved within one graph only moves the mark
-      try {
-        if (key !== drawn) {
-          drawn = key;
-          document.documentElement.dataset.theme = g.theme;
-          document.querySelector(".gname").title = document.querySelector(".gname").textContent = g.name;
-          for (const el of document.querySelectorAll("[data-gmode]")) el.classList.toggle("on", el.dataset.gmode === g.mode);
-          note.textContent = g.note;
-          note.hidden = !!g.src;
-          svg.innerHTML = g.src ? await b.svg(g.src) : "";
-          body.scrollTo(0, 0);
-        }
-        marked = g.cur;
-        b.markCur(svg, g.cur);
-      } catch { drawn = null; }  // the board reloaded mid-paint: the next tick paints from the new one
-    }, 200);
-  `;
+  addEventListener("message", async (e) => {
+    // the only things a message moves are the board's own cursor and its graph mode, so an opaque
+    // origin nobody can check costs nothing
+    const said = e.data;
+    if (said?.graph === "hello") {
+      gwin = e.source;
+      const view = await viewOf(shownGraph());
+      e.source.postMessage(view.key === said.key ? { graph: "alive" } : { graph: "view", view }, "*");
+    } else if (said?.graph === "goto") {
+      openTarget(said.href);
+    } else if (said?.graph === "mode") {
+      setMode(said.mode);
+    }
+  });
 
   function openWindow() {
     if (gwin && !gwin.closed) { gwin.focus(); return; }
-    gwin = open("", "board-graph", "popup,width=980,height=800");
-    if (!gwin) { say("the browser blocked the graph window"); return; }
-    const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n");
-    gwin.document.write(
-      '<!doctype html><html data-theme="' + document.documentElement.dataset.theme + '">' +
-      '<head><meta charset="utf-8"><title>dependencies — ' + document.querySelector(".top .name span").textContent + "</title>" +
-      "<style>" + css + "</style></head><body class=\"gwin\">" +
-      '<div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>' +
-      '<span class="gorphan">the board this followed is gone</span>' +
-      '<span class="seg"><button class="btn" data-gmode="feature" title="the graph of the row the board is on">feature</button>' +
-      '<button class="btn" data-gmode="all" title="the whole tracker">all</button></span></div>' +
-      '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>' +
-      "<script>" + WINDOW_JS + "<\/script></body></html>"
-    );
-    gwin.document.close();
+    const win = open("", "board-graph", "popup,width=980,height=800");
+    if (!win) { say("the browser blocked the graph window"); return; }
+    // the fonts are linked rather than in the stylesheet, and the window renders the same labels
+    const head = [...document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')]
+      .map((l) => l.outerHTML).join("")
+      + "<style>" + [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n") + "</style>";
+    try {
+      win.document.write(
+        '<!doctype html><html data-theme="' + document.documentElement.dataset.theme + '">' +
+        '<head><meta charset="utf-8"><title>' + document.querySelector(".top .name span").textContent +
+        " dependencies</title>" + head + '</head><body class="gwin">' + ${graphwin} +
+        "<script>" + WINDOW_JS + "<\/script></body></html>"
+      );
+      win.document.close();
+    } catch {
+      win.focus();  // a window this page did not open: the board reloaded under one already running
+    }
+    gwin = win;
   }
+
+  const WINDOW_JS = `
+    ${viewjs}
+    let last = null, heard = Date.now();
+    const body = document.querySelector(".gfbody");
+    attach(body, (href) => opener.postMessage({ graph: "goto", href }, "*"));
+    for (const b of document.querySelectorAll("[data-gmode]"))
+      b.addEventListener("click", () => opener.postMessage({ graph: "mode", mode: b.dataset.gmode }, "*"));
+    addEventListener("message", (e) => {
+      heard = Date.now();
+      if (e.data?.graph !== "view") return;
+      document.documentElement.dataset.theme = e.data.view.theme;
+      last = paintView(document.body, e.data.view, last);
+    });
+    // the board answers this, so silence past a few rounds of it is a board that has gone away
+    setInterval(() => {
+      try { opener.postMessage({ graph: "hello", key: last }, "*"); } catch { }
+      document.documentElement.dataset.orphan = Date.now() - heard > 3000 ? "1" : "";
+    }, 1000);
+  `;
 
   document.getElementById("gopen").addEventListener("click", () => openFull(true));
   document.getElementById("gclose").addEventListener("click", () => openFull(false));
-  for (const id of ["gwinopen", "gwinfull"]) document.getElementById(id).addEventListener("click", openWindow);
+  document.getElementById("gwinopen").addEventListener("click", openWindow);
+  // from inside the overlay, the window is where the graph is going, so the board comes back with it
+  document.getElementById("gwinfull").addEventListener("click", () => { openFull(false); openWindow(); });
   full.addEventListener("click", (e) => { if (e.target === full) openFull(false); });
   // the preview is the way in to the full size view; a node in it still goes to its row
-  document.getElementById("gbody").addEventListener("click", (e) => { if (!e.target.closest("a")) openFull(true); });
+  document.getElementById("gbody").addEventListener("click", (e) => { if (!hrefOf(e.target.closest("a"))) openFull(true); });
 
   function setCur(el, scroll = true) {
     cur?.classList.remove("kcur");
@@ -2521,7 +2596,6 @@ ${groups}
   // A click on an in-page link (a graph node, a chip) runs it directly, so the
   // flash fires again when the hash is already the target's and hashchange stays silent.
   function openTarget(hash = location.hash) {
-    if (hash === "#graph") { openFull(true); return; }  // the full size graph, from a link or a reload
     const el = document.getElementById(hash.slice(1));
     if (!el) return;
     for (let d = el; d; d = d.parentElement) if (d.tagName === "DETAILS") d.open = true;
@@ -2534,8 +2608,7 @@ ${groups}
   }
   window.addEventListener("hashchange", () => openTarget());
   document.addEventListener("click", (e) => {
-    const a = e.target.closest("a");
-    const href = a && (a.getAttribute("href") || a.getAttribute("xlink:href"));
+    const href = hrefOf(e.target.closest("a"));
     if (href && href.startsWith("#") && href === location.hash) setTimeout(() => openTarget(href));
   });
 
@@ -2580,9 +2653,12 @@ ${groups}
     .observe(document.querySelector(".top"));
   if (cur) cur.classList.add("kcur");
   applyFilters();
-  // the re-render a tracker change triggers puts the full size graph back where it was
-  if (saved?.full) openFull(true);
-  if (!saved && location.hash) openTarget();
+  if (!saved) {
+    if (location.hash) openTarget();
+    // ?graph opens the overlay on the row the address names, which is what a layout check measures
+    if (new URLSearchParams(location.search).has("graph")) openFull(true);
+  }
+  if (saved?.full) openFull(true);  // the re-render a tracker change triggers puts it back
 </script>
 </body>
 </html>
