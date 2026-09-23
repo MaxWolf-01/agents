@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [08]
 priority: 2
 size: M
+diff: [f0ac0e74312cdba2b5b813bec8f41f3357d2706e..36a03729595b4b972a7c77b9447fe96ab05026b6]
 ---
 
 # The board briefing
