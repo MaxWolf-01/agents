@@ -1,6 +1,6 @@
 ---
 status: open
-blocked-by: [13]
+blocked-by: [13, retro-semi-automated]
 priority: 2
 size: S
 ---
@@ -24,3 +24,7 @@ The retrospective itself is `retro-semi-automated`: this ticket gives it an inpu
 - [ ] `/mx:dispatch`'s close-out files a debrief ticket rather than a chat report, and nothing in the skills says the debrief goes to chat.
 - [ ] The debrief ticket carries the feature's sessions and commit range.
 - [ ] Demo: the skill text before and after, and board-orients' own debrief ticket as the first one written this way.
+
+## Comments
+
+**2026-09-23** The user ruled (D108) that the retro is a sub-step of the debrief, designed together with this ticket in `retro-semi-automated`'s grilling, so this build waits on that grilling.
