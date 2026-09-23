@@ -61,6 +61,7 @@ from board import (
 )
 from briefing import Briefing, cache_path
 from demo_tracker import S1, S2, S4, Demo
+from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
 
 FEAT = "feat-a"  # a hyphen, so a slugged id and the raw name can be told apart
 NO_QUEUE = Queue(Path("needs-human.md"), [])
@@ -1115,13 +1116,15 @@ def asked_in(row: str) -> list[dict[str, str]]:
     return found
 
 
-def test_an_opened_ticket_reads_as_blocks_in_one_order(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The build in review, which has one of every block: its questions, its artefacts, then its
-    own sections as the file writes them, the comments last and folded."""
+def test_an_opened_ticket_reads_as_blocks_in_one_order(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The build in review, which has one of every block: its questions, the sessions that worked
+    on it, its artefacts, then its own sections as the file writes them, the comments last and
+    folded."""
+    demo = transcribed
     out = tmp_path / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
     row = rows_of(out.read_text())["t-csv-import-02"]
-    assert labels_of(row) == ["questions", "artefacts", "what to build", "acceptance criteria", "comments"]
+    assert labels_of(row) == ["questions", "sessions", "artefacts", "what to build", "acceptance criteria", "comments"]
     # the brief is the row's own: read before anything is opened, and written once
     assert "You tell the importer once" in summary_of(row)
     assert "You tell the importer once" not in body_of(row)
@@ -1268,6 +1271,126 @@ def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, trac
     assert tracker_snapshot(tracker_roots(tracker), repo) != before
 
 
+# ---- the sessions behind a ticket ------------------------------------------
+# The spec's Decision: the sessions a ticket lists come from the `Session:` trailer on every commit
+# that changed its file, on every branch, and take their title and working directory from their
+# transcript on this machine. A session with no transcript here the user cannot resume, so it is
+# not listed.
+
+HERE = "f1e2d3c4-1111-4111-8111-111111111111"  # committed on the main branch and on the ticket's own
+AWAY = "f1e2d3c4-2222-4222-8222-222222222222"  # a worker on another host: no transcript on this machine
+NAMED = "f1e2d3c4-3333-4333-8333-333333333333"  # committed on the ticket branch only, and was renamed by hand
+
+
+@pytest.fixture
+def worked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """(the tracker, its repo) of a ticket three sessions committed on, one of them only on the
+    ticket's own branch and one of them a worker on another host, beside a ticket committed before
+    any session put its id on a commit. This machine's transcripts are the two it has."""
+    repo = tmp_path / "ledger"
+    root = repo / "agent" / "tickets"
+    root.mkdir(parents=True)
+    demo_git(repo, "init", "-q", "-b", "master")
+    ticket(root / "map-columns.md", "open")
+    demo_commit(repo, HERE, "2026-09-14T10:00:00+02:00", "map-columns: filed", "agent/tickets")
+    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nOne mapping per bank.\n")
+    demo_commit(repo, HERE, "2026-09-16T09:00:00+02:00", "map-columns: one mapping per bank", "agent/tickets")
+
+    demo_git(repo, "checkout", "-q", "-b", "ticket/master/map-columns")
+    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nRead from the header row.\n")
+    demo_commit(repo, AWAY, "2026-09-17T11:00:00+02:00", "map-columns: the mapping step", "agent/tickets")
+    (root / "map-columns.md").write_text((root / "map-columns.md").read_text() + "\nAsked once per bank.\n")
+    demo_commit(repo, NAMED, "2026-09-18T12:00:00+02:00", "map-columns: for review", "agent/tickets")
+    demo_git(repo, "checkout", "-q", "master")
+
+    ticket(root / "view-list.md", "open")
+    demo_git(repo, "add", "--", "agent/tickets")
+    demo_git(repo, "commit", "-q", "-m", "view-list: filed before the hook")
+
+    written = tmp_path / "claude" / "projects"
+    write_transcript(written, HERE, str(repo), "Ledger imports")
+    write_transcript(written, NAMED, "/home/max/repos/ledger-map-columns", "Wave 1 of csv-import", "Mapping the Sparkasse export")
+    monkeypatch.setattr(board, "TRANSCRIPTS", written)
+    return root, repo
+
+
+def sessions_in(row: str) -> list[tuple[str, str, str]]:
+    """(its title, the days it worked, the command its button copies) for every session an opened
+    ticket lists, in the order it lists them."""
+    listed = re.search(r'<ul class="sessions">(.*?)</ul>', body_of(row), re.S)
+    found = []
+    for item in re.findall(r"<li>(.*?)</li>", listed.group(1) if listed else "", re.S):
+        marks = {mark: text for mark, text, _ in marks_on(item)}
+        (resume,) = [text for which, text, _, _ in copiers(item) if which == "resume"]
+        found.append((marks["stitle"], marks["when"], resume))
+    return found
+
+
+def test_a_tickets_sessions_come_from_the_trailers_on_every_branch(worked: tuple[Path, Path]) -> None:
+    """The one that worked on the ticket branch is listed beside the one that worked on master:
+    a build's commits are on its own branch until the merge. The worker on another host is not,
+    and a ticket no trailer names has no sessions at all."""
+    root, repo = worked
+    listed = ticket_sessions(root / "map-columns.md", repo)
+    assert [s.id for s in listed] == [HERE, NAMED], "oldest first, and AWAY has no transcript on this machine"
+    assert [(s.first, s.last) for s in listed] == [("2026-09-14", "2026-09-16"), ("2026-09-18", "2026-09-18")]
+    assert [s.cwd for s in listed] == [str(repo), "/home/max/repos/ledger-map-columns"]
+    assert ticket_sessions(root / "view-list.md", repo) == [], "no trailer says which session committed it"
+
+
+def test_a_session_shows_the_name_it_was_given_over_the_one_it_was_written(worked: tuple[Path, Path]) -> None:
+    """The title is the session's `/rename` name where it has one, else Claude Code's own."""
+    root, repo = worked
+    titles = {s.id: s.title for s in ticket_sessions(root / "map-columns.md", repo)}
+    assert titles == {HERE: "Ledger imports", NAMED: "Mapping the Sparkasse export"}
+
+
+def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(worked: tuple[Path, Path], tmp_path: Path) -> None:
+    """What the user reads to recognise the session they want, and clicks to close their tmux panes:
+    the title, the days it committed on the ticket, and the command that picks it up again."""
+    root, repo = worked
+    out = tmp_path / "board.html"
+    render(tracker_roots(root), repo, out)
+    rows = rows_of(out.read_text())
+    assert sessions_in(rows["standalone-map-columns"]) == [
+        ("Ledger imports", "2026-09-14 → 2026-09-16", f"cd {repo} && claude --resume {HERE}"),
+        ("Mapping the Sparkasse export", "2026-09-18", f"cd /home/max/repos/ledger-map-columns && claude --resume {NAMED}"),
+    ]
+    assert "sessions" in labels_of(rows["standalone-map-columns"])
+    assert "sessions" not in labels_of(rows["standalone-view-list"]), "no trailer names a session, so nothing is said"
+    assert AWAY not in out.read_text(), "the worker on another host is left out, not shown unresumable"
+    assert absences(out.read_text(), "transcripts") == 0, "this machine has its transcripts"
+
+
+def test_the_button_that_resumes_a_session_shows_the_command_it_copies(worked: tuple[Path, Path], tmp_path: Path) -> None:
+    """The spec's reviewed Property, at the button this slice adds: the board's own check of it
+    renders a tracker whose sessions have no transcript here, so it reaches no resume button."""
+    root, repo = worked
+    out = tmp_path / "board.html"
+    render(tracker_roots(root), repo, out)
+    found = [c for c in copiers(rows_of(out.read_text())["standalone-map-columns"]) if c[0] == "resume"]
+    assert len(found) == 2
+    for _, text, said, tip in found:
+        what, _, shown = tip.partition("\n\n")
+        assert shown == text, f"the button shows {shown!r} and copies {text!r}"
+        assert "copy" in what and "resume" in what
+        assert text.split("--resume ")[1] not in said, "the note names the session as the reader knows it"
+
+
+def test_the_demo_trackers_ticket_lists_the_two_sessions_this_machine_can_resume(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The fixture's build in review: four sessions on its commits, the two with a transcript here
+    listed with their titles, the worker on another host left out."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    row = rows_of(out.read_text())["t-csv-import-02"]
+    assert sessions_in(row) == [
+        ("Grilling the CSV import", "2026-09-14", f"cd /home/max/repos/ledger && claude --resume {S1}"),
+        ("Dispatching csv-import, wave 1", "2026-09-17 → 2026-09-18",
+         f"cd /home/max/repos/ledger-csv-import && claude --resume {S2}"),
+    ]
+    assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
+
+
 # ---- properties -----------------------------------------------------------
 # The executable Properties of agent/tickets/board-orients/spec.md that live at these seams. Each
 # is an expected failure naming the slice that lifts it; one that already holds carries none.
@@ -1363,7 +1486,6 @@ def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo
     assert "standalone-staging-credentials" not in rows_in(out.read_text(), "needs"), "its one question is ruled"
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="ticket_sessions is a stub; lifted by 05-sessions")
 def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo: Demo) -> None:
     ticket = demo.root / "csv-import" / "02-map-columns.md"
     listed = ticket_sessions(ticket, demo.repo, demo.transcripts)
@@ -1373,7 +1495,6 @@ def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo:
     assert [s.cwd for s in listed] == [demo.sessions[s.id]["cwd"] for s in listed]
 
 
-@pytest.mark.xfail(strict=True, reason="the board lists no sessions yet; lifted by 05-sessions")
 def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: Demo, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_with: Callable[..., Path]) -> None:
     monkeypatch.setattr(board, "TRANSCRIPTS", tmp_path / "no-transcripts")
     out = tmp_path / "board.html"

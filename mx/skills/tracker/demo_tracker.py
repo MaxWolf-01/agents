@@ -13,9 +13,10 @@ on their ticket branches with their questions there, one build stopped on two qu
 one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
 a needs-human queue, review pages beside the tickets, acceptance criteria a build in review has half
 met, demo scripts and a figure under agent/show, and four sessions on the commits: three with a
-transcript under the transcripts directory this writes, one worker on another host with none.
+transcript under the claude/ config directory this writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
+    CLAUDE_CONFIG_DIR=/tmp/demo/claude board /tmp/demo/agent/tickets --no-watch --no-open
 """
 
 # Promoted from agent/prototypes/board-orients/demo-tracker/build.sh, with its tickets moved to the
@@ -52,7 +53,7 @@ class Demo:
 
     repo: Path
     root: Path  # agent/tickets, what the board is pointed at
-    transcripts: Path  # stands in for ~/.claude/projects: <project>/<session id>.jsonl
+    transcripts: Path  # this machine's transcripts: $CLAUDE_CONFIG_DIR/projects/<project>/<session id>.jsonl
     sessions: dict[str, dict]  # session id -> the title the board should show, and the cwd, for the ones with a transcript
 
 
@@ -60,10 +61,12 @@ def build(dest: Path) -> Demo:
     """Write the demo tracker into `dest`, rebuilding it from scratch."""
     repo = Path(dest).resolve()
     repo.mkdir(parents=True, exist_ok=True)
-    for stale in (repo / ".git", repo / "agent", repo / "src", repo / "transcripts"):
+    for stale in (repo / ".git", repo / "agent", repo / "src", repo / "claude"):
         shutil.rmtree(stale, ignore_errors=True)
-    demo = Demo(repo, repo / "agent" / "tickets", repo / "transcripts", TRANSCRIBED)
-    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\ntranscripts/\n")
+    # claude/ is a CLAUDE_CONFIG_DIR of its own, so the board reads the fixture's sessions by
+    # pointing at it and the demo's resume commands are the ones the fixture's transcripts answer
+    demo = Demo(repo, repo / "agent" / "tickets", repo / "claude" / "projects", TRANSCRIBED)
+    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nclaude/\n")
     git(repo, "init", "-q", "-b", "master")
 
     csv_import(repo)
@@ -589,22 +592,30 @@ def review_pages(repo: Path) -> None:
 
 
 def transcripts(root: Path) -> None:
-    """A transcript per session, where and as Claude Code writes them: one directory per working
-    directory, every non-alphanumeric character dashed, and the title as an `ai-title` record.
+    """The transcript of each session this machine has one for; the fourth is a worker on another
+    host and has none here.
 
     S2 also carries the `/rename` name, so a reader has both to tell apart; the other two have only
     Claude Code's own title, which is what every transcript on this machine carries.
     """
     for sid, info in TRANSCRIBED.items():
-        path = root / re.sub(r"[^A-Za-z0-9]", "-", info["cwd"]) / f"{sid}.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lines = [
-            {"type": "user", "sessionId": sid, "cwd": info["cwd"]},
-            {"type": "ai-title", "aiTitle": info["ai_title"], "sessionId": sid},
-        ]
-        if renamed := info.get("renamed"):
-            lines.append({"type": "summary", "customTitle": renamed, "sessionId": sid})
-        path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+        transcript(root, sid, info["cwd"], info["ai_title"], info.get("renamed"))
+
+
+def transcript(root: Path, session: str, cwd: str, ai_title: str, renamed: str | None = None) -> Path:
+    """One session's transcript, where and as Claude Code writes them: under a directory per
+    working directory, every non-alphanumeric character dashed, with the title as an `ai-title`
+    record and a `/rename` name as a summary record."""
+    path = root / re.sub(r"[^A-Za-z0-9]", "-", cwd) / f"{session}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        {"type": "user", "sessionId": session, "cwd": cwd},
+        {"type": "ai-title", "aiTitle": ai_title, "sessionId": session},
+    ]
+    if renamed:
+        lines.append({"type": "summary", "customTitle": renamed, "sessionId": session})
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    return path
 
 
 # ---- writing it ------------------------------------------------------------

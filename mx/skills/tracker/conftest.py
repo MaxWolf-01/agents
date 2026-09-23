@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import board  # noqa: E402
 from demo_tracker import Demo, build  # noqa: E402
 
 KEPT = ("git", "uv", "chromium")  # what a check may still need: the repo, a script's own run, a browser
@@ -24,6 +25,14 @@ def demo(tmp_path_factory: pytest.TempPathFactory) -> Demo:
     session committed on which ticket. Changing a ticket's status, type, priority or blocking edge
     moves those checks with it."""
     return build(tmp_path_factory.mktemp("demo-tracker"))
+
+
+@pytest.fixture
+def transcribed(demo: Demo, monkeypatch: pytest.MonkeyPatch) -> Demo:
+    """The demo tracker with its transcripts where this machine keeps its own, so the sessions its
+    commits name are ones the board can read a title and a working directory for."""
+    monkeypatch.setattr(board, "TRANSCRIPTS", demo.transcripts)
+    return demo
 
 
 @pytest.fixture
