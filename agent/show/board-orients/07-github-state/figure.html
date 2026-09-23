@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub links on the board, before and after</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+  (() => {
+    const asked = new URLSearchParams(location.search).get("theme");
+    const night = asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = night ? "night" : "day";
+  })();
+</script>
+<style>
+/* the board's own stylesheet, so every row below looks and behaves as it does on the board */
+
+  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
+     the fonts, and the base rules. The type roles there are for a page of prose; a board sets its
+     own below. --muted goes darker than the house value, which is a day-scheme readability fix:
+     the board's small text is read on parchment at 100% zoom. */
+  :root {
+    color-scheme: light dark;
+    --ground: light-dark(#f4e4cd, #1a1714);
+    --ground-2: light-dark(#eddabe, #201c18);
+    --edge: light-dark(#cfbca3, #4a433b);
+    --muted: light-dark(#4c443c, #b0a89e);
+    --body: light-dark(#37261d, #ede3d2);
+    --strong: light-dark(#22140b, #faf2dc);
+    --accent: light-dark(#426724, #6ea444);
+    --accent-2: light-dark(#674806, #cdb78a);
+    --wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.22));
+    --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+    --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+    --font-body: "Newsreader", Georgia, serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --radius: 6px;
+    --topbar-h: 52px;  /* measured once the bar is laid out, since it wraps on a narrow window */
+    /* one character of a mark: the marks are monospace at .78rem, and IBM Plex Mono advances .6em,
+       with the rest the slack a fallback mono needs */
+    --mark-char: calc(.78rem * .64);
+  }
+  /* the row's fixed columns, each as wide as the widest mark that lands in it (board.row_columns) */
+  :root {
+    --col-ftag: calc(11 * var(--mark-char) + 0rem);
+    --col-num: calc(2 * var(--mark-char) + 0rem);
+    --col-asks: calc(14 * var(--mark-char) + 0.85rem);
+    --col-time: calc(16 * var(--mark-char) + 0rem);
+    --col-pri: calc(10 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(13 * var(--mark-char) + 0rem);
+  }
+  #grp-needs {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(2 * var(--mark-char) + 0rem);
+  }
+  #grp-open {
+    --col-chips: calc(0 * var(--mark-char) + 0rem);
+  }
+  #grp-claimed {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(2 * var(--mark-char) + 0rem);
+  }
+  #grp-blocked {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(8 * var(--mark-char) + 0.95rem);
+  }
+  #grp-proposed {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(8 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(2 * var(--mark-char) + 0rem);
+  }
+  #grp-done {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(0 * var(--mark-char) + 0rem);
+  }
+
+  [data-theme="day"] { color-scheme: light; }
+  [data-theme="night"] { color-scheme: dark; }
+
+  /* The callout hues of mwolf.dev: what a row asks wears one each, the priority ramps on the
+     first, a question's tag takes the same rose as the answer it waits for, and the user's time
+     has the last to itself. The teal is picked again from the
+     prototype's, away from the moss accent, which it read as by day. Each day value clears 4.6:1
+     against its own 12% tint, since that is the background the tag's text sits on. */
+  :root {
+    --c-pink: light-dark(#7d4172, #d9a2d0);
+    --c-gold: light-dark(#725614, #d9b36f);
+    --c-rose: light-dark(#963f37, #fabeb4);
+    --c-purple: light-dark(#6546b3, #b8a4ff);
+    --c-orange: light-dark(#894c14, #ffc387);
+    --c-blue: light-dark(#255d8f, #85baeb);
+    --c-slate: light-dark(#4c5b76, #9aaacb);
+    --c-time: light-dark(#255a63, #86bcc4);
+  }
+
+  * { box-sizing: border-box; }
+  html { scrollbar-color: var(--edge) var(--ground); }
+  body { margin: 0; background: var(--ground); color: var(--body);
+    font: 400 15.5px/1.5 var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; transition: color 150ms; }
+  a:hover { color: var(--accent); }
+  ::selection { background: var(--mark); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code, kbd, pre { font-family: var(--font-mono); }
+  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
+    .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
+
+  /* ---- the top bar: the project, the feature pills, the filter, the graph mode, the scheme ---- */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; align-items: center; min-height: 52px;
+    padding: .4rem 1.25rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
+  .top .name { font-weight: 600; color: var(--strong); white-space: nowrap; }
+  .top .name span { color: var(--muted); font-weight: 400; }
+  .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .featchip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
+    font-size: .8rem; color: var(--muted); cursor: pointer; white-space: nowrap; display: inline-flex; gap: .4em;
+    align-items: center; transition: color 150ms, border-color 150ms; }
+  .featchip:hover { color: var(--accent); border-color: var(--accent); }
+  .featchip.off { opacity: .5; text-decoration: line-through; }
+  .dim { color: var(--muted); }
+  .dot { display: inline-block; width: .45em; height: .45em; border-radius: 50%; background: var(--accent-2); }
+  .search { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); color: var(--body);
+    font-size: .82rem; padding: .25rem .6rem; width: 12rem; }
+  .search:focus { outline: none; border-color: var(--accent); }
+  .btn { background: none; border: 0; color: var(--muted); font-size: .82rem; cursor: pointer; padding: .2rem .45rem;
+    transition: color 150ms; white-space: nowrap; }
+  .btn:hover, .btn.on { color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: var(--radius); }
+  .seg .btn.on { background: var(--wash); }
+  .seg .btn + .btn { border-left: 1px solid var(--edge); }
+  .scheme { display: inline-flex; align-items: center; }
+  [data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
+
+  /* what this render did without, said once each */
+  .absences { padding: .6rem 1.25rem 0; display: grid; gap: .2rem; max-width: 110rem; margin: 0 auto; }
+  .absences:empty { display: none; }
+  .absent { font-size: .92rem; color: var(--muted); border-left: 2px solid var(--accent-2); padding-left: .6rem; }
+
+  /* ---- the rows, the graph panel beside them on a wide window ---- */
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1rem 1.25rem 5rem;
+    align-items: start; max-width: 110rem; margin: 0 auto; }
+  /* one column: the graph above the rows, where a glance still reaches it, rather than past every group */
+  .side { order: -1; position: sticky; top: var(--topbar-h); max-height: 40vh; overflow: auto; z-index: 5;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
+  .side.folded .gbody { display: none; }
+  @media (min-width: 1400px) {
+    main { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 2.5rem; }
+    .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
+      border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
+  }
+  .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
+  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gnote { color: var(--muted); font-size: .92rem; padding: .4rem 0; }
+  .mermaid { margin: 0; display: flex; justify-content: center; }
+  /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
+     that has not come back yet would widen the column it sits in */
+  .mermaid:not(:has(svg)) { display: none; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  .side g.node.cur rect, .side g.node.cur polygon { stroke-width: 2.5px !important; }
+
+  /* ---- a group of rows ---- */
+  .grp { margin-bottom: 1.75rem; }
+  .grp > summary { list-style: none; cursor: pointer; padding: .3rem 0 .6rem; position: relative; }
+  .grp > summary::-webkit-details-marker { display: none; }
+  .grp.empty { display: none; }
+  h2 { font-size: .82rem; font-weight: 400; color: var(--muted); margin: 0; display: flex; align-items: center;
+    gap: .6rem; font-family: var(--font-mono); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--edge); }
+  h2 .n { color: var(--muted); }
+  .grp > summary::before { content: "▾"; color: var(--muted); font-size: .7rem; margin-right: .4rem; }
+  .grp:not([open]) > summary::before { content: "▸"; }
+  .label { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); }
+
+  /* ---- a row: every mark in a fixed column, so the eye scans one ---- */
+  .ticket { border-top: 1px solid var(--edge); scroll-margin-top: calc(var(--topbar-h) + 3rem); scroll-margin-bottom: 3rem; }
+  .ticket:first-child { border-top: 0; }
+  .ticket.off, .ticket.miss { display: none; }
+  .ticket > summary { display: grid; column-gap: .9rem; row-gap: .2rem; align-items: baseline; padding: .55rem .5rem;
+    cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms;
+    grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr) var(--col-time) var(--col-pri) var(--col-chips);
+    grid-template-areas: "ftag num asks main time pri chips"; }
+  .ticket > summary::-webkit-details-marker { display: none; }
+  .ticket > summary:hover { background: var(--wash-ink); }
+  .ticket.kcur > summary, .ticket.flash > summary { background: var(--wash); }
+  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); min-width: 0; }
+  /* a box that hides its overflow hides its own tooltip with it, so the ellipsis sits one level in */
+  .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
+  .num:hover { color: var(--accent); }
+  .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
+  /* the name is what a row is read by, so it keeps its words: the links wrap under it rather than
+     taking the width off it */
+  .titleline { display: flex; flex-wrap: wrap; gap: 0 .6rem; align-items: baseline; min-width: 0; }
+  .title { color: var(--strong); min-width: 0; }
+  .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
+  .titleline > a, .titleline > .src { flex: none; }
+  .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticket[open] .brief { white-space: normal; }
+  /* a needs-me row's open questions, under the name they belong to */
+  .qs { display: grid; gap: .15rem; justify-items: start; padding: .2rem 0 .1rem; min-width: 0; }
+  .q { display: flex; gap: .5rem; align-items: baseline; max-width: 100%; min-width: 0; }
+  .qtag, .asked .tag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
+  .qhead { color: var(--body); font-size: .88rem; min-width: 0; }
+  .copier { flex: none; font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+    border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
+  .copier:hover { color: var(--accent); border-color: var(--accent); }
+  .meta { display: contents; }
+  .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
+  .chip { font-size: .78rem; }
+  .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%;
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
+  .a-review { --c: var(--c-gold); }
+  .a-answer { --c: var(--c-rose); }
+  .a-design { --c: var(--c-purple); }
+  .a-prototype { --c: var(--c-orange); }
+  .a-research { --c: var(--c-blue); }
+  .a-legwork { --c: var(--c-slate); }
+  .a-build { background: none; border-color: transparent; padding-left: 0; }
+  .time { grid-area: time; color: var(--c-time); justify-self: end; font-variant-numeric: tabular-nums; }
+  /* the priority is a ramp, not a set of categories: one hue, strongest at p1 */
+  .pri { grid-area: pri; color: var(--c-pink); justify-self: start; padding: 0 .45rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--c-pink) 16%, transparent); }
+  .pri.p3 { background: color-mix(in srgb, var(--c-pink) 8%, transparent); }
+  .pri.p4, .pri.p5 { color: var(--muted); background: none; padding-left: 0; }
+  /* the blockers' column is as fixed as the rest, so a long cross-feature reference wraps within
+     it rather than widening it and pulling the time and the priority out of line */
+  .chips { grid-area: chips; display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
+  .chip { color: var(--body); overflow-wrap: anywhere; }
+  .chip.done { color: var(--muted); text-decoration: line-through; }
+  .rp { color: var(--accent); }
+  .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  /* a GitHub reference in the look of its state; github.SAYS says the same in words on hover.
+     Open work takes the accent, a review asking for changes the rose a question wears, a merge the
+     callout purple, as GitHub marks a merge. Anything closed is struck through and a draft
+     underlined. A reference GitHub was not asked about keeps the muted link it has always been. */
+  .gh { color: var(--muted); }
+  .gh.pr-open, .gh.issue-open { color: var(--accent); }
+  .gh.pr-changes { color: var(--c-rose); }
+  .gh.pr-merged { color: var(--c-purple); }
+  .gh.pr-draft { text-decoration: underline dotted; text-underline-offset: 3px; }
+  .gh.pr-closed, .gh.issue-closed { text-decoration: line-through; }
+  .src { color: var(--accent-2); }
+
+  /* below this width the time, the priority and the blockers move under the name, and the top
+     bar's pills take a line of their own rather than scrolling out of sight */
+  @media (max-width: 1000px) {
+    .top { flex-wrap: wrap; padding: .4rem .75rem; }
+    .featnav { flex-basis: 100%; order: 1; }
+    main { padding: 1rem .75rem 5rem; }
+    .absences { padding: .6rem .75rem 0; }
+    .ticket > summary { grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr);
+      grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
+    .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
+    .time, .pri, .chips { grid-area: auto; justify-self: auto; }
+  }
+  /* narrower still: the name takes the row's width, with its marks over it and under it */
+  @media (max-width: 620px) {
+    .ticket > summary { grid-template-columns: minmax(0, var(--col-ftag)) var(--col-num) minmax(0, 1fr);
+      grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
+    .search { flex: 1; width: auto; }
+  }
+
+  /* ---- a row, opened ---- */
+  .body { padding: .4rem .5rem 1.4rem 1rem; margin-left: .5rem; border-left: 1px solid var(--edge);
+    max-width: 46rem; color: var(--body); font-size: .96rem; }
+  .body > * + * { margin-top: .8em; }
+  .body h3 { font-size: .96rem; font-weight: 600; color: var(--strong); }
+  .body a { color: var(--accent); }
+  .body code { background: var(--ground-2); border-radius: 3px; padding: 0 .25em; font-size: .85em; }
+  .body pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius);
+    padding: .6rem .8rem; overflow-x: auto; font-size: .82rem; }
+  .body pre code { background: none; padding: 0; }
+  .body ul, .body ol { padding-left: 1.2em; }
+  .body li + li { margin-top: .3em; }
+  .body li::marker { color: var(--muted); }
+  .body table { border-collapse: collapse; font-size: .9rem; }
+  .body th, .body td { text-align: left; padding: .2rem .8rem .2rem 0; border-bottom: 1px solid var(--edge); }
+  /* the blocks an opened ticket reads as, each under the word for what it is. The ticket's own
+     prose keeps the body's spacing; the word above it sits closer, as a label does */
+  .block > * + *, .history > * + * { margin-top: .8em; }
+  .block > .label + *, .history > summary + * { margin-top: .35rem; }
+  .body .asked, .body .artefacts, .body .sessions { list-style: none; padding: 0; display: grid; gap: .45rem; }
+  /* a line of a block is its own containing block, so a mark's words are laid out from that line
+     rather than from the whole block */
+  .asked > li, .artefacts > li, .sessions > li { display: flex; gap: .6rem; align-items: baseline; position: relative; }
+  .asked .head { color: var(--strong); }
+  .asked > li > div > * + * { margin-top: .2rem; }
+  /* a question the user has answered is history: its words stay, the colours that call for one go */
+  .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
+  .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }
+  /* a session is its name and the days it worked, the command that resumes it on the button */
+  .sessions .stitle { color: var(--strong); }
+  .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
+  /* a criterion's mark is the glyph its list item carries instead of a bullet */
+  .body li.tick { list-style: none; position: relative; }
+  .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;
+    color: var(--muted); font-size: .85em; }
+  .body li.tick.met::before { content: "✓"; color: var(--accent); }
+  .history > summary { list-style: none; cursor: pointer; }
+  .history > summary::-webkit-details-marker { display: none; }
+  .history > summary > .label::before { content: "▸"; margin-right: .4rem; }
+  .history[open] > summary > .label::before { content: "▾"; }
+
+  /* ---- a mark says in words what it means ---- */
+  /* The words appear under the row, at its left edge: the row is the box that is always on screen
+     and never hides its overflow, so they cannot be clipped by the mark they belong to or run off
+     a narrow window, wherever in the row that mark sits. A group's header is the same box for the
+     one mark that sits on it, the button that copies every question in the group. */
+  .ticket > summary { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% - .2rem); left: .5rem;
+    width: max-content; max-width: min(28rem, 100%); white-space: pre-line; background: var(--ground); color: var(--body);
+    border: 1px solid var(--edge); border-radius: var(--radius); padding: .5rem .7rem;
+    font: .8rem/1.5 var(--font-mono); text-decoration: none; pointer-events: none;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--strong) 14%, transparent); }
+
+  .log { margin: 0; font-size: .8rem; line-height: 1.8; overflow-x: auto; white-space: pre-wrap; }
+  .hash { color: var(--muted); }
+  .footmeta { color: var(--muted); font-size: .78rem; margin-top: .8rem; }
+
+  #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 50; max-width: 90vw;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .3rem .9rem;
+    font: .8rem var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity 200ms; pointer-events: none; }
+  #toast.on { opacity: 1; }
+
+  #help { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
+  #help.open { display: flex; }
+  #help .card { background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.2rem 1.5rem; }
+  #help table { border-collapse: collapse; font-size: .9rem; }
+  #help td { padding: .2rem 1rem .2rem 0; }
+  kbd { font-size: .78rem; border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; color: var(--body); }
+
+
+/* the figure around it */
+  body { padding: 0 0 4rem; }
+  /* the rows keep the width the board gives them: below about 1100px the board reflows a row, and
+     the line the links sit on is what this figure is about */
+  .page { max-width: 96rem; margin: 0 auto; padding: 0 1.5rem; }
+  h1 { font-size: 1.6rem; font-weight: 600; margin: 2.5rem 0 .75rem; color: var(--strong); }
+  .lead { color: var(--muted); max-width: 46rem; }
+  .lead + .lead { margin-top: .75rem; }
+  .scheme { margin-top: 1.5rem; font-family: var(--font-mono); font-size: .78rem; color: var(--muted);
+    background: none; border: 1px solid var(--edge); border-radius: 4px; padding: .2rem .5rem; cursor: pointer; }
+  .scheme:hover { color: var(--accent); border-color: var(--accent); }
+  .panel { margin: 2.5rem 0 0; }
+  figcaption { color: var(--muted); margin-bottom: .6rem; }
+  figcaption b { color: var(--strong); font-weight: 600; }
+  /* a row says its words below itself, so the last row's need room inside the panel: nothing here
+     clips or scrolls, which is the precondition the board's own tooltip is written against */
+  .rows { border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2);
+    padding: .25rem 0 3.5rem; overflow: visible; }
+  .rows .absent { padding: .5rem 1.25rem; }
+  .notes { margin: .9rem 0 0; padding: 0; list-style: none; max-width: 52rem; }
+  .notes li { display: flex; gap: .5rem; align-items: baseline; margin-top: .4rem; color: var(--muted); }
+  .mk { flex: none; display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; margin-right: .3rem;
+    border-radius: 50%; background: var(--accent); color: var(--ground); font-family: var(--font-mono); font-size: .7rem; }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>GitHub links on the board, before and after</h1>
+<p class="lead">Three renders of one tracker, whose two tickets name three real references in two
+repositories. Every row below is the board's own markup under the board's own stylesheet, so the
+links are live: hover one for the words it says.</p>
+<p class="lead">Built by <code>figure.py</code> beside this file. The walkthrough of the state it
+leaves is <code>demo</code>, beside it.</p>
+<button class="scheme" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'night' ? 'day' : 'night'">day / night</button>
+<figure class="panel"><figcaption><b>before</b> the board as it was until this slice</figcaption><div class="rows"><details class="ticket row-review" id="t-csv-import-02" data-feature="csv-import" data-num="02" data-search="02 map columns once per bank you tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again. questions d1 remember the mapping per bank or per file name? per bank asks one more question on the first import; per file name breaks when a bank renames its export. d2 amounts with a comma as the decimal separator are read as thousands today. guess from the file, or ask once per bank? d3 the mappings live in ~/.config/ledger/mappings.toml . fine there, or beside the ledger file so they travel with it? artefacts /tmp/board-gh-figure/demo/agent/show/csv-import/02-map-columns/demo copy path mapping.svg what to build the first import from a bank asks for the mapping and stores it; later imports from that bank use it silently. acceptance criteria the second import from a bank asks nothing and maps the columns the first one did. property, reviewed: a mapping that fails halfway writes nothing. comments the mapping step is built and remembers a bank&#x27;s layout; on branch ticket/csv-import/02-map-columns , not merged. demo agent/show/csv-import/02-map-columns/demo details, if you want them [d4] assumptions a1 src/mapping.py:1 : one mapping per bank, keyed by the export&#x27;s header row. cli/cli#1 cli/cli#2" data-path="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">csv-import</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md">02</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="Map columns once per bank"><span class="clip">Map columns once per bank</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/csv-import/02-map-columns.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><span class="mk">1</span><a class="gh" href="https://github.com/cli/cli/issues/1" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">cli/cli#1</a><span class="mk">2</span><a class="gh" href="https://github.com/cli/cli/issues/2" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">cli/cli#2</a></span><span class="brief">You tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Remember the mapping per bank or per file name?
+
+Per bank asks one more question on the first import; per file name breaks when a bank renames its export."><span class="clip">Remember the mapping per bank or per file name?</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export." data-copied="D1 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="Amounts with a comma as the decimal separator
+
+are read as thousands today. Guess from the file, or ask once per bank?"><span class="clip">Amounts with a comma as the decimal separator</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?" data-copied="D2 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D3</span><span class="qhead" data-tip="The mappings live in `~/.config/ledger/mappings.toml`.
+
+Fine there, or beside the ledger file so they travel with it?"><span class="clip">The mappings live in <code>~/.config/ledger/mappings.toml</code>.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="D3 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export.
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="3 questions of 02-map-columns.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy all 3</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">1 h</span><span class="pri p1" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p1 now</span><span class="chips"><a class="chip done" href="#t-csv-import-01" onclick="event.stopPropagation()" data-tip="Waits on 01, done.">01</a></span></span></summary></details><details class="ticket row-review" id="standalone-speed-up-tests" data-feature="standalone" data-num="--" data-search="-- a faster test suite the suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute. questions d1 two tests still build their own database because they migrate it; leave them, or move them to a slow suite? d2 the template is rebuilt when a migration file changes. enough, or also on a schema change made by hand? artefacts /tmp/board-gh-figure/demo/agent/show/speed-up-tests/demo copy path what to build a session-scoped template database, copied per test. comments the suite runs in 48 seconds, down from four minutes; on branch ticket/master/speed-up-tests , not merged. demo agent/show/speed-up-tests/demo details, if you want them [d3] friction: the ci cache key did not include the migrations directory. anthropics/claude-code#96304" data-path="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">standalone</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md">--</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="A faster test suite"><span class="clip">A faster test suite</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/speed-up-tests.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><span class="mk">3</span><a class="gh" href="https://github.com/anthropics/claude-code/issues/96304" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">anthropics/claude-code#96304</a></span><span class="brief">The suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Two tests still build their own database
+
+because they migrate it; leave them, or move them to a slow suite?"><span class="clip">Two tests still build their own database</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?" data-copied="D1 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="The template is rebuilt when a migration file changes.
+
+Enough, or also on a schema change made by hand?"><span class="clip">The template is rebuilt when a migration file changes.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="D2 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="2 questions of speed-up-tests.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a mig…">copy all 2</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">20 min</span><span class="pri p2" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p2 next</span><span class="chips"></span></span></summary></details></div><ol class="notes"><li><span class="mk">1</span><span><code>cli/cli#1</code>: a merged pull request, in the muted ink every reference wore.</span></li><li><span class="mk">2</span><span><code>cli/cli#2</code>: a closed issue, in the same ink, because the row could not tell the two apart.</span></li><li><span class="mk">3</span><span><code>anthropics/claude-code#96304</code>: an open issue, likewise. Hover any of the three and it says <i>A pull request or issue this ticket names, on GitHub.</i>: true of all three, and the same words for each.</span></li></ol></figure><figure class="panel"><figcaption><b>after</b> the same tracker, the same three references</figcaption><div class="rows"><details class="ticket row-review" id="t-csv-import-02" data-feature="csv-import" data-num="02" data-search="02 map columns once per bank you tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again. questions d1 remember the mapping per bank or per file name? per bank asks one more question on the first import; per file name breaks when a bank renames its export. d2 amounts with a comma as the decimal separator are read as thousands today. guess from the file, or ask once per bank? d3 the mappings live in ~/.config/ledger/mappings.toml . fine there, or beside the ledger file so they travel with it? artefacts /tmp/board-gh-figure/demo/agent/show/csv-import/02-map-columns/demo copy path mapping.svg what to build the first import from a bank asks for the mapping and stores it; later imports from that bank use it silently. acceptance criteria the second import from a bank asks nothing and maps the columns the first one did. property, reviewed: a mapping that fails halfway writes nothing. comments the mapping step is built and remembers a bank&#x27;s layout; on branch ticket/csv-import/02-map-columns , not merged. demo agent/show/csv-import/02-map-columns/demo details, if you want them [d4] assumptions a1 src/mapping.py:1 : one mapping per bank, keyed by the export&#x27;s header row. cli/cli#1 cli/cli#2" data-path="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">csv-import</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md">02</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="Map columns once per bank"><span class="clip">Map columns once per bank</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/csv-import/02-map-columns.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><span class="mk">1</span><a class="gh pr-merged" href="https://github.com/cli/cli/issues/1" target="_blank" onclick="event.stopPropagation()" data-tip="A merged pull request on GitHub.">cli/cli#1</a><span class="mk">2</span><a class="gh issue-closed" href="https://github.com/cli/cli/issues/2" target="_blank" onclick="event.stopPropagation()" data-tip="A closed issue on GitHub.">cli/cli#2</a></span><span class="brief">You tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Remember the mapping per bank or per file name?
+
+Per bank asks one more question on the first import; per file name breaks when a bank renames its export."><span class="clip">Remember the mapping per bank or per file name?</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export." data-copied="D1 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="Amounts with a comma as the decimal separator
+
+are read as thousands today. Guess from the file, or ask once per bank?"><span class="clip">Amounts with a comma as the decimal separator</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?" data-copied="D2 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D3</span><span class="qhead" data-tip="The mappings live in `~/.config/ledger/mappings.toml`.
+
+Fine there, or beside the ledger file so they travel with it?"><span class="clip">The mappings live in <code>~/.config/ledger/mappings.toml</code>.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="D3 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export.
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="3 questions of 02-map-columns.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy all 3</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">1 h</span><span class="pri p1" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p1 now</span><span class="chips"><a class="chip done" href="#t-csv-import-01" onclick="event.stopPropagation()" data-tip="Waits on 01, done.">01</a></span></span></summary></details><details class="ticket row-review" id="standalone-speed-up-tests" data-feature="standalone" data-num="--" data-search="-- a faster test suite the suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute. questions d1 two tests still build their own database because they migrate it; leave them, or move them to a slow suite? d2 the template is rebuilt when a migration file changes. enough, or also on a schema change made by hand? artefacts /tmp/board-gh-figure/demo/agent/show/speed-up-tests/demo copy path what to build a session-scoped template database, copied per test. comments the suite runs in 48 seconds, down from four minutes; on branch ticket/master/speed-up-tests , not merged. demo agent/show/speed-up-tests/demo details, if you want them [d3] friction: the ci cache key did not include the migrations directory. anthropics/claude-code#96304" data-path="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">standalone</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md">--</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="A faster test suite"><span class="clip">A faster test suite</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/speed-up-tests.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><span class="mk">3</span><a class="gh issue-open" href="https://github.com/anthropics/claude-code/issues/96304" target="_blank" onclick="event.stopPropagation()" data-tip="An open issue on GitHub.">anthropics/claude-code#96304</a></span><span class="brief">The suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Two tests still build their own database
+
+because they migrate it; leave them, or move them to a slow suite?"><span class="clip">Two tests still build their own database</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?" data-copied="D1 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="The template is rebuilt when a migration file changes.
+
+Enough, or also on a schema change made by hand?"><span class="clip">The template is rebuilt when a migration file changes.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="D2 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="2 questions of speed-up-tests.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a mig…">copy all 2</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">20 min</span><span class="pri p2" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p2 next</span><span class="chips"></span></span></summary></details></div><ol class="notes"><li><span class="mk">1</span><span><code>cli/cli#1</code> in the callout purple: merged. Hover it for <i>A merged pull request on GitHub.</i></span></li><li><span class="mk">2</span><span><code>cli/cli#2</code> struck through: closed. Hover it for <i>A closed issue on GitHub.</i></span></li><li><span class="mk">3</span><span><code>anthropics/claude-code#96304</code> in the accent: open. Hover it for <i>An open issue on GitHub.</i> A draft is underlined, and a pull request whose review asked for changes takes the rose a question wears.</span></li></ol></figure><figure class="panel"><figcaption><b>after, with GitHub out of reach</b> no <code>gh</code>, no auth or no network</figcaption><div class="rows"><span class="mk">1</span><p class="absent" data-absent="github">GitHub did not answer (To get started with GitHub CLI, please run:  gh auth login), so no GitHub link says whether it is open, merged or waiting on changes.</p><details class="ticket row-review" id="t-csv-import-02" data-feature="csv-import" data-num="02" data-search="02 map columns once per bank you tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again. questions d1 remember the mapping per bank or per file name? per bank asks one more question on the first import; per file name breaks when a bank renames its export. d2 amounts with a comma as the decimal separator are read as thousands today. guess from the file, or ask once per bank? d3 the mappings live in ~/.config/ledger/mappings.toml . fine there, or beside the ledger file so they travel with it? artefacts /tmp/board-gh-figure/demo/agent/show/csv-import/02-map-columns/demo copy path mapping.svg what to build the first import from a bank asks for the mapping and stores it; later imports from that bank use it silently. acceptance criteria the second import from a bank asks nothing and maps the columns the first one did. property, reviewed: a mapping that fails halfway writes nothing. comments the mapping step is built and remembers a bank&#x27;s layout; on branch ticket/csv-import/02-map-columns , not merged. demo agent/show/csv-import/02-map-columns/demo details, if you want them [d4] assumptions a1 src/mapping.py:1 : one mapping per bank, keyed by the export&#x27;s header row. cli/cli#1 cli/cli#2" data-path="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">csv-import</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md">02</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="Map columns once per bank"><span class="clip">Map columns once per bank</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/csv-import/02-map-columns.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><span class="mk">2</span><a class="gh unknown" href="https://github.com/cli/cli/issues/1" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">cli/cli#1</a><a class="gh unknown" href="https://github.com/cli/cli/issues/2" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">cli/cli#2</a></span><span class="brief">You tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Remember the mapping per bank or per file name?
+
+Per bank asks one more question on the first import; per file name breaks when a bank renames its export."><span class="clip">Remember the mapping per bank or per file name?</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export." data-copied="D1 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="Amounts with a comma as the decimal separator
+
+are read as thousands today. Guess from the file, or ask once per bank?"><span class="clip">Amounts with a comma as the decimal separator</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?" data-copied="D2 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D3</span><span class="qhead" data-tip="The mappings live in `~/.config/ledger/mappings.toml`.
+
+Fine there, or beside the ledger file so they travel with it?"><span class="clip">The mappings live in <code>~/.config/ledger/mappings.toml</code>.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="D3 of 02-map-columns.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank renames its export.
+- [D2] **Amounts with a comma as the decimal separator** are read as thousands today. Guess from the file, or ask once per bank?
+- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" data-copied="3 questions of 02-map-columns.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/csv-import/02-map-columns.md
+- [D1] **Remember the mapping per bank or per file name?** Per bank asks one more question on the first import; per file name breaks when a bank rename…">copy all 3</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">1 h</span><span class="pri p1" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p1 now</span><span class="chips"><a class="chip done" href="#t-csv-import-01" onclick="event.stopPropagation()" data-tip="Waits on 01, done.">01</a></span></span></summary></details><details class="ticket row-review" id="standalone-speed-up-tests" data-feature="standalone" data-num="--" data-search="-- a faster test suite the suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute. questions d1 two tests still build their own database because they migrate it; leave them, or move them to a slow suite? d2 the template is rebuilt when a migration file changes. enough, or also on a schema change made by hand? artefacts /tmp/board-gh-figure/demo/agent/show/speed-up-tests/demo copy path what to build a session-scoped template database, copied per test. comments the suite runs in 48 seconds, down from four minutes; on branch ticket/master/speed-up-tests , not merged. demo agent/show/speed-up-tests/demo details, if you want them [d3] friction: the ci cache key did not include the migrations directory. anthropics/claude-code#96304" data-path="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">standalone</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md">--</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="A faster test suite"><span class="clip">A faster test suite</span></span><a class="rp" href="file:///tmp/board-gh-figure/demo/agent/diffviews/speed-up-tests.html" target="_blank" onclick="event.stopPropagation()" data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a><a class="gh unknown" href="https://github.com/anthropics/claude-code/issues/96304" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">anthropics/claude-code#96304</a></span><span class="brief">The suite takes four minutes because every test builds its own database; sharing one template database brings it under a minute.</span><span class="qs"><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D1</span><span class="qhead" data-tip="Two tests still build their own database
+
+because they migrate it; leave them, or move them to a slow suite?"><span class="clip">Two tests still build their own database</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?" data-copied="D1 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?">copy</span></span><span class="q"><span class="qtag" data-tip="The ticket&#x27;s own numbering for this question.
+A session that takes your answer records it under this tag as a `Ruled &lt;date&gt;:` line, which is what clears the question from the board.">D2</span><span class="qhead" data-tip="The template is rebuilt when a migration file changes.
+
+Enough, or also on a schema change made by hand?"><span class="clip">The template is rebuilt when a migration file changes.</span></span><span class="copier qcopy" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="D2 of speed-up-tests.md" data-tip="Click to copy this question under the path of its ticket, to answer in any session.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?">copy</span></span><span class="copier qall" data-copy="/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a migration file changes.** Enough, or also on a schema change made by hand?" data-copied="2 questions of speed-up-tests.md" data-tip="Click to copy every open question on this ticket, under the path of the file they are on.
+
+/tmp/board-gh-figure/demo/agent/tickets/speed-up-tests.md
+- [D1] **Two tests still build their own database** because they migrate it; leave them, or move them to a slow suite?
+- [D2] **The template is rebuilt when a mig…">copy all 2</span></span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">20 min</span><span class="pri p2" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p2 next</span><span class="chips"></span></span></summary></details></div><ol class="notes"><li><span class="mk">1</span><span>The one note at the top of the page, above every row, carries what <code>gh</code> itself said. It is said once however many links the board shows, and nothing else on the page says it.</span></li><li><span class="mk">2</span><span>Every reference is the muted link it was before this slice, and says the same words on hover: the board asked, was told nothing, and no row pretends otherwise.</span></li></ol></figure>
+</div>
+</body>
+</html>

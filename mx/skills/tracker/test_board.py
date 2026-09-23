@@ -23,11 +23,13 @@ the slice that lifts it; that spec is their oracle.
 
 import html
 import itertools
+import json
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -56,6 +58,7 @@ from board import (
     tracker_roots,
     tracker_snapshot,
 )
+import github
 from briefing import Briefing, cache_path
 from demo_tracker import S1, S2, S4, Demo
 from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
@@ -329,9 +332,9 @@ def test_a_gh_reference_is_a_link_on_the_row_and_in_its_search_text(tracker: Pat
     ticket(tracker / "quoted.md", "open", gh=["acme/coding#137"])
     page = page_of(tracker)
     assert (
-        '<a class="gh" href="https://github.com/acme/backend/issues/317" target="_blank" '
+        '<a class="gh unknown" href="https://github.com/acme/backend/issues/317" target="_blank" '
         'onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">acme/backend#317</a>'
-        '<a class="gh" href="https://github.com/acme/helix/issues/412"' in page
+        '<a class="gh unknown" href="https://github.com/acme/helix/issues/412"' in page
     )
     assert 'href="https://github.com/acme/coding/issues/137"' in page
     searches = dict(re.findall(r'id="([\w-]+)" data-feature="[\w-]+" data-num="[^"]+" data-search="([^"]*)"', page))
@@ -519,7 +522,7 @@ def test_the_stamp_changes_with_a_standalone_ticket_source(tracker: Path) -> Non
 # ---- what the root holds --------------------------------------------------
 
 
-def test_markdown_at_the_tracker_root_that_declares_no_status_is_not_a_ticket(repo: Path, tracker: Path, tmp_path: Path) -> None:
+def test_markdown_at_the_tracker_root_that_declares_no_status_is_not_a_ticket(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """A ticket declares its status in frontmatter; the other markdown a tracker root holds, a
     README, a note, a needs-human.md left over from the retired queue, is not a ticket and not a
     row, whether or not it carries frontmatter of its own."""
@@ -734,6 +737,19 @@ def test_rows_sort_by_priority_then_by_the_users_time_within_a_group(tmp_path: P
     assert list(rows_of(page)) == [
         "t-ledger-03", "t-ledger-01", "t-ledger-05", "t-ledger-02", "standalone-aa-p3-standalone", "t-ledger-04",
     ]
+
+
+def test_the_stamp_the_open_tab_polls_moves_when_a_link_changes_state(tracker: Path) -> None:
+    """A merge on GitHub moves nothing under the tracker, and the open tab has to hear about it."""
+    features, standalone = load(tracker)
+    stamps = [
+        content_stamp("demo", features, standalone, "", gh)
+        for gh in (github.NOTHING,
+                   github.Answer({"acme/backend#317": "pr-open"}),
+                   github.Answer({"acme/backend#317": "pr-merged"}),
+                   github.Answer({}, "GitHub did not answer"))
+    ]
+    assert len(set(stamps)) == len(stamps)
 
 
 def test_the_stamp_the_open_tab_polls_moves_when_a_ticket_is_reprioritised(tracker: Path) -> None:
@@ -1432,6 +1448,305 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
     assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
 
 
+# ---- the state of a GitHub reference ---------------------------------------
+# The spec's Decision: the board resolves every `gh` reference in one query per render, cached
+# beside the board, and a link wears the state that comes back. The oracle is GitHub's GraphQL
+# schema (a repository's issueOrPullRequest by number, a pull request's state, isDraft and
+# reviewDecision) and the ticket's own sentence: a pull request is open, a draft, merged or
+# waiting on changes, an issue open or closed.
+
+
+def pull(number: int, state: str, draft: bool = False, review: str | None = None) -> dict:
+    """A pull request as GitHub answers for one: the two states carry names of their own, since one
+    response name cannot hold both enums (github.query)."""
+    return {"__typename": "PullRequest", "number": number, "prState": state, "isDraft": draft, "reviewDecision": review}
+
+
+def issue(number: int, state: str) -> dict:
+    return {"__typename": "Issue", "number": number, "issueState": state}
+
+
+# One answer holding a reference in every state the board tells apart, across two repositories.
+ANSWERED = {
+    "data": {
+        "r0": {
+            "nameWithOwner": "acme/backend",
+            "n0": pull(1, "OPEN"),
+            "n1": pull(2, "OPEN", draft=True),
+            "n2": pull(3, "OPEN", review="CHANGES_REQUESTED"),
+            "n3": pull(4, "MERGED", review="APPROVED"),
+            "n4": pull(5, "CLOSED"),
+            "n5": pull(8, "OPEN", draft=True, review="CHANGES_REQUESTED"),
+            "n6": pull(317, "OPEN"),  # the build ticket the tracker fixture already carries
+        },
+        "r1": {
+            "nameWithOwner": "acme/helix",
+            "n0": issue(6, "OPEN"),
+            "n1": issue(7, "CLOSED"),
+            "n2": issue(412, "OPEN"),
+        },
+    }
+}
+# What the board should make of it, every reference the tracker names once `referenced` has run.
+STATED = {
+    "acme/backend#1": "pr-open",
+    "acme/backend#2": "pr-draft",
+    "acme/backend#3": "pr-changes",
+    "acme/backend#4": "pr-merged",
+    "acme/backend#5": "pr-closed",
+    "acme/backend#8": "pr-draft",  # nothing has been asked of a pull request nobody was asked to review
+    "acme/helix#6": "issue-open",
+    "acme/helix#7": "issue-closed",
+    "acme/backend#317": "pr-open",
+    "acme/helix#412": "issue-open",
+}
+
+
+@pytest.fixture
+def referenced(tracker: Path) -> Path:
+    """The tracker with a ticket naming a reference in every state the board tells apart, beside
+    the two its build ticket already names. It is a standalone ticket, which the main checkout is
+    read for: a feature with a worktree is read from there (tracker_roots), and the repo fixture
+    commits the tracker before this rewrites it."""
+    ticket(tracker / "small-chore.md", "open", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
+    return tracker
+
+
+def gh_answering(path_with: Callable[..., Path], answer: dict, said: str = "") -> Path:
+    """A `gh` that answers every query with `answer`. Given `said`, it reports that on stderr and
+    exits non-zero, as gh does with a request it considers failed."""
+    # printf, a shell builtin, since this PATH holds only the tools the board reaches for itself
+    spoken = f'printf "%s\\n" {shlex.quote(said)} >&2\nexit 1' if said else ""
+    return path_with("gh", f"printf '%s' {shlex.quote(json.dumps(answer))}\n{spoken}")
+
+
+def gh_marks(page: str) -> dict[str, tuple[str, str]]:
+    """(the state it wears, the words it says on hover) of every GitHub link on the page, by
+    reference."""
+    return {
+        "".join(text).strip(): (got["class"].split()[1], got["data-tip"])
+        for mark, text, got in elements_of(page) if mark == "gh"
+    }
+
+
+def queries(record: Path) -> list[str]:
+    """The GraphQL queries the render sent; an auth probe is not one."""
+    return [r for r in runs(record) if "graphql" in r]
+
+
+def stamp_of(page: str) -> str:
+    """The stamp the open tab polls against, which moves when anything the page shows moves."""
+    return re.search(r'<body data-stamp="([^"]*)"', page).group(1)
+
+
+def test_a_reference_wears_the_state_github_gives_it_and_says_it_in_words(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """Every state the board tells apart, from one answer, and the words each says on hover: which
+    of the two it is, and which state it is in."""
+    gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    marks = gh_marks(out.read_text())
+    assert {ref: state for ref, (state, _) in marks.items()} == STATED
+    assert "merged" in marks["acme/backend#4"][1], "a merged pull request reads as merged without opening it"
+    for ref, (state, tip) in marks.items():
+        kind = "pull request" if state.startswith("pr-") else "issue"
+        word = {"changes": "asked for changes"}.get(state.split("-", 1)[1], state.split("-", 1)[1])
+        assert kind in tip and word in tip, f"{ref} is {state} and says {tip!r}"
+    assert absences(out.read_text(), "github") == 0, "GitHub answered, so there is no absence to report"
+
+
+def test_the_query_asks_for_the_two_states_under_names_of_their_own() -> None:
+    """A pull request's state and an issue's are two different enums, and GraphQL refuses a node
+    that selects both under the one response name, whatever the parent types.
+
+    Validated against GitHub's published schema on 2026-09-23, which is how to redo it:
+
+        curl -sfL -o /tmp/gh.graphql https://docs.github.com/public/fpt/schema.docs.graphql
+        uv run --with graphql-core python -c "import github; from graphql import *; \
+          print(validate(build_schema(open('/tmp/gh.graphql').read()), parse(github.query(['a/b#1']))))"
+    """
+    asked = github.query(["acme/backend#1"])
+    assert not re.findall(r"(?<!: )\bstate\b", asked), f"{asked}: a state asked for under its own name merges the two enums"
+
+
+def test_a_reference_written_in_another_case_wears_its_state_all_the_same(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """GitHub answers under the repository's canonical name; the row looks its reference up by the
+    string its own file holds, and a repository name is the same name in any case."""
+    ticket(referenced / "loose-idea.md", "proposed", gh=["ACME/Backend#4"])
+    gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    assert gh_marks(out.read_text())["ACME/Backend#4"][0] == "pr-merged"
+
+
+def test_one_query_per_render_resolves_every_reference_in_every_repository(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    record = gh_answering(path_with, ANSWERED)
+    render(tracker_roots(referenced), repo, tmp_path / "board.html")
+    (asked,) = queries(record)
+    assert runs(record) == [asked], "one gh for the render, which is the query"
+    assert 'repository(owner: "acme", name: "backend")' in asked
+    assert 'repository(owner: "acme", name: "helix")' in asked
+    assert asked.count("issueOrPullRequest") == len(STATED), "one field per reference, whichever of the two it is"
+
+
+def test_an_answer_carrying_data_is_read_though_gh_calls_the_request_failed(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """A repository the account cannot see answers as null and makes gh exit non-zero, while the
+    rest of the answer stands: those links stay bare, and the board asked and was answered, so the
+    page has no absence to report."""
+    partial = {"data": {"r0": ANSWERED["data"]["r0"], "r1": None}}
+    gh_answering(path_with, partial, said="gh: Could not resolve to a Repository with the name 'acme/helix'.")
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    marks = gh_marks(out.read_text())
+    assert marks["acme/backend#4"][0] == "pr-merged"
+    assert [marks[ref][0] for ref in ("acme/helix#6", "acme/helix#7")] == ["unknown", "unknown"]
+    assert marks["acme/helix#6"][1] == board.UNKNOWN_REF
+    assert absences(out.read_text(), "github") == 0
+
+
+def test_the_page_says_why_github_did_not_answer_in_ghs_own_words(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """An answer with no data in it is no answer: a token GitHub refuses, a network that is not
+    there. What gh said is what the user has to fix, so the note carries it."""
+    gh_answering(path_with, {"message": "Bad credentials", "status": "401"}, said="gh: Bad credentials (HTTP 401)")
+    out = tmp_path / "board.html"
+    render(tracker_roots(tracker), repo, out)
+    page = out.read_text()
+    assert absences(page, "github") == 1
+    assert "Bad credentials" in page
+    assert gh_marks(page)["acme/backend#317"] == ("unknown", board.UNKNOWN_REF)
+
+
+def test_a_reference_filed_after_the_last_query_is_asked_about_at_once(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The cached answer serves the references it was asked about; a ticket filed with one it was
+    not is worth the query it costs, rather than a window bare."""
+    record = gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    ticket(referenced / "loose-idea.md", "proposed", gh=["acme/coding#9"])
+    render(tracker_roots(referenced), repo, out)
+    assert len(queries(record)) == 2
+    assert queries(record)[1].count("issueOrPullRequest") == len(STATED) + 1
+
+
+def test_an_answer_older_than_its_lifetime_is_asked_again(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The clock is what ages an answer, so the check moves the lifetime rather than the file: what
+    the cache holds is the module's own business."""
+    record = gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    monkeypatch.setattr(github, "LIFETIME", timedelta(0))
+    render(tracker_roots(referenced), repo, out)
+    assert len(queries(record)) == 2
+
+
+def test_a_cached_answer_dresses_the_links_the_render_it_served_did_not_ask_about(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """What the cache is for: the second render shows every state the first one was told, and says
+    nothing about an absence, having wanted nothing."""
+    record = gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    first = out.read_text()
+    render(tracker_roots(referenced), repo, out)
+    assert len(queries(record)) == 1
+    served = out.read_text()
+    assert {ref: state for ref, (state, _) in gh_marks(served).items()} == STATED
+    assert absences(served, "github") == 0
+    assert stamp_of(served) == stamp_of(first), "the tab has nothing to reload for"
+
+
+def test_a_tracker_that_changed_without_its_references_changing_asks_nothing(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The watcher's everyday render: a claim, a ruling, a brief rewritten, and the same references
+    on the rows."""
+    record = gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    ticket(referenced / "small-chore.md", "claimed", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
+    render(tracker_roots(referenced), repo, out)
+    assert len(queries(record)) == 1
+    assert 'class="ticket row-claimed" id="standalone-small-chore"' in out.read_text(), "the render did happen"
+
+
+def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """A board with no GitHub reference on it has no source to miss, as a tracker with no review
+    page rendered has no server to miss. Its own tracker, since the fixture's build ticket names
+    two references from the worktree its feature is read from."""
+    record = gh_answering(path_with, ANSWERED)
+    root = tmp_path / "repo" / "agent" / "tickets"
+    (root / "solo").mkdir(parents=True)
+    ticket(root / "solo" / "01-only.md", "open")
+    repo = root.parent.parent
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tracker")
+    render(tracker_roots(root), repo, tmp_path / "board.html")
+    page = (tmp_path / "board.html").read_text()
+    assert queries(record) == []
+    assert absences(page, "github") == 0
+    assert gh_marks(page) == {}
+
+
+def test_a_cache_this_version_cannot_read_is_asked_past(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """A cache half-written by a killed render, or written by a board that held other fields: the
+    render asks again rather than failing on it."""
+    record = gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    github.cache_path(out).parent.mkdir(parents=True, exist_ok=True)
+    github.cache_path(out).write_text('{"asked": "2026-09-23T')
+    render(tracker_roots(referenced), repo, out)
+    assert len(queries(record)) == 1
+    assert gh_marks(out.read_text())["acme/backend#4"][0] == "pr-merged"
+
+
+def test_a_gh_that_never_answers_leaves_the_render_to_go_on_without_it(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A render waits TIMEOUT for GitHub and no longer: a board that hung on a hung request would
+    take its watcher with it."""
+    monkeypatch.setattr(github, "TIMEOUT", 0.5)
+    path_with("gh", "while :; do :; done")
+    out = tmp_path / "board.html"
+    render(tracker_roots(tracker), repo, out)
+    page = out.read_text()
+    assert absences(page, "github") == 1
+    assert gh_marks(page)["acme/backend#317"][0] == "unknown"
+
+
+def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page(
+    repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The ticket's "a link shows its state in its own look", at the page seam: the layout checks
+    render without gh, so the styles the states wear are only visible here."""
+    gh_answering(path_with, ANSWERED)
+    out = tmp_path / "board.html"
+    render(tracker_roots(referenced), repo, out)
+    style = out.read_text().split("<style>", 1)[1].split("</style>", 1)[0]
+    looks = {state: re.findall(rf"\.gh\.{state}\b[^{{]*{{([^}}]*)}}", style) for state in github.SAYS}
+    assert all(looks[state] for state in github.SAYS), f"states with no look of their own: {[s for s in looks if not looks[s]]}"
+    assert len({tuple(rules) for rules in looks.values()}) >= 4, "the states would not be told apart on the page"
+
+
 # ---- properties -----------------------------------------------------------
 # The executable Properties of agent/tickets/board-orients/spec.md that live at these seams. Each
 # is an expected failure naming the slice that lifts it; one that already holds carries none.
@@ -1545,7 +1860,6 @@ def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: D
     assert S1 not in page and S4 not in page, "no session is resumable without a transcript"
 
 
-@pytest.mark.xfail(strict=True, reason="the board asks GitHub nothing yet; lifted by 07-github-state")
 def test_the_board_renders_without_github_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     out = tmp_path / "board.html"
     render(tracker_roots(tracker), repo, out)
@@ -1592,7 +1906,6 @@ def test_a_tracker_with_no_review_pages_rendered_says_nothing_about_the_server(r
     assert absences(out.read_text(), "review-page-server") == 0
 
 
-@pytest.mark.xfail(strict=True, reason="the board asks GitHub nothing yet; lifted by 07-github-state")
 def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     gh = path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"

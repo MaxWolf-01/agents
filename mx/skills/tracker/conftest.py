@@ -54,13 +54,18 @@ def path_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., 
     for tool in KEPT:
         if found := shutil.which(tool):
             (bin_dir / tool).symlink_to(found)
+    # tr, found here while the machine's PATH still stands: the cut-down one below holds the
+    # board's own tools and nothing else, so a stub that looked tr up at call time would record
+    # nothing and leak "tr: not found" into the tool's stderr, which the board reads as its words
+    flatten = shutil.which("tr")
+    assert flatten, "no tr to flatten a stub's arguments with"
     monkeypatch.setenv("PATH", str(bin_dir))
 
     def stub(name: str, answer: str = "") -> Path:
         script = bin_dir / name
-        # one line per run whatever the arguments hold: a GraphQL query arrives with newlines in it
+        # one line per run whatever the arguments hold, a query running to several lines included
         script.write_text(
-            f'#!/bin/sh\nprintf "%s\\n" "$(printf "%s" "$*" | tr "\\n" " ")" >> "{bin_dir / f"{name}.runs"}"\n{answer}\n'
+            f'#!/bin/sh\nprintf "%s\\n" "$(printf "%s" "$*" | {flatten} "\\n" " ")" >> "{bin_dir / f"{name}.runs"}"\n{answer}\n'
         )
         script.chmod(0o755)
         return bin_dir / f"{name}.runs"
