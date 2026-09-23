@@ -28,8 +28,8 @@ HTML marks overlapping each other are outside its reach, and so is text a box cl
 spills, which every mark that truncates does by design. The Property is executable as far as that
 reaches; the rest was read by eye at these widths, in both schemes (02-rows' closing comment).
 
-Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover,
-and the page's own answers about the scheme, the anchor and the graph.
+Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
+copy button's click, and the page's own answers about the scheme, the anchor and the graph.
 """
 
 import json
@@ -111,7 +111,10 @@ TIP = """
 """
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
-    page = browser.new_page(viewport={"width": width, "height": 1000})
+    # the clipboard is what a copy button is for, and a page reaches it only where it is granted
+    context = browser.new_context(viewport={"width": width, "height": 1000},
+                                  permissions=["clipboard-read", "clipboard-write"])
+    page = context.new_page()
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
@@ -137,6 +140,15 @@ with sync_playwright() as pw:
         where = mark if mark.startswith("#") else f"#t-csv-import-02 .{mark}"
         page.hover(where)
         out["tips"][mark] = page.evaluate(TIP, where)
+    page.click("#t-csv-import-02 .qall")
+    page.wait_for_timeout(500)
+    out["copied"] = {
+        "clipboard": page.evaluate("navigator.clipboard.readText()"),
+        "asked": page.evaluate("document.querySelector('#t-csv-import-02 .qall').dataset.copy"),
+        "note": page.inner_text("#toast"),
+        "shown": page.evaluate("document.getElementById('toast').classList.contains('on')"),
+        "still_open": page.evaluate("!!document.getElementById('t-csv-import-02').open"),
+    }
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
     page.wait_for_timeout(2500)
@@ -146,8 +158,11 @@ with sync_playwright() as pw:
 print(json.dumps(out))
 '''
 
-# a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "#grp-needs .qgroup")
+# a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
+# repeats within the row
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall",
+         "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
+         "#t-csv-import-02 .q:first-child .qcopy", "#grp-needs .qgroup")
 
 
 def probe(page: Path, width: int) -> dict:
@@ -183,6 +198,12 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
+    # a copy button is a span inside a summary, so the click it takes is the page's to handle
+    copied = seen["copied"]
+    assert copied["clipboard"] == copied["asked"], "the click put something else on the clipboard"
+    assert copied["clipboard"].count("- [D") == 3, "the ticket's three questions, under its path"
+    assert copied["shown"] and "02-map-columns.md" in copied["note"], f"the note reads {copied['note']!r}"
+    assert copied["still_open"], "the click folded the row instead of copying"
     # the name is what a row is read by, so it is never the thing that gives up its width
     for name in seen["names"]:
         assert not (name["cut"] and name["beside"]), (

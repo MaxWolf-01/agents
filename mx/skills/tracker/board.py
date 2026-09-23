@@ -17,15 +17,15 @@ file aside) and writes one self-contained page beside the tracker,
 agent/board.html. The page is the tickets as rows grouped by state: needs me,
 frontier, claimed, blocked, proposed, done folded.
 
-Needs me holds every ticket that waits on the user: one not done that is a
-build in review, has a question no `Ruled` line answers, or is an unclaimed
-grilling or prototype decision at p1 or p2. Its open questions show
-under its row, each with a button that copies it, one that copies the ticket's
-own, and one on the group that copies every question on the board; each button
-says on hover what it will copy. A build in review is read from its ticket
-branch (ticket/<feature>/<NN-slug>, or ticket/<integration branch>/<slug> for a
-standalone ticket), where the worker's questions and closing comment are until
-the merge. The needs-human.md queues are shown there too until they retire.
+Needs me holds every ticket whose next step is the user's own time: a build to
+rule on, a ticket stopped on a question, a near design session (board.needs_me).
+Its open questions show under its row, each with a button that copies it, one
+that copies the ticket's own, and one on the group that copies every question on
+the board; each button says on hover what it will copy. A build in review is
+read from its own ticket branch (board.ticket_branches), where the worker's
+questions and closing comment are until the merge, while the tracker's copy says
+where the ticket stands and carries the `Ruled` lines that answer its questions.
+The needs-human.md queues are shown there too until they retire.
 
 A row reads left to right in fixed columns: the feature, the number, what the
 row asks of the user (to rule on, your answer, design session, prototype,
@@ -107,7 +107,7 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
 from typing import Annotated
@@ -145,6 +145,8 @@ ASKS = {  # what a row asks of the user: the word in its column, and what that w
     "legwork": ("legwork", "Work that unblocks a decision: an agent does it, or hands you a checklist."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
 }
+# what a row is grouped under (board.group_of); a ticket in review has no group of its own,
+# since needs me claims every one of them
 GROUPS = [
     ("needs", "needs me"), ("open", "frontier"), ("claimed", "claimed"),
     ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done"),
@@ -196,9 +198,9 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
     diffviews = serve_diffviews(root.parent / "diffviews")
-    features = load_features(root, roots.overrides, diffviews, repo)
+    features = load_features(root, roots.overrides, diffviews, roots.repo)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
-    standalone = [k for k in load_standalone(roots, diffviews, repo) if k.slug not in roots.overrides]
+    standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
     queue = load_needs_human(root / "needs-human.md")
     log = git_log(repo)
     stamp = content_stamp(project, features, standalone, queue, log)
@@ -235,7 +237,7 @@ def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
     """
     dirs = [roots.main, roots.main.parent / "diffviews"]
     dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
-    return (git(repo, "rev-parse", "HEAD"), git(repo, "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/ticket/")) + tuple(
+    return (git(repo, "rev-parse", "HEAD"), git(repo, "for-each-ref", "--format=%(objectname) %(refname)", TICKET_BRANCHES)) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
@@ -404,7 +406,7 @@ class Standalone:
     questions: list["Question"] = field(default_factory=list)
 
 
-def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, repo: Path | None = None) -> list[Feature]:
+def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, repo: Path | None) -> list[Feature]:
     features = []
     # the main checkout may not have the tracker yet: a first feature grilled in its own worktree
     names = sorted(({p.name for p in root.iterdir() if p.is_dir()} if root.is_dir() else set()) | set(overrides))
@@ -429,10 +431,10 @@ def assert_safe_name(name: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
-def load_standalone(roots: Roots, diffviews: Diffviews, repo: Path | None = None) -> list[Standalone]:
+def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     root = roots.main
     standalone = [
-        read_standalone(p, roots, diffviews, None, repo)
+        read_standalone(p, roots, diffviews, None)
         for p in (sorted(root.glob("*.md")) if root.is_dir() else [])
         if p.name != "needs-human.md"  # the standalone tickets' queue, beside them as a feature's is
     ]
@@ -443,37 +445,34 @@ def load_standalone(roots: Roots, diffviews: Diffviews, repo: Path | None = None
             meta, _ = split_frontmatter(path.read_text())
             if path.stem in have or str(meta.get("status")) not in TICKET_STATUSES:
                 continue
-            standalone.append(read_standalone(path, roots, dv, branch, repo))
+            standalone.append(read_standalone(path, roots, dv, branch))
             have.add(path.stem)
     return standalone
 
 
-def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None, repo: Path | None = None) -> Standalone:
+def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
     assert_safe_name(path.stem)
-    meta, body = split_frontmatter(path.read_text())
-    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-    body = body[heading.end():] if heading else body
+    meta, name, brief, body = read_ticket(path.read_text())
     blocked_by = [(str(n), ref_status(roots.main, roots.overrides, str(n))) for n in meta.get("blocked-by") or []]
     status = declared_status(meta, path)
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
-    brief, body = take_brief(body)
-    body = account(body, status, repo, None, path)
+    written = ticket_body(body, status, roots.repo, None, path)
     return Standalone(
         slug=path.stem,
-        title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
+        title=name or path.stem.replace("-", " "),
         status=status,
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
         gh=gh_refs(meta, path),
-        body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
+        body_html=markdown.markdown(written, extensions=["fenced_code", "tables"]),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
         priority=ticket_priority(meta, path),
         size=ticket_size(meta, path),
         brief=brief,
-        questions=read_questions(body),
+        questions=questions_of(written, body),
     )
 
 
@@ -520,32 +519,29 @@ def load_needs_human(path: Path) -> Queue:
     return Queue(path, [e.strip() for e in entries])
 
 
-def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path], repo: Path | None = None) -> list[Ticket]:
+def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path], repo: Path | None) -> list[Ticket]:
     tickets = []
     for path in sorted(feature_dir.glob("[0-9][0-9]-*.md")):
-        meta, body = split_frontmatter(path.read_text())
+        meta, name, brief, body = read_ticket(path.read_text())
         status = declared_status(meta, path)
-        heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-        body = body[heading.end():] if heading else body
         blockers = meta.get("blocked-by") or []
-        brief, body = take_brief(body)
-        body = account(body, status, repo, feature_dir.name, path)
+        written = ticket_body(body, status, repo, feature_dir.name, path)
         tickets.append(
             Ticket(
                 num=path.name[:2],
-                title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
+                title=name or path.stem[3:].replace("-", " "),
                 status=status,
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
-                body_html=render_body(body, feature_dir.name),
+                body_html=render_body(written, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
                 priority=ticket_priority(meta, path),
                 size=ticket_size(meta, path),
                 brief=brief,
-                questions=read_questions(body),
+                questions=questions_of(written, body),
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -588,6 +584,16 @@ def ticket_size(meta: dict, path: Path) -> str | None:
     return str(size)
 
 
+def read_ticket(text: str) -> tuple[dict, str | None, str, str]:
+    """A ticket file as the board reads it: its frontmatter, its H1 (the short name a row shows, or
+    None where it has none), its brief as inline HTML, and the body left under those."""
+    meta, body = split_frontmatter(text)
+    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+    body = body[heading.end():] if heading else body
+    brief, body = take_brief(body)
+    return meta, heading.group(1).strip() if heading else None, brief, body
+
+
 def take_brief(body: str) -> tuple[str, str]:
     """(the ## Brief section as inline HTML, the body without it): what the row shows under the name,
     and the text that is left to fold under the row. One home per fact, on the row as on the page."""
@@ -597,18 +603,19 @@ def take_brief(body: str) -> tuple[str, str]:
     return inline_md(" ".join(match.group(1).split())), body[: match.start()] + body[match.end() :]
 
 
-def account(body: str, status: str, repo: Path | None, feature: str | None, path: Path) -> str:
-    """The ticket's text below its brief, read from its own branch while a build is in review:
-    that is where the worker's questions and closing comment are until the merge. Where the ticket
-    stands is the checkout's to say, whatever status the branch's copy still declares."""
+def ticket_body(body: str, status: str, repo: Path | None, feature: str | None, path: Path) -> str:
+    """The ticket's text below its brief, read from its own branch while a build is in review: that
+    is where the worker's questions and closing comment are until the merge.
+
+    Three things stay the checkout's, whatever the branch's copy says: where the ticket stands, so
+    that a branch which never flipped its status cannot pull a build out of needs me; the brief,
+    which has one home and it is the row (02-rows); and a `Ruled` line, which is written in the file
+    the board hands out (`questions_of`).
+    """
     if status != "review":
         return body
-    text = review_copy(repo, feature, path)
-    if text is None:
-        return body
-    _, written = split_frontmatter(text)
-    heading = re.search(r"^#\s+(.+)$", written, re.MULTILINE)
-    return take_brief(written[heading.end():] if heading else written)[1]
+    text = branch_text(repo, feature, path)
+    return body if text is None else read_ticket(text)[3]
 
 
 def inline_md(text: str) -> str:
@@ -702,6 +709,8 @@ def git_log(repo: Path) -> str:
 # their oracle, held as the properties in test_board.py: each stub's check is an expected failure
 # naming the slice that lifts it.
 
+TICKET_BRANCHES = "refs/heads/ticket/"  # where a ticket's own branch is, as dispatch cuts it
+
 # where a session's transcript is on this machine, as the rest of the repo resolves it
 TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 
@@ -723,23 +732,32 @@ class Question:
 
     tag: str  # D1, D2, ... the ticket's running sequence
     headline: str  # the bold sentence the board shows under the row
-    detail: str  # the rest of the item, as written
+    detail: str  # the rest of the item, its own whitespace collapsed
     ruled: str | None  # the date on the `Ruled <date>:` line under it; None while the question is open
 
 
 QUESTIONS_SECTION = re.compile(r"^##\s+Questions\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
 ASKED = re.compile(r"^- \[(D\d+)\](.*)$", re.MULTILINE)
 HEADLINE = re.compile(r"\s*\*\*(.+?)\*\*\s*(.*)", re.DOTALL)
-RULED = re.compile(r"^\s*-?\s*Ruled\s+(\S+?)\s*:", re.MULTILINE)
+# the date the spec's line carries, so that a rationale line opening "Ruled out:" is not a ruling
+RULED = re.compile(r"^\s*-?\s*Ruled\s+(\d{4}-\d\d-\d\d)\s*:", re.MULTILINE)
+
+
+def questions_of(asked: str, ruled_in: str) -> list[Question]:
+    """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
+    questions on its branch while the ruling is written in the tracker's own copy, the file the
+    board hands out on the clipboard, so the two texts are read together."""
+    answered = {q.tag: q.ruled for q in read_questions(ruled_in) if q.ruled}
+    return [replace(q, ruled=q.ruled or answered.get(q.tag)) for q in read_questions(asked)]
 
 
 def read_questions(text: str) -> list[Question]:
     """The questions a ticket file holds, ruled ones included, in file order. The `[Dn]` tags a
-    closing comment carries elsewhere in the file are not questions: only `## Questions` is read."""
-    section = QUESTIONS_SECTION.search(text)
-    if not section:
+    closing comment carries elsewhere in the file are not questions: only `## Questions` is read,
+    every such section of it, since a worker appends its own to a ticket that may have one."""
+    asked = "\n".join(section.group(1) for section in QUESTIONS_SECTION.finditer(text))
+    if not asked:
         return []
-    asked = section.group(1)
     found = []
     for item in ASKED.finditer(asked):
         rest = asked[item.end():]
@@ -762,7 +780,7 @@ def ticket_branches(repo: Path) -> dict[str, list[str]]:
     """The repo's ticket branches, by the slug each ends in: a worker builds a ticket on
     `ticket/<feature>/<NN-slug>`, or `ticket/<integration branch>/<slug>` for a standalone one."""
     result = subprocess.run(
-        ["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", "refs/heads/ticket/"],
+        ["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", TICKET_BRANCHES],
         capture_output=True, text=True,
     )
     branches: dict[str, list[str]] = {}
@@ -771,14 +789,25 @@ def ticket_branches(repo: Path) -> dict[str, list[str]]:
     return branches
 
 
-def review_copy(repo: Path | None, feature: str | None, path: Path) -> str | None:
-    """The ticket as its own branch has it: a build in review keeps its questions and its closing
-    comment there until the merge. None where the board has no branch of that ticket to read, which
-    is every ticket whose branch has already been merged and deleted."""
+def branch_text(repo: Path | None, feature: str | None, path: Path) -> str | None:
+    """The ticket file as its own branch has it, or None where the board finds no branch of that
+    ticket, a merged and deleted one included.
+
+    A feature ticket takes the branch its feature names and no other, since another feature holding
+    a ticket of the same number would otherwise answer for it. A standalone ticket's integration
+    branch is not knowable from the file, so the sole branch ending in its slug is its own.
+    """
     if repo is None:
         return None
     named = ticket_branches(repo).get(path.stem, [])
-    branch = next((b for b in named if b == f"ticket/{feature}/{path.stem}"), named[0] if len(named) == 1 else None)
+    if feature is not None:
+        branch = next((b for b in named if b == f"ticket/{feature}/{path.stem}"), None)
+    elif len(named) == 1:
+        branch = named[0]
+    else:
+        branch = None
+        if named:  # a standalone ticket, and nothing on it says which of those branches is its own
+            print(f"board: {path} could be any of {named}, so its questions are the checkout's", file=sys.stderr)
     if branch is None:
         return None
     # ./ resolves against git's own cwd, so the file keeps the place it has in this checkout
@@ -935,17 +964,25 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 type Row = Ticket | Standalone
 
 
-def asks(status: str, kind: str | None, open_question: bool = False) -> str:
+SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
+WORKED_ALONE = {"research": "research", "legwork": "legwork"}  # the ones an agent takes away and comes back from
+
+
+def asks(status: str, kind: str | None, open_question: bool) -> str:
     """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
-    for a ruling, a decision ticket asks for the session its type names, and a ticket stopped on a
-    question of its own asks for the answer. A decision ticket's question is that session, so its
-    type is what the row shows."""
+    for a ruling, a ticket stopped on a question of its own asks for the answer, and a decision
+    ticket asks for the session its type names.
+
+    A grilling or a prototype decision asks for its session whether or not its question is written
+    down yet, since sitting down together is the work. Research and legwork an agent does alone, so
+    a question open on one is what stops it, and the row says so."""
     if status == "review":
         return "review"
-    named = {"grilling": "design", "prototype": "prototype", "research": "research", "legwork": "legwork"}.get(kind or "")
-    if named:
-        return named
-    return "answer" if open_question and status != "done" else "build"
+    if kind in SITS_FOR:
+        return SITS_FOR[kind]
+    if open_question and status != "done":
+        return "answer"
+    return WORKED_ALONE.get(kind or "", "build")
 
 
 def asks_tag(t: Row) -> str:
@@ -1016,17 +1053,20 @@ def row_open(row_id: str, status: str, feature: str, num: str, search: str, path
     )
 
 
-def clipped(text: str, markup: bool = False) -> str:
+def clipped(text: str) -> str:
     """A mark's words, cut off with an ellipsis where its column is too narrow. The clipping sits on
-    this inner element, since a box that hides its overflow would hide its own hover words too.
-    `markup` is for words already rendered as HTML, a question's headline among them."""
-    return f'<span class="clip">{text if markup else html.escape(text)}</span>'
+    this inner element, since a box that hides its overflow would hide its own hover words too."""
+    return clipped_html(html.escape(text))
+
+
+def clipped_html(markup: str) -> str:
+    """The same, for words already rendered: a question's headline carries code and emphasis."""
+    return f'<span class="clip">{markup}</span>'
 
 
 def open_questions(t: Row) -> list[Question]:
-    """A ticket's questions no `Ruled` line answers. A done ticket has none: a question still open
-    when the user rules on the build is filed as a proposed ticket then (the spec's Decisions)."""
-    return [q for q in t.questions if not q.ruled] if t.status != "done" else []
+    """A ticket's questions no `Ruled` line answers."""
+    return [q for q in t.questions if not q.ruled]
 
 
 def group_of(t: Row) -> str:
@@ -1037,22 +1077,27 @@ def group_of(t: Row) -> str:
 
 def questions_block(t: Row) -> str:
     """The open questions under a needs-me row: each one's tag and headline with a button that
-    copies it, and one that copies the ticket's own."""
-    asked = open_questions(t)
+    copies it, and one that copies the ticket's own once there are two to copy.
+
+    A done ticket shows none: a question still open when the user rules on the build is filed as a
+    proposed ticket then (the spec's Decisions), so one left on a done ticket is a leftover."""
+    asked = [] if t.status == "done" else open_questions(t)
     if not asked:
         return ""
     lines = "".join(
-        f'<span class="q"><span class="qtag">{q.tag}</span>'
-        f'<span class="qhead" data-tip="{html.escape(question_tip(q))}">{clipped(inline_md(q.headline), markup=True)}</span>'
+        f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span>'
+        f'<span class="qhead" data-tip="{html.escape(question_tip(q))}">{clipped_html(inline_md(q.headline))}</span>'
         + copy_button("qcopy", "copy", "Click to copy this question under the path of its ticket, to answer in any session.",
                       copy_text(t.path, [q]), f"{q.tag} of {t.path.name}")
         + "</span>"
         for q in asked
     )
+    if len(asked) < 2:  # one question's own button already copies the ticket's whole list
+        return f'<span class="qs">{lines}</span>'
     return f'<span class="qs">{lines}' + copy_button(
         "qall", f"copy all {len(asked)}",
         "Click to copy every open question on this ticket, under the path of the file they are on.",
-        copy_text(t.path, asked), f"{len(asked)} of {t.path.name}",
+        copy_text(t.path, asked), f"{len(asked)} questions of {t.path.name}",
     ) + "</span>"
 
 
@@ -1065,7 +1110,7 @@ def group_copy(rows: Sequence[Row]) -> str:
         return ""
     count = sum(len(questions) for _, questions in asked)
     return copy_button(
-        "qgroup", f"copy all {count}",
+        "qgroup", f"copy all {count} question{'s' if count != 1 else ''}",
         "Click to copy every open question on the board, each under the path of the ticket it is on.",
         "\n\n".join(copy_text(path, questions) for path, questions in asked),
         f"{count} question{'s' if count != 1 else ''}",
@@ -1073,10 +1118,18 @@ def group_copy(rows: Sequence[Row]) -> str:
 
 
 def copy_text(path: Path, asked: Sequence[Question]) -> str:
-    """What a copy button puts on the clipboard: the questions as the ticket writes them, under the
-    path of the file they are on, so the session taking the answer knows where to record it."""
+    """What a copy button puts on the clipboard: the questions, each rewritten as one line of the
+    markdown the ticket holds, under the path of the file they are on, so the session taking the
+    answer knows where to record it."""
     written = (f"- [{q.tag}] **{q.headline}**" + (f" {q.detail}" if q.detail else "") for q in asked)
     return "\n".join([str(path), *written])
+
+
+TAG_TIP = (
+    "The ticket's own numbering for this question.\n"
+    "A session that takes your answer records it under this tag as a `Ruled <date>:` line, which is "
+    "what clears the question from the board."
+)
 
 
 def question_tip(q: Question) -> str:
@@ -1087,12 +1140,12 @@ def question_tip(q: Question) -> str:
 COPY_CAP = 220  # how much of what it copies a button shows before the rest is an ellipsis
 
 
-def copy_button(kind: str, word: str, what: str, text: str, said: str) -> str:
+def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str:
     """A button that copies `text` and says so: what it copies is its hover words, cut off where
     they run long, and `said` is what the page's own note says once it has. It is a span, as the
     row's number is, since the page handles the click itself."""
     shown = text if len(text) <= COPY_CAP else text[:COPY_CAP].rstrip() + "\u2026"
-    return (f'<span class="{kind}" data-copy="{html.escape(text)}" data-copied="{html.escape(said)}" '
+    return (f'<span class="copier {variant}" data-copy="{html.escape(text)}" data-copied="{html.escape(said)}" '
             f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
 
 
@@ -1343,7 +1396,8 @@ ${columns}
   [data-theme="night"] { color-scheme: dark; }
 
   /* The callout hues of mwolf.dev: what a row asks wears one each, the priority ramps on the
-     first, and the user's time has the last to itself. The teal is picked again from the
+     first, a question's tag takes the same rose as the answer it waits for, and the user's time
+     has the last to itself. The teal is picked again from the
      prototype's, away from the moss accent, which it read as by day. Each day value clears 4.6:1
      against its own 12% tint, since that is the background the tag's text sits on. */
   :root {
@@ -1465,9 +1519,9 @@ ${columns}
   .q { display: flex; gap: .5rem; align-items: baseline; max-width: 100%; min-width: 0; }
   .qtag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
   .qhead { color: var(--body); font-size: .88rem; min-width: 0; }
-  .qcopy, .qall, .qgroup { flex: none; font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+  .copier { flex: none; font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
     border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
-  .qcopy:hover, .qall:hover, .qgroup:hover { color: var(--accent); border-color: var(--accent); }
+  .copier:hover { color: var(--accent); border-color: var(--accent); }
   .meta { display: contents; }
   .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
   .chip { font-size: .78rem; }
