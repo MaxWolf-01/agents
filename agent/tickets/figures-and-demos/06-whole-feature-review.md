@@ -1,5 +1,6 @@
 ---
-status: review
+status: done
+diff: [5a322f6053977aaeb3737db37f7dda08214d59f1..8a2273bf7cf5dc77737979367fe0dd819b8c90a4]
 ---
 
 # Whole-feature review of figures-and-demos against master
