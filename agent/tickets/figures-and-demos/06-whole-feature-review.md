@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 ---
 
 # Whole-feature review of figures-and-demos against master
@@ -112,3 +112,21 @@ Thirteen checks, all green, with the state directory now on the typed line and t
   - A16 `agent/show/figures-and-demos/03-landing-demo/demo:95`: the toy's demo lets go of what it opens. The staged pane runs in the user's own environment, where the handler for a text file can be a terminal, and waiting on it kept the job running until that window closed. `/mx:show` carries the rule, since it binds every demo and not this toy.
 - [D13] The queue file is deleted rather than emptied: its seven entries are all applied, and a queue with nothing in it is not one. What each entry asked for is A8 to A14, and the spec diff is the rest.
 - [D14] Filed this round: [A worker host keeps the `job` it was first given](../worker-host-tools-go-stale.md). `dispatch-ctl init` fetches `job` only when the host has none, so agent@pc ran a copy from before the staged mode landed and every landing dispatched here reported the mode missing. That reading is what my D3 repeated to you.
+
+Addressed: C5
+
+**2026-09-23** The ruling on figures and demos is in its four homes: `/mx:show`'s table and its demo definition, the spec's two Decisions it touches, marked `(you, 2026-09-23)`, and the landing read in `/mx:dispatch` as a pointer. Two more lines moved with it, which are mine and are A17 and A18. Nothing is merged: `5a322f6..HEAD`.
+
+**Demo**
+
+The diff is the demo: the whole change is the rule for choosing between the two, and it is four paragraphs and two table cells. `git diff HEAD~1 -- mx/skills/show/SKILL.md` is the one to read first.
+
+**I need from you**
+
+- [D15] **Two consequences the ruling has that this round did not build.** Under it, a skill change's figure is the before and after of what an agent writes and its demo cell is empty, so this feature's own `01-show-table/demo` and `02-spec-figures/demo` are figures: each drives the same round twice, once against the skill as it stood and once against this branch's. Nothing about the files changes; which column of the table they sit in does. And this branch's own work is a change to something already there whose effect cannot be run, so under the rule it owes a before-and-after figure of what an agent writes, and it has none: this round was the rule itself, as instructed. Both are cheap to settle at the ruling and expensive to discover later.
+
+**Details, if you want them**
+
+- [D16] Assumptions, continuing from A16
+  - A17 `mx/skills/dispatch/worker-prompt.md:32`: the contract's Demo slot names the both-rule rather than only the demo file. A worker reads the contract at the moment it is deciding what to build, and one that reads "the file `/mx:show` names" builds a demo and no figure, whatever the table says.
+  - A18 `mx/skills/orient/SKILL.md:42`: "where no drivable surface exists yet, the closest render stands in (a screenshot, a driven transcript)" becomes "the figure stands where the demo would", in orient and in the contract. The hedge and the rule answer the same question, and the rule answers it better: not a weaker demo, a figure.
