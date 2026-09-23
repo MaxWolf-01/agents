@@ -27,24 +27,36 @@
 # the reports' paths are this script's own output. Exit 1 names an axis whose
 # report never arrived, to re-run with --axes.
 #
-# A reviewer runs on `--permission-mode manual`: allowed to read, to run git,
-# and to write inside the report directory, and nothing else. The Tests
-# reviewer works in <range>/checkout, a worktree of the pinned tip this script
-# adds before it starts and removes when it ends, so the code it mutates to
-# see what the tests catch is its own; the same one Edit rule covers that
-# checkout and its report, and it may call the test runners named in `runners`
-# below and nothing more.
+# A reviewer runs on `--permission-mode manual`: it reads anything, runs the
+# git commands the `git_reads` list at the top of this script names, and writes
+# inside its report directory. The Tests reviewer works in <range>/checkout, a
+# worktree of the pinned tip this script adds before it starts and removes when
+# it ends, so the code it mutates to see what the tests catch is its own; the
+# same one Edit rule covers that checkout and its report, and it may run the
+# test commands the `runners` list names, in a tree that holds what the commit
+# holds and nothing an install would add.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/briefs
-# The project's test command, whichever of these this project uses: the Tests
-# reviewer runs it in its checkout. A runner missing from this list is a
-# denial it reports, never a workaround it finds.
-runners=("Bash(make *)" "Bash(nix develop *)"
-         "Bash(uv run *)" "Bash(uvx *)" "Bash(pytest *)" "Bash(python *)" "Bash(python3 *)"
-         "Bash(npm *)" "Bash(npx *)" "Bash(node *)" "Bash(bun *)"
-         "Bash(cargo *)" "Bash(go *)")
+# Reading history is every reviewer's, by the subcommand and never by the tool,
+# which is the bar `/mx:permissions-review` holds an allowlist to.
+git_reads=("Bash(git status)" "Bash(git status *)" "Bash(git log *)" "Bash(git diff *)"
+           "Bash(git show *)" "Bash(git blame *)" "Bash(git grep *)" "Bash(git rev-parse *)"
+           "Bash(git rev-list *)" "Bash(git merge-base *)" "Bash(git ls-files *)"
+           "Bash(git ls-tree *)" "Bash(git cat-file *)" "Bash(git describe *)"
+           "Bash(git shortlog *)" "Bash(git branch --list *)" "Bash(git branch -a)"
+           "Bash(git worktree list)" "Bash(git worktree list *)" "Bash(git check-ignore *)")
+# The project's test command, by the test target and not by the tool, and
+# `git restore` to undo a mutation, which reaches only the checkout the Tests
+# reviewer stands in. A command this project needs that is missing here is a
+# denial the reviewer reports, never a workaround it finds.
+runners=("Bash(make test)" "Bash(make check)"
+         "Bash(nix develop -c make test)" "Bash(nix develop -c make check)"
+         "Bash(uv run *)" "Bash(uvx *)" "Bash(pytest *)"
+         "Bash(npm test)" "Bash(npm test *)" "Bash(node --test *)"
+         "Bash(cargo test *)" "Bash(go test *)"
+         "Bash(git restore *)")
 
 die() { echo "review: $1" >&2; exit 1; }
 help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
@@ -138,12 +150,30 @@ mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 # The Tests axis is the one that runs what it reads, so it gets a checkout of
 # the pinned tip to itself, inside its report directory: it mutates code there
 # to find out what the suite catches, and the tree the caller works in and the
-# trees the other axes read stay as they are. Any checkout a killed run left
-# behind goes first, so the same range can be reviewed again.
+# trees the other axes read stay as they are.
 checkout=$dir/checkout
-drop_checkout() { git worktree remove --force "$checkout" >/dev/null 2>&1 || rm -rf "$checkout"; }
+
+# Removed once the reviewer is done with it, and the transcript says which way
+# that went: a checkout still standing is what stops the next review of this
+# range, so it is not something to report as gone.
+drop_checkout() {
+    local out
+    if out=$(git worktree remove --force "$checkout" 2>&1); then
+        echo "review: the Tests reviewer's checkout is removed" >&2
+    elif rm -rf "$checkout" && [ ! -e "$checkout" ]; then
+        echo "review: git would not remove the Tests reviewer's checkout ($out); the directory is gone, its worktree entry may not be: git worktree prune" >&2
+    else
+        echo "review: the Tests reviewer's checkout is still at $checkout ($out); remove it before reviewing $range again" >&2
+    fi
+}
+
+# A checkout already there is either a review of this range still running or
+# one that was killed, and this script can tell neither from the other: both
+# are the caller's to settle, and removing it blind would pull the tree out
+# from under a live reviewer.
 case " $axis_list " in *" tests "*)
-    drop_checkout
+    [ ! -e "$checkout" ] ||
+        die "$checkout is already there, from a review of $range still running or killed; when none is running: git worktree remove --force $checkout"
     echo "+ git worktree add --detach $checkout $head" >&2
     git worktree add --quiet --detach "$checkout" "$head" ||
         die "cannot give the Tests reviewer a checkout at $checkout"
@@ -196,7 +226,7 @@ done
 
 reviewer() { # <axis>
     local axis=$1 rc cwd=$root allowed
-    allowed=(Read Grep Glob "Bash(git *)" "Edit(/$dir/**)")
+    allowed=(Read Grep Glob "${git_reads[@]}" "Edit(/$dir/**)")
     # The Tests reviewer starts in its own checkout, so the test command it
     # finds runs there without a path of its own.
     if [ "$axis" = tests ]; then cwd=$checkout; allowed+=("${runners[@]}"); fi
@@ -210,7 +240,7 @@ reviewer() { # <axis>
     echo "review: the $axis reviewer exited $rc" >&2
     # Whatever it left there, and whether it finished or died: the checkout is
     # this run's, not the worktree's.
-    [ "$axis" = tests ] && { drop_checkout; echo "review: the Tests reviewer's checkout is removed" >&2; }
+    [ "$axis" = tests ] && drop_checkout
     return 0
 }
 
