@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 
 from board import render, tracker_roots
+from briefing import Briefing, cache_path
 from demo_tracker import Demo
 
 RENDER_LINT = Path(__file__).resolve().parents[1] / "show" / "render_lint.py"
@@ -54,6 +56,19 @@ ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
+# A briefing as a session writes one, so the head of the side column is measured as prose and
+# not as the board's own two lines; no model runs in a check (the fixtures take claude off PATH).
+WRITTEN = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
+SAID = """Two builds wait on your ruling and the frontier is three deep. The import feature is the
+one moving: 01 landed on Monday and 02 has been in review since, with three questions on it.
+
+## next
+
+- **Map columns once per bank** — the whole feature waits behind it, and its demo runs.
+- **Speed up the test suite** — four minutes to forty-eight seconds, two questions left.
+- **The flaky upload test** — fifteen minutes, and it stops a build going red for nothing.
+
+The first two touch nothing in common and can run as one wave."""
 # The demo's own transcripts (the `transcribed` fixture), so the sessions on its commits are ones
 # this machine can name and the opened row carries the block that lists them.
 
@@ -73,6 +88,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
+    Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(tracker_roots(transcribed.root), transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in ("", f"#{OPENED}", "#graph")]
     found = {width: lint(pages, width) for width in WIDTHS}
@@ -196,6 +212,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
+    Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(tracker_roots(transcribed.root), transcribed.repo, out)
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
@@ -398,6 +415,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
+    Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(tracker_roots(transcribed.root), transcribed.repo, out)
     seen = graph_probe(out)
     assert seen["errors"] == [], seen["errors"]

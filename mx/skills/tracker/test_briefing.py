@@ -59,7 +59,6 @@ def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datet
     return answers
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="on_change is a stub; lifted by 09-briefing")
 @given(run=RUN)
 def test_the_briefing_session_is_pinged_once_a_window_and_never_past_its_idle_hour_or_ping_cap(run: list[tuple[int, bool]]) -> None:
     for verb, session, changed_at, now in drive(run):

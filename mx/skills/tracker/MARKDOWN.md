@@ -64,7 +64,7 @@ A question is open, and shows on the board's needs-me group, until a `Ruled <dat
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the dependency graph beside them. A ticket is in that group when it is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what it reads and which checkout's copy.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the board briefing and the dependency graph beside them. A ticket is in the needs-me group when it is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed. The briefing is a `claude -p` session's account of where things stand and what to take up next, which a watching board keeps current; without `claude` the column holds the board's own count instead. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what it reads and which checkout's copy.
 
 The human runs `board`; the tab then follows every tracker change on its own. A session renders once, without opening a tab, after it changes tracker state (`board --no-watch --no-open`), so the page on disk is current for whoever opens it next.
 

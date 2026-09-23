@@ -78,6 +78,18 @@ def cache_path(board: Path) -> Path:
     return Path(str(board) + ".github.json")
 
 
+def asked_at(cache: Path) -> datetime.datetime | None:
+    """When the answer beside the board was got, or None where none was.
+
+    What a watching board re-renders on: an answer older than LIFETIME is one this render would ask
+    again, and a pull request merged while the tracker sat still shows as merged on that render
+    rather than on whatever touches a ticket next."""
+    try:
+        return datetime.datetime.fromisoformat(json.loads(cache.read_text())["asked"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def read(cache: Path, now: datetime.datetime) -> tuple[list[str], Answer] | None:
     """The references the last query asked about and what came back, or None where no answer stands:
     none written, older than LIFETIME, or a file this version cannot read."""
