@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [03]
 priority: 1
 size: S
+diff: [230f345f96621b5fec35c48e4353d262ee4504ee..a470827516ae2ba724250d9434e7ea049af71adc]
 ---
 
 # An opened ticket reads as blocks
