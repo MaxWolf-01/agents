@@ -17,8 +17,7 @@
 #     agent/show/host-per-spawn` finds the commit that removed it.
 #   - `diffview`, `uv` and the board, by stubs on PATH: the review page is
 #     `diffview`'s and nothing below renders or reads one.
-#   - `job stage`, by a shim, for as long as the staged mode is missing from the
-#     `job` on this host. It is the mode's whole body: the session created, the
+#   - `job stage`, by a shim, where the `job` on the host predates the mode. It is the mode's whole body: the session created, the
 #     line `job run` would type typed, and the Enter withheld. The run below
 #     announces which of the two it used.
 set -euo pipefail
@@ -32,8 +31,11 @@ export HOME=$work/home
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export PATH=$work/bin:$PATH
 # Named rather than left to its default, since a demo run under `job` itself
-# inherits the outer job's state directory and would stage into it.
-export JOB_STATE_DIR=$HOME/.local/state/jobs
+# inherits the outer job's state directory and would stage into it. Named away
+# from this run's HOME as well: `job stage` types the state directory onto the
+# staged line only when it is not the default, and the pane's shell has the tmux
+# server's environment, whose HOME is the real one.
+export JOB_STATE_DIR=$work/jobs
 mkdir -p "$HOME" "$work/bin"
 
 # The toy repo's names are fixed, so the sessions a run creates are too: a run
@@ -87,7 +89,10 @@ mkdir -p "$here/out"
 { echo "$ ./src/lamp --preset warm"; sed 's/^/  /' "$(git -C "$here" rev-parse --show-toplevel)/src/presets.txt"; } |
     tee "$here/out/warm.txt"
 if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
-    xdg-open "$here/out/warm.txt"
+    # Let go of, so the run ends with the work: the handler for a text file can
+    # be a terminal, and waiting on it would keep the job running until the
+    # window closes.
+    (xdg-open "$here/out/warm.txt" > /dev/null 2>&1 &)
 fi
 echo "wrote $here/out/warm.txt"
 DEMO
@@ -210,7 +215,7 @@ printf '%s\n' "$pane" > "$out/staged-pane.txt"
 check "the ticket branch is checked out beside the feature worktree" \
     bash -c 'test "$(git -C "$1" rev-parse --abbrev-ref HEAD)" = ticket/lamp-ui/01-warm-preset' _ "$wt"
 check "the demo's path is typed at the session's prompt" \
-    grep -q 'agent/show/lamp-ui/01-warm-preset/demo' <<< "$pane"
+    grep -qE '(^|[[:space:]])\./agent/show/lamp-ui/01-warm-preset/demo[[:space:]]*$' <<< "$pane"
 check "nothing ran it: the demo has produced nothing yet" not test -e "$wt/agent/show/lamp-ui/01-warm-preset/out"
 check "the ticket waits for the ruling on the feature branch" \
     grep -q '^status: review$' agent/tickets/lamp-ui/01-warm-preset.md
@@ -234,6 +239,8 @@ step "the user presses Enter, on their own machine and when they choose"
 
 tmux send-keys -t "=$session:" Enter
 job wait "$demo_job" --deadline 60
+check "the Enter ran it, and it wrote what the preset says" \
+    grep -q 'warm: 2700K' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 printf '\n  what the demo wrote, beside itself in the ticket branch:\n\n'
 sed 's/^/    /' "$wt/agent/show/lamp-ui/01-warm-preset/out/warm.txt"
 check "the run is an ordinary job, its log and status where every job's are" \

@@ -174,6 +174,25 @@ def test_a_queue_entry_keeps_its_indented_detail(tmp_path: Path) -> None:
     ]
 
 
+def test_a_directory_with_neither_a_ticket_nor_a_spec_is_not_a_feature(tracker: Path) -> None:
+    (tracker / "scratch").mkdir()
+    (tracker / "notes").mkdir()
+    (tracker / "notes" / "thinking.md").write_text("# what the suite is for\n")
+    (tracker / "scratch notes").mkdir()  # a name assert_safe_name refuses, so the skip has to come first
+    (tracker / "a-b").mkdir()  # and two that slug to one mermaid id, which the collision assert refuses
+    (tracker / "a_b").mkdir()
+    features, _ = load(tracker)
+    assert [f.name for f in features] == [FEAT]
+
+
+def test_a_grilled_feature_with_a_spec_and_no_tickets_yet_is_a_feature(tracker: Path) -> None:
+    (tracker / "just-grilled").mkdir()
+    (tracker / "just-grilled" / "spec.md").write_text("---\nstatus: draft\n---\n\n# Grilled\n")
+    features, _ = load(tracker)
+    assert [f.name for f in features] == [FEAT, "just-grilled"]
+    assert [t.num for t in features[1].tickets] == []
+
+
 # ---- graphs ---------------------------------------------------------------
 
 

@@ -16,7 +16,7 @@ A reader of the plugin's README sees the landing (worker, orchestrator, user; th
 
 - [x] The README embeds the figure in both schemes with alt text, and its source sits with the README's figure sources; `render.py` regenerates it, and the render check covers it where [`render.py --check`](../render-check.md) has landed.
 - [x] The README's QA bullet and its landing prose describe the demo file.
-- [ ] Property, reviewed: a promoted figure is kept current where it lands; the feature's own copy is what the retire step removes.
+- [x] Property, reviewed: a promoted figure is kept current where it lands; the promotion moves it, so the feature's show directory keeps no copy to retire (round 7, ruled after this ticket was cut; the ticket's `[D1]`).
 - [x] Demo: `agent/show/figures-and-demos/05-readme-figure/demo`, executable, no arguments: the README section rendered as a page or shot, in both schemes, with the figure in place.
 
 ## Comments

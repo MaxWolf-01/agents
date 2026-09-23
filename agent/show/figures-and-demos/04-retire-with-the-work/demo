@@ -6,8 +6,8 @@
 # Retire states; each is printed as it runs.
 #
 # No arguments. The toy repo and the home the notes move into are both inside a
-# temp dir, removed at the end; the transcript is printed and written beside
-# this file as transcript.txt, failures included.
+# temp dir, removed at the end; the transcript is printed and written to
+# out/ beside this file, failures included.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -100,4 +100,5 @@ check "git history still finds the retired work" \
 printf '\n'
 }
 
-main 2>&1 | tee "$here/transcript.txt"
+mkdir -p "$here/out"
+main 2>&1 | tee "$here/out/transcript.txt"

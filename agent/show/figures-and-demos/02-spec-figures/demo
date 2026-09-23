@@ -12,6 +12,9 @@
 # neither session can read the skill the other was given or the round it
 # delivered. What each round committed, what it left on disk and the first line
 # of its message are the comparison, and it lands under out/ beside this file.
+# An after round that draws nothing is the rule not firing: the comparison is
+# printed either way and the run then exits nonzero, since a round that skipped
+# its figure otherwise reads exactly like one that drew it.
 #
 # What a run costs, since it is the same file the session on the user's machine
 # runs: two non-interactive Sonnet sessions against a logged-in `claude`, ten
@@ -66,6 +69,7 @@ step "the prompt both runs get"
 printf '%s\n' "$prompt" | fold -s -w 78
 
 failed=
+why=
 
 drive() { # <phase>
     phase=$1
@@ -74,9 +78,17 @@ drive() { # <phase>
     eval "root_$phase=\$root"
     cp -r "$repo/mx" "$root/plugin"
     if [ "$phase" = before ]; then
+        wants="$here/before-SKILL.md:SKILL.md $here/before-SPEC-FORMAT.md:SPEC-FORMAT.md"
         cp "$here/before-SKILL.md" "$root/plugin/skills/grilling/SKILL.md"
         cp "$here/before-SPEC-FORMAT.md" "$root/plugin/skills/grilling/SPEC-FORMAT.md"
+    else
+        wants="$repo/mx/skills/grilling/SKILL.md:SKILL.md $repo/mx/skills/grilling/SPEC-FORMAT.md:SPEC-FORMAT.md"
     fi
+    # The copy is the whole comparison, so the arm is asked what it holds.
+    for want in $wants; do
+        cmp -s "${want%:*}" "$root/plugin/skills/grilling/${want#*:}" ||
+            { echo "the $phase arm's plugin does not hold ${want%:*}" >&2; exit 1; }
+    done
 
     toy=$root/repo
     mkdir -p "$toy/agent/tickets/orders"
@@ -147,22 +159,26 @@ SPEC
           else empty end' "$outw/$phase-stream.jsonl" > "$outw/$phase-transcript.txt"
     cat "$outw/$phase-transcript.txt"
 
-    # A round the plugin never drove is a round out of the model's own head, and
-    # it looks exactly like the real thing at exit 0.
-    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
-            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:grilling") != null)' \
-            "$outw/$phase-stream.jsonl" > /dev/null; then
-        printf '\nthe %s session never loaded the plugin at %s, so its round is nothing to do with this skill.\n' \
-            "$phase" "$root/plugin"
-        failed=$phase
-    fi
-
     # A session that never ran leaves the same empty message as one that chose to
     # say nothing, and the second is a result about the skill.
     if [ "$rc" -ne 0 ] || [ ! -s "$outw/$phase-message.txt" ]; then
         printf '\nthe %s session delivered no round (claude exited %s). Its stderr:\n' "$phase" "$rc"
         tail -5 "$outw/$phase-stderr.txt" | sed 's/^/  /'
         failed=$phase
+        why="the $phase session delivered no round"
+        return 0
+    fi
+
+    # A round the plugin never drove is a round out of the model's own head, and
+    # it looks exactly like the real thing at exit 0. Read after the run check,
+    # so an empty stream is reported as the session it was, not as a plugin miss.
+    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
+            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:grilling") != null)' \
+            "$outw/$phase-stream.jsonl" > /dev/null; then
+        printf '\nthe %s session never loaded the plugin at %s, so its round is nothing to do with this skill.\n' \
+            "$phase" "$root/plugin"
+        failed=$phase
+        why="the $phase session ran without the plugin"
     fi
 }
 
@@ -174,7 +190,7 @@ drive after
 
 if [ -n "$failed" ]; then
     echo >&2
-    echo "FAILED: the $failed session, so nothing here compares the two rounds." >&2
+    echo "FAILED: $why, so nothing here compares the two rounds." >&2
     echo "Its transcript and stderr are in out/; the rest of the demo is skipped." >&2
     exit 1
 fi
@@ -228,10 +244,12 @@ step "opening what the after round drew"
 # The page holds every figure the round drew at once, so it wins over a bare
 # render whenever the round built one.
 rel=$(cd "$outw" && find after-show -name 'index.html' 2> /dev/null | sort | head -1)
+[ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.html' 2> /dev/null | sort | head -1)
 [ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.svg' 2> /dev/null | sort | head -1)
 publish
 if [ -z "$rel" ]; then
-    echo "the after round drew no page or SVG to open"
+    echo "the after round drew no figure: the rule did not fire in this run" >&2
+    exit 1
 else
     opened=$out/$rel
     if command -v claude-browser > /dev/null; then
