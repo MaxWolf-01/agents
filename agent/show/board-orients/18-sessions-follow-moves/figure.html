@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A moved ticket's sessions, before and after</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+  (() => {
+    const asked = new URLSearchParams(location.search).get("theme");
+    const night = asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = night ? "night" : "day";
+  })();
+</script>
+<style>
+/* the board's own stylesheet, so every row below looks and behaves as it does on the board */
+
+  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
+     the fonts, and the base rules. The type roles there are for a page of prose; a board sets its
+     own below. --muted goes darker than the house value, which is a day-scheme readability fix:
+     the board's small text is read on parchment at 100% zoom. */
+  :root {
+    color-scheme: light dark;
+    --ground: light-dark(#f4e4cd, #1a1714);
+    --ground-2: light-dark(#eddabe, #201c18);
+    --edge: light-dark(#cfbca3, #4a433b);
+    --muted: light-dark(#4c443c, #b0a89e);
+    --body: light-dark(#37261d, #ede3d2);
+    --strong: light-dark(#22140b, #faf2dc);
+    --accent: light-dark(#426724, #6ea444);
+    --accent-2: light-dark(#674806, #cdb78a);
+    --wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.22));
+    --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+    --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+    --font-body: "Newsreader", Georgia, serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --radius: 6px;
+    --topbar-h: 52px;  /* measured once the bar is laid out, since it wraps on a narrow window */
+    /* one character of a mark: the marks are monospace at .78rem, and IBM Plex Mono advances .6em,
+       with the rest the slack a fallback mono needs */
+    --mark-char: calc(.78rem * .64);
+  }
+  /* the row's fixed columns, each as wide as the widest mark that lands in it (board.row_columns) */
+  :root {
+    --col-ftag: calc(11 * var(--mark-char) + 0rem);
+    --col-num: calc(2 * var(--mark-char) + 0rem);
+    --col-asks: calc(14 * var(--mark-char) + 0.85rem);
+    --col-time: calc(16 * var(--mark-char) + 0rem);
+    --col-pri: calc(10 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(13 * var(--mark-char) + 0rem);
+  }
+  #grp-needs {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(0 * var(--mark-char) + 0rem);
+  }
+  #grp-open {
+    --col-chips: calc(0 * var(--mark-char) + 0rem);
+  }
+  #grp-claimed {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(2 * var(--mark-char) + 0rem);
+  }
+  #grp-blocked {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(8 * var(--mark-char) + 0.95rem);
+  }
+  #grp-proposed {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(8 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(2 * var(--mark-char) + 0rem);
+  }
+  #grp-done {
+    --col-time: calc(6 * var(--mark-char) + 0rem);
+    --col-pri: calc(7 * var(--mark-char) + 0.95rem);
+    --col-chips: calc(0 * var(--mark-char) + 0rem);
+  }
+
+  [data-theme="day"] { color-scheme: light; }
+  [data-theme="night"] { color-scheme: dark; }
+
+  /* The callout hues of mwolf.dev: what a row asks wears one each, the priority ramps on the
+     first, a question's tag takes the same rose as the answer it waits for, and the user's time
+     has the last to itself. The teal is picked again from the
+     prototype's, away from the moss accent, which it read as by day. Each day value clears 4.6:1
+     against its own 12% tint, since that is the background the tag's text sits on. */
+  :root {
+    --c-pink: light-dark(#7d4172, #d9a2d0);
+    --c-gold: light-dark(#725614, #d9b36f);
+    --c-rose: light-dark(#963f37, #fabeb4);
+    --c-purple: light-dark(#6546b3, #b8a4ff);
+    --c-orange: light-dark(#894c14, #ffc387);
+    --c-blue: light-dark(#255d8f, #85baeb);
+    --c-slate: light-dark(#4c5b76, #9aaacb);
+    --c-time: light-dark(#255a63, #86bcc4);
+  }
+
+  * { box-sizing: border-box; }
+  html { scrollbar-color: var(--edge) var(--ground); }
+  body { margin: 0; background: var(--ground); color: var(--body);
+    font: 400 15.5px/1.5 var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; transition: color 150ms; }
+  a:hover { color: var(--accent); }
+  ::selection { background: var(--mark); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code, kbd, pre { font-family: var(--font-mono); }
+  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
+    .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
+
+  /* ---- the top bar: the project, the feature pills, the filter, the graph mode, the scheme ---- */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; align-items: center; min-height: 52px;
+    padding: .4rem 1.25rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
+  .top .name { font-weight: 600; color: var(--strong); white-space: nowrap; }
+  .top .name span { color: var(--muted); font-weight: 400; }
+  .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .featchip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
+    font-size: .8rem; color: var(--muted); cursor: pointer; white-space: nowrap; display: inline-flex; gap: .4em;
+    align-items: center; transition: color 150ms, border-color 150ms; }
+  .featchip:hover { color: var(--accent); border-color: var(--accent); }
+  .featchip.off { opacity: .5; text-decoration: line-through; }
+  .dim { color: var(--muted); }
+  .dot { display: inline-block; width: .45em; height: .45em; border-radius: 50%; background: var(--accent-2); }
+  .search { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); color: var(--body);
+    font-size: .82rem; padding: .25rem .6rem; width: 12rem; }
+  .search:focus { outline: none; border-color: var(--accent); }
+  .btn { background: none; border: 0; color: var(--muted); font-size: .82rem; cursor: pointer; padding: .2rem .45rem;
+    transition: color 150ms; white-space: nowrap; }
+  .btn:hover, .btn.on { color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: var(--radius); }
+  .seg .btn.on { background: var(--wash); }
+  .seg .btn + .btn { border-left: 1px solid var(--edge); }
+  .scheme { display: inline-flex; align-items: center; }
+  [data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
+
+  /* what this render did without, said once each */
+  .absences { padding: .6rem 1.25rem 0; display: grid; gap: .2rem; max-width: 110rem; margin: 0 auto; }
+  .absences:empty { display: none; }
+  .absent { font-size: .92rem; color: var(--muted); border-left: 2px solid var(--accent-2); padding-left: .6rem; }
+
+  /* ---- the rows, the graph panel beside them on a wide window ---- */
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1rem 1.25rem 5rem;
+    align-items: start; max-width: 110rem; margin: 0 auto; }
+  /* one column: the graph above the rows, where a glance still reaches it, rather than past every group */
+  .side { order: -1; position: sticky; top: var(--topbar-h); max-height: 40vh; overflow: auto; z-index: 5;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
+  .side.folded .gbody { display: none; }
+  @media (min-width: 1400px) {
+    main { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 2.5rem; }
+    .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
+      border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
+  }
+  /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
+  .briefing { margin-bottom: 1.1rem; }
+  .bhead { display: flex; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .3rem; }
+  .bwhen { color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
+  .btext { font-size: .92rem; line-height: 1.55; }
+  .btext > :first-child { margin-top: 0; }
+  .btext > :last-child { margin-bottom: 0; }
+  .btext h1, .btext h2 { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); font-weight: 400;
+    margin: .9rem 0 .35rem; text-transform: lowercase; }
+  .btext h1::after, .btext h2::after { content: none; }  /* the rule an h2 carries over a group of rows is for a group of rows */
+  .btext ul, .btext ol { margin: .2rem 0; padding-left: 1.1rem; }
+  .btext li { margin-top: .3rem; }
+  .btext strong { color: var(--strong); font-weight: 600; }
+
+  .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
+  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gnote { color: var(--muted); font-size: .92rem; padding: .4rem 0; }
+  .mermaid { margin: 0; display: flex; justify-content: center; }
+  /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
+     that has not come back yet would widen the column it sits in */
+  .mermaid:not(:has(svg)) { display: none; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  .side g.node.cur rect, .side g.node.cur polygon,
+    .gfbody g.node.cur rect, .gfbody g.node.cur polygon { stroke-width: 2.5px !important; }
+
+  /* ---- the same graph at full size: over the board, or in a window of its own ---- */
+  .side .gbody { cursor: zoom-in; }  /* the preview opens the full size view */
+  .side .gbody a { cursor: pointer; }
+  #gfull { position: fixed; inset: 0; z-index: 90; display: none; padding: 1.25rem;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
+  #gfull.open { display: block; }
+  #gfull .card { height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); }
+  .gfhead { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+    padding: .45rem .8rem; border-bottom: 1px solid var(--edge); }
+  /* safe centring: a graph that fits sits in the middle of the box, one that does not starts at
+     the edge the scroll starts from rather than having its first node cut off */
+  .gfbody { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 1rem;
+    display: flex; justify-content: safe center; align-items: safe center; }
+  .gfbody.panning { cursor: grabbing; user-select: none; }
+  /* full size is the graph's own size: what shrinks it in the preview is the width it is given */
+  .gfbody svg { max-width: none !important; }
+  /* the window of its own is the same head and body, with nothing else in the document */
+  body.gwin { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .gorphan { display: none; color: var(--accent-2); font-size: .8rem; font-family: var(--font-mono); }
+  [data-orphan="1"] .gorphan { display: inline; }
+
+  /* ---- a group of rows ---- */
+  .grp { margin-bottom: 1.75rem; }
+  .grp > summary { list-style: none; cursor: pointer; padding: .3rem 0 .6rem; position: relative; }
+  .grp > summary::-webkit-details-marker { display: none; }
+  .grp.empty { display: none; }
+  h2 { font-size: .82rem; font-weight: 400; color: var(--muted); margin: 0; display: flex; align-items: center;
+    gap: .6rem; font-family: var(--font-mono); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--edge); }
+  h2 .n { color: var(--muted); }
+  .grp > summary::before { content: "▾"; color: var(--muted); font-size: .7rem; margin-right: .4rem; }
+  .grp:not([open]) > summary::before { content: "▸"; }
+  .label { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); }
+
+  /* ---- a row: every mark in a fixed column, so the eye scans one ---- */
+  .ticket { border-top: 1px solid var(--edge); scroll-margin-top: calc(var(--topbar-h) + 3rem); scroll-margin-bottom: 3rem; }
+  .ticket:first-child { border-top: 0; }
+  .ticket.off, .ticket.miss { display: none; }
+  .ticket > summary { display: grid; column-gap: .9rem; row-gap: .2rem; align-items: baseline; padding: .55rem .5rem;
+    cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms;
+    grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr) var(--col-time) var(--col-pri) var(--col-chips);
+    grid-template-areas: "ftag num asks main time pri chips"; }
+  .ticket > summary::-webkit-details-marker { display: none; }
+  .ticket > summary:hover { background: var(--wash-ink); }
+  .ticket.kcur > summary, .ticket.flash > summary { background: var(--wash); }
+  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); min-width: 0; }
+  /* a box that hides its overflow hides its own tooltip with it, so the ellipsis sits one level in */
+  .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
+  .num:hover { color: var(--accent); }
+  .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
+  /* the name is what a row is read by, so it keeps its words: the links wrap under it rather than
+     taking the width off it */
+  .titleline { display: flex; flex-wrap: wrap; gap: 0 .6rem; align-items: baseline; min-width: 0; }
+  .title { color: var(--strong); min-width: 0; }
+  .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
+  .titleline > a, .titleline > .src { flex: none; }
+  .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticket[open] .brief { white-space: normal; }
+  /* a needs-me row's open questions, under the name they belong to */
+  .qs { display: grid; gap: .15rem; justify-items: start; padding: .2rem 0 .1rem; min-width: 0; }
+  .q { display: flex; gap: .5rem; align-items: baseline; max-width: 100%; min-width: 0; }
+  .qtag, .asked .tag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
+  .qhead { color: var(--body); font-size: .88rem; min-width: 0; }
+  .copier { flex: none; font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+    border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
+  .copier:hover { color: var(--accent); border-color: var(--accent); }
+  .meta { display: contents; }
+  .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
+  .chip { font-size: .78rem; }
+  .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%;
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
+  .a-review { --c: var(--c-gold); }
+  .a-answer { --c: var(--c-rose); }
+  .a-design { --c: var(--c-purple); }
+  .a-prototype { --c: var(--c-orange); }
+  .a-research { --c: var(--c-blue); }
+  .a-legwork { --c: var(--c-slate); }
+  .a-build { background: none; border-color: transparent; padding-left: 0; }
+  .time { grid-area: time; color: var(--c-time); justify-self: end; font-variant-numeric: tabular-nums; }
+  /* the priority is a ramp, not a set of categories: one hue, strongest at p1 */
+  .pri { grid-area: pri; color: var(--c-pink); justify-self: start; padding: 0 .45rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--c-pink) 16%, transparent); }
+  .pri.p3 { background: color-mix(in srgb, var(--c-pink) 8%, transparent); }
+  .pri.p4, .pri.p5 { color: var(--muted); background: none; padding-left: 0; }
+  /* the blockers' column is as fixed as the rest, so a long cross-feature reference wraps within
+     it rather than widening it and pulling the time and the priority out of line */
+  .chips { grid-area: chips; display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
+  .chip { color: var(--body); overflow-wrap: anywhere; }
+  .chip.done { color: var(--muted); text-decoration: line-through; }
+  .rp { color: var(--accent); }
+  .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  /* a GitHub reference in the look of its state; github.SAYS says the same in words on hover.
+     Open work takes the accent, a review asking for changes the rose a question wears, a merge the
+     callout purple, as GitHub marks a merge. Anything closed is struck through and a draft
+     underlined. A reference GitHub was not asked about keeps the muted link it has always been. */
+  .gh { color: var(--muted); }
+  .gh.pr-open, .gh.issue-open { color: var(--accent); }
+  .gh.pr-changes { color: var(--c-rose); }
+  .gh.pr-merged { color: var(--c-purple); }
+  .gh.pr-draft { text-decoration: underline dotted; text-underline-offset: 3px; }
+  .gh.pr-closed, .gh.issue-closed { text-decoration: line-through; }
+  .src { color: var(--accent-2); }
+
+  /* below this width the time, the priority and the blockers move under the name, and the top
+     bar's pills take a line of their own rather than scrolling out of sight */
+  @media (max-width: 1000px) {
+    .top { flex-wrap: wrap; padding: .4rem .75rem; }
+    .featnav { flex-basis: 100%; order: 1; }
+    main { padding: 1rem .75rem 5rem; }
+    .absences { padding: .6rem .75rem 0; }
+    .ticket > summary { grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr);
+      grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
+    .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
+    .time, .pri, .chips { grid-area: auto; justify-self: auto; }
+  }
+  /* narrower still: the name takes the row's width, with its marks over it and under it */
+  @media (max-width: 620px) {
+    .ticket > summary { grid-template-columns: minmax(0, var(--col-ftag)) var(--col-num) minmax(0, 1fr);
+      grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
+    .search { flex: 1; width: auto; }
+  }
+
+  /* ---- a row, opened ---- */
+  .body { padding: .4rem .5rem 1.4rem 1rem; margin-left: .5rem; border-left: 1px solid var(--edge);
+    max-width: 46rem; color: var(--body); font-size: .96rem; }
+  .body > * + * { margin-top: .8em; }
+  .body h3 { font-size: .96rem; font-weight: 600; color: var(--strong); }
+  .body a { color: var(--accent); }
+  .body code { background: var(--ground-2); border-radius: 3px; padding: 0 .25em; font-size: .85em; }
+  .body pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius);
+    padding: .6rem .8rem; overflow-x: auto; font-size: .82rem; }
+  .body pre code { background: none; padding: 0; }
+  .body ul, .body ol { padding-left: 1.2em; }
+  .body li + li { margin-top: .3em; }
+  .body li::marker { color: var(--muted); }
+  .body table { border-collapse: collapse; font-size: .9rem; }
+  .body th, .body td { text-align: left; padding: .2rem .8rem .2rem 0; border-bottom: 1px solid var(--edge); }
+  /* the blocks an opened ticket reads as, each under the word for what it is. The ticket's own
+     prose keeps the body's spacing; the word above it sits closer, as a label does */
+  .block > * + *, .history > * + * { margin-top: .8em; }
+  .block > .label + *, .history > summary + * { margin-top: .35rem; }
+  .body .asked, .body .artefacts, .body .sessions { list-style: none; padding: 0; display: grid; gap: .45rem; }
+  /* a line of a block is its own containing block, so a mark's words are laid out from that line
+     rather than from the whole block */
+  .asked > li, .artefacts > li, .sessions > li { display: flex; gap: .6rem; align-items: baseline; position: relative; }
+  .asked .head { color: var(--strong); }
+  .asked > li > div > * + * { margin-top: .2rem; }
+  /* a question the user has answered is history: its words stay, the colours that call for one go */
+  .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
+  .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }
+  /* a session is its name and the days it worked, the command that resumes it on the button */
+  .sessions .stitle { color: var(--strong); }
+  .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
+  /* a criterion's mark is the glyph its list item carries instead of a bullet */
+  .body li.tick { list-style: none; position: relative; }
+  .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;
+    color: var(--muted); font-size: .85em; }
+  .body li.tick.met::before { content: "✓"; color: var(--accent); }
+  .history > summary { list-style: none; cursor: pointer; }
+  .history > summary::-webkit-details-marker { display: none; }
+  .history > summary > .label::before { content: "▸"; margin-right: .4rem; }
+  .history[open] > summary > .label::before { content: "▾"; }
+
+  /* ---- a mark says in words what it means ---- */
+  /* The words appear under the row, at its left edge: the row is the box that is always on screen
+     and never hides its overflow, so they cannot be clipped by the mark they belong to or run off
+     a narrow window, wherever in the row that mark sits. A group's header is the same box for the
+     one mark that sits on it, the button that copies every question in the group. */
+  .ticket > summary { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% - .2rem); left: .5rem;
+    width: max-content; max-width: min(28rem, 100%); white-space: pre-line; background: var(--ground); color: var(--body);
+    border: 1px solid var(--edge); border-radius: var(--radius); padding: .5rem .7rem;
+    font: .8rem/1.5 var(--font-mono); text-decoration: none; pointer-events: none;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--strong) 14%, transparent); }
+
+  .log { margin: 0; font-size: .8rem; line-height: 1.8; overflow-x: auto; white-space: pre-wrap; }
+  .hash { color: var(--muted); }
+  .footmeta { color: var(--muted); font-size: .78rem; margin-top: .8rem; }
+
+  #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 50; max-width: 90vw;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .3rem .9rem;
+    font: .8rem var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity 200ms; pointer-events: none; }
+  #toast.on { opacity: 1; }
+
+  #help { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
+  #help.open { display: flex; }
+  #help .card { background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.2rem 1.5rem; }
+  #help table { border-collapse: collapse; font-size: .9rem; }
+  #help td { padding: .2rem 1rem .2rem 0; }
+  kbd { font-size: .78rem; border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; color: var(--body); }
+
+
+/* the figure around it */
+  body { padding: 0 0 4rem; }
+  .page { max-width: 74rem; margin: 0 auto; padding: 0 1.5rem; }
+  h1 { font-size: 1.6rem; font-weight: 600; margin: 2.5rem 0 .75rem; color: var(--strong); }
+  .lead { color: var(--muted); max-width: 46rem; }
+  .lead + .lead { margin-top: .75rem; }
+  .lead a { color: var(--accent); }
+  .scheme { margin-top: 1.5rem; font-family: var(--font-mono); font-size: .78rem; color: var(--muted);
+    background: none; border: 1px solid var(--edge); border-radius: 4px; padding: .2rem .5rem; cursor: pointer; }
+  .scheme:hover { color: var(--accent); border-color: var(--accent); }
+  .panel { margin: 2.5rem 0 0; }
+  figcaption { color: var(--muted); margin-bottom: .6rem; }
+  figcaption b { color: var(--strong); font-weight: 600; }
+  /* a date says its words below itself, so the last one needs room inside the panel: nothing here
+     clips or scrolls, which is the precondition the board's own tooltip is written against */
+  .rows { border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2);
+    padding: .25rem 0 3.5rem; overflow: visible; }
+  .notes { margin: .9rem 0 0; padding: 0; list-style: none; max-width: 52rem; }
+  .notes li { display: flex; gap: .5rem; align-items: baseline; margin-top: .4rem; color: var(--muted); }
+  .notes b { color: var(--strong); font-weight: 600; }
+  .mk { flex: none; display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; margin-right: .3rem;
+    border-radius: 50%; background: var(--accent); color: var(--ground); font-family: var(--font-mono); font-size: .7rem; }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>A moved ticket's sessions, before and after</h1>
+<p class="lead">One demo tracker, rendered twice. Its build in review was filed and worked on inside
+the feature <code>csv-import</code>, then moved out to <code>agent/tickets/map-columns.md</code> as a
+standalone ticket, which is what board-orients 15 did on 2026-09-23 when it became
+<code>debrief-ticket</code>. Three sessions committed on it before the move, one moved it.</p>
+<p class="lead">Both rows below are the board's own markup under the board's own stylesheet, opened,
+with everything but the sessions block cut away. Hover a date for the words the board says about it.
+The full renders are <a href="file:///tmp/board-moves-figure/before.html">before.html</a> and
+<a href="file:///tmp/board-moves-figure/after.html">after.html</a>.</p>
+<p class="lead">Built by <code>figure.py</code> beside this file. The walkthrough on this repo's own
+tracker is <code>demo</code>, beside it.</p>
+<button class="scheme" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'night' ? 'day' : 'night'">day / night</button>
+<figure class="panel"><figcaption><b>before</b> the board as it was until this slice</figcaption><div class="rows"><details open class="ticket row-review" id="standalone-map-columns" data-feature="standalone" data-num="--" data-search="-- map columns once per bank you tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again. sessions on this machine triage after the holidays 2026-09-20 copy resume what to build the first import from a bank asks for the mapping and stores it; later imports from that bank use it silently. acceptance criteria the second import from a bank asks nothing and maps the columns the first one did. property, reviewed: a mapping that fails halfway writes nothing. ledger-org/ledger#57" data-path="/tmp/board-moves-figure/demo/agent/tickets/map-columns.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">standalone</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-moves-figure/demo/agent/tickets/map-columns.md">--</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="Map columns once per bank"><span class="clip">Map columns once per bank</span></span><a class="gh unknown" href="https://github.com/ledger-org/ledger/issues/57" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">ledger-org/ledger#57</a></span><span class="brief">You tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again.</span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">1 h</span><span class="pri p1" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p1 now</span><span class="chips"></span></span></summary><div class="body"><section class="block"><p class="label">sessions on this machine</p><ul class="sessions"><li><span class="mk">1</span><span class="stitle">Triage after the holidays</span><span class="when" data-tip="When this session first committed on the ticket, and when it last did.">2026-09-20</span><span class="copier resume" data-copy="cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12" data-copied="the command resuming Triage after the holidays" data-tip="Click to copy the command that resumes this session in the directory it ran in.
+
+cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12">copy resume</span></li></ul></section></div></details></div><ol class="notes"><li><span class="mk">1</span><span><b>Triage after the holidays</b>, 2026-09-20: the session that moved the ticket, and the only one the board could find. Every session that worked on the ticket while it was <code>csv-import/02-map-columns.md</code> is keyed by that path, which nothing on the board now reads, so the ticket reads as work nobody has touched.</span></li></ol></figure><figure class="panel"><figcaption><b>after</b> the same tracker, the same move</figcaption><div class="rows"><details open class="ticket row-review" id="standalone-map-columns" data-feature="standalone" data-num="--" data-search="-- map columns once per bank you tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again. sessions on this machine grilling the csv import 2026-09-14 copy resume dispatching csv-import, wave 1 2026-09-17 → 2026-09-18 copy resume triage after the holidays 2026-09-20 copy resume what to build the first import from a bank asks for the mapping and stores it; later imports from that bank use it silently. acceptance criteria the second import from a bank asks nothing and maps the columns the first one did. property, reviewed: a mapping that fails halfway writes nothing. ledger-org/ledger#57" data-path="/tmp/board-moves-figure/demo/agent/tickets/map-columns.md"><summary><span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows."><span class="clip">standalone</span></span><span class="num" data-tip="Click to copy the path of the file this row was read from (y):
+/tmp/board-moves-figure/demo/agent/tickets/map-columns.md">--</span><span class="asks a-review" data-tip="A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it.">to rule on</span><span class="main"><span class="titleline"><span class="title" data-tip="Map columns once per bank"><span class="clip">Map columns once per bank</span></span><a class="gh unknown" href="https://github.com/ledger-org/ledger/issues/57" target="_blank" onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">ledger-org/ledger#57</a></span><span class="brief">You tell the importer once which column holds the date, the amount and the payee; it remembers that per bank and never asks again.</span></span><span class="meta"><span class="time" data-tip="Your time on this ticket, never the agent&#x27;s: reading the diff or the design, trying the demo, deciding.
+XS under 15 min
+S about 20 min
+M about an hour
+L half a day
+XL several sessions">1 h</span><span class="pri p1" data-tip="The priority, an agent&#x27;s reading of what you have said; tell any session to change one.
+p1 now: today
+p2 next: this week
+p3 soon: once the ones above are out
+p4 later: when there is room
+p5 someday: parked">p1 now</span><span class="chips"></span></span></summary><div class="body"><section class="block"><p class="label">sessions on this machine</p><ul class="sessions"><li><span class="mk">1</span><span class="stitle">Grilling the CSV import</span><span class="when" data-tip="When this session first committed on the ticket, and when it last did.">2026-09-14</span><span class="copier resume" data-copy="cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume a1f3c9e2-4b7d-4e21-9c35-7d2e8f1b6a04" data-copied="the command resuming Grilling the CSV import" data-tip="Click to copy the command that resumes this session in the directory it ran in.
+
+cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume a1f3c9e2-4b7d-4e21-9c35-7d2e8f1b6a04">copy resume</span></li><li><span class="mk">2</span><span class="stitle">Dispatching csv-import, wave 1</span><span class="when" data-tip="When this session first committed on the ticket, and when it last did.">2026-09-17 → 2026-09-18</span><span class="copier resume" data-copy="claude --resume b52e7d10-9a3c-4f68-8e17-3c9b2a5d4e81" data-copied="the command resuming Dispatching csv-import, wave 1" data-tip="Click to copy the command that resumes this session in the directory it ran in.
+
+claude --resume b52e7d10-9a3c-4f68-8e17-3c9b2a5d4e81">copy resume</span></li><li><span class="mk">3</span><span class="stitle">Triage after the holidays</span><span class="when" data-tip="When this session first committed on the ticket, and when it last did.">2026-09-20</span><span class="copier resume" data-copy="cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12" data-copied="the command resuming Triage after the holidays" data-tip="Click to copy the command that resumes this session in the directory it ran in.
+
+cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12">copy resume</span></li></ul></section></div></details></div><ol class="notes"><li><span class="mk">1</span><span><b>Grilling the CSV import</b>, 2026-09-14: the session that filed the ticket, back on it. It committed under <code>csv-import/02-map-columns.md</code>, and git records the move, so the board follows it.</span></li><li><span class="mk">2</span><span><b>Dispatching csv-import, wave 1</b>, 2026-09-17 → 2026-09-18: the orchestrator that claimed the slice and flipped it to review, likewise under the old path. Its span is what it did across both days, unchanged by the move.</span></li><li><span class="mk">3</span><span><b>Triage after the holidays</b>, 2026-09-20: the session that moved the ticket, where it was before. A ticket that moved twice lists all three the same way: each move carries what the path before it held.</span></li></ol></figure>
+</div>
+</body>
+</html>
