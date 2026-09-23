@@ -5,7 +5,8 @@
 #
 # Usage: demo [--stubbed] [tracker directory]
 #   --stubbed  answer the board's query from this file instead of GitHub, with the states those
-#              three references were in on 2026-09-23: the look of the page without a login.
+#              three references were in on 2026-09-23: the look of a board that has them, on a
+#              machine that cannot ask.
 set -euo pipefail
 
 stubbed=""
@@ -28,10 +29,10 @@ if [[ -n $stubbed ]]; then
     cat >"$tracker/answer.json" <<'JSON'
 {"data": {
   "r0": {"nameWithOwner": "cli/cli",
-         "n0": {"__typename": "PullRequest", "number": 1, "state": "MERGED", "isDraft": false, "reviewDecision": "APPROVED"},
-         "n1": {"__typename": "Issue", "number": 2, "state": "CLOSED"}},
+         "n0": {"__typename": "PullRequest", "number": 1, "prState": "MERGED", "isDraft": false, "reviewDecision": "APPROVED"},
+         "n1": {"__typename": "Issue", "number": 2, "issueState": "CLOSED"}},
   "r1": {"nameWithOwner": "anthropics/claude-code",
-         "n0": {"__typename": "Issue", "number": 96304, "state": "OPEN"}}
+         "n0": {"__typename": "Issue", "number": 96304, "issueState": "OPEN"}}
 }}
 JSON
     # a gh that records what the board asks of it and answers from the file

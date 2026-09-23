@@ -21,8 +21,10 @@ from pathlib import Path
 
 GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")  # a reference as a ticket writes it: owner/repo#number
 
-LIFETIME = datetime.timedelta(minutes=5)  # how long an answer stands before the board asks again
-TIMEOUT = 20  # seconds a render waits for GitHub before going on without it
+# The spec asks for "a short lifetime" and gives no number: five minutes is 07-github-state's pick,
+# the window the briefing debounces a burst of tracker changes into.
+LIFETIME = datetime.timedelta(minutes=5)
+TIMEOUT = 20  # seconds a render waits for GitHub before going on without it, this slice's pick too
 
 # What a link says on hover, one per state a reference can be in. A pull request is open until it
 # is merged or closed; a draft is one not offered for review yet, and a review that asked for
@@ -52,7 +54,7 @@ class Answer:
 NOTHING = Answer({})  # a render that asked nothing: bare links, and no absence to report
 
 
-def resolve(refs: Sequence[str], cache: Path, now: datetime.datetime | None = None) -> Answer:
+def resolve(refs: Sequence[str], cache: Path) -> Answer:
     """The state of every reference in `refs`, from the cache beside the board while it is younger
     than LIFETIME and holds the answer to every one of them, and from GitHub otherwise.
 
@@ -60,7 +62,7 @@ def resolve(refs: Sequence[str], cache: Path, now: datetime.datetime | None = No
     same whatever it resolves, and a ticket filed with a new reference would otherwise wait out the
     window bare.
     """
-    now = now or datetime.datetime.now().astimezone()
+    now = datetime.datetime.now().astimezone()
     wanted = sorted(set(refs))
     if not wanted:
         return NOTHING
@@ -116,14 +118,16 @@ def ask(refs: Sequence[str]) -> Answer:
     if not isinstance(body, dict) or not isinstance(body.get("data"), dict):
         said = next((line for line in done.stderr.splitlines() if line.strip()), "it said nothing")
         return Answer({}, f"GitHub did not answer ({said.strip()}), so no GitHub link says {WHETHER}.")
-    return Answer(states(body["data"]))
+    return Answer(states(body["data"], refs))
 
 
 def query(refs: Sequence[str]) -> str:
     """The GraphQL query that resolves every reference, its repositories asked about once each.
 
     Each node carries the repository and number it answers for, so the answer is read by what it
-    says rather than by the aliases this query gave it.
+    says rather than by the aliases this query gave it. The two states are asked for under names of
+    their own: one response name cannot hold two enums, and a query that merges them is one GraphQL
+    rejects.
     """
     by_repo: dict[str, list[str]] = {}
     for ref in refs:
@@ -135,16 +139,24 @@ def query(refs: Sequence[str]) -> str:
         owner, name = repo.split("/")
         asked = " ".join(
             f"n{j}: issueOrPullRequest(number: {number}) {{ __typename "
-            f"... on PullRequest {{ number state isDraft reviewDecision }} ... on Issue {{ number state }} }}"
+            f"... on PullRequest {{ number prState: state isDraft reviewDecision }} "
+            f"... on Issue {{ number issueState: state }} }}"
             for j, number in enumerate(numbers)
         )
         parts.append(f'r{i}: repository(owner: "{owner}", name: "{name}") {{ nameWithOwner {asked} }}')
     return "query { " + " ".join(parts) + " }"
 
 
-def states(data: dict) -> dict[str, str]:
+def states(data: dict, refs: Sequence[str]) -> dict[str, str]:
     """Which state each reference GitHub answered about is in, read from the answer's own account of
-    which repository and number each node is."""
+    which repository and number each node is, and keyed by the reference as the ticket wrote it.
+
+    GitHub answers under the repository's canonical name, which a ticket may have written in another
+    case; a row looks its reference up by the string in its own file, so the answer is matched back
+    to that string."""
+    wrote: dict[str, list[str]] = {}
+    for ref in refs:  # two tickets may write one reference two ways, and both rows want its state
+        wrote.setdefault(ref.lower(), []).append(ref)
     found = {}
     for repo in data.values():
         if not isinstance(repo, dict) or not (name := repo.get("nameWithOwner")):
@@ -153,7 +165,7 @@ def states(data: dict) -> dict[str, str]:
             if key == "nameWithOwner" or not isinstance(node, dict) or not node.get("number"):
                 continue
             if state := classify(node):
-                found[f"{name}#{node['number']}"] = state
+                found.update(dict.fromkeys(wrote.get(f"{name}#{node['number']}".lower(), []), state))
     return found
 
 
@@ -163,13 +175,13 @@ def classify(node: dict) -> str | None:
     A merged or closed pull request is that whatever else it says; among open ones a draft is a
     draft first, since a review cannot have asked anything of one that is not offered for review.
     """
-    state = str(node.get("state", "")).lower()
     if node.get("__typename") == "PullRequest":
+        state = str(node.get("prState", "")).lower()
         if state in ("merged", "closed"):
             return f"pr-{state}"
         if node.get("isDraft"):
             return "pr-draft"
         return "pr-changes" if node.get("reviewDecision") == "CHANGES_REQUESTED" else "pr-open"
     if node.get("__typename") == "Issue":
-        return "issue-closed" if state == "closed" else "issue-open"
+        return "issue-closed" if str(node.get("issueState", "")).lower() == "closed" else "issue-open"
     return None

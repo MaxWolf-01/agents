@@ -95,8 +95,9 @@ once.
 
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
-re-renders on one. Several watchers writing the same page is harmless since the
-render is deterministic from disk.
+re-renders on one. Several watchers writing the same page is harmless: the
+render is the same from the same tracker, GitHub's answer aside, and that one is
+shared through the cache beside the page.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections, the cursor and the hidden
@@ -222,9 +223,9 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
     log = git_log(repo)
-    stamp = content_stamp(project, features, standalone, log)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(features, standalone), github.cache_path(out))
+    stamp = content_stamp(project, features, standalone, log, gh)
     page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js", gh)
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
@@ -689,9 +690,13 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], log: str) -> str:
+def content_stamp(
+    project: str, features: list[Feature], standalone: list[Standalone], log: str,
+    gh: github.Answer = github.NOTHING,
+) -> str:
     # everything the page shows except the render timestamp: an unchanged board
-    # keeps its stamp, so the open tab knows not to reload
+    # keeps its stamp, so the open tab knows not to reload. A state GitHub gave a link is one of
+    # those things, and the only one that moves without a file moving with it.
     key = repr((
         project,
         [(f.name, f.spec_status,
@@ -701,6 +706,8 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source,
           k.priority, k.size, k.brief, k.questions) for k in standalone],
         log,
+        sorted(gh.states.items()),
+        gh.missing,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
@@ -1307,8 +1314,11 @@ def review_link(address: str | None) -> str:
 
 def gh_links(refs: Sequence[str], gh: dict[str, str]) -> str:
     """The pull requests and issues a ticket names, each in the look of the state GitHub gave it and
-    saying that state in words on hover. A reference GitHub was not asked about, or did not answer
-    for, is the bare link it was before, and the page says why once (absences)."""
+    saying that state in words on hover.
+
+    A reference GitHub was not asked about is the bare link it was before, and the page says why
+    once (absences). One it was asked about and did not answer for is bare too, and says nothing
+    further: the board asked and was answered, so there is no absence to report."""
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
         f'<a class="gh {gh.get(ref, "unknown")}" href="https://github.com/{repo}/issues/{num}" target="_blank" '
