@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [04]
 priority: 2
 size: S
+diff: [6cdb82482841cf3aa2bbfd82c5c7cc42b6fb981b..aa7a4d3d69c0fee4b6ac62280377edd09977f613]
 ---
 
 # The sessions behind a ticket
