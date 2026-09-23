@@ -11,9 +11,9 @@ Two features (a confirmed spec with six slices, a draft spec with three tickets,
 decisions), nine standalone tickets covering every decision type, two builds waiting on a ruling
 on their ticket branches with their questions there, one build stopped on two questions of which
 one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
-a needs-human queue, review pages beside the tickets, demo scripts and a figure under agent/show,
-and four sessions on the commits: three with a transcript under the transcripts directory this
-writes, one worker on another host with none.
+a needs-human queue, review pages beside the tickets, acceptance criteria a build in review has half
+met, demo scripts and a figure under agent/show, and four sessions on the commits: three with a
+transcript under the transcripts directory this writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
 """
@@ -140,6 +140,7 @@ The first import from a bank asks for the mapping and stores it; later imports f
 
 ## Acceptance criteria
 
+- [ ] The second import from a bank asks nothing and maps the columns the first one did.
 - [ ] Property, reviewed: a mapping that fails halfway writes nothing.
 """)
     write(repo / "agent/tickets/csv-import/03-duplicate-rule.md", """---
@@ -481,6 +482,7 @@ def build_in_review(repo: Path) -> None:
     write(repo / "src/mapping.py", '"""Column mappings, remembered per bank."""\n')
     ticket = repo / "agent/tickets/csv-import/02-map-columns.md"
     set_status(ticket, "review")
+    ticket.write_text(ticket.read_text().replace("- [ ] The second import", "- [x] The second import"))
     append(ticket, """
 ## Questions
 

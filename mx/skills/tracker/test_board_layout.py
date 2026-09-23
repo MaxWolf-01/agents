@@ -16,9 +16,9 @@ matrix. A page that ignores
 prescribes is the check's precondition rather than a second check.
 
 Each width is measured on four pages: both schemes with every row folded, and both schemes with
-one row opened through its anchor, which is also what paints the dependency graph beside it. A
-board nobody has clicked has no graph and no open body, so without the anchor half of what the
-Property covers is never laid out.
+one row opened through its anchor, which lays out the blocks the ticket reads as and paints the
+dependency graph beside it. A board nobody has clicked has no graph and no open body, so without
+the anchor half of what the Property covers is never laid out.
 
 Fourteen widths, two schemes, folded and open is fourteen browser runs of four pages, a minute of
 the suite: the matrix the Property states, rather than a sample of it.
@@ -160,9 +160,9 @@ print(json.dumps(out))
 
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall",
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "democopy", "tick",
          "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
-         "#t-csv-import-02 .q:first-child .qcopy", "#grp-needs .qgroup")
+         "#t-csv-import-02 .q:first-child .qcopy", "#t-csv-import-02 .asked .tag", "#grp-needs .qgroup")
 
 
 def probe(page: Path, width: int) -> dict:
