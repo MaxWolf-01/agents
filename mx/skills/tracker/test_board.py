@@ -17,8 +17,7 @@ tickets with an edge; a standalone ticket a branch added is shown, one it merely
 not; markdown at the tracker root that declares no status is not a ticket.
 
 Under "properties" at the end sit the executable Properties of
-agent/tickets/board-orients/spec.md that belong to these seams, each an expected failure naming
-the slice that lifts it; that spec is their oracle.
+agent/tickets/board-orients/spec.md that belong to these seams; that spec is their oracle.
 """
 
 import html
@@ -41,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import board
 from board import (
     STATUS_SYMBOL,
+    Seen,
     TICKET_STATUSES,
     Diffviews,
     Roots,
@@ -48,19 +48,21 @@ from board import (
     content_stamp,
     feature_graph,
     load_features,
+    look,
     load_standalone,
     needs_me,
     read_questions,
     render,
     render_page,
+    run_out,
     serve_diffviews,
     ticket_sessions,
     tracker_roots,
     tracker_snapshot,
 )
 import github
-from briefing import Briefing, cache_path
-from demo_tracker import S1, S2, S4, Demo
+from briefing import DEBOUNCE, Briefing, cache_path
+from demo_tracker import S1, S2, S3, S4, Demo, build as build_demo
 from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
 
 FEAT = "feat-a"  # a hyphen, so a slugged id and the raw name can be told apart
@@ -775,6 +777,21 @@ def test_the_stamp_the_open_tab_polls_moves_when_a_ticket_is_reprioritised(track
     ticket(tracker / FEAT / "02-second.md", "open", priority=1, size="XS", brief="Why it matters, cold.")
     features, standalone = load(tracker)
     assert content_stamp("demo", features, standalone, "") != before
+
+
+def test_the_stamp_the_open_tab_polls_moves_when_the_session_rewrites_the_briefing(tracker: Path) -> None:
+    """The briefing is the other thing on the page that moves with no file under the tracker moving,
+    and the open tab polls the stamp: an unmoved stamp is a briefing nobody ever reads."""
+    features, standalone = load(tracker)
+    when = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
+    stamps = [
+        content_stamp("demo", features, standalone, "", github.NOTHING, said)
+        for said in (None,
+                     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0),
+                     Briefing("One build waits on your ruling.", when, "abc-123", when, when, 1),
+                     Briefing("Two builds wait on your ruling.", when + timedelta(hours=1), "abc-123", when, when, 1))
+    ]
+    assert len(set(stamps)) == len(stamps)
 
 
 def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1762,9 +1779,248 @@ def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page(
     assert len({tuple(rules) for rules in looks.values()}) >= 4, "the states would not be told apart on the page"
 
 
+# ---- the board briefing ---------------------------------------------------
+# The side column's head: what the session that writes it is given, what a change tells it, and
+# what the board says before any session has written one. The oracle is the spec's Decisions under
+# "The board briefing"; the Property on pings and retirement is test_briefing.py's.
+
+
+@pytest.fixture
+def ranked(tmp_path: Path) -> Path:
+    """A tracker whose frontier separates the three things the fallback orders by: two tickets at
+    one priority differing in what they unblock, two differing in the user's time, and one at a
+    lower priority that unblocks more than any of them."""
+    root = tmp_path / "repo" / "agent" / "tickets"
+    feature = root / FEAT
+    feature.mkdir(parents=True)
+    ticket(feature / "01-hub.md", "open", priority=1, size="M", name="The hub")
+    ticket(feature / "02-quick.md", "open", priority=1, size="XS", name="The quick one")
+    ticket(feature / "03-slow.md", "open", priority=1, size="L", name="The slow one")
+    ticket(feature / "04-later.md", "open", priority=2, size="XS", name="The later one")
+    ticket(feature / "05-waits.md", "open", blocked_by=["01", "04"], priority=1, size="XS", name="Waits on the hub")
+    ticket(feature / "06-waits-too.md", "open", blocked_by=["01", "04"], priority=1, size="XS", name="Waits as well")
+    ticket(feature / "07-third.md", "open", blocked_by=["04"], priority=1, size="XS", name="Waits on the later one")
+    ticket(feature / "08-built.md", "review", priority=2, size="S", name="A build to rule on")
+    ticket(feature / "09-shape.md", "open", kind="prototype", priority=1, size="S", name="A shape to pick")
+    (feature / "10-asked.md").write_text(
+        "---\nstatus: open\npriority: 3\nsize: S\n---\n\n# Stopped on a word\n\n"
+        "## Questions\n- [D1] **Retry, or fake the clock?** Either way it is four seconds.\n"
+    )
+    return root
+
+
+def briefing_of(page: str) -> str:
+    """The briefing as the page carries it, markup and all."""
+    return page.split('<div class="briefing"', 1)[1].split('<div class="ghead"', 1)[0]
+
+
+def test_the_board_says_what_waits_on_the_user_until_a_session_writes_a_briefing(ranked: Path) -> None:
+    """The spec's fallback: the counts the prototype's sentence gives, and no model behind them."""
+    said = board.fallback(load_features(ranked, {}, Diffviews(ranked, None), None), [])
+    assert said.startswith(
+        "One build to rule on, one question wanting a word and one design session wait on you."
+    ), said
+
+
+def test_the_fallback_orders_the_next_picks_by_priority_then_what_they_unlock_then_your_time(ranked: Path) -> None:
+    """Three picks, in the order the spec names: priority, then what accepting one unblocks, then
+    the user's own time on it."""
+    said = board.fallback(load_features(ranked, {}, Diffviews(ranked, None), None), [])
+    picks = re.findall(r"^- \*\*(.+?)\*\*: (.+)$", said, re.MULTILINE)
+    assert [name for name, _ in picks] == ["The hub", "The quick one", "A shape to pick"]
+    assert picks[0][1] == "now · accepting it unblocks two · 1 h of yours"
+
+
+def test_the_briefing_the_cache_holds_is_what_the_board_shows_with_the_time_it_was_written(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    out = tmp_path / "board.html"
+    when = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
+    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 2).write(cache_path(out))
+    render(tracker_roots(tracker), repo, out)
+    page = out.read_text()
+    said = briefing_of(page)
+    assert "Two builds wait on your ruling." in said
+    assert "21 Sep 09:30" in said, "the board shows when the briefing was written"
+    assert "waits on you." not in said, "the board's own count stands in only until a session writes one"
+    assert absences(page, "model") == 0, "a briefing already written is no absence whatever the machine has now"
+
+
+def test_a_watched_board_re_renders_on_a_briefing_the_session_rewrote(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """A pass of the watcher that finds nothing under the tracker moved still has two things to look
+    at, and this is one of them: the briefing lands minutes after the change that asked for it, on a
+    tracker that has gone quiet since."""
+    out = tmp_path / "board.html"
+    watching, session = Seen(), board.Briefer(repo, out)
+    watching = look(watching, session, tracker, repo, out)  # the first pass reads; main() rendered
+    rendered = out.stat().st_mtime_ns if out.exists() else 0
+    watching = look(watching, session, tracker, repo, out)
+    assert (out.stat().st_mtime_ns if out.exists() else 0) == rendered, "nothing moved, nothing re-rendered"
+
+    when = datetime.now().astimezone()
+    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
+    look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "the briefing the session wrote never reached the page"
+    assert "Two builds wait on your ruling." in briefing_of(out.read_text())
+
+
+def test_githubs_answer_arms_the_watchers_clock_once_per_answer() -> None:
+    """The other thing a quiet pass looks at. An answer that has had its render is done with:
+    a render that does not ask (a tracker that has stopped naming any reference) leaves the same
+    answer behind, and a clock that read the file alone would re-render on it every two seconds."""
+    old = datetime.now().astimezone() - github.LIFETIME - timedelta(seconds=1)
+    assert run_out(old, None), "an answer past its lifetime is one the next render asks again"
+    assert not run_out(old, old), "and having had that render, the same answer asks for no other"
+    assert not run_out(datetime.now().astimezone(), None), "an answer still good asks for nothing"
+    assert not run_out(None, None), "and a board that has asked nothing has no clock to run out"
+
+
+def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_until_it_answers(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The watcher's side of the schedule, driven a tick at a time with claude stubbed: the first
+    change dispatches a run and its answer lands in the cache beside the board, a second change
+    inside the window dispatches nothing, and a run that answers nothing leaves the account of what
+    moved for the retry to carry (briefing.on_change holds the schedule itself)."""
+    said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
+    claude = path_with("claude", f"echo {shlex.quote(json.dumps(said))}")
+    out, roots = tmp_path / "board.html", tracker_roots(tracker)
+    at = datetime.now().astimezone()
+    watcher = board.Briefer(repo, out)
+
+    watcher.opened(tracker_snapshot(roots, repo), at)
+    watcher.tick(roots, tracker_snapshot(roots, repo), at)
+    watcher.running.join(30)
+    assert len(runs(claude)) == 1, "the change the watcher opened on starts one run"
+    written = Briefing.read(cache_path(out))
+    assert written and (written.text, written.session, written.pings) == (said["result"], "abc-123", 0)
+    told = watcher.told
+
+    watcher.changed(at + timedelta(minutes=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), at + timedelta(minutes=1))
+    assert len(runs(claude)) == 1, "a change inside the window waits it out"
+
+    path_with("claude", "echo '{\"is_error\": true}'")  # a login that has lapsed, a run past its limit
+    (tracker / "small-chore.md").write_text("---\nstatus: done\n---\n\n# A chore\n")
+    # stamped while the session was exploring: a run's clock is read before it starts, so a change
+    # landing during one reads as a change it has not heard, and the window after is when it does
+    watcher.changed(written.last_activity + timedelta(seconds=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), at + DEBOUNCE + timedelta(seconds=1))
+    watcher.running.join(30)
+    assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the window after it"
+    assert Briefing.read(cache_path(out)) == written, "a run that answered nothing writes nothing"
+    assert watcher.told == told, "what the session was told about waits for the run that reaches it"
+    cache_path(out).unlink()  # and with no briefing to fall back on, the page says why there is none
+    render(tracker_roots(tracker), repo, out)
+    assert absences(out.read_text(), "model") == 1
+
+
+def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The cache is written by a thread of its own while the board renders from it, and a version
+    of the board older than the file that is there is the same case: neither is a render that
+    fails."""
+    out = tmp_path / "board.html"
+    cache_path(out).write_text('{"text": "half a fi')
+    render(tracker_roots(tracker), repo, out)
+    assert "One build to rule on waits on you." in briefing_of(out.read_text())
+
+
+def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
+    """What a fresh session starts from: the tracker as the board computes it, which is every row's
+    marks, its brief, its open questions and the file the rest of it is in."""
+    roots = tracker_roots(demo.root)
+    state = board.briefing_state(roots, demo.repo)
+    shown = [
+        (f"{f.name}/{t.num}", t) for f in load_features(demo.root, {}, Diffviews(demo.root, None), demo.repo)
+        for t in f.tickets
+    ]
+    for ref, t in shown:
+        assert f"{ref} · {t.status} · " in state, f"{ref} is a row on the board and not a line of the state"
+        assert str(t.path) in state, f"{ref} is given without the file to read the rest of it in"
+    asked = [q.tag for _, t in shown for q in t.questions if not q.ruled]
+    assert asked and all(f"asks: [{tag}]" in state for tag in asked)
+    assert board.git_log(demo.repo).splitlines()[0] in state, "the commits behind the tracker"
+    # one line in full, since what the session is handed is every mark the row wears and not only
+    # the three above, and the standalone tickets are half the tracker
+    ticket = demo.root / "csv-import" / "02-map-columns.md"
+    assert (
+        f"csv-import/02 \u00b7 review \u00b7 to rule on \u00b7 p1 now \u00b7 1 h \u00b7 Map columns once per bank \u00b7 {ticket}\n"
+        "  brief: You tell the importer once which column holds the date, the amount and the payee;"
+        " it remembers that per bank and never asks again.\n"
+        "  waits on: 01\n"
+    ) in state
+    assert "## standalone\nexport-to-xlsx \u00b7 blocked \u00b7 build \u00b7 p4 later \u00b7 20 min \u00b7 Export to Excel \u00b7 " in state
+
+
+def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(tmp_path: Path) -> None:
+    """What a ping tells the session. Its own copy of the demo tracker: this check moves files under
+    it, and the shared fixture is read by every later check in this file and the next."""
+    own = build_demo(tmp_path / "demo")
+    roots = tracker_roots(own.root)
+    before = tracker_snapshot(roots, own.repo)
+    assert changed_note(before, before, own.repo) == "something under the tracker was touched without changing"
+
+    (own.root / "csv-import" / "07-new-ticket.md").write_text("---\nstatus: open\n---\n\n# A new slice\n")
+    (own.root / "upgrade-python.md").unlink()
+    ticket = own.root / "speed-up-tests.md"
+    ticket.write_text(ticket.read_text() + "\n## Questions\n\n- [D9] **Is the template rebuilt often enough?**\n")
+    demo_commit(own.repo, S3, "2026-09-23T09:00:00+02:00", "tickets: a slice filed, a chore retired", "agent/tickets")
+    note = changed_note(before, tracker_snapshot(roots, own.repo), own.repo)
+
+    assert "new: agent/tickets/csv-import/07-new-ticket.md" in note
+    assert "gone: agent/tickets/upgrade-python.md" in note
+    assert "changed: agent/tickets/speed-up-tests.md" in note
+    assert "the repo has moved on: " in note and "a slice filed, a chore retired" in note
+
+
+def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The cache is written by a thread of its own while the board renders from it, and a version
+    of the board older than the file that is there is the same case: neither is a render that
+    fails."""
+    out = tmp_path / "board.html"
+    cache_path(out).write_text('{"text": "half a fi')
+    render(tracker_roots(tracker), repo, out)
+    assert "One build to rule on waits on you." in briefing_of(out.read_text())
+
+
+def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
+    """What a fresh session starts from: the tracker as the board computes it, which is every row's
+    marks, its brief, its open questions and the file the rest of it is in."""
+    roots = tracker_roots(demo.root)
+    state = board.briefing_state(roots, demo.repo)
+    shown = [
+        (f"{f.name}/{t.num}", t) for f in load_features(demo.root, {}, Diffviews(demo.root, None), demo.repo)
+        for t in f.tickets
+    ]
+    for ref, t in shown:
+        assert f"{ref} · {t.status} · " in state, f"{ref} is a row on the board and not a line of the state"
+        assert str(t.path) in state, f"{ref} is given without the file to read the rest of it in"
+    asked = [q.tag for _, t in shown for q in t.questions if not q.ruled]
+    assert asked and all(f"asks: [{tag}]" in state for tag in asked)
+    assert board.git_log(demo.repo).splitlines()[0] in state, "the commits behind the tracker"
+
+
+def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(demo: Demo, tmp_path: Path) -> None:
+    roots = tracker_roots(demo.root)
+    before = tracker_snapshot(roots, demo.repo)
+    (demo.root / "csv-import" / "07-new-ticket.md").write_text("---\nstatus: open\n---\n\n# A new slice\n")
+    (demo.root / "upgrade-python.md").unlink()
+    ticket = demo.root / "speed-up-tests.md"
+    ticket.write_text(ticket.read_text().replace("status: claimed", "status: review", 1))
+    note = board.changed_note(before, tracker_snapshot(roots, demo.repo), demo.repo)
+    assert "new: agent/tickets/csv-import/07-new-ticket.md" in note
+    assert "gone: agent/tickets/upgrade-python.md" in note
+    assert "changed: agent/tickets/speed-up-tests.md" in note
+
+
 # ---- properties -----------------------------------------------------------
-# The executable Properties of agent/tickets/board-orients/spec.md that live at these seams. Each
-# is an expected failure naming the slice that lifts it; one that already holds carries none.
+# The executable Properties of agent/tickets/board-orients/spec.md that live at these seams.
 
 
 def runs(record: Path) -> list[str]:
@@ -1883,7 +2139,6 @@ def test_the_board_renders_without_github_and_says_the_absence_once(repo: Path, 
     assert "acme/backend#317" in page, "the references stay on the row, bare"
 
 
-@pytest.mark.xfail(strict=True, reason="the board has no briefing yet; lifted by 09-briefing")
 def test_the_board_renders_without_the_model_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     out = tmp_path / "board.html"
     render(tracker_roots(tracker), repo, out)
@@ -1931,7 +2186,6 @@ def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path,
     assert len(queries()) == 1, "the answer cached beside the board serves the unchanged render"
 
 
-@pytest.mark.xfail(strict=True, reason="the board has no briefing yet; lifted by 09-briefing")
 def test_a_render_that_finds_nothing_changed_makes_no_model_call(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     claude = path_with("claude")
     out = tmp_path / "board.html"

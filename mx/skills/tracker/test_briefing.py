@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "hypothesis", "tyro"]  # tyro: the demo tracker the shared fixtures build
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown"]  # the last three: the demo tracker and the board the shared fixtures import
 # ///
 """The briefing session's schedule. Run: uv run test_briefing.py
 
@@ -59,7 +59,6 @@ def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datet
     return answers
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="on_change is a stub; lifted by 09-briefing")
 @given(run=RUN)
 def test_the_briefing_session_is_pinged_once_a_window_and_never_past_its_idle_hour_or_ping_cap(run: list[tuple[int, bool]]) -> None:
     for verb, session, changed_at, now in drive(run):
@@ -73,6 +72,15 @@ def test_the_briefing_session_is_pinged_once_a_window_and_never_past_its_idle_ho
         if verb == "wait":
             told = session is not None and session.last_activity >= changed_at
             assert told or now - changed_at < DEBOUNCE, "a change waiting past its debounce window"
+
+
+def test_a_session_retired_with_nothing_new_to_tell_it_is_left_where_it_is() -> None:
+    """The spec: the session retires after an idle hour "and the next change starts a fresh one".
+    A board watching a tracker that has not moved since its last briefing has no next change, so
+    the hour passing is not itself a reason to explore the repo again."""
+    told = fresh(START, 1)
+    assert on_change(told, START, START + IDLE + timedelta(minutes=1)) == "wait"
+    assert on_change(told, START + timedelta(minutes=1), START + IDLE + timedelta(minutes=1)) == "fresh"
 
 
 def test_the_windows_the_property_is_stated_in_are_the_spec_s() -> None:
