@@ -26,7 +26,7 @@ A `prepare-commit-msg` hook in the dotfiles' global git hooks, beside the pre-pu
 
 ## Comments
 
-**2026-09-23**, orchestrator. A `prepare-commit-msg` hook in the dotfiles adds `Session: <id>` from `$CLAUDE_CODE_SESSION_ID`, wired globally by home-manager as a git config hook. Built and tested on branch `git/session-trailer` of `~/.dotfiles` (worktree `/var/tmp/wt-session-trailer`, one commit), not merged, and not switched on: it takes effect on a machine after the merge and an `hmswitch` (`nswitch` on pc). Review page: `agent/diffviews/board-orients/06-session-trailer-hook.html`.
+**2026-09-23**, orchestrator. A `prepare-commit-msg` hook in the dotfiles adds `Session: <id>` from `$CLAUDE_CODE_SESSION_ID`, wired globally by home-manager as a git config hook. Built and tested on branch `git/session-trailer` of `~/.dotfiles` (worktree `/var/tmp/wt-session-trailer`), one commit and one review round, not merged, and not switched on: it takes effect on a machine after the merge and an `hmswitch` (`nswitch` on pc). Review page: `agent/diffviews/board-orients/06-session-trailer-hook.html`.
 
 **Demo.** A throwaway repo committing under the git config home-manager builds from the branch (`GIT_CONFIG_GLOBAL` pointed at the built file), inside this session:
 
@@ -51,6 +51,7 @@ a commit made outside a session
 
 - [D1] **Merge and switch it on?** Merge `git/session-trailer` into the dotfiles' master, then `hmswitch` here and `nswitch` on pc. Until then no commit carries the trailer, and ticket 05 builds against fixtures only.
 - [D2] **Off under `~/work`, as built?** The include that sets the work address also turns the hook off there. The trailer is a random UUID and identifies no account, but it would put a convention of ours into the team's history. Turning it on there means deleting that one line.
+  - Ruled 2026-09-23: on under `~/work` too; the include went back to setting only the address (`18b5f5e`).
 
 **Details, if you want them**
 
