@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 priority: 2
 size: XS
 ---
@@ -61,3 +61,5 @@ a commit made outside a session
   - A3 `git/hooks/claude-session-trailer`: the first trailer wins. An amend in a second session keeps the first session's id, since `--if-exists doNothing` adds nothing when a `Session:` trailer is already there. Amending a commit that has no trailer, inside a session, adds that session's id: the session rewrote the commit.
   - A4 Probed on git 2.55: a plain rebase does not run `prepare-commit-msg` at all. `--force-rebase`, reword and squash do run it, with the old message, and that message already carries its trailer.
   - A5 Not installed for the worker users on pc (`nix/home/worker.nix`). The board leaves out sessions from other hosts, so nothing would read their trailers.
+
+**2026-09-23**, orchestrator. Accepted. Merged into the dotfiles as `3c07294` (the build `531f94b..18b5f5e`), pushed, and switched on on zephylux with `hmswitch`; a commit made here now carries the trailer. pc takes it at its next `nswitch`.
