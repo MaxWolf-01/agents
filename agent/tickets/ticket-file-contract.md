@@ -17,6 +17,8 @@ Filed on the user's request on 2026-09-23, at priority 1, after the incident bel
 
 `dispatch review` builds a review page's notes from the ticket's `Assumptions` bullets (`notes_of` in `mx/skills/dispatch/dispatch`), one line at a time. board-orients 10's worker wrapped its bullets at about 100 columns, as the Markdown renders fine that way, so every note on its page ends mid-sentence: "a relayed question carries two numberings, the ticket's and". 02 and 04 wrap the same way. `notes_of` already refuses a bullet that doesn't match its pattern, but a continuation line isn't a bullet, so nothing refused it.
 
+The board shows the same kind of drift in how it renders Markdown. `board.py` uses Python-Markdown, which nests a list only under four spaces of indent, where GitHub and CommonMark take three. So this ticket's own Question list, whose options are indented three, renders on the board as thirteen flat numbered items. The writer followed one Markdown and the reader implements another.
+
 ## What reads a ticket today
 
 As of board-orients' chain (tickets 01 to 10, unmerged) plus master:
@@ -26,7 +28,7 @@ As of board-orients' chain (tickets 01 to 10, unmerged) plus master:
 | frontmatter: `status`, `type`, `blocked-by`, `diff`, `gh`, `priority`, `size` | `/mx:tracker` MARKDOWN.md | `board.py` (YAML); `dispatch`, `dispatch-ctl`, `run-worker.sh` (each an `awk`/`sed` match on `^status:`; `run-worker.sh` takes the first `status:` line anywhere in the file) |
 | H1 as the short name, `## Brief` | MARKDOWN.md, `/mx:to-tickets` | `board.py` |
 | `## Questions`: `- [Dn] **headline** detail` with `Ruled <date>:` under it | MARKDOWN.md, worker contract, `/mx:dispatch` | `board.py` |
-| `Assumptions`: `- A<n> \`path:line\`: text`; `Addressed: C1, C4` | worker contract (`worker-prompt.md`) | `dispatch` (`notes_of`, jq) |
+| `Assumptions`: ``- A<n> `path:line`: text``; `Addressed: C1, C4` | worker contract (`worker-prompt.md`) | `dispatch` (`notes_of`, jq) |
 | `## Acceptance criteria` checklist, `Property P<n>, <disposition>:` | `/mx:to-tickets` | `board.py` (04), `property-coverage` |
 | spec `## Properties`: `- P<n> …` | `/mx:grilling` SPEC-FORMAT | `property-coverage` |
 | spec frontmatter `status: draft \| confirmed` | SPEC-FORMAT | `board.py` |
