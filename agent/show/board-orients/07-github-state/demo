@@ -4,37 +4,28 @@
 # state GitHub gives them; without it they stay bare and the page says why once.
 #
 # Usage: demo [--stubbed] [tracker directory]
-#   --stubbed  answer the board's query from this file instead of GitHub, with the states those
-#              three references were in on 2026-09-23 (read from api.github.com that day), so the
-#              states show without a `gh` login.
+#   --stubbed  answer the board's query from references.json beside this script, with the states
+#              those three references were in on 2026-09-23, so the states show without a `gh` login.
 set -euo pipefail
 
 stubbed=""
-answered_by="GitHub itself"
-[[ ${1:-} == --stubbed ]] && { stubbed=1; answered_by="this script, as the three references stood on 2026-09-23"; shift; }
+[[ ${1:-} == --stubbed ]] && { stubbed=1; shift; }
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$here/../../../..
+refs=$here/references.json
 tracker=${1:-/tmp/board-gh-demo}
 uv run "$root/mx/skills/tracker/demo_tracker.py" "$tracker" >/dev/null
 
-# Two repositories, three references, three of the states the board tells apart. cli/cli#1 is
-# merged and cli/cli#2 closed for good; the open issue is live and may have been closed since.
-sed -i 's|^gh: .*|gh: [cli/cli#1, cli/cli#2]|' "$tracker/agent/tickets/csv-import/02-map-columns.md"
-sed -i 's|^gh: .*|gh: [anthropics/claude-code#96304]|' "$tracker/agent/tickets/speed-up-tests.md"
+# the three references, in two repositories, that this demo and figure.py both show
+while IFS=$'\t' read -r path list; do
+    sed -i "s|^gh: .*|gh: [$list]|" "$tracker/agent/tickets/$path"
+done < <(jq -r '.refs | to_entries[] | "\(.key)\t\(.value | join(", "))"' "$refs")
 
 calls=$tracker/gh.calls
 rm -f "$calls"
 mkdir -p "$tracker/bin"
 if [[ -n $stubbed ]]; then
-    cat >"$tracker/answer.json" <<'JSON'
-{"data": {
-  "r0": {"nameWithOwner": "cli/cli",
-         "n0": {"__typename": "PullRequest", "number": 1, "prState": "MERGED", "isDraft": false, "reviewDecision": "APPROVED"},
-         "n1": {"__typename": "Issue", "number": 2, "issueState": "CLOSED"}},
-  "r1": {"nameWithOwner": "anthropics/claude-code",
-         "n0": {"__typename": "Issue", "number": 96304, "issueState": "OPEN"}}
-}}
-JSON
+    jq -c .answer "$refs" >"$tracker/answer.json"
     # a gh that records what the board asks of it and answers from the file
     printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec cat "%s"\n' "$calls" "$tracker/answer.json" >"$tracker/bin/gh"
 else
@@ -47,6 +38,16 @@ export PATH=$tracker/bin:$PATH
 "$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
 "$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
 
+# what the board made of the answer is what the board wrote down, so the line below reads it back
+cache=$tracker/agent/board.html.github.json
+if [[ -n $stubbed ]]; then
+    answered_by="references.json beside this script, as those three stood on 2026-09-23"
+elif [[ -z $(jq -r .missing "$cache") ]]; then
+    answered_by="GitHub itself"
+else
+    answered_by="nothing: GitHub was out of reach, and the page says so once"
+fi
+
 cat <<TEXT
 
 Answering from $answered_by.
@@ -54,7 +55,7 @@ GraphQL queries sent for those two renders: $(grep -c graphql "$calls" 2>/dev/nu
 
 What the board cached beside the page, which is what the second render read:
 
-$(sed 's/^/    /' "$tracker/agent/board.html.github.json")
+$(sed 's/^/    /' "$cache")
 
 Open the page above. Two rows in the needs-me group name references: "Map columns once per bank"
 carries cli/cli#1 and cli/cli#2 to the right of its name, after the review page link, and "A
@@ -67,8 +68,8 @@ through and says "A closed issue on GitHub.", and the issue is in the accent and
 issue on GitHub." Nothing else on either row moved. The scheme switch in the top bar puts the
 three through the night scheme.
 
-Where the board could not ask — no gh, no auth, no network — those three go back to the grey they
-were, with the sentence they had, and one note above the rows carries what gh itself said.
+Where the board could not ask, for want of gh, its auth or the network, those three go back to the
+grey they were, with the sentence they had, and one note above the rows carries what gh itself said.
 
 figure.html beside this script is those three states side by side, live: the board before this
 slice, the board now, and the board now with GitHub out of reach, each row lifted out of a real
