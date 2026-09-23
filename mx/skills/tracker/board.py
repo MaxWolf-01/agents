@@ -65,6 +65,13 @@ graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
 
+That panel is a preview. The `full` button, or ?graph on the address, opens the
+same graph at its own size over the board; `window` opens it in a window of its
+own, to sit beside the board. Both scroll and drag to pan, and both carry the
+feature and whole-tracker switch. A click on a node in the overlay closes it on
+that ticket's row; a click on a node in the window leaves the window where it is
+and moves the board to that row.
+
 One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
 that has a worktree on a branch named after it (how dispatch cuts a feature
@@ -1532,6 +1539,7 @@ def render_page(
     )
     footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS,
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
         columns=row_columns(features, standalone, grouped), absences="".join(absences(features, standalone, gh)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
@@ -1628,6 +1636,100 @@ def absences(features: list[Feature], standalone: list[Standalone], gh: github.A
     if gh.missing:
         said.append(absence_note("github", gh.missing))
     return said
+
+
+# The full size graph, as the overlay over the board and the window of its own both wear it: one
+# head with the feature/whole-tracker switch and whatever that view adds, over one box holding
+# either a note or the drawing. Two views of one thing, so one markup and one script for both.
+GRAPH_VIEW = Template(
+    '<div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>'
+    '<span class="seg"><button class="btn" data-gmode="feature" title="${feature_says}">feature</button>'
+    '<button class="btn" data-gmode="all" title="${all_says}">all</button></span>${extra}</div>'
+    '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>'
+)
+OVERLAY = GRAPH_VIEW.substitute(
+    feature_says="the graph of the row's feature (a)", all_says="the whole tracker's graph (a)",
+    extra='<button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>'
+          '<button class="btn" id="gclose" title="back to the board (Esc)">close</button>',
+)
+# the window has no keys of its own, so its switch says what it does without naming one
+GRAPH_WINDOW = GRAPH_VIEW.substitute(
+    feature_says="the graph of the row the board is on", all_says="the whole tracker's graph",
+    extra='<span class="gorphan">the board this followed is gone</span>',
+)
+
+# What the two views do, run in the board's page and again in the window's: the window is another
+# document, and once the board has reloaded once it is another origin too, so nothing it calls can
+# live in the board's script. One home here, two realms at run time.
+VIEW_JS = r"""
+  const hrefOf = (a) => a && (a.getAttribute("href") ?? a.getAttribute("xlink:href"));
+
+  function markCur(root, id) {
+    for (const n of root.querySelectorAll("g.node.cur")) n.classList.remove("cur");
+    if (id) root.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+  }
+
+  // A graph at full size is wider than the box it sits in, so the box is dragged as well as
+  // scrolled. The click a drag ends with is swallowed wherever it lands, or a pan that finished
+  // over a node would open that node, and one that finished on the overlay's backdrop would close
+  // the overlay.
+  function pannable(el) {
+    const doc = el.ownerDocument;
+    let from = null, swallow = false;
+    el.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      from = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: 0 };
+      e.preventDefault();  // no text or node selection under the drag
+    });
+    doc.addEventListener("mousemove", (e) => {
+      if (!from) return;
+      from.moved = Math.max(from.moved, Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y));
+      el.classList.toggle("panning", from.moved > 4);
+      el.scrollLeft = from.left - (e.clientX - from.x);
+      el.scrollTop = from.top - (e.clientY - from.y);
+    });
+    doc.addEventListener("mouseup", () => {
+      if (!from) return;
+      swallow = from.moved > 4;
+      el.classList.remove("panning");
+      from = null;
+    });
+    doc.addEventListener("click", (e) => {
+      if (!swallow) return;
+      swallow = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+  }
+
+  // A node at full size takes the board to its row: the overlay closes on it, the window of its own
+  // stays where it is and the board moves behind it.
+  function nodeClicks(el, go) {
+    el.addEventListener("click", (e) => {
+      const href = hrefOf(e.target.closest("a"));
+      if (href?.startsWith("#")) { e.preventDefault(); go(href); }
+    });
+  }
+  function attach(el, go) { pannable(el); nodeClicks(el, go); }
+
+  // One paint for both views. A view whose key has not moved keeps its drawing, and with it
+  // whatever the reader had panned to; only the mark on the cursor's node moves.
+  function paintView(root, view, last) {
+    const name = root.querySelector(".gname");
+    name.title = name.textContent = view.name;
+    for (const b of root.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === view.mode);
+    const body = root.querySelector(".gfbody"), svg = body.querySelector(".gsvg");
+    if (view.key !== last) {
+      const note = body.querySelector(".gnote");
+      note.textContent = view.note;
+      note.hidden = !!view.svg;
+      svg.innerHTML = view.svg;
+      body.scrollTo(0, 0);
+    }
+    markCur(svg, view.cur);
+    return view.key;
+  }
+"""
 
 
 PAGE = Template(r"""<!doctype html>
@@ -1759,7 +1861,30 @@ ${columns}
      that has not come back yet would widen the column it sits in */
   .mermaid:not(:has(svg)) { display: none; }
   .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon { stroke-width: 2.5px !important; }
+  .side g.node.cur rect, .side g.node.cur polygon,
+    .gfbody g.node.cur rect, .gfbody g.node.cur polygon { stroke-width: 2.5px !important; }
+
+  /* ---- the same graph at full size: over the board, or in a window of its own ---- */
+  .side .gbody { cursor: zoom-in; }  /* the preview opens the full size view */
+  .side .gbody a { cursor: pointer; }
+  #gfull { position: fixed; inset: 0; z-index: 90; display: none; padding: 1.25rem;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
+  #gfull.open { display: block; }
+  #gfull .card { height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); }
+  .gfhead { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+    padding: .45rem .8rem; border-bottom: 1px solid var(--edge); }
+  /* safe centring: a graph that fits sits in the middle of the box, one that does not starts at
+     the edge the scroll starts from rather than having its first node cut off */
+  .gfbody { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 1rem;
+    display: flex; justify-content: safe center; align-items: safe center; }
+  .gfbody.panning { cursor: grabbing; user-select: none; }
+  /* full size is the graph's own size: what shrinks it in the preview is the width it is given */
+  .gfbody svg { max-width: none !important; }
+  /* the window of its own is the same head and body, with nothing else in the document */
+  body.gwin { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .gorphan { display: none; color: var(--accent-2); font-size: .8rem; font-family: var(--font-mono); }
+  [data-orphan="1"] .gorphan { display: inline; }
 
   /* ---- a group of rows ---- */
   .grp { margin-bottom: 1.75rem; }
@@ -1959,13 +2084,17 @@ ${groups}
 </div>
 <aside class="side" id="side">
   <div class="ghead"><span class="label">dependencies</span><span class="gname" id="gname"></span>
+    <button class="btn" id="gopen" title="the graph at full size, over the board (f)">full</button>
+    <button class="btn" id="gwinopen" title="the graph at full size, in a window of its own beside the board (w)">window</button>
     <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
-  <div class="gbody" id="gbody">
+  <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
     <div class="g" data-feature=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
   </div>
 </aside>
 </main>
+
+<div id="gfull"><div class="card">${overlay}</div></div>
 
 <div id="help"><div class="card"><table>
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
@@ -1978,6 +2107,8 @@ ${groups}
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
 <tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
+<tr><td><kbd>f</kbd></td><td>the graph at full size over the board; a click on a node goes to its row</td></tr>
+<tr><td><kbd>w</kbd></td><td>the graph at full size in a window of its own, beside the board</td></tr>
 <tr><td><kbd>t</kbd></td><td>the other colour scheme</td></tr>
 <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
@@ -2023,6 +2154,10 @@ ${groups}
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
   import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs";
   mermaid.registerLayoutLoaders(elkLayouts);
+
+  // What the two full size views do, shared with the window of its own, which runs its own copy
+  // (board.VIEW_JS).
+${viewjs}
 
   // Mermaid bakes the colours into the SVG, and a light-dark() token never resolves through
   // getPropertyValue, so every colour is read off a probe element in the scheme on show, and read
@@ -2081,6 +2216,7 @@ ${groups}
       nodeHover(el);
     }
     markNode();
+    paintFull();
   }
 
   // Every node carries its full title as a native tooltip.
@@ -2161,18 +2297,167 @@ ${groups}
     const key = mode === "all" ? "*" : (feature === "standalone" ? "*" : feature);
     for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.feature !== key;
     if (key === "*") composeAll();
-    document.getElementById("gname").textContent = mode === "all" ? "whole tracker" : (feature || "");
+    const gname = document.getElementById("gname");
+    // the column is narrow enough to cut a feature name short, so the whole one is on hover
+    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (feature || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
-  function markNode() {
-    for (const n of side.querySelectorAll("g.node.cur")) n.classList.remove("cur");
-    if (!cur?.dataset.num) return;
-    const g = side.querySelector(".g:not([hidden])");
-    const id = cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
-      : "T_" + (g?.dataset.feature === "*" ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
-    g?.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+  function setMode(m) { mode = m; showGraph(); }
+
+  // the cursor row's node in the graph on show, which carries the namespace that graph was built
+  // with: f for one feature's own, b for the whole tracker composed from its parts
+  function curNode() {
+    if (!cur?.dataset.num) return "";
+    const composed = side.querySelector(".g:not([hidden])")?.dataset.feature === "*";
+    return cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
+      : "T_" + (composed ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
   }
+  function markNode() { markCur(side, curNode()); }
+
+  // ---- the graph at full size: over the board, or in a window of its own ----
+  // The preview is one graph given a column's width; both full size views are the same graph given
+  // its own, drawn again from the preview's source so that a node keeps the id and the "#t-..."
+  // link the board matches a row by. A drawing is kept per source and scheme, so opening and
+  // closing costs one render of each graph rather than one per opening.
+  const full = document.getElementById("gfull");
+  const fullCache = {};
+  let gwin = null;  // the window of its own, while one is open
+  let fullKey = null, viewSeq = 0;
+
+  // what the preview is showing, as the two full size views need it
+  function shownGraph() {
+    const g = side.querySelector(".g:not([hidden])"), pre = g?.querySelector(".mermaid");
+    return {
+      src: (pre?.dataset.src ?? pre?.textContent ?? "").trim(),
+      note: g?.querySelector(".gnote:not([hidden])")?.textContent ?? "",
+      name: document.getElementById("gname").textContent, mode, cur: curNode(),
+      theme: document.documentElement.dataset.theme,
+    };
+  }
+
+  async function svgFor(src) {
+    const key = src + "@" + document.documentElement.dataset.theme;
+    if (!fullCache[key]) {
+      const { svg } = await mermaid.render("gf" + Date.now() + "_" + seq++, src + "\n" + classDefs);
+      const box = document.createElement("div");
+      box.innerHTML = svg;
+      nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
+      // mermaid sizes its drawing to whatever box it is given (width="100%", capped at the size it
+      // drew); full size is that size, which is the one its viewBox counts in.
+      const el = box.querySelector("svg"), [, , w, h] = el.getAttribute("viewBox").split(/[\s,]+/);
+      el.setAttribute("width", w);
+      el.setAttribute("height", h);
+      fullCache[key] = box.innerHTML;
+    }
+    return fullCache[key];
+  }
+
+  // The whole of what a full size view shows, drawing included, so the window of its own is sent a
+  // picture rather than a source it has no mermaid to draw.
+  async function viewOf(g) {
+    return {
+      key: [g.name, g.mode, g.theme, g.src, g.note].join("|"), name: g.name, mode: g.mode,
+      theme: g.theme, note: g.note, cur: g.cur, svg: g.src ? await svgFor(g.src) : "",
+    };
+  }
+
+  // Paint whichever full size views are open. The sequence number is what keeps a slow drawing
+  // from landing after a faster one started later: mermaid resolves in whatever order it finishes.
+  async function paintFull() {
+    if (!full.classList.contains("open") && !gwin) return;
+    const me = ++viewSeq;
+    const view = await viewOf(shownGraph());
+    if (me !== viewSeq) return;
+    if (full.classList.contains("open")) fullKey = paintView(full, view, fullKey);
+    sendView(view);
+  }
+
+  function openFull(on) {
+    full.classList.toggle("open", on);
+    if (on) paintFull();
+  }
+
+  attach(full.querySelector(".gfbody"), (href) => { openFull(false); openTarget(href); });
+
+  // ---- the window of its own ----
+  // It talks to the board by message rather than by reaching into it. The board is a file:// page,
+  // so its origin is opaque and a reload mints another one: from the reload on, the window's
+  // `opener.<anything>` throws and the board's own handle on the window is gone. A message crosses
+  // either way regardless, so the window says hello on a timer and the board answers whoever asked,
+  // which is how the two find each other again after every re-render.
+  function sendView(view) {
+    try {
+      if (gwin && !gwin.closed) gwin.postMessage({ graph: "view", view }, "*");
+    } catch { gwin = null; }
+  }
+
+  addEventListener("message", async (e) => {
+    // the only things a message moves are the board's own cursor and its graph mode, so an opaque
+    // origin nobody can check costs nothing
+    const said = e.data;
+    if (said?.graph === "hello") {
+      gwin = e.source;
+      const view = await viewOf(shownGraph());
+      e.source.postMessage(view.key === said.key ? { graph: "alive" } : { graph: "view", view }, "*");
+    } else if (said?.graph === "goto") {
+      openTarget(said.href);
+    } else if (said?.graph === "mode") {
+      setMode(said.mode);
+    }
+  });
+
+  function openWindow() {
+    if (gwin && !gwin.closed) { gwin.focus(); return; }
+    const win = open("", "board-graph", "popup,width=980,height=800");
+    if (!win) { say("the browser blocked the graph window"); return; }
+    // the fonts are linked rather than in the stylesheet, and the window renders the same labels
+    const head = [...document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')]
+      .map((l) => l.outerHTML).join("")
+      + "<style>" + [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n") + "</style>";
+    try {
+      win.document.write(
+        '<!doctype html><html data-theme="' + document.documentElement.dataset.theme + '">' +
+        '<head><meta charset="utf-8"><title>' + document.querySelector(".top .name span").textContent +
+        " dependencies</title>" + head + '</head><body class="gwin">' + ${graphwin} +
+        "<script>" + WINDOW_JS + "<\/script></body></html>"
+      );
+      win.document.close();
+    } catch {
+      win.focus();  // a window this page did not open: the board reloaded under one already running
+    }
+    gwin = win;
+  }
+
+  const WINDOW_JS = `
+    ${viewjs}
+    let last = null, heard = Date.now();
+    const body = document.querySelector(".gfbody");
+    attach(body, (href) => opener.postMessage({ graph: "goto", href }, "*"));
+    for (const b of document.querySelectorAll("[data-gmode]"))
+      b.addEventListener("click", () => opener.postMessage({ graph: "mode", mode: b.dataset.gmode }, "*"));
+    addEventListener("message", (e) => {
+      heard = Date.now();
+      if (e.data?.graph !== "view") return;
+      document.documentElement.dataset.theme = e.data.view.theme;
+      last = paintView(document.body, e.data.view, last);
+    });
+    // the board answers this, so silence past a few rounds of it is a board that has gone away
+    setInterval(() => {
+      try { opener.postMessage({ graph: "hello", key: last }, "*"); } catch { }
+      document.documentElement.dataset.orphan = Date.now() - heard > 3000 ? "1" : "";
+    }, 1000);
+  `;
+
+  document.getElementById("gopen").addEventListener("click", () => openFull(true));
+  document.getElementById("gclose").addEventListener("click", () => openFull(false));
+  document.getElementById("gwinopen").addEventListener("click", openWindow);
+  // from inside the overlay, the window is where the graph is going, so the board comes back with it
+  document.getElementById("gwinfull").addEventListener("click", () => { openFull(false); openWindow(); });
+  full.addEventListener("click", (e) => { if (e.target === full) openFull(false); });
+  // the preview is the way in to the full size view; a node in it still goes to its row
+  document.getElementById("gbody").addEventListener("click", (e) => { if (!hrefOf(e.target.closest("a"))) openFull(true); });
+
   function setCur(el, scroll = true) {
     cur?.classList.remove("kcur");
     cur = el ?? null;
@@ -2207,7 +2492,7 @@ ${groups}
     off.has(b.dataset.feature) ? off.delete(b.dataset.feature) : off.add(b.dataset.feature);
     applyFilters();
   });
-  for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => { mode = b.dataset.gmode; showGraph(); });
+  for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => setMode(b.dataset.gmode));
   document.getElementById("sidefold").addEventListener("click", () => side.classList.toggle("folded"));
   search.addEventListener("input", applyFilters);
   // a click on a row's summary moves the cursor there, so the graph follows the mouse too;
@@ -2224,14 +2509,14 @@ ${groups}
 
   const toast = document.getElementById("toast");
   let toastTimer = null;
+  function say(words) {
+    toast.textContent = words;
+    toast.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
+  }
   function copy(text, said) {
     if (!text) return;
-    const say = (words) => {
-      toast.textContent = words;
-      toast.classList.add("on");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
-    };
     // navigator.clipboard is absent outside a secure context
     (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => say("copied " + said), () => say("could not copy " + said));
   }
@@ -2271,7 +2556,12 @@ ${groups}
       return;
     }
     switch (e.key) {
-      case "Escape": help.classList.remove("open"); if (cur?.open) cur.open = false; else setCur(null); break;
+      case "Escape":
+        help.classList.remove("open");
+        if (full.classList.contains("open")) openFull(false);
+        else if (cur?.open) cur.open = false;
+        else setCur(null);
+        break;
       case "?": help.classList.toggle("open"); break;
       case "/": e.preventDefault(); search.focus(); search.select(); break;
       case "j": e.preventDefault(); moveCur(1); break;
@@ -2288,8 +2578,10 @@ ${groups}
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
       case "d": { const href = cur?.querySelector("a.rp")?.href; if (href) window.open(href, "_blank"); break; }
       case "y": copyPath(cur); break;
-      case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
+      case "a": setMode(mode === "all" ? "feature" : "all"); break;
       case "b": side.classList.toggle("folded"); break;
+      case "f": openFull(!full.classList.contains("open")); break;
+      case "w": openWindow(); break;
       case "t": switchScheme(); break;
       case "0": off.clear(); applyFilters(); break;
       default:
@@ -2316,14 +2608,14 @@ ${groups}
   }
   window.addEventListener("hashchange", () => openTarget());
   document.addEventListener("click", (e) => {
-    const a = e.target.closest("a");
-    const href = a && (a.getAttribute("href") || a.getAttribute("xlink:href"));
+    const href = hrefOf(e.target.closest("a"));
     if (href && href.startsWith("#") && href === location.hash) setTimeout(() => openTarget(href));
   });
 
   function saveState() {
     const state = {
       mode, cur: cur?.id ?? null, folded: side.classList.contains("folded"),
+      full: full.classList.contains("open"),
       groups: [...document.querySelectorAll("details.grp[open]")].map((d) => d.id),
       open: [...document.querySelectorAll("details.ticket[open]")].map((d) => d.id).filter(Boolean),
       comments: [...document.querySelectorAll(".ticket details.history[open]")].map((d) => d.closest(".ticket").id),
@@ -2361,7 +2653,12 @@ ${groups}
     .observe(document.querySelector(".top"));
   if (cur) cur.classList.add("kcur");
   applyFilters();
-  if (!saved && location.hash) openTarget();
+  if (!saved) {
+    if (location.hash) openTarget();
+    // ?graph opens the overlay on the row the address names, which is what a layout check measures
+    if (new URLSearchParams(location.search).has("graph")) openFull(true);
+  }
+  if (saved?.full) openFull(true);  // the re-render a tracker change triggers puts it back
 </script>
 </body>
 </html>

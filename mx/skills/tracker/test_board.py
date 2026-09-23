@@ -362,6 +362,21 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     assert '"id": "K_b_quoted"' in page
 
 
+def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(tracker: Path) -> None:
+    """The ids the page's script and the browser checks address the full size views by, and the one
+    markup both of those views wear (board.GRAPH_VIEW), so the overlay over the board and the window
+    of its own cannot drift apart. What either draws, and what a click on it does, is the browser's
+    to say (test_board_layout.py)."""
+    page = page_of(tracker)
+    for opener in ("gopen", "gwinopen", "gwinfull", "gclose"):  # from the preview, and to the window
+        assert f'id="{opener}"' in page, opener
+    for view in (board.OVERLAY, board.GRAPH_WINDOW):
+        assert re.findall(r'data-gmode="(\w+)"', view) == ["feature", "all"]
+        assert view.count('<div class="gsvg">') == 1
+    assert board.OVERLAY in page, "the overlay wears markup of its own"
+    assert json.dumps(board.GRAPH_WINDOW).replace("</", "<\\/") in page, "the window is built from markup of its own"
+
+
 def test_a_row_links_its_review_page(tracker: Path) -> None:
     dv = tracker.parent / "diffviews"
     (dv / FEAT).mkdir(parents=True)
