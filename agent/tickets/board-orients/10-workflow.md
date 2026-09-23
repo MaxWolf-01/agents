@@ -46,20 +46,25 @@ as they are on this branch (A1). The comment's listing is what finishes them.
   them. Their calls reached you in chat already. The board reads a build's questions from its own
   ticket branch, which is not mine to write on, so moving them is a resume of those two workers, or
   nothing.
+  - Ruled 2026-09-23: moot: 02 and 03 have landed.
 - [D2] **The feature debrief leaves the durable channel.** It was one queue entry; as built,
   dispatch reports it in chat, every call in it lands on a ticket as a question, and the merge
   commit body keeps what was left. The alternative the spec's own rule suggests is a proposed
   `debrief` ticket per feature, which keeps the whole account on the board.
+  - Ruled 2026-09-23: answered by `debrief-ticket`, the debrief as a ticket.
 - [D3] **A standalone ticket that forgets `status:` now disappears from the board in silence**,
   where before it rendered as `open`. A tracker root holds a README and notes, so the rule has to
   skip something; saying "n files at the root declare no status" on the page would name the typo
   and fire on every README.
+  - Ruled 2026-09-23: leave it; the user notices a lingering ticket, and no ticket is filed.
 - [D4] **The priorities and sizes in the listing are my reading of what you have said**, not yours.
   They are the field you are least likely to want an agent guessing at, and the cheapest to correct
   now, before they sort your board.
+  - Ruled 2026-09-23: keep them as listed.
 - [D5] **A decision ticket's subject moves from `## Question` to `## Questions`.** One heading, and
   the board shows what the ticket asks under its row; the cost is a one-line edit on each of the
   five decision tickets on master that use the old heading.
+  - Ruled 2026-09-23: yes, applied with 10's tracker migration when the feature merges into master.
 
 ## Comments
 

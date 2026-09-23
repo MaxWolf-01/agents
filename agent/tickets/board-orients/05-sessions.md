@@ -28,7 +28,9 @@ The board reads the `Session:` trailers of every commit that changed the ticket 
 ## Questions
 
 - [D1] **The session that built a ticket is never the one the ticket lists.** A dispatched worker runs on another host, whose transcripts are not on your machine, so what a landed build shows is the sessions that filed and claimed it, never the one that wrote the code. That is what the spec asks for (story 17, "only sessions I can resume listed"), and the block now says *sessions on this machine* so the short list explains itself. Reaching the worker's session at all means its transcript travelling back with its branch, which is a ticket of its own.
+  - Ruled 2026-09-23: leave it; the worker's session reaching this machine would be a ticket of its own.
 - [D2] **The board-wide copy-button check cannot see the resume button.** 01's check of the reviewed Property pins the kinds of button on the board and asserts each one's note names the file it copied from (`the demo's path`, `D1 of flaky-upload-test.md`). A resume command has no file, so its note names the session (`the command resuming Grilling the CSV import`) and the new button has a check of its own instead of joining that one. Either the note rule becomes per-kind and one check covers all five buttons, or the two checks stand.
+  - Ruled 2026-09-23: answered by 13, which reads the copy note per kind (its A8).
 - [D3] **A renumbered ticket starts its session list at the rename.** The log is read in one pass over the whole repo and keyed by path, and git's rename following works on neither a repo-wide pass nor `--all`, so a slice renumbered when a breakdown is re-cut keeps only the sessions that committed on its current name. Leaving it costs a short list on a renamed ticket; following renames costs a git call per ticket and still cannot see across branches.
 
 ## Comments
