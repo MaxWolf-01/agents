@@ -250,6 +250,8 @@ The rebase round. `master` moved: every-property-gets-a-criterion landed there a
 
 The commits are the same work at new SHAs: the lists above name the rebased ones, and each round's range label is the pre-rebase range its reviewers actually read, kept as the record of what was reviewed.
 
+`master` then moved twice more while this round ran, `6cf0250` and `7093bf7`, both of them the render-lint-html-overlap ticket and neither touching a file this branch touches. This branch sits on `7176f6e` rather than chasing a branch that moves, and `git merge-tree master HEAD` reports the merge clean.
+
 **Demo.** The verification, all of it from this worktree after the rebase:
 
         $ make check
