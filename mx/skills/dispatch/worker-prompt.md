@@ -26,14 +26,13 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 
 **Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default when no `spec.md` sits beside your ticket; the full axes when one does, or when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
-**Close into the ticket**: tick the acceptance criteria your work meets, and append a comment under the ticket's `## Comments` heading (`/mx:tracker`) in the shape the agent that dispatched you relays to the user unchanged:
+**Close into the ticket**: tick the acceptance criteria your work meets, put the calls only the user can make in the ticket's `## Questions`, and append a comment under its `## Comments` heading (`/mx:tracker`, The ticket file) in the shape the agent that dispatched you relays to the user unchanged:
 
 - One line saying what landed and what is not merged.
 - **Demo**, as steps a stranger can run: the command and its expected transcript, the path or URL to open, what to look for. You never perform the demo for the user; from this host you can open nothing for them, and the agent that dispatched you runs the steps on the user's machine and opens the result beside the review page. Where no live surface exists yet, the closest render stands in (a screenshot, a driven transcript) and the comment says so.
-- **I need from you**: the calls only the user can make, each tagged `[Dn]`. An assumption worth their ruling, a declined finding, a question your build raised.
-- **Details, if you want them**, each entry tagged `[Dn]` as well: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
+- **Details, if you want them**, each entry tagged `[Dn]`: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
-The tags run as one sequence across both lists and never repeat: a second comment continues from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: review` flip, comes after it.
+A **question** is one `- [Dn] **headline?** detail` item under `## Questions`: an assumption worth the user's ruling, a declined finding, a question your build raised. The board shows it under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: review` flip, comes after it.
 </contract>
 
 <workflow>

@@ -19,10 +19,10 @@ One turn of grilling: the design as it stands with the frontier's questions, the
 _Avoid_: iteration, pass
 
 **Call**:
-One design decision as the spec states it, carrying a mark that says who settled it.
+One design decision as the spec states it, carrying a spec mark that says who settled it.
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
-**Mark**:
+**Spec mark**:
 The provenance tag on a call in a draft spec: who settled it, or that nobody has yet.
 _Avoid_: marker, annotation, tag, label
 
@@ -100,6 +100,10 @@ _Avoid_: effort, estimate, points
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
 _Avoid_: dashboard
 
+**Row mark**:
+One tag on a board row, carrying a single fact for scanning: what the ticket asks of the user, its priority, its time, a blocker. Says on hover what it means.
+_Avoid_: mark (a spec mark's provenance), badge, chip, pill, label
+
 **Retire**:
 Take a shipped feature's or ticket's record out of the live tracker; history keeps it.
 _Avoid_: archive, clean up
@@ -142,7 +146,7 @@ _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
 **Expected failure**:
 The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
-_Avoid_: mark (the provenance tag on a spec call), xfail, skip
+_Avoid_: mark (a spec mark or a row mark), xfail, skip
 
 ### Sessions
 

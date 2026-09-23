@@ -50,16 +50,24 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec. A build ticket is `proposed`: its ruling comes from what it built (`/mx:tracker`).
 
+Every ticket carries its **priority** and its **size** in frontmatter, a **short name** as its H1, and a **brief** the user reads on the board (`/mx:tracker`, The ticket file). The priority comes from what the user has said about the feature and the slice's place in it; the size is the user's own time on the slice, which for most is reading the closing comment and driving the demo.
+
 **Name the calls each slice builds on.** A draft spec's marks (`/mx:grilling`) say which decisions are the user's and which are the agent's; the provenance line names the ones this slice rests on, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
 <ticket-template>
 
 ---
 status: proposed
+priority: <1 to 5>
+size: <XS | S | M | L | XL>
 blocked-by: [NN] # omit when nothing blocks it
 ---
 
-# <Ticket title>
+# <The slice's short name, a few words>
+
+## Brief
+
+<Two or three sentences for the user, read cold: what this slice is and why it matters.>
 
 Slice of `spec.md`, building on <the spec's calls this slice rests on, by mark and section>.
 
