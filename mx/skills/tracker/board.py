@@ -674,8 +674,8 @@ TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 
 
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
-    """Whether a ticket waits on the user, from what its file says: a build in review, a ticket with
-    an open question, or an unclaimed design or prototype decision at p1 or p2.
+    """Whether a ticket waits on the user, from what its file says: one not done that is a build in
+    review, has an open question, or is an unclaimed design or prototype decision at p1 or p2.
     Lifted by 03-questions-and-needs-me."""
     raise NotImplementedError
 

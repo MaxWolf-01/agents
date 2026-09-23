@@ -822,7 +822,7 @@ def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_
         [False, True],
     )
     for status, kind, priority, open_question in space:
-        waits = (
+        waits = status != "done" and (
             status == "review"
             or open_question
             or (kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed"))
