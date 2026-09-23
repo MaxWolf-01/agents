@@ -17,7 +17,9 @@ Ruled by the user on 2026-09-23, on 09's D2 and its cadence, after 09 merged.
 ## Questions
 
 - [D1] **The ten-minute floor is measured from the session's last run, not from the time the last briefing was written.** The two come apart when a ping answers `unchanged`: the run costs what a run costs and writes no new text, and measuring from the run pushes the next rewrite out by ten minutes from there. Measuring from `written`, which is what this ticket says, would let a tracker that keeps moving pay a run on every pass once ten minutes have passed since the last rewrite, which is the cost the ruling caps. I built the conservative one; the ticket's letter is the other.
+  - Ruled 2026-09-23: as built: the ten minutes run from the session's last run, since the cap is on runs.
 - [D2] **A tracker whose statuses move oftener than every five minutes never gets its briefing rewritten.** The quiet window restarts on each status change, so a dispatch wave landing a ticket every four minutes leaves the column showing the briefing from before the wave, for as long as the wave runs. That is the rule as ruled ("waits for five minutes with no further status change"), and a wave moves in bursts rather than steadily, so it may never bite; what is gone is any bound on how stale the column can be, since the idle hour retires a session rather than writing a briefing. A ceiling ("ping anyway once the briefing is half an hour old") is the alternative, and it is one more window to hold in your head.
+  - Ruled 2026-09-23: as ruled: no ceiling; waves land in bursts.
 
 ## What to build
 

@@ -27,7 +27,9 @@ When a row is open, the question list under its summary is hidden, and the quest
 ## Questions
 
 - [D1] **An opened row now has no button that copies all of its questions.** "The row's copy all moves with the list" reads two ways: the button goes when the list does, which is what this builds, or it moves into the questions block beside the per-question buttons. Each question in the block has its own button and the needs-me group's copy-all still takes every question on the board, so what an opened row loses is one click for one ticket's worth.
+  - Ruled 2026-09-23: as built: the copy-all goes with the list; each question's own button and the group's copy-all remain.
 - [D2] **The spec's Decisions say nothing about an opened row's questions, so these checks' oracle is this ticket.** "Questions show under their ticket in needs me, tag and headline, each with a copy button" and "An opened ticket reads as blocks: its questions (each with its detail)" are both still written for a row that shows them twice. Whichever way D1 goes, the Decisions want a sentence for it and the Testing Decisions a clause putting what the page's style does in the browser probe's scope; a confirmed spec is not a worker's to amend, so it is written here.
+  - Ruled 2026-09-23: the spec's opened-ticket Decision and the browser probe's scope now say it.
 
 ## Comments
 
