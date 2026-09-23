@@ -20,7 +20,9 @@ A script beside the skill, `review <fixed-point> [--axes correctness,standards,s
 
 `review` beside the code-review skill launches the axes and the skill keeps the judgment: the script resolves the fixed point, pins the range, composes each brief from `briefs/`, runs the axes as `claude -p` reviewers two at a time on an explicit model, and exits nonzero naming an axis that left no report; the skill goes from 113 lines to 81 and the brief texts exist once, in the templates. On branch `ticket/master/review-launcher` (`a4db42a`, `4d24795`, `d7ed489`, `4d583c0`), not merged. The plugin version is not bumped, so this reaches other machines only after a release from the integration branch.
 
-**Demo.** Every transcript below is a real run of the script on this branch; the two runs need `claude` and cost tokens (roughly 6 minutes for the light one, 25 for the axes).
+**Demo.** *Superseded by the amend round's demo at the bottom of this ticket: the axes no longer run two at a time and the Tests axis now runs in a checkout, so the transcripts below are this round's record and not what the script prints today. The steps still run.*
+
+Every transcript below is a real run of the script on this branch; the two runs need `claude` and cost tokens (roughly 6 minutes for the light one, 25 for the axes).
 
 1. A light run over the last commit, one reviewer:
 
@@ -86,7 +88,7 @@ A script beside the skill, `review <fixed-point> [--axes correctness,standards,s
 
   - A1 `mx/skills/code-review/SKILL.md:36`: step 3 folded into the script, since the ticket's list of what the skill keeps does not name it. What stays under that heading is a pointer to what binds a review, for a reader disposing findings in step 5, not a step the caller runs; it keeps the number because `worker-prompt.md` and `/mx:review-pr` both name "step 5".
   - A2 `mx/skills/code-review/briefs/preamble.md:1`: the delivery and discipline lines live in one preamble template rather than in each axis file, so no line of brief text is written twice; the light brief is preamble + correctness + standards + a note of its own, which is why the fold carries no copy of either brief.
-  - A3 `mx/skills/code-review/review:112`: five filenames at the repo root are the whole of a repo's own standards sources, and there is no flag to add one. Declined the review's `--standards` finding as unexercised; the skill and `--help` now say root-only, so a caller in a repo it does not fit can see it.
+  - A3 `mx/skills/code-review/review:140`: five filenames at the repo root are the whole of a repo's own standards sources, and there is no flag to add one. Declined the review's `--standards` finding as unexercised; the skill and `--help` now say root-only, so a caller in a repo it does not fit can see it.
   - A4 `mx/skills/code-review/review:30`: `--permission-mode manual` with allow rules for reading, git and the report directory, fixed in the script rather than inherited from the session or taken from an env knob.
   - A5 `mx/skills/code-review/review:7`: no `--out`, against the usage line I first shipped: nothing in the repo passed it, and the failure path forgot to print it. A PR review's reports now live in the clone the review ran in.
   - A6 `mx/skills/code-review/SKILL.md:48`: the model stays the skill's judgment (`--model`), which the ticket's list of what the skill keeps does not name either; the script defaults it (Opus, Sonnet under `--light`) so a caller that says nothing still gets an explicit model.
@@ -139,3 +141,101 @@ A script beside the skill, `review <fixed-point> [--axes correctness,standards,s
   - `job probe` prints every job this host has ever run, ninety-odd lines from other features' sessions, so reading my own status is a `grep` away. A filter, or a prune of finished jobs, would make the one line I want the answer.
   - `claude --allowedTools` is variadic: with the prompt as an argument after it, the flag swallows the prompt and the CLI fails with "Input must be provided either through stdin or as a prompt argument". The brief goes in on stdin, which is what `run-worker.sh` already does; worth knowing for the next `claude -p` launcher.
   - A review takes 6 to 25 minutes, over this session's own 600-second tool ceiling, so every round runs under `job` and needs two or three waits. Nothing broke; it is the shape of the loop, and `job wait --deadline` is what makes it legible.
+
+---
+
+The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected axis starts at once. Built for you to rule on: the Tests reviewer gets a checkout of its own, `agent/reviews/<range>/checkout`, a worktree of the pinned tip that the script adds before that reviewer starts and removes when it ends, whichever way it ends. It starts there, mutates code there, runs the project's test command there; the tree you work in and the trees the other axes read are not writable by any reviewer. On the same branch (`268ac52`, `4e06139`, `6bdc94e`), still not merged, still unreleased. The ruling reached me relayed rather than as page comments, so this round marks none of them resolved.
+
+**The allow rules**, which you asked to be told. Every reviewer: `Read`, `Grep`, `Glob`, the read-only git subcommands named in the script's `git_reads` list, and `Edit` under `agent/reviews/<range>/**`, on `--permission-mode manual`, which refuses everything else without asking. The Tests reviewer also gets the test targets named in `runners` (`make test`, `make check`, `nix develop -c make test`, `pytest`, `npm test`, `node --test`, `cargo test`, `go test`, and `uv run`/`uvx`, the two standing exceptions `/mx:permissions-review` names), plus `git restore`, which reaches only the checkout it stands in. Its checkout sits **inside** its report directory, so the one `Edit` rule covers both the code it mutates and the report it writes, and everything outside that directory stays unwritable. Named by subcommand and test target rather than by tool, because `/mx:permissions-review`'s bar is that a wildcard over anything that runs code allows everything; the first cut of this used `make *`, `python3 *` and eleven more like them, and the review caught it.
+
+**Demo**, all of it real output from this branch's script.
+
+1. The Tests axis with its checkout, on a toy repo whose one test asserts `add(1, 2) is not None` against `def add(a, b): return a + b`, with a spec naming the seam and one executable property (`/tmp/calc`, two commits, `make test` = `PYTHONPATH=. uv run --with pytest pytest -q`):
+
+        $ review HEAD~1 --axes tests --spec spec.md --model sonnet
+        + git worktree add --detach /tmp/calc/agent/reviews/60d2279..a8ed1ab/checkout a8ed1ab...
+        review: 60d2279..a8ed1ab, tests on sonnet; reports in /tmp/calc/agent/reviews/60d2279..a8ed1ab
+        + (cd /tmp/calc/agent/reviews/60d2279..a8ed1ab/checkout && claude -p --model sonnet --permission-mode manual --allowedTools ... < .../briefs/tests.md > .../tests.log)
+        review: the tests reviewer exited 0
+        review: the Tests reviewer's checkout is removed
+        /tmp/calc/agent/reviews/60d2279..a8ed1ab/tests.md
+
+   and the report it left, which is the point of the checkout:
+
+        **Mutation evidence** (run from this checkout, `calc.py` restored with `git restore` after each):
+        - Mutated `add` to `return a - b` (wrong operator) → `make test` still reports `1 passed`.
+        - Mutated `add` to `return 0` (ignores both arguments) → `make test` still reports `1 passed`.
+
+   `git status` in the toy repo afterwards: clean. `git worktree list`: one entry, the repo itself.
+
+2. Every axis at once, stubbed so the timing is the only thing measured (four axes, each stub sleeping three seconds):
+
+        $ time review fb5d592~1 --spec agent/tickets/review-launcher.md
+        review: 685e1bc..cf5b230, correctness, standards, spec, tests on opus; reports in .../agent/reviews/685e1bc..cf5b230
+        ... 3.2s total, where the cap made it 6s
+
+3. The refusals the round added, both from this worktree:
+
+        $ review <base> --axes tests --spec <spec>          # with a checkout already there
+        review: .../checkout is already there, from a review of <range> still running or killed; when none is running: git worktree remove --force .../checkout
+        $ review <base> --axes tests --spec <spec>          # with a typo in briefs/tests.md
+        review: briefs/tests.md asks for {{NOPE}}, which this script does not substitute
+        # and no checkout is left behind by that one
+
+4. The boundary, probed with a live reviewer session in a checkout made exactly as the script makes one, given exactly the rules above:
+
+        1. Read ../../../PRINCIPLES.md              → ran, quoted "# Workflow principles"
+        2. Edit the checkout's Makefile             → ran
+        3. make check                               → ran
+        4. Write into the worker's tree             → blocked
+        5. touch /tmp/probe-escaped                 → blocked
+        6. git restore Makefile                     → ran
+        7. git commit -am probe                     → blocked
+        8. git stash list                           → blocked
+
+   Afterwards: no `PROBE-ESCAPED.md`, no `/tmp/probe-escaped`, and `git status` in the worker's tree showed only my own edits.
+
+**I need from you**
+
+- [D9] The Tests axis runs the tip's own test files and build recipes; that is what running a suite is, and the checkout bounds where the code sits rather than what it can reach (A13). `/mx:review-pr` now says to leave the axis off an incoming PR unless you would run that PR's suite on this machine anyway. Is that the right line, or should the axis be barred from an untrusted tip outright, or only run on an isolated host?
+- [D10] A fresh checkout holds what the commit holds and no reviewer can install into it, so a suite needing `npm install` or `uv sync` gets reported rather than run (A12). `dispatch-ctl` solves the same problem by running the project's setup command in every worktree it makes. Should the script do that too, at the cost of a build per Tests axis?
+- [D11] `git restore` is a state mutation, which the permissions bar says never to allowlist; it is in the Tests reviewer's rules because it is how a mutation is undone between runs, and it cannot reach past the checkout the reviewer stands in (A11). Keep it?
+- [D12] A checkout already at the path now refuses the run, naming the recovery, because a live review and a killed one look identical from here (A14). The cost is a manual `git worktree remove` after a killed run. Worth a lock file that tells them apart?
+
+**Details, if you want them**
+
+- [D13] `Assumptions`, continuing from A9
+
+  - A10 `mx/skills/code-review/review:221`: the script owns the checkout's whole life, where the ruling had the reviewer create it: a reviewer that dies mid-run would otherwise leave a worktree registered in your repo, and the removal would have to live here anyway. It is added after the briefs render, so a template error costs nothing, and removed by the same subshell that ran the reviewer.
+  - A11 `mx/skills/code-review/review:61`: the Tests reviewer's extra rules are the test targets by name plus `uv run`/`uvx`, and `git restore`. Supersedes A4 for this axis: "nothing else" now means nothing outside that list, and the list runs the tree's own code by design.
+  - A12 `mx/skills/code-review/briefs/tests.md:12`: the checkout is the commit as committed, and a suite that cannot run without an install is a line in the report rather than an install the reviewer performs.
+  - A13 `mx/skills/review-pr/SKILL.md:18`: an incoming PR's Tests axis is the caller's call, taken in `/mx:review-pr` rather than by a rule in the script, since only the caller knows whether that tip is one they would run tests from.
+  - A14 `mx/skills/code-review/review:227`: a checkout already at the path refuses the run instead of being removed, because removing it blind would pull the tree out from under a reviewer still using it.
+
+- [D14] Findings, two rounds over the amend, both light on Opus since the diff is the review's own.
+
+  Round one, `4d583c0..268ac52`, eight findings, fixed in `4e06139`:
+
+  - `runners` allowlisted thirteen tools by wildcard (`make *`, `python3 *`, `node *`, ...), which `/mx:permissions-review` names as equivalent to allowing everything, so the containment the checkout exists for did not hold and an incoming PR's Makefile would have run on your machine → fixed, both lists name subcommands now, `Bash(git *)` included
+  - a checkout left by a killed run was removed blind, which would have pulled the tree out from under a live reviewer of the same range → fixed, it refuses and names the recovery
+  - `drop_checkout` reported removal whichever way it went, so a checkout still standing read as gone → fixed, three outcomes, git's reason included
+  - the checkout is never set up, so a suite needing an install had nowhere to get it → the brief says so, A12, and D11 is the open half
+  - `--help` pointed at a `runners` list it does not print → fixed, it names where the list is
+  - the Tests brief carried five prose tells and a restore with no reason → fixed, rewritten with the why
+  - the axis overview carried the mechanism → fixed, it carries what the caller needs instead
+  - this ticket's first comment describing the script two versions back → fixed, its demo is marked superseded above and this round carries the current one
+
+  Round two, `268ac52..4e06139`, four findings and two nits, fixed in `6bdc94e`:
+
+  - `Bash(git grep *)` was still arbitrary code execution, in every reviewer, in your worktree: `git grep -O<cmd>` hands the command to a shell. Probed here → fixed, the entry is gone and searching is the Grep tool's
+  - six rules had only their starred form, and a trailing glob wants an argument, so bare `pytest`, `cargo test` and `go test` were denied: the axis would have lost its mutation evidence to a denial → fixed, both forms
+  - a brief that fails to render left an orphan checkout, which the new refusal then made permanent for every later run → fixed, the checkout comes after the briefs
+  - running a suite runs the author's build files, and nothing a caller reads said so → fixed in `--help`, the skill and `/mx:review-pr`, and D10 is the open half
+  - "a mutation the suite passes" read backwards, and `runners` had lost its locative → fixed
+
+  Not re-argued: `git diff --output=<path>` writes outside the report directory, which `claude/settings.json` already grants globally, and the axis overview naming what the Tests axis does, which round one of the first build declined as the overview case.
+
+- [D15] Friction, this round
+
+  - The two rounds of review on the amend cost two more `claude -p` fleets and about 25 minutes, and each round's fixes are what the next round reads. The thing that made them pay was the reviewer probing live (`git grep -O` is not something a reading of the list would have caught), which is the same reason the Tests axis now gets a checkout.
+  - `/mx:permissions-review` holds the bar this round twice failed against, and nothing pointed at it from where the rules were being written: it is a skill about scanning transcripts for prompts, so neither `/mx:orient` nor the code-review skill mentions it, and a worker writing an allowlist finds it only by having read it before. Its Safety bar section is the part that binds anyone writing a permission rule anywhere.
