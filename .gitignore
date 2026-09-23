@@ -6,6 +6,8 @@ scratch/
 __pycache__/
 
 agent/show/**/*.png
+docs/figures/*.png
+agent/show/**/out/
 agent/board.html*
 agent/diffviews/
 agent/show/context-format/*.json

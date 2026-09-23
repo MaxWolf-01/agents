@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# The skill change demoed the way its own table says a skill change is demoed:
+# one session driven twice, where the difference is the point.
+#
+# Both runs get the same prompt, a two-table schema decision settled in a
+# grilling round and due in a spec's Decisions, and a copy of this branch's mx
+# plugin, differing only in the show skill they open: the skill as it stood
+# (`before-SKILL.md`), or the table. Each run gets a scratch root of its own,
+# well away from this one, holding one plugin and one toy repo, so neither
+# session can read the skill the other was given. What each run left on disk is
+# the comparison, and it lands under out/ beside this file. An after run that
+# builds nothing is the table not firing: the comparison is printed either way
+# and the run then exits nonzero, since a run that skipped its figure otherwise
+# reads exactly like one that drew it.
+#
+# The prompt opens the skill by hand. Reaching it from the two stations on its
+# own belongs to [A grilling round draws its figures, opens them first, and
+# re-renders them as the design moves](../../../tickets/figures-and-demos/02-spec-figures.md)
+# and [A landing stages the demo file in a tmux session on the user's
+# machine](../../../tickets/figures-and-demos/03-landing-demo.md).
+#
+# What a run costs, since it is the same file the session on the user's machine
+# runs: two non-interactive Sonnet sessions against a logged-in `claude`, a few
+# minutes, and the public internet (the render pulls mermaid-cli through npx).
+# Each session has unrestricted `Bash` on this machine, as an agent driven with
+# no one watching: it is pointed at its toy repo, not confined to it.
+set -eu
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(git -C "$here" rev-parse --show-toplevel)
+out=$here/out
+model=sonnet
+
+for cmd in claude jq git; do
+    command -v "$cmd" > /dev/null || { echo "demo needs $cmd on PATH" >&2; exit 1; }
+done
+# The render a run does goes through mermaid-cli, which otherwise downloads a
+# Chromium of its own.
+chromium=$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)
+if [ -n "$chromium" ]; then export PUPPETEER_EXECUTABLE_PATH=$chromium; fi
+
+work=$(mktemp -d /tmp/show-table-demo.XXXXXX)
+outw=$work/out
+mkdir -p "$outw"
+roots=
+published=
+publish() { # out/ is replaced wholesale as the run ends, failure included
+    [ -n "$published" ] && return 0
+    published=1
+    rm -rf "$out"
+    mv "$outw" "$out"
+}
+cleanup() {
+    publish
+    rm -rf "$work" ${roots:-}
+}
+trap cleanup EXIT
+
+if [ -t 1 ]; then
+    step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+else
+    step() { printf '\n== %s\n' "$*"; }
+fi
+
+prompt="/mx:show We are mid-grilling on the \`orders\` feature; its spec is at \
+agent/tickets/orders/spec.md, and this round settled one call: an order's lines live in \
+their own table. \`orders\` holds id, customer, placed_at, status; \`order_lines\` holds \
+id, order_id, sku, qty, unit_price. One order has many lines, and a line belongs to \
+exactly one order. A line's price is the price at the time of the order, not a lookup \
+into the product. Write the Decisions entry, give the decision what this station gives a \
+decision of its shape, and end your turn with one line telling me where to look."
+
+step "the prompt both runs get"
+printf '%s\n' "$prompt" | fold -s -w 78
+
+failed=
+why=
+
+drive() { # <phase>
+    phase=$1
+    root=$(mktemp -d "/tmp/show-table-$phase.XXXXXX")
+    roots="$roots $root"
+    eval "root_$phase=\$root"
+    cp -r "$repo/mx" "$root/plugin"
+    want=$repo/mx/skills/show/SKILL.md
+    [ "$phase" = before ] && want=$here/before-SKILL.md && cp "$want" "$root/plugin/skills/show/SKILL.md"
+    # The copy is the whole comparison, so the arm is asked what it holds.
+    cmp -s "$want" "$root/plugin/skills/show/SKILL.md" ||
+        { echo "the $phase arm's plugin does not hold $want" >&2; exit 1; }
+
+    toy=$root/repo
+    mkdir -p "$toy/agent/tickets/orders"
+    cat > "$toy/agent/tickets/orders/spec.md" <<'SPEC'
+---
+status: draft
+---
+
+# Orders: taking an order and keeping it
+
+## Problem Statement
+
+An order is a row in one table today, with its lines pasted into a text column.
+
+## Decisions
+
+- **An order is placed once and never edited.** A correction is a new order that supersedes it. `(you, r1)`
+SPEC
+    git -C "$toy" init -q -b main .
+    toygit() { git -C "$toy" -c user.email=toy@toy -c user.name=toy -c commit.gpgsign=false "$@"; }
+    toygit add -A
+    toygit commit -q -m "the spec after round 1"
+
+    set +e
+    ( cd "$toy" && printf '%s' "$prompt" | claude -p --model "$model" \
+        --plugin-dir "$root/plugin" \
+        --setting-sources "" --strict-mcp-config \
+        --allowedTools "Bash Read Write Edit Glob Grep Skill TodoWrite" \
+        --output-format stream-json --verbose \
+        > "$outw/$phase-stream.jsonl" 2> "$outw/$phase-stderr.txt" )
+    rc=$?
+    set -e
+
+    jq -r --arg root "$root/" '
+        if .type == "assistant" then .message.content[] |
+            if .type == "text" then (.text | select(length > 0) | "\n" + .)
+            elif .type == "tool_use" then "· " + .name + "(" +
+                ((.input.skill // .input.command // .input.file_path // (.input | tostring))
+                 | gsub("\n"; " ") | gsub($root; "") | .[0:96]) + ")"
+            else empty end
+        elif .type == "result" then "\n" + .result
+        else empty end' "$outw/$phase-stream.jsonl" > "$outw/$phase-transcript.txt"
+    cat "$outw/$phase-transcript.txt"
+
+    # A session that never ran leaves the same empty transcript as one that
+    # chose to build nothing, and the second is a result about the skill.
+    if [ "$rc" -ne 0 ] || [ ! -s "$outw/$phase-transcript.txt" ]; then
+        printf '\nthe %s session did not run (claude exited %s). Its stderr:\n' "$phase" "$rc"
+        tail -5 "$outw/$phase-stderr.txt" | sed 's/^/  /'
+        failed=$phase
+        why="the $phase session did not run"
+        return 0
+    fi
+
+    # A run the plugin never drove is a run out of the model's own head, and it
+    # looks exactly like the real thing at exit 0. Read after the run check, so
+    # an empty stream is reported as the session it was, not as a plugin miss.
+    if ! jq -e --arg plugin "$root/plugin" 'select(.type == "system" and .subtype == "init")
+            | (.plugins | any(.path == $plugin)) and (.slash_commands | index("mx:show") != null)' \
+            "$outw/$phase-stream.jsonl" > /dev/null; then
+        printf '\nthe %s session never loaded the plugin at %s, so its run is nothing to do with this skill.\n' \
+            "$phase" "$root/plugin"
+        failed=$phase
+        why="the $phase session ran without the plugin"
+    fi
+}
+
+step "before: the skill as it stood, with no table to look a shape up in"
+drive before
+
+step "after: the same prompt, the same plugin, this branch's skill"
+drive after
+
+if [ -n "$failed" ]; then
+    echo >&2
+    echo "FAILED: $why, so nothing here compares the two skills." >&2
+    echo "Its transcript and stderr are in out/; the rest of the demo is skipped." >&2
+    exit 1
+fi
+
+step "what each run left on disk"
+for phase in before after; do
+    printf '\n%s\n' "$phase"
+    eval "toy=\$root_$phase/repo"
+    changed=$(git -C "$toy" status --porcelain --untracked-files=all | sed 's/^/  /')
+    echo "${changed:-  (nothing; the run left the tree as it found it)}"
+    cp "$toy/agent/tickets/orders/spec.md" "$outw/$phase-spec.md"
+    if [ -d "$toy/agent/show" ]; then
+        cp -r "$toy/agent/show" "$outw/$phase-show"
+    fi
+done
+
+step "the Decisions entry each run wrote"
+for phase in before after; do
+    printf '\n%s\n' "out/$phase-spec.md"
+    sed -n '/^## Decisions/,$p' "$outw/$phase-spec.md" | tail -n +3 | fold -s -w 78 | sed 's/^/  /'
+done
+
+step "the figures each run wrote, and the sample instance beside them"
+for phase in before after; do
+    printf '\n%s\n' "$phase"
+    if [ ! -d "$outw/$phase-show" ]; then
+        echo "  (no show directory; this run built no figure)"
+        continue
+    fi
+    find "$outw/$phase-show" -type f | sort | while read -r file; do
+        printf '\n%s' "out/${file#"$outw/"}"
+        case $file in
+            # A render and a page are looked at, not read.
+            *.svg | *.png | *.html) printf ' (%s bytes)\n' "$(wc -c < "$file")" ;;
+            *) printf '\n'; fold -s -w 78 "$file" | sed 's/^/  /' ;;
+        esac
+    done
+done
+
+step "opening what the after run produced"
+# The page holds the diagram and its sample instance together, so it wins over a
+# bare render whenever the run built one.
+rel=$(cd "$outw" && find after-show -name 'index.html' 2> /dev/null | sort | head -1)
+[ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.html' 2> /dev/null | sort | head -1)
+[ -n "$rel" ] || rel=$(cd "$outw" && find after-show -name '*.svg' 2> /dev/null | sort | head -1)
+publish
+if [ -z "$rel" ]; then
+    echo "the after run built no figure: the table did not fire in this run" >&2
+    exit 1
+else
+    opened=$out/$rel
+    if command -v claude-browser > /dev/null; then
+        claude-browser "$opened"
+    elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
+        xdg-open "$opened"
+    else
+        echo "no display here, so nothing is opened: $opened"
+    fi
+fi

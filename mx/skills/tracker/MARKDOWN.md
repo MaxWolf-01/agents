@@ -51,9 +51,16 @@ A superseded file (`/mx:tracker`, Supersede) is either **tombstoned** (one line 
 
 ## Retire
 
-A ticket is `done` once the user's accept merged it. Retire the files once the work has shipped:
+A ticket is `done` once the user's accept merged it. Retire the files once the work has shipped, and take the show directory of what is retired (`/mx:show`) in the same commit, so no figure or demo outlives the design it drew:
 
-- **Standalone ticket**: `git rm agent/tickets/<slug>.md`, as its own commit once its build has merged into the integration branch. The work arrives as a `--no-ff` merge of its ticket branch and `dispatch review` writes `done` and the ticket's range after that, so no commit of the work is left to carry the removal.
-- **Feature**: `git rm -r agent/tickets/<feature-slug>/`, once the whole feature has shipped and every proposed ticket in it is ruled; an opened one that outlives the feature moves to a standalone ticket first.
+- **Standalone ticket**: `git rm agent/tickets/<slug>.md`, with `agent/show/<slug>/` in the same command where the ticket built one (a decision ticket has none), as its own commit once its build has merged into the integration branch. The work arrives as a `--no-ff` merge of its ticket branch and `dispatch review` writes `done` and the ticket's range after that, so no commit of the work is left to carry the removal.
+- **Feature**: `git rm -r agent/tickets/<feature-slug>/ agent/show/<feature-slug>/`, once the whole feature has shipped and every proposed ticket in it is ruled; an opened one that outlives the feature moves to a standalone ticket first.
+- **Loose branch**: `git rm -r agent/show/<branch>/` on the branch itself, so the merge that lands the work carries the removal; there is no ticket beside it to retire.
 
-Git history preserves both: `git log --diff-filter=D -- agent/tickets` finds retired work. When the repo doesn't track `agent/tickets/`, git has nothing to recover from: move the file into `agent/tickets/done/` instead.
+The untracked renders beside the figure sources survive `git rm -r`, which leaves the directory standing with them inside: `rm -rf` what it leaves.
+
+The research notes (`agent/research/`) the retired tickets cite leave the tree in the same step. Untracked, they are moved rather than deleted: `mkdir -p ~/logs/agent/<repo>/research/ && mv agent/research/<NN>-<slug>.md ~/logs/agent/<repo>/research/`, where the backups reach them and a later session reading the repo does not.
+
+What a README, a PR or the build still needs is promoted out of `agent/show/` in the same commit (`/mx:show`, Promotion).
+
+Git history preserves what it tracked: `git log --diff-filter=D -- agent/tickets agent/show` finds retired work. When the repo doesn't track `agent/tickets/`, git has nothing to recover from: the tickets take the research notes' route, `mv` to `~/logs/agent/<repo>/tickets/`, so a grep of the tree and an agent reading it find only live work.
