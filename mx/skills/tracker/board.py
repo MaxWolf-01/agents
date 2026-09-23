@@ -2138,9 +2138,9 @@ ${columns}
   .btext { font-size: .92rem; line-height: 1.55; }
   .btext > :first-child { margin-top: 0; }
   .btext > :last-child { margin-bottom: 0; }
-  .btext h2 { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); font-weight: 400;
+  .btext h1, .btext h2 { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); font-weight: 400;
     margin: .9rem 0 .35rem; text-transform: lowercase; }
-  .btext h2::after { content: none; }  /* the rule an h2 carries over a group of rows is for a group of rows */
+  .btext h1::after, .btext h2::after { content: none; }  /* the rule an h2 carries over a group of rows is for a group of rows */
   .btext ul, .btext ol { margin: .2rem 0; padding-left: 1.1rem; }
   .btext li { margin-top: .3rem; }
   .btext strong { color: var(--strong); font-weight: 600; }

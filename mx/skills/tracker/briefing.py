@@ -131,7 +131,9 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
     if not answer:
         return None
     said = answer["result"].strip()
-    stands = not said or said.lower().rstrip(".") == UNCHANGED
+    # the word as the prompt writes it, which is in backticks: an answer that keeps them, or ends
+    # the sentence, is the same answer, and taking it for a briefing would put it in the column
+    stands = not said or said.strip("`*. ").lower() == UNCHANGED
     return replace(
         cached,
         text=cached.text if stands else said,

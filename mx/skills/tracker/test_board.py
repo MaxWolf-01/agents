@@ -1807,6 +1807,18 @@ def test_the_briefing_the_cache_holds_is_what_the_board_shows_with_the_time_it_w
     assert "wait on you." not in said, "the board's own count stands in only until a session writes one"
 
 
+def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The cache is written by a thread of its own while the board renders from it, and a version
+    of the board older than the file that is there is the same case: neither is a render that
+    fails."""
+    out = tmp_path / "board.html"
+    cache_path(out).write_text('{"text": "half a fi')
+    render(tracker_roots(tracker), repo, out)
+    assert "wait on you." in briefing_of(out.read_text())
+
+
 def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
     """What a fresh session starts from: the tracker as the board computes it, which is every row's
     marks, its brief, its open questions and the file the rest of it is in."""
