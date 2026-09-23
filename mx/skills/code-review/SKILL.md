@@ -41,6 +41,7 @@ The standards sources are the script's to gather, and the brief it writes for ea
 - [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a standards source for whoever reads the tests when no Tests axis runs, the one light reviewer included.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, commands, output styles, prompt templates).
+- [`CONTEXT-FORMAT.md`](../domain-modelling/CONTEXT-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules, and `glossary-lint` runs on every touched glossary. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
 - The repo's own standards documents, at its root and only there: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, `PRINCIPLES.md`.
 
 ### 4. Run the reviewers

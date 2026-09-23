@@ -18,7 +18,7 @@ A script beside the skill, `review <fixed-point> [--axes correctness,standards,s
 
 ## Comments
 
-`review` beside the code-review skill launches the axes and the skill keeps the judgment: the script resolves the fixed point, pins the range, composes each brief from `briefs/`, runs the axes as `claude -p` reviewers two at a time on an explicit model, and exits nonzero naming an axis that left no report; the skill goes from 113 lines to 81 and the brief texts exist once, in the templates. On branch `ticket/master/review-launcher` (`a4db42a`, `4d24795`, `d7ed489`, `4d583c0`), not merged. The plugin version is not bumped, so this reaches other machines only after a release from the integration branch.
+`review` beside the code-review skill launches the axes and the skill keeps the judgment: the script resolves the fixed point, pins the range, composes each brief from `briefs/`, runs the axes as `claude -p` reviewers two at a time on an explicit model, and exits nonzero naming an axis that left no report; the skill goes from 113 lines to 81 and the brief texts exist once, in the templates. On branch `ticket/master/review-launcher` (`1922f9b`, `0047995`, `274c595`, `8d7908e`), not merged. The plugin version is not bumped, so this reaches other machines only after a release from the integration branch.
 
 **Demo.** *Superseded by the amend round's demo at the bottom of this ticket: the axes no longer run two at a time and the Tests axis now runs in a checkout, so the transcripts below are this round's record and not what the script prints today. The steps still run.*
 
@@ -88,17 +88,17 @@ Every transcript below is a real run of the script on this branch; the two runs 
 
   - A1 `mx/skills/code-review/SKILL.md:36`: step 3 folded into the script, since the ticket's list of what the skill keeps does not name it. What stays under that heading is a pointer to what binds a review, for a reader disposing findings in step 5, not a step the caller runs; it keeps the number because `worker-prompt.md` and `/mx:review-pr` both name "step 5".
   - A2 `mx/skills/code-review/briefs/preamble.md:1`: the delivery and discipline lines live in one preamble template rather than in each axis file, so no line of brief text is written twice; the light brief is preamble + correctness + standards + a note of its own, which is why the fold carries no copy of either brief.
-  - A3 `mx/skills/code-review/review:140`: five filenames at the repo root are the whole of a repo's own standards sources, and there is no flag to add one. Declined the review's `--standards` finding as unexercised; the skill and `--help` now say root-only, so a caller in a repo it does not fit can see it.
+  - A3 `mx/skills/code-review/review:146`: five filenames at the repo root are the whole of a repo's own standards sources, and there is no flag to add one. Declined the review's `--standards` finding as unexercised; the skill and `--help` now say root-only, so a caller in a repo it does not fit can see it.
   - A4 `mx/skills/code-review/review:30`: `--permission-mode manual` with allow rules for reading, git and the report directory, fixed in the script rather than inherited from the session or taken from an env knob.
   - A5 `mx/skills/code-review/review:7`: no `--out`, against the usage line I first shipped: nothing in the repo passed it, and the failure path forgot to print it. A PR review's reports now live in the clone the review ran in.
-  - A6 `mx/skills/code-review/SKILL.md:48`: the model stays the skill's judgment (`--model`), which the ticket's list of what the skill keeps does not name either; the script defaults it (Opus, Sonnet under `--light`) so a caller that says nothing still gets an explicit model.
+  - A6 `mx/skills/code-review/SKILL.md:49`: the model stays the skill's judgment (`--model`), which the ticket's list of what the skill keeps does not name either; the script defaults it (Opus, Sonnet under `--light`) so a caller that says nothing still gets an explicit model.
   - A7 `agent/tickets/review-launcher.md:15`: the criterion is ticked for the substance, not the count: `review <fixed-point>` runs correctness and standards, `--spec` adds the Spec axis, and a diff touching test files adds the Tests axis.
   - A8 `mx/skills/review-pr/SKILL.md:17`: the prior PR discussion travels inside the spec file now, since the briefs are fixed templates. Declined a `--context` flag; that skill's step 3 says so and the Spec brief tells the reviewer a point the discussion settled is not a finding.
   - A9 `mx/skills/code-review/review:1`: no test for the script, `make check`'s `--help` as the ticket asked.
 
 - [D7] Findings, three rounds. Round one ran the full axes against `7123d63..a4db42a` with this ticket as the spec; rounds two and three ran light over each round's own fixes, since by then the diff was the review's own.
 
-  Round one, `7123d63..a4db42a`, 28 findings, fixed in `4d24795`:
+  Round one, `7123d63..a4db42a`, 28 findings, fixed in `0047995`:
 
   - the reviewers got `git diff <fixed-point>...HEAD`, resolved minutes later in their own processes, so a caller committing meanwhile moved the diff out from under them → fixed, both ends pinned once
   - `acceptEdits` auto-approved every write, so the report-directory rule narrowed nothing and concurrent reviewers could edit the tree they were reading → fixed, `manual`, probed
@@ -120,7 +120,7 @@ Every transcript below is a real run of the script on this branch; the two runs 
   - step 3 numbered among the steps while containing no step → declined, A1
   - the axis questions appearing in both the skill's overview and the brief headings → declined, the overview case `SMELLS.md` allows
 
-  Round two, `a4db42a..4d24795`, light on Opus, 9 findings and 6 judgement calls, fixed in `d7ed489`:
+  Round two, `a4db42a..4d24795`, light on Opus, 9 findings and 6 judgement calls, fixed in `274c595`:
 
   - `TEST-SMELLS.md`'s own first line still told a Standards reviewer the baseline binds it "in light mode", the rule round one replaced, in a file the reviewer is told to read in full → fixed
   - the Standards brief listed its baselines by filename and left the test-smell one out of the report instruction → fixed
@@ -133,7 +133,7 @@ Every transcript below is a real run of the script on this branch; the two runs 
   - the process-document test matched any repo's `src/agents/` or `briefs/` → fixed, this workflow's surfaces only
   - six prose calls (an aphorism, a 55-word step 4, a stale locative, prose restating the line under it, a property where an action belonged) → fixed
 
-  Round three, `4d24795..d7ed489`, light on Sonnet: correctness clean, one standards finding, the test-smell bullet still naming the Standards axis as its only other reader → fixed, `4d583c0`.
+  Round three, `4d24795..d7ed489`, light on Sonnet: correctness clean, one standards finding, the test-smell bullet still naming the Standards axis as its only other reader → fixed, `8d7908e`.
 
 - [D8] Friction
 
@@ -144,7 +144,7 @@ Every transcript below is a real run of the script on this branch; the two runs 
 
 ---
 
-The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected axis starts at once. Built for you to rule on: the Tests reviewer gets a checkout of its own, `agent/reviews/<range>/checkout`, a worktree of the pinned tip that the script adds before that reviewer starts and removes when it ends, whichever way it ends. It starts there, mutates code there, runs the project's test command there; the tree you work in and the trees the other axes read are not writable by any reviewer. On the same branch (`268ac52`, `4e06139`, `6bdc94e`), still not merged, still unreleased. The ruling reached me relayed rather than as page comments, so this round marks none of them resolved.
+The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected axis starts at once. Built for you to rule on: the Tests reviewer gets a checkout of its own, `agent/reviews/<range>/checkout`, a worktree of the pinned tip that the script adds before that reviewer starts and removes when it ends, whichever way it ends. It starts there, mutates code there, runs the project's test command there; the tree you work in and the trees the other axes read are not writable by any reviewer. On the same branch (`45c39cb`, `04c97f6`, `1e100d4`), still not merged, still unreleased. The ruling reached me relayed rather than as page comments, so this round marks none of them resolved.
 
 **The allow rules**, which you asked to be told. Every reviewer: `Read`, `Grep`, `Glob`, the read-only git subcommands named in the script's `git_reads` list, and `Edit` under `agent/reviews/<range>/**`, on `--permission-mode manual`, which refuses everything else without asking. The Tests reviewer also gets the test targets named in `runners` (`make test`, `make check`, `nix develop -c make test`, `pytest`, `npm test`, `node --test`, `cargo test`, `go test`, and `uv run`/`uvx`, the two standing exceptions `/mx:permissions-review` names), plus `git restore`, which reaches only the checkout it stands in. Its checkout sits **inside** its report directory, so the one `Edit` rule covers both the code it mutates and the report it writes, and everything outside that directory stays unwritable. Named by subcommand and test target rather than by tool, because `/mx:permissions-review`'s bar is that a wildcard over anything that runs code allows everything; the first cut of this used `make *`, `python3 *` and eleven more like them, and the review caught it.
 
@@ -206,15 +206,15 @@ The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected
 
 - [D13] `Assumptions`, continuing from A9
 
-  - A10 `mx/skills/code-review/review:221`: the script owns the checkout's whole life, where the ruling had the reviewer create it: a reviewer that dies mid-run would otherwise leave a worktree registered in your repo, and the removal would have to live here anyway. It is added after the briefs render, so a template error costs nothing, and removed by the same subshell that ran the reviewer.
-  - A11 `mx/skills/code-review/review:61`: the Tests reviewer's extra rules are the test targets by name plus `uv run`/`uvx`, and `git restore`. Supersedes A4 for this axis: "nothing else" now means nothing outside that list, and the list runs the tree's own code by design.
+  - A10 `mx/skills/code-review/review:227`: the script owns the checkout's whole life, where the ruling had the reviewer create it: a reviewer that dies mid-run would otherwise leave a worktree registered in your repo, and the removal would have to live here anyway. It is added after the briefs render, so a template error costs nothing, and removed by the same subshell that ran the reviewer.
+  - A11 `mx/skills/code-review/review:64`: the Tests reviewer's extra rules are the test targets by name plus `uv run`/`uvx`, and `git restore`. Supersedes A4 for this axis: "nothing else" now means nothing outside that list, and the list runs the tree's own code by design.
   - A12 `mx/skills/code-review/briefs/tests.md:12`: the checkout is the commit as committed, and a suite that cannot run without an install is a line in the report rather than an install the reviewer performs.
   - A13 `mx/skills/review-pr/SKILL.md:18`: an incoming PR's Tests axis is the caller's call, taken in `/mx:review-pr` rather than by a rule in the script, since only the caller knows whether that tip is one they would run tests from.
-  - A14 `mx/skills/code-review/review:227`: a checkout already at the path refuses the run instead of being removed, because removing it blind would pull the tree out from under a reviewer still using it.
+  - A14 `mx/skills/code-review/review:233`: a checkout already at the path refuses the run instead of being removed, because removing it blind would pull the tree out from under a reviewer still using it.
 
 - [D14] Findings, two rounds over the amend, both light on Opus since the diff is the review's own.
 
-  Round one, `4d583c0..268ac52`, eight findings, fixed in `4e06139`:
+  Round one, `4d583c0..268ac52`, eight findings, fixed in `04c97f6`:
 
   - `runners` allowlisted thirteen tools by wildcard (`make *`, `python3 *`, `node *`, ...), which `/mx:permissions-review` names as equivalent to allowing everything, so the containment the checkout exists for did not hold and an incoming PR's Makefile would have run on your machine → fixed, both lists name subcommands now, `Bash(git *)` included
   - a checkout left by a killed run was removed blind, which would have pulled the tree out from under a live reviewer of the same range → fixed, it refuses and names the recovery
@@ -225,7 +225,7 @@ The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected
   - the axis overview carried the mechanism → fixed, it carries what the caller needs instead
   - this ticket's first comment describing the script two versions back → fixed, its demo is marked superseded above and this round carries the current one
 
-  Round two, `268ac52..4e06139`, four findings and two nits, fixed in `6bdc94e`:
+  Round two, `268ac52..4e06139`, four findings and two nits, fixed in `1e100d4`:
 
   - `Bash(git grep *)` was still arbitrary code execution, in every reviewer, in your worktree: `git grep -O<cmd>` hands the command to a shell. Probed here → fixed, the entry is gone and searching is the Grep tool's
   - six rules had only their starred form, and a trailing glob wants an argument, so bare `pytest`, `cargo test` and `go test` were denied: the axis would have lost its mutation evidence to a denial → fixed, both forms
@@ -239,3 +239,50 @@ The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected
 
   - The two rounds of review on the amend cost two more `claude -p` fleets and about 25 minutes, and each round's fixes are what the next round reads. The thing that made them pay was the reviewer probing live (`git grep -O` is not something a reading of the list would have caught), which is the same reason the Tests axis now gets a checkout.
   - `/mx:permissions-review` holds the bar this round twice failed against, and nothing pointed at it from where the rules were being written: it is a skill about scanning transcripts for prompts, so neither `/mx:orient` nor the code-review skill mentions it, and a worker writing an allowlist finds it only by having read it before. Its Safety bar section is the part that binds anyone writing a permission rule anywhere.
+
+---
+
+The rebase round. `master` moved: every-property-gets-a-criterion landed there and edited the Spec reviewer's brief inside the skill, which this branch had already moved into `briefs/spec.md`. Rebased onto `7176f6e`, nine commits replayed, one conflict, in the skill's steps 3 and 4 where this branch's fold had replaced the text master edited. Three of master's edits landed on text this branch moved, and all three are settled:
+
+- "checked against the diff by name" is now "by its id", in `briefs/spec.md`, which is where that brief lives.
+- Master's fifth standards source, `CONTEXT-FORMAT.md` and `ADR-FORMAT.md` when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`), with `glossary-lint` on every touched glossary: the script gathers both files behind that same test, the Standards brief carries the instruction, the skill's step-3 list carries the bullet and its why, and the Standards and light reviewers get `glossary-lint` in their allow rules when the test fires and not otherwise (A15).
+- "a `/tmp` clone" became "a fresh clone" in the delivery line, a sentence this branch deleted along with `--out` (A5). The decision it carries still stands where master put the rest of it, `/mx:review-pr` step 2, which this branch leaves alone. Nothing to carry.
+
+The commits are the same work at new SHAs: the lists above name the rebased ones, and each round's range label is the pre-rebase range its reviewers actually read, kept as the record of what was reviewed.
+
+**Demo.** The verification, all of it from this worktree after the rebase:
+
+        $ make check
+        manifests parse, hooks point at executables, bin/ answers --help
+        $ make test
+        128 passed in 24.44s            # master's glossary-lint and property-coverage tests included
+
+        $ review <a range touching CONTEXT.md> --spec agent/tickets/review-launcher.md    # claude stubbed
+        review: 6603216..8294d82, correctness, standards, spec, tests on opus; reports in .../agent/reviews/6603216..8294d82
+        $ grep FORMAT.md .../briefs/standards.md
+        - .../mx/skills/domain-modelling/CONTEXT-FORMAT.md
+        - .../mx/skills/domain-modelling/ADR-FORMAT.md
+        $ grep -o 'Bash(glossary-lint[^)]*)' .../standards.log
+        Bash(glossary-lint) Bash(glossary-lint *)
+        $ grep -c glossary-lint .../correctness.log
+        0
+        $ grep -c 'by its id' .../briefs/spec.md
+        1
+
+        $ review HEAD~1 --light                                                           # claude stubbed
+        $ grep -c glossary-lint .../light.log     # a range touching no glossary and no ADR
+        0
+
+   The Tests axis in that first run took its checkout and gave it back, as it does on any range: `git worktree list` afterwards holds this worktree and nothing of the review.
+
+**I need from you**: nothing new. D9 to D12 stand as they were.
+
+**Details, if you want them**
+
+- [D16] `Assumptions`, continuing from A14
+
+  - A15 `mx/skills/code-review/review:59`: `glossary-lint` reaches the Standards and light reviewers as an allow rule, gated on the same test that adds the two format files, and it is the one command outside git and the test targets any reviewer may run. It reads and reports, the workflow owns it, and the axis handed a format it checks by hand should not be denied the mechanical half of it.
+
+- [D17] Friction
+
+  - A ticket comment that names commits goes stale the moment the branch is rebased, and this one named nine. Nothing catches that: the review page renders from `diff:` ranges the orchestrator writes, and the prose around them is on its own. Rewriting them by hand is what this round did.

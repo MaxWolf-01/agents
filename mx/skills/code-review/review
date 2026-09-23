@@ -54,6 +54,9 @@ git_reads=("Bash(git status)" "Bash(git status *)" "Bash(git log)" "Bash(git log
            "Bash(git describe *)" "Bash(git shortlog)" "Bash(git shortlog *)"
            "Bash(git branch --list *)" "Bash(git branch -a)"
            "Bash(git worktree list)" "Bash(git worktree list *)" "Bash(git check-ignore *)")
+# `glossary-lint` is the mechanical half of the glossary format and reads only,
+# so the axis handed that format runs it.
+linters=("Bash(glossary-lint)" "Bash(glossary-lint *)")
 # The project's test command, by the test target and not by the tool, and
 # `git restore` to undo a mutation, which reaches only the checkout the Tests
 # reviewer stands in. A command this project needs that is missing here is a
@@ -108,11 +111,13 @@ git diff --quiet "$base" "$head" && die "$diff_cmd is empty; nothing to review"
     echo "review: uncommitted changes in $root are not part of $range" >&2
 
 touched=$(git diff --name-only "$base" "$head")
-# What a test file is called in the languages this workflow meets, and what a
-# process document is: two questions the diff answers.
+# What a test file is called in the languages this workflow meets, what a
+# process document is, and what a glossary or an ADR is: three questions the
+# diff answers.
 touches() { printf '%s\n' "$touched" | grep -Eq "$1"; }
 touches '(^|/)(tests?|spec)/|(^|/)(test_[^/]+|conftest)\.py$|_test\.(py|go|ts|js|rs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.java$' && tests=1 || tests=
 touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|(^|/)\.?claude/(commands|agents|output-styles)/|prompt[^/]*\.md$' && process=1 || process=
+touches '(^|/)CONTEXT(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
@@ -137,6 +142,7 @@ done
 # else.
 sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
 [ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
+[ -n "$formats" ] && sources+=("$skill/../domain-modelling/CONTEXT-FORMAT.md" "$skill/../domain-modelling/ADR-FORMAT.md")
 for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
     [ -f "$root/$f" ] && sources+=("$root/$f")
 done
@@ -238,6 +244,8 @@ reviewer() { # <axis>
     # The Tests reviewer starts in its own checkout, so the test command it
     # finds runs there without a path of its own.
     if [ "$axis" = tests ]; then cwd=$checkout; allowed+=("${runners[@]}"); fi
+    # Whoever reads the glossary format runs the half of it that is mechanical.
+    if [ -n "$formats" ]; then case $axis in standards|light) allowed+=("${linters[@]}") ;; esac; fi
     # Echoed whole, redirections and working directory included, so the
     # transcript holds the command that produced a report, or the one that
     # produced nothing.
