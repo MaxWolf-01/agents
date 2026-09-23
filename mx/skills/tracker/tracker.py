@@ -22,6 +22,7 @@ Examples:
     tracker new map-columns --parent csv-import --priority 2 --size M
     tracker set map-columns status=claimed
     tracker rule map-columns D3 "keep it in the fast suite"
+    tracker drop map-columns             # a ticket nothing shipped: the reject ruling
     tracker retire csv-import
     tracker hook                         # install the pre-commit hook that runs `check`
 """
@@ -471,10 +472,7 @@ def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
     known = {top / name for name in git(top, "ls-files").splitlines()}
     leaving = sorted(owned(retiring, tracker, top))
     tracked = [path for path in leaving if path in known]
-    edited = [path for path in tracked + [one.path for one in unblocking(retiring, tracker)]
-              if git(top, "status", "--porcelain", "--", str(path.relative_to(top))).strip()]
-    if edited:
-        raise Refused([f"{', '.join(str(path.relative_to(top)) for path in edited)} has changes no commit holds; git history is what keeps a retired file, so commit them first"])
+    refuse_uncommitted(tracked + [one.path for one in unblocking(retiring, tracker)], top)
     if tracked:
         run(top, "git", "rm", "-q", *[str(path.relative_to(top)) for path in tracked])
     for path in [path for path in leaving if path not in known and path.exists()]:
@@ -491,6 +489,43 @@ def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
     others = len(retiring) - 1
     print(f"retired {slug}" + (f" and {others} child ticket{'s' if others > 1 else ''}" if others else "") + "; staged, not committed")
     return 0
+
+
+@app.command(name="drop")
+def drop(slug: Annotated[str, tyro.conf.Positional]) -> int:
+    """Take a ticket nothing shipped out of the tracker: the reject ruling, and a proposal withdrawn.
+    `git rm`s the file and drops the blocking edges onto it from the tickets that stay, printing each
+    step; the commit is the caller's, and the reason for the drop goes in its message, since git
+    history is where the file and that reason are found afterwards. Refuses a `done` ticket, which is
+    `retire`'s, and refuses while a ticket that stays names it as its parent or cites one of its
+    properties.
+
+    Args:
+        slug: the ticket to drop.
+    """
+    tracker = here()
+    top = toplevel(tracker.root)
+    dropping = tracker.ticket(slug)
+    if dropping.status == "done":
+        raise Refused([f"{slug} is done; retiring is what takes shipped work out, with the show directory and the notes it owns"])
+    if children := tracker.children(slug):
+        raise Refused([f"{', '.join(one.slug for one in children)} names {slug} as its parent ticket; a child ticket goes before the ticket it is part of"])
+    if citing := cites_into([dropping], tracker):
+        raise Refused(["a ticket that stays cites a property of the one dropping, and every reader refuses a citation that names no ticket:", *citing])
+
+    staying = unblocking([dropping], tracker)
+    refuse_uncommitted([dropping.path, *[one.path for one in staying]], top)
+    run(top, "git", "rm", "-q", str(dropping.path.relative_to(top)))
+    unblock([dropping], tracker, top)
+    print(f"dropped {slug}; staged, not committed")
+    return 0
+
+
+def refuse_uncommitted(paths: Sequence[Path], top: Path) -> None:
+    """A file leaves by `git rm`, so what no commit holds would leave with no way back."""
+    edited = [path for path in paths if git(top, "status", "--porcelain", "--", str(path.relative_to(top))).strip()]
+    if edited:
+        raise Refused([f"{', '.join(str(path.relative_to(top)) for path in edited)} has changes no commit holds; git history is what keeps a file that leaves, so commit them first"])
 
 
 def descendants(slug: str, tracker: Tracker, seen: frozenset[str] = frozenset()) -> list[Ticket]:

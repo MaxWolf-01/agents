@@ -762,6 +762,70 @@ def test_retiring_is_refused_while_a_ticket_that_stays_cites_a_property_of_one_l
     assert (tickets / "one-flow.md").exists()
 
 
+@pytest.mark.parametrize("status", ["proposed", "open", "claimed", "review"])
+def test_dropping_takes_a_ticket_nothing_shipped_out_and_leaves_no_edge_onto_it(
+    tickets: Path, repo: Path, status: str
+) -> None:
+    """The reject ruling: the file goes, git history keeps it and the reason the commit gives, and
+    the tickets that stay are left with no reference that names no ticket."""
+    ticket(tickets, "pick-a-date-library", status=status)
+    staying = ticket(tickets, "map-columns", **{"blocked-by": "[pick-a-date-library, one-flow]"})
+    ticket(tickets, "one-flow")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+
+    said = run(repo, "drop", "pick-a-date-library")
+    assert said.code == 0, said.said
+    assert said.out.splitlines() == [
+        "+ git rm -q agent/tickets/pick-a-date-library.md",
+        "+ drop pick-a-date-library from map-columns's blocked-by",
+        "+ git add agent/tickets/map-columns.md",
+        "dropped pick-a-date-library; staged, not committed",
+    ], said.out
+    assert not (tickets / "pick-a-date-library.md").exists()
+    assert git(repo, "show", "HEAD:agent/tickets/pick-a-date-library.md"), "git history keeps the file"
+    assert "D  agent/tickets/pick-a-date-library.md" in git(repo, "status", "--short"), "and the removal is staged"
+    assert run(repo, "get", "map-columns", "blocked-by").out == "one-flow\n", "the edge onto it goes, the others stay"
+    assert "M  agent/tickets/map-columns.md" in git(repo, "status", "--short")
+    assert run(repo, "check", str(staying)).code == 0, "nothing is left naming no ticket"
+
+
+def test_dropping_a_done_ticket_is_refused_as_retirings(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the ticket")
+    said = run(repo, "drop", "one-flow")
+    assert said.code == 1 and "retiring is what takes shipped work out" in said.err
+    assert (tickets / "one-flow.md").exists()
+
+
+def test_dropping_is_refused_while_a_ticket_that_stays_names_it(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", "## Properties\n\n- P1 A ticket is read whole or refused.\n")
+    child = ticket(tickets, "map-columns", parent="one-flow")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+
+    said = run(repo, "drop", "one-flow")
+    assert said.code == 1 and "map-columns names one-flow as its parent ticket" in said.err
+    child.unlink()
+    citing = ticket(tickets, "saved-views", "## Acceptance criteria\n\n- [ ] `one-flow#P1` holds.\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "one more")
+    said = run(repo, "drop", "one-flow")
+    assert said.code == 1 and f"{citing}:{line_of(citing, 'one-flow#P1')}: one-flow#P1" in said.err
+    assert (tickets / "one-flow.md").exists()
+
+
+def test_dropping_a_ticket_with_changes_no_commit_holds_is_refused(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the ticket")
+    path.write_text(path.read_text() + "\nA line nothing has committed.\n")
+    said = run(repo, "drop", "one-flow")
+    assert said.code == 1 and "git history is what keeps a file that leaves" in said.err
+    assert path.exists()
+
+
 def test_retiring_a_ticket_whose_work_has_not_landed_is_refused(tickets: Path, repo: Path) -> None:
     ticket(tickets, "one-flow", status="review")
     git(repo, "add", "-A")
@@ -777,7 +841,7 @@ def test_retiring_a_file_with_changes_no_commit_holds_is_refused_before_anything
     git(repo, "commit", "-q", "-m", "the ticket")
     path.write_text(path.read_text() + "\nA line nothing has committed.\n")
     said = run(repo, "retire", "one-flow")
-    assert said.code == 1 and "git history is what keeps a retired file" in said.err
+    assert said.code == 1 and "git history is what keeps a file that leaves" in said.err
     assert path.exists()
 
 

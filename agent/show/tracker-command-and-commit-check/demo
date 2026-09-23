@@ -24,7 +24,7 @@ TICKETS = WORK / "agent" / "tickets"
 TRACKER = REPO / "mx" / "bin" / "tracker"
 CORPUS = REPO / "mx" / "skills" / "tracker" / "corpus"
 PATH = f"{REPO / 'mx' / 'bin'}:{os.environ['PATH']}"
-SUBCOMMANDS = ("check", "get", "data", "context", "frontier", "new", "set", "rule", "retire", "hook")
+SUBCOMMANDS = ("check", "get", "data", "context", "frontier", "new", "set", "rule", "drop", "retire", "hook")
 
 
 def git(*args: str, at: Path = WORK) -> None:
@@ -82,8 +82,8 @@ def steps() -> list[dict]:
              "<code>--help</code> is the reference for what each subcommand takes and what it refuses; the "
              "tracker skill keeps the flow and the judgment, and the two never say the same thing.",
         runs=[(shown, said.split("╭─ options")[0].rstrip() + "\n…")],
-        look="Five subcommands read (check, get, data, context, frontier), four write (new, set, "
-             "rule, retire), one installs the commit hook. The rest of this run, and each "
+        look="Five subcommands read (check, get, data, context, frontier), five write (new, set, "
+             "rule, drop, retire), one installs the commit hook. The rest of this run, and each "
              "subcommand's own <code>--help</code>, is beside this page in "
              "<code>out/tracker-help.txt</code>.",
     ))
@@ -205,6 +205,31 @@ def steps() -> list[dict]:
     ran(str(TRACKER), "set", "map-columns", "status=done")
     git("add", "agent/tickets")
     git("commit", "-q", "-m", "map-columns landed", "--no-verify")
+    (TICKETS / "pick-a-date-library.md").write_text(
+        "---\nstatus: proposed\npriority: 3\nsize: S\n---\n\n"
+        "# Pick a date library\n\n## Brief\n\nWhat pick-a-date-library is, cold.\n")
+    (TICKETS / "saved-views.md").write_text(
+        (TICKETS / "saved-views.md").read_text().replace(
+            "blocked-by: [map-columns]", "blocked-by: [map-columns, pick-a-date-library]"))
+    git("add", "agent/tickets")
+    git("commit", "-q", "-m", "a proposal, and the ticket that waits on it", "--no-verify")
+    found.append(dict(
+        title="Dropping a ticket nothing shipped",
+        said="Your reject ruling deletes the ticket, and every ticket that named it would then be "
+             "refused at commit, since a reference that names no ticket is refused by every reader. "
+             "<code>drop</code> is that ruling as one command: the file leaves by "
+             "<code>git rm</code>, so history keeps it and the reason the commit gives, and the "
+             "edges onto it leave with it. A ticket a surviving one names as its parent, or cites "
+             "a property of, is refused instead: those have to go first.",
+        runs=[ran(str(TRACKER), "drop", "pick-a-date-library"),
+              ran(str(TRACKER), "get", "saved-views", "blocked-by"),
+              ran(str(TRACKER), "drop", "board-orients", refused=True)],
+        look="saved-views keeps the edge it still has and loses the one onto a ticket that is gone. "
+             "board-orients is refused because it shipped: taking shipped work out is retiring, "
+             "which is the next panel, and it carries the show directory and the notes with it.",
+    ))
+    git("commit", "-q", "-m", "reject pick-a-date-library: hyphen-dt covers it", "--no-verify")
+
     found.append(dict(
         title="Retiring, and where each file goes",
         said="Nothing leaves irrecoverably. A tracked file leaves by <code>git rm</code>, so history keeps "
