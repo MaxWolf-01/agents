@@ -190,3 +190,64 @@ right, but the render you open is yours to make.
   - `board` still cannot render this repo's own board on a dispatch worker host (01's friction), so
     half this ticket's demo is unproducible here and I verified it from a copied tracker in a
     scratch repo instead.
+
+The two legibility defects from the read of the rendered board are fixed in `a2c61af`, on the same
+branch, still not merged.
+
+The name no longer gives up its width: the review page and GitHub links beside it wrap under it
+instead. And a row's fixed columns are measured rather than set by hand — the feature, the number
+and what the row asks over the whole board, so those run straight down every row of it; the time,
+the priority and the blockers over each group, since a group of quick unblocked tickets has no use
+for the width an XL one needs. On the demo tracker at 1500px the name and brief column goes from
+300px to 601px: both names whole with their links beside them, and the brief reading to its
+eighty-fifth character rather than its forty-fifth.
+
+**Demo**
+
+The same two commands as above, then look at the board at 1500, 1100 and 920px wide, in both
+schemes:
+
+    $ uv run mx/skills/tracker/demo_tracker.py /tmp/board-demo
+    /tmp/board-demo/agent/tickets
+    $ cd /tmp/board-demo && board agent/tickets --no-watch --no-open
+    /tmp/board-demo/agent/board.html
+
+- At 1500 and 1100px, `Map columns once per bank` and `A faster test suite` read whole, with
+  `review page` and `ledger-org/ledger#57` beside them; at 920px the row reflows and all of it fits
+  on one line.
+- The brief now runs to the edge of the row rather than stopping short of it, in every group.
+- `needs my review` sets its time, priority and blocker columns to what its own rows need; `frontier`
+  keeps the wider ones, because it holds the `half a day` and `several sessions` tickets. Each column
+  still runs straight down the group you are reading.
+- On this repo's own board the eight long H1s still truncate, which is the spec's Decision, but none
+  of them truncates while a link on its row is whole.
+
+**I need from you**
+
+- [D9] **The trailing three columns are measured per group, not per board.** That is what recovers
+  the empty width: `needs my review` needs 6 characters of time where `frontier` needs 16. The cost
+  is that the time, the priority and the blockers sit at different x in different groups, so a
+  column runs down a group rather than down the whole page; the feature, the number and what the
+  row asks are still measured board-wide and do run down the page. The alternative is one width for
+  the whole board, which is what left the 150px empty.
+
+**Details, if you want them**
+
+- [D10] Assumptions
+  - A14 `mx/skills/tracker/board.py:1049`: a column's width is a count of characters of the marks'
+    monospace (`--mark-char`, IBM Plex Mono's .6em advance with slack for a fallback), measured from
+    the marks' own vocabularies and from the tracker's own names; render-lint's escape check is what
+    holds that metric, since a mark that outgrew its column would spill visibly.
+  - A15 `mx/skills/tracker/board.py:1036`: a tracker's own names are capped at the width the column
+    had when it was fixed, so a runaway feature name or blocker reference costs the row no more than
+    before: the name is cut with an ellipsis, the reference wraps.
+  - A16 `mx/skills/tracker/board.py:1214`: the name keeps its words and its links wrap under it,
+    rather than the links shrinking first; an ellipsised `ledger-org/ledg…` reads as nothing, while
+    a link on a second line still reads as itself.
+  - A17 `mx/skills/tracker/board.py:1162`: the graph panel's share of a wide window goes from 26rem
+    to 22rem, which is the rest of the width the row had spare; the graph scales to it.
+- [D11] Friction
+  - The columns were hand-set to values I had measured once against the demo tracker's content, and
+    both defects came out of that: numbers that fit one tracker's widest row and nothing else. The
+    board knows every mark it is about to draw, so the widths are derivable, and deriving them made
+    the row narrower to write as well as wider to read.
