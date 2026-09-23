@@ -343,6 +343,21 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     assert '"id": "K_b_quoted"' in page
 
 
+def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(tracker: Path) -> None:
+    """The graph beside the rows is a preview: the page carries a second view of the same graph,
+    over the board, and builds a third in a window of its own. Both are drawn from the preview's
+    own sources, so the page holds one copy of each graph however many views show it, and both
+    carry the feature/whole-tracker switch, which is what makes it work in all three."""
+    page = page_of(tracker)
+    for opener in ("gopen", "gwinopen", "gwinfull", "gclose"):  # from the preview, and to the window
+        assert f'id="{opener}"' in page, opener
+    overlay = re.search(r'<div id="gfull">.*?</div></div>\n\n<div id="help"', page, re.S).group(0)
+    assert re.findall(r'data-gmode="(\w+)"', overlay) == ["feature", "all"]
+    assert 'class="mermaid"' not in overlay, "the overlay carries a graph source of its own"
+    # one source per feature that has a graph, plus the whole tracker's, and no more
+    assert page.count('<pre class="mermaid"') == 2
+
+
 def test_a_row_links_its_review_page(tracker: Path) -> None:
     dv = tracker.parent / "diffviews"
     (dv / FEAT).mkdir(parents=True)

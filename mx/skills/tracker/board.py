@@ -65,6 +65,13 @@ graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
 
+That panel is a preview. The same graph opens at full size over the board, from
+the panel itself, the `full` button, the `f` key or the address's #graph, and in
+a window of its own beside the board from `window` or `w`; both scroll and drag
+to pan, take the feature and whole-tracker switch, and go to a ticket's row when
+a node is clicked, the overlay closing on it and the window leaving the board to
+move behind it.
+
 One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
 that has a worktree on a branch named after it (how dispatch cuts a feature
@@ -1759,7 +1766,32 @@ ${columns}
      that has not come back yet would widen the column it sits in */
   .mermaid:not(:has(svg)) { display: none; }
   .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon { stroke-width: 2.5px !important; }
+  .side g.node.cur rect, .side g.node.cur polygon,
+    .gfbody g.node.cur rect, .gfbody g.node.cur polygon { stroke-width: 2.5px !important; }
+
+  /* ---- the same graph at full size: over the board, or in a window of its own ---- */
+  .side .gbody { cursor: zoom-in; }  /* the preview opens the full size view */
+  .side .gbody a { cursor: pointer; }
+  #gfull { position: fixed; inset: 0; z-index: 90; display: none; padding: 1.25rem;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
+  #gfull.open { display: block; }
+  #gfull .card { height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); }
+  .gfhead { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+    padding: .45rem .8rem; border-bottom: 1px solid var(--edge); }
+  .gfhead .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
+  /* safe centring: a graph that fits sits in the middle of the box, one that does not starts at
+     the edge the scroll starts from rather than having its first node cut off */
+  .gfbody { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 1rem;
+    display: flex; justify-content: safe center; align-items: safe center; }
+  .gfbody.panning { cursor: grabbing; user-select: none; }
+  /* full size is the graph's own size: what shrinks it in the preview is the width it is given */
+  .gfbody svg { max-width: none !important; }
+  /* the window of its own is the same head and body, with nothing else in the document */
+  body.gwin { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .gorphan { display: none; color: var(--accent-2); font-size: .8rem; font-family: var(--font-mono); }
+  [data-orphan="1"] .gorphan { display: inline; }
 
   /* ---- a group of rows ---- */
   .grp { margin-bottom: 1.75rem; }
@@ -1959,6 +1991,8 @@ ${groups}
 </div>
 <aside class="side" id="side">
   <div class="ghead"><span class="label">dependencies</span><span class="gname" id="gname"></span>
+    <button class="btn" id="gopen" title="the graph at full size, over the board (f)">full</button>
+    <button class="btn" id="gwinopen" title="the graph at full size, in a window of its own beside the board (w)">window</button>
     <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
   <div class="gbody" id="gbody">
     <div class="g" data-feature=""><div class="gnote">open a row or move onto one (j / k)</div></div>
@@ -1966,6 +2000,14 @@ ${groups}
   </div>
 </aside>
 </main>
+
+<div id="gfull"><div class="card">
+  <div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>
+    <span class="seg"><button class="btn" data-gmode="feature" title="the graph of the row's feature (a)">feature</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
+    <button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>
+    <button class="btn" id="gclose" title="back to the board (Esc)">close</button></div>
+  <div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>
+</div></div>
 
 <div id="help"><div class="card"><table>
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
@@ -1978,6 +2020,8 @@ ${groups}
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
 <tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
+<tr><td><kbd>f</kbd></td><td>the graph at full size over the board; a click on a node goes to its row</td></tr>
+<tr><td><kbd>w</kbd></td><td>the graph at full size in a window of its own, beside the board</td></tr>
 <tr><td><kbd>t</kbd></td><td>the other colour scheme</td></tr>
 <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
@@ -2081,6 +2125,7 @@ ${groups}
       nodeHover(el);
     }
     markNode();
+    paintFull();
   }
 
   // Every node carries its full title as a native tooltip.
@@ -2165,14 +2210,177 @@ ${groups}
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
-  function markNode() {
-    for (const n of side.querySelectorAll("g.node.cur")) n.classList.remove("cur");
-    if (!cur?.dataset.num) return;
-    const g = side.querySelector(".g:not([hidden])");
-    const id = cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
-      : "T_" + (g?.dataset.feature === "*" ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
-    g?.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+  // the cursor row's node in the graph on show, which carries the namespace that graph was built
+  // with: f for one feature's own, b for the whole tracker composed from its parts
+  function curNode() {
+    if (!cur?.dataset.num) return "";
+    const composed = side.querySelector(".g:not([hidden])")?.dataset.feature === "*";
+    return cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
+      : "T_" + (composed ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
   }
+  function markCur(root, id) {
+    for (const n of root.querySelectorAll("g.node.cur")) n.classList.remove("cur");
+    if (id) root.querySelector('g.node[id*="-' + id + '-"]')?.classList.add("cur");
+  }
+  function markNode() { markCur(side, curNode()); }
+
+  // ---- the graph at full size: over the board, or in a window of its own ----
+  // The preview is one graph given a column's width; both full size views are the same graph given
+  // its own, drawn again from the preview's source so that a node keeps the id and the "#t-..."
+  // link the board matches a row by. A drawing is kept per source and scheme, so opening and
+  // closing costs one render of each graph rather than one per opening.
+  const full = document.getElementById("gfull"), fullBody = full.querySelector(".gfbody");
+  const fullCache = {};
+  let gwin = null;  // the window of its own, while one is open
+
+  // what the preview is showing, as the two full size views need it
+  function shownGraph() {
+    const g = side.querySelector(".g:not([hidden])"), pre = g?.querySelector(".mermaid");
+    return {
+      src: (pre?.dataset.src ?? pre?.textContent ?? "").trim(),
+      note: g?.querySelector(".gnote:not([hidden])")?.textContent ?? "",
+      name: document.getElementById("gname").textContent, mode, cur: curNode(),
+      theme: document.documentElement.dataset.theme,
+    };
+  }
+
+  async function svgFor(src) {
+    const key = src + "@" + document.documentElement.dataset.theme;
+    if (!fullCache[key]) {
+      const { svg } = await mermaid.render("gf" + Date.now() + "_" + seq++, src + "\n" + classDefs);
+      const box = document.createElement("div");
+      box.innerHTML = svg;
+      nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
+      // mermaid sizes its drawing to whatever box it is given (width="100%", capped at the size it
+      // drew); full size is that size, which is the one its viewBox counts in.
+      const el = box.querySelector("svg"), [, , w, h] = el.getAttribute("viewBox").split(/[\s,]+/);
+      el.setAttribute("width", w);
+      el.setAttribute("height", h);
+      fullCache[key] = box.innerHTML;
+    }
+    return fullCache[key];
+  }
+
+  async function paintFull() {
+    if (!full.classList.contains("open")) return;
+    const g = shownGraph();
+    full.querySelector(".gname").textContent = g.name;
+    full.querySelector(".gnote").textContent = g.note;
+    full.querySelector(".gnote").hidden = !!g.src;
+    full.querySelector(".gsvg").innerHTML = g.src ? await svgFor(g.src) : "";
+    markCur(fullBody, g.cur);
+    fullBody.scrollTo(0, 0);
+  }
+
+  function openFull(on) {
+    full.classList.toggle("open", on);
+    if (on) paintFull();
+  }
+
+  // A graph at full size is wider than the box it sits in, so the box is dragged as well as
+  // scrolled. A drag that moved is not a click, or every pan that ended over a node would open it.
+  function pannable(el) {
+    const doc = el.ownerDocument;
+    let from = null, moved = 0;
+    el.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      from = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+      moved = 0;
+      e.preventDefault();  // no text or node selection under the drag
+    });
+    doc.addEventListener("mousemove", (e) => {
+      if (!from) return;
+      moved = Math.max(moved, Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y));
+      el.classList.toggle("panning", moved > 4);
+      el.scrollLeft = from.left - (e.clientX - from.x);
+      el.scrollTop = from.top - (e.clientY - from.y);
+    });
+    doc.addEventListener("mouseup", () => { from = null; });
+    el.addEventListener("click", (e) => {
+      if (moved <= 4) return;
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove("panning");
+    }, true);
+  }
+
+  // A node at full size takes the board to its row: the overlay closes on it, the window of its
+  // own leaves the board to move behind it.
+  function nodeClicks(el, go) {
+    el.addEventListener("click", (e) => {
+      const a = e.target.closest("a");
+      const href = a && (a.getAttribute("href") ?? a.getAttribute("xlink:href"));
+      if (!href || !href.startsWith("#")) return;
+      e.preventDefault();
+      go(href);
+    });
+  }
+  function attach(el, go) { pannable(el); nodeClicks(el, go); }
+  attach(fullBody, (href) => { openFull(false); openTarget(href); });
+
+  function setMode(m) { mode = m; showGraph(); }
+
+  // The window of its own reads the board through this and paints itself, rather than being
+  // painted by the board: the board reloads whenever the tracker changes, and a handler the board
+  // gave the window before that reload would go on calling a page nobody is looking at.
+  window.boardGraph = { state: shownGraph, svg: svgFor, setMode, goto: (href) => openTarget(href), attach, markCur };
+
+  const WINDOW_JS = `
+    const body = document.querySelector(".gfbody"), note = body.querySelector(".gnote"), svg = body.querySelector(".gsvg");
+    const board = () => { try { return opener && !opener.closed ? opener.boardGraph : null; } catch { return null; } };
+    board()?.attach(body, (href) => board()?.goto(href));
+    for (const b of document.querySelectorAll("[data-gmode]"))
+      b.addEventListener("click", () => board()?.setMode(b.dataset.gmode));
+    let drawn = null, marked = null;
+    setInterval(async () => {
+      const b = board();
+      document.documentElement.dataset.orphan = b ? "" : "1";
+      if (!b) return;
+      const g = b.state(), key = [g.name, g.mode, g.theme, g.src, g.note].join("|");
+      if (key === drawn && g.cur === marked) return;  // a cursor that moved within one graph only moves the mark
+      try {
+        if (key !== drawn) {
+          drawn = key;
+          document.documentElement.dataset.theme = g.theme;
+          document.querySelector(".gname").textContent = g.name;
+          for (const el of document.querySelectorAll("[data-gmode]")) el.classList.toggle("on", el.dataset.gmode === g.mode);
+          note.textContent = g.note;
+          note.hidden = !!g.src;
+          svg.innerHTML = g.src ? await b.svg(g.src) : "";
+          body.scrollTo(0, 0);
+        }
+        marked = g.cur;
+        b.markCur(svg, g.cur);
+      } catch { drawn = null; }  // the board reloaded mid-paint: the next tick paints from the new one
+    }, 200);
+  `;
+
+  function openWindow() {
+    if (gwin && !gwin.closed) { gwin.focus(); return; }
+    gwin = open("", "board-graph", "popup,width=980,height=800");
+    if (!gwin) { say("the browser blocked the graph window"); return; }
+    const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+    gwin.document.write(
+      '<!doctype html><html data-theme="' + document.documentElement.dataset.theme + '">' +
+      '<head><meta charset="utf-8"><title>dependencies — ' + document.querySelector(".top .name span").textContent + "</title>" +
+      "<style>" + css + "</style></head><body class=\"gwin\">" +
+      '<div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>' +
+      '<span class="gorphan">the board this followed is gone</span>' +
+      '<span class="seg"><button class="btn" data-gmode="feature" title="the graph of the row the board is on">feature</button>' +
+      '<button class="btn" data-gmode="all" title="the whole tracker">all</button></span></div>' +
+      '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>' +
+      "<script>" + WINDOW_JS + "<\/script></body></html>"
+    );
+    gwin.document.close();
+  }
+
+  document.getElementById("gopen").addEventListener("click", () => openFull(true));
+  document.getElementById("gclose").addEventListener("click", () => openFull(false));
+  for (const id of ["gwinopen", "gwinfull"]) document.getElementById(id).addEventListener("click", openWindow);
+  full.addEventListener("click", (e) => { if (e.target === full) openFull(false); });
+  // the preview is the way in to the full size view; a node in it still goes to its row
+  document.getElementById("gbody").addEventListener("click", (e) => { if (!e.target.closest("a")) openFull(true); });
+
   function setCur(el, scroll = true) {
     cur?.classList.remove("kcur");
     cur = el ?? null;
@@ -2207,7 +2415,7 @@ ${groups}
     off.has(b.dataset.feature) ? off.delete(b.dataset.feature) : off.add(b.dataset.feature);
     applyFilters();
   });
-  for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => { mode = b.dataset.gmode; showGraph(); });
+  for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => setMode(b.dataset.gmode));
   document.getElementById("sidefold").addEventListener("click", () => side.classList.toggle("folded"));
   search.addEventListener("input", applyFilters);
   // a click on a row's summary moves the cursor there, so the graph follows the mouse too;
@@ -2224,14 +2432,14 @@ ${groups}
 
   const toast = document.getElementById("toast");
   let toastTimer = null;
+  function say(words) {
+    toast.textContent = words;
+    toast.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
+  }
   function copy(text, said) {
     if (!text) return;
-    const say = (words) => {
-      toast.textContent = words;
-      toast.classList.add("on");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
-    };
     // navigator.clipboard is absent outside a secure context
     (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => say("copied " + said), () => say("could not copy " + said));
   }
@@ -2271,7 +2479,12 @@ ${groups}
       return;
     }
     switch (e.key) {
-      case "Escape": help.classList.remove("open"); if (cur?.open) cur.open = false; else setCur(null); break;
+      case "Escape":
+        help.classList.remove("open");
+        if (full.classList.contains("open")) openFull(false);
+        else if (cur?.open) cur.open = false;
+        else setCur(null);
+        break;
       case "?": help.classList.toggle("open"); break;
       case "/": e.preventDefault(); search.focus(); search.select(); break;
       case "j": e.preventDefault(); moveCur(1); break;
@@ -2288,8 +2501,10 @@ ${groups}
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
       case "d": { const href = cur?.querySelector("a.rp")?.href; if (href) window.open(href, "_blank"); break; }
       case "y": copyPath(cur); break;
-      case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
+      case "a": setMode(mode === "all" ? "feature" : "all"); break;
       case "b": side.classList.toggle("folded"); break;
+      case "f": openFull(!full.classList.contains("open")); break;
+      case "w": openWindow(); break;
       case "t": switchScheme(); break;
       case "0": off.clear(); applyFilters(); break;
       default:
@@ -2304,6 +2519,7 @@ ${groups}
   // A click on an in-page link (a graph node, a chip) runs it directly, so the
   // flash fires again when the hash is already the target's and hashchange stays silent.
   function openTarget(hash = location.hash) {
+    if (hash === "#graph") { openFull(true); return; }  // the full size graph, from a link or a reload
     const el = document.getElementById(hash.slice(1));
     if (!el) return;
     for (let d = el; d; d = d.parentElement) if (d.tagName === "DETAILS") d.open = true;
@@ -2324,6 +2540,7 @@ ${groups}
   function saveState() {
     const state = {
       mode, cur: cur?.id ?? null, folded: side.classList.contains("folded"),
+      full: full.classList.contains("open"),
       groups: [...document.querySelectorAll("details.grp[open]")].map((d) => d.id),
       open: [...document.querySelectorAll("details.ticket[open]")].map((d) => d.id).filter(Boolean),
       comments: [...document.querySelectorAll(".ticket details.history[open]")].map((d) => d.closest(".ticket").id),
@@ -2361,6 +2578,8 @@ ${groups}
     .observe(document.querySelector(".top"));
   if (cur) cur.classList.add("kcur");
   applyFilters();
+  // the re-render a tracker change triggers puts the full size graph back where it was
+  if (saved?.full) openFull(true);
   if (!saved && location.hash) openTarget();
 </script>
 </body>

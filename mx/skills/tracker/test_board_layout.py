@@ -15,13 +15,14 @@ matrix. A page that ignores
 `?theme=` would be measured twice in the same scheme, so the scheme switch the house style
 prescribes is the check's precondition rather than a second check.
 
-Each width is measured on four pages: both schemes with every row folded, and both schemes with
-one row opened through its anchor, which lays out the blocks the ticket reads as and paints the
-dependency graph beside it. A board nobody has clicked has no graph and no open body, so without
-the anchor half of what the Property covers is never laid out.
+Each width is measured on six pages: both schemes with every row folded, both schemes with one row
+opened through its anchor, which lays out the blocks the ticket reads as and paints the dependency
+graph beside it, and both schemes with the graph at full size over the board, which #graph opens.
+A board nobody has clicked has no graph and no open body, so without the anchors most of what the
+Property covers is never laid out.
 
-Fourteen widths, two schemes, folded and open is fourteen browser runs of four pages, a minute of
-the suite: the matrix the Property states, rather than a sample of it.
+Fourteen widths, two schemes, folded, open and the full size graph is fourteen browser runs of six
+pages, a minute of the suite: the matrix the Property states, rather than a sample of it.
 
 What render-lint measures is text against its own box, and SVG text against other SVG text: two
 HTML marks overlapping each other are outside its reach, and so is text a box clips rather than
@@ -72,7 +73,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(tracker_roots(transcribed.root), transcribed.repo, out)
-    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in ("", f"#{OPENED}")]
+    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in ("", f"#{OPENED}", "#graph")]
     found = {width: lint(pages, width) for width in WIDTHS}
     assert {width: f for width, f in found.items() if f} == {}
 
@@ -225,6 +226,134 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         assert 0 <= tip["left"] and tip["right"] <= tip["viewport"], (
             f"the {mark} mark's words run off the window: {tip['left']}..{tip['right']} of {tip['viewport']}"
         )
+
+
+# What the graph does once a browser runs it, which is the only place it does anything: the side
+# column's preview, the same graph opened at full size over the board, and the same again in a
+# window of its own. A node is clicked in each full size view, and what the board did with the
+# click is read off the board.
+GRAPH_PROBE = r'''
+import json, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+page_url = Path(sys.argv[1]).resolve().as_uri()
+NODE = "#t-csv-import-04"  # a ticket with an edge, so it is a node in both graphs
+
+def click_node(frame, where):
+    hrefs = frame.eval_on_selector_all(where + " a", "els => els.map((a) => a.getAttribute('href') || a.getAttribute('xlink:href'))")
+    frame.locator(where + " a").nth(hrefs.index(NODE)).click()
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    page = context.new_page()
+    failed = []
+    page.on("requestfailed", lambda r: failed.append(r.url))
+    page.goto(f"{page_url}?theme=night#t-csv-import-02", wait_until="networkidle")
+    page.evaluate("document.fonts.ready")
+    out = {"cdn": not any("mermaid" in url or "elk" in url for url in failed),
+           "ground": page.evaluate("getComputedStyle(document.body).backgroundColor")}
+    wide = "(sel) => document.querySelector(sel)?.getBoundingClientRect().width ?? 0"
+    out["preview_width"] = page.evaluate(wide, ".side .mermaid svg")
+
+    # the overlay: the whole tracker at full size, a node in it, and where the board landed
+    page.click("#gopen")
+    page.wait_for_selector("#gfull .gsvg svg")
+    page.click("#gfull [data-gmode=all]")
+    page.wait_for_timeout(1500)
+    out["overlay"] = {
+        "name": page.inner_text("#gfull .gname"),
+        "width": page.evaluate(wide, "#gfull .gsvg svg"),
+        "nodes": page.eval_on_selector_all("#gfull .gsvg g.node", "els => els.length"),
+        "marked": page.eval_on_selector_all("#gfull .gsvg g.node.cur", "els => els.map((n) => n.id)"),
+        "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
+        "pannable": page.evaluate("(() => { const b = document.querySelector('#gfull .gfbody'); return b.scrollWidth > b.clientWidth })()"),
+    }
+    click_node(page, "#gfull .gsvg")
+    page.wait_for_timeout(400)
+    out["overlay"]["still_open"] = page.evaluate("document.getElementById('gfull').classList.contains('open')")
+    out["overlay"]["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+
+    # the window of its own, which the board goes on driving and which goes on driving the board
+    with page.expect_popup() as popped:
+        page.click("#gwinopen")
+    win = popped.value
+    win.wait_for_selector(".gfbody svg")
+    out["window"] = {
+        "title": win.title(),
+        "scheme": win.evaluate("document.documentElement.dataset.theme"),
+        "ground": win.evaluate("getComputedStyle(document.body).backgroundColor"),
+        "name": win.inner_text(".gname"),
+        "width": win.evaluate(wide, ".gfbody svg"),
+        "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
+    }
+    win.click("[data-gmode=all]")  # the switch in the window moves the board's graph too
+    win.wait_for_timeout(1500)
+    out["window"]["name_all"] = win.inner_text(".gname")
+    out["window"]["board_name"] = page.inner_text("#gname")
+    click_node(win, ".gfbody")
+    page.wait_for_timeout(400)
+    out["window"]["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+    out["window"]["still_open"] = not win.is_closed()
+    page.click("#scheme")  # the board's scheme switch reaches the window
+    win.wait_for_timeout(1500)
+    out["window"]["scheme_after"] = win.evaluate("document.documentElement.dataset.theme")
+    out["node"] = NODE
+    browser.close()
+print(json.dumps(out))
+'''
+
+
+def graph_probe(page: Path) -> dict:
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(page)],
+        input=GRAPH_PROBE, capture_output=True, text=True,
+    )
+    assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-2000:]}"
+    return json.loads(done.stdout)
+
+
+def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The ticket's acceptance criteria, which are all about what a browser does: the whole
+    tracker's graph readable at full size in the overlay, a node clicked in the overlay and in the
+    window bringing the board to that ticket's row, and the switch working in both.
+
+    Readable is measured as the size mermaid drew the graph at, which is what the preview's column
+    shrinks it below: the same graph, several times wider than the preview shows it."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    seen = graph_probe(out)
+    if not seen["cdn"]:
+        pytest.skip("no mermaid: the graph never painted")
+    row = seen["node"].removeprefix("#")
+
+    over = seen["overlay"]
+    assert over["name"] == "whole tracker", f"the overlay's switch left it on {over['name']!r}"
+    assert over["nodes"] >= 8, f"the whole tracker's graph drew {over['nodes']} nodes"
+    assert over["width"] > 2 * seen["preview_width"], (
+        f"the overlay draws the graph {over['width']}px wide, against {seen['preview_width']}px in the preview"
+    )
+    assert over["pannable"], "the whole tracker at full size fits the overlay, so nothing is being panned"
+    assert over["titles"] == over["nodes"], "a node at full size does not carry its full title"
+    assert len(over["marked"]) == 1, f"the cursor's row is marked on {len(over['marked'])} nodes"
+    assert not over["still_open"], "the click left the overlay over the board"
+    assert over["cursor"] == row, f"the click left the board on {over['cursor']!r}"
+
+    win = seen["window"]
+    assert win["title"].startswith("dependencies"), win["title"]
+    assert win["scheme"] == "night" and win["scheme_after"] == "day", "the window did not follow the board's scheme"
+    assert win["ground"] == seen["ground"], f"the window is not on the board's ground: {win['ground']}"
+    assert win["width"] > 2 * seen["preview_width"], f"the window draws the graph {win['width']}px wide"
+    assert win["titles"] > 0, "a node in the window carries no title"
+    assert win["name_all"] == "whole tracker" and win["board_name"] == "whole tracker", (
+        f"the switch in the window left it on {win['name_all']!r} and the board on {win['board_name']!r}"
+    )
+    assert win["cursor"] == row, f"the click in the window left the board on {win['cursor']!r}"
+    assert win["still_open"], "the click closed the window instead of moving the board behind it"
 
 
 if __name__ == "__main__":
