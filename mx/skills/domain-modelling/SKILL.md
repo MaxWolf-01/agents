@@ -35,6 +35,8 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The ma
 │       └── decisions/
 ```
 
+With several contexts, work in the one the current topic belongs to; ask when that is unclear.
+
 Create files lazily, only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `decisions/` exists, create it when the first ADR is needed.
 
 ## During the session
@@ -57,7 +59,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 ### Update CONTEXT.md inline
 
-When a term is resolved, update `CONTEXT.md` right there. Don't batch these up; capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+When a term is resolved, update `CONTEXT.md` right there. Don't batch these up; capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md). An entry is written when `glossary-lint` passes on the file.
 
 `CONTEXT.md` is a glossary and nothing else. Right after a decision settles, the freshly-agreed mechanism feels like the definition. It isn't: the ADR or design doc you just wrote is its home. Touch an entry only when the term's meaning moved, not its implementation.
 
@@ -69,4 +71,14 @@ Only offer to create an ADR when all three are true:
 2. **Surprising without context**: a future reader will wonder "why did they do it this way?"
 3. **The result of a real trade-off**: there were genuine alternatives and you picked one for specific reasons
 
-If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+If any of the three is missing, skip the ADR. What typically qualifies:
+
+- **Architectural shape.** "We're using a monorepo." "The write model is event-sourced, the read model is projected into Postgres."
+- **Integration patterns between contexts.** "Ordering and Billing communicate via domain events, not synchronous HTTP."
+- **Technology choices that carry lock-in.** Database, message bus, auth provider, deployment target. Not every library, just the ones that would take a quarter to swap out.
+- **Boundary and scope decisions.** "Customer data is owned by the Customer context; other contexts reference it by ID only." The explicit no-s are as valuable as the yes-s.
+- **Deliberate deviations from the obvious path.** "We're using manual SQL instead of an ORM because X." Anything where a reasonable reader would assume the opposite. These stop the next engineer from "fixing" something that was deliberate.
+- **Constraints not visible in the code.** "We can't use AWS because of compliance requirements." "Response times must be under 200ms because of the partner API contract."
+- **Rejected alternatives when the rejection is non-obvious.** If you considered GraphQL and picked REST for subtle reasons, record it; otherwise someone will suggest GraphQL again in six months.
+
+Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).

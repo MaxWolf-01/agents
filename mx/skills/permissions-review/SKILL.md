@@ -25,7 +25,7 @@ The scanner's `--help` says how Claude Code matches a command (per segment, with
 
 ### 1. Identify settings files
 
-Global settings (always applies): `~/.claude/settings.json`. If this is a symlink (dotfiles), note the canonical path for editing.
+Global settings (always applies): `settings.json` in the Claude config directory, `$CLAUDE_CONFIG_DIR` or `~/.claude` when unset. If this is a symlink, its target (`readlink -f`) is the file to edit.
 
 Project-level settings (current project only): `<project-root>/.claude/settings.json`.
 
@@ -35,15 +35,12 @@ Read both to understand what's already allowed.
 
 ```bash
 uv run <skill-dir>/scripts/test_scan_unapproved.py
-uv run <skill-dir>/scripts/scan_unapproved.py \
-  ~/.claude/projects/ \
-  <global_settings_path> [<project_settings_path>] \
-  --days <N>
+uv run <skill-dir>/scripts/scan_unapproved.py --days <N>
 ```
 
 The tests cover the shell parsing the scanner depends on. They take a second; a failure means the numbers below are fiction.
 
-`~/.claude/projects/` is the right default: friction rarely stays inside one project. Narrow to one project's directory when asked (`--help` names it).
+The scanner defaults to the settings files of step 1 and every project's sessions, which is the right scope: friction rarely stays inside one project. `--help` says how to narrow it to one project when asked.
 
 Read `--show-auto-approved` when the blocked list looks suspiciously short, and after a Claude Code upgrade.
 
@@ -56,7 +53,7 @@ Drop one-offs (fewer than ~3 occurrences) unless clearly recurring across projec
 ### 4. Apply changes
 
 Split additions:
-- **Global** (`~/.dotfiles/claude/settings.json` or wherever the canonical source is): universal read-only commands useful across all projects.
+- **Global** (the file step 1 found): universal read-only commands useful across all projects.
 - **Project-local** (`<project>/.claude/settings.json`): project-specific make targets, domain tools.
 - **Clean up local**: remove local entries already covered by global, and promote local entries that are clearly project-agnostic.
 

@@ -1,5 +1,6 @@
 ---
 status: open
+blocked-by: [figures-and-demos/06]
 ---
 
 # The dispatch and job machinery, shown: the flow, and what each role types

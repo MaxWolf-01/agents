@@ -1,7 +1,6 @@
 ---
 name: writing-for-humans
 description: "Writing artifact text for cold readers: docs, READMEs, docstrings, comments, UI copy, commit messages, ticket prose. Use when drafting or editing artifact text, when asked to de-slop a file, or when a review needs prose standards."
-user_invocable: true
 ---
 
 Counterpart to `/mx:writing-for-agents`: that skill covers documents that instruct an agent's process; this one covers text that explains or records, read cold by whoever finds it, human or agent. A document that does both (a spec, an ADR) loads both.

@@ -4,6 +4,8 @@ This is my coding agent setup (mainly claude code).
 
 Audiences: `mx/README.md` is for humans learning the workflow and may restate what the skills say; agents orient via `/mx:orient`, and the skills stay the home of the process. `PRINCIPLES.md` is for agents changing the workflow or its harness.
 
+Dispatched workers never load `claude/CLAUDE.md`; `mx/skills/dispatch/worker-prompt.md` stands in for it and copies its workflow, style, tools and taste blocks, adapted to a worker. An edit to one of those blocks is checked against the copy.
+
 @PRINCIPLES.md
 
 # Releasing mx

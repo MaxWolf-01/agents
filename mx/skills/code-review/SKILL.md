@@ -37,12 +37,13 @@ No spec → run **light** (below): one reviewer, no Spec axis, instead of the fu
 
 ### 3. Identify the standards sources
 
-Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Four files join these as standards sources, each passed by absolute path:
+Anything in the repo that documents how code should be written: `CLAUDE.md`, `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `PRINCIPLES.md`. Five files join these as standards sources, each passed by absolute path:
 
 - [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
 - [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**: the Tests axis's own source, and a Standards source in light mode whenever the diff touches tests.
 - `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
 - `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, prompt templates, workflow conventions): a standards source for those hunks.
+- [`CONTEXT-FORMAT.md`](../domain-modelling/CONTEXT-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`CONTEXT.md`, `CONTEXT-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules, and `glossary-lint` runs on every touched glossary, its findings reported as violations. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
 
 ### 4. Spawn the reviewers in parallel
 
@@ -50,7 +51,7 @@ Spawn one subagent per axis, all in a single message so they run concurrently. A
 
 Each spawn carries an explicit model, never left to inherit this session's own: Opus by default, Sonnet by your judgment when the diff is small or trivial, never Fable unless the user names it explicitly for this review.
 
-Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message. Where the diff is in a checkout other than the one you were invoked in, a `/tmp` clone of a PR for one, write that path absolute and inside your own checkout, so the reports outlive the clone.
+Every brief opens with two lines. First, delivery: *"Write your finished report to `agent/reviews/<range>/<axis>.md`, creating the directory."* The reports stay there, gitignored, for the life of the worktree: the aggregator reads files, not a chat message. Where the diff is in a checkout other than the one you were invoked in, a fresh clone of a PR for one, write that path absolute and inside your own checkout, so the reports outlive the clone.
 
 Then the discipline line: *"Read every touched file in full, plus the callers of anything changed, not just the hunks. Build the mental model before judging; a diff read in isolation lies."*
 
