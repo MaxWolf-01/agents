@@ -1,6 +1,5 @@
 ---
 status: claimed
-type: grilling
 priority: 1
 size: L
 ---
@@ -23,7 +22,7 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 - P2 Every machine-read construct has one parser, and every script reads tickets through it.
 - P3 A reference (`parent`, `blocked-by`, `<slug>#P<n>`) that names no ticket or property is refused with its file and line.
 - P4 A ticket's context is its body plus every ancestor's body, assembled one way for the worker and the reviewer alike.
-- P5 No skill, script or glossary entry distinguishes tickets by kind beyond whether a ticket has child tickets (open → Q4 on whether it also distinguishes tickets that need the user).
+- P5 No skill, script or glossary entry distinguishes tickets by kind beyond whether a ticket has child tickets and whether it needs the user in the loop.
 
 ## Decisions
 
@@ -43,11 +42,14 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 
 **Ticket body**
 
-- Sections: Brief (the intent and why, as a technical stakeholder writes it) always; Properties when the ticket has any, as short always/never sentences; Acceptance criteria; Decisions where a call needs its mark; User stories, Testing seams, Out of scope and Fog only when they have content; Comments. (you, r2) Whether a ticket whose deliverable is an answer keeps its own Question and Answer sections: open → Q4.
+- Sections: Brief (the intent and why, as a technical stakeholder writes it) always; Properties when the ticket has any, as short always/never sentences; Acceptance criteria; Decisions where a call needs its mark; User stories, Testing seams, Out of scope and Fog only when they have content; Comments. (you, r2)
+- There is no decision ticket. A ticket whose deliverable is an answer is a ticket like any other: its acceptance criteria say what is decided, and the answer lands in the parent ticket's Decisions (its own, for a top-level ticket), the reasoning in its Comments. The four types (research, prototype, grilling, legwork) go. One frontmatter field says a ticket needs the user in the loop (a grilling, work only the user can do), and dispatch keeps that ticket from a worker; every other ticket, research and prototypes included, goes to a worker and is ruled on its review page. (you, r3)
+- Research lands in the ticket that asked for it: the gist, the sources, the answers its criteria asked for. A companion file only when the material is too long for the ticket; a `/mx:show` artifact when the findings are for the user. `/mx:research` is trimmed to that, and `agent/research/` as a standing artefact goes. (you, r3; trim rather than delete, since `/mx:research` also answers questions outside any ticket: my call)
 
 **The parser**
 
-- One parser, a script in the tracker skill on PATH, called by every script that reads tickets: `board.py`, `property_coverage.py`, `dispatch` (`notes_of`, the `^status:` reads), `dispatch-ctl`, `run-worker.sh`. (you, r1) When it refuses: open → Q5.
+- One parser, a script in the tracker skill on PATH, called by every script that reads tickets: `board.py`, `property_coverage.py`, `dispatch` (`notes_of`, the `^status:` reads), `dispatch-ctl`, `run-worker.sh`. (you, r1)
+- A mismatch is refused at commit, by a git pre-commit hook that runs the parser over the staged ticket files, and again by every reader, each naming the file and line. (you, r3) The hook is installed per repo: `/mx:project-setup` wires it, and dispatch wires it into the repo it stages on a worker host. (my call, r3; the other way is one machine-wide config hook, as the dotfiles do for the session trailer)
 
 **The build**
 
@@ -55,15 +57,9 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 - The live tracker is converted by the scripts ticket's worker, with judgment, not by a migration script: each feature's `spec.md` becomes a top-level ticket and its `NN-slug.md` tickets its child tickets. A shipped feature whose tickets are all done is retired instead of converted. (you, r2; the retire rule my call)
 - The build starts from master once board-orients has merged. (you, r2)
 
-## Open questions
+## Testing seams
 
-- **Q4: whether a ticket whose deliverable is an answer stays its own kind.** Today a decision ticket carries a `type` (research, prototype, grilling, legwork), a Question section and an Answer section, and dispatch routes it by type instead of spawning a worker. Options sketched by the agent, frame unconfirmed:
-  - (a) Every ticket is Brief plus Acceptance criteria. "Decided, and recorded in the parent ticket's Decisions" is a criterion like any other. The one fact dispatch needs is whether the ticket needs the user in the loop (a grilling, hands-on legwork), a single frontmatter field; research and prototypes go to a worker like any build and are ruled on their review page.
-  - (b) Keep the decision ticket and its four types.
-- **Q5: what refuses a mismatch, and when.** Options sketched by the agent, frame unconfirmed:
-  - (a) An mx plugin hook that runs the parser on every ticket file an agent writes, plus every reader refusing with file and line.
-  - (b) A git pre-commit hook on `agent/tickets/**`, plus the readers.
-  - (c) The readers alone.
+The parser's command line is the one seam. P1 to P3 are executable there, as checks over generated ticket files, built by the parser's own ticket. P4 is executable at the same seam once the context assembly exists. P5 is reviewed: by each child ticket's review and by this ticket's close-out. (my call, r3)
 
 ## The incident
 
@@ -88,7 +84,7 @@ As of board-orients' chain (tickets 01 to 10) plus master:
 
 ## Acceptance criteria
 
-- [ ] Q4 and Q5 are decided and recorded above; options outside the lists count.
+- [x] Every question the grilling raised is decided and recorded above.
 - [ ] Every construct in the table above has an owner: read through the parser, merged, or dropped.
 - [ ] The three child tickets are filed with `parent: ticket-file-contract`.
 - [ ] This ticket's close-out review has run over the whole output.
