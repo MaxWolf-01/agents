@@ -11,6 +11,7 @@ and tools that only read: it runs unattended, on the repo the board is rendered 
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -32,8 +33,10 @@ COMMAND = "claude"
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
 # The user's own sessions carry their memory files and hooks; a briefing session is none of their
-# conversations, and the repo's own CLAUDE.md is the one thing about it worth reading.
-SETTINGS = json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(Path.home() / ".claude" / "CLAUDE.md")]})
+# conversations, and the repo's own CLAUDE.md is the one thing about it worth reading. The config
+# directory is read the way the board reads it for transcripts: a machine that moves it moves both.
+CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+SETTINGS = json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(CONFIG_DIR / "CLAUDE.md")]})
 RUN_LIMIT = 900  # seconds a run gets; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
