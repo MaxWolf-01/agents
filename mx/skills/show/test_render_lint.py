@@ -6,7 +6,8 @@
 
 The seam is the command line: a page on disk in, findings and an exit code out, which is how
 every caller uses it and the only place the browser's own measurements can be read. Each page
-here exhibits one condition, and the oracle is what a reader sees on it: two labels printed
+here exhibits one condition, and the oracle is what a reader sees on it: a line wider than the box
+holding it escapes it and the same line in a box wide enough does not; two labels printed
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
 its title off, which is a finding that never fails a run; and text a clip leaves nothing of,

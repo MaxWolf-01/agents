@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
+# Historical artifact as of 2026-09-23, superseded by mx/skills/tracker/demo_tracker.py. Not current; kept as the reasoning trail.
 # Builds a demo tracker for the board-orients prototype: a small git repo for a fictional
 # bookkeeping CLI, "ledger", whose tickets exercise every element the board renders.
 # Rerun to rebuild from scratch; it removes only what it creates here, then renders the board.
 #
 #   agent/prototypes/board-orients/demo-tracker/build.sh [output directory, default /var/tmp/board-orients-demo]
 #
-# Superseded 2026-09-23 by mx/skills/tracker/demo_tracker.py, the copy promoted into the board's
-# checks. Its tickets follow the prototype's reading (questions under a closing comment's
-# "I need from you", a "Ruled: D2" line, a `name:` field), which is the reading the spec replaced.
+# Its tickets follow the prototype's reading (questions under a closing comment's "I need from
+# you", a "Ruled: D2" line, a `name:` field), which is the reading the spec replaced.
 set -euo pipefail
 
 proto=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/board.py

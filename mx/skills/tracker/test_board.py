@@ -46,6 +46,7 @@ from board import (
     Roots,
     board_graph,
     changed_note,
+    loaded,
     content_stamp,
     feature_graph,
     load_features,
@@ -1820,6 +1821,7 @@ def ranked(tmp_path: Path) -> Path:
     ticket(feature / "07-third.md", "open", blocked_by=["04"], priority=1, size="XS", name="Waits on the later one")
     ticket(feature / "08-built.md", "review", priority=2, size="S", name="A build to rule on")
     ticket(feature / "09-shape.md", "open", kind="prototype", priority=1, size="S", name="A shape to pick")
+    ticket(feature / "11-grill.md", "open", kind="grilling", priority=2, size="S", name="A shape to talk through")
     (feature / "10-asked.md").write_text(
         "---\nstatus: open\npriority: 3\nsize: S\n---\n\n# Stopped on a word\n\n"
         "## Questions\n- [D1] **Retry, or fake the clock?** Either way it is four seconds.\n"
@@ -1836,8 +1838,8 @@ def test_the_board_says_what_waits_on_the_user_until_a_session_writes_a_briefing
     """The spec's fallback: the counts the prototype's sentence gives, and no model behind them."""
     said = board.fallback(load_features(ranked, {}, Diffviews(ranked, None), None), [])
     assert said.startswith(
-        "One build to rule on, one question wanting a word and one design session wait on you."
-    ), said
+        "One build to rule on, one question wanting a word and two design sessions wait on you."
+    ), f"a grilling and a prototype are both design sessions, and both are counted: {said}"
 
 
 def test_the_fallback_orders_the_next_picks_by_priority_then_what_they_unlock_then_your_time(ranked: Path) -> None:
@@ -1890,10 +1892,13 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     """The watcher's own reason to exist, which the pass above leaves out: a ticket file moves and
     the page follows it, with the session that writes the briefing told what moved."""
     out = tmp_path / "board.html"
+    when = datetime.now().astimezone()  # a briefing already written, so the opening pass arms nothing
+    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
     render(tracker_roots(tracker), repo, out)  # as main() does before it starts watching
     watching, session = Seen(), board.Briefer(repo, out)
     watching = look(watching, session, tracker, repo, out)
     rendered = out.stat().st_mtime_ns
+    assert session.changed_at is None, "the opening pass has nothing to tell the session about"
 
     ticket(tracker / "new-chore.md", "open")
     look(watching, session, tracker, repo, out)
@@ -1952,18 +1957,23 @@ def test_a_quiet_pass_of_the_watcher_makes_no_model_call(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """The Property at the seam that can fail it. A render has no path to the model at all, so the
-    cost the Property is about is the watcher's: a pass over a tracker that has not moved, with the
-    model on the machine and a briefing already written, runs nothing."""
-    claude = path_with("claude", "echo '{}'")
+    cost the Property is about is the watcher's, and it is only a cost once a session exists: the
+    change that starts one is paid for, and every pass after it over a tracker that has not moved
+    is the thing the Property forbids."""
+    said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
+    claude = path_with("claude", f"echo {shlex.quote(json.dumps(said))}")
     out = tmp_path / "board.html"
-    when = datetime.now().astimezone()
-    Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
     watching, session = Seen(), board.Briefer(repo, out)
-    for _ in range(2):
+    watching = look(watching, session, tracker, repo, out)  # the start is a change: one run is owed
+    assert session.running
+    session.running.join(30)
+    assert len(runs(claude)) == 1
+
+    for _ in range(3):
         watching = look(watching, session, tracker, repo, out)
-    if session.running:
-        session.running.join(30)
-    assert runs(claude) == [], "an unchanged tracker has nothing to tell the briefing session"
+        if session.running:
+            session.running.join(30)
+    assert len(runs(claude)) == 1, "an unchanged tracker has nothing to tell the briefing session"
 
 
 def test_githubs_answer_arms_the_watchers_clock_once_per_answer() -> None:
@@ -2244,6 +2254,8 @@ def test_a_done_blocker_is_the_same_dashed_context_whichever_kind_it_is(tmp_path
     (root / "ledger").mkdir(parents=True)
     ticket(root / "ledger" / "01-waits-on-a-chore.md", "open", blocked_by=["done-chore"])
     ticket(root / "ledger" / "02-waits-on-a-feature.md", "open", blocked_by=["other/01"])
+    # a second waiter on the same done chore, since the list of waits holds one entry per waiter
+    ticket(root / "ledger" / "03-waits-on-it-too.md", "open", blocked_by=["done-chore"])
     (root / "other").mkdir()
     ticket(root / "other" / "01-landed.md", "done")
     ticket(root / "done-chore.md", "done")
@@ -2252,9 +2264,9 @@ def test_a_done_blocker_is_the_same_dashed_context_whichever_kind_it_is(tmp_path
     assert parts, "nothing waits on anything"
     lines = [line for part in parts["features"] for node in part["nodes"] for line in node["lines"]]
     ghosts = [line for line in lines if ":::ghost" in line]
-    assert len(ghosts) == 2, f"one kind of done blocker is drawn and the other is not: {ghosts}"
-    drawn = {edge["line"].strip() for edge in parts["edges"]}
-    assert len(drawn) == 2, f"an edge into a done blocker was dropped with it: {drawn}"
+    assert len(ghosts) == 2, f"a done blocker is drawn twice, or one kind of it is not drawn: {ghosts}"
+    drawn = [edge["line"].strip() for edge in parts["edges"]]
+    assert len(drawn) == len(set(drawn)) == 3, f"an edge into a done blocker was dropped or doubled: {drawn}"
 
 
 def test_an_external_reference_counts_once_however_the_ticket_file_wrote_it(tmp_path: Path) -> None:
@@ -2267,47 +2279,42 @@ def test_an_external_reference_counts_once_however_the_ticket_file_wrote_it(tmp_
     ticket(root / "hub" / "01-the-hub.md", "open")
     ticket(root / "dep" / "01-short.md", "open", blocked_by=["hub/1"])
     ticket(root / "dep" / "02-padded.md", "open", blocked_by=["hub/01"])
+    ticket(root / "waits-short.md", "open", blocked_by=["hub/1"])  # a standalone ticket's own edge
     features, standalone = load(root)
-    assert board.waited_on(features, standalone)["hub/01"] == 2, "the two spellings counted as two tickets"
+    said = board.fallback(features, standalone)
+    assert "accepting it unblocks three" in said, f"the spellings counted apart in the picks: {said}"
+    parts = board_graph(features, standalone)
+    assert parts and len(parts["edges"]) == 3, "and the graph drew edges the count does not agree with"
 
 
 def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_ticket(
     demo: Demo, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
-    """The second half of the reviewed Property "the board keeps no side file about a ticket". The
-    three files a render writes beside the page are a content hash, GitHub's own answer keyed by
-    the reference it was asked about, and the briefing: none is about a ticket, and the next cache
-    added beside the board is what this names."""
+    """The second half of the reviewed Property "the board keeps no side file about a ticket". A
+    render writes two files beside the page, a content hash and GitHub's own answer keyed by the
+    reference it was asked about; the briefing's cache is the session's thread's. None of them says
+    anything a ticket file says, and the next cache added beside the board is what this names."""
     out = tmp_path / "beside" / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
     beside = sorted(p.name for p in out.parent.iterdir())
     assert beside == ["board.html", "board.html.github.json", "board.html.stamp.js"]
-    paths = [str(t.path) for f in load_features(demo.root, {}, Diffviews(demo.root, None), demo.repo) for t in f.tickets]
+    features, standalone = loaded(tracker_roots(demo.root), Diffviews(demo.root, None))
+    rows = [t for f in features for t in f.tickets] + list(standalone)
+    about = [str(t.path) for t in rows] + [t.title for t in rows] + [t.brief for t in rows if t.brief]
+    about += [q.tag for t in rows for q in t.questions]
     for sidecar in beside[1:]:
         held = (out.parent / sidecar).read_text()
-        assert not any(path in held for path in paths), f"{sidecar} holds a ticket's own file"
+        assert not any(said in held for said in about), f"{sidecar} says something about a ticket"
 
 
 def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     gh = path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"
-    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731; an auth probe is not a request for a reference
+    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731  an auth probe is not a request for a reference
     render(tracker_roots(tracker), repo, out)
     assert len(queries()) == 1, "one query per render resolves both references"
     render(tracker_roots(tracker), repo, out)
     assert len(queries()) == 1, "the answer cached beside the board serves the unchanged render"
-
-
-def test_a_render_that_finds_nothing_changed_makes_no_model_call(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    claude = path_with("claude")
-    out = tmp_path / "board.html"
-    when = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
-    briefing = Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 2)
-    briefing.write(cache_path(out))
-    render(tracker_roots(tracker), repo, out)
-    render(tracker_roots(tracker), repo, out)
-    assert runs(claude) == [], "an unchanged tracker has nothing to tell the briefing session"
-    assert briefing.text in out.read_text(), "the board shows the briefing the cache holds"
 
 
 if __name__ == "__main__":

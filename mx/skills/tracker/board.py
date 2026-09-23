@@ -114,9 +114,10 @@ once.
 
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
-re-renders on one. It also re-renders on the two things that move with no file
-under the tracker moving: a briefing the session has rewritten, and GitHub's
-answer running past the five minutes it is cached for. One watcher per board:
+re-renders on one. It also re-renders on the three things that move with no
+file under the tracker moving: a briefing the session has rewritten, GitHub's
+answer running past the five minutes it is cached for, and a run of the model
+that answered nothing, which the page says once. One watcher per board:
 several of them write the same page from the same tracker, and share GitHub's
 answer through the cache beside it, but each keeps its own briefing schedule, so
 a second one pays for every briefing again and resumes the session while the
@@ -257,12 +258,14 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     """Re-render on any change under the tracker, in every checkout that contributes to it, and on
-    the two things that move on their own: the briefing a session has rewritten since the page was
-    written, and GitHub's answer running out of the lifetime it is cached for.
+    the three things that move on their own: the briefing a session has rewritten since the page
+    was written, GitHub's answer running out of the lifetime it is cached for, and a run of the
+    model that came back with nothing.
 
-    Those two are what the watcher is for as much as the tracker is. A pull request merged while
-    the tracker sits still would otherwise show as open until someone touched a ticket, and a
-    briefing written minutes after the change that asked for it would not show at all."""
+    Those three are what the watcher is for as much as the tracker is. A pull request merged while
+    the tracker sits still would otherwise show as open until someone touched a ticket, a briefing
+    written minutes after the change that asked for it would not show at all, and a run that
+    answered nothing writes no file for anything else to notice."""
     seen, session = Seen(), Briefer(repo, out)
     while True:
         try:
@@ -297,6 +300,7 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
     cache = briefing.cache_path(out)
     snapshot = tracker_snapshot(roots, repo)
     written = cache.stat().st_mtime_ns if cache.exists() else 0
+    quiet = briefing.SILENT  # read with the rest of what this pass reads: a run lands on its own thread
     armed, lapsed = seen.armed, run_out(seen.asked, seen.armed)
     if snapshot != seen.snapshot:
         if seen.snapshot is not None:
@@ -306,12 +310,12 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
             # the start is itself a change where no briefing has ever been written, since a tracker
             # quiet since the last one is the board a returning user opens
             session.opened(snapshot, None if briefing.Briefing.read(cache) else now())
-    elif written != seen.briefing or briefing.SILENT != seen.quiet or lapsed:
+    elif written != seen.briefing or quiet != seen.quiet or lapsed:
         render(roots, repo, out)
         if lapsed:
             armed = seen.asked  # only the render that asked again is done with this answer
     session.tick(roots, snapshot, now())
-    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed, briefing.SILENT)
+    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed, quiet)
 
 
 def now() -> datetime.datetime:
@@ -451,7 +455,7 @@ def state_line(ref: str, t: "Row") -> str:
         said += f"  brief: {plain(t.brief)}\n"
     if waits := blockers_of(t):
         said += f"  waits on: {', '.join(waits)}\n"
-    for q in open_questions(t):
+    for q in shown_questions(t):
         said += f"  asks: [{q.tag}] {plain(inline_md(q.headline))} {plain(inline_md(q.detail))}\n".rstrip() + "\n"
     return said
 
@@ -1531,8 +1535,8 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
             if (src := by_feature.get(src_feat, {}).get(src_num)) and src.status == "done":
                 include[src_feat].add(src_num)
                 ghost[src_feat].add(src_num)
-        elif (k := by_slug.get(ref)) and k.status == "done":
-            shown.append(k)
+        elif ref not in shown_slugs and (k := by_slug.get(ref)) and k.status == "done":
+            shown.append(k)  # `waits` holds one entry per waiting ticket, so the guard is the set
             shown_slugs.add(ref)
             ghost_slugs.add(ref)
 
