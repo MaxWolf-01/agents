@@ -33,19 +33,26 @@
 # worktree of the pinned tip this script adds before it starts and removes when
 # it ends, so the code it mutates to see what the tests catch is its own; the
 # same one Edit rule covers that checkout and its report, and it may run the
-# test commands the `runners` list names, in a tree that holds what the commit
-# holds and nothing an install would add.
+# test commands the `runners` list at the top of this script names, in a tree
+# that holds what the commit holds and nothing an install would add. Running a
+# suite runs the tree's own test files and build recipes, which makes the Tests
+# axis one to point at a tip you would run tests from anyway.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/briefs
 # Reading history is every reviewer's, by the subcommand and never by the tool,
 # which is the bar `/mx:permissions-review` holds an allowlist to.
-git_reads=("Bash(git status)" "Bash(git status *)" "Bash(git log *)" "Bash(git diff *)"
-           "Bash(git show *)" "Bash(git blame *)" "Bash(git grep *)" "Bash(git rev-parse *)"
-           "Bash(git rev-list *)" "Bash(git merge-base *)" "Bash(git ls-files *)"
-           "Bash(git ls-tree *)" "Bash(git cat-file *)" "Bash(git describe *)"
-           "Bash(git shortlog *)" "Bash(git branch --list *)" "Bash(git branch -a)"
+# Both forms of anything anyone types bare, since a trailing glob wants an
+# argument. Searching a tree is the Grep tool's, not `git grep`'s, whose -O
+# hands a pager of your choosing to a shell.
+git_reads=("Bash(git status)" "Bash(git status *)" "Bash(git log)" "Bash(git log *)"
+           "Bash(git diff)" "Bash(git diff *)" "Bash(git show)" "Bash(git show *)"
+           "Bash(git blame *)" "Bash(git rev-parse *)" "Bash(git rev-list *)"
+           "Bash(git merge-base *)" "Bash(git ls-files)" "Bash(git ls-files *)"
+           "Bash(git ls-tree *)" "Bash(git cat-file *)" "Bash(git describe)"
+           "Bash(git describe *)" "Bash(git shortlog)" "Bash(git shortlog *)"
+           "Bash(git branch --list *)" "Bash(git branch -a)"
            "Bash(git worktree list)" "Bash(git worktree list *)" "Bash(git check-ignore *)")
 # The project's test command, by the test target and not by the tool, and
 # `git restore` to undo a mutation, which reaches only the checkout the Tests
@@ -53,9 +60,9 @@ git_reads=("Bash(git status)" "Bash(git status *)" "Bash(git log *)" "Bash(git d
 # denial the reviewer reports, never a workaround it finds.
 runners=("Bash(make test)" "Bash(make check)"
          "Bash(nix develop -c make test)" "Bash(nix develop -c make check)"
-         "Bash(uv run *)" "Bash(uvx *)" "Bash(pytest *)"
+         "Bash(uv run *)" "Bash(uvx *)" "Bash(pytest)" "Bash(pytest *)"
          "Bash(npm test)" "Bash(npm test *)" "Bash(node --test *)"
-         "Bash(cargo test *)" "Bash(go test *)"
+         "Bash(cargo test)" "Bash(cargo test *)" "Bash(go test)" "Bash(go test *)"
          "Bash(git restore *)")
 
 die() { echo "review: $1" >&2; exit 1; }
@@ -167,19 +174,6 @@ drop_checkout() {
     fi
 }
 
-# A checkout already there is either a review of this range still running or
-# one that was killed, and this script can tell neither from the other: both
-# are the caller's to settle, and removing it blind would pull the tree out
-# from under a live reviewer.
-case " $axis_list " in *" tests "*)
-    [ ! -e "$checkout" ] ||
-        die "$checkout is already there, from a review of $range still running or killed; when none is running: git worktree remove --force $checkout"
-    echo "+ git worktree add --detach $checkout $head" >&2
-    git worktree add --quiet --detach "$checkout" "$head" ||
-        die "cannot give the Tests reviewer a checkout at $checkout"
-    ;;
-esac
-
 # The brief a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis both briefs it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
@@ -223,6 +217,20 @@ for axis in $axis_list; do
     render "$axis" > "$dir/briefs/$axis.md" || exit 1
     rm -f "$dir/$axis.md"
 done
+
+# After the briefs, so a template this run cannot render costs nothing: the
+# checkout outlives only a run that started. A checkout already there is a
+# review of this range still running or one that was killed, and this script
+# can tell neither from the other, so both are the caller's to settle; removing
+# it blind would pull the tree out from under a live reviewer.
+case " $axis_list " in *" tests "*)
+    [ ! -e "$checkout" ] ||
+        die "$checkout is already there, from a review of $range still running or killed; when none is running: git worktree remove --force $checkout"
+    echo "+ git worktree add --detach $checkout $head" >&2
+    git worktree add --quiet --detach "$checkout" "$head" ||
+        die "cannot give the Tests reviewer a checkout at $checkout"
+    ;;
+esac
 
 reviewer() { # <axis>
     local axis=$1 rc cwd=$root allowed
