@@ -39,7 +39,7 @@ The tags run as one sequence across both lists and never repeat: a second commen
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes kept as primary sources, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes of the work in flight, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 

@@ -93,7 +93,7 @@ Once a variant has won, capture the answer (which variant and why), then capture
 - **Sub-shape A**: fold the winner into the existing page; move the losing variants and the switcher out of the app tree.
 - **Sub-shape B**: promote the winning variant to a real route; move the throwaway route and the switcher out of the app tree.
 
-The full set of variants is the primary source, so it lands in `agent/prototypes/`, not the bin; variant components and the switcher left in the app tree rot fast and confuse the next reader.
+The full set of variants lands in `agent/prototypes/`, not the bin, for as long as the work is built; variant components and the switcher left in the app tree rot fast and confuse the next reader.
 
 ## Anti-patterns
 
