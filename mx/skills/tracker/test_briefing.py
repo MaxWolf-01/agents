@@ -5,15 +5,17 @@
 """The briefing session's schedule. Run: uv run test_briefing.py
 
 The seam the spec names is `on_change`, a pure function of the cache file's state, the change's
-time and the clock. The oracle is the Property of agent/tickets/board-orients/spec.md: the briefing
-session is pinged at most once per debounce window, and never outlives its idle hour or its ping
-cap. `ping` is a second seam, which the Testing Decisions does not name (ticket 13's D9): what the
-session is resumed with and what its answer does to the cache, with `claude` stubbed.
+time and the clock. The oracle is the Property of agent/tickets/board-orients/spec.md, in the
+windows the user ruled on 2026-09-23 (ticket 16): the session is pinged once the tracker has gone
+five minutes without a ticket's status moving, no sooner than ten minutes after the last briefing,
+and never outlives its idle hour or its ping cap. `ping` is a second seam, which the Testing
+Decisions does not name (ticket 13's D9): what the session is resumed with and what its answer does
+to the cache, with `claude` stubbed.
 
-A run of tracker changes and quiet ticks is drawn, driven through the schedule, and the answers are
+A run of status changes and quiet ticks is drawn, driven through the schedule, and the answers are
 read back against that Property. The spec's third retirement limit, the session's context, is not a
-function of the cache file, so it is not checked here. Liveness is: a change the session has not
-been told about, once the debounce window has passed, reaches it.
+function of the cache file, so it is not checked here. Liveness is: a status change the session has
+not been told about, once both windows have passed, reaches it.
 """
 
 import json
@@ -30,7 +32,8 @@ from hypothesis import given, strategies as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 import briefing
-from briefing import DEBOUNCE, DENIED, IDLE, PING_CAP, TOOLS, UNCHANGED, Briefing, cache_path, on_change, ping
+from briefing import (CADENCE, DENIED, EFFORT, IDLE, MODEL, PING_CAP, QUIET, TOOLS, UNCHANGED, Briefing, cache_path,
+                      on_change, ping)
 
 START = datetime.fromisoformat("2026-09-21T09:00:00+02:00")
 RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=90), st.booleans()), min_size=1, max_size=60)
@@ -46,7 +49,7 @@ def retired(session: Briefing, now: datetime) -> bool:
 
 def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datetime, datetime]]:
     """The schedule's answer to each tick of a run, with the state it was asked about: minutes since
-    the last tick, and whether the tracker changed at this one. A tick with no change yet asks
+    the last tick, and whether a ticket's status changed at this one. A tick with no change yet asks
     nothing; the watcher has nothing to tell the session about."""
     answers, session, changed_at, now, n = [], None, None, START, 0
     for minutes, changed in run:
@@ -66,18 +69,21 @@ def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datet
 
 
 @given(run=RUN)
-def test_the_briefing_session_is_pinged_once_a_window_and_never_past_its_idle_hour_or_ping_cap(run: list[tuple[int, bool]]) -> None:
+def test_the_briefing_session_is_pinged_a_quiet_window_after_a_status_moves_and_never_past_its_idle_hour_or_ping_cap(run: list[tuple[int, bool]]) -> None:
     for verb, session, changed_at, now in drive(run):
         assert verb in ("ping", "wait", "fresh")
+        if verb in ("ping", "fresh") and session is not None:
+            assert now - changed_at >= QUIET, "a briefing written while the tracker was still moving"
         if verb == "ping":
             assert session is not None, "a ping needs a session to resume"
-            assert now - session.last_activity >= DEBOUNCE, "two pings inside one debounce window"
+            assert now - session.last_activity >= CADENCE, "two briefings inside ten minutes"
             assert not retired(session, now), "a session past its idle hour or ping cap still pinged"
         if verb == "fresh":
             assert session is None or retired(session, now), "a live session replaced instead of pinged"
         if verb == "wait":
             told = session is not None and session.last_activity >= changed_at
-            assert told or now - changed_at < DEBOUNCE, "a change waiting past its debounce window"
+            waiting = now - changed_at < QUIET or now - session.last_activity < CADENCE if session else False
+            assert told or waiting, "a change waiting past both its windows"
 
 
 def test_a_session_retired_with_nothing_new_to_tell_it_is_left_where_it_is() -> None:
@@ -89,17 +95,37 @@ def test_a_session_retired_with_nothing_new_to_tell_it_is_left_where_it_is() -> 
     assert on_change(told, START + timedelta(minutes=1), START + IDLE + timedelta(minutes=1)) == "fresh"
 
 
-def test_the_windows_the_property_is_stated_in_are_the_spec_s() -> None:
-    """The property above reads its windows off the module, so the spec's own numbers are checked
-    here: five to ten minutes of debounce, and the idle hour.
+def test_a_board_with_no_briefing_at_all_writes_one_without_waiting_out_a_window() -> None:
+    """The board a returning user opens: the tracker has not moved precisely because they were away,
+    and the two windows are about a tracker in motion (09's D3)."""
+    assert on_change(None, START, START) == "fresh"
 
-    The spec gives no number for the ping cap, only that there is one, so what is checked is the
-    one `briefing.py` gives it in prose beside it, "two hours of a tracker changing every window".
-    A cap the schedule can never reach leaves the Property's own clause unfalsifiable, which is
-    what a cap raised "just for now" leaves behind."""
-    assert timedelta(minutes=5) <= DEBOUNCE <= timedelta(minutes=10)
+
+def test_the_two_windows_hold_a_briefing_back_and_then_let_it_through() -> None:
+    """The worked example under the property above: a status moves, the tracker keeps moving, and
+    the ping goes out once it has been quiet for five minutes and the last briefing is ten old."""
+    wrote = fresh(START, 1)
+    assert on_change(wrote, START + timedelta(minutes=1), START + timedelta(minutes=3)) == "wait", "the tracker is still moving"
+    assert on_change(wrote, START + timedelta(minutes=1), START + timedelta(minutes=8)) == "wait", "a briefing eight minutes after the last"
+    assert on_change(wrote, START + timedelta(minutes=1), START + timedelta(minutes=11)) == "ping"
+    # and the quiet window is measured from the last status to move, not the first
+    assert on_change(wrote, START + timedelta(minutes=9), START + timedelta(minutes=11)) == "wait"
+    assert on_change(wrote, START + timedelta(minutes=9), START + timedelta(minutes=14)) == "ping"
+
+
+def test_the_windows_the_property_is_stated_in_are_the_ones_the_user_ruled() -> None:
+    """The property above reads its windows off the module, so the numbers themselves are checked
+    here: five quiet minutes, a briefing every ten at most, and the idle hour.
+
+    The user gave no number for the ping cap, only that there is one, so what is checked is the one
+    `briefing.py` gives it in prose beside it, "three hours and twenty minutes of a tracker whose
+    statuses move every window". A cap the schedule can never reach leaves the Property's own clause
+    unfalsifiable, which is what a cap raised "just for now" leaves behind."""
+    assert QUIET == timedelta(minutes=5)
+    assert CADENCE == timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)
-    assert PING_CAP * DEBOUNCE <= timedelta(hours=2), f"a cap of {PING_CAP} is past the two hours beside it"
+    assert CADENCE < IDLE, "a session retires before it can be pinged, so the cap is unreachable"
+    assert PING_CAP * CADENCE <= timedelta(hours=4), f"a cap of {PING_CAP} is past the hours beside it"
 
 
 def answered(said: str) -> str:
@@ -123,6 +149,8 @@ def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_pi
     assert f"--resume {cached.session}" in run, "the ping started a session of its own instead of resuming"
     assert f"--allowedTools {TOOLS}" in run and f"--disallowedTools {DENIED}" in run, "the unattended run could write"
     assert str(tmp_path / "cfg" / "CLAUDE.md") in run, "it was given the user's own memory to read"
+    assert f"--model {MODEL} --effort {EFFORT}" in run, "the briefing ran on whatever this machine defaults to"
+    assert '"outputStyle": "default"' in run, "it wore the user's own output style, which writes for them at a terminal"
 
 
 def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(

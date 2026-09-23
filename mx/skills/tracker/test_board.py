@@ -64,7 +64,7 @@ from board import (
 )
 import briefing
 import github
-from briefing import DEBOUNCE, Briefing, cache_path
+from briefing import CADENCE, QUIET, Briefing, cache_path
 from demo_tracker import S1, S2, S3, S4, Demo, build as build_demo
 from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
 
@@ -1886,11 +1886,13 @@ def test_a_watched_board_re_renders_on_a_briefing_the_session_rewrote(
     assert "Two builds wait on your ruling." in briefing_of(out.read_text())
 
 
-def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_session(
+def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_session_of_a_status(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """The watcher's own reason to exist, which the pass above leaves out: a ticket file moves and
-    the page follows it, with the session that writes the briefing told what moved."""
+    the page follows it. Only a status moving is the session's business, though (the user's rule,
+    2026-09-23): a ticket filed is a status appearing, and prose rewritten is a render and no more.
+    """
     out = tmp_path / "board.html"
     when = datetime.now().astimezone()  # a briefing already written, so the opening pass arms nothing
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
@@ -1901,10 +1903,24 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     assert session.changed_at is None, "the opening pass has nothing to tell the session about"
 
     ticket(tracker / "new-chore.md", "open")
-    look(watching, session, tracker, repo, out)
+    watching = look(watching, session, tracker, repo, out)
     assert out.stat().st_mtime_ns != rendered, "a ticket filed under the tracker never reached the page"
     assert "standalone-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
-    assert session.changed_at is not None, "the briefing session was never told the tracker moved"
+    told = session.changed_at
+    assert told is not None, "the briefing session was never told a ticket was filed"
+
+    rendered = out.stat().st_mtime_ns
+    chore = tracker / "new-chore.md"
+    chore.write_text(chore.read_text().replace("the `suite` is slow", "the `suite` is slow, and flaky with it"))
+    watching = look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "a ticket rewritten never reached the page"
+    assert session.changed_at == told, "prose rewritten was sent to the session as a change"
+
+    rendered = out.stat().st_mtime_ns
+    chore.write_text(chore.read_text().replace("status: open", "status: claimed"))
+    look(watching, session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "a ticket claimed never reached the page"
+    assert session.changed_at != told, "the briefing session was never told a status moved"
 
 
 def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
@@ -1992,7 +2008,7 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
 ) -> None:
     """The watcher's side of the schedule, driven a tick at a time with claude stubbed: the first
     change dispatches a run and its answer lands in the cache beside the board, a second change
-    inside the window dispatches nothing, and a run that answers nothing leaves the account of what
+    inside the windows dispatches nothing, and a run that answers nothing leaves the account of what
     moved for the retry to carry (briefing.on_change holds the schedule itself)."""
     said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
     claude = path_with("claude", f"printf '%s\\n' {shlex.quote(json.dumps(said))}")
@@ -2011,13 +2027,15 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
     watcher.changed(at + timedelta(minutes=1))
     watcher.tick(roots, tracker_snapshot(roots, repo), at + timedelta(minutes=1))
     assert len(runs(claude)) == 1, "a change inside the window waits it out"
+    watcher.tick(roots, tracker_snapshot(roots, repo), at + QUIET + timedelta(minutes=1))
+    assert len(runs(claude)) == 1, "the tracker went quiet, but the last briefing is minutes old"
 
     path_with("claude", "echo '{\"is_error\": true}'")  # a login that has lapsed, a run past its limit
     (tracker / "small-chore.md").write_text("---\nstatus: done\n---\n\n# A chore\n")
     # stamped while the session was exploring: a run's clock is read before it starts, so a change
     # landing during one reads as a change it has not heard, and the window after is when it does
     watcher.changed(written.last_activity + timedelta(seconds=1))
-    watcher.tick(roots, tracker_snapshot(roots, repo), at + DEBOUNCE + timedelta(seconds=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), at + CADENCE + timedelta(seconds=1))
     watcher.running.join(30)
     assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the window after it"
     assert f"--resume {written.session}" in runs(claude)[1], "the window's change started a fresh exploration"

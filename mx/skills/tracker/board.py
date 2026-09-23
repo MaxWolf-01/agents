@@ -68,9 +68,11 @@ keeps its status whatever blocks it and is drawn dashed.
 Over that panel sits the board briefing: where things stand and three next
 picks, written by a `claude -p` session that was given the tracker as the board
 reads it and explored the repo from there, with the time it was written beside
-it. A watching board sends each tracker change to that same session, at most
-once every five minutes, as a note of what changed, and the session rewrites the
-briefing or leaves it standing; it retires after an hour idle or twenty pings,
+it. A watching board sends each change of a ticket's status to that same
+session, as a note of what changed, five minutes after the tracker goes quiet
+and at most one briefing every ten minutes, and the session rewrites the
+briefing or leaves it standing; a ticket edited without its status moving is
+re-rendered and not sent. It retires after an hour idle or twenty pings,
 and the next change starts a fresh one. The session and its briefing live in a
 cache file beside the page. Until a briefing has been written the column holds
 the board's own count of what waits and the frontier by priority, then by what
@@ -238,7 +240,10 @@ def find_tracker(start: Path) -> Path:
     sys.exit(f"board: no agent/tickets at or above {start}")
 
 
-def render(roots: "Roots", repo: Path, out: Path) -> None:
+def render(roots: "Roots", repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
+    """Write the page, and answer with the status every ticket on it is shown under: the watcher
+    pings the briefing session on a status that moved, and the render is where the tracker is
+    already read."""
     project = repo.name
     root = roots.main
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
@@ -254,6 +259,26 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
+    return statuses(features, standalone)
+
+
+def statuses(features: list["Feature"], standalone: list["Standalone"]) -> tuple[tuple[str, str], ...]:
+    """Every ticket the board shows with the status it shows it under, as a value to compare: what
+    the briefing session is pinged about (`look`). A ticket filed and a ticket retired are a status
+    appearing and a status going, so both are a change; a ticket whose prose was rewritten is not.
+
+    The derived status is the one here, so a ticket unblocked by its blocker landing reads as the
+    change it is."""
+    return tuple(
+        [(f"{f.name}/{t.num}", t.status) for f in features for t in f.tickets]
+        + [(k.slug, k.status) for k in standalone]
+    )
+
+
+def tracker_statuses(roots: "Roots") -> tuple[tuple[str, str], ...]:
+    """The same, without a render: what the watcher's first pass reads, since the tracker it opens
+    on is the baseline every later status is compared against."""
+    return statuses(*loaded(roots, Diffviews(roots.main.parent / "diffviews", None)))
 
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
@@ -280,13 +305,15 @@ class Seen:
     """What the last pass of the watcher read, as a value to compare the next one against.
 
     `snapshot` is the tracker as `tracker_snapshot` reads it and None before the first pass;
-    `briefing` is when the cache file the rendered page holds was written; `asked` is when GitHub's
-    answer beside the board was got, and `armed` the answer the render that asked again has been
-    done for. `quiet` is what the last run of the model that answered nothing said: it writes no
-    cache file, so nothing else here moves with it.
+    `statuses` is every ticket's status as the page it drew shows it, which is what the briefing
+    session is pinged about; `briefing` is when the cache file the rendered page holds was written;
+    `asked` is when GitHub's answer beside the board was got, and `armed` the answer the render that
+    asked again has been done for. `quiet` is what the last run of the model that answered nothing
+    said: it writes no cache file, so nothing else here moves with it.
     """
 
     snapshot: tuple | None = None
+    statuses: tuple[tuple[str, str], ...] = ()
     briefing: int = 0
     asked: datetime.datetime | None = None
     armed: datetime.datetime | None = None
@@ -295,27 +322,36 @@ class Seen:
 
 def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Path) -> Seen:
     """One pass of the watcher: re-render what has moved since the last one, tell the briefing
-    session what changed, and return what this pass read."""
+    session what changed, and return what this pass read.
+
+    Any file under the tracker moving re-renders; only a ticket's status moving reaches the session,
+    so the prose of a ticket rewritten all afternoon costs a render each and no model run (the
+    user's rule, 2026-09-23). The change is timed from before the render, which takes a moment, so a
+    status that moved during one is a status the session has not been told about."""
     roots = tracker_roots(tickets_root)
     cache = briefing.cache_path(out)
     snapshot = tracker_snapshot(roots, repo)
     written = cache.stat().st_mtime_ns if cache.exists() else 0
     quiet = briefing.SILENT  # read with the rest of what this pass reads: a run lands on its own thread
     armed, lapsed = seen.armed, run_out(seen.asked, seen.armed)
+    statuses = seen.statuses
     if snapshot != seen.snapshot:
         if seen.snapshot is not None:
-            session.changed(now())
-            render(roots, repo, out)
+            at = now()
+            statuses = render(roots, repo, out)
+            if statuses != seen.statuses:
+                session.changed(at)
         else:
             # the start is itself a change where no briefing has ever been written, since a tracker
             # quiet since the last one is the board a returning user opens
+            statuses = tracker_statuses(roots)
             session.opened(snapshot, None if briefing.Briefing.read(cache) else now())
     elif written != seen.briefing or quiet != seen.quiet or lapsed:
-        render(roots, repo, out)
+        render(roots, repo, out)  # nothing under the tracker moved, so no status did either
         if lapsed:
             armed = seen.asked  # only the render that asked again is done with this answer
     session.tick(roots, snapshot, now())
-    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed, quiet)
+    return Seen(snapshot, statuses, written, github.asked_at(github.cache_path(out)), armed, quiet)
 
 
 def now() -> datetime.datetime:
@@ -339,22 +375,23 @@ class Briefer:
 
     The session itself lives in the cache file beside the board, so a board restarted mid-window
     picks up the one it left. What is held here is only what the file cannot say: which tracker
-    snapshot the session was told about, so that a ping names what changed since, and the clock the
-    debounce is measured on (briefing.on_change).
+    snapshot the session was told about, so that a ping names what changed since, and when a ticket's
+    status last moved, which is what the two windows are measured from (briefing.on_change).
 
     A run takes minutes, so it runs in a thread of its own: a watcher blocked on the model is a
-    board that stops re-rendering. One at a time, and never twice inside a window, so a model that
-    is not answering is asked once a window rather than every pass."""
+    board that stops re-rendering. One at a time, and never twice inside the cadence, so a model
+    that is not answering is asked once a window rather than every pass."""
 
     repo: Path
     out: Path
     told: tuple = ()  # the tracker snapshot the session was last told about
-    changed_at: datetime.datetime | None = None
+    changed_at: datetime.datetime | None = None  # when a ticket's status last moved, None until one does
     tried: datetime.datetime | None = None  # when a run was last started, answered or not
     running: threading.Thread | None = None
 
     def opened(self, snapshot: tuple, at: datetime.datetime | None) -> None:
-        """The watcher's first pass: what the session is told about is measured from here."""
+        """The watcher's first pass: what the session is told about is measured from here, and `at`
+        is set only where the start is itself the change (no briefing has ever been written)."""
         self.told, self.changed_at = snapshot, at
 
     def changed(self, at: datetime.datetime) -> None:
@@ -362,12 +399,13 @@ class Briefer:
 
     def tick(self, roots: "Roots", snapshot: tuple, at: datetime.datetime) -> None:
         """Whatever this pass of the watcher owes the briefing session, against the tracker as that
-        pass read it."""
+        pass read it. `changed_at` is when a ticket's status last moved, which is what the ping waits
+        out the quiet window from."""
         if not self.changed_at or not briefing.available():
             return
         if self.running and self.running.is_alive():
             return
-        if self.tried and at - self.tried < briefing.DEBOUNCE:
+        if self.tried and at - self.tried < briefing.CADENCE:
             return  # a run that answered nothing is tried again a window later, not on the next pass
         cached = briefing.Briefing.read(briefing.cache_path(self.out))
         verb = briefing.on_change(cached, self.changed_at, at)
@@ -489,9 +527,9 @@ FALLBACK_TIP = "No model has written a briefing: this is the board's own count, 
 # marks and their tips do not (PRIORITY_TIP).
 BRIEFING_TIP = (
     "The board briefing: a session that explored this repo says where things stand and what to take up next.\n"
-    f"A tracker change is sent to that same session, at most once every {briefing.DEBOUNCE.seconds // 60} minutes;\n"
-    f"it retires after {briefing.IDLE.seconds // 3600} h idle or {briefing.PING_CAP} of those, "
-    "and the next change starts a fresh one."
+    f"A ticket's status changing is sent to that same session {briefing.QUIET.seconds // 60} minutes after the\n"
+    f"tracker goes quiet, and at most every {briefing.CADENCE.seconds // 60} minutes; it retires after "
+    f"{briefing.IDLE.seconds // 3600} h idle\nor {briefing.PING_CAP} of those, and the next change starts a fresh one."
 )
 
 
