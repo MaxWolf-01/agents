@@ -29,7 +29,8 @@ where the ticket stands and carries the `Ruled` lines that answer its questions.
 A row reads left to right in fixed columns: the feature, the number, what the
 row asks of the user (to rule on, your answer, design session, prototype,
 research, legwork, build), the ticket's short name with its review page and the
-pull requests and issues its `gh` list names, the ticket brief under the name
+pull requests and issues its `gh` list names, each in the look of the state
+GitHub gives it and saying that state on hover, the ticket brief under the name
 with the open questions under that, the user's time on it, the priority as a
 word, and what it waits on. The name is the ticket's H1, the brief its `##
 Brief` section, the questions its `## Questions` section, the priority and the
@@ -85,6 +86,13 @@ board opens a page that saves comments. A server exiting is itself a change to
 re-render on, so a watching board keeps its links live; where the pages cannot
 be served the link is the file, which the page itself says is read-only.
 
+Every pull request and issue the rows name is resolved in one `gh api graphql`
+query per render, GitHub giving issues and pull requests one number space per
+repository, and the answer is cached beside the page for five minutes, so a
+watching board asks once a window however often it re-renders. Without `gh`,
+its auth or the network the references stay bare links and the page says why
+once.
+
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
@@ -124,6 +132,8 @@ from typing import Annotated
 import markdown
 import tyro
 import yaml
+
+import github  # the state of the pull requests and issues the tickets name, beside this script
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
@@ -214,7 +224,8 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     log = git_log(repo)
     stamp = content_stamp(project, features, standalone, log)
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js")
+    gh = github.resolve(gh_shown(features, standalone), github.cache_path(out))
+    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js", gh)
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
@@ -623,13 +634,10 @@ def inline_md(text: str) -> str:
     return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip())
 
 
-GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
-
-
 def gh_refs(meta: dict, path: Path) -> list[str]:
     refs = [str(r) for r in meta.get("gh") or []]
     for ref in refs:
-        assert GH_REF.fullmatch(ref), f"{path}: gh reference {ref!r}; a reference is owner/repo#number"
+        assert github.GH_REF.fullmatch(ref), f"{path}: gh reference {ref!r}; a reference is owner/repo#number"
     return refs
 
 
@@ -1297,13 +1305,19 @@ def review_link(address: str | None) -> str:
             f'data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a>')
 
 
-def gh_links(refs: Sequence[str]) -> str:
+def gh_links(refs: Sequence[str], gh: dict[str, str]) -> str:
+    """The pull requests and issues a ticket names, each in the look of the state GitHub gave it and
+    saying that state in words on hover. A reference GitHub was not asked about, or did not answer
+    for, is the bare link it was before, and the page says why once (absences)."""
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
-        f'<a class="gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
-        f'onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">{html.escape(ref)}</a>'
+        f'<a class="gh {gh.get(ref, "unknown")}" href="https://github.com/{repo}/issues/{num}" target="_blank" '
+        f'onclick="event.stopPropagation()" data-tip="{html.escape(github.SAYS.get(gh.get(ref, ""), UNKNOWN_REF))}">{html.escape(ref)}</a>'
         for ref in refs for repo, num in [ref.split("#")]
     )
+
+
+UNKNOWN_REF = "A pull request or issue this ticket names, on GitHub."
 
 
 def search_text(*parts: str) -> str:
@@ -1415,7 +1429,7 @@ def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str
             f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
 
 
-def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str = "") -> str:
+def row(row_id: str, feature: str, num: str, t: Row, chips: str, gh: dict[str, str], on_branch: str = "") -> str:
     """One ticket row, every mark in a fixed column: the feature, the number (a click copies the
     file's path), what the row asks of the user, the name with its review page and GitHub
     references, the ticket brief under the name and the open questions the ticket asks the user
@@ -1428,23 +1442,23 @@ def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str 
         f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{html.escape(num)}</span>'
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
-        f'{review_link(t.diffview)}{gh_links(t.gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
+        f'{review_link(t.diffview)}{gh_links(t.gh, gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
         f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{chips}</span></span>'
         f'</summary><div class="body">{t.body_html}</div></details>'
     )
 
 
-def ticket_row(f: Feature, t: Ticket) -> str:
+def ticket_row(f: Feature, t: Ticket, gh: dict[str, str]) -> str:
     by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t, dep_chips(f.name, by_num, t))
+    return row(f"t-{f.name}-{t.num}", f.name, t.num, t, dep_chips(f.name, by_num, t), gh)
 
 
-def standalone_row(k: Standalone) -> str:
+def standalone_row(k: Standalone, gh: dict[str, str]) -> str:
     on_branch = (
         f'<span class="src" data-tip="Filed on branch {html.escape(k.source)}, not on the main branch.">on {html.escape(k.source)}</span>'
         if k.source else ""
     )
-    return row(f"standalone-{k.slug}", "standalone", "--", k, ext_chips(k.blocked_by), on_branch)
+    return row(f"standalone-{k.slug}", "standalone", "--", k, ext_chips(k.blocked_by), gh, on_branch)
 
 
 def feature_chip(f: Feature) -> str:
@@ -1466,15 +1480,15 @@ def feature_chip(f: Feature) -> str:
 
 def render_page(
     project: str, features: list[Feature], standalone: list[Standalone],
-    log: str, stamp: str, stamp_src: str
+    log: str, stamp: str, stamp_src: str, gh: github.Answer = github.NOTHING,
 ) -> str:
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
     ranked: dict[str, list[tuple[tuple, str, Row]]] = {state: [] for state, _ in GROUPS}
     for f in features:
         for t in f.tickets:
-            ranked[group_of(t)].append((sort_key(t), ticket_row(f, t), t))
+            ranked[group_of(t)].append((sort_key(t), ticket_row(f, t, gh.states), t))
     for k in standalone:
-        ranked[group_of(k)].append((sort_key(k), standalone_row(k), k))
+        ranked[group_of(k)].append((sort_key(k), standalone_row(k, gh.states), k))
     ranked = {state: sorted(sortable, key=lambda ranks: ranks[0]) for state, sortable in ranked.items()}
     for state, sortable in ranked.items():
         rows[state].extend(row for _, row, _ in sortable)
@@ -1509,7 +1523,7 @@ def render_page(
     footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
-        columns=row_columns(features, standalone, grouped), absences="".join(absences(features, standalone)),
+        columns=row_columns(features, standalone, grouped), absences="".join(absences(features, standalone, gh)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
@@ -1578,11 +1592,17 @@ def blocker_refs(features: list[Feature], standalone: list[Standalone]) -> list[
     return [ref for rows in ([t for f in features for t in f.tickets], standalone) for t in rows for ref in blockers_of(t)]
 
 
-def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+def gh_shown(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+    """Every pull request and issue the board links, the whole of one render's question for GitHub."""
+    return [ref for rows in ([t for f in features for t in f.tickets], standalone) for t in rows for ref in t.gh]
+
+
+def absences(features: list[Feature], standalone: list[Standalone], gh: github.Answer) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
     missing). A review page linked as a file is one nothing answered for; a tracker with no page
     rendered yet has no server to miss, so it says nothing. A machine with no transcripts directory
-    has run no session this board could name, whatever the commits say."""
+    has run no session this board could name, whatever the commits say. GitHub says its own absence
+    in its own words, since what stopped the query is what the user has to fix (github.ask)."""
     said = []
     pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
     if any(page and page.startswith("file://") for page in pages):
@@ -1595,6 +1615,8 @@ def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]
             "transcripts",
             f"No session transcripts at {TRANSCRIPTS}, so no ticket lists the sessions that worked on it.",
         ))
+    if gh.missing:
+        said.append(absence_note("github", gh.missing))
     return said
 
 
@@ -1801,7 +1823,17 @@ ${columns}
   .chip.done { color: var(--muted); text-decoration: line-through; }
   .rp { color: var(--accent); }
   .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  /* a GitHub reference in the look of its state (github.SAYS says the same in words on hover):
+     open work in the accent, a review asking for changes in the rose a question wears, a merge in
+     the purple GitHub itself uses, anything closed struck through and a draft underlined as the
+     provisional thing it is. A reference GitHub was not asked about keeps the muted link it has
+     always been. */
   .gh { color: var(--muted); }
+  .gh.pr-open, .gh.issue-open { color: var(--accent); }
+  .gh.pr-changes { color: var(--c-rose); }
+  .gh.pr-merged { color: var(--c-purple); }
+  .gh.pr-draft { text-decoration: underline dotted; text-underline-offset: 3px; }
+  .gh.pr-closed, .gh.issue-closed { text-decoration: line-through; }
   .src { color: var(--accent-2); }
 
   /* below this width the time, the priority and the blockers move under the name, and the top

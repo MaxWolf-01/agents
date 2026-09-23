@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Renders the demo tracker's board against real pull requests and issues in two repositories, twice
+# in a row, counting what the board asked GitHub each time. With `gh` logged in the links wear the
+# state GitHub gives them; without it they stay bare and the page says why once.
+#
+# Usage: demo [--stubbed] [tracker directory]
+#   --stubbed  answer the board's query from this file instead of GitHub, with the states those
+#              three references were in on 2026-09-23: the look of the page without a login.
+set -euo pipefail
+
+stubbed=""
+answered_by="GitHub itself"
+[[ ${1:-} == --stubbed ]] && { stubbed=1; answered_by="this script, as the three references stood on 2026-09-23"; shift; }
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$here/../../../..
+tracker=${1:-/tmp/board-gh-demo}
+uv run "$root/mx/skills/tracker/demo_tracker.py" "$tracker" >/dev/null
+
+# Two repositories, three references, three of the states the board tells apart. cli/cli#1 is
+# merged and cli/cli#2 closed for good; the open issue is live and may have been closed since.
+sed -i 's|^gh: .*|gh: [cli/cli#1, cli/cli#2]|' "$tracker/agent/tickets/csv-import/02-map-columns.md"
+sed -i 's|^gh: .*|gh: [anthropics/claude-code#96304]|' "$tracker/agent/tickets/speed-up-tests.md"
+
+calls=$tracker/gh.calls
+rm -f "$calls"
+mkdir -p "$tracker/bin"
+if [[ -n $stubbed ]]; then
+    cat >"$tracker/answer.json" <<'JSON'
+{"data": {
+  "r0": {"nameWithOwner": "cli/cli",
+         "n0": {"__typename": "PullRequest", "number": 1, "state": "MERGED", "isDraft": false, "reviewDecision": "APPROVED"},
+         "n1": {"__typename": "Issue", "number": 2, "state": "CLOSED"}},
+  "r1": {"nameWithOwner": "anthropics/claude-code",
+         "n0": {"__typename": "Issue", "number": 96304, "state": "OPEN"}}
+}}
+JSON
+    # a gh that records what the board asks of it and answers from the file
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec cat "%s"\n' "$calls" "$tracker/answer.json" >"$tracker/bin/gh"
+else
+    # a gh that records what the board asks of it and hands the call to the real one
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec %s "$@"\n' "$calls" "$(command -v gh || echo /bin/false)" >"$tracker/bin/gh"
+fi
+chmod +x "$tracker/bin/gh"
+export PATH=$tracker/bin:$PATH
+
+"$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
+"$root/mx/bin/board" "$tracker/agent/tickets" --no-watch --no-open
+
+cat <<TEXT
+
+Answering from $answered_by.
+GraphQL queries sent for those two renders: $(grep -c graphql "$calls" 2>/dev/null || echo 0)
+
+What the board cached beside the page, which is what the second render read:
+
+$(sed 's/^/    /' "$tracker/agent/board.html.github.json")
+
+Open the page above. "Map columns once per bank" in needs me names cli/cli#1 and cli/cli#2 beside
+its name, and "A faster test suite" in the frontier names anthropics/claude-code#96304. With the
+states in hand, #1 is purple for merged, #2 struck through for closed and the issue green for
+open; hover any of them for the same in words. Without them all three are the muted links they
+were, and one note at the top of the page says what gh said.
+TEXT
