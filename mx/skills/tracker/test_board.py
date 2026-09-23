@@ -724,7 +724,7 @@ def test_the_stamp_the_open_tab_polls_moves_when_a_link_changes_state(tracker: P
     """A merge on GitHub moves nothing under the tracker, and the open tab has to hear about it."""
     features, standalone = load(tracker)
     stamps = [
-        content_stamp("demo", features, standalone, NO_QUEUE, "", gh)
+        content_stamp("demo", features, standalone, "", gh)
         for gh in (github.NOTHING,
                    github.Answer({"acme/backend#317": "pr-open"}),
                    github.Answer({"acme/backend#317": "pr-merged"}),
