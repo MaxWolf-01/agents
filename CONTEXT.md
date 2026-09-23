@@ -24,7 +24,7 @@ _Avoid_: choice, assumption (an assumption is an implementer's unescalated call,
 
 **Spec mark**:
 The provenance tag on a call in a draft spec: who settled it, or that nobody has yet.
-_Avoid_: marker, annotation, tag, label
+_Avoid_: mark (bare; a row mark is one too), marker, annotation, tag, label
 
 **Frontier**:
 What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates and nobody holds.
@@ -101,8 +101,8 @@ The rendered view of the whole tracker: every feature, its dependency graph, the
 _Avoid_: dashboard
 
 **Row mark**:
-One tag on a board row, carrying a single fact for scanning: what the ticket asks of the user, its priority, its time, a blocker. Says on hover what it means.
-_Avoid_: mark (a spec mark's provenance), badge, chip, pill, label
+One tag on a board row, carrying a single fact about the ticket for scanning.
+_Avoid_: mark (bare; a spec mark is one too), badge, pill, label
 
 **Retire**:
 Take a shipped feature's or ticket's record out of the live tracker; history keeps it.

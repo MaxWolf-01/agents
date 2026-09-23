@@ -13,9 +13,9 @@ Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type/priority/size frontmatter, cross-feature refs as
 <feature>/NN) and every standalone ticket (*.md at the tracker root whose
-frontmatter declares a status) and writes one self-contained page beside the tracker,
-agent/board.html. The page is the tickets as rows grouped by state: needs me,
-frontier, claimed, blocked, proposed, done folded.
+frontmatter declares a status) and writes one self-contained page beside the
+tracker, agent/board.html. The page is the tickets as rows grouped by state:
+needs me, frontier, claimed, blocked, proposed, done folded.
 
 Needs me holds every ticket whose next step is the user's own time: a build to
 rule on, a ticket stopped on a question, a near design session (board.needs_me).
@@ -421,18 +421,24 @@ def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     standalone = [
         read_standalone(p, roots, diffviews, None)
         for p in (sorted(root.glob("*.md")) if root.is_dir() else [])
-        if "status" in split_frontmatter(p.read_text())[0]  # a ticket declares one; other markdown at the root is not a ticket
+        if is_ticket(p)
     ]
     have = {k.slug for k in standalone}
     for branch, tracker in roots.branches:
         dv = serve_diffviews(tracker.parent / "diffviews")
         for path in branch_added(tracker, roots.repo):
-            meta, _ = split_frontmatter(path.read_text())
-            if path.stem in have or str(meta.get("status")) not in TICKET_STATUSES:
+            if path.stem in have or not is_ticket(path):
                 continue
             standalone.append(read_standalone(path, roots, dv, branch))
             have.add(path.stem)
     return standalone
+
+
+def is_ticket(path: Path) -> bool:
+    """Whether a markdown file at the tracker root is a ticket: a README, a note, a leftover queue
+    file live there too, and what a ticket declares is a status (`/mx:tracker`). A status that is
+    not one of the five is a typo in a ticket, which `declared_status` names rather than hides."""
+    return "status" in split_frontmatter(path.read_text())[0]
 
 
 def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
@@ -1159,12 +1165,11 @@ def feature_chip(f: Feature) -> str:
     The done count is out of every ticket the feature has, proposed ones included, so a breakdown
     just cut off a spec reads 0/4."""
     counts = Counter(t.status for t in f.tickets)
-    waiting = sum(group_of(t) == "needs" for t in f.tickets)
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    bits += [f"{waiting} need me"] if waiting else []
-    dot = '<i class="dot"></i>' if waiting else ""
+    # the dot says the feature holds work of the user's own; the counts above already say how much
+    dot = '<i class="dot"></i>' if any(group_of(t) == "needs" for t in f.tickets) else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
         f'<span class="dim">{counts["done"]}/{len(f.tickets)}</span></button>'

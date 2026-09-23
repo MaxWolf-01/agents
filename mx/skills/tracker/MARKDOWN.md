@@ -41,7 +41,7 @@ gh: [owner/repo#317, owner/other-repo#412] # the pull requests and issues the ti
   - Ruled 2026-09-21: keep it in the fast suite.
 ```
 
-A question is open, and shows on the board's needs-me group, until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line, in the tracker's own copy of the ticket, whatever branch the question was asked on. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none. Either kind of ticket carries the section; a decision ticket's own subject stays its `## Question`, resolved under `## Answer` (Ticket state).
+A question is open, and shows on the board's needs-me group, until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line, in the tracker's own copy of the ticket, whatever branch the question was asked on. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none. A decision ticket states what it is asking here too, which is what shows it under its row, and records the answer under `## Answer` (Ticket state).
 
 **`## Comments`** at the bottom takes notes and follow-up conversation, a worker's closing comment included.
 
@@ -64,7 +64,7 @@ A question is open, and shows on the board's needs-me group, until a `Ruled <dat
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the dependency graph beside them. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what it reads and which checkout's copy.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the dependency graph beside them. A ticket is in that group when it is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what it reads and which checkout's copy.
 
 The human runs `board`; the tab then follows every tracker change on its own. A session renders once, without opening a tab, after it changes tracker state (`board --no-watch --no-open`), so the page on disk is current for whoever opens it next.
 

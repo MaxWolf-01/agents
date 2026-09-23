@@ -276,19 +276,33 @@ def test_the_page_groups_rows_by_state_needs_me_first_and_done_folded(tracker: P
 def test_a_feature_chip_carries_the_counts_as_its_tooltip(tracker: Path) -> None:
     page = page_of(tracker)
     assert (
-        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/7 done · 2 open · 1 review · 2 blocked · 1 proposed · 1 need me">'
+        f'<button class="featchip" data-feature="{FEAT}" title="spec confirmed · 1/7 done · 2 open · 1 review · 2 blocked · 1 proposed">'
         f'<i class="dot"></i>{FEAT} <span class="dim">1/7</span></button>' in page
     )
     assert 'standalone <span class="dim">3</span>' in page
 
 
-def test_a_feature_with_a_build_in_review_gets_the_dot(tmp_path: Path) -> None:
+def test_a_feature_chip_dots_when_any_of_its_tickets_waits_on_the_user(tmp_path: Path) -> None:
+    """The dot reads the needs-me group, so a ticket stopped on a question lights it as much as a
+    build in review does; the counts beside it already say how many tickets the feature has."""
     root = tmp_path / "agent" / "tickets"
     (root / "solo").mkdir(parents=True)
-    ticket(root / "solo" / "01-only.md", "review")
+    only = root / "solo" / "01-only.md"
+    ticket(only, "review")
     (feature,), standalone = load(root)
     page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
-    assert '<button class="featchip" data-feature="solo" title="0/1 done · 1 review · 1 need me"><i class="dot"></i>solo' in page
+    assert '<button class="featchip" data-feature="solo" title="0/1 done · 1 review"><i class="dot"></i>solo' in page
+
+    ticket(only, "claimed")  # the case a status alone cannot tell: in hand, and waiting on an answer
+    only.write_text(only.read_text() + "\n## Questions\n\n- [D1] **Per bank or per file?** Neither is free.\n")
+    (feature,), standalone = load(root)
+    page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
+    assert '<button class="featchip" data-feature="solo" title="0/1 done · 1 claimed"><i class="dot"></i>solo' in page
+
+    ticket(only, "claimed")  # the same ticket with nothing asked of the user
+    (feature,), standalone = load(root)
+    page = render_page("demo", [feature], standalone, log="", stamp="s", stamp_src="s.js")
+    assert '<button class="featchip" data-feature="solo" title="0/1 done · 1 claimed">solo' in page
 
 
 def test_a_gh_reference_is_a_link_on_the_row_and_in_its_search_text(tracker: Path) -> None:
@@ -486,14 +500,16 @@ def test_the_stamp_changes_with_a_standalone_ticket_source(tracker: Path) -> Non
 
 
 def test_markdown_at_the_tracker_root_that_declares_no_status_is_not_a_ticket(repo: Path, tracker: Path, tmp_path: Path) -> None:
-    """A ticket declares its status in frontmatter; other markdown beside the standalone tickets,
-    a needs-human.md left over from the retired queue among it, is not a ticket and not a row."""
+    """A ticket declares its status in frontmatter; the other markdown a tracker root holds, a
+    README, a note, a needs-human.md left over from the retired queue, is not a ticket and not a
+    row, whether or not it carries frontmatter of its own."""
     (tracker / "needs-human.md").write_text("# Needs human\n\n- rule on loose-idea :: built while proposed\n")
+    (tracker / "README.md").write_text("---\ntitle: How this tracker works\n---\n\n# Read me first\n")
     _, standalone = load(tracker)
-    assert "needs-human" not in {k.slug for k in standalone}
+    assert {k.slug for k in standalone} == {"loose-idea", "quoted", "small-chore"}
     out = tmp_path / "out" / "board.html"
     render(tracker_roots(tracker), repo, out)
-    assert "rule on loose-idea" not in out.read_text()
+    assert "rule on loose-idea" not in out.read_text() and "Read me first" not in out.read_text()
 
 
 def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(tracker: Path) -> None:
@@ -1022,7 +1038,7 @@ def absences(page: str, source: str) -> int:
 def rows_in(page: str, group: str) -> set[str]:
     """The ticket rows one of the board's groups holds."""
     body = page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
-    return {r for r in re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body) if r.startswith(("t-", "standalone-"))}
+    return set(re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body))
 
 
 def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_design_session() -> None:
