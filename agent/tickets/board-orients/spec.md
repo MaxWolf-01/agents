@@ -72,7 +72,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 - The board renders with any optional source missing (GitHub, the model, transcripts, the review-page server), and says each absence once.
 - A copy button shows what it copies.
 - A ticket's priority, size, kind and questions are read from the ticket file; the board keeps no side file about a ticket.
-- The briefing session is pinged at most once per debounce window, and never outlives its idle hour or its ping cap.
+- The briefing session is pinged only on a ticket's status changing, once the tracker has gone five minutes without another and ten minutes after the last briefing, and never outlives its idle hour or its ping cap (amended 2026-09-23, was once per debounce window on any tracker change).
 
 ## Decisions
 
@@ -114,9 +114,10 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 ### The board briefing
 
 - **A briefing session writes it.** The first run is a fresh `claude -p` session on a short prompt of its own, never the user's system prompt: it is given the tracker's state as the board computes it (tickets with status, priority, size, brief and questions; recent landings) and explores the repo freely from there, commits, code and docs alike. It writes where things stand and three next picks, each with a reason, marking picks that can run in parallel as one wave for dispatch. The model picks; no rule does.
-- **The session is pinged, not rerun.** A tracker change, debounced by five to ten minutes, is sent to the same session with `--resume` as a short note of what changed; the session decides whether the briefing needs rewriting and what to look at for it (recent commits, a ticket, the code), building on what it already explored. The session retires after an idle hour or a cap on pings, whichever comes first, and the next change starts a fresh one. The board's watcher hosts the debounce; a board rendered once without watching shows the last briefing.
+- **The session is pinged, not rerun.** A ticket's status changing, a new ticket and a retired one included, is sent to the same session with `--resume` as a short note of what changed, five minutes after the tracker last moved and no sooner than ten minutes after the last briefing (amended 2026-09-23 on 09's D2, was any tracker change debounced by five to ten minutes); a ticket edited without its status moving is re-rendered and not sent. The session decides whether the briefing needs rewriting and what to look at for it (recent commits, a ticket, the code), building on what it already explored. The session retires after an idle hour or a cap on pings, whichever comes first, and the next change starts a fresh one. The board's watcher hosts the debounce; a board rendered once without watching shows the last briefing.
 - **The cache file** beside the board holds the briefing, the time it was written, and the session's id, start, last activity and ping count, which the retirement rule reads. The board shows the time written.
 - **Cost rests on the prompt cache.** A ping inside the cache's lifetime rereads the session's context at the cached price; the build confirms which lifetime the plan in use gives (five minutes by default, an hour where the longer cache applies) and sets the idle limit to match. A ping after the cache has lapsed still costs less than a fresh exploration.
+- **The session runs on Opus 5.5 at medium effort, and without the user's output style**, which shapes a reply for a human at a terminal (ruled 2026-09-23 on 09's D2, for every noninteractive run).
 - **Fallback**: with no model available, or before the first briefing exists, the board writes the deterministic sentence the prototype does (counts of builds, questions, design sessions, running work) and orders next by priority, then what accepting unlocks, then the user's time.
 
 ### Where the workflow changes

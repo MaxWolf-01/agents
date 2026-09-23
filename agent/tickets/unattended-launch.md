@@ -19,7 +19,7 @@ Settled already, and the pattern to reuse: code-review's reviewers launch with `
 | --- | --- | --- | --- |
 | subagents | `claude/CLAUDE.md`, `<subagents>` | Opus; Fable for large work, Sonnet for lookups | the harness's |
 | dispatch workers | `mx/skills/dispatch/run-worker.sh`, `dispatch/SKILL.md` step 3 | Opus; Sonnet for a small ticket | user `CLAUDE.md` and output style excluded; skills, allowlist, hooks and connectors inherited |
-| board briefing | `mx/skills/tracker/briefing.py` (board-orients) | Opus 5.5, medium (ruled, board-orients 16) | user `CLAUDE.md` excluded; output style inherited on zephylux |
+| board briefing | `mx/skills/tracker/briefing.py` (board-orients) | Opus 5.5, medium (board-orients 16) | user `CLAUDE.md` and output style excluded; the run replaces the system prompt, so the style is out of the request either way (board-orients 16) |
 | chat-review hook | `mx/skills/writing-for-humans/chat_review.py` | Haiku, thinking off | none (`--setting-sources ""`) |
 | diffview summary | `~/.dotfiles/bin/diffview` | Sonnet | everything |
 | session naming | `~/.dotfiles/bin/session-index` | Sonnet | none (`--system-prompt`, `--setting-sources ""`) |
