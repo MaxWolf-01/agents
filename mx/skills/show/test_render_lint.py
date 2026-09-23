@@ -10,8 +10,9 @@ here exhibits one condition, and the oracle is what a reader sees on it: two lab
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
 its title off, which is a finding that never fails a run; text a clip leaves nothing of, and
-text a folded disclosure holds, are both hidden on purpose; and a box cuts off only what it
-is the containing block of.
+text a folded disclosure holds, are both hidden on purpose, while text the browser renders
+late or lays out through a box-less element is not; and a box cuts off only what it is the
+containing block of, the page itself included.
 
 A run launches Chromium, so these take a second or two each.
 """
@@ -113,6 +114,38 @@ def test_a_folded_disclosure_holds_no_visible_text(tmp_path):
     assert code == 0
 
 
+def test_an_open_disclosure_still_has_its_text_measured(tmp_path):
+    code, findings = lint(tmp_path, f"<details open><summary>Ticket one</summary>{TWO_LABELS.format(one=10, two=12)}</details>")
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
+def test_text_in_a_box_that_generates_none_is_measured(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="position:relative;height:80px">
+          <div style="position:absolute;left:40px;top:20px"><span style="display:contents">Label A over label B</span></div>
+          <span style="position:absolute;left:40px;top:22px">Label B under label A</span>
+        </div>
+        """,
+    )
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
+def test_a_section_the_browser_renders_late_is_measured(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        f"""
+        <div style="height:3000px">A spacer taller than the first viewport.</div>
+        <section style="content-visibility:auto;contain-intrinsic-size:auto 200px">{TWO_LABELS.format(one=10, two=12)}</section>
+        """,
+    )
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
 def test_a_static_box_does_not_clip_the_labels_absolutely_positioned_inside_it(tmp_path):
     code, findings = lint(
         tmp_path,
@@ -138,6 +171,33 @@ def test_a_positioned_box_does_clip_what_it_holds(tmp_path):
         """,
     )
     assert kinds(findings) == ["clipped"]
+    assert code == 0
+
+
+def test_a_box_holding_what_it_perspective_projects_does_clip_it(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="perspective:500px;overflow:hidden;width:120px;height:40px">
+          <span style="position:absolute;left:4px;top:8px;white-space:nowrap">A label the box cuts off long before here</span>
+        </div>
+        <span style="position:absolute;left:300px;top:8px">Another mark entirely</span>
+        """,
+    )
+    assert kinds(findings) == ["clipped"]
+    assert code == 0
+
+
+def test_the_page_itself_clips_what_it_pushes_out_of_the_viewport(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <style>body { overflow-x: hidden }</style>
+        <span style="position:absolute;left:2000px;top:20px">Off to the right A</span>
+        <span style="position:absolute;left:2000px;top:22px">Off to the right B</span>
+        """,
+    )
+    assert findings == []
     assert code == 0
 
 

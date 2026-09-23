@@ -19,10 +19,10 @@ Kinds, by severity:
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
   (reported, never fatal: a truncated title is sometimes the design).
 
-Skipped on purpose: a scrolling ancestor, which is what keeps text inside it from counting
-as escaped or cut off; overflow under 2px; the touching line boxes of a multi-line label;
-text a clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs
-cross by less than half the shorter one's height.
+Skipped on purpose: overflow under 2px; the touching line boxes of a multi-line label; text a
+clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
+less than half the shorter one's height. Text in a scrolling ancestor never counts as escaping
+or being cut off, and still counts as overlapping.
 
 Exit code 1 when any escape or overlap was found.
 
@@ -65,14 +65,15 @@ MEASURE = r"""
   // Whether an ancestor's clip reaches a box positioned this way: an absolute box is cut only
   // by its containing-block chain, a fixed one only by an ancestor that takes it out of the
   // viewport's frame.
-  const holds = (cs, pos) => cs.transform !== 'none' || cs.filter !== 'none' || cs.contain !== 'none' || cs.willChange !== 'auto' || (pos === 'absolute' && cs.position !== 'static')
+  const holds = (cs, pos) => cs.transform !== 'none' || cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' || cs.contain !== 'none' || cs.willChange !== 'auto' || (pos === 'absolute' && cs.position !== 'static')
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
   // it cannot scroll say how much they cut off.
   const clip = (el, r) => {
     let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
-      if (a !== el && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
+      const root = a === document.body || a === document.documentElement
+      if (a !== el && !root && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
       pos = cs.position
       if (cs.overflowX === 'visible' || cs.display === 'inline') continue
       const ab = a.getBoundingClientRect()
@@ -83,12 +84,15 @@ MEASURE = r"""
     }
     return { seen, cut }
   }
+  // display: contents leaves an element with no box, and checkVisibility calls a box-less element
+  // hidden; its text is laid out and painted by the formatting context above it.
+  const shown = (el) => el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) || (getComputedStyle(el).display === 'contents' && !!el.parentElement && shown(el.parentElement))
   const runs = []
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     const el = n.parentElement
     if (!n.nodeValue.trim() || !el || el instanceof SVGElement) continue
-    if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true, contentVisibilityAuto: true })) continue
+    if (!shown(el)) continue
     const range = document.createRange()
     range.selectNodeContents(n)
     const seen = []

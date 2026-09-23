@@ -54,4 +54,4 @@ Copy on the page is artefact text: `/mx:writing-for-humans` binds every label an
 - `PARTS.md`: one line per part (button, input, table, note, overlay, chart), and the Tailwind v4 mapping.
 - `demo.html`: every token, role and part rendered, with the toggle and the `?theme=` reading to copy. Open it to see the floor.
 
-Before presenting anything built on this, `render-lint` the page (its `--help` lists what it measures; a crop per finding) and look at both schemes.
+Before presenting anything built on this, `render-lint` the page (its `--help` lists what it measures and how to get a crop per finding) and look at both schemes.
