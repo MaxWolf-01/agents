@@ -17,10 +17,12 @@ A thing is understood in front of a render: someone sees what it is and what it 
 | A new or moved module boundary | dependency diagram | none |
 | A prompt, a skill, a process change | an excerpt of the session it would produce, or that session role-played as a stand-in | a driven session transcript, before and after where the difference is the point |
 | A script, a hook, a CLI | example invocations, or the interface with sample outputs | the real invocation and the output it produced, `--help` for a CLI |
-| A page or a UI | none | the page opened, a screenshot per state, a tutorial that walks the reader through it, or a recording |
+| A page or a UI | a prototype of it (`/mx:prototype`), a rough render to judge before the page is built | the page opened, a screenshot per state, a tutorial that walks the reader through it, or a recording |
 | A config or a keybinding | none | the setting or the keystroke, and what it does |
 
 Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none, and a shape with no row at all, mean nothing is owed: no slot is ever padded to have something in it. A change of no shape the table gives a demo owes none, and the landing that carries it says so in one line: the diff is the demo. Every document takes this table, an ADR included, and most ADRs hit no row.
+
+The page row is the one whose figure is another skill's artefact: `/mx:prototype` owns how it is built and where it lives, and the decision links it the way it links a figure.
 
 A **before/after** is the shape that crosses the rows: a decision or a change that moves something already there is shown as the two side by side, whatever else its row gives it.
 
@@ -45,7 +47,7 @@ A demo is built to be read by someone with the product sense and none of the wee
 
 One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: what it reads sits beside it in the same directory.
 
-Running it is the whole demo. It writes what it produces, a transcript, a sample file, a screenshot, into `out/` beside itself, untracked because the next run regenerates it, and it opens what it produced when a display is there, so a worker on a headless host runs it for the files and the session on the user's machine runs it for the opening. It runs from a fresh checkout of its branch on any host where the project is installed, carrying nothing from the session that wrote it, and it says so when it fails rather than printing an empty result. The fixed name is what makes every demo findable and runnable without reading anything first: `fd -t x '^demo$' agent/show`.
+Running it is the whole demo. It writes what it produces, a transcript, a sample file, a screenshot, into `out/` beside itself, untracked because the next run regenerates it, and it opens what it produced when a display is there, so a worker on a headless host runs it for the files and the session on the user's machine runs it for the opening. It lets go of what it opened rather than waiting on it: a staged demo runs under `job`, and a handler that is a terminal or an editor would keep the run going until its window closed. It runs from a fresh checkout of its branch on any host where the project is installed, carrying nothing from the session that wrote it, and it says so when it fails rather than printing an empty result. The fixed name is what makes every demo findable and runnable without reading anything first: `fd -t x '^demo$' agent/show`.
 
 ## Register
 
