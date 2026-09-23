@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [13]
 priority: 2
 size: XS
+diff: [298cff22a7e82f4ed7eda573db85e6b9b0cdcc72..f969633f8b5e8ed81968699d4c4f917175fef392]
 ---
 
 # An opened row shows its questions once
