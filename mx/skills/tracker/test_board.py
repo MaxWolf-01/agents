@@ -1884,11 +1884,13 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
     assert len(runs(claude)) == 1, "a change inside the window waits it out"
 
     path_with("claude", "echo '{\"is_error\": true}'")  # a login that has lapsed, a run past its limit
-    later = at + DEBOUNCE + timedelta(seconds=1)
     (tracker / "small-chore.md").write_text("---\nstatus: done\n---\n\n# A chore\n")
-    watcher.changed(later)
-    watcher.tick(roots, tracker_snapshot(roots, repo), later)
+    # stamped while the session was exploring: a run's clock is read before it starts, so a change
+    # landing during one reads as a change it has not heard, and the window after is when it does
+    watcher.changed(written.last_activity + timedelta(seconds=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), at + DEBOUNCE + timedelta(seconds=1))
     watcher.running.join(30)
+    assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the window after it"
     assert Briefing.read(cache_path(out)) == written, "a run that answered nothing writes nothing"
     assert watcher.told == told, "what the session was told about waits for the run that reaches it"
     cache_path(out).unlink()  # and with no briefing to fall back on, the page says why there is none
