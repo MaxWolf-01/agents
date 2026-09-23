@@ -560,6 +560,7 @@
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "autoCompactEnabled": false,
+  "promptCacheTtl": "1h",
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
