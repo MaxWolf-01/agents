@@ -1216,9 +1216,16 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
     path. The row's copy-all goes with the list it copies."""
     out = tmp_path / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
-    rows = rows_of(out.read_text())
+    page = out.read_text()
+    rows = rows_of(page)
     row = rows["standalone-flaky-upload-test"]
+    written = (f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?**"
+               " A retry hides a real slowdown; a fake clock makes the test say nothing about timing.")
+    assert [text for _, text, _, _ in copiers(body_of(row))] == [written], "the question as the file writes it, under its path"
     assert copiers(body_of(row)) == copiers(summary_of(row)), "the same button, and none on the question a ruling answered"
+    # the list going is the page's style, which only a browser sees run (test_board_layout.py);
+    # this is the tripwire for a run with no browser, not the check
+    assert ".ticket[open] .qs { display: none; }" in page, "nothing in the page hides an opened row's question list"
     three = rows["t-csv-import-02"]
     assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "democopy"]
     assert [which for which, _, _, _ in copiers(summary_of(three))] == ["qcopy", "qcopy", "qcopy", "qall"]
@@ -1241,7 +1248,9 @@ def test_a_blocked_rows_questions_carry_the_same_buttons_in_both_places(tmp_path
     page = render_page("demo", features, standalone, log="", stamp="s", stamp_src="s.js")
     assert '<details class="ticket row-blocked" id="t-ledger-02"' in page, "the fixture no longer exercises a derived status"
     row = rows_of(page)["t-ledger-02"]
-    assert copiers(body_of(row)) == copiers(summary_of(row)) != [], "the two readings of the status disagree"
+    written = f"{waiting}\n- [D1] **Which store?** The one that travels."
+    assert [text for _, text, _, _ in copiers(body_of(row))] == [written]
+    assert copiers(body_of(row)) == copiers(summary_of(row)), "the two readings of the status disagree"
 
 
 def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:

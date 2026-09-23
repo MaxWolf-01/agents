@@ -181,9 +181,15 @@ with sync_playwright() as pw:
           return list ? list.getBoundingClientRect().height > 0 : null
         }
         const row = document.getElementById(opened)
-        return {opened_list: listed(opened), folded_list: listed(folded),
-                asked: row.querySelectorAll(".asked > li").length,
-                copiers: row.querySelectorAll(".asked > li > .copier").length}
+        // each question of the opened row, as boxes rather than as nodes: a button the markup
+        // carries and the style hides is what this run is here to tell from one the reader can click
+        const asked = [...row.querySelectorAll(".asked > li")].map((li) => {
+          const line = li.getBoundingClientRect()
+          const button = li.querySelector(":scope > .copier")?.getBoundingClientRect()
+          return {copier: button ? button.width > 0 : false,
+                  at_the_end: button ? line.right - button.right < 1 : null}
+        })
+        return {opened_list: listed(opened), folded_list: listed(folded), asked}
       }
     """, [ROW, FOLDED])
     page.click(f"#{FOLDED} .qall")
@@ -259,7 +265,12 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     asked = seen["questions"]
     assert asked["opened_list"] is False, "the opened row lists its questions under its name as well as in its block"
     assert asked["folded_list"] is True, "a folded row lost the questions under its name"
-    assert asked["asked"] == asked["copiers"] == 3, f"the opened row's block holds {asked}"
+    assert [q["copier"] for q in asked["asked"]] == [True] * 3, (
+        f"a question of the opened row has no button the reader can click: {asked['asked']}"
+    )
+    assert all(q["at_the_end"] for q in asked["asked"]), (
+        f"a question's button sits among its words rather than at the end of its line: {asked['asked']}"
+    )
     # a copy button is a span inside a summary, so the click it takes is the page's to handle
     copied = seen["copied"]
     assert copied["clipboard"] == copied["asked"], "the click put something else on the clipboard"
