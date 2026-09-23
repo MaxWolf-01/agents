@@ -1,5 +1,5 @@
 ---
-status: open
+status: claimed
 priority: 2
 size: XS
 ---
