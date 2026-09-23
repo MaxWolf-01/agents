@@ -1221,8 +1221,8 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
     return found
 
 
-# one record per commit, its files under it: the date the session wrote it, and the session that
-# signed it
+# one record per commit, its files under it as `<status>\t<name>`, a move as `R<score>\t<old>\t<new>`:
+# the date the session wrote it, and the session that signed it
 SESSION_LOG = f"--format=%x1e%as %(trailers:key={SESSION_TRAILER},valueonly,separator=%x20)"
 
 
@@ -1231,20 +1231,36 @@ def session_log(repo: Path) -> dict[str, dict[str, tuple[str, str]]]:
     """Which sessions changed which file, and the dates of each session's first and last commit on
     it, oldest session first: one pass over every branch of the repo.
 
+    A file that moved is one file: git records the move, so the sessions under its old path carry
+    over to the new one as the walk reaches the commit that moved it, through a chain of moves too.
+    Carrying at that commit rather than at the end is what leaves a later file born at the freed old
+    path with only its own sessions.
+
     The dates are min and max rather than the ends of the walk, which is in commit order while the
     dates are the author's: a cherry-picked commit would otherwise leave a range running backwards.
     """
     changed: dict[str, dict[str, tuple[str, str]]] = {}
     # a commit's own account of which session made it, written by the prepare-commit-msg hook
-    written = git(repo, "log", "--all", "--reverse", "--name-only", SESSION_LOG)
+    written = git(repo, "log", "--all", "--reverse", "--name-status", "-M", SESSION_LOG)
     for record in filter(None, written.split("\x1e")):  # git()'s strip eats the leading separator
         head, _, names = record.partition("\n")
         date, *sessions = head.split()
-        for sid in sessions:
-            for name in filter(None, names.split("\n")):
-                first, last = changed.setdefault(name, {}).get(sid, (date, date))
-                changed[name][sid] = (min(first, date), max(last, date))
+        for line in filter(None, names.split("\n")):
+            status, *paths = line.split("\t")
+            name = paths[-1]  # a move names its destination second
+            worked = changed.setdefault(name, {})
+            if status.startswith("R"):
+                carry(changed.pop(paths[0], {}), worked)
+            carry({sid: (date, date) for sid in sessions}, worked)
     return changed
+
+
+def carry(worked: dict[str, tuple[str, str]], into: dict[str, tuple[str, str]]) -> None:
+    """Merge sessions and their first and last dates into `into`, widening the span of one already
+    there."""
+    for sid, (first, last) in worked.items():
+        was_first, was_last = into.get(sid, (first, last))
+        into[sid] = (min(was_first, first), max(was_last, last))
 
 
 def repo_name(path: Path) -> str | None:

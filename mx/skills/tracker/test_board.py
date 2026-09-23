@@ -1499,6 +1499,84 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
     assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
 
 
+@pytest.fixture
+def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """(the tracker, its repo) of two tickets that moved: one standalone ticket grilled into a
+    feature, and one grilled in that later left it again under a name of its own. A session commits
+    at every stop, so a session listed on either ticket names the path it worked under.
+    """
+    repo = tmp_path / "the ledger"
+    root = repo / "agent" / "tickets"
+    (root / "csv-import").mkdir(parents=True)
+    demo_git(repo, "init", "-q", "-b", "master")
+    ticket(root / "split-rows.md", "open")
+    ticket(root / "name-columns.md", "open")
+    demo_commit(repo, HERE, "2026-09-14T10:00:00+02:00", "two csv tickets filed", "agent/tickets")
+
+    demo_git(repo, "mv", "agent/tickets/split-rows.md", "agent/tickets/csv-import/02-split-rows.md")
+    demo_git(repo, "mv", "agent/tickets/name-columns.md", "agent/tickets/csv-import/01-name-columns.md")
+    demo_commit(repo, NAMED, "2026-09-16T09:00:00+02:00", "csv-import: grilled, two slices", "agent/tickets")
+    append(root / "csv-import" / "01-name-columns.md", "\nThe header row names the bank.\n")
+    demo_commit(repo, NAMED, "2026-09-17T09:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
+
+    demo_git(repo, "mv", "agent/tickets/csv-import/01-name-columns.md", "agent/tickets/header-row.md")
+    append(root / "header-row.md", "\nAsked once per bank.\n")
+    demo_commit(repo, NEW, "2026-09-19T08:00:00+02:00", "header-row: out of csv-import", "agent/tickets")
+
+    written = tmp_path / "claude" / "projects"
+    for sid in (HERE, NAMED, NEW):
+        write_transcript(written, sid, str(repo), f"Worked as {sid[:4]}")
+    monkeypatch.setattr(board, "TRANSCRIPTS", written)
+    return root, repo
+
+
+def test_a_ticket_that_moved_lists_the_sessions_from_under_its_old_path(moved: tuple[Path, Path]) -> None:
+    """A moved ticket is one ticket: git records the move, so the session that filed it is listed on
+    it wherever it now sits, and a chain of two moves carries both earlier paths."""
+    root, repo = moved
+    once = ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)
+    assert [(s.id, s.first, s.last) for s in once] == [
+        (HERE, "2026-09-14", "2026-09-14"), (NAMED, "2026-09-16", "2026-09-16"),
+    ], "the session that filed it as agent/tickets/split-rows.md worked on this ticket"
+    twice = ticket_sessions(root / "header-row.md", repo)
+    assert [(s.id, s.first, s.last) for s in twice] == [
+        (HERE, "2026-09-14", "2026-09-14"),
+        (NAMED, "2026-09-16", "2026-09-17"),
+        (NEW, "2026-09-19", "2026-09-19"),
+    ], "standalone, then the feature's 01, then standalone again: oldest session first, spans intact"
+    assert ticket_sessions(root / "split-rows.md", repo) == [], "the path it left holds no ticket"
+
+
+def test_a_ticket_born_at_a_path_another_left_lists_only_its_own_sessions(moved: tuple[Path, Path]) -> None:
+    """The moves carry as the walk reaches them, not at the end: a new ticket filed at a freed path
+    is another ticket, and inherits nothing from the one that moved away."""
+    root, repo = moved
+    ticket(root / "split-rows.md", "open")  # a second ticket, named for the gap the first one left
+    demo_commit(repo, NEW, "2026-09-20T10:00:00+02:00", "split-rows: filed again", "agent/tickets")
+    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [NEW]
+
+
+def test_the_sessions_of_every_ticket_come_from_one_pass_over_the_repo(
+    moved: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Following a move costs no git call per ticket: however many tickets the board lists, and
+    however far each has moved, the log is read once."""
+    root, repo = moved
+    ran: list[str] = []
+    real = board.git
+
+    def counted(cwd: Path, *args: str) -> str:
+        ran.append(args[0])
+        return real(cwd, *args)
+
+    monkeypatch.setattr(board, "git", counted)
+    tickets = sorted(root.rglob("*.md"))
+    assert len(tickets) == 2, "two tickets, so one call for both is a reading and not a coincidence"
+    for path in tickets:
+        ticket_sessions(path, repo)
+    assert ran == ["log"]
+
+
 # ---- the state of a GitHub reference ---------------------------------------
 # The spec's Decision: the board resolves every `gh` reference in one query per render, cached
 # beside the board, and a link wears the state that comes back. The oracle is GitHub's GraphQL
