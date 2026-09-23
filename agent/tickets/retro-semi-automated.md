@@ -22,3 +22,5 @@ The per-session half of this (what fought the agent, what it would build) is the
 **2026-09-23** The user wants the retrospective to run per feature, from its debrief: subagents scan the feature's sessions, commit history and diffs for patterns, roadblocks, and bad workflow or tooling. board-orients 15 makes the debrief a ticket that lists the feature's sessions (from `Session:` commit trailers) and its commit range, which is this ticket's input per feature.
 
 **2026-09-23** Ruled by the user (D108): priority 3, grilled together with board-orients 15, the retro a sub-step of the debrief; "debrief" is the name for the whole close-out account.
+
+**2026-09-23** Ruled by the user (D93): the rule "a defect a tool could have caught gets its check proposed" (text overlapping on a render, a prose tell, a convention broken: fix it, and file a ticket extending the tool that owns that kind of check) belongs to the workflow, not to the global `claude/CLAUDE.md`, and is designed in this grilling. The drafted wording, a `CLAUDE.md` sentence plus a worker-contract friction line, is branch `claude-md/propose-checks` (`f58ed36`), unmerged.
