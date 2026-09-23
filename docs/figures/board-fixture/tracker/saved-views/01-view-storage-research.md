@@ -1,13 +1,19 @@
 ---
 status: claimed
 type: research
+priority: 2
+size: S
 ---
 
 # Where does a saved view live?
 
-## Question
+## Brief
 
-Whether the filter set can be stored as one column the database can query into,
-or needs its own table, and what each costs when a view is shared.
+Everything else in this feature waits on one storage answer: whether a filter set is a column the
+database can query into or a table of its own, and what each costs once a view is shared.
 
-Answering this rewrites the spec's Decisions and Testing Decisions.
+## What to build
+
+What each of the two stores costs when a view is shared, read out of the database's own docs and
+whatever the codebase already does with filters. The answer rewrites the spec's Decisions and its
+Testing Decisions, and nothing here waits on you until it lands.

@@ -1,0 +1,8 @@
+{
+ "text": "The csv-import feature is delivered end to end \u2014 parse, mapping, dry-run commit \u2014 and the duplicate rule was settled as date+payee+amount. Mutation testing found that no test asserts the reason a rejected line carries, and `test_importer.py:16` confirms it, keeping only the line number and throwing the reason away. saved-views is stalled on two questions, one claimed, one untouched \u2014 its spec's Solution is still two behavioural sentences with no surface at all.\n\n## next\n\n- saved-views/05 \u2014 nothing in the feature is drawn until you rule on the list's shape; 02's floor depends on it.\n- The flaky upload test \u2014 the fix has landed in the tree already; only D1 is open, and no test opens a file now.\n- retire-the-legacy-exporter \u2014 `export_csv` appears nowhere but its own ticket; verification looks nearly done.\n\nThese three can run at the same time. Hold csv-import/06 until the flake ruling \u2014 both edit the same test.",
+ "written": "2026-09-23T15:03:46.453881+00:00",
+ "session": "0e85f00a-159b-474d-a676-4dc8a3e3dc8f",
+ "started": "2026-09-23T15:03:46.453881+00:00",
+ "last_activity": "2026-09-23T15:03:46.453881+00:00",
+ "pings": 0
+}

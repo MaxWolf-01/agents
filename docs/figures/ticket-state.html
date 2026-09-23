@@ -31,7 +31,6 @@ svg{display:block; width:100%; height:auto;}
 .dagedge{fill:none; stroke:var(--muted); stroke-width:1; opacity:.7;}
 .flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
 .flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2;}
-.spoke{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:5 4;}
 .m-muted{fill:var(--muted);} .m-accent{fill:var(--accent);}
 text{fill:var(--ink);}
 .name{font:600 12px 'Geist',sans-serif;}
@@ -59,10 +58,10 @@ text{fill:var(--ink);}
 <p class="dek">Tickets are markdown files under <code>agent/tickets/</code>; the board is the whole tracker rendered as
 one page. Every ticket an agent writes is <code>proposed</code>: on the frontier and built like any other, in its own
 colour in every view, until you rule on what it produced. Everything the page shows &mdash; the dependency graph, the
-frontier, the wave lanes, the review pages, the queue &mdash; is derived from those files, so the page is never a
+frontier, the review pages, everything that waits on you &mdash; is derived from those files, so the page is never a
 second place to keep state.</p>
 
-<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 914" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
@@ -73,37 +72,40 @@ second place to keep state.</p>
   </defs>
 
   <!-- the board, as a zone -->
-  <rect class="zone" x="392" y="64" width="768" height="664" rx="8"/>
+  <rect class="zone" x="392" y="64" width="768" height="772" rx="8"/>
 
   <!-- connectors -->
   <path class="flow" d="M 344,136 H 426" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 344,296 H 426" marker-end="url(#arrow)"/>
-  <path class="spoke" d="M 344,492 H 386" marker-end="url(#arrow)"/>
-  <path class="flow-accent" d="M 124,424 V 350" marker-end="url(#arrow-accent)"/>
+  <path class="flow" d="M 344,256 H 426" marker-end="url(#arrow)"/>
+  <path class="flow-accent" d="M 344,444 H 388" marker-end="url(#arrow-accent)"/>
+  <path class="flow-accent" d="M 124,424 V 310" marker-end="url(#arrow-accent)"/>
 
-  <path class="flow-accent" d="M 568,174 V 258" marker-end="url(#arrow-accent)"/>
-  <path class="flow" d="M 568,334 V 378" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 568,454 V 498" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 568,574 V 618" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 704,136 H 730 V 416 H 706" marker-end="url(#arrow)"/>
-  <path class="flow-accent" d="M 344,600 H 386 V 536 H 426" marker-end="url(#arrow-accent)"/>
+  <path class="flow-accent" d="M 568,174 V 218" marker-end="url(#arrow-accent)"/>
+  <path class="flow" d="M 568,294 V 338" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 568,414 V 458" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 568,534 V 578" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 568,654 V 698" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 704,136 H 730 V 376 H 706" marker-end="url(#arrow)"/>
+  <path class="flow-accent" d="M 344,600 H 386 V 496 H 426" marker-end="url(#arrow-accent)"/>
 
   <!-- state chips -->
   <rect class="chip-accent" x="432" y="104" width="272" height="64" rx="6"/>
-  <rect class="chip" x="432" y="264" width="272" height="64" rx="6"/>
-  <rect class="chip" x="432" y="384" width="272" height="64" rx="6"/>
-  <rect class="chip" x="432" y="504" width="272" height="64" rx="6"/>
-  <rect class="chip-ghost" x="432" y="624" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="224" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="344" width="272" height="64" rx="6"/>
+  <rect class="chip-accent" x="432" y="464" width="272" height="64" rx="6"/>
+  <rect class="chip" x="432" y="584" width="272" height="64" rx="6"/>
+  <rect class="chip-ghost" x="432" y="704" width="272" height="64" rx="6"/>
 
   <!-- source cards -->
   <rect class="card" x="64" y="88" width="280" height="96" rx="6"/>
-  <rect class="card" x="64" y="248" width="280" height="96" rx="6"/>
+  <rect class="card" x="64" y="208" width="280" height="96" rx="6"/>
   <rect class="card" x="64" y="424" width="280" height="136" rx="6"/>
   <rect class="chip-accent" x="64" y="592" width="280" height="112" rx="6"/>
 
   <!-- board panels -->
   <rect class="card" x="760" y="104" width="384" height="280" rx="6"/>
-  <rect class="card" x="760" y="440" width="384" height="200" rx="6"/>
+  <rect class="card" x="760" y="440" width="384" height="216" rx="6"/>
+  <rect class="card" x="760" y="680" width="384" height="112" rx="6"/>
 
   <!-- mini DAG inside the graph panel -->
   <path class="dagedge" d="M 868,224 H 900" marker-end="url(#arrow)"/>
@@ -124,18 +126,18 @@ second place to keep state.</p>
   <text class="note" x="76" y="162">the orchestrator: a harden line no test pins</text>
   <text class="note" x="76" y="176">a review: a finding too large to fix there</text>
 
-  <text class="name" x="76" y="272">You</text>
-  <text class="note" x="76" y="292">asked for in chat, or a grilling's decision</text>
-  <text class="note" x="76" y="306">tickets: rulings already</text>
-  <text class="note" x="76" y="322">silence is not a ruling</text>
+  <text class="name" x="76" y="232">You</text>
+  <text class="note" x="76" y="252">asked for in chat, or a grilling's decision</text>
+  <text class="note" x="76" y="266">tickets: rulings already</text>
+  <text class="note" x="76" y="282">silence is not a ruling</text>
 
-  <text class="name" x="76" y="448">The needs-human queue</text>
-  <text class="cmd" x="76" y="464">needs-human.md, per feature</text>
-  <text class="note" x="76" y="482">one entry per thing only you can answer:</text>
-  <text class="note" x="76" y="496">the feature's debrief, a decision, the</text>
-  <text class="note" x="76" y="510">kickoff prompt of a session you must run</text>
-  <text class="note" x="76" y="528">answered? the entry is deleted; the answer</text>
-  <text class="note" x="76" y="542">lands in code or in tickets, never here</text>
+  <text class="name" x="76" y="448">A ticket's open questions</text>
+  <text class="cmd" x="76" y="464">## Questions, in the ticket file</text>
+  <text class="note" x="76" y="482">one [D1] item per call only you can make:</text>
+  <text class="note" x="76" y="496">a worker's, a grilling's, the question that</text>
+  <text class="note" x="76" y="510">stopped a build. None of them floats free</text>
+  <text class="note" x="76" y="528">answered? a Ruled line under it closes it,</text>
+  <text class="note" x="76" y="542">and the row leaves needs me on the next render</text>
 
   <text class="name" x="76" y="616">Your ruling, on what it built</text>
   <text class="note" x="76" y="636">the demo and the review page, never</text>
@@ -148,38 +150,43 @@ second place to keep state.</p>
   <text class="note" x="448" y="146">written, not yet ruled; on the frontier,</text>
   <text class="note" x="448" y="160">and the claim takes it like an open one</text>
 
-  <text class="state" x="448" y="288">open</text>
-  <text class="note" x="448" y="306">on the tracker, nobody holds it; open +</text>
-  <text class="note" x="448" y="320">unblocked + unclaimed is the frontier</text>
+  <text class="state" x="448" y="248">open</text>
+  <text class="note" x="448" y="266">on the tracker, nobody holds it; open +</text>
+  <text class="note" x="448" y="280">unblocked + unclaimed is the frontier</text>
 
-  <text class="state" x="448" y="408">claimed</text>
-  <text class="note" x="448" y="426">one worker is on it, in its own worktree,</text>
-  <text class="note" x="448" y="440">set before any work starts</text>
+  <text class="state" x="448" y="368">claimed</text>
+  <text class="note" x="448" y="386">one worker is on it, in its own worktree,</text>
+  <text class="note" x="448" y="400">set before any work starts</text>
 
-  <text class="state" x="448" y="528">done</text>
-  <text class="note" x="448" y="546">the worker's flip, on its ticket branch;</text>
-  <text class="note" x="448" y="560">the flip on its own proves nothing</text>
+  <text class="state" x="448" y="488">review</text>
+  <text class="note" x="448" y="506">built, or answered by an agent alone, and</text>
+  <text class="note" x="448" y="520">waiting on you: the demo, the review page</text>
 
-  <text class="state" x="448" y="648">retired</text>
-  <text class="note" x="448" y="666">not a status: git rm once it ships, and</text>
-  <text class="note" x="448" y="680">the row leaves the board; history keeps it</text>
+  <text class="state" x="448" y="608">done</text>
+  <text class="note" x="448" y="626">your accept, written through the merge;</text>
+  <text class="note" x="448" y="640">a flip on its own proves nothing</text>
+
+  <text class="state" x="448" y="728">retired</text>
+  <text class="note" x="448" y="746">not a status: git rm once it ships, and</text>
+  <text class="note" x="448" y="760">the row leaves the board; history keeps it</text>
 
   <!-- labels: transitions -->
-  <text class="al-accent" x="584" y="202">AN EARLY RULING</text>
-  <text class="note" x="584" y="218">open, delete, or send it to</text>
-  <text class="note" x="584" y="232">grilling; most are ruled on later</text>
+  <text class="al-accent" x="584" y="186">AN EARLY RULING</text>
+  <text class="note" x="584" y="200">open, delete, or send it to</text>
+  <text class="note" x="584" y="214">grilling; most are ruled on later</text>
 
-  <text class="al" x="584" y="340">DISPATCH CLAIM</text>
-  <text class="note" x="584" y="352">the orchestrator, sole</text>
-  <text class="note" x="584" y="364">claim-writer; proposed and</text>
-  <text class="note" x="584" y="376">open alike</text>
+  <text class="al" x="584" y="300">DISPATCH CLAIM</text>
+  <text class="note" x="584" y="312">the orchestrator, sole</text>
+  <text class="note" x="584" y="324">claim-writer; proposed and</text>
+  <text class="note" x="584" y="336">open alike</text>
 
-  <text class="al" x="584" y="472">THE WORKER'S LAST ACT</text>
-  <text class="note" x="584" y="488">committed and verified first</text>
+  <text class="al" x="584" y="426">THE WORKER'S LAST ACT</text>
+  <text class="note" x="584" y="440">on its branch; the orchestrator</text>
+  <text class="note" x="584" y="452">writes the feature branch's copy</text>
 
-  <text class="al" x="584" y="584">LANDED</text>
-  <text class="note" x="584" y="598">merged after a read against the</text>
-  <text class="note" x="584" y="612">ticket and the spec</text>
+  <text class="al" x="584" y="546">ACCEPTED, THEN MERGED</text>
+  <text class="note" x="584" y="560">read against the ticket and</text>
+  <text class="note" x="584" y="574">the spec before the merge</text>
 
   <!-- labels: board panels -->
   <text class="name" x="772" y="128">The dependency graph</text>
@@ -192,14 +199,21 @@ second place to keep state.</p>
 
   <text class="name" x="772" y="464">Also on the page</text>
   <text class="cmd" x="772" y="480">board</text>
-  <text class="note" x="772" y="498">spec status per feature: draft or confirmed</text>
-  <text class="note" x="772" y="512">wave lanes: which tickets ran together</text>
-  <text class="note" x="772" y="526">a row per ticket, linking its review page where one exists</text>
-  <text class="note" x="772" y="540">the needs-human queue, merged across features</text>
-  <text class="note" x="772" y="554">one switcher cycles every graph: frontier / full / lanes</text>
-  <text class="note" x="772" y="576">runs from anywhere in the repo, watches the tracker with</text>
-  <text class="note" x="772" y="590">every worktree's copy, and the open tab re-renders itself</text>
-  <text class="note" x="772" y="604">on each change. Gitignored: it is a view, not a record.</text>
+  <text class="note" x="772" y="498">needs me: every ticket that waits on you, in one group,</text>
+  <text class="note" x="772" y="512">its open questions under it, each one copyable</text>
+  <text class="note" x="772" y="526">a row per ticket: what it asks of you, your time, priority</text>
+  <text class="note" x="772" y="540">its review page, and the sessions that worked on it</text>
+  <text class="note" x="772" y="554">spec status per feature: draft or confirmed</text>
+  <text class="note" x="772" y="568">a briefing: where things stand and what to pick up next</text>
+  <text class="note" x="772" y="604">runs from anywhere in the repo, watches the tracker with</text>
+  <text class="note" x="772" y="618">every worktree's copy, and the open tab re-renders itself</text>
+  <text class="note" x="772" y="632">on each change. Gitignored: it is a view, not a record.</text>
+
+  <text class="name" x="772" y="704">What a row asks of you</text>
+  <text class="cmd" x="772" y="720">one word, in the same place on every row</text>
+  <text class="note" x="772" y="740">to rule on, your answer, design session, prototype,</text>
+  <text class="note" x="772" y="754">research, legwork, build</text>
+  <text class="note" x="772" y="774">every mark on a row says what it means on hover</text>
 
   <!-- board zone label + arrow labels + aside -->
   <rect class="mask" x="408" y="56" width="152" height="16" rx="4"/>
@@ -207,21 +221,19 @@ second place to keep state.</p>
 
   <text class="al-accent" x="232" y="384">YOU ANSWER</text>
 
-  <text class="al" x="332" y="476">MERGED IN</text>
+  <text class="al-accent" x="346" y="430">NEEDS ME</text>
 
-  <text class="aside" x="432" y="712">A decision ticket takes the same states and is never handed to a worker: the orchestrator claims it, then routes it by type.</text>
+  <text class="aside" x="432" y="816">A decision ticket takes the same states and is never handed to a worker: the orchestrator claims it, then routes it by type.</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="748" x2="1160" y2="748"/>
-  <rect class="chip-accent" x="64" y="766" width="24" height="12" rx="3"/>
-  <line class="flow-accent" x1="100" y1="772" x2="130" y2="772" marker-end="url(#arrow-accent)"/>
-  <text class="legend-text" x="142" y="775">waiting on you</text>
-  <rect class="dagnode-frontier" x="290" y="766" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="322" y="775">the frontier: startable now</text>
-  <line class="flow" x1="500" y1="771" x2="536" y2="771" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="544" y="775">the state chain</text>
-  <line class="spoke" x1="660" y1="771" x2="696" y2="771"/>
-  <text class="legend-text" x="704" y="775">a file the page merges in</text>
+  <line class="rule" x1="64" y1="856" x2="1160" y2="856"/>
+  <rect class="chip-accent" x="64" y="874" width="24" height="12" rx="3"/>
+  <line class="flow-accent" x1="100" y1="880" x2="130" y2="880" marker-end="url(#arrow-accent)"/>
+  <text class="legend-text" x="142" y="883">waiting on you</text>
+  <rect class="dagnode-frontier" x="290" y="874" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="322" y="883">the frontier: startable now</text>
+  <line class="flow" x1="500" y1="879" x2="536" y2="879" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="544" y="883">the state chain</text>
 </svg>
 <script>
 const root = document.documentElement, button = document.querySelector('.scheme');

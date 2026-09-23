@@ -1,8 +1,15 @@
 ---
 status: done
+priority: 2
+size: S
 ---
 
 # The import properties, as checks
+
+## Brief
+
+The spec's three properties become tests before anything implements them, so every later slice
+lands against a check that already exists and says which slice lifts it.
 
 ## What to build
 
