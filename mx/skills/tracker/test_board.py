@@ -45,6 +45,7 @@ from board import (
     Diffviews,
     Roots,
     board_graph,
+    changed_note,
     content_stamp,
     feature_graph,
     load_features,
@@ -1975,48 +1976,6 @@ def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(tmp_path: 
     assert "gone: agent/tickets/upgrade-python.md" in note
     assert "changed: agent/tickets/speed-up-tests.md" in note
     assert "the repo has moved on: " in note and "a slice filed, a chore retired" in note
-
-
-def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
-    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
-) -> None:
-    """The cache is written by a thread of its own while the board renders from it, and a version
-    of the board older than the file that is there is the same case: neither is a render that
-    fails."""
-    out = tmp_path / "board.html"
-    cache_path(out).write_text('{"text": "half a fi')
-    render(tracker_roots(tracker), repo, out)
-    assert "One build to rule on waits on you." in briefing_of(out.read_text())
-
-
-def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
-    """What a fresh session starts from: the tracker as the board computes it, which is every row's
-    marks, its brief, its open questions and the file the rest of it is in."""
-    roots = tracker_roots(demo.root)
-    state = board.briefing_state(roots, demo.repo)
-    shown = [
-        (f"{f.name}/{t.num}", t) for f in load_features(demo.root, {}, Diffviews(demo.root, None), demo.repo)
-        for t in f.tickets
-    ]
-    for ref, t in shown:
-        assert f"{ref} · {t.status} · " in state, f"{ref} is a row on the board and not a line of the state"
-        assert str(t.path) in state, f"{ref} is given without the file to read the rest of it in"
-    asked = [q.tag for _, t in shown for q in t.questions if not q.ruled]
-    assert asked and all(f"asks: [{tag}]" in state for tag in asked)
-    assert board.git_log(demo.repo).splitlines()[0] in state, "the commits behind the tracker"
-
-
-def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(demo: Demo, tmp_path: Path) -> None:
-    roots = tracker_roots(demo.root)
-    before = tracker_snapshot(roots, demo.repo)
-    (demo.root / "csv-import" / "07-new-ticket.md").write_text("---\nstatus: open\n---\n\n# A new slice\n")
-    (demo.root / "upgrade-python.md").unlink()
-    ticket = demo.root / "speed-up-tests.md"
-    ticket.write_text(ticket.read_text().replace("status: claimed", "status: review", 1))
-    note = board.changed_note(before, tracker_snapshot(roots, demo.repo), demo.repo)
-    assert "new: agent/tickets/csv-import/07-new-ticket.md" in note
-    assert "gone: agent/tickets/upgrade-python.md" in note
-    assert "changed: agent/tickets/speed-up-tests.md" in note
 
 
 # ---- properties -----------------------------------------------------------
