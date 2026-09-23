@@ -295,3 +295,15 @@ The commits are the same work at new SHAs: the lists above name the rebased ones
 - D114: a reviewer starts from none of the caller's setup: no settings files, MCP servers, skills or auto-memory, and only the file and shell tools.
 - D115: every reviewer runs Opus, `--effort high` by default; `--effort` is the knob the skill leaves the caller. The other unattended launches change together under [How every unattended `claude` run is launched](unattended-launch.md).
 - D116: the skill's description says what the skill is and its triggers; the four axes and the light-mode rule left it.
+
+Review of `0b32de6..e298428`, four axes, run by the new script itself (it is the check that `--allowedTools` still grants the script's commands under `--setting-sources ""`: all four reports landed). Finding index:
+
+- Correctness 1, Spec 6 (the sweep lets go of another range's lock before removing its checkout) → fixed, `2289640`.
+- Correctness 2 (a range with no lock file read as dead) → fixed, `2289640`.
+- Tests 1 to 6, Spec 1 (mutations the tests missed) → fixed, `2289640`; the one surviving mutation, closing fd 9 for `claude` alone, is equivalent because the reviewer's own subshell holds the lock.
+- Spec 5, Standards C1 (repo-wide `git worktree prune`) → fixed, `2289640`: the sweep reads git's list of worktrees instead.
+- Spec 7 (a test run's leftover process keeps the range locked) → fixed in part, `2289640`: the refusal names `fuser -v` on the lock file.
+- Standards V1 to V5, C2, S2 to S5, S7 to S11, S13 → fixed, `2289640`.
+- Spec 2, Standards S12 (the description keeps a sentence saying what the skill is) → declined: the user approved that exact text on the calls page, and writing-for-agents has a pointer state what the material is.
+- Spec 4, Standards S6 (`--model` survives D115) → declined: D115 rules the default, and the flag is the way to run a review on another model when the user names one.
+- Standards C3 (the rulings entry is one paragraph with bullets) → declined: four rulings from one page read better together.
