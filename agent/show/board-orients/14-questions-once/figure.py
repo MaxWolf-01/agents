@@ -5,7 +5,7 @@
 # ///
 """Write figure.html beside this file: an opened row's questions before this slice and after it.
 
-Three renders of one demo tracker, each a screenshot of a browser driven to the state it shows,
+Three panels off one demo tracker, each a screenshot of a browser driven to the state it shows,
 with a numbered badge sitting where each note points, placed from the box the browser measured for
 that element rather than from a coordinate anyone typed. Both colour schemes are captured and the
 figure's switch picks one.
@@ -32,7 +32,7 @@ from playwright.sync_api import Page, sync_playwright
 HERE = Path(__file__).parent
 ROOT = HERE.parents[3]
 TRACKER = ROOT / "mx" / "skills" / "tracker"
-ROW = "t-csv-import-02"  # the build in review, whose three questions the row and the block both hold
+ROW = "t-csv-import-02"  # the build in review, which asks three questions
 FOLDED = "standalone-retire-legacy-exporter"  # a needs-me row the anchor leaves folded
 WIDE = {"width": 1500, "height": 1700}  # tall enough for the opened row to be shot without scrolling
 PAD = 10  # the margin a clipped shot keeps around the element it is clipped to

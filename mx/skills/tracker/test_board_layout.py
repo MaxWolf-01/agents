@@ -57,6 +57,7 @@ ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
+FOLDED = "standalone-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
 # A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
 # prose; the hover probe below renders the other branch, the board's own count. No model runs in a
 # check: the fixtures take claude off PATH.
@@ -112,7 +113,7 @@ from playwright.sync_api import sync_playwright
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 width, marks = int(sys.argv[2]), sys.argv[3].split(",")
-ROW, FOLDED = "t-csv-import-02", "standalone-retire-legacy-exporter"
+ROW, FOLDED = sys.argv[4].split(",")
 TIP = """
 (mark) => {
   const el = document.querySelector(mark)
@@ -145,7 +146,7 @@ with sync_playwright() as pw:
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
     for scheme in ("day", "night"):
-        page.goto(f"{page_url}?theme={scheme}#t-csv-import-02", wait_until="networkidle")
+        page.goto(f"{page_url}?theme={scheme}#{ROW}", wait_until="networkidle")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
     out["names"] = page.evaluate("""
@@ -170,7 +171,7 @@ with sync_playwright() as pw:
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
-        where = mark if mark.startswith("#") else f"#t-csv-import-02 .{mark}"
+        where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
         page.hover(where)
         out["tips"][mark] = page.evaluate(TIP, where)
     out["questions"] = page.evaluate("""
@@ -207,19 +208,17 @@ print(json.dumps(out))
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
 MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
-         "#t-csv-import-02 .asked > li:first-child .tag", "#t-csv-import-02 .asked > li:first-child > .copier",
+         f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
-         "#t-csv-import-02 .sessions li:first-child .when", "#t-csv-import-02 .sessions li:first-child .resume",
+         f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",
          # the list under the name, which only a folded row carries
-         "#standalone-retire-legacy-exporter .qall",
-         "#standalone-retire-legacy-exporter .q:first-child .qtag",
-         "#standalone-retire-legacy-exporter .q:first-child .qhead",
-         "#standalone-retire-legacy-exporter .q:first-child .qcopy")
+         f"#{FOLDED} .qall", f"#{FOLDED} .q:first-child .qtag",
+         f"#{FOLDED} .q:first-child .qhead", f"#{FOLDED} .q:first-child .qcopy")
 
 
 def probe(page: Path, width: int) -> dict:
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS)],
+        ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
         input=PROBE, capture_output=True, text=True,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
@@ -236,9 +235,10 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 
     The same run says what the rest of the page did: that the name keeps its words while the links
     beside it give way, that ?theme= pinned each scheme, that the anchor opened a row, that an
-    opened row shows each of its questions once, and that the graph survives the scheme switch. Those are three of the four things the layout check above
-    assumes of its six pages; the fourth, that ?graph opened the overlay on a graph rather than on
-    the placeholder, belongs to the graph probe below."""
+    opened row shows each of its questions once, and that the graph survives the scheme switch.
+    Three of those, the scheme, the anchor and the graph, are what the layout check above assumes
+    of its six pages; the fourth, that ?graph opened the overlay on a graph rather than on the
+    placeholder, belongs to the graph probe below."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")

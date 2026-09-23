@@ -862,8 +862,8 @@ def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: P
 
 # ---- questions and the needs-me group -------------------------------------
 # The spec's Decisions on `## Questions` and on the board: every question lives on its ticket,
-# shows under its row in the one needs-me group, and is copyable one at a time, per ticket, or all
-# at once, each button saying what it will copy.
+# shows under its row in the one needs-me group while that row is folded, and is copyable one at a
+# time, per ticket, or all at once, each button saying what it will copy.
 
 def copiers(markup: str) -> list[tuple[str, str, str, str]]:
     """(which button, what it copies, what the page says once it has, the words it shows) for every
@@ -1142,12 +1142,17 @@ def put(path: Path, text: str) -> None:
     path.write_text(text)
 
 
+def artefacts_markup(row: str) -> str:
+    """The artefacts list an opened ticket holds, as the page wrote it."""
+    listed = re.search(r'<ul class="artefacts">.*?</ul>', body_of(row), re.S)
+    return listed.group() if listed else ""
+
+
 def artefacts_in(row: str) -> list[tuple[str, str]]:
     """What an opened ticket lists as its artefacts, in order: ("demo", the path its button copies)
     for the demo, and (the words of the link, where it points) for a figure."""
-    listed = re.search(r'<ul class="artefacts">(.*?)</ul>', body_of(row), re.S)
     found = []
-    for item in re.findall(r"<li>(.*?)</li>", listed.group(1) if listed else "", re.S):
+    for item in re.findall(r"<li>(.*?)</li>", artefacts_markup(row), re.S):
         link = re.search(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', item)
         found.append((link.group(2), link.group(1)) if link else ("demo", re.search(r'data-copy="([^"]+)"', item).group(1)))
     return found
@@ -1205,7 +1210,7 @@ def test_an_opened_ticket_carries_every_question_with_its_detail_and_the_ruling_
     assert '<li class="question ruled">' in body_of(row), "an answered question is marked answered"
 
 
-def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_did(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """An opened row lists its questions once: the list under the name goes (the page's style) and
     the block carries the same buttons beside the detail, copying the same line under the same
     path. The row's copy-all goes with the list it copies."""
@@ -1222,6 +1227,23 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_did(dem
     ], "a question is copied the same way wherever the button for it sits"
 
 
+def test_a_blocked_rows_questions_carry_the_same_buttons_in_both_places(tmp_path: Path) -> None:
+    """A ticket's body is rendered from the status its file declares, and the board derives
+    `blocked` from its blockers afterwards; the row and the block read the two. They have to agree
+    on which questions carry a copy button, which they do while only a done ticket loses them."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-store.md", "open", priority=1, size="S")
+    ticket(root / "ledger" / "02-waiting.md", "open", blocked_by=["01"], priority=1, size="S")
+    waiting = root / "ledger" / "02-waiting.md"
+    waiting.write_text(waiting.read_text() + "\n## Questions\n\n- [D1] **Which store?** The one that travels.\n")
+    features, standalone = load(root)
+    page = render_page("demo", features, standalone, log="", stamp="s", stamp_src="s.js")
+    assert '<details class="ticket row-blocked" id="t-ledger-02"' in page, "the fixture no longer exercises a derived status"
+    row = rows_of(page)["t-ledger-02"]
+    assert copiers(body_of(row)) == copiers(summary_of(row)) != [], "the two readings of the status disagree"
+
+
 def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The demo on a button that copies its path, since a demo is a command to run, and the figures
     beside it as links. Nothing in the ticket declares either: the directory is read."""
@@ -1232,8 +1254,9 @@ def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_pa
     assert artefacts_in(rows["t-csv-import-02"]) == [
         ("demo", str(show / "demo")), ("mapping.svg", f"file://{show / 'mapping.svg'}"),
     ]
-    listed = re.search(r'<ul class="artefacts">.*?</ul>', body_of(rows["t-csv-import-02"]), re.S).group()
-    assert [which for which, _, _, _ in copiers(listed)] == ["democopy"], "the demo is the one artefact on a button"
+    assert [which for which, _, _, _ in copiers(artefacts_markup(rows["t-csv-import-02"]))] == ["democopy"], (
+        "the demo is the one artefact on a button"
+    )
     # a standalone ticket's show directory is its slug's own, beside the tracker it was read from
     alone = demo.repo / "agent" / "show" / "speed-up-tests"
     assert artefacts_in(rows["standalone-speed-up-tests"]) == [("demo", str(alone / "demo"))]

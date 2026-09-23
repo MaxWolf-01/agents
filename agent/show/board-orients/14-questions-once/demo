@@ -13,9 +13,9 @@ CLAUDE_CONFIG_DIR="$tracker/claude" "$root/mx/bin/board" "$tracker/agent/tickets
 
 cat <<TEXT
 
-Open the page above. In *needs me*, "Retire the QIF exporter" is folded, and this slice leaves a
-folded row alone: under its name are its two questions, each with a *copy* button, and *copy all 2*
-under them.
+The board is the page above, opened here if this machine has a display. In *needs me*, "Retire the
+QIF exporter" is folded, and this slice leaves a folded row alone: under its name are its two
+questions, each with a *copy* button, and *copy all 2* under them.
 
 Now click "Map columns once per bank", the build in review. Before this slice the row kept that
 same list while it was open, and repeated all three questions in the block below it. Open, it now
@@ -30,6 +30,7 @@ reads:
     D2  Amounts with a comma as the decimal separator                            copy
         are read as thousands today. Guess from the file, or ask once per bank?
     D3  The mappings live in ~/.config/ledger/mappings.toml.                     copy
+        Fine there, or beside the ledger file so they travel with it?
 
 The list under the name is gone: each question is read once, where its detail is. The *copy* button
 at the end of a question's line is the one the list carried. Hover it to read what it will copy:
