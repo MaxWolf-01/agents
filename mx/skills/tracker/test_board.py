@@ -1774,7 +1774,7 @@ def ranked(tmp_path: Path) -> Path:
 
 def briefing_of(page: str) -> str:
     """The briefing as the page carries it, markup and all."""
-    return page.split('<div class="brief"', 1)[1].split("</div>\n  <div class=\"ghead\"", 1)[0]
+    return page.split('<div class="briefing"', 1)[1].split('<div class="ghead"', 1)[0]
 
 
 def test_the_board_says_what_waits_on_the_user_until_a_session_writes_a_briefing(ranked: Path) -> None:

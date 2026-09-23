@@ -44,7 +44,7 @@ CHANGED = """The tracker has changed since you wrote the briefing:
 
 {note}
 
-Look at whatever this makes you want to look at, then answer with the whole briefing again, in the same shape. Answer with the single word `unchanged` where what happened leaves your briefing standing."""
+Look at whatever this makes you want to look at, then answer with the whole briefing again: the sentences, then `## next` and the three picks, as before. Answer with the single word `unchanged` where what happened leaves your briefing standing."""
 
 
 @dataclass(frozen=True)

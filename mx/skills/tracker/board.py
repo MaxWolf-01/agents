@@ -432,7 +432,7 @@ def shorten(path: str, repo: Path) -> str:
     return str(Path(path).relative_to(repo)) if Path(path).is_relative_to(repo) else path
 
 
-COUNTED = "no one two three four five six seven eight nine ten".split()
+COUNTED = "no one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
 
 FALLBACK_TIP = "No model has written a briefing: this is the board's own count, and the frontier by what it unblocks."
 BRIEFING_TIP = (
@@ -2131,7 +2131,7 @@ ${columns}
       border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
   }
   /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
-  .brief { margin-bottom: 1.1rem; }
+  .briefing { margin-bottom: 1.1rem; }
   /* the box the head's own words are laid out from, as a row is for the marks on it */
   .bhead { position: relative; display: flex; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .3rem; }
   .bwhen { color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
@@ -2375,7 +2375,7 @@ ${groups}
 </details>
 </div>
 <aside class="side" id="side">
-  <div class="brief" id="brief">${briefing}</div>
+  <div class="briefing" id="briefing">${briefing}</div>
   <div class="ghead"><span class="label">dependencies</span><span class="gname" id="gname"></span>
     <button class="btn" id="gopen" title="the graph at full size, over the board (f)">full</button>
     <button class="btn" id="gwinopen" title="the graph at full size, in a window of its own beside the board (w)">window</button>

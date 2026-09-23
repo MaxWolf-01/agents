@@ -1,0 +1,8 @@
+{
+ "text": "csv-import/02 and speed-up-tests are both built and waiting on your ruling, each with a diff and a demo already rendered. csv-import/03 is claimed and in flight. 02's ruling is the cork in the frontier, freeing 04, and export-to-xlsx and saved-views/02 both sit behind 04.\n\n## next\n- **csv-import/02** \u2014 rule it first; three tickets unblock off it. The ticket's acceptance property, that a mapping failing halfway writes nothing, already rehearses 04's transaction boundary, so read them together.\n- **speed-up-tests** \u2014 two small questions, diff and demo rendered; a ruling buys back three minutes per suite run.\n- **flaky-upload-test** \u2014 D2 is already ruled, so the test stays in the fast suite. D1 is the only thing between it and a 15-minute build.",
+ "written": "2026-09-23T12:28:42+00:00",
+ "session": "a74a6418-9499-4db0-8f49-e02c09355ee3",
+ "started": "2026-09-23T12:28:42+00:00",
+ "last_activity": "2026-09-23T12:28:42+00:00",
+ "pings": 0
+}
