@@ -63,7 +63,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 ## Properties
 
 - A question on the board always belongs to a ticket; nothing on the board floats free of one.
-- A ticket is in "needs me" exactly when it is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed.
+- A ticket is in "needs me" exactly when it is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed (amended 2026-09-23, was without "not done").
 - A question with a `Ruled:` line under it never shows as open.
 - Every mark on a row (what it asks, time, priority, blocker) explains itself on hover in words.
 - At zoom 80% to 200% and window widths from 900px up, nothing on the board overlaps or escapes its box.
@@ -88,7 +88,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
       - [D2] **Keep the test in the fast suite?** It takes four seconds either way.
         - Ruled 2026-09-21: keep it in the fast suite.
 
-  A question is open until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line. A worker's closing comment keeps its Demo, Assumptions, findings and friction, and its calls go into `## Questions` instead of an "I need from you" list, so the board reads one place.
+  A question is open until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none (you, 2026-09-23). A worker's closing comment keeps its Demo, Assumptions, findings and friction, and its calls go into `## Questions` instead of an "I need from you" list, so the board reads one place.
 - **`needs-human.md` retires**. A question with no ticket to hang on is filed as a proposed ticket, and ruling on the proposal is the answer. The existing queue files are migrated once: each entry moves to its ticket's questions or becomes a proposed ticket.
 
 ### What the board reads
