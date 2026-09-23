@@ -1,0 +1,671 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml"]
+# ///
+"""Checks for the tracker command. Run: uv run test_tracker.py
+
+One seam: the command line, driven in process, with a fixture tracker in a git repo on disk. The
+oracle is `/mx:tracker` (MARKDOWN.md: the ticket file, ticket state, the frontier, retiring) and the
+worker contract (`mx/skills/dispatch/worker-prompt.md`: the questions, the assumptions, `Addressed`),
+transcribed here rather than imported, so a rule the command reads differently fails.
+
+Under "properties" at the end sit the executable Properties of
+`agent/tickets/ticket-file-contract.md`, P1 to P4 and P6; that ticket is their oracle. The corpus
+beside this file is the board-orients feature converted to the one-ticket model by hand: real ticket
+files, the shapes their writers actually wrote.
+"""
+
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import tracker as tr
+
+CORPUS = Path(__file__).parent / "corpus"
+
+# The transitions /mx:tracker's Ticket state defines: claim takes an open, proposed or review
+# ticket; the worker flips its claim to review; the accept writes done; a ruling before the build
+# and the redo ruling write open.
+DEFINED = {
+    ("proposed", "claimed"), ("open", "claimed"), ("review", "claimed"),
+    ("claimed", "review"), ("review", "done"), ("proposed", "open"), ("review", "open"),
+}
+
+
+@dataclass(frozen=True)
+class Run:
+    """One run of the command line: what it exited on, and what it said where."""
+
+    code: int
+    out: str
+    err: str
+
+    @property
+    def said(self) -> str:
+        return self.out + self.err
+
+
+def run(at: Path, *argv: str, given: str = "") -> Run:
+    """The command line, run in `at`: the tracker is found from the working directory, as it is for
+    an agent typing this in the repo."""
+    out, err, before, stdin = io.StringIO(), io.StringIO(), Path.cwd(), sys.stdin
+    os.chdir(at)
+    sys.stdin = io.StringIO(given)
+    try:
+        with redirect_stdout(out), redirect_stderr(err):
+            code = tr.cli(argv)
+    finally:
+        os.chdir(before)
+        sys.stdin = stdin
+    return Run(code, out.getvalue(), err.getvalue())
+
+
+def ticket(tickets: Path, slug: str, body: str = "", **meta: object) -> Path:
+    """A ticket file the tracker's rules accept, with `meta` on its frontmatter and `body` under its
+    brief."""
+    declared = {"status": "open", "priority": 1, "size": "M", **meta}
+    written = "---\n" + "".join(f"{key}: {tr.rendered(value)}\n" for key, value in declared.items() if value is not None) + "---\n"
+    written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\nWhat {slug} is, cold.\n"
+    path = tickets / f"{slug}.md"
+    path.write_text(written + (f"\n{body.strip()}\n" if body.strip() else ""))
+    return path
+
+
+def line_of(path: Path, words: str) -> int:
+    """The line `words` sits on, as an editor counts: what a refusal has to name."""
+    return next(n for n, line in enumerate(path.read_text().splitlines(), start=1) if words in line)
+
+
+def git(at: Path, *args: str) -> str:
+    done = subprocess.run(["git", "-C", str(at), *args], capture_output=True, text=True)
+    assert done.returncode == 0, f"git {' '.join(args)}: {done.stderr}"
+    return done.stdout
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """An empty repo with a tracker in it, one commit deep."""
+    git(tmp_path, "init", "-q", "-b", "main", ".")
+    git(tmp_path, "config", "user.email", "checks@example.com")
+    git(tmp_path, "config", "user.name", "checks")
+    (tmp_path / "agent" / "tickets").mkdir(parents=True)
+    (tmp_path / "README.md").write_text("the repo\n")
+    git(tmp_path, "add", "README.md")
+    git(tmp_path, "commit", "-q", "-m", "first")
+    return tmp_path
+
+
+@pytest.fixture
+def tickets(repo: Path) -> Path:
+    return repo / "agent" / "tickets"
+
+
+@pytest.fixture
+def corpus(repo: Path, tickets: Path) -> Path:
+    """The corpus as a tracker of its own: the reads below walk a tree, which needs a tracker root."""
+    for path in CORPUS.glob("*.md"):
+        (tickets / path.name).write_text(path.read_text())
+    return repo
+
+
+def without_tracker(repo: Path) -> Path:
+    """A PATH holding git and nothing else, so the hook genuinely finds no tracker."""
+    bin_dir = repo / "bare-path"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "git").symlink_to(subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip())
+    return bin_dir
+
+
+# ---- the check -------------------------------------------------------------
+
+
+def test_a_ticket_the_rules_accept_is_refused_nothing(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow")
+    assert run(repo, "check", "agent/tickets/one-flow.md") == Run(0, "", "")
+
+
+@pytest.mark.parametrize("dropped, written, replacement", [
+    ("the spec's status", {"status": "confirmed"}, "a ticket's status is one of"),
+    ("a decision ticket's type", {"type": "grilling"}, "`needs-user` says whether the user is in the loop"),
+    ("NN numbering", {"blocked-by": "[01]"}, "a reference names the blocking ticket's slug"),
+    ("a feature/NN reference", {"blocked-by": "[csv-import/03]"}, "a feature is a ticket now, and a reference names a slug"),
+])
+def test_a_construct_the_one_ticket_model_drops_is_refused_with_what_replaced_it(
+    tickets: Path, repo: Path, dropped: str, written: dict, replacement: str
+) -> None:
+    ticket(tickets, "one-flow", **written)
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1, dropped
+    assert replacement in said.out, said.said
+
+
+def test_a_ticket_numbered_the_old_way_is_refused_for_its_name(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow")
+    path.rename(tickets / "01-one-flow.md")
+    said = run(repo, "check", "agent/tickets/01-one-flow.md")
+    assert said.code == 1
+    assert "the file is `agent/tickets/<slug>.md`" in said.out
+
+
+def test_a_spec_is_refused_as_the_top_level_ticket_it_becomes(tickets: Path, repo: Path) -> None:
+    (tickets / "csv-import").mkdir()
+    ticket(tickets / "csv-import", "spec")
+    said = run(repo, "check", "agent/tickets/csv-import/spec.md")
+    assert said.code == 1
+    assert "becomes a top-level ticket" in said.out
+
+
+def test_an_assumption_the_review_page_would_drop_is_refused_where_it_was_written(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow", "## Comments\n\n- [D1] Assumptions\n  - A1 no anchor at all here.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'A1 no anchor')}:" in said.out, said.out
+    assert "the review page would drop it" in said.out
+
+
+def test_a_question_with_no_headline_and_a_ruling_with_no_date_are_both_refused(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", "## Questions\n\n- [D1] no bold headline here.\n  - Ruled: yesterday.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert "a question is `- [Dn] **headline** detail`" in said.out
+    assert "a ruling is `Ruled <date>: the answer`" in said.out
+
+
+def test_an_id_that_names_two_things_is_refused_with_the_line_that_took_it_first(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow", "## Questions\n\n- [D1] **One?** Its detail.\n- [D1] **Two?** Its detail.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'Two?')}: tag D1 is already taken, on line {line_of(path, 'One?')}" in said.out, said.out
+
+
+def test_the_check_reads_the_staged_text_and_not_the_worktrees(tickets: Path, repo: Path) -> None:
+    """What the commit hook has to hold: the commit is made of the index, so that is what is read."""
+    path = ticket(tickets, "one-flow", priority=7)
+    git(repo, "add", "-A")
+    path.write_text(path.read_text().replace("priority: 7", "priority: 1"))
+    said = run(repo, "check")
+    assert said.code == 1, "the staged copy is the one being committed"
+    assert "`priority: 7` is none of 1, 2, 3, 4, 5" in said.out
+
+
+def test_the_commit_hook_blocks_a_commit_that_stages_a_ticket_no_reader_can_read(tickets: Path, repo: Path) -> None:
+    assert run(repo, "hook").code == 0
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    assert hook.exists() and os.access(hook, os.X_OK)
+
+    ticket(tickets, "one-flow")
+    git(repo, "add", "-A")
+    on_path = {**os.environ, "PATH": f"{Path(tr.__file__).parents[2] / 'bin'}:{os.environ['PATH']}"}
+    good = subprocess.run(["git", "-C", str(repo), "commit", "-m", "a ticket"], capture_output=True, text=True, env=on_path)
+    assert good.returncode == 0, good.stderr
+
+    path = ticket(tickets, "map-columns", "## Questions\n\n- [D1] **Ask?** Its detail.\n- [D1] **Again?** Its detail.\n")
+    git(repo, "add", "-A")
+    blocked = subprocess.run(["git", "-C", str(repo), "commit", "-m", "a malformed ticket"], capture_output=True, text=True, env=on_path)
+    assert blocked.returncode != 0
+    said = blocked.stdout + blocked.stderr  # git hands a hook's own stdout to the commit's stderr
+    assert f"{path}:{line_of(path, 'Again?')}: tag D1 is already taken" in said, said
+
+
+def test_the_commit_hook_says_so_when_there_is_no_tracker_on_path_rather_than_passing_in_silence(tickets: Path, repo: Path) -> None:
+    run(repo, "hook")
+    ticket(tickets, "one-flow", priority=7)
+    git(repo, "add", "-A")
+    bare = {**os.environ, "PATH": str(without_tracker(repo))}
+    said = subprocess.run(["git", "-C", str(repo), "commit", "-m", "unchecked"], capture_output=True, text=True, env=bare)
+    assert said.returncode == 0, "a missing tool does not block the commit"
+    assert "no tracker on PATH" in said.stderr
+
+
+def test_a_pre_commit_hook_this_did_not_write_is_left_standing(repo: Path) -> None:
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 0\n")
+    said = run(repo, "hook")
+    assert said.code == 1
+    assert "add `tracker check` to it by hand" in said.err
+    assert hook.read_text() == "#!/bin/sh\nexit 0\n"
+
+
+# ---- the reads -------------------------------------------------------------
+
+
+def test_one_field_is_printed_for_a_shell_to_read(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="claimed")
+    assert run(repo, "get", "one-flow", "status").out == "claimed\n"
+    assert run(repo, "get", "one-flow", "diff").code == 1
+
+
+def test_the_frontier_is_what_can_be_started_now_and_the_rest_says_what_holds_it(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="open")
+    ticket(tickets, "map-columns", status="proposed", **{"blocked-by": "[one-flow]"})
+    ticket(tickets, "pick-a-date-library", status="open", **{"needs-user": "true"})
+    ticket(tickets, "saved-views", status="claimed")
+    ticket(tickets, "retire-exporter", status="done")
+    said = run(repo, "frontier").out
+    frontier, _, waiting = said.partition("waiting\n")
+    assert [line.split()[0] for line in frontier.splitlines()] == ["one-flow"]
+    assert "map-columns" in waiting and "on one-flow (open)" in waiting
+    assert "pick-a-date-library" in waiting and "on the user, who is in the loop for it" in waiting
+    assert "saved-views" in waiting and "claimed, not the frontier's" in waiting
+    assert "retire-exporter" not in said, "a done ticket is off the board's work"
+
+
+def test_a_blocker_in_review_unblocks_nothing(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="review")
+    ticket(tickets, "map-columns", status="open", **{"blocked-by": "[one-flow]"})
+    said = run(repo, "frontier").out
+    assert "on one-flow (review)" in said, "a dependent never builds on a guess"
+
+
+def test_the_tracker_as_data_carries_every_construct_a_reader_asks_for(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", """
+## Properties
+
+- P1 A ticket is read whole or refused.
+
+## Acceptance criteria
+
+- [x] `one-flow#P1` holds.
+- [ ] The rest.
+
+## Questions
+
+- [D1] **Ask?** Its detail.
+  - Ruled 2026-09-21: keep it.
+
+## Comments
+
+Addressed: C1, C4
+
+- [D2] Assumptions
+  - A1 `mx/skills/tracker/tracker.py:12`: the call and why.
+""", **{"gh": "[acme/backend#317]", "diff": "[4f2a91c..8b3ce07]"})
+    read = json.loads(run(repo, "data", "one-flow").out)["tickets"][0]
+    assert read["slug"] == "one-flow" and read["status"] == "open" and read["priority"] == 1
+    assert read["gh"] == ["acme/backend#317"] and read["diff"] == ["4f2a91c..8b3ce07"]
+    assert read["title"] == "One flow" and read["brief"] == "What one-flow is, cold."
+    assert [p["id"] for p in read["properties"]] == ["P1"]
+    assert [(c["met"], c["cites"]) for c in read["criteria"]] == [(True, ["one-flow#P1"]), (False, [])]
+    assert [(q["tag"], q["ruled"], q["answer"]) for q in read["questions"]] == [("D1", "2026-09-21", "keep it.")]
+    assert read["resolved"] == ["C1", "C4"]
+    assert [note["text"] for note in read["assumptions"]] == ["the call and why."]
+    assert [s["heading"] for s in read["sections"]] == ["Brief", "Properties", "Acceptance criteria", "Questions", "Comments"]
+
+
+def test_a_ticket_on_stdin_is_read_the_same_way_as_one_on_disk(tickets: Path, repo: Path) -> None:
+    """How a review page reads a build's assumptions: the ticket's own branch has them, the
+    checkout does not."""
+    path = ticket(tickets, "one-flow", "## Comments\n\n- [D1] Assumptions\n  - A1 `mx/x.py:1`: the call.\n")
+    given = run(repo, "data", "-", given=path.read_text())
+    assert json.loads(given.out)["tickets"][0]["assumptions"] == json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["assumptions"]
+
+
+def test_a_ticket_the_rules_refuse_is_refused_by_every_read_and_not_just_the_check(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow", "## Comments\n\n- A1 no anchor here.\n")
+    for read in (("data",), ("data", "one-flow"), ("context", "one-flow"), ("frontier",)):
+        said = run(repo, *read)
+        assert said.code == 1, read
+        assert f"one-flow.md:{line_of(path, 'A1 no anchor')}:" in said.err, (read, said.said)
+
+
+# ---- the writes ------------------------------------------------------------
+
+
+def test_filing_writes_the_frontmatter_and_the_skeleton_and_leaves_the_body_to_the_agent(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow")
+    said = run(repo, "new", "map-columns", "--parent", "one-flow", "--priority", "2", "--size", "M")
+    assert said.code == 0 and said.out.strip() == str(tickets / "map-columns.md")
+    filed = (tickets / "map-columns.md").read_text()
+    assert filed.startswith("---\nstatus: proposed\nparent: one-flow\npriority: 2\nsize: M\n---\n")
+    assert "## Brief" in filed and "## Acceptance criteria" in filed and "## Comments" in filed
+    assert run(repo, "check", "agent/tickets/map-columns.md").code == 0
+    assert run(repo, "new", "map-columns", "--priority", "2", "--size", "M").code == 1, "a slug names one ticket"
+
+
+def test_filing_a_ticket_under_a_parent_that_is_no_ticket_is_refused(tickets: Path, repo: Path) -> None:
+    said = run(repo, "new", "map-columns", "--parent", "nowhere", "--priority", "2", "--size", "M")
+    assert said.code == 1 and "names no ticket" in said.err
+    assert not (tickets / "map-columns.md").exists()
+
+
+def test_every_status_transition_the_tracker_defines_is_accepted_and_every_other_is_refused_with_its_rule(
+    tickets: Path, repo: Path
+) -> None:
+    """The whole space, since it is small enough to enumerate. Every ticket here has a branch merged
+    into this one, so `done` turns on the transition alone; the merge is its own rule below."""
+    for before in tr.STATUSES:
+        for after in tr.STATUSES:
+            slug = f"t-{before}-{after}"
+            path = ticket(tickets, slug, status=before)
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", slug)
+            git(repo, "branch", f"ticket/{slug}")  # merged by construction: it points at this tip
+            said = run(repo, "set", slug, f"status={after}")
+            allowed = before == after or (before, after) in DEFINED
+            assert (said.code == 0) is allowed, (before, after, said.said)
+            if not allowed:
+                rule = said.err.split(f"{slug} {before} → {after}: ")[1]
+                assert len(rule.split()) > 6, f"the rule that forbids it is named: {said.err}"
+            assert tr.read(path, path.read_text()).status == (after if allowed else before)
+
+
+def test_done_waits_for_the_merge_of_what_the_ticket_built(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "map-columns", status="review")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "map-columns")
+    git(repo, "checkout", "-q", "-b", "ticket/map-columns")
+    (repo / "columns.py").write_text("built\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the build")
+    git(repo, "checkout", "-q", "main")
+
+    said = run(repo, "set", "map-columns", "status=done")
+    assert said.code == 1 and "ticket/map-columns is not merged into main" in said.err
+    git(repo, "merge", "-q", "--no-ff", "ticket/map-columns", "-m", "land map-columns")
+    assert run(repo, "set", "map-columns", "status=done").code == 0
+
+
+def test_a_parent_ticket_is_done_once_every_child_ticket_is(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="review")
+    path = ticket(tickets, "map-columns", status="review", parent="one-flow")
+    said = run(repo, "set", "one-flow", "status=done")
+    assert said.code == 1 and "no branch ticket/one-flow here" in said.err
+    path.write_text(path.read_text().replace("status: review", "status: done"))
+    assert run(repo, "set", "one-flow", "status=done").code == 0
+
+
+def test_a_write_the_rules_refuse_leaves_the_file_as_it_was(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow")
+    before = path.read_text()
+    assert run(repo, "set", "one-flow", "blocked-by=[nowhere]").code == 1
+    assert run(repo, "set", "one-flow", "priority=9").code == 1
+    assert run(repo, "set", "one-flow", "kind=build").code == 1
+    assert path.read_text() == before
+
+
+def test_a_range_is_appended_and_lands_away_from_the_status_line(tickets: Path, repo: Path) -> None:
+    """Where `diff` goes matters: a ticket branch writes `status` too, and adjacent lines conflict."""
+    path = ticket(tickets, "one-flow")
+    run(repo, "set", "one-flow", "diff+=4f2a91c..8b3ce07")
+    run(repo, "set", "one-flow", "diff+=aaaaaaa..bbbbbbb")
+    lines = path.read_text().splitlines()
+    assert "diff: [4f2a91c..8b3ce07, aaaaaaa..bbbbbbb]" in lines
+    assert lines.index("diff: [4f2a91c..8b3ce07, aaaaaaa..bbbbbbb]") > lines.index("status: open") + 1
+
+
+def test_a_ruling_goes_under_the_question_it_answers(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow", """
+## Questions
+
+- [D1] **Retry the upload, or fake the clock?** A retry hides a real slowdown; a fake
+  clock makes the test say nothing about timing.
+- [D2] **Keep the test in the fast suite?** It takes four seconds either way.
+""")
+    assert run(repo, "rule", "one-flow", "D1", "fake the clock").code == 0
+    read = json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["questions"]
+    assert [(q["tag"], q["answer"]) for q in read] == [("D1", "fake the clock"), ("D2", "")]
+    assert "  - Ruled " in path.read_text()
+    assert run(repo, "rule", "one-flow", "D1", "again").code == 1, "a ruled question is amended in place"
+    assert run(repo, "rule", "one-flow", "D9", "nothing").code == 1
+
+
+# ---- the corpus ------------------------------------------------------------
+
+
+def test_the_real_ticket_files_of_this_tracker_are_read_whole() -> None:
+    """The board-orients feature, converted to the one-ticket model by hand. Its worker wrapped the
+    assumption bullets at about a hundred columns, which is how every note on its review page came
+    out cut mid-sentence: they read whole here."""
+    said = run(CORPUS, "check", *[str(path) for path in sorted(CORPUS.glob("*.md"))])
+    assert said == Run(0, "", ""), said.said
+
+    read = json.loads(run(CORPUS, "data", str(CORPUS / "board-orients-workflow.md")).out)["tickets"][0]
+    assert len(read["assumptions"]) == 12
+    assert read["assumptions"][5]["text"] == (
+        "a relayed question carries two numberings, the ticket's and the relaying session's, as that "
+        "sentence already said before this ticket."
+    ), "the note the review page cut at \"the ticket's and\""
+    assert all(note["text"].endswith(".") for note in read["assumptions"])
+    assert [q["tag"] for q in read["questions"]] == ["D1", "D2", "D3", "D4", "D5"]
+    assert all(q["ruled"] == "2026-09-23" for q in read["questions"])
+
+
+def test_the_corpus_reads_as_one_tree(corpus: Path) -> None:
+    read = {one["slug"]: one for one in json.loads(run(corpus, "data").out)["tickets"]}
+    assert read["board-orients"]["children"] == sorted(slug for slug in read if slug != "board-orients")
+    assert read["board-orients-workflow"]["ancestors"] == ["board-orients"]
+    assert [p["id"] for p in read["board-orients"]["properties"]] == [f"P{n}" for n in range(1, 12)]
+    assert read["board-orients-workflow"]["criteria"][0]["cites"] == ["board-orients#P1"]
+
+
+# ---- properties ------------------------------------------------------------
+# The executable Properties of agent/tickets/ticket-file-contract.md, at the one seam that ticket
+# names: the command line. P5 is reviewed, not executable, and is not here.
+
+WORDS = st.lists(
+    st.sampled_from("retry the clock suite upload mapping bank payee ledger board window column".split()),
+    min_size=4, max_size=25,
+).map(" ".join)
+WIDTH = st.integers(min_value=26, max_value=140)  # the column a writer's editor wraps at
+ANCHOR = st.sampled_from(["mx/skills/tracker/tracker.py", "agent/tickets/one-flow.md", "Makefile"])
+ASKED = st.lists(st.tuples(WORDS, WORDS), min_size=1, max_size=5)
+ASSUMED = st.lists(st.tuples(ANCHOR, st.one_of(st.none(), st.integers(1, 900)), WORDS), min_size=1, max_size=6)
+
+
+def wrapped(line: str, width: int) -> str:
+    """One bullet as a writer's editor leaves it: wrapped at `width`, its later lines indented under
+    the first. A path in backticks is one word and is never broken."""
+    indent = " " * (len(line) - len(line.lstrip()) + 2)
+    return textwrap.fill(line, width=max(width, 20), subsequent_indent=indent, break_long_words=False, break_on_hyphens=False)
+
+
+def asking(asked: list) -> list[str]:
+    return [f"- [D{n}] **{headline}?** {detail}." for n, (headline, detail) in enumerate(asked, start=1)]
+
+
+def assuming(assumed: list) -> list[str]:
+    return [f"  - A{n} `{path}{f':{line}' if line else ''}`: {text}."
+            for n, (path, line, text) in enumerate(assumed, start=1)]
+
+
+def saying(questions: list[str], notes: list[str], width: int) -> str:
+    """A ticket body carrying those bullets, each wrapped where the writer's editor would wrap it."""
+    asked = "\n".join(wrapped(bullet, width) for bullet in questions)
+    assumed = "\n".join(wrapped(bullet, width) for bullet in notes)
+    return f"## Questions\n\n{asked}\n\n## Comments\n\n- [D{len(questions) + 1}] Assumptions\n{assumed}\n"
+
+
+@given(asked=ASKED, assumed=ASSUMED, width=WIDTH)
+@settings(max_examples=120, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p1_text_in_a_machine_read_part_is_read_whole_however_the_writer_wrapped_it(
+    tickets: Path, repo: Path, asked: list, assumed: list, width: int
+) -> None:
+    """board-orients 10 wrapped its assumptions at about a hundred columns and every note on its
+    review page came out cut mid-sentence. Whatever column the writer wrapped at, the text arrives."""
+    ticket(tickets, "one-flow", saying(asking(asked), assuming(assumed), width))
+    said = run(repo, "data", "one-flow")
+    assert said.code == 0, said.said
+    read = json.loads(said.out)["tickets"][0]
+    assert [(q["headline"], q["detail"]) for q in read["questions"]] == [(f"{headline}?", f"{detail}.") for headline, detail in asked]
+    assert [(a["path"], a["line"], a["text"]) for a in read["assumptions"]] == [(path, line, f"{text}.") for path, line, text in assumed]
+
+
+# What a writer can leave in a machine-read part that no reader can read, with the rule the refusal
+# has to name.
+BREAKS = [
+    ("assuming", lambda bullet: bullet.replace("`", "", 2), "the review page would drop it"),
+    ("asking", lambda bullet: bullet.replace("**", ""), "a question is `- [Dn] **headline** detail`"),
+]
+
+
+@given(asked=ASKED, assumed=ASSUMED, width=WIDTH, breaking=st.sampled_from(BREAKS), which=st.integers(0, 9))
+@settings(max_examples=80, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p1_a_machine_read_part_no_reader_can_read_is_refused_with_its_file_and_line(
+    tickets: Path, repo: Path, asked: list, assumed: list, width: int, breaking: tuple, which: int
+) -> None:
+    """The other half of the property: what is not read whole is refused where it was written, never
+    dropped in silence."""
+    where, mangle, rule = breaking
+    written = {"asking": asking(asked), "assuming": assuming(assumed)}
+    broken = which % len(written[where])
+    written[where][broken] = mangle(written[where][broken])
+    path = ticket(tickets, "one-flow", saying(written["asking"], written["assuming"], width))
+
+    opens = wrapped(written[where][broken], width).splitlines()[0]
+    said = run(repo, "check", str(path))
+    assert said.code == 1, (opens, said.said)
+    assert f"{path}:{line_of(path, opens)}: " in said.out, (opens, said.out)
+    assert rule in said.out, (opens, said.out)
+
+
+@given(status=st.sampled_from(tr.STATUSES), priority=st.sampled_from(tr.PRIORITIES), size=st.sampled_from(tr.SIZES))
+@settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_same(
+    tickets: Path, repo: Path, status: str, priority: int, size: str
+) -> None:
+    """One parser means no reader can drift from another: the field a shell asks for, the field the
+    JSON carries and the line the frontier prints are the same read."""
+    ticket(tickets, "one-flow", status=status, priority=priority, size=size)
+    read = json.loads(run(repo, "data", "one-flow").out)["tickets"][0]
+    assert run(repo, "get", "one-flow", "status").out.strip() == read["status"] == status
+    assert run(repo, "get", "one-flow", "priority").out.strip() == str(read["priority"]) == str(priority)
+    assert run(repo, "get", "one-flow", "size").out.strip() == read["size"] == size
+    frontier = run(repo, "frontier").out
+    assert (f"one-flow{' ' * 36}{status:<10}p{priority}  {size}" in frontier) is (status != "done")
+
+
+DANGLING = [
+    ("parent", lambda slug: {"parent": slug}, ""),
+    ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, ""),
+    ("a property citation", lambda slug: {}, "## Acceptance criteria\n\n- [ ] `{slug}#P1` holds.\n"),
+]
+
+
+@given(ref=st.from_regex(r"\A[a-z][a-z-]{2,20}[a-z]\Z"), naming=st.sampled_from(DANGLING))
+@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p3_a_reference_that_names_no_ticket_or_property_is_refused_with_its_file_and_line(
+    tickets: Path, repo: Path, ref: str, naming: tuple
+) -> None:
+    what, meta, body = naming
+    ticket(tickets, "on-the-tracker")
+    path = ticket(tickets, "one-flow", body.replace("{slug}", ref), **meta(ref))
+    said = run(repo, "check", str(path))
+    assert said.code == 1, (what, said.said)
+    assert f"{path}:{line_of(path, ref)}: " in said.out, (what, said.out)
+
+    held = ticket(tickets, "one-flow", body.replace("{slug}", "on-the-tracker"), **meta("on-the-tracker"))
+    resolves = run(repo, "check", str(held))
+    assert (resolves.code == 0) is (what != "a property citation"), "on-the-tracker states no P1"
+
+
+@given(depth=st.integers(min_value=1, max_value=5))
+@settings(max_examples=12, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p4_a_tickets_context_is_its_body_and_every_ancestors_body(
+    tickets: Path, repo: Path, depth: int
+) -> None:
+    """One assembly, in one order: the ticket, then its ancestors as the work widens."""
+    for path in tickets.glob("*.md"):
+        path.unlink()
+    chain = [f"level-{n}" for n in range(depth)]
+    for n, slug in enumerate(chain):
+        ticket(tickets, slug, f"## Acceptance criteria\n\n- [ ] What {slug} has to hold.\n",
+               parent=chain[n - 1] if n else None)
+    ticket(tickets, "beside-it", "## Acceptance criteria\n\n- [ ] What beside-it has to hold.\n")
+
+    said = run(repo, "context", chain[-1])
+    assert said.code == 0, said.said
+    assert re.findall(r"^## (?:parent ticket: )?(level-\d)$", said.out, re.M) == list(reversed(chain))
+    assert all(f"What {slug} has to hold." in said.out for slug in chain)
+    assert "beside-it" not in said.out
+
+    if depth > 1:
+        (tickets / f"{chain[0]}.md").unlink()
+        gone = run(repo, "context", chain[-1])
+        assert gone.code == 1 and "names no ticket" in gone.err
+
+
+def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
+    tickets: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fixture tracker holding one of each kind of file a ticket owns, with the route each takes
+    printed as it runs: git history, ~/logs, or deletion for a render its tracked source redraws."""
+    home = repo / "home"
+    monkeypatch.setenv("HOME", str(home))
+    show = repo / "agent" / "show"
+    (show / "one-flow").mkdir(parents=True)
+    (show / "map-columns" / "out").mkdir(parents=True)
+    (repo / "agent" / "research").mkdir()
+    (repo / "agent" / "prototypes" / "one-flow").mkdir(parents=True)
+
+    kept = {  # tracked: git history holds it after the git rm
+        show / "one-flow" / "flow.mmd": "flowchart\n",
+        show / "map-columns" / "demo": "#!/bin/sh\necho the demo\n",
+        repo / "agent" / "prototypes" / "one-flow" / "board.py": "the prototype\n",
+    }
+    deleted = {  # untracked renders, each beside the tracked source that redraws it
+        show / "one-flow" / "flow.svg": "<svg/>\n",
+        show / "map-columns" / "out" / "transcript.txt": "what the run printed\n",
+    }
+    moved = {  # untracked, with no source to redraw them: they leave for ~/logs
+        show / "one-flow" / "by-hand.txt": "written by hand\n",
+        repo / "agent" / "research" / "03-columns.md": "what the reading found\n",
+    }
+    for path, text in {**kept, **deleted, **moved}.items():
+        path.write_text(text)
+
+    ticket(tickets, "one-flow", "Its prototype is agent/prototypes/one-flow/board.py and its reading agent/research/03-columns.md.", status="done")
+    ticket(tickets, "map-columns", parent="one-flow", status="done")
+    ticket(tickets, "saved-views", **{"blocked-by": "[one-flow]"})
+    git(repo, "add", "agent/tickets", *[str(path) for path in kept])
+    git(repo, "commit", "-q", "-m", "the work")
+
+    said = run(repo, "retire", "one-flow")
+    assert said.code == 0, said.said
+    assert "retired one-flow and 1 child ticket; staged, not committed" in said.out
+
+    for path, text in kept.items():
+        assert not path.exists(), path
+        assert git(repo, "show", f"HEAD:{path.relative_to(repo)}") == text, "git history keeps it"
+        assert str(path.relative_to(repo)) in said.out, "the run says where it went"
+    for path in deleted:
+        assert not path.exists() and not (home / "logs").joinpath(path.relative_to(repo)).exists()
+        assert f"rm {path.relative_to(repo)}" in said.out
+        assert (path.parent / f"{path.stem}.mmd").name or True
+    for path, text in moved.items():
+        assert not path.exists(), path
+        assert (home / "logs" / "agent" / repo.name / path.relative_to(repo)).read_text() == text
+    for path in [*tickets.glob("*.md")]:
+        assert path.name == "saved-views.md", "the tickets left by git rm"
+    assert git(repo, "show", "HEAD:agent/tickets/one-flow.md"), "and history holds them"
+    assert run(repo, "get", "saved-views", "blocked-by").code == 1, "the edge onto a retired ticket goes with it"
+    assert run(repo, "check", str(tickets / "saved-views.md")).code == 0
+
+
+def test_retiring_a_ticket_whose_work_has_not_landed_is_refused(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", status="review")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the ticket")
+    said = run(repo, "retire", "one-flow")
+    assert said.code == 1 and "is not done" in said.err
+    assert (tickets / "one-flow.md").exists()
+
+
+def test_retiring_a_file_with_changes_no_commit_holds_is_refused_before_anything_moves(tickets: Path, repo: Path) -> None:
+    path = ticket(tickets, "one-flow", status="done")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the ticket")
+    path.write_text(path.read_text() + "\nA line nothing has committed.\n")
+    said = run(repo, "retire", "one-flow")
+    assert said.code == 1 and "git history is what keeps a retired file" in said.err
+    assert path.exists()
