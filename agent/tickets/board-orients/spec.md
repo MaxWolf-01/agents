@@ -12,11 +12,11 @@ Five standalone tickets asked for pieces of this and are absorbed here: priority
 
 ## Solution
 
-The board stays one page. A ticket carries what the board needs in its own file: a priority, a size measured in the user's time, a short name, a brief written for the user, and its open questions. The board reads everything else from where it already is: sessions from a `Session:` trailer on every commit, titles from the transcripts on this machine, artefacts from the ticket's show directory, GitHub state from one query per render.
+The board stays one page. A ticket carries what the board needs in its own file: a priority, a size measured in the user's time, a short name, a ticket brief written for the user, and its open ticket questions. The board reads everything else from where it already is: sessions from a `Session:` trailer on every commit, titles from the transcripts on this machine, artefacts from the ticket's show directory, GitHub state from one query per render.
 
-Every question belongs to a ticket. A ticket whose work waits on the user sits in one group, **needs me**: a build to rule on, a ticket stopped on a question, a near design session. Its open questions show under it, each copyable, and an answer clears through a `Ruled:` line. The floating `needs-human.md` queues retire.
+Every question belongs to a ticket. A ticket whose work waits on the user sits in one group, the **needs-me group**: a build to rule on, a ticket stopped on a question, a near design session. Its open questions show under it, each copyable, and an answer clears through a `Ruled:` line. The floating `needs-human.md` queues retire.
 
-A side column opens with a **briefing**: where things stand and the next picks, written by a model that explores the repo itself, and kept current by pinging that same session with what changed. The dependency graph sits under it as a preview that opens full size.
+A side column opens with the **board briefing**: where things stand and the next picks, written by a model that explores the repo itself, and kept current by pinging that same session with what changed. The dependency graph sits under it as a preview that opens full size.
 
 Rows are calm and legible: the house style with colour where it carries meaning: what the row asks of the user, its priority, its time. Every mark explains itself on hover. An opened ticket reads as structured blocks, not a wall of text.
 
@@ -101,7 +101,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 
 ### The board
 
-- **Groups**: needs me, frontier, claimed, blocked, proposed, done (folded). "Needs my review" folds into needs me; review stays a ticket status.
+- **Groups**: the needs-me group, frontier, claimed, blocked, proposed, done (folded). "Needs my review" folds into the needs-me group; review stays a ticket status.
 - **A row has fixed columns**: feature, number (a click copies the file's path), what the row asks, the name with its review link and GitHub references, the brief under the name, the user's time, priority, blockers. What the row asks is one of: to rule on, your answer, design session, prototype, research, legwork, build. Below a width the row reflows, time and priority moving under the name, so nothing overlaps at any zoom.
 - **Marks carry colour where it carries meaning**: a tinted tag for what the row asks, a pill with a word for priority, the time in its own hue, taken from the mwolf.dev callouts and deepened for the day scheme. The prototype's teal for time reads off and is picked again against both schemes. Links stay the house accent.
 - **Every mark explains itself on hover** in words: what p1 to p5 mean and who sets them, that the time is the user's and what each size stands for, what the row asks, and for a blocker "waits on 01, done" or "not done yet".
@@ -111,7 +111,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 - **The side column**: the briefing, then the dependency graph as a preview of the whole tracker or the cursor's feature. The preview opens the graph full size in an overlay on the board, pannable, a click on a node closing it on that row; the overlay also opens as its own window, to sit beside the board. Rejected: a bigger panel, which takes the rows' width for a view needed now and then.
 - **House style**, both schemes, with the scheme switch.
 
-### The briefing
+### The board briefing
 
 - **A briefing session writes it.** The first run is a fresh `claude -p` session on a short prompt of its own, never the user's system prompt: it is given the tracker's state as the board computes it (tickets with status, priority, size, brief and questions; recent landings) and explores the repo freely from there, commits, code and docs alike. It writes where things stand and three next picks, each with a reason, marking picks that can run in parallel as one wave for dispatch. The model picks; no rule does.
 - **The session is pinged, not rerun.** A tracker change, debounced by five to ten minutes, is sent to the same session with `--resume` as a short note of what changed; the session decides whether the briefing needs rewriting and what to look at for it (recent commits, a ticket, the code), building on what it already explored. The session retires after an idle hour or a cap on pings or context, whichever comes first, and the next change starts a fresh one. The board's watcher hosts the debounce; a board rendered once without watching shows the last briefing.
@@ -124,7 +124,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 - **Tracker**: the ticket file's new fields and sections, `needs me`, the retired queue, the `Ruled:` line.
 - **To-tickets, grilling, dispatch, the worker contract**: a filed ticket carries priority, size, brief; a worker's calls go into `## Questions`; an orchestrator records an answer as `Ruled:`.
 - **Dotfiles**: the `Session:` trailer hook; outside this repo, so not a worker's.
-- **Glossary**: a ticket's **brief** and the board's **briefing** are two words for two things; `needs me`, `question`, `priority`, `size` join `CONTEXT.md`.
+- **Glossary**: ticket brief, board briefing, ticket question, needs-me group, ticket priority and ticket size join `CONTEXT.md`; a ticket brief and the board briefing are two things with two names.
 
 ### Deferrals
 
