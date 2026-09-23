@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [03]
 priority: 1
 size: M
+diff: [230f345f96621b5fec35c48e4353d262ee4504ee..75d3fc6c77c86acbac762ffdd3df5952ccc1da97]
 ---
 
 # The workflow writes what the board reads
