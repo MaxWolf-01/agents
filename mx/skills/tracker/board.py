@@ -41,6 +41,15 @@ blockers move under the name. A click on a row's number copies the absolute
 path of the file the row was read from: the ticket, or for a needs-me entry its
 needs-human.md.
 
+An opened row reads as blocks rather than the ticket's whole text: its questions
+with the detail the row has no room for and the ruling on each answered one, its
+artefacts, then the ticket's own sections in the order the file writes them,
+with the comments folded away as history. The artefacts are read from the
+ticket's show directory, agent/show/<feature>/<NN-slug>/ or agent/show/<slug>/:
+the file named `demo` on a button that copies its path, every other file as a
+link. The acceptance criteria read as the checklist the ticket writes them as.
+The brief is not repeated there: it is on the row.
+
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
 a screenshot. Feature pills in the top bar hide and show a feature's rows, each
@@ -229,14 +238,16 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
 
 def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
     """What the board read last, as a value to compare: the tracker's files in every checkout that
-    contributes to it, the review pages beside them, and the commit the log comes from.
+    contributes to it, the review pages and the artefacts beside them, and the commit the log comes
+    from.
 
     A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
     the render that follows is what puts the pages back on an address that answers. So do the
     ticket branches: a build in review is read from its own, where no file under the tracker moves.
+    So do the show directories, where an opened ticket reads its artefacts from.
     """
-    dirs = [roots.main, roots.main.parent / "diffviews"]
-    dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
+    dirs = [roots.main, roots.main.parent / "diffviews", roots.main.parent / "show"]
+    dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews", o.parent / "show")]
     return (git(repo, "rev-parse", "HEAD"), git(repo, "for-each-ref", "--format=%(objectname) %(refname)", TICKET_BRANCHES)) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
@@ -458,6 +469,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
     written = ticket_body(body, status, roots.repo, None, path)
+    asked = questions_of(written, body)
     return Standalone(
         slug=path.stem,
         title=name or path.stem.replace("-", " "),
@@ -465,14 +477,14 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
         gh=gh_refs(meta, path),
-        body_html=markdown.markdown(written, extensions=["fenced_code", "tables"]),
+        body_html=ticket_blocks(written, None, asked, show_dir(path, None)),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
         priority=ticket_priority(meta, path),
         size=ticket_size(meta, path),
         brief=brief,
-        questions=questions_of(written, body),
+        questions=asked,
     )
 
 
@@ -526,6 +538,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
         status = declared_status(meta, path)
         blockers = meta.get("blocked-by") or []
         written = ticket_body(body, status, repo, feature_dir.name, path)
+        asked = questions_of(written, body)
         tickets.append(
             Ticket(
                 num=path.name[:2],
@@ -535,13 +548,13 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
-                body_html=render_body(written, feature_dir.name),
+                body_html=ticket_blocks(written, feature_dir.name, asked, show_dir(path, feature_dir.name)),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
                 priority=ticket_priority(meta, path),
                 size=ticket_size(meta, path),
                 brief=brief,
-                questions=questions_of(written, body),
+                questions=asked,
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -661,8 +674,10 @@ def ref_anchor(ref: str) -> str:
     return f"#standalone-{ref}"
 
 
-def render_body(md: str, feature: str) -> str:
+def render_body(md: str, feature: str | None) -> str:
     out = markdown.markdown(md, extensions=["fenced_code", "tables"])
+    if feature is None:  # a standalone ticket has no feature for a bare NN- reference to name
+        return out
     # cross-ticket links (47-event-union-v2.md) become in-page anchors
     return re.sub(r'href="(?:[\w./-]*/)?(\d\d)-[\w-]*\.md"', rf'href="#t-{feature}-\1"', out)
 
@@ -734,6 +749,7 @@ class Question:
     headline: str  # the bold sentence the board shows under the row
     detail: str  # the rest of the item, its own whitespace collapsed
     ruled: str | None  # the date on the `Ruled <date>:` line under it; None while the question is open
+    answer: str = ""  # what that line says the user ruled, in their own words
 
 
 QUESTIONS_SECTION = re.compile(r"^##\s+Questions\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
@@ -747,8 +763,12 @@ def questions_of(asked: str, ruled_in: str) -> list[Question]:
     """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
     questions on its branch while the ruling is written in the tracker's own copy, the file the
     board hands out on the clipboard, so the two texts are read together."""
-    answered = {q.tag: q.ruled for q in read_questions(ruled_in) if q.ruled}
-    return [replace(q, ruled=q.ruled or answered.get(q.tag)) for q in read_questions(asked)]
+    answered = {q.tag: q for q in read_questions(ruled_in) if q.ruled}
+    found = []
+    for q in read_questions(asked):
+        ruling = answered.get(q.tag)
+        found.append(q if q.ruled or ruling is None else replace(q, ruled=ruling.ruled, answer=ruling.answer))
+    return found
 
 
 def read_questions(text: str) -> list[Question]:
@@ -771,6 +791,7 @@ def read_questions(text: str) -> list[Question]:
             headline=" ".join((headline.group(1) if headline else written).split()),
             detail=" ".join((headline.group(2) if headline else "").split()),
             ruled=ruled.group(1) if ruled else None,
+            answer=" ".join(body[ruled.end():].split()) if ruled else "",
         ))
     return found
 
@@ -840,6 +861,120 @@ def absence_note(source: str, words: str) -> str:
     """An optional source the render did without, said once on the page: GitHub, the model, the
     transcripts, the review-page server."""
     return f'<p class="absent" data-absent="{html.escape(source)}">{html.escape(words)}</p>'
+
+
+# ---- an opened ticket -----------------------------------------------------
+
+
+def ticket_blocks(body: str, feature: str | None, asked: Sequence[Question], show: Path) -> str:
+    """A ticket opened on the board, as blocks: its questions with the detail the row has no room
+    for, the artefacts it produced, then its own sections in the order the file writes them, the
+    comments folded away as history.
+
+    The brief is not one of them. It is on the row, where it is read without opening anything, and
+    a ticket says a thing once.
+    """
+    blocks, history = [asked_block(asked), artefacts_block(show)], []
+    for heading, text in sections(body):
+        word = heading.lower() if heading else ""
+        if word == "questions":
+            continue  # shown above, as the questions the board read out of it
+        if word == "comments":
+            history.append(text)
+        else:
+            blocks.append(block(heading, prose(heading, text, feature)))
+    return "".join(filter(None, blocks)) + history_block("".join(history), feature)
+
+
+SECTION = re.compile(r"^##\s+(.+?)\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
+
+
+def sections(body: str) -> list[tuple[str | None, str]]:
+    """A ticket's `##` sections in file order, whatever stands above the first of them first and
+    under no heading: a proposed ticket's line of provenance is written there."""
+    found = list(SECTION.finditer(body))
+    written = [(None, body[: found[0].start()] if found else body)]
+    written += [(section.group(1), section.group(2)) for section in found]
+    return [(heading, text) for heading, text in written if text.strip()]
+
+
+def block(label: str | None, inner: str) -> str:
+    """One block of an opened ticket: what it is, and the ticket's own words under it."""
+    words = f'<p class="label">{html.escape(label.lower())}</p>' if label else ""
+    return f'<section class="block">{words}{inner}</section>'
+
+
+TICKED = re.compile(r"<li>\s*\[([ xX])\]\s*")
+
+
+def prose(heading: str | None, text: str, feature: str | None) -> str:
+    """A section's own words, rendered. The acceptance criteria are the checklist they are written
+    as, each criterion met or not, rather than a list of lines opening with a bracket."""
+    written = render_body(text, feature)
+    if heading and heading.lower() == "acceptance criteria":
+        return TICKED.sub(lambda tick: f'<li class="tick{" met" if tick.group(1) in "xX" else ""}">', written)
+    return written
+
+
+def asked_block(asked: Sequence[Question]) -> str:
+    """Every question the ticket asks, the answered ones marked with the ruling that answered them:
+    the row carries the open headlines, and the detail and the history are here."""
+    if not asked:
+        return ""
+    items = "".join(
+        f'<li class="question{" ruled" if q.ruled else ""}"><span class="tag">{q.tag}</span><div>'
+        f'<p class="head">{inline_md(q.headline)}</p>'
+        + (f'<p class="detail">{inline_md(q.detail)}</p>' if q.detail else "")
+        + (f'<p class="ruling">Ruled {q.ruled}: {inline_md(q.answer)}</p>' if q.ruled else "")
+        + "</div></li>"
+        for q in asked
+    )
+    return block("questions", f'<ul class="asked">{items}</ul>')
+
+
+def artefacts_block(show: Path) -> str:
+    """What the ticket produced to look at: its demo on a button that copies the path, since a demo
+    is a command to run, and every other file in its show directory as a link."""
+    demo, figures = artefacts(show)
+    if demo is None and not figures:
+        return ""
+    items = "".join(
+        f'<li><a href="file://{html.escape(str(figure))}" target="_blank">'
+        f'{html.escape(str(figure.relative_to(show)))}</a></li>'
+        for figure in figures
+    )
+    if demo is not None:
+        items = (
+            f'<li><code>{html.escape(str(demo))}</code>'
+            + copy_button("democopy", "copy path", "Click to copy the path of this ticket\u2019s demo, to run it in a shell.",
+                          str(demo), "the demo\u2019s path")
+            + "</li>"
+        ) + items
+    return block("artefacts", f'<ul class="artefacts">{items}</ul>')
+
+
+def artefacts(show: Path) -> tuple[Path | None, list[Path]]:
+    """A ticket's show directory: the file named `demo`, and every other file under it."""
+    if not show.is_dir():
+        return None, []
+    demo = show / "demo"
+    return (demo if demo.is_file() else None), sorted(p for p in show.rglob("*") if p.is_file() and p != demo)
+
+
+def show_dir(path: Path, feature: str | None) -> Path:
+    """Where a ticket's artefacts are (/mx:show): `agent/show/<feature>/<NN-slug>/`, or
+    `agent/show/<slug>/` for a standalone ticket, beside the tracker the ticket was read from."""
+    show = (path.parent.parent if feature else path.parent).parent / "show"
+    return show / feature / path.stem if feature else show / path.stem
+
+
+def history_block(comments: str, feature: str | None) -> str:
+    """The ticket's comments, folded: the conversation on it and a build's closing comment are what
+    happened, not what the ticket is, so they open only when the reader asks for them."""
+    if not comments.strip():
+        return ""
+    return ('<details class="history"><summary><span class="label">comments</span></summary>'
+            f'{render_body(comments, feature)}</details>')
 
 
 # ---- graphs ---------------------------------------------------------------
@@ -1587,6 +1722,29 @@ ${columns}
   .body li::marker { color: var(--muted); }
   .body table { border-collapse: collapse; font-size: .9rem; }
   .body th, .body td { text-align: left; padding: .2rem .8rem .2rem 0; border-bottom: 1px solid var(--edge); }
+  /* the blocks an opened ticket reads as, each under the word for what it is */
+  .block, .history { display: grid; gap: .3rem; }
+  .asked, .artefacts { list-style: none; padding: 0; display: grid; gap: .45rem; }
+  .asked > li { display: flex; gap: .6rem; align-items: baseline; }
+  .asked .tag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
+  .asked .head { color: var(--strong); }
+  .asked .ruling { color: var(--accent-2); }
+  .asked > li > div > * + * { margin-top: .2rem; }
+  /* a question the user has answered is history: its words stay, its colours give way */
+  .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
+  /* a copy button's words are laid out from the line it sits on, which is as wide as the block */
+  .artefacts > li { display: flex; gap: .8rem; align-items: baseline; position: relative; }
+  .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }
+  .artefacts a { color: var(--accent); }
+  /* the acceptance criteria as the checklist the ticket writes them as */
+  .body li.tick { list-style: none; }
+  .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;
+    color: var(--muted); font-size: .85em; }
+  .body li.tick.met::before { content: "✓"; color: var(--accent); }
+  .history > summary { list-style: none; cursor: pointer; }
+  .history > summary::-webkit-details-marker { display: none; }
+  .history > summary > .label::before { content: "▸"; margin-right: .4rem; }
+  .history[open] > summary > .label::before { content: "▾"; }
 
   /* ---- a mark says in words what it means ---- */
   /* The words appear under the row, at its left edge: the row is the box that is always on screen

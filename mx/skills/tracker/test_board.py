@@ -564,9 +564,27 @@ MARKS = {"ftag", "num", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag"
 
 
 def rows_of(page: str) -> dict[str, str]:
-    """Each ticket row's markup, by row id, in the order the page lists them."""
-    found = re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"(.*?)</details>', page, re.S)
-    return {row_id: body for row_id, body in found}
+    """Each ticket row's markup, by row id, in the order the page lists them: to the `</details>`
+    that closes the row, counting in the one it holds itself (the comments, folded)."""
+    found = {}
+    for row in re.finditer(r'<details class="ticket [^"]*" id="([\w-]+)"', page):
+        depth = 0
+        for tag in re.finditer(r"<details\b|</details>", page[row.start():]):
+            depth += 1 if tag.group().startswith("<details") else -1
+            if depth == 0:
+                found[row.group(1)] = page[row.end(): row.start() + tag.start()]
+                break
+    return found
+
+
+def summary_of(row: str) -> str:
+    """What a row shows without being opened: its name, its marks and its open questions."""
+    return row.split("</summary>", 1)[0]
+
+
+def body_of(row: str) -> str:
+    """What it shows opened: the blocks the ticket reads as."""
+    return row.split("</summary>", 1)[1]
 
 
 class Marks(HTMLParser):
@@ -823,9 +841,9 @@ def test_a_needs_me_row_lists_the_questions_its_ticket_file_asks_and_no_ruled_on
     row = rows_of(out.read_text())["standalone-flaky-upload-test"]
     assert questions_on(row) == [("D1", "Retry the upload, or fake the clock?")], "D2 is ruled, and a ruled question is answered"
     written = f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?** A retry hides a real slowdown; a fake clock makes the test say nothing about timing."
-    assert [(which, text) for which, text, _, _ in copiers(row)] == [("qcopy", written)], "one question needs no copy-all beside it"
+    assert [(which, text) for which, text, _, _ in copiers(summary_of(row))] == [("qcopy", written)], "one question needs no copy-all beside it"
     # the ticket with three of them has one, and it copies all three under the one path
-    three = copiers(rows_of(out.read_text())["t-csv-import-02"])
+    three = copiers(summary_of(rows_of(out.read_text())["t-csv-import-02"]))
     assert [which for which, _, _, _ in three] == ["qcopy", "qcopy", "qcopy", "qall"]
     assert three[-1][1].splitlines() == [str(demo.root / "csv-import" / "02-map-columns.md")] + [
         line for which, text, _, _ in three[:-1] for line in text.splitlines()[1:]
@@ -1010,7 +1028,7 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(demo: Demo, tmp_pat
     render(tracker_roots(demo.root), demo.repo, out)
     page = out.read_text()
     found = copiers(page)
-    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup"}
+    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "democopy"}
     for which, text, said, tip in found:
         what, _, shown = tip.partition("\n\n")
         assert len(what.split()) >= 4 and "copy" in what, f"the {which} button says {what!r} of the click"
@@ -1048,6 +1066,132 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
     # the file's own markdown, so a question pastes back into the ticket as it was written
     assert "- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" in asked
     assert not any("Whose card does the sandbox go on" in line for line in asked), "a ruled question is answered"
+
+
+# ---- an opened ticket ------------------------------------------------------
+# The spec's Decisions on an opened ticket: blocks, not a wall of text, in one order, reading the
+# artefacts from the ticket's show directory and folding the comments away as history.
+
+QUESTION_PARTS = ("tag", "head", "detail", "ruling")
+
+
+def labels_of(row: str) -> list[str]:
+    """The word over each block of an opened ticket, in the order the reader meets them."""
+    return [text for mark, text, _ in marks_on(body_of(row)) if mark == "label"]
+
+
+def asked_in(row: str) -> list[dict[str, str]]:
+    """Every question an opened ticket holds, as the parts it shows of each: its tag, its headline,
+    its detail, and the ruling that answered it where one has."""
+    found: list[dict[str, str]] = []
+    for mark, text, _ in marks_on(body_of(row)):
+        if mark == "question":
+            found.append({})
+        elif mark in QUESTION_PARTS and found:
+            found[-1][mark] = text
+    return found
+
+
+def test_an_opened_ticket_reads_as_blocks_in_one_order(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The build in review, which has one of every block: its questions, its artefacts, then its
+    own sections as the file writes them, the comments last and folded."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    row = rows_of(out.read_text())["t-csv-import-02"]
+    assert labels_of(row) == ["questions", "artefacts", "what to build", "acceptance criteria", "comments"]
+    # the brief is the row's own: read before anything is opened, and written once
+    assert "You tell the importer once" in summary_of(row)
+    assert "You tell the importer once" not in body_of(row)
+    assert summary_of(row).count('<span class="brief">') == 1
+
+
+def test_an_opened_ticket_carries_every_question_with_its_detail_and_the_ruling_on_it(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The row shows the open headlines; the ticket shows all of them, the detail it had no room
+    for, and what the user ruled on the ones that are answered."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    row = rows_of(out.read_text())["standalone-flaky-upload-test"]
+    assert asked_in(row) == [
+        {"tag": "D1", "head": "Retry the upload, or fake the clock?",
+         "detail": "A retry hides a real slowdown; a fake clock makes the test say nothing about timing."},
+        {"tag": "D2", "head": "Keep the test in the fast suite?",
+         "detail": "It takes four seconds with either fix.",
+         "ruling": "Ruled 2026-09-21: keep it in the fast suite."},
+    ]
+    assert [tag for tag, _ in questions_on(summary_of(row))] == ["D1"], "the row lists the open one and no more"
+    assert '<li class="question ruled">' in body_of(row), "an answered question is marked answered"
+
+
+def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The demo on a button that copies its path, since a demo is a command to run, and the figures
+    beside it as links. Nothing in the ticket declares either: the directory is read."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    rows = rows_of(out.read_text())
+    show = demo.repo / "agent" / "show" / "csv-import" / "02-map-columns"
+    body = body_of(rows["t-csv-import-02"])
+    assert [(which, text) for which, text, _, _ in copiers(body)] == [("democopy", str(show / "demo"))]
+    assert f'<a href="file://{show / "mapping.svg"}" target="_blank">mapping.svg</a>' in body
+    # a standalone ticket's show directory is its slug's own, beside the tracker it was read from
+    alone = body_of(rows["standalone-speed-up-tests"])
+    assert str(demo.repo / "agent" / "show" / "speed-up-tests" / "demo") in alone
+    assert "artefacts" not in labels_of(rows["standalone-flaky-upload-test"]), "nothing has been built on it yet"
+
+
+def test_the_comments_fold_under_an_opened_ticket_as_history(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """A build's closing comment is what happened, not what the ticket is, so it opens only when
+    the reader asks for it."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    row = rows_of(out.read_text())["t-csv-import-02"]
+    folded = re.search(r'<details class="history"(\s+open)?>(.*)</details>', body_of(row), re.S)
+    assert folded and not folded.group(1), "the comments are open before anyone asked for them"
+    assert "The mapping step is built and remembers a bank" in folded.group(2), "the closing comment, on its branch"
+    assert labels_of(row)[-1] == "comments"
+
+
+def test_the_acceptance_criteria_read_as_a_checklist(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The build in review met one criterion on its branch and left the other, which is what the
+    checklist says; neither reads as a line opening with a bracket."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    body = body_of(rows_of(out.read_text())["t-csv-import-02"])
+    assert [(mark, text) for mark, text, _ in marks_on(body) if mark == "tick"] == [
+        ("tick", "The second import from a bank asks nothing and maps the columns the first one did."),
+        ("tick", "Property, reviewed: a mapping that fails halfway writes nothing."),
+    ]
+    assert body.count('<li class="tick met">') == 1 and body.count('<li class="tick">') == 1
+    assert "[x]" not in body and "[ ]" not in body
+
+
+def test_an_opened_ticket_leaves_none_of_the_file_behind(tmp_path: Path) -> None:
+    """A ticket writes the sections it needs: a proposed one opens with its provenance under no
+    heading of its own, a decision ticket answers under one the board has no word for. Both keep
+    the place the file gives them, between the blocks the board does name."""
+    root = tmp_path / "agent" / "tickets"
+    root.mkdir(parents=True)
+    (root / "pick-a-format.md").write_text(
+        "---\nstatus: review\ntype: research\npriority: 2\nsize: S\n---\n\n# A wire format\n\n"
+        "Proposed by the orchestrator from 03's closing comment.\n\n"
+        "## Brief\n\nWhich format the two services speak.\n\n"
+        "## Questions\n\n- [D1] **Protobuf or JSON?** One is smaller, the other is read by hand.\n\n"
+        "## Answer\n\nJSON, until a profile says otherwise.\n\n"
+        "## Comments\n\n**2026-09-22** The profile is in `agent/research/`.\n"
+    )
+    row = rows_of(page_of(root))["standalone-pick-a-format"]
+    assert labels_of(row) == ["questions", "answer", "comments"]
+    assert "Proposed by the orchestrator" in body_of(row), "the provenance line, under no heading of its own"
+    assert "JSON, until a profile says otherwise." in body_of(row)
+
+
+def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, tracker: Path) -> None:
+    """A session writing a demo moves no file under the tracker, and the artefacts are what an
+    opened ticket would otherwise never show."""
+    before = tracker_snapshot(tracker_roots(tracker), repo)
+    demo = tracker.parent / "show" / FEAT / "07-built" / "demo"
+    demo.parent.mkdir(parents=True)
+    demo.write_text("#!/bin/sh\necho the import, twice\n")
+    assert tracker_snapshot(tracker_roots(tracker), repo) != before
 
 
 # ---- properties -----------------------------------------------------------
