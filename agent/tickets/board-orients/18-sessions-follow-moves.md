@@ -14,6 +14,7 @@ A ticket file that moves keeps the sessions that worked on it under its old path
 ## Questions
 
 - [D1] **Which moves the board follows is git's guess at how alike two files are, at its default half.** `-M` is what the ticket asks for, and it pairs a delete with an add only where over half the file survives. So a commit that both moves a ticket and rewrites more than half of it carries nothing, silently, and a commit that retires one short ticket while filing another can read as one move and hand the new ticket the retired one's sessions. Lowering the threshold buys the first and costs more of the second; ticket files are short and share their frontmatter and headings, so the pairing has little to go on. The default stands until you say otherwise (A4).
+  - Ruled 2026-09-23: git's default threshold, as built.
 
 ## What to build
 
