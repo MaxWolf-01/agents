@@ -64,15 +64,17 @@ MEASURE = r"""
   }
   // Whether an ancestor's clip reaches a box positioned this way: an absolute box is cut only
   // by its containing-block chain, a fixed one only by an ancestor that takes it out of the
-  // viewport's frame. The properties are the ones Chrome answers yes for, probed one at a
-  // time; container-type and will-change: opacity read like they belong and do not.
-  const WILL_HOLD = /transform|translate|rotate|scale|perspective|filter|contain|content-visibility/
+  // viewport's frame. The properties are the ones Chrome answers yes for, probed one at a time;
+  // container-type, will-change: opacity and will-change: content-visibility read like they
+  // belong and do not, and will-change is matched whole, since transform-origin is not transform.
+  const WILL_HOLD = new Set(['transform', 'translate', 'rotate', 'scale', 'perspective', 'filter', 'backdrop-filter', 'contain', 'transform-style', 'offset-path'])
+  const wants = (cs, what) => cs.willChange.split(',').some((w) => what.has ? what.has(w.trim()) : w.trim() === what)
   const holds = (cs, pos) =>
-    (pos === 'absolute' && cs.position !== 'static') ||
+    (pos === 'absolute' && (cs.position !== 'static' || wants(cs, 'position'))) ||
     cs.transform !== 'none' || cs.translate !== 'none' || cs.rotate !== 'none' || cs.scale !== 'none' ||
     cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' ||
     cs.transformStyle === 'preserve-3d' || cs.contentVisibility !== 'visible' ||
-    /paint|layout|strict|content/.test(cs.contain) || WILL_HOLD.test(cs.willChange)
+    /paint|layout|strict|content/.test(cs.contain) || wants(cs, WILL_HOLD)
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
   // it cannot scroll say how much they cut off.
   const clip = (el, r) => {
@@ -81,13 +83,15 @@ MEASURE = r"""
       const cs = getComputedStyle(a)
       // Overflow on the root elements is the viewport's, which cuts every box on the page and
       // reaches past the element's own; body hands its overflow up only while html has none.
+      // The viewport is as tall as the page here, since --width's resize gave the page the
+      // height it asked for, and a page whose own height follows the viewport's outgrows it.
       const root = a === document.documentElement || (a === document.body && getComputedStyle(document.documentElement).overflowX === 'visible')
       if (a !== el && !root && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
       pos = cs.position
       if (cs.overflowX === 'visible' || cs.display === 'inline') continue
       const ab = a.getBoundingClientRect()
       const c = root
-        ? { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+        ? { left: 0, top: 0, right: innerWidth, bottom: Math.max(innerHeight, document.documentElement.scrollHeight) }
         : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
       if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY))
         cut = Math.max(cut, c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
@@ -204,7 +208,7 @@ def main(args: Args) -> None:
                 if args.crops:
                     b, m = f["box"], 24
                     out = args.crops / f"{Path(path).stem}-{n:02d}-{f['kind']}.png"
-                    page.screenshot(path=str(out), clip={"x": max(0, b["x"] - m), "y": max(0, b["y"] - m), "width": b["w"] + 2 * m, "height": b["h"] + 2 * m})
+                    page.screenshot(path=str(out), full_page=True, clip={"x": max(0, b["x"] - m), "y": max(0, b["y"] - m), "width": b["w"] + 2 * m, "height": b["h"] + 2 * m})
                     f["crop"] = str(out)
                 findings.append(f)
         browser.close()

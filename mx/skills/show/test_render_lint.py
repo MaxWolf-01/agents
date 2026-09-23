@@ -10,8 +10,9 @@ here exhibits one condition, and the oracle is what a reader sees on it: two lab
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
 its title off, which is a finding that never fails a run; and text a clip leaves nothing of,
-like the text a folded disclosure holds, is hidden on purpose. Text the browser renders late,
-or lays out through an element with no box of its own, is measured. A box cuts off only what
+like the text a folded disclosure holds, is hidden on purpose, while an element with no box of
+its own hides its text by visibility and not by opacity, which has nothing to act on. Text the
+browser renders late, or lays out below the first screen, is measured. A box cuts off only what
 it is the containing block of, the page itself included.
 
 A run launches Chromium, so these take a second or two each.
@@ -39,10 +40,10 @@ TWO_LABELS = """
 """
 
 
-def lint(tmp_path: Path, body: str) -> tuple[int, list[dict]]:
+def lint(tmp_path: Path, body: str, crops: Path | None = None) -> tuple[int, list[dict]]:
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
-    run = subprocess.run([str(LINT), str(page), "--json"], capture_output=True, text=True)
+    run = subprocess.run([str(LINT), str(page), "--json", *(["--crops", str(crops)] if crops else [])], capture_output=True, text=True)
     assert run.returncode in (0, 1), run.stderr
     return run.returncode, json.loads(run.stdout)
 
@@ -211,7 +212,7 @@ def test_the_page_itself_clips_what_it_pushes_out_of_the_viewport(tmp_path):
     code, findings = lint(
         tmp_path,
         """
-        <style>body { overflow-x: hidden; min-height: 3000px }</style>
+        <style>body { overflow-x: hidden; min-height: 3000px; width: 3000px }</style>
         <span style="position:absolute;left:2000px;top:20px">Off to the right A</span>
         <span style="position:absolute;left:2000px;top:22px">Off to the right B</span>
         """,
@@ -231,6 +232,57 @@ def test_the_page_does_not_clip_what_it_keeps_in_the_viewport(tmp_path):
     )
     assert kinds(findings) == ["overlap"]
     assert code == 1
+
+
+def test_the_page_does_not_clip_what_a_viewport_sized_layout_puts_below_the_fold(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        f"""
+        <style>body {{ overflow-x: hidden }} .hero {{ height: 100vh; position: relative }}</style>
+        <section class="hero"><span style="position:absolute;left:40px;top:50%">The first screen</span></section>
+        <section class="hero">{TWO_LABELS.format(one=10, two=12)}</section>
+        """,
+    )
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
+def test_a_box_holds_what_will_change_says_it_will_position_and_not_what_merely_reads_like_it(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="position:relative;height:320px">
+          <div style="overflow:hidden;height:100px;will-change:transform-origin">
+            <span style="position:absolute;left:40px;top:200px">A label no box holds</span>
+            <span style="position:absolute;left:40px;top:202px">The label under it</span>
+          </div>
+          <div style="overflow:hidden;height:100px;will-change:position">
+            <span style="position:absolute;left:40px;top:200px">A label its box holds</span>
+            <span style="position:absolute;left:40px;top:202px">The label under that</span>
+          </div>
+        </div>
+        """,
+    )
+    assert [f["text"] for f in findings] == ["A label no box holds | The label under it"]
+    assert code == 1
+
+
+def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <style>.hero { height: 100vh; position: relative }</style>
+        <section class="hero"><span style="position:absolute;left:40px;top:50%">The first screen</span></section>
+        <section class="hero">
+          <span style="position:absolute;left:40px;top:50%">Row label one</span>
+          <span style="position:absolute;left:40px;top:calc(50% + 2px)">Row label two</span>
+        </section>
+        """,
+        crops=tmp_path / "crops",
+    )
+    assert code == 1
+    assert [Path(f["crop"]).name for f in findings] == ["page-01-overlap.png"]
+    assert (tmp_path / "crops" / "page-01-overlap.png").exists()
 
 
 def test_a_scrolling_box_cuts_nothing_off(tmp_path):
