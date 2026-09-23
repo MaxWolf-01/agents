@@ -32,6 +32,7 @@ The board reads the `Session:` trailers of every commit that changed the ticket 
 - [D2] **The board-wide copy-button check cannot see the resume button.** 01's check of the reviewed Property pins the kinds of button on the board and asserts each one's note names the file it copied from (`the demo's path`, `D1 of flaky-upload-test.md`). A resume command has no file, so its note names the session (`the command resuming Grilling the CSV import`) and the new button has a check of its own instead of joining that one. Either the note rule becomes per-kind and one check covers all five buttons, or the two checks stand.
   - Ruled 2026-09-23: answered by 13, which reads the copy note per kind (its A8).
 - [D3] **A renumbered ticket starts its session list at the rename.** The log is read in one pass over the whole repo and keyed by path, and git's rename following works on neither a repo-wide pass nor `--all`, so a slice renumbered when a breakdown is re-cut keeps only the sessions that committed on its current name. Leaving it costs a short list on a renamed ticket; following renames costs a git call per ticket and still cannot see across branches.
+  - Ruled 2026-09-23: follow the move, since git records it; the case is any move of a ticket file, not a renumbering. Built as [18](18-sessions-follow-moves.md).
 
 ## Comments
 
