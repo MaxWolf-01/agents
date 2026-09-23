@@ -56,17 +56,18 @@ ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
-# A briefing as a session writes one, so the head of the side column is measured as prose and
-# not as the board's own two lines; no model runs in a check (the fixtures take claude off PATH).
+# A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
+# prose; the hover probe below renders the other branch, the board's own count. No model runs in a
+# check: the fixtures take claude off PATH.
 WRITTEN = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
 SAID = """Two builds wait on your ruling and the frontier is three deep. The import feature is the
 one moving: 01 landed on Monday and 02 has been in review since, with three questions on it.
 
 ## next
 
-- **Map columns once per bank** — the whole feature waits behind it, and its demo runs.
-- **Speed up the test suite** — four minutes to forty-eight seconds, two questions left.
-- **The flaky upload test** — fifteen minutes, and it stops a build going red for nothing.
+- **Map columns once per bank**: the whole feature waits behind it, and its demo runs.
+- **Speed up the test suite**: four minutes to forty-eight seconds, two questions left.
+- **The flaky upload test**: fifteen minutes, and it stops a build going red for nothing.
 
 The first two touch nothing in common and can run as one wave."""
 # The demo's own transcripts (the `transcribed` fixture), so the sessions on its commits are ones
@@ -96,8 +97,10 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
-# opened a row, whether the graph beside it came back, and what each mark shows on hover, a copy
-# button's account of what it copies among them. A pseudo-element has no rect of its own, so a
+# opened a row, whether the graph beside it came back, whether the briefing is set as prose and says
+# what it is, and what each mark shows on hover, a copy button's account of what it copies among
+# them. The side column's own hints are `title` attributes, as the graph's buttons are: a box that
+# scrolls cuts a tooltip drawn inside it, and that column is the one box on the page that scrolls. A pseudo-element has no rect of its own, so a
 # tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
 # would hide it, which is how two marks came to carry words no reader could see.
 PROBE = r'''
@@ -154,6 +157,13 @@ with sync_playwright() as pw:
       })
     """)
     out["opened"] = page.evaluate("document.querySelectorAll('details.ticket[open]').length")
+    out["briefing"] = page.evaluate("""
+      () => {
+        const p = document.querySelector(".btext p"), box = p.getBoundingClientRect()
+        return {wraps: getComputedStyle(p).whiteSpace !== "nowrap", over: p.scrollWidth - Math.ceil(box.width),
+                says: document.querySelector("#briefing .bwhen").title}
+      }
+    """)
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
@@ -212,11 +222,13 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
-    Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(tracker_roots(transcribed.root), transcribed.repo, out)  # no briefing: the board's own count
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
+    said = seen["briefing"]
+    assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
+    assert said["says"], "the briefing's own mark says nothing about what it is"
     if seen["cdn"]:
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"

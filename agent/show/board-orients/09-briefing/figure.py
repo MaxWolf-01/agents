@@ -56,17 +56,17 @@ PANELS = {
     "fallback": (
         "the column now, before any session has written a briefing",
         [
-            (".bwhen", "Which of the two you are looking at, and on hover what it is. A machine with no <code>claude</code> stays here, and the page says that once at the top."),
+            (".bwhen", "Which of the two you are looking at, and on hover what it is. A machine with no <code>claude</code>, or one whose last run of it answered nothing, stays here, and the page says which at the top."),
             (".btext p", "The count the board can make on its own: what waits on you, and what is being worked on."),
-            (".btext li", "The next picks by priority, then by what accepting one unblocks, then by your own time on it — each pick carrying the terms it was ordered by."),
+            (".btext li", "The next picks by priority, then by what accepting one unblocks, then by your own time on it, each pick carrying the terms it was ordered by."),
         ],
     ),
     "briefing": (
         "the same column once the session has written one",
         [
-            (".btext p", "Written by a <code>claude -p</code> session that was given the tracker as the board reads it and explored the repo from there: the demos it ran, the commits, the tickets' own files. What it says is what reading those tells you and the rows do not."),
-            (".bwhen", "When it was written. A tracker change is sent to that same session, at most once every five minutes; on hover, that and the hour idle it retires after."),
-            (".btext li", "Three picks with a reason each, and the last line says which of them can run at the same time, so dispatching a wave is one decision."),
+            (".btext p", "Written by a <code>claude -p</code> session that was given the tracker as the board reads it and read the repo from there: the commits, the tickets' own files, what is under <code>agent/show</code>. What it says is what reading those tells you and the rows do not."),
+            (".bwhen", "When it was written, to the day and the hour; hovering gives the year, and says that a tracker change is sent to that same session at most once every five minutes and that it retires after an hour idle."),
+            (".btext li", "Three picks with a reason each, and under them the line that says which can run at the same time, so dispatching a wave is one decision."),
             (".ghead", "The graph is where it was, under the briefing."),
         ],
     ),

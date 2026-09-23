@@ -37,6 +37,7 @@ import board  # noqa: E402
 import briefing  # noqa: E402
 
 ACCEPTED = "csv-import/02-map-columns.md"  # the build in review, which the change below accepts
+ELIDED = "## saved-views"  # where the state below is cut: the second feature reads as the first
 
 
 @dataclass
@@ -90,10 +91,11 @@ def main(args: Args) -> None:
 
     board.render(roots, repo, out)
     print(f"\nThe board with no briefing written yet: {out}")
-    said("what the column holds meanwhile", board.fallback(*loaded(roots, repo)))
+    pages = board.Diffviews(roots.main.parent / "diffviews", None)  # the review pages are not this demo's subject
+    said("what the column holds meanwhile", board.fallback(*board.loaded(roots, pages)))
 
     state = board.briefing_state(roots, repo)
-    said("what a fresh session is given (board.briefing_state)", state[: state.index("## saved-views")] + "…")
+    said("what a fresh session is given (board.briefing_state)", state.split(f"\n{ELIDED}")[0] + "\n…")
     first = briefing.first(state, repo, now())
     assert first, "the model did not answer"
     first.write(briefing.cache_path(out))
@@ -118,13 +120,6 @@ def main(args: Args) -> None:
         f"Watch it keep itself current: CLAUDE_CONFIG_DIR={board.TRANSCRIPTS.parent} "
         f"uv run {TRACKER / 'board.py'} {roots.main}"
     )
-
-
-def loaded(roots: "board.Roots", repo: Path) -> tuple[list, list]:
-    """The tracker as the board's own loaders read it."""
-    diffviews = board.Diffviews(roots.main.parent / "diffviews", None)
-    features = board.load_features(roots.main, roots.overrides, diffviews, roots.repo)
-    return features, board.load_standalone(roots, diffviews)
 
 
 def accept(repo: Path) -> None:

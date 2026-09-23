@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 
 import board  # noqa: E402
+import briefing  # noqa: E402
 from demo_tracker import Demo, build  # noqa: E402
 
 KEPT = ("git", "uv", "chromium")  # what a check may still need: the repo, a script's own run, a browser
@@ -34,6 +35,7 @@ def fresh_caches() -> None:
     board.session_log.cache_clear()
     board.read_transcript.cache_clear()
     board.toplevel.cache_clear()
+    briefing.SILENT = ""  # what the last run of the model said, which the page says once
 
 
 @pytest.fixture

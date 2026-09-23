@@ -72,9 +72,10 @@ it. A watching board sends each tracker change to that same session, at most
 once every five minutes, as a note of what changed, and the session rewrites the
 briefing or leaves it standing; it retires after an hour idle or twenty pings,
 and the next change starts a fresh one. The session and its briefing live in a
-cache file beside the page. Before the first briefing, or with no claude on the
-machine, the column holds the board's own count of what waits and the frontier
-by priority, then by what accepting it unlocks, then by the user's time.
+cache file beside the page. Until a briefing has been written the column holds
+the board's own count of what waits and the frontier by priority, then by what
+accepting it unlocks, then by the user's time; a machine with no claude, or one
+whose last run of it answered nothing, stays there and the page says so once.
 
 That panel is a preview. The `full` button, or ?graph on the address, opens the
 same graph at its own size over the board; `window` opens it in a window of its
@@ -115,9 +116,11 @@ Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. It also re-renders on the two things that move with no file
 under the tracker moving: a briefing the session has rewritten, and GitHub's
-answer running past the five minutes it is cached for. Several watchers writing
-the same page is harmless: the render is the same from the same tracker,
-GitHub's answer aside, and that one is shared through the cache beside the page.
+answer running past the five minutes it is cached for. One watcher per board:
+several of them write the same page from the same tracker, and share GitHub's
+answer through the cache beside it, but each keeps its own briefing schedule, so
+a second one pays for every briefing again and resumes the session while the
+first is in it.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections, the cursor and the hidden
@@ -240,10 +243,7 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
     session_log.cache_clear()  # and commits on them, each carrying the session that made it
-    diffviews = serve_diffviews(root.parent / "diffviews")
-    features = load_features(root, roots.overrides, diffviews, roots.repo)
-    # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
-    standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
+    features, standalone = loaded(roots, serve_diffviews(root.parent / "diffviews"))
     log = git_log(repo)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(features, standalone), github.cache_path(out))
@@ -263,36 +263,65 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     Those two are what the watcher is for as much as the tracker is. A pull request merged while
     the tracker sits still would otherwise show as open until someone touched a ticket, and a
     briefing written minutes after the change that asked for it would not show at all."""
-    cache = briefing.cache_path(out)
-    seen, session, asked = None, Briefer(repo, out), None
+    seen, session = Seen(), Briefer(repo, out)
     while True:
         try:
-            roots = tracker_roots(tickets_root)
-            snapshot = tracker_snapshot(roots, repo)
-            written = cache.stat().st_mtime_ns if cache.exists() else 0
-            if snapshot != seen:
-                if seen is not None:
-                    session.changed(now())
-                    render(roots, repo, out)
-                else:
-                    # the start is itself a change where no briefing has ever been written, since a
-                    # tracker quiet since the last one is the board a returning user opens
-                    session.opened(snapshot, None if briefing.Briefing.read(cache) else now())
-                seen = snapshot
-            elif written != session.showing or (asked and now() - asked >= github.LIFETIME):
-                render(roots, repo, out)
-            session.showing = written
-            # the answer this render left beside the board; unmoved where it did not ask, so a
-            # tracker that names no pull request is not re-rendered every window for nothing
-            asked = github.asked_at(github.cache_path(out))
-            session.tick(roots, repo, now())
+            seen = look(seen, session, tickets_root, repo, out)
         except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
             print(f"board: {e}; retrying", file=sys.stderr)
         time.sleep(2)
 
 
+@dataclass(frozen=True)
+class Seen:
+    """What the last pass of the watcher read, as a value to compare the next one against.
+
+    `snapshot` is the tracker as `tracker_snapshot` reads it and None before the first pass;
+    `briefing` is when the cache file the rendered page holds was written; `asked` is when GitHub's
+    answer beside the board was got, and `armed` the answer a re-render has already been done for.
+    """
+
+    snapshot: tuple | None = None
+    briefing: int = 0
+    asked: datetime.datetime | None = None
+    armed: datetime.datetime | None = None
+
+
+def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Path) -> Seen:
+    """One pass of the watcher: re-render what has moved since the last one, tell the briefing
+    session what changed, and return what this pass read."""
+    roots = tracker_roots(tickets_root)
+    cache = briefing.cache_path(out)
+    snapshot = tracker_snapshot(roots, repo)
+    written = cache.stat().st_mtime_ns if cache.exists() else 0
+    armed = seen.armed
+    if snapshot != seen.snapshot:
+        if seen.snapshot is not None:
+            session.changed(now())
+            render(roots, repo, out)
+        else:
+            # the start is itself a change where no briefing has ever been written, since a tracker
+            # quiet since the last one is the board a returning user opens
+            session.opened(snapshot, None if briefing.Briefing.read(cache) else now())
+    elif written != seen.briefing or run_out(seen.asked, seen.armed):
+        render(roots, repo, out)
+        armed = seen.asked  # this answer has had its render; only a later one arms the clock again
+    session.tick(roots, snapshot, now())
+    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed)
+
+
 def now() -> datetime.datetime:
     return datetime.datetime.now().astimezone()
+
+
+def run_out(asked: datetime.datetime | None, armed: datetime.datetime | None) -> bool:
+    """Whether GitHub's answer has run out of the lifetime it is cached for and the render that
+    would ask again has not happened yet.
+
+    The answer's own time is what arms the clock, so an answer that has had its render is done with:
+    a render that asked leaves a later one and the clock arms again a window after it, and a tracker
+    that has stopped naming any reference leaves the same one, which fires once and never again."""
+    return bool(asked) and asked != armed and now() - asked >= github.LIFETIME
 
 
 @dataclass
@@ -315,7 +344,6 @@ class Briefer:
     changed_at: datetime.datetime | None = None
     tried: datetime.datetime | None = None  # when a run was last started, answered or not
     running: threading.Thread | None = None
-    showing: int = 0  # when the cache file the rendered page holds was written
 
     def opened(self, snapshot: tuple, at: datetime.datetime | None) -> None:
         """The watcher's first pass: what the session is told about is measured from here."""
@@ -324,8 +352,9 @@ class Briefer:
     def changed(self, at: datetime.datetime) -> None:
         self.changed_at = at
 
-    def tick(self, roots: "Roots", repo: Path, at: datetime.datetime) -> None:
-        """Whatever this pass of the watcher owes the briefing session."""
+    def tick(self, roots: "Roots", snapshot: tuple, at: datetime.datetime) -> None:
+        """Whatever this pass of the watcher owes the briefing session, against the tracker as that
+        pass read it."""
         if not self.changed_at or not briefing.available():
             return
         if self.running and self.running.is_alive():
@@ -336,34 +365,47 @@ class Briefer:
         verb = briefing.on_change(cached, self.changed_at, at)
         if verb == "wait":
             return
-        snapshot = tracker_snapshot(roots, repo)
-        told = None if verb == "fresh" else changed_note(self.told, snapshot, repo)
-        self.tried, self.told = at, snapshot
-        self.running = threading.Thread(target=self.write, args=(roots, repo, cached, told), daemon=True)
+        note = None if verb == "fresh" else changed_note(self.told, snapshot, self.repo)
+        self.tried = at
+        self.running = threading.Thread(target=self.write, args=(roots, cached, note, snapshot), daemon=True)
         self.running.start()
 
-    def write(self, roots: "Roots", repo: Path, cached: "briefing.Briefing | None", told: str | None) -> None:
+    def write(
+        self, roots: "Roots", cached: "briefing.Briefing | None", note: str | None, snapshot: tuple,
+    ) -> None:
         """The run, off the watcher's own thread: a fresh session on the tracker's state, or the one
         that wrote the briefing told what changed. What it writes is picked up by the next pass,
-        which re-renders the board on it."""
+        which re-renders the board on it.
+
+        What the session has been told stays where it was until it answers: a run that comes back
+        with nothing is tried again a window later, and the account of what moved is what that
+        retry is for."""
         try:
             said = (
-                briefing.ping(cached, told, self.repo, now()) if told is not None
-                else briefing.first(briefing_state(roots, repo), self.repo, now())
+                briefing.ping(cached, note, self.repo, now()) if note is not None
+                else briefing.first(briefing_state(roots, self.repo), self.repo, now())
             )
+            if said:
+                said.write(briefing.cache_path(self.out))
+                self.told = snapshot
         except Exception as e:  # the board is a page that renders without the model, this run included
             print(f"board: the briefing session: {e}", file=sys.stderr)
-            return
-        if said:
-            said.write(briefing.cache_path(self.out))
 
 
 def briefing_state(roots: "Roots", repo: Path) -> str:
     """The tracker as the board reads it, in the words the briefing session is handed it in."""
-    diffviews = Diffviews(roots.main.parent / "diffviews", None)  # the session is given the tickets, not the pages they are reviewed on
-    features = load_features(roots.main, roots.overrides, diffviews, roots.repo)
-    standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
+    # the session is given the tickets; a review page is the user's to read and its address the
+    # render's to find. A feature read from its own worktree asks its own server all the same
+    # (load_features), which the render also asks, and answering twice is what that server is for.
+    features, standalone = loaded(roots, Diffviews(roots.main.parent / "diffviews", None))
     return state_of(repo.name, features, standalone, git_log(repo))
+
+
+def loaded(roots: "Roots", diffviews: "Diffviews") -> tuple[list["Feature"], list["Standalone"]]:
+    """Every ticket the board shows: each feature's, and the standalone ones. A standalone ticket
+    whose slug names an in-flight feature was absorbed into it (grilling) and is not one of them."""
+    features = load_features(roots.main, roots.overrides, diffviews, roots.repo)
+    return features, [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
 
 
 # ---- the board briefing ---------------------------------------------------
@@ -396,7 +438,7 @@ def state_of(project: str, features: list["Feature"], standalone: list["Standalo
 def state_line(ref: str, t: "Row") -> str:
     """One ticket, as the board's own marks read it."""
     marks = [
-        ref, t.status, ASKS[asks(t.status, t.kind, bool(open_questions(t)))][0],
+        ref, t.status, ASKS[asks_word(t)][0],
         f"p{t.priority} {PRIORITY[t.priority][0]}" if t.priority else "no priority",
         SIZES[t.size][0] if t.size else "no size", t.title, str(t.path),
     ]
@@ -414,12 +456,12 @@ def changed_note(before: tuple, after: tuple, repo: Path) -> str:
     """What moved between two of the watcher's snapshots, in the words the briefing session is told
     it in: the ticket files, the review pages and the artefacts, and the commits behind them."""
     was = {path: rest for path, *rest in before[2:]}
-    now = {path: rest for path, *rest in after[2:]}
+    since = {path: rest for path, *rest in after[2:]}
     said = [
         f"{word}: {', '.join(shorten(p, repo) for p in sorted(paths))}"
         for word, paths in (
-            ("new", now.keys() - was.keys()), ("gone", was.keys() - now.keys()),
-            ("changed", {p for p in now.keys() & was.keys() if now[p] != was[p]}),
+            ("new", since.keys() - was.keys()), ("gone", was.keys() - since.keys()),
+            ("changed", {p for p in since.keys() & was.keys() if since[p] != was[p]}),
         ) if paths
     ]
     if before[:2] != after[:2]:
@@ -435,39 +477,50 @@ def shorten(path: str, repo: Path) -> str:
 COUNTED = "no one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
 
 FALLBACK_TIP = "No model has written a briefing: this is the board's own count, and the frontier by what it unblocks."
+# The windows are the schedule's own, so the words and the rule cannot drift apart, as a row's
+# marks and their tips do not (PRIORITY_TIP).
 BRIEFING_TIP = (
     "The board briefing: a session that explored this repo says where things stand and what to take up next.\n"
-    "A tracker change is sent to that same session, at most once every five minutes;\n"
-    "it retires after an hour idle and the next change starts a fresh one."
+    f"A tracker change is sent to that same session, at most once every {briefing.DEBOUNCE.seconds // 60} minutes;\n"
+    f"it retires after {briefing.IDLE.seconds // 3600} h idle or {briefing.PING_CAP} of those, "
+    "and the next change starts a fresh one."
 )
 
 
 def fallback(features: list["Feature"], standalone: list["Standalone"]) -> str:
     """What the board says where no model has written a briefing: the counts of what waits on the
     user and what is being worked on, and the next few by priority, then by what accepting them
-    unlocks, then by the user's own time."""
+    unlocks, then by the user's own time.
+
+    What waits is counted off the rows' own marks, so the sentence and the group under it say the
+    same thing: a ticket the board tags as a design session is one here whatever else it carries."""
     rows = [(f"{f.name}/{t.num}", t) for f in features for t in f.tickets] + [(k.slug, k) for k in standalone]
     live = [(ref, t) for ref, t in rows if t.status != "done"]
+    mine = [t for _, t in live if group_of(t) == "needs"]
     waiting = {
-        ("build to rule on", "builds to rule on"): [t for _, t in live if t.status == "review"],
-        ("question wanting a word", "questions wanting a word"): [q for _, t in live for q in open_questions(t)],
-        ("design session", "design sessions"):
-            [t for _, t in live if group_of(t) == "needs" and t.status != "review" and not open_questions(t)],
+        ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
+        ("question wanting a word", "questions wanting a word"): [q for t in mine for q in open_questions(t)],
+        ("design session", "design sessions"): [t for t in mine if asks_word(t) in ("design", "prototype")],
     }
     counts = [
         f"{counted(len(held))} {one if len(held) == 1 else many}" for (one, many), held in waiting.items() if held
     ]
+    several = len(counts) > 1 or any(len(held) > 1 for held in waiting.values())  # what the verb agrees with
+    waits = f"{listed(counts).capitalize()} wait{'' if several else 's'} on you." if counts else "Nothing waits on you."
     running = [t for _, t in live if t.status == "claimed"]
-    lead = (listed(counts).capitalize() + " wait on you." if counts else "Nothing waits on you.") + (
-        f" {counted(len(running)).capitalize()} ticket{'s are' if len(running) != 1 else ' is'} being worked on."
-        if running else ""
+    worked = (
+        f"{counted(len(running)).capitalize()} ticket{'s are' if len(running) != 1 else ' is'} being worked on."
+        if running else "Nothing is being worked on."
     )
+    lead = f"{waits} {worked}"
     unlocks = waited_on(features, standalone)
     picks = sorted(
         ((ref, t) for ref, t in live if group_of(t) in ("needs", "open")),
         key=lambda row: (row[1].priority or len(PRIORITY) + 1, -unlocks[row[0]], *sort_key(row[1])[1:]),
     )
-    return lead + "\n\n## next\n" + "".join(f"- **{t.title}** — {why(t, unlocks[ref])}\n" for ref, t in picks[:3])
+    if not picks:
+        return lead + "\n\nNothing is open to take up."
+    return lead + "\n\n## next\n" + "".join(f"- **{t.title}**: {why(t, unlocks[ref])}\n" for ref, t in picks[:3])
 
 
 def waited_on(features: list["Feature"], standalone: list["Standalone"]) -> Counter:
@@ -1524,8 +1577,13 @@ def asks(status: str, kind: str | None, open_question: bool) -> str:
     return WORKED_ALONE.get(kind or "", "build")
 
 
+def asks_word(t: Row) -> str:
+    """Which of ASKS a row asks of the user, from the row itself."""
+    return asks(t.status, t.kind, bool(open_questions(t)))
+
+
 def asks_tag(t: Row) -> str:
-    kind = asks(t.status, t.kind, bool(open_questions(t)))
+    kind = asks_word(t)
     word, meaning = ASKS[kind]
     return f'<span class="asks a-{kind}" data-tip="{html.escape(meaning)}">{word}</span>'
 
@@ -1804,12 +1862,14 @@ def briefing_block(said: "briefing.Briefing | None", features: list[Feature], st
     """The head of the side column: where things stand and what to take up next, as the briefing
     session wrote it and when, or the board's own count where no session has written one."""
     when, text, tip = (
-        (f"written {said.written:%d %b %H:%M}", said.text, BRIEFING_TIP)
+        # the row shows the day and the hour; the words behind it carry the year, which is what a
+        # briefing nobody has replaced in months is read by
+        (f"written {said.written:%d %b %H:%M}", said.text, f"Written {said.written:%Y-%m-%d %H:%M}.\n{BRIEFING_TIP}")
         if said else ("the board's own", fallback(features, standalone), FALLBACK_TIP)
     )
     return (
         f'<div class="bhead"><span class="label">briefing</span>'
-        f'<span class="bwhen" data-tip="{html.escape(tip)}">{html.escape(when)}</span></div>'
+        f'<span class="bwhen" title="{html.escape(tip)}">{html.escape(when)}</span></div>'
         f'<div class="btext">{markdown.markdown(text)}</div>'
     )
 
@@ -1885,14 +1945,18 @@ def gh_shown(features: list[Feature], standalone: list[Standalone]) -> list[str]
 
 def absences(
     features: list[Feature], standalone: list[Standalone], gh: github.Answer,
-    written: "briefing.Briefing | None" = None,
+    standing: "briefing.Briefing | None" = None,
 ) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
     missing). A review page linked as a file is one nothing answered for; a tracker with no page
     rendered yet has no server to miss, so it says nothing. A machine with no transcripts directory
     has run no session this board could name, whatever the commits say. GitHub says its own absence
     in its own words, since what stopped the query is what the user has to fix (github.ask). A
-    briefing already written is no absence whatever the machine has now: the column is not empty."""
+    briefing already written is no absence whatever the machine has now: the column is not empty,
+    and what it says of itself is when it was written.
+
+    The model says its own absence in its own words too: a machine with no claude and a login that
+    has lapsed are the same empty column and two different things to fix (briefing.missing)."""
     said = []
     pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
     if any(page and page.startswith("file://") for page in pages):
@@ -1907,11 +1971,8 @@ def absences(
         ))
     if gh.missing:
         said.append(absence_note("github", gh.missing))
-    if written is None and not briefing.available():
-        said.append(absence_note(
-            "model",
-            f"No {briefing.COMMAND} on this machine, so the briefing is the board's own count rather than a model's reading.",
-        ))
+    if standing is None and (why := briefing.missing()):
+        said.append(absence_note("model", why))
     return said
 
 
@@ -2132,8 +2193,7 @@ ${columns}
   }
   /* the briefing, at the head of the column: prose, so it is set as the page's prose is */
   .briefing { margin-bottom: 1.1rem; }
-  /* the box the head's own words are laid out from, as a row is for the marks on it */
-  .bhead { position: relative; display: flex; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .3rem; }
+  .bhead { display: flex; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .3rem; }
   .bwhen { color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
   .btext { font-size: .92rem; line-height: 1.55; }
   .btext > :first-child { margin-top: 0; }

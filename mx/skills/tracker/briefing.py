@@ -19,17 +19,25 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 DEBOUNCE = timedelta(minutes=5)  # a burst of tracker changes reaches the session as one ping; the spec allows five to ten
-# The prompt cache's lifetime, which is what a ping rereads the session's context at: the plan this
-# was built on writes the hour-long cache (09-briefing's closing comment has the run that says so).
+# The prompt cache's lifetime, which is what a ping rereads the session's context at: a run of the
+# command below reports its input under `cache_creation.ephemeral_1h_input_tokens` and nothing
+# under the five-minute one, so it is the hour-long cache this is set against.
 IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: two hours of a tracker changing every window
 
 COMMAND = "claude"
-# What the session explores with: reading the repo is the whole of its work, and nothing it is
-# given can write to the checkout the board is rendered from.
+# What the session explores with: reading the repo is the whole of its work. The list is what the
+# run allows on top of the machine's own settings, which stand whatever it says, so the three that
+# write are named as denied rather than left out.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
+DENIED = "Write,Edit,NotebookEdit"
+# The user's own sessions carry their memory files and hooks; a briefing session is none of their
+# conversations, and the repo's own CLAUDE.md is the one thing about it worth reading.
+SETTINGS = json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(Path.home() / ".claude" / "CLAUDE.md")]})
 RUN_LIMIT = 900  # seconds a run gets; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
+
+SILENT = ""  # what the last run that answered nothing said, for the page to say once (board.absences)
 
 SYSTEM = """You write the briefing at the head of one person's ticket board, for the tracker of the repo you are in.
 
@@ -93,11 +101,15 @@ def on_change(cached: Briefing | None, changed_at: datetime, now: datetime) -> s
     time and the clock.
 
     The session's own last activity is the window's start, so the pings of a tracker changing all
-    day are one a window and no more, and the same field, an hour untouched, is what retires it."""
+    day are one a window and no more, and the same field, an hour untouched, is what retires it.
+
+    A change the session already has is what a retired session is read against first: retirement is
+    the next change's business, and a board watching a tracker that has not moved since the morning
+    would otherwise explore it again on the hour, all night, for the same change."""
+    if cached is not None and cached.last_activity >= changed_at:
+        return "wait"  # this change reached it already, in the note of an earlier one
     if cached is None or retired(cached, now):
         return "fresh"
-    if cached.last_activity >= changed_at:
-        return "wait"  # this change reached it already, in the note of an earlier one
     return "wait" if now - cached.last_activity < DEBOUNCE else "ping"
 
 
@@ -117,7 +129,11 @@ def available() -> bool:
 
 def first(state: str, repo: Path, now: datetime) -> Briefing | None:
     """The briefing a fresh session writes from the tracker's state, exploring `repo` from there,
-    or None where the model did not answer."""
+    or None where the model did not answer.
+
+    `now` is the moment the run starts, not the moment it answers: the session's last activity is
+    what a change is read as told or untold against (on_change), and a change arriving while the
+    repo is being explored is one the session has not heard."""
     answer = ask(["--system-prompt", SYSTEM, "-p", state], repo)
     if not answer or not answer["result"].strip():
         return None
@@ -150,29 +166,43 @@ def ask(args: list[str], repo: Path) -> dict | None:
 
     The board renders without the model, so every way this comes back empty is one the caller goes
     on from: no claude on the machine, no auth, no network, a run past RUN_LIMIT, an error. Each of
-    them says itself once where the board's own output goes, since the page cannot say what it
-    never heard, and a login that has lapsed looks exactly like a board that never had a model."""
+    them is kept for the page to say once, in the words the run itself used, since a login that has
+    lapsed is a different thing to fix from a machine that never had the model."""
+    global SILENT
     if not available():
         return None
     try:
         done = subprocess.run(
-            [COMMAND, *args, "--output-format", "json", "--allowedTools", TOOLS],
+            [COMMAND, *args, "--output-format", "json", "--allowedTools", TOOLS, "--disallowedTools", DENIED,
+             "--settings", SETTINGS],
             cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
-        return quiet(str(e))
+        quiet(str(e))
+        return None
     try:
         answer = json.loads(done.stdout)
     except ValueError:
         answer = None
     if not isinstance(answer, dict) or answer.get("is_error") or not answer.get("session_id"):
         said = (answer or {}).get("result") or next((line for line in done.stderr.splitlines() if line.strip()), "")
-        return quiet(str(said) or "it answered nothing")
+        quiet(str(said) or "it answered nothing")
+        return None
+    SILENT = ""
     return answer | {"result": str(answer.get("result", ""))}
 
 
 def quiet(said: str) -> None:
     """A run that came back with no briefing: the board carries on with the briefing it has, or with
-    its own count, and what went wrong is on the watcher's own output."""
+    its own count, and what went wrong is on the watcher's own output and on the page (missing)."""
+    global SILENT
+    SILENT = f"The briefing session answered nothing ({said.strip()[:120]}), so the briefing is the board's own count."
     print(f"{COMMAND}: {said.strip()[:200]}", file=sys.stderr)
-    return None
+
+
+def missing() -> str:
+    """Why this machine has written no briefing, in the words the page says once, or empty where the
+    model is here and the last run of it answered."""
+    if not available():
+        return f"No {COMMAND} on this machine, so the briefing is the board's own count rather than a model's reading."
+    return SILENT
