@@ -6,7 +6,7 @@
 
 Two layers: what harden decides on its own, and what it reports when driven at its command line
 against a fixture repository, which is the seam the spec names. The oracle is the two prototype
-replays under `agent/prototypes/testing-workflow/` in the mx repository, replayed here at fixture
+replays retired from `agent/prototypes/testing-workflow/` in the mx repository (git history has them), replayed here at fixture
 scale: a function the tests do not pin comes back as a survivor, a deleted test brings its function
 back into the measurement, and the mutant renumbering that made a prototype report 41 new survivors
 where 3 were real stays filtered.
