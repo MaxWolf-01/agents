@@ -1321,9 +1321,9 @@ def gh_links(refs: Sequence[str], gh: dict[str, str]) -> str:
     further: the board asked and was answered, so there is no absence to report."""
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
-        f'<a class="gh {gh.get(ref, "unknown")}" href="https://github.com/{repo}/issues/{num}" target="_blank" '
-        f'onclick="event.stopPropagation()" data-tip="{html.escape(github.SAYS.get(gh.get(ref, ""), UNKNOWN_REF))}">{html.escape(ref)}</a>'
-        for ref in refs for repo, num in [ref.split("#")]
+        f'<a class="gh {state or "unknown"}" href="https://github.com/{repo}/issues/{num}" target="_blank" '
+        f'onclick="event.stopPropagation()" data-tip="{html.escape(github.SAYS.get(state, UNKNOWN_REF))}">{html.escape(ref)}</a>'
+        for ref in refs for repo, num in [ref.split("#")] for state in [gh.get(ref)]
     )
 
 
@@ -1833,11 +1833,10 @@ ${columns}
   .chip.done { color: var(--muted); text-decoration: line-through; }
   .rp { color: var(--accent); }
   .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
-  /* a GitHub reference in the look of its state (github.SAYS says the same in words on hover):
-     open work in the accent, a review asking for changes in the rose a question wears, a merge in
-     the purple GitHub itself uses, anything closed struck through and a draft underlined as the
-     provisional thing it is. A reference GitHub was not asked about keeps the muted link it has
-     always been. */
+  /* a GitHub reference in the look of its state; github.SAYS says the same in words on hover.
+     Open work takes the accent, a review asking for changes the rose a question wears, a merge the
+     callout purple, as GitHub marks a merge. Anything closed is struck through and a draft
+     underlined. A reference GitHub was not asked about keeps the muted link it has always been. */
   .gh { color: var(--muted); }
   .gh.pr-open, .gh.issue-open { color: var(--accent); }
   .gh.pr-changes { color: var(--c-rose); }

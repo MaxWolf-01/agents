@@ -6,8 +6,8 @@ of the two it is. The answer is cached beside the rendered board for LIFETIME, s
 a busy tracker asks once a window rather than once a render, and never once a reference.
 
 No `gh`, no auth or no network leaves every link bare and gives the page one note saying so
-(board.absences). That outcome is cached like any other, so a board with nothing to ask tries again
-once a window rather than on every render.
+(board.absences). A question that could not be answered is cached like any other, so a board GitHub
+is out of reach of asks once a window rather than once a render.
 """
 
 import datetime

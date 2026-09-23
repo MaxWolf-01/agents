@@ -57,7 +57,8 @@ def path_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., 
     # tr, found here while the machine's PATH still stands: the cut-down one below holds the
     # board's own tools and nothing else, so a stub that looked tr up at call time would record
     # nothing and leak "tr: not found" into the tool's stderr, which the board reads as its words
-    flatten = shutil.which("tr") or "tr"
+    flatten = shutil.which("tr")
+    assert flatten, "no tr to flatten a stub's arguments with"
     monkeypatch.setenv("PATH", str(bin_dir))
 
     def stub(name: str, answer: str = "") -> Path:

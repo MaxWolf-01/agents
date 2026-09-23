@@ -1493,11 +1493,11 @@ def referenced(tracker: Path) -> Path:
     return tracker
 
 
-def gh_answering(path_with: Callable[..., Path], answer: dict, said: str = "", code: int = 0) -> Path:
-    """A `gh` that answers every query with `answer`, and reports `said` and `code` as gh reports a
-    request it considers failed."""
+def gh_answering(path_with: Callable[..., Path], answer: dict, said: str = "") -> Path:
+    """A `gh` that answers every query with `answer`. Given `said`, it reports that on stderr and
+    exits non-zero, as gh does with a request it considers failed."""
     # printf, a shell builtin, since this PATH holds only the tools the board reaches for itself
-    spoken = f'printf "%s\\n" {shlex.quote(said)} >&2\nexit {code}' if said else ""
+    spoken = f'printf "%s\\n" {shlex.quote(said)} >&2\nexit 1' if said else ""
     return path_with("gh", f"printf '%s' {shlex.quote(json.dumps(answer))}\n{spoken}")
 
 
@@ -1583,7 +1583,7 @@ def test_an_answer_carrying_data_is_read_though_gh_calls_the_request_failed(
     rest of the answer stands: those links stay bare, and the board asked and was answered, so the
     page has no absence to report."""
     partial = {"data": {"r0": ANSWERED["data"]["r0"], "r1": None}}
-    gh_answering(path_with, partial, said="gh: Could not resolve to a Repository with the name 'acme/helix'.", code=1)
+    gh_answering(path_with, partial, said="gh: Could not resolve to a Repository with the name 'acme/helix'.")
     out = tmp_path / "board.html"
     render(tracker_roots(referenced), repo, out)
     marks = gh_marks(out.read_text())
@@ -1598,7 +1598,7 @@ def test_the_page_says_why_github_did_not_answer_in_ghs_own_words(
 ) -> None:
     """An answer with no data in it is no answer: a token GitHub refuses, a network that is not
     there. What gh said is what the user has to fix, so the note carries it."""
-    gh_answering(path_with, {"message": "Bad credentials", "status": "401"}, said="gh: Bad credentials (HTTP 401)", code=1)
+    gh_answering(path_with, {"message": "Bad credentials", "status": "401"}, said="gh: Bad credentials (HTTP 401)")
     out = tmp_path / "board.html"
     render(tracker_roots(tracker), repo, out)
     page = out.read_text()
