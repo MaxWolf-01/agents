@@ -57,6 +57,7 @@ ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
+FOLDED = "standalone-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
 # A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
 # prose; the hover probe below renders the other branch, the board's own count. No model runs in a
 # check: the fixtures take claude off PATH.
@@ -112,6 +113,7 @@ from playwright.sync_api import sync_playwright
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 width, marks = int(sys.argv[2]), sys.argv[3].split(",")
+ROW, FOLDED = sys.argv[4].split(",")
 TIP = """
 (mark) => {
   const el = document.querySelector(mark)
@@ -144,7 +146,7 @@ with sync_playwright() as pw:
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
     for scheme in ("day", "night"):
-        page.goto(f"{page_url}?theme={scheme}#t-csv-import-02", wait_until="networkidle")
+        page.goto(f"{page_url}?theme={scheme}#{ROW}", wait_until="networkidle")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
     out["names"] = page.evaluate("""
@@ -169,17 +171,35 @@ with sync_playwright() as pw:
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
-        where = mark if mark.startswith("#") else f"#t-csv-import-02 .{mark}"
+        where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
         page.hover(where)
         out["tips"][mark] = page.evaluate(TIP, where)
-    page.click("#t-csv-import-02 .qall")
+    out["questions"] = page.evaluate("""
+      ([opened, folded]) => {
+        const listed = (id) => {
+          const list = document.getElementById(id).querySelector(".qs")
+          return list ? list.getBoundingClientRect().height > 0 : null
+        }
+        const row = document.getElementById(opened)
+        // each question of the opened row, as boxes rather than as nodes: a button the markup
+        // carries and the style hides is what this run is here to tell from one the reader can click
+        const asked = [...row.querySelectorAll(".asked > li")].map((li) => {
+          const line = li.getBoundingClientRect()
+          const button = li.querySelector(":scope > .copier")?.getBoundingClientRect()
+          return {copier: button ? button.width > 0 : false,
+                  at_the_end: button ? line.right - button.right < 1 : null}
+        })
+        return {opened_list: listed(opened), folded_list: listed(folded), asked}
+      }
+    """, [ROW, FOLDED])
+    page.click(f"#{FOLDED} .qall")
     page.wait_for_timeout(500)
     out["copied"] = {
         "clipboard": page.evaluate("navigator.clipboard.readText()"),
-        "asked": page.evaluate("document.querySelector('#t-csv-import-02 .qall').dataset.copy"),
+        "asked": page.evaluate(f"document.querySelector('#{FOLDED} .qall').dataset.copy"),
         "note": page.inner_text("#toast"),
         "shown": page.evaluate("document.getElementById('toast').classList.contains('on')"),
-        "still_open": page.evaluate("!!document.getElementById('t-csv-import-02').open"),
+        "still_folded": page.evaluate(f"!document.getElementById('{FOLDED}').open"),
     }
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
@@ -191,16 +211,20 @@ print(json.dumps(out))
 '''
 
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
-# repeats within the row
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "democopy", "tick",
-         "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
-         "#t-csv-import-02 .q:first-child .qcopy", "#t-csv-import-02 .asked .tag", "#grp-needs .qgroup",
-         "#t-csv-import-02 .sessions li:first-child .when", "#t-csv-import-02 .sessions li:first-child .resume")
+# repeats within the row. An opened row lists its questions in its block rather than under its
+# name, so the marks of that list are read off a row the anchor leaves folded.
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
+         f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
+         "#grp-needs .qgroup",
+         f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",
+         # the list under the name, which only a folded row carries
+         f"#{FOLDED} .qall", f"#{FOLDED} .q:first-child .qtag",
+         f"#{FOLDED} .q:first-child .qhead", f"#{FOLDED} .q:first-child .qcopy")
 
 
 def probe(page: Path, width: int) -> dict:
     done = subprocess.run(
-        ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS)],
+        ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
         input=PROBE, capture_output=True, text=True,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
@@ -216,10 +240,11 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     runs off the edge of the window.
 
     The same run says what the rest of the page did: that the name keeps its words while the links
-    beside it give way, that ?theme= pinned each scheme, that the anchor opened a row, and that the
-    graph survives the scheme switch. Those are three of the four things the layout check above
-    assumes of its six pages; the fourth, that ?graph opened the overlay on a graph rather than on
-    the placeholder, belongs to the graph probe below."""
+    beside it give way, that ?theme= pinned each scheme, that the anchor opened a row, that an
+    opened row shows each of its questions once, and that the graph survives the scheme switch.
+    Three of those, the scheme, the anchor and the graph, are what the layout check above assumes
+    of its six pages; the fourth, that ?graph opened the overlay on a graph rather than on the
+    placeholder, belongs to the graph probe below."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -235,12 +260,23 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
+    # an opened row shows each of its questions once: the list under the name goes, and the block
+    # carries the same questions with a copy button on each
+    asked = seen["questions"]
+    assert asked["opened_list"] is False, "the opened row lists its questions under its name as well as in its block"
+    assert asked["folded_list"] is True, "a folded row lost the questions under its name"
+    assert [q["copier"] for q in asked["asked"]] == [True] * 3, (
+        f"a question of the opened row has no button the reader can click: {asked['asked']}"
+    )
+    assert all(q["at_the_end"] for q in asked["asked"]), (
+        f"a question's button sits among its words rather than at the end of its line: {asked['asked']}"
+    )
     # a copy button is a span inside a summary, so the click it takes is the page's to handle
     copied = seen["copied"]
     assert copied["clipboard"] == copied["asked"], "the click put something else on the clipboard"
-    assert copied["clipboard"].count("- [D") == 3, "the ticket's three questions, under its path"
-    assert copied["shown"] and "02-map-columns.md" in copied["note"], f"the note reads {copied['note']!r}"
-    assert copied["still_open"], "the click folded the row instead of copying"
+    assert copied["clipboard"].count("- [D") == 2, "the folded row's two questions, under its path"
+    assert copied["shown"] and "retire-legacy-exporter.md" in copied["note"], f"the note reads {copied['note']!r}"
+    assert copied["still_folded"], "the click opened the row instead of copying"
     # the name is what a row is read by, so it is never the thing that gives up its width
     for name in seen["names"]:
         assert not (name["cut"] and name["beside"]), (
