@@ -64,20 +64,31 @@ MEASURE = r"""
   }
   // Whether an ancestor's clip reaches a box positioned this way: an absolute box is cut only
   // by its containing-block chain, a fixed one only by an ancestor that takes it out of the
-  // viewport's frame.
-  const holds = (cs, pos) => cs.transform !== 'none' || cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' || cs.contain !== 'none' || cs.willChange !== 'auto' || (pos === 'absolute' && cs.position !== 'static')
+  // viewport's frame. The properties are the ones Chrome answers yes for, probed one at a
+  // time; container-type and will-change: opacity read like they belong and do not.
+  const WILL_HOLD = /transform|translate|rotate|scale|perspective|filter|contain|content-visibility/
+  const holds = (cs, pos) =>
+    (pos === 'absolute' && cs.position !== 'static') ||
+    cs.transform !== 'none' || cs.translate !== 'none' || cs.rotate !== 'none' || cs.scale !== 'none' ||
+    cs.perspective !== 'none' || cs.filter !== 'none' || cs.backdropFilter !== 'none' ||
+    cs.transformStyle === 'preserve-3d' || cs.contentVisibility !== 'visible' ||
+    /paint|layout|strict|content/.test(cs.contain) || WILL_HOLD.test(cs.willChange)
   // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
   // it cannot scroll say how much they cut off.
   const clip = (el, r) => {
     let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
-      const root = a === document.body || a === document.documentElement
+      // Overflow on the root elements is the viewport's, which cuts every box on the page and
+      // reaches past the element's own; body hands its overflow up only while html has none.
+      const root = a === document.documentElement || (a === document.body && getComputedStyle(document.documentElement).overflowX === 'visible')
       if (a !== el && !root && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
       pos = cs.position
       if (cs.overflowX === 'visible' || cs.display === 'inline') continue
       const ab = a.getBoundingClientRect()
-      const c = { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
+      const c = root
+        ? { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+        : { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
       if (!['auto', 'scroll'].includes(cs.overflowX) && !['auto', 'scroll'].includes(cs.overflowY))
         cut = Math.max(cut, c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom)
       seen = { left: Math.max(seen.left, c.left), top: Math.max(seen.top, c.top), right: Math.min(seen.right, c.right), bottom: Math.min(seen.bottom, c.bottom) }
@@ -86,7 +97,7 @@ MEASURE = r"""
   }
   // display: contents leaves an element with no box, and checkVisibility calls a box-less element
   // hidden; its text is laid out and painted by the formatting context above it.
-  const shown = (el) => el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) || (getComputedStyle(el).display === 'contents' && !!el.parentElement && shown(el.parentElement))
+  const shown = (el) => { const cs = getComputedStyle(el); return el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) || (cs.display === 'contents' && cs.visibility === 'visible' && !!el.parentElement && shown(el.parentElement)) }
   const runs = []
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
