@@ -30,6 +30,7 @@ The board resolves every `gh` reference in one GraphQL query per render; GitHub 
 - [D1] **How long should an answer stand?** Five minutes is mine; the spec says "a short lifetime" and gives no number. A pull request that merges reads as it was at the last render for up to that long, and the board asks GitHub at most once a window however often the tracker moves.
 - [D2] **A question GitHub could not answer is cached like an answer.** So an unauthenticated board asks once a window rather than once a render; the cost is that logging `gh` in shows on the board only at the next window, or on deleting `agent/board.html.github.json`. The alternative is asking again on every render while it keeps failing.
 - [D3] **Nothing ages a state out on a quiet tracker.** The watcher renders on a change under the tracker, so on a tracker nobody touches, a pull request that merges is never asked about again and the link stays open indefinitely. A watcher that re-renders when its answer lapses is a slice of its own.
+  - Ruled 2026-09-23: answered by 09's GitHub clock (13's D1).
 - [D4] **Colour alone separates open, waiting on changes and merged.** Closed is struck through and a draft underlined, but those three differ in hue only, which asks something of the reader in the day scheme and everything of a colourblind one. The alternative is the state as a word on the link, at four to seven characters of row width per reference.
 
 ## Comments

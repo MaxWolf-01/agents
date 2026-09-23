@@ -1,6 +1,6 @@
 ---
 status: open
-blocked-by: [13, retro-semi-automated]
+blocked-by: [retro-semi-automated]
 priority: 2
 size: S
 ---
@@ -28,3 +28,5 @@ The retrospective itself is `retro-semi-automated`: this ticket gives it an inpu
 ## Comments
 
 **2026-09-23** The user ruled (D108) that the retro is a sub-step of the debrief, designed together with this ticket in `retro-semi-automated`'s grilling, so this build waits on that grilling.
+
+**2026-09-23** Moved out of board-orients by the user, so the feature merges without waiting on this ticket's grilling; it is built after board-orients has merged.

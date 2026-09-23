@@ -32,15 +32,25 @@ Dispose of every finding under the review skill's rule: fix it on this branch in
 ## Questions
 
 - [D1] **Which of 07's D3 and 09's D1 survives?** 07 asks you to rule on a gap (a merged pull request never ages out on a quiet tracker) that 09 closed with the watcher's GitHub clock, so the board invites you to rule twice on the same thing, once as a hole and once as its price. Ruling on one is what removes the other.
+  - Ruled 2026-09-23: 07's D3 is answered by 09's GitHub clock; 09's D1 stands as its price.
 - [D2] **The Property "a render that finds nothing changed makes no GitHub request and no model call" is no longer what the watcher does.** Two landed behaviours sit outside it, both anchored and both right on the merits: a watched board naming any `gh` reference asks again once its answer lapses, and a watcher starting on a tracker that has not moved writes a first briefing, which is exactly the board you open after a week away. The sentence wants amending, or one of the two goes.
+  - Ruled 2026-09-23: keep both behaviours; the Property now names them as its two exceptions.
 - [D3] **`An opened ticket reads as blocks: the brief, its questions, ...` says the brief is in the opened body; the build leaves it on the row.** 02's A6 and 04's A4 made that call and 04's D3 asks you to ratify it. The code removes the section from the body so it cannot come back, so the spec's line and the board disagree today.
+  - Ruled 2026-09-23: the brief stays on the row; the spec's opened-ticket line no longer lists it.
 - [D4] **`Links stay the house accent` against a GitHub link wearing its state's colour.** 07's ticket asked for the colour and its A5 says the sentence is older than the ticket. 07's D4 asks the same question from the other side: whether colour alone should separate open, waiting on changes and merged.
+  - Ruled 2026-09-23: a GitHub reference wears its pull request's state; the spec's accent line says so.
 - [D5] **The briefing session retires on `an idle hour or a cap on pings or context`, and nothing reads context.** `claude -p` does not report it and the cache file cannot hold it (09's A3), and the Property's own wording already dropped it. The Decision is the sentence to amend.
+  - Ruled 2026-09-23: the context condition is dropped from the Decision. How any long session learns where its context stands is filed as `context-checkpoints`.
 - [D6] **Eight questions sit unruled on two tickets this feature already landed**, 05's D1 to D3 and 10's D1 to D5. A done ticket shows none, deliberately, so they reach you through no channel at all: each wants a `Ruled` line or a proposed ticket, and the board cannot tell you that.
+  - Ruled 2026-09-23: the eight questions go in the feature's close-out debrief, to be ruled there.
 - [D7] **The tracker pass 10's D6 wrote out for master is drifting.** `agent/tickets/needs-human.md` still holds its two entries, 34 of the roughly 45 live tickets carry no priority, size or brief, and seven decision tickets still head their subject `## Question`, which the board's parser cannot read; meanwhile master has gained tickets both with the fields and without. Apply the listing, or build the `ticket-meta` command 10's friction asked for and apply it with that.
+  - Ruled 2026-09-23: 10's listing is applied when the feature merges into master.
 - [D8] **Four of this feature's slices landed with no demo file**: 02, 03, 04 and 10 carry typed command listings in their closing comments instead. They landed before the figures-and-demos rule merged into this branch, so the feature ships under two contracts and `fd -t x '^demo$' agent/show` finds five of its nine. Retrofit them, or let the rule start from where it landed.
+  - Ruled 2026-09-23: no retrofit; the demo rule starts where it landed.
 - [D9] **The Testing Decisions is three seams where the feature enters at five.** The watcher's pass and the browser probe are both seams a slice created and no line names (08's A5, and the Tests axis's T9); 09's A8 names five checks at seams it made; 02's A12 adds a second check for "every mark explains itself"; 01's D2 wants the limit of what `render-lint` reaches written down; and "a listed session's resume command resumes it" is disposed executable where only the first half of it can be. One amendment covers them.
+  - Ruled 2026-09-23: the Testing Decisions names the watcher's pass and the browser probe as seams.
 - [D14] **Acceptance criterion 3 cannot be met without ruling on 12 first.** Every skill, README line, figure, glossary entry and spec line is clean; the one artefact left is `agent/show/board-orients/index.html`, whose source-map figure still draws `I need from you [Dn] · Ruled: Dn` as where the board reads a build's questions. Tombstoning it is one of the two options [12](12-explainer-superseded.md) puts to you, so taking it here would answer 12 rather than this ticket, and the criterion is left unticked instead.
+  - Ruled 2026-09-23: 12 is rejected (D101): the explainer is deleted with the feature's show directory when the feature retires.
 
 ## Comments
 
