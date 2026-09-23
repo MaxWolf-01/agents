@@ -1003,14 +1003,15 @@ def render_page(
     for f in features:
         rows["needs"].extend(needs_row(f.name, i, item, f.needs_human.path) for i, item in enumerate(f.needs_human.entries))
     rows["needs"].extend(needs_row("standalone", i, item, queue.path) for i, item in enumerate(queue.entries))
-    ranked: dict[str, list[tuple[tuple, str]]] = {state: [] for state, _ in GROUPS}
+    ranked: dict[str, list[tuple[tuple, str, Row]]] = {state: [] for state, _ in GROUPS}
     for f in features:
         for t in f.tickets:
-            ranked[t.status].append((sort_key(t), ticket_row(f, t)))
+            ranked[t.status].append((sort_key(t), ticket_row(f, t), t))
     for k in standalone:
-        ranked[k.status].append((sort_key(k), standalone_row(k)))
+        ranked[k.status].append((sort_key(k), standalone_row(k), k))
     for state, sortable in ranked.items():
-        rows[state].extend(page for _, page in sorted(sortable, key=lambda pair: pair[0]))
+        rows[state].extend(row for _, row, _ in sorted(sortable, key=lambda ranks: ranks[0]))
+    grouped = {state: [t for _, _, t in sortable] for state, sortable in ranked.items() if sortable}
     groups = "".join(
         f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
         f'<summary><h2>{label} <span class="n">{len(rows[state])}</span></h2></summary>'
@@ -1041,9 +1042,73 @@ def render_page(
     footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
-        absences="".join(absences(features, standalone)),
+        columns=row_columns(features, standalone, grouped), absences="".join(absences(features, standalone)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
+
+
+# How many characters of a tracker's own names a column shows before the rest is cut with an
+# ellipsis (a feature name) or wraps to a second line (a blocker reference): the width the column
+# had when it was fixed, so a long name costs the row no more than it used to.
+NAME_CAP = 14
+REF_CAP = 14
+
+
+def row_columns(features: list[Feature], standalone: list[Standalone], grouped: dict[str, list[Row]]) -> str:
+    """The width of each of a row's fixed columns, as the CSS tokens the row's grid reads.
+
+    A column is as wide as the widest mark that can land in it and no wider, so the name and the
+    brief take every pixel the row has spare. The widths come from the marks themselves: the closed
+    vocabularies for what a row asks, the user's time and the priority, and the tracker's own names
+    and references for the feature tag and the blockers. Their marks are all set in the one
+    monospace, so a column's width is a count of characters (`--mark-char`), capped where a
+    tracker's own names could run away.
+
+    The feature, the number and what the row asks are measured over the whole board, so those
+    columns run straight down every row of it. The time, the priority and the blockers are measured
+    over each group, since a group of quick unblocked tickets has no use for the width an XL one
+    needs: a column still runs down the group the eye is reading, and the rest is the brief's."""
+    page = {
+        "ftag": min(max([len(f.name) for f in features] + [len("standalone")]), NAME_CAP),
+        "num": len("--"),  # a standalone ticket has no number
+        "asks": max(len(word) for word, _ in ASKS.values()),
+        "time": max(len(word) for word, _ in SIZES.values()),
+        "pri": max(len(f"p{level} {word}") for level, (word, _) in PRIORITY.items()),
+        "chips": min(max([len(ref) for ref in blocker_refs(features, standalone)], default=2), REF_CAP),
+    }
+    css = column_tokens(":root", page)
+    for state, rows in grouped.items():
+        own = {
+            "time": max([len(SIZES[r.size][0]) for r in rows if r.size], default=0),
+            "pri": max([len(f"p{r.priority} {PRIORITY[r.priority][0]}") for r in rows if r.priority], default=0),
+            "chips": min(max([len(ref) for r in rows for ref in blockers_of(r)], default=0), REF_CAP),
+        }
+        css += column_tokens(f"#grp-{state}", {mark: n for mark, n in own.items() if n < page[mark]})
+    return css
+
+
+PADDING = {"asks": 0.85, "pri": 0.95}  # the tag's border and the pill's, which sit outside the words
+
+
+def column_tokens(selector: str, widths: dict[str, int]) -> str:
+    if not widths:
+        return ""
+    return f"  {selector} {{\n" + "".join(
+        f"    --col-{mark}: calc({count} * var(--mark-char) + {PADDING.get(mark, 0)}rem);\n"
+        for mark, count in widths.items()
+    ) + "  }\n"
+
+
+def blockers_of(t: Row) -> list[str]:
+    """The blockers one row shows, as the reader sees them written."""
+    if isinstance(t, Standalone):
+        return [ref for ref, _ in t.blocked_by]
+    return t.blocked_by + [ref for ref, _ in t.ext_by]
+
+
+def blocker_refs(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+    """Every blocker the board shows."""
+    return [ref for rows in ([t for f in features for t in f.tickets], standalone) for t in rows for ref in blockers_of(t)]
 
 
 def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]:
@@ -1100,7 +1165,12 @@ PAGE = Template(r"""<!doctype html>
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --radius: 6px;
     --topbar-h: 52px;  /* measured once the bar is laid out, since it wraps on a narrow window */
+    /* one character of a mark: the marks are monospace at .78rem, and IBM Plex Mono advances .6em,
+       with the rest the slack a fallback mono needs */
+    --mark-char: calc(.78rem * .64);
   }
+  /* the row's fixed columns, each as wide as the widest mark that lands in it (board.row_columns) */
+${columns}
   [data-theme="day"] { color-scheme: light; }
   [data-theme="night"] { color-scheme: dark; }
 
@@ -1170,7 +1240,7 @@ PAGE = Template(r"""<!doctype html>
     background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
   .side.folded .gbody { display: none; }
   @media (min-width: 1400px) {
-    main { grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 2.5rem; }
+    main { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 2.5rem; }
     .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
       border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
   }
@@ -1203,7 +1273,7 @@ PAGE = Template(r"""<!doctype html>
   .ticket.off, .ticket.miss { display: none; }
   .ticket > summary { display: grid; column-gap: .9rem; row-gap: .2rem; align-items: baseline; padding: .55rem .5rem;
     cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms;
-    grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr) 7.2rem 6rem 8rem;
+    grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr) var(--col-time) var(--col-pri) var(--col-chips);
     grid-template-areas: "ftag num asks main time pri chips"; }
   .ticket > summary::-webkit-details-marker { display: none; }
   .ticket > summary:hover { background: var(--wash-ink); }
@@ -1214,7 +1284,9 @@ PAGE = Template(r"""<!doctype html>
   .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
   .num:hover { color: var(--accent); }
   .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
-  .titleline { display: flex; gap: .6rem; align-items: baseline; min-width: 0; }
+  /* the name is what a row is read by, so it keeps its words: the links wrap under it rather than
+     taking the width off it */
+  .titleline { display: flex; flex-wrap: wrap; gap: 0 .6rem; align-items: baseline; min-width: 0; }
   .title { color: var(--strong); min-width: 0; }
   .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
   .titleline > a, .titleline > .src { flex: none; }
@@ -1256,16 +1328,14 @@ PAGE = Template(r"""<!doctype html>
     .featnav { flex-basis: 100%; order: 1; }
     main { padding: 1rem .75rem 5rem; }
     .absences { padding: .6rem .75rem 0; }
-    .ticket > summary { grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr);
+    .ticket > summary { grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr);
       grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
     .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
     .time, .pri, .chips { grid-area: auto; justify-self: auto; }
-    /* the name takes the row's width; its links follow on the next line rather than squeezing it */
-    .titleline { flex-wrap: wrap; }
   }
   /* narrower still: the name takes the row's width, with its marks over it and under it */
   @media (max-width: 620px) {
-    .ticket > summary { grid-template-columns: minmax(0, 6.4rem) 2rem minmax(0, 1fr);
+    .ticket > summary { grid-template-columns: minmax(0, var(--col-ftag)) var(--col-num) minmax(0, 1fr);
       grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
     .search { flex: 1; width: auto; }
   }

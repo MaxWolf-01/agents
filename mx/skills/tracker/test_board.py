@@ -665,6 +665,43 @@ def test_every_size_and_priority_shows_the_word_the_spec_gives_it(tmp_path: Path
         assert f"p{i} {PRIORITY_WORDS[i]}:" in tips["pri"], f"the priority's words leave p{i} out"
 
 
+def columns_for(page: str, selector: str) -> dict[str, str]:
+    """The width in characters the page gives each of a row's fixed columns, for the whole board
+    (`:root`) or for one group; empty when that selector narrows none of them."""
+    block = re.search(rf"{re.escape(selector)} \{{\n((?:    --col-.*\n)+)  \}}", page)
+    return dict(re.findall(r"--col-(\w+): calc\((\d+) \*", block.group(1))) if block else {}
+
+
+def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_path: Path) -> None:
+    """The name and the brief take what the row has spare, so a column is measured from the marks:
+    the closed vocabularies for what a row asks, the time and the priority, the tracker's own names
+    and references for the feature tag and the blockers, and each group's own three, since a group
+    of quick unblocked tickets has no use for the width an XL one needs."""
+    root = tmp_path / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    ticket(root / "ledger" / "01-quick.md", "review", priority=2, size="S")
+    ticket(root / "ledger" / "02-long-haul.md", "open", priority=5, size="XL", blocked_by=["01"])
+    # a standalone ticket writes its blocker qualified, which is the widest a reference gets
+    ticket(root / "waits-on-the-haul.md", "open", priority=3, size="M", blocked_by=["ledger/02"])
+    features, standalone = load(root)
+    page = render_page("demo", features, standalone, NO_QUEUE, log="", stamp="s", stamp_src="s.js")
+    assert columns_for(page, ":root") == {
+        "ftag": str(len("standalone")),  # longer than the one feature's name
+        "num": str(len("--")),
+        "asks": str(len("design session")),  # the widest of the spec's seven words
+        "time": str(len("several sessions")),
+        "pri": str(len("p5 someday")),
+        "chips": str(len("ledger/02")),
+    }
+    # the group whose only ticket is an S at p2 with nothing waiting on it leaves the rest of that
+    # width to the name and the brief
+    assert columns_for(page, "#grp-review") == {"time": str(len("20 min")), "pri": str(len("p2 next")), "chips": "0"}
+    # the group that holds the XL ticket keeps the board's width for every one of the three
+    # the group holding the XL ticket and the widest reference narrows none of the three
+    narrowed = columns_for(page, "#grp-blocked")
+    assert narrowed == {}, f"the blocked group narrows {sorted(narrowed)}, though its rows are the widest of each"
+
+
 def test_rows_sort_by_priority_then_by_the_users_time_within_a_group(tmp_path: Path) -> None:
     """The spec's Decision: the user reads a group top down. A ticket whose frontmatter says
     neither sorts after the ones that do, since nothing is known about what it costs."""

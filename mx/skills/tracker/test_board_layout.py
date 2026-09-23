@@ -119,6 +119,17 @@ with sync_playwright() as pw:
         page.goto(f"{page_url}?theme={scheme}#t-csv-import-02", wait_until="networkidle")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    out["names"] = page.evaluate("""
+      () => [...document.querySelectorAll("details.ticket")].map((row) => {
+        const clip = row.querySelector(".title .clip"), name = clip.getBoundingClientRect()
+        const links = [...row.querySelectorAll(".titleline > a")]
+        return {
+          row: row.id, text: clip.textContent,
+          cut: clip.scrollWidth > clip.clientWidth + 1,
+          beside: links.filter((a) => Math.abs(a.getBoundingClientRect().top - name.top) < 4).length,
+        }
+      })
+    """)
     out["opened"] = page.evaluate("document.querySelectorAll('details.ticket[open]').length")
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
@@ -146,15 +157,17 @@ def probe(page: Path, width: int) -> dict:
     return json.loads(done.stdout)
 
 
-@pytest.mark.parametrize("width", [1600, 900])  # the seven-column row, and the reflow below 1000px
+# the row beside the graph panel, the row on its own, and the row reflowed
+@pytest.mark.parametrize("width", [1500, 1100, 920])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover": that the words the
     markup carries (test_board.py) reach the reader. A mark whose box hides its overflow hides its
     own tooltip, and one anchored to the wrong side runs off the edge of the window.
 
     The same run says what the rest of the page did, since it is the only one that drives a browser:
-    that ?theme= pinned each scheme, that the anchor opened a row, and that the graph survives the
-    scheme switch, which is what the layout check above assumes of its four pages."""
+    that the name keeps its words while the links beside it give way, that ?theme= pinned each
+    scheme, that the anchor opened a row, and that the graph survives the scheme switch, which is
+    what the layout check above assumes of its four pages."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -167,6 +180,16 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
+    # the name is what a row is read by, so it is never the thing that gives up its width
+    for name in seen["names"]:
+        assert not (name["cut"] and name["beside"]), (
+            f"{name['row']}: the name is cut to {name['text']!r} while {name['beside']} link(s) beside it are whole"
+        )
+        assert not name["cut"], (
+            f"{name['row']}: the name {name['text']!r} does not fit the column even with the row to itself"
+            " — a name this long renders truncated until it is edited (the spec's Decisions), so if"
+            " the fixture meant it, this row wants a shorter H1"
+        )
     for mark, tip in seen["tips"].items():
         assert not tip.get("missing"), f"no {mark} on the row"
         assert tip["words"] not in ("none", "normal"), f"the {mark} mark shows nothing on hover"
