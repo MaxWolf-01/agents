@@ -103,7 +103,7 @@ def test_the_windows_the_property_is_stated_in_are_the_spec_s() -> None:
 
 
 def answered(said: str) -> str:
-    return "echo " + shlex.quote(json.dumps({"is_error": False, "session_id": "def-456", "result": said}))
+    return "printf '%s\\n' " + shlex.quote(json.dumps({"is_error": False, "session_id": "def-456", "result": said}))
 
 
 def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_ping(

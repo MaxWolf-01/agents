@@ -1961,7 +1961,7 @@ def test_a_quiet_pass_of_the_watcher_makes_no_model_call(
     change that starts one is paid for, and every pass after it over a tracker that has not moved
     is the thing the Property forbids."""
     said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
-    claude = path_with("claude", f"echo {shlex.quote(json.dumps(said))}")
+    claude = path_with("claude", f"printf '%s\\n' {shlex.quote(json.dumps(said))}")
     out = tmp_path / "board.html"
     watching, session = Seen(), board.Briefer(repo, out)
     watching = look(watching, session, tracker, repo, out)  # the start is a change: one run is owed
@@ -1995,7 +1995,7 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
     inside the window dispatches nothing, and a run that answers nothing leaves the account of what
     moved for the retry to carry (briefing.on_change holds the schedule itself)."""
     said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
-    claude = path_with("claude", f"echo {shlex.quote(json.dumps(said))}")
+    claude = path_with("claude", f"printf '%s\\n' {shlex.quote(json.dumps(said))}")
     out, roots = tmp_path / "board.html", tracker_roots(tracker)
     at = datetime.now().astimezone()
     watcher = board.Briefer(repo, out)
