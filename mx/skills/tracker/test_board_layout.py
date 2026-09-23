@@ -52,6 +52,8 @@ ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
+# The demo's own transcripts (the `transcribed` fixture), so the sessions on its commits are ones
+# this machine can name and the opened row carries the block that lists them.
 
 
 def lint(pages: list[str], width: int) -> list[dict]:
@@ -64,12 +66,12 @@ def lint(pages: list[str], width: int) -> list[dict]:
     return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
 
 
-def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in ("", f"#{OPENED}")]
     found = {width: lint(pages, width) for width in WIDTHS}
     assert {width: f for width, f in found.items() if f} == {}
@@ -162,7 +164,8 @@ print(json.dumps(out))
 # repeats within the row
 MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "democopy", "tick",
          "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
-         "#t-csv-import-02 .q:first-child .qcopy", "#t-csv-import-02 .asked .tag", "#grp-needs .qgroup")
+         "#t-csv-import-02 .q:first-child .qcopy", "#t-csv-import-02 .asked .tag", "#grp-needs .qgroup",
+         "#t-csv-import-02 .sessions li:first-child .when", "#t-csv-import-02 .sessions li:first-child .resume")
 
 
 def probe(page: Path, width: int) -> dict:
@@ -176,7 +179,7 @@ def probe(page: Path, width: int) -> dict:
 
 # the row beside the graph panel, the row on its own, and the row reflowed
 @pytest.mark.parametrize("width", [1500, 1100, 920])
-def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
+def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
     shows what it copies": that the words the markup carries (test_board.py) reach the reader. A
     mark whose box hides its overflow hides its own tooltip, and one anchored to the wrong side
@@ -190,7 +193,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(tracker_roots(transcribed.root), transcribed.repo, out)
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"

@@ -42,12 +42,17 @@ path of the file the row was read from: the ticket, or for a needs-me entry its
 needs-human.md.
 
 An opened row reads as blocks rather than the ticket's whole text: its questions
-with the detail the row has no room for and the ruling on each answered one, its
-artefacts, then the ticket's own sections in the order the file writes them,
-with the comments folded away as history. The artefacts are read from the
-ticket's show directory, agent/show/<feature>/<NN-slug>/ or agent/show/<slug>/:
-the file named `demo` on a button that copies its path, every other file as a
-link. The brief is not repeated there: it is on the row.
+with the detail the row has no room for and the ruling on each answered one, the
+sessions that worked on it, its artefacts, then the ticket's own sections in the
+order the file writes them, with the comments folded away as history. The
+artefacts are read from the ticket's show directory,
+agent/show/<feature>/<NN-slug>/ or agent/show/<slug>/: the file named `demo` on a
+button that copies its path, every other file as a link. The sessions are read
+from the `Session:` trailer on every commit that changed the ticket file, on
+every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
+one with no transcript on this machine, a worker on another host, is left out,
+and each of the rest carries a button that copies the command resuming it. The
+brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
@@ -110,6 +115,7 @@ import html
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -205,6 +211,7 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     root = roots.main
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
+    session_log.cache_clear()  # and commits on them, each carrying the session that made it
     diffviews = serve_diffviews(root.parent / "diffviews")
     features = load_features(root, roots.overrides, diffviews, roots.repo)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
@@ -469,6 +476,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         status = "blocked"
     written = ticket_body(body, status, roots.repo, None, path)
     asked = questions_of(written, body)
+    worked = ticket_sessions(path, roots.repo)
     return Standalone(
         slug=path.stem,
         title=name or path.stem.replace("-", " "),
@@ -476,7 +484,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
         gh=gh_refs(meta, path),
-        body_html=ticket_blocks(written, None, asked, show_dir(path, None)),
+        body_html=ticket_blocks(written, None, asked, show_dir(path, None), worked),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
@@ -538,6 +546,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
         blockers = meta.get("blocked-by") or []
         written = ticket_body(body, status, repo, feature_dir.name, path)
         asked = questions_of(written, body)
+        worked = ticket_sessions(path, repo)
         tickets.append(
             Ticket(
                 num=path.name[:2],
@@ -547,7 +556,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
-                body_html=ticket_blocks(written, feature_dir.name, asked, show_dir(path, feature_dir.name)),
+                body_html=ticket_blocks(written, feature_dir.name, asked, show_dir(path, feature_dir.name), worked),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
                 priority=ticket_priority(meta, path),
@@ -728,6 +737,8 @@ TICKET_BRANCHES = "refs/heads/ticket/"  # where a ticket's own branch is, as dis
 # where a session's transcript is on this machine, as the rest of the repo resolves it
 TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 
+SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by the dotfiles' git hook
+
 
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
@@ -849,18 +860,113 @@ class Session:
     """A session whose commits changed a ticket, as the user resumes it."""
 
     id: str
-    title: str  # its /rename name, else Claude Code's own
+    title: str  # its /rename name, else Claude Code's own, else its id
     cwd: str  # the working directory its transcript records
     first: str  # when it first committed on the ticket
     last: str
 
+    @property
+    def resume(self) -> str:
+        """The command that picks the session up where it left off, in the directory it ran in.
 
-def ticket_sessions(path: Path, repo: Path, transcripts: Path | None = None) -> list[Session]:
+        The directory is gone once dispatch has cleaned up the worktree a session ran in, and the
+        session is still there: `claude --resume` finds it from wherever it is run, so what the
+        vanished directory costs is the `cd`, not the resume.
+        """
+        if not self.cwd or not Path(self.cwd).is_dir():
+            return f"claude --resume {self.id}"
+        return f"cd {shlex.quote(self.cwd)} && claude --resume {self.id}"
+
+
+def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = None) -> list[Session]:
     """The sessions whose commits changed the ticket file, from the `Session:` trailers on every
     branch, oldest first. A session with no transcript under `transcripts` (TRANSCRIPTS, this
     machine's, by default) is a worker on another host and is left out: the user cannot resume it.
-    Lifted by 05-sessions."""
-    raise NotImplementedError
+    """
+    if repo is None or (name := repo_name(path)) is None:  # a tracker outside any checkout
+        return []
+    found = []
+    for sid, (first, last) in session_log(repo).get(name, {}).items():
+        if written := transcript(sid, transcripts or TRANSCRIPTS):
+            title, cwd = written
+            found.append(Session(sid, title or sid, cwd, first, last))
+    return found
+
+
+# one record per commit, its files under it: the date the session wrote it, and the session that
+# signed it
+SESSION_LOG = f"--format=%x1e%as %(trailers:key={SESSION_TRAILER},valueonly,separator=%x20)"
+
+
+@functools.cache
+def session_log(repo: Path) -> dict[str, dict[str, tuple[str, str]]]:
+    """Which sessions changed which file, and the dates of each session's first and last commit on
+    it, oldest session first: one pass over every branch of the repo.
+
+    The dates are min and max rather than the ends of the walk, which is in commit order while the
+    dates are the author's: a cherry-picked commit would otherwise leave a range running backwards.
+    """
+    changed: dict[str, dict[str, tuple[str, str]]] = {}
+    # a commit's own account of which session made it, written by the prepare-commit-msg hook
+    written = git(repo, "log", "--all", "--reverse", "--name-only", SESSION_LOG)
+    for record in filter(None, written.split("\x1e")):  # git()'s strip eats the leading separator
+        head, _, names = record.partition("\n")
+        date, *sessions = head.split()
+        for sid in sessions:
+            for name in filter(None, names.split("\n")):
+                first, last = changed.setdefault(name, {}).get(sid, (date, date))
+                changed[name][sid] = (min(first, date), max(last, date))
+    return changed
+
+
+def repo_name(path: Path) -> str | None:
+    """The file as git names it: its path from the top of the checkout that holds it, which is the
+    name every worktree of the repo gives it and the name the log prints. None outside a checkout."""
+    top = toplevel(path.parent)
+    return str(path.resolve().relative_to(top)) if top else None
+
+
+@functools.cache
+def toplevel(directory: Path) -> Path | None:
+    """The top of the checkout `directory` is in, or None where it is in none."""
+    done = subprocess.run(
+        ["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    )
+    return Path(done.stdout.strip()).resolve() if done.returncode == 0 else None
+
+
+TITLES = ("customTitle", "aiTitle")  # a session's /rename name, else Claude Code's own
+
+
+def transcript(session: str, transcripts: Path) -> tuple[str, str] | None:
+    """(the session's title, the directory it ran in) from its transcript on this machine, or None
+    where this machine has no transcript of it. The newest transcript answers, since a session
+    resumed in another directory writes a second one."""
+    written = sorted(transcripts.glob(f"*/{session}.jsonl"), key=lambda p: p.stat().st_mtime)
+    if not written:
+        return None
+    return read_transcript(written[-1], written[-1].stat().st_size)
+
+
+@functools.cache
+def read_transcript(path: Path, size: int) -> tuple[str, str]:
+    """The title a transcript's records carry and the working directory they were written in. The
+    last title the session was given wins, and a name it was given by hand wins over the model's.
+
+    `size` keys the cache: a transcript the session is still writing is read again as it grows.
+    """
+    titles: dict[str, str] = {}
+    cwd = ""
+    for line in path.read_text(errors="replace").splitlines():
+        if not any(key in line for key in (*TITLES, "cwd")):
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:  # a line the session was still writing when the board read it
+            continue
+        titles.update({key: record[key] for key in TITLES if record.get(key)})
+        cwd = cwd or str(record.get("cwd") or "")
+    return next((titles[key] for key in TITLES if key in titles), ""), cwd
 
 
 def absence_note(source: str, words: str) -> str:
@@ -872,10 +978,12 @@ def absence_note(source: str, words: str) -> str:
 # ---- an opened ticket -----------------------------------------------------
 
 
-def ticket_blocks(body: str, feature: str | None, asked: Sequence[Question], show: Path) -> str:
+def ticket_blocks(
+    body: str, feature: str | None, asked: Sequence[Question], show: Path, worked: Sequence[Session]
+) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
-    for, the artefacts it produced, then its own sections in the order the file writes them, the
-    comments folded away as history.
+    for, the sessions that worked on it, the artefacts it produced, then its own sections in the
+    order the file writes them, the comments folded away as history.
 
     The brief is not one of them. It is on the row, where it is read without opening anything, and
     a ticket says a thing once. The comments sink to the end whatever place the file gives them,
@@ -891,7 +999,7 @@ def ticket_blocks(body: str, feature: str | None, asked: Sequence[Question], sho
             history.append(text)
         else:
             blocks.append(block(heading, prose(heading, text, feature)))
-    front = [asked_block(asked, prose(None, "".join(said), feature)), artefacts_block(show)]
+    front = [asked_block(asked, prose(None, "".join(said), feature)), sessions_block(worked), artefacts_block(show)]
     return "".join(filter(None, front + blocks)) + history_block("".join(history), feature)
 
 
@@ -948,6 +1056,31 @@ def asked_block(asked: Sequence[Question], said: str) -> str:
         for q in asked
     )
     return block("questions", said + (f'<ul class="asked">{items}</ul>' if asked else ""))
+
+
+RESUME_TIP = "Click to copy the command that resumes this session in the directory it ran in."
+WHEN_TIP = "When this session first committed on the ticket, and when it last did."
+
+
+def sessions_block(worked: Sequence[Session]) -> str:
+    """The sessions that worked on the ticket, each with the command that resumes it. The label says
+    on this machine because that is the list: a worker on another host is not in it (ticket_sessions),
+    and a ticket no session has committed on has no block at all."""
+    if not worked:
+        return ""
+    items = "".join(
+        f'<li><span class="stitle">{html.escape(session.title)}</span>'
+        f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(worked_on(session))}</span>'
+        + copy_button("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}")
+        + "</li>"
+        for session in worked
+    )
+    return block("sessions on this machine", f'<ul class="sessions">{items}</ul>')
+
+
+def worked_on(session: Session) -> str:
+    """The days a session committed on the ticket: the one day, or the first and the last."""
+    return session.first if session.first == session.last else f"{session.first} → {session.last}"
 
 
 def artefacts_block(show: Path) -> str:
@@ -1490,14 +1623,21 @@ def blocker_refs(features: list[Feature], standalone: list[Standalone]) -> list[
 def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
     missing). A review page linked as a file is one nothing answered for; a tracker with no page
-    rendered yet has no server to miss, so it says nothing."""
+    rendered yet has no server to miss, so it says nothing. A machine with no transcripts directory
+    has run no session this board could name, whatever the commits say."""
+    said = []
     pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
     if any(page and page.startswith("file://") for page in pages):
-        return [absence_note(
+        said.append(absence_note(
             "review-page-server",
             "Nothing is serving the review pages, so they open as files and what you write on one is not saved.",
-        )]
-    return []
+        ))
+    if not TRANSCRIPTS.is_dir():
+        said.append(absence_note(
+            "transcripts",
+            f"No session transcripts at {TRANSCRIPTS}, so no ticket lists the sessions that worked on it.",
+        ))
+    return said
 
 
 PAGE = Template(r"""<!doctype html>
@@ -1744,15 +1884,18 @@ ${columns}
      prose keeps the body's spacing; the word above it sits closer, as a label does */
   .block > * + *, .history > * + * { margin-top: .8em; }
   .block > .label + *, .history > summary + * { margin-top: .35rem; }
-  .body .asked, .body .artefacts { list-style: none; padding: 0; display: grid; gap: .45rem; }
+  .body .asked, .body .artefacts, .body .sessions { list-style: none; padding: 0; display: grid; gap: .45rem; }
   /* a line of a block is its own containing block, so a mark's words are laid out from that line
      rather than from the whole block */
-  .asked > li, .artefacts > li { display: flex; gap: .6rem; align-items: baseline; position: relative; }
+  .asked > li, .artefacts > li, .sessions > li { display: flex; gap: .6rem; align-items: baseline; position: relative; }
   .asked .head { color: var(--strong); }
   .asked > li > div > * + * { margin-top: .2rem; }
   /* a question the user has answered is history: its words stay, the colours that call for one go */
   .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
   .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }
+  /* a session is its name and the days it worked, the command that resumes it on the button */
+  .sessions .stitle { color: var(--strong); }
+  .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
   /* a criterion's mark is the glyph its list item carries instead of a bullet */
   .body li.tick { list-style: none; position: relative; }
   .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;
