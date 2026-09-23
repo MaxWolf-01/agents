@@ -24,20 +24,23 @@ TICKETS = WORK / "agent" / "tickets"
 TRACKER = REPO / "mx" / "bin" / "tracker"
 CORPUS = REPO / "mx" / "skills" / "tracker" / "corpus"
 PATH = f"{REPO / 'mx' / 'bin'}:{os.environ['PATH']}"
+SUBCOMMANDS = ("check", "get", "data", "context", "frontier", "new", "set", "rule", "retire", "hook")
 
 
 def git(*args: str, at: Path = WORK) -> None:
     subprocess.run(["git", "-C", str(at), *args], check=True, capture_output=True)
 
 
-def ran(*command: str, at: Path = WORK, shown: str = "", home: Path | None = None) -> tuple[str, str]:
+def ran(*command: str, at: Path = WORK, shown: str = "", home: Path | None = None, refused: bool = False) -> tuple[str, str]:
     """One run, as the page shows it: what was typed, and what came back. `home` moves the user's
-    home for the run, so a demo that retires files leaves them under out/ rather than in ~/logs."""
+    home for the run, so a demo that retires files leaves them under out/ rather than in ~/logs;
+    `refused` marks a panel whose point is the non-zero exit."""
+    elsewhere = {"HOME": str(home), "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", str(Path.home() / ".cache/uv"))}
     done = subprocess.run(command, cwd=at, capture_output=True, text=True,
-                          env={**os.environ, "PATH": PATH, **({"HOME": str(home), "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", str(Path.home() / ".cache/uv"))} if home else {})})
+                          env={**os.environ, "PATH": PATH, **(elsewhere if home else {})})
     said = (done.stdout + done.stderr).rstrip().replace(f"{WORK}/", "").replace(str(TRACKER), "tracker").replace(f"{REPO}/", "")
-    if done.returncode and "refused" not in said and "refuse" not in said and "hook" not in " ".join(command):
-        said += f"\n(exit {done.returncode})"
+    if done.returncode and not refused:
+        raise SystemExit(f"{' '.join(command)} failed with {done.returncode}:\n{said}")
     return shown or " ".join(command).replace(str(TRACKER), "tracker"), said
 
 
@@ -46,7 +49,8 @@ def build() -> None:
     shutil.rmtree(OUT, ignore_errors=True)
     TICKETS.mkdir(parents=True)
     for path in CORPUS.glob("*.md"):
-        shutil.copy(path, TICKETS / path.name)
+        if path.name != "README.md":
+            shutil.copy(path, TICKETS / path.name)
     (WORK / "agent" / "show" / "board-orients").mkdir(parents=True)
     (WORK / "agent" / "show" / "board-orients" / "index.html").write_text("<p>the explainer</p>\n")
     (WORK / "agent" / "show" / "board-orients" / "index.png").write_text("a render nobody tracks\n")
@@ -70,16 +74,18 @@ def steps() -> list[dict]:
     found = []
 
     shown, said = ran(str(TRACKER), "--help")
-    (OUT / "tracker-help.txt").write_text(said + "\n")
+    every = [said] + [ran(str(TRACKER), name, "--help")[1] for name in SUBCOMMANDS]
+    (OUT / "tracker-help.txt").write_text("\n\n".join(every) + "\n")
     found.append(dict(
         title="The command",
         said="One command owns every mechanical operation on a ticket file, read and write. Its "
              "<code>--help</code> is the reference for what each subcommand takes and what it refuses; the "
              "tracker skill keeps the flow and the judgment, and the two never say the same thing.",
         runs=[(shown, said.split("╭─ options")[0].rstrip() + "\n…")],
-        look="Six subcommands read (check, get, data, context, frontier), three write (new, set, "
-             "rule, retire), one installs the commit hook. The rest of this run, the reference for "
-             "each of them, is beside this page in <code>out/tracker-help.txt</code>.",
+        look="Five subcommands read (check, get, data, context, frontier), four write (new, set, "
+             "rule, retire), one installs the commit hook. The rest of this run, and each "
+             "subcommand's own <code>--help</code>, is beside this page in "
+             "<code>out/tracker-help.txt</code>.",
     ))
 
     ticket = TICKETS / "board-orients-workflow.md"
@@ -137,7 +143,7 @@ def steps() -> list[dict]:
              "with the file, the line and what replaced it. The pre-commit hook runs the same check over "
              "the staged files, so this is what a commit gets rather than a reader tripping later.",
         runs=[ran(str(TRACKER), "hook"),
-              ran("git", "commit", "-m", "map columns once per bank",
+              ran("git", "commit", "-m", "map columns once per bank", refused=True,
                   shown="git commit -m 'map columns once per bank'")],
         look="Five refusals, one commit refused. `type` and `NN` name what replaced them; "
              "`board-orients#P40` names a property the parent ticket does not state; the assumption has "
@@ -159,24 +165,28 @@ def steps() -> list[dict]:
     git("commit", "-q", "-m", "file map-columns")
     moved = [ran(str(TRACKER), "set", "map-columns", "status=claimed"),
              ran(str(TRACKER), "set", "map-columns", "status=review"),
-             ran(str(TRACKER), "set", "map-columns", "status=done"),
-             ran(str(TRACKER), "set", "board-orients-workflow", "status=open")]
+             ran(str(TRACKER), "set", "map-columns", "status=done", refused=True),
+             ran(str(TRACKER), "set", "board-orients-workflow", "status=open", refused=True)]
     found.append(dict(
         title="Status, along the transitions the tracker defines",
         said="A status change the tracker's rules forbid is refused with the rule that forbids it. "
              "<code>done</code> follows the user's accept and the merge of what the ticket built, which is "
              "why the third line stops: nothing has been built here.",
         runs=moved,
-        look="The last line is the rule for a ticket already done: done is the accept and nothing less.",
+        look="A ticket that is already done does not move back to open, and the last line is the rule "
+             "that says so.",
     ))
 
+    ran(str(TRACKER), "set", "map-columns", "status=review")
+    (TICKETS / "saved-views.md").write_text(
+        (TICKETS / "saved-views.md").read_text().replace("blocked-by: [board-orients]", "blocked-by: [map-columns]"))
     found.append(dict(
         title="The frontier, and what holds the rest back",
         said="What can be started right now: unclaimed, unblocked, open or proposed, and not the user's "
              "own to sit for. Everything else not done says what it waits on.",
         runs=[ran(str(TRACKER), "frontier")],
-        look="saved-views waits on board-orients, which is in review; a blocker in review unblocks "
-             "nothing, since a dependent never builds on a guess.",
+        look="saved-views waits on map-columns, which is in review, so neither is on the frontier: a "
+             "blocker in review unblocks nothing, since a dependent never builds on a guess.",
     ))
 
     run = ran(str(TRACKER), "context", "map-columns")
@@ -189,7 +199,6 @@ def steps() -> list[dict]:
              "as any dangling reference is.",
     ))
 
-    ran(str(TRACKER), "set", "map-columns", "status=review")
     git("add", "agent/tickets")
     git("commit", "-q", "-m", "map-columns for review", "--no-verify")
     git("branch", "ticket/map-columns")
@@ -208,7 +217,8 @@ def steps() -> list[dict]:
         look="board-orients takes its five child tickets and its show directory with it. The tracked "
              "files leave by git rm, which is why git status has them; index.png is a render beside the "
              "tracked page that draws it, so it is deleted; the research note has no source to redraw it "
-             "and is moved to ~/logs, which this run points into out/ so the demo keeps to itself. saved-views stays, and loses its edge onto work that has shipped.",
+             "and is moved to ~/logs, which this run points into out/ so the demo keeps to itself. "
+             "saved-views stays, and loses its edge onto work that has shipped.",
     ))
     return found
 
@@ -303,21 +313,17 @@ set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").match
 """
 
 
-def block(said: str) -> str:
-    return html.escape(said)
-
-
 def render(found: list[dict]) -> str:
     written = []
     for n, step in enumerate(found, start=1):
         parts = [f'    <section class="s">', f'      <span class="v-meta">{n}</span>',
                  f'      <h2 class="v-h2">{step["title"]}</h2>', f'      <p class="said">{step["said"]}</p>']
         for shown, said in step.get("runs", []):
-            parts.append(f'      <pre><b>$ {block(shown)}</b>\n{block(said)}</pre>')
+            parts.append(f'      <pre><b>$ {html.escape(shown)}</b>\n{html.escape(said)}</pre>')
         if pair := step.get("pair"):
             parts.append('      <div class="pair">')
             for label, said in pair:
-                parts.append(f'        <div><span class="v-meta">{block(label)}</span><pre>{block(said)}</pre></div>')
+                parts.append(f'        <div><span class="v-meta">{html.escape(label)}</span><pre>{html.escape(said)}</pre></div>')
             parts.append("      </div>")
         parts.append(f'      <p class="look"><span class="v-meta">look</span>{step["look"]}</p>')
         parts.append("    </section>")

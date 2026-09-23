@@ -79,6 +79,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 - P9 A copy button shows what it copies.
 - P10 A ticket's priority, size, kind and questions are read from the ticket file; the board keeps no side file about a ticket.
 - P11 The briefing session is pinged only on a ticket's status changing, once the tracker has gone five minutes without another and no sooner than ten minutes after the last run of the session, and never outlives its idle hour or its ping cap (amended 2026-09-23, was once per debounce window on any tracker change).
+
 ## Decisions
 
 ### The ticket file

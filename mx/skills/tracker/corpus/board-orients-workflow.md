@@ -198,13 +198,13 @@ below are my reading, not yours; `[D5]` a decision ticket's subject moves to `##
       where the tracker has five. Its three labels for the needs-human queue go the same way, since
       this feature retired it.
   - The `session-page` feature's tickets, none of which carries the new fields yet:
-    - `board-orients-property-checks` — p2, S. The session page's executable properties as checks at their three
+    - `01-properties` — p2, S. The session page's executable properties as checks at their three
       seams, before the code behind them exists, so each later slice lands against a check it did not
       write.
-    - `board-orients-rows` — p2, M. A session directory and its transcript render into the session
+    - `02-session-renderer` — p2, M. A session directory and its transcript render into the session
       page: the title, brief and resume command, the open questions under them, then the turns newest
       first with each user message whole behind one click.
-    - `board-orients-questions-and-needs-me` — p2, M. A spec renders into its own page: its figures shown in place, its
+    - `03-spec-page` — p2, M. A spec renders into its own page: its figures shown in place, its
       provenance marks as tags, and every block the round changed marked where it sits. It replaces
       diffview for specs.
     - `04-stop-hook` — p2, S. One hook renders the pages as each turn ends, and sends the agent back

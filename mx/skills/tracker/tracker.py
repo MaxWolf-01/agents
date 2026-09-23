@@ -33,7 +33,7 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Iterable, Literal, Sequence, get_args
 
@@ -44,8 +44,9 @@ from tyro.extras import SubcommandApp
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
+Field = Literal["status", "parent", "blocked-by", "needs-user", "priority", "size", "diff", "gh"]
 STATUSES, SIZES, PRIORITIES = get_args(Status), get_args(Size), get_args(Priority)
-FIELDS = ("status", "parent", "blocked-by", "needs-user", "priority", "size", "diff", "gh")
+FIELDS = get_args(Field)
 LIST_FIELDS = ("blocked-by", "diff", "gh")
 
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -54,6 +55,660 @@ RANGE = re.compile(r"[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}")
 
 TICKETS = Path("agent") / "tickets"
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
+
+
+# ---- the commands ----------------------------------------------------------
+
+app = SubcommandApp()
+
+
+@app.command(name="check")
+def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
+    """Refuse every ticket file that says something no reader can read, one `file:line: message` per
+    finding. With no paths, the staged ticket files, which is what the commit hook runs; a commit in
+    a repo with no tracker has nothing to check and is refused nothing.
+
+    Args:
+        paths: the ticket files to check; they are read as the tracker their directory holds.
+    """
+    if paths:
+        files = [path.resolve() for path in paths]
+        roots = {path.parent for path in files}
+        if len(roots) > 1:
+            raise Refused(["one tracker per run; these files are in " + ", ".join(sorted(str(one) for one in roots))])
+        tracker = tracker_of(roots.pop())
+    else:
+        try:
+            tracker = staged(find_tracker(Path.cwd()))
+        except Refused:
+            return 0
+        files = staged_paths(tracker.root)
+    found = [refusal for path in files for refusal in refusals_of(tracker.at_path(path), tracker)]
+    for refusal in found:
+        print(refusal)
+    if refused := {refusal.path for refusal in found}:
+        print(f"{len(refused)} file{'s' if len(refused) > 1 else ''} refused")
+    return 1 if found else 0
+
+
+@app.command(name="get")
+def get(slug: Annotated[str, tyro.conf.Positional], field: Annotated[Field, tyro.conf.Positional]) -> int:
+    """Print one frontmatter field of one ticket, as the file writes it, a list field one entry per
+    line. Exit 1 when the ticket does not declare it.
+
+    Args:
+        slug: the ticket.
+        field: the frontmatter field.
+    """
+    ticket = here().ticket(slug)
+    if field not in ticket.meta:
+        raise Refused([f"{slug} declares no `{field}`"])
+    value = ticket.meta[field]
+    print("\n".join(rendered(one) for one in value) if isinstance(value, list) else rendered(value))
+    return 0
+
+
+@app.command(name="data")
+def data(source: Annotated[str, tyro.conf.Positional] = "") -> int:
+    """The tracker as JSON: every ticket with its frontmatter, sections, questions, properties,
+    acceptance criteria and assumptions. One ticket alone when given a slug, a path or `-`, which
+    reads a ticket file from stdin, as a review page does from a ticket branch.
+
+    JSON schema:
+
+        {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
+          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "priority": int,
+          "size": "str", "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
+          "sections": [{"heading": "str", "line": int, "text": "str"}],
+          "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
+                         "answer": "str", "line": int}],
+          "assumptions": [{"id": int, "path": "str", "line": int|null, "text": "str", "at": int}],
+          "resolved": ["str"], "properties": [{"id": "str", "text": "str", "line": int}],
+          "criteria": [{"met": bool, "text": "str", "cites": ["str"], "line": int}],
+          "children": ["str"], "ancestors": ["str"]}]}
+
+    A ticket on stdin is read alone: its own text is held to every rule, and the references it
+    makes to other tickets are nobody's to resolve, since the tracker it came from is not here.
+
+    Args:
+        source: a slug, a ticket file, or `-` for one on stdin; the whole tracker when absent.
+    """
+    if source == "-" or (source and source.endswith(".md")):
+        alone = source == "-"
+        path = Path("-.md") if alone else Path(source)
+        text = sys.stdin.read() if alone else path.read_text()
+        ticket = read(path, text)
+        # a file read by path is read in the tracker its directory holds, so its references resolve
+        beside = {} if alone else {one: one.read_text() for one in sorted(path.parent.glob("*.md"))}
+        tracker = Tracker(path.parent, {}, {}, {}) if alone else tracker_of(path.parent, {**beside, path: text})
+        refuse(ticket.refusals if alone else refusals_of(ticket, tracker))
+        print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker)]}, indent=2))
+        return 0
+    tracker = here()
+    tickets = [tracker.ticket(source)] if source else list(tracker.tickets.values())
+    refuse([refusal for ticket in tickets for refusal in refusals_of(ticket, tracker)])
+    print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker) for ticket in tickets]}, indent=2))
+    return 0
+
+
+def as_data(ticket: Ticket, tracker: Tracker) -> dict:
+    return {
+        "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
+        "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
+        "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
+        "diff": [str(one) for one in ticket.meta.get("diff") or []],
+        "gh": [str(one) for one in ticket.meta.get("gh") or []],
+        "title": ticket.title, "brief": ticket.brief,
+        "sections": [{"heading": s.heading, "line": s.line, "text": s.text} for s in ticket.sections],
+        "questions": [asdict(one) for one in ticket.questions],
+        "assumptions": [asdict(one) for one in ticket.assumptions],
+        "resolved": ticket.resolved,
+        "properties": [asdict(one) for one in ticket.properties],
+        "criteria": [asdict(one) for one in ticket.criteria],
+        "children": [child.slug for child in tracker.children(ticket.slug)],
+        "ancestors": [one.slug for one in tracker.ancestors(ticket.slug)] if ticket.slug in tracker.tickets else [],
+    }
+
+
+@app.command(name="context")
+def context(slug: Annotated[str, tyro.conf.Positional]) -> int:
+    """The context a ticket is built and reviewed in: its own body, then every ancestor's body,
+    nearest first. A ticket whose parent names no ticket is refused, as any dangling reference is.
+
+    Args:
+        slug: the ticket.
+    """
+    tracker = here()
+    ticket = tracker.ticket(slug)
+    refuse([refusal for one in (ticket, *tracker.ancestors(slug)) for refusal in refusals_of(one, tracker)])
+    print(assembled(ticket, tracker))
+    return 0
+
+
+def assembled(ticket: Ticket, tracker: Tracker) -> str:
+    """The one assembly every reader of a ticket's context gets: the worker's brief, the reviewer's
+    spec. The ticket comes first, since it is what is being built; its ancestors follow in the order
+    the work widens."""
+    written = [f"## {ticket.slug}\n{ticket.body.strip()}"]
+    written += [f"## parent ticket: {one.slug}\n{one.body.strip()}" for one in tracker.ancestors(ticket.slug)]
+    return "\n\n".join(written) + "\n"
+
+
+@app.command(name="frontier")
+def frontier() -> int:
+    """What can be started right now: the unclaimed, unblocked tickets that are open or proposed and
+    do not need the user. Everything else not done follows under `waiting`, with what holds it back.
+    """
+    tracker = here()
+    refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
+    ready, waiting = [], []
+    for ticket in sorted(tracker.tickets.values(), key=lambda one: (one.meta.get("priority") or 9, one.slug)):
+        if ticket.status == "done":
+            continue
+        (waiting if (holding := held(ticket, tracker)) else ready).append((ticket, holding))
+    for ticket, _ in ready:
+        print(line_of(ticket, f"parent {ticket.parent}" if ticket.parent else ""))
+    if waiting:
+        print("waiting")
+        for ticket, holding in waiting:
+            print(line_of(ticket, holding))
+    return 0
+
+
+def held(ticket: Ticket, tracker: Tracker) -> str:
+    """What holds a ticket back from being started now, or "" when nothing does."""
+    if ticket.status in ("claimed", "review"):
+        return f"{ticket.status}, not the frontier's"
+    if ticket.needs_user:
+        return "on the user, who is in the loop for it"
+    blocking = [ref for ref in ticket.blocked_by if tracker.tickets[ref].status != "done"]
+    if blocking:
+        return "on " + ", ".join(f"{ref} ({tracker.tickets[ref].status})" for ref in blocking)
+    return ""
+
+
+def line_of(ticket: Ticket, said: str) -> str:
+    return f"{ticket.slug:<44}{ticket.status:<10}p{ticket.meta.get('priority')}  {str(ticket.meta.get('size')):<4}{said}".rstrip()
+
+
+@app.command(name="new")
+def new(
+    slug: Annotated[str, tyro.conf.Positional],
+    priority: Priority,
+    size: Size,
+    parent: str = "",
+    blocked_by: tuple[str, ...] = (),
+    status: Literal["proposed", "open"] = "proposed",
+    needs_user: bool = False,
+) -> int:
+    """File a ticket: its frontmatter and the skeleton of its body, which the filing agent writes
+    into. Prints the path. Refuses a slug the tracker already holds.
+
+    Args:
+        slug: the ticket's id, lower case words joined by hyphens, descriptive enough to know it from.
+        priority: how soon it matters to the user, 1 now to 5 someday.
+        size: the user's time on it: XS, S, M, L or XL.
+        parent: the ticket this one is part of; absent on a top-level ticket.
+        blocked_by: the tickets that have to be done first, by slug.
+        status: the status to file it at.
+        needs_user: mark the ticket as one the user is in the loop for.
+    """
+    if not SLUG.fullmatch(slug):
+        raise Refused([f"`{slug}` is no slug; a slug is lower case words joined by hyphens, and the tracker is flat"])
+    tracker = here()
+    path = tracker.root / f"{slug}.md"
+    if path.exists():
+        raise Refused([f"{path} is already a ticket"])
+    meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
+            "needs-user": needs_user, "priority": priority, "size": size}
+    written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
+    written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n## Acceptance criteria\n\n## Comments\n"
+    filed = read(path, written)
+    refuse(refusals_of(filed, tracker.with_ticket(filed)))
+    path.write_text(written)
+    print(path)
+    return 0
+
+
+def rendered(value: object) -> str:
+    if isinstance(value, list):
+        return "[" + ", ".join(str(one) for one in value) + "]"
+    return "true" if value is True else "false" if value is False else str(value)
+
+
+# What a status change follows: where it may come from, and the rule that says so. A ticket moves
+# along the tracker's transitions and nowhere else, so the rule is enforced where it is written.
+INTO = {
+    "claimed": (("open", "proposed", "review"), "a claim is taken from the frontier, a proposal like an open ticket, and a build the user sent back is claimed again"),
+    "review": (("claimed",), "review is where a finished build waits for the user's ruling, and a build starts from a claim"),
+    "done": (("review",), "done is the accept and nothing less, written once the user has ruled on the review page"),
+    "open": (("proposed", "review"), "open is a ticket ruled and not yet built: the ruling on a proposal, or the redo ruling that discards a build and keeps the ticket"),
+    "proposed": ((), "proposed is where an agent files a ticket the user has not ruled on, and nothing moves back to it"),
+}
+
+
+@app.command(name="set")
+def set_fields(
+    slug: Annotated[str, tyro.conf.Positional],
+    assignments: Annotated[tuple[str, ...], tyro.conf.Positional],
+) -> int:
+    """Write frontmatter fields, refusing what the tracker's rules forbid and saying which rule.
+    `field=value` sets one, `field+=value` appends to a list field.
+
+    Args:
+        slug: the ticket.
+        assignments: `status=claimed`, `diff+=4f2a91c..8b3ce07`, `blocked-by=[one, another]`.
+    """
+    tracker = here()
+    ticket = tracker.ticket(slug)
+    changes, said = {}, []
+    for assignment in assignments:
+        key, appended, value = assignment.partition("+=")
+        if not appended:
+            key, _, value = assignment.partition("=")
+        if key not in FIELDS:
+            raise Refused([f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}"])
+        if appended and key not in LIST_FIELDS:
+            raise Refused([f"`{key}` holds one value, not a list; `{key}=...` sets it"])
+        if key == "status":
+            refuse_transition(ticket, value, tracker)
+        changes[key] = listed(ticket, key, value) if appended else value
+        said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
+    was = ticket.path.read_text()
+    written = written_with(was, changes)
+    after = read(ticket.path, written)
+    refuse(caused(ticket, after, tracker, was, written))
+    ticket.path.write_text(written)
+    print(f"{slug}: " + "; ".join(said))
+    return 0
+
+
+def caused(ticket: Ticket, after: Ticket, tracker: Tracker, was: str, now: str) -> list[Refusal]:
+    """The refusals the write caused, which is the ones the file did not already carry. A write moves
+    the lines under it, so what stood before is shifted to where it now sits before the two are
+    compared: a write answers for the breakage it makes and no other."""
+    at, by = shift(was, now)
+    stood = {moved(refusal, at, by) for refusal in refusals_of(ticket, tracker)}
+    return [refusal for refusal in refusals_of(after, tracker.with_ticket(after)) if refusal not in stood]
+
+
+def shift(was: str, now: str) -> tuple[int, int]:
+    """(the first line the write changed, how many lines it added there)."""
+    before, then = was.splitlines(), now.splitlines()
+    first = next((n for n, (one, other) in enumerate(zip(before, then), start=1) if one != other), min(len(before), len(then)) + 1)
+    return first, len(then) - len(before)
+
+
+# the one refusal that names a second line, `duplicates`, which moves with the first
+NAMED_LINE = re.compile(r"(?<=on line )\d+")
+
+
+def moved(refusal: Refusal, at: int, by: int) -> Refusal:
+    shifted = lambda line: line + by if line >= at else line  # noqa: E731
+    return replace(refusal, line=shifted(refusal.line),
+                   what=NAMED_LINE.sub(lambda found: str(shifted(int(found.group()))), refusal.what))
+
+
+def listed(ticket: Ticket, key: str, value: str) -> str:
+    return rendered([str(one) for one in ticket.meta.get(key) or []] + [value])
+
+
+def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
+    if want == ticket.status:
+        return
+    if want not in INTO:
+        raise Refused([f"`status: {want}` is no ticket status; a ticket declares one of {', '.join(STATUSES)}"])
+    allowed, rule = INTO[want]
+    if ticket.status not in allowed:
+        raise Refused([f"{ticket.slug} {ticket.status} → {want}: {rule}"])
+    if want == "done" and (why := unlanded(ticket, tracker)):
+        raise Refused([f"{ticket.slug} {ticket.status} → done: {why}"])
+
+
+def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
+    """Why the ticket's work has not landed here, or None once it has: its own branch merged into
+    the branch this runs on, which is the branch ticket branches merge into; for a parent ticket,
+    every child ticket done; for a ticket the user is in the loop for, the ruling itself."""
+    top = toplevel(tracker.root)
+    onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    branch = ticket_branch(top, ticket.slug)
+    if branch is None:
+        children = tracker.children(ticket.slug)
+        if ticket.needs_user or (children and all(child.status == "done" for child in children)):
+            return None
+        return f"no branch ticket/{ticket.slug} here; done follows the user's accept and the merge of what it built"
+    if onto == branch:
+        return f"{branch} is the branch this runs on; done is written where the ticket branch merges into, never on the branch itself"
+    tip = git(top, "rev-parse", branch).strip()
+    return None if tried(top, "merge-base", "--is-ancestor", tip, "HEAD").returncode == 0 else (
+        f"{branch} is not merged into {onto}; done follows the user's accept and its merge")
+
+
+def ticket_branch(top: Path, slug: str) -> str | None:
+    """The ticket's own branch, by the slug it ends in, or None where the repo has none."""
+    branches = git(top, "for-each-ref", "--format=%(refname:short)", "refs/heads/ticket/").split()
+    return next((branch for branch in branches if branch.rsplit("/", 1)[-1] == slug), None)
+
+
+def written_with(text: str, changes: dict[str, str | None]) -> str:
+    """The file with its frontmatter carrying `changes`, a None dropping a field. A field it does not
+    have yet goes in as the last frontmatter line, away from `status`, which a ticket branch writes
+    too: adjacent lines would make the merge conflict."""
+    opening = re.match(r"\A---\n(.*?\n)---\n", text, re.DOTALL)
+    if not opening:
+        raise Refused(["no frontmatter to write into"])
+    lines, left = [], dict(changes)
+    for line in opening.group(1).splitlines():
+        key = re.match(r"([\w-]+):", line)
+        if key and key.group(1) in left:
+            value = left.pop(key.group(1))
+            if value is not None:
+                lines.append(f"{key.group(1)}: {value}")
+        else:
+            lines.append(line)
+    lines += [f"{key}: {value}" for key, value in left.items() if value is not None]
+    return "---\n" + "\n".join(lines) + "\n---\n" + text[opening.end():]
+
+
+@app.command(name="rule")
+def rule(
+    slug: Annotated[str, tyro.conf.Positional],
+    tag: Annotated[str, tyro.conf.Positional],
+    answer: Annotated[str, tyro.conf.Positional],
+) -> int:
+    """Write the user's answer under the question it answers, in the tracker's own copy of the
+    ticket. Refuses a tag the ticket does not ask, and one already ruled.
+
+    Args:
+        slug: the ticket.
+        tag: the question's tag, D1 onward.
+        answer: what the user ruled, in their words.
+    """
+    tracker = here()
+    ticket = tracker.ticket(slug)
+    asked = next((question for question in ticket.questions if question.tag == tag), None)
+    if not asked:
+        raise Refused([f"{slug} asks no {tag}; it asks {', '.join(q.tag for q in ticket.questions) or 'nothing'}"])
+    if asked.ruled:
+        raise Refused([f"{slug} {tag} was ruled {asked.ruled}: {asked.answer}; a later decision amends that line in place, marked `(amended <date>, was …)`"])
+    item = next(bullet for section in ticket.sections for bullet in section.bullets if bullet.line == asked.line)
+    today = datetime.date.today().isoformat()
+    lines = ticket.path.read_text().splitlines()
+    lines.insert(item.last, f"{' ' * (item.indent + 2)}- Ruled {today}: {answer}")
+    written = "\n".join(lines) + "\n"
+    after = read(ticket.path, written)
+    refuse(caused(ticket, after, tracker, ticket.path.read_text(), written))
+    ticket.path.write_text(written)
+    print(f"{slug}: {tag} ruled {today}")
+    return 0
+
+
+# ---- retiring --------------------------------------------------------------
+# Nothing leaves irrecoverably: a tracked file leaves by `git rm`, so history keeps it; an untracked
+# one is moved to ~/logs, unless it is a render whose generating source is tracked, which alone is
+# deleted. Every step is printed as it runs, and the commit stays with the caller.
+
+LINKED = re.compile(r"agent/(?:prototypes|research)/[\w./-]*[\w-]")
+
+
+@app.command(name="retire")
+def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
+    """Take a shipped ticket and its descendants out of the live tracker, with the show directories,
+    prototypes and research notes they own, and stage the removal. Prints every step it runs.
+
+    Args:
+        slug: the ticket; its child tickets are retired with it.
+    """
+    tracker = here()
+    top = toplevel(tracker.root)
+    retiring = [tracker.ticket(slug), *descendants(slug, tracker)]
+    if standing := [one.slug for one in retiring if one.status != "done"]:
+        raise Refused([f"{', '.join(standing)} is not done; a ticket is retired once the user's accept has merged its work"])
+
+    if citing := cites_into(retiring, tracker):
+        raise Refused(["a ticket that stays cites a property of one retiring, and every reader refuses a citation that names no ticket:", *citing])
+
+    known = {top / name for name in git(top, "ls-files").splitlines()}
+    leaving = sorted(owned(retiring, tracker, top))
+    tracked = [path for path in leaving if path in known]
+    edited = [path for path in tracked + [one.path for one in unblocking(retiring, tracker)]
+              if git(top, "status", "--porcelain", "--", str(path.relative_to(top))).strip()]
+    if edited:
+        raise Refused([f"{', '.join(str(path.relative_to(top)) for path in edited)} has changes no commit holds; git history is what keeps a retired file, so commit them first"])
+    if tracked:
+        run(top, "git", "rm", "-q", *[str(path.relative_to(top)) for path in tracked])
+    for path in [path for path in leaving if path not in known and path.exists()]:
+        if renders(path, known):
+            run(top, "rm", str(path.relative_to(top)))
+        else:
+            kept = Path.home() / LOGS / "agent" / top.name / path.relative_to(top)
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            run(top, "mv", str(path.relative_to(top)), str(kept))
+    for directory in sorted({path.parent for path in leaving if path.parent != tracker.root}, reverse=True):
+        if directory.is_dir() and not any(directory.iterdir()):
+            run(top, "rmdir", str(directory.relative_to(top)))
+    unblock(retiring, tracker, top)
+    others = len(retiring) - 1
+    print(f"retired {slug}" + (f" and {others} child ticket{'s' if others > 1 else ''}" if others else "") + "; staged, not committed")
+    return 0
+
+
+def descendants(slug: str, tracker: Tracker, seen: frozenset[str] = frozenset()) -> list[Ticket]:
+    found = []
+    for child in tracker.children(slug):
+        if child.slug not in seen | {slug}:
+            found += [child, *descendants(child.slug, tracker, seen | {slug})]
+    return found
+
+
+def cites_into(retiring: Sequence[Ticket], tracker: Tracker) -> list[str]:
+    """Where a ticket that stays cites a property of one that is leaving, which no reader could read
+    once the file is gone."""
+    leaving = {one.slug for one in retiring}
+    return [f"{ticket.path}:{line}: {ref}" for ticket in tracker.tickets.values()
+            if ticket.slug not in leaving
+            for ref, line in ticket.cites if ref.partition("#")[0] in leaving]
+
+
+def owned(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> set[Path]:
+    """Every file the retired tickets take with them: their own, their show directories, and the
+    prototypes and research notes they link that no surviving ticket links too."""
+    retired = {one.slug for one in retiring}
+    leaving = {one.path for one in retiring}
+    for one in retiring:
+        leaving |= under(top / "agent" / "show" / one.slug)
+    kept = "\n".join(one.body for one in tracker.tickets.values() if one.slug not in retired)
+    for one in retiring:
+        for link in LINKED.findall(one.body):
+            if link not in kept:
+                leaving |= under(top / link) | ({top / link} if (top / link).is_file() else set())
+    return leaving
+
+
+def under(path: Path) -> set[Path]:
+    """Every file of a directory a ticket owns, at any depth; nothing where it is not one."""
+    return {one for one in path.rglob("*") if one.is_file()} if path.is_dir() else set()
+
+
+def renders(path: Path, known: set[Path]) -> bool:
+    """Whether an untracked file is a render its tracked source regenerates: the SVG beside its
+    `.mmd`, the PNG beside the page that draws it, what a tracked `demo` wrote into `out/`."""
+    if path.parent.name == "out":
+        return any(source.parent == path.parent.parent for source in known)
+    return any(source.parent == path.parent and source.stem == path.stem for source in known)
+
+
+def unblocking(retiring: Sequence[Ticket], tracker: Tracker) -> list[Ticket]:
+    """The tickets that stay and wait on one that is leaving."""
+    retired = {one.slug for one in retiring}
+    return [ticket for ticket in tracker.tickets.values()
+            if ticket.slug not in retired and set(ticket.blocked_by) & retired]
+
+
+def unblock(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> None:
+    """The blocking edges onto the retired tickets, dropped from the tickets that stay: a retired
+    ticket has shipped, and an edge naming no ticket is refused by every reader."""
+    retired = {one.slug for one in retiring}
+    for ticket in unblocking(retiring, tracker):
+        print(f"+ drop {', '.join(sorted(set(ticket.blocked_by) & retired))} from {ticket.slug}'s blocked-by", flush=True)
+        left = [ref for ref in ticket.blocked_by if ref not in retired]
+        ticket.path.write_text(written_with(ticket.path.read_text(), {"blocked-by": rendered(left) if left else None}))
+        run(top, "git", "add", str(ticket.path.relative_to(top)))
+
+
+def run(cwd: Path, *args: str) -> None:
+    print("+ " + " ".join(args), flush=True)
+    done = subprocess.run(args, cwd=cwd)
+    if done.returncode != 0:
+        raise Refused([f"{' '.join(args)} failed"])
+
+
+# ---- the commit hook -------------------------------------------------------
+
+HOOK = """#!/bin/sh
+# Installed by `tracker hook`: a ticket file no reader can read is refused where it was written.
+if ! command -v tracker >/dev/null 2>&1; then
+    echo "pre-commit: no tracker on PATH, so the staged ticket files went unchecked" >&2
+    exit 0
+fi
+exec tracker check
+"""
+
+
+@app.command(name="hook")
+def hook() -> int:
+    """Install the pre-commit hook that runs `tracker check` over the staged ticket files. Prints
+    the path it wrote. Leaves a pre-commit hook this did not write standing, and says so."""
+    top = toplevel(Path.cwd())
+    into = Path(git(top, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
+    if into.exists() and into.read_text() != HOOK:
+        raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
+    into.parent.mkdir(parents=True, exist_ok=True)
+    into.write_text(HOOK)
+    into.chmod(0o755)
+    print(into)
+    return 0
+
+
+# ---- what the tracker's rules refuse ---------------------------------------
+# Every rule a ticket file is held to, each refusal naming the rule that refused it.
+
+
+def refusals_of(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
+    """What `ticket` says that no reader can read: what its own text refuses, its frontmatter, its
+    layout, and every reference in it that names no ticket or property."""
+    found = list(ticket.refusals)
+    found += frontmatter_refusals(ticket)
+    found += layout_refusals(ticket, tracker)
+    found += reference_refusals(ticket, tracker)
+    return sorted(found, key=lambda refusal: (str(refusal.path), refusal.line, refusal.what))
+
+
+def at(ticket: Ticket, key: str) -> int:
+    return ticket.at.get(key, 1)
+
+
+def refs_of(ticket: Ticket) -> list[tuple[str, object]]:
+    """Every (field, reference) pair the ticket declares, `parent` and `blocked-by` alike."""
+    parent = ticket.meta.get("parent")
+    blocking = ticket.meta.get("blocked-by")
+    return ([("parent", parent)] if parent is not None else []) + [
+        ("blocked-by", ref) for ref in (blocking if isinstance(blocking, list) else [])
+    ]
+
+
+def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
+    found, meta = [], ticket.meta
+    refuse = lambda key, what: found.append(Refusal(ticket.path, at(ticket, key), what))  # noqa: E731
+
+    for key in meta:
+        if key == "type":
+            refuse(key, "`type` is dropped, and a ticket whose deliverable is an answer is a ticket like any other; `needs-user` says whether the user is in the loop")
+        elif key not in FIELDS:
+            refuse(key, f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}")
+
+    status = meta.get("status")
+    if status in ("draft", "confirmed"):
+        refuse("status", f"`status: {status}` was a spec's, and a spec is a top-level ticket now; a ticket's status is one of {', '.join(STATUSES)}")
+    elif status is None:
+        refuse("status", f"no `status`; a ticket declares one of {', '.join(STATUSES)}")
+    elif status not in STATUSES:
+        refuse("status", f"`status: {status}` is no ticket status; a ticket declares one of {', '.join(STATUSES)}")
+
+    for key, allowed in (("priority", PRIORITIES), ("size", SIZES)):
+        value = meta.get(key)
+        if value is None:
+            refuse(key, f"no `{key}`; whoever files a ticket fills its priority and its size (the user's time on it)")
+        elif value not in allowed:
+            refuse(key, f"`{key}: {value}` is none of {', '.join(str(one) for one in allowed)}")
+
+    if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
+        refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
+
+    # a list field is checked for being a list first: a bare scalar is a string, and walking it
+    # would refuse the line once per character
+    for key, written in ((key, meta[key]) for key in LIST_FIELDS if meta.get(key) is not None):
+        if not isinstance(written, list):
+            refuse(key, f"`{key}: {written}` is one value; `{key}` is a list, written `{key}: [{written}]`")
+    for key, ref in refs_of(ticket):
+        if what := unreadable_ref(ref):
+            refuse(key, f"`{key}: {ref}` {what}")
+    if meta.get("parent") == ticket.slug:
+        refuse("parent", "a ticket is not its own parent ticket")
+
+    for ref in meta.get("diff") if isinstance(meta.get("diff"), list) else []:
+        if not RANGE.fullmatch(str(ref)):
+            refuse("diff", f"`diff: {ref}` is no commit range; a range is `<sha>..<sha>`, never a branch name, since a ticket branch is deleted once it lands")
+    for ref in meta.get("gh") if isinstance(meta.get("gh"), list) else []:
+        if not GH_REF.fullmatch(str(ref)):
+            refuse("gh", f"`gh: {ref}` is no reference; a reference is `owner/repo#number`")
+    return found
+
+
+def unreadable_ref(ref: object) -> str | None:
+    """Why a `parent` or `blocked-by` entry names no ticket, or None when it names one."""
+    if isinstance(ref, int) or str(ref).isdigit():
+        return "is a number; `NN` numbering is dropped, and a reference names the blocking ticket's slug"
+    if "/" in str(ref):
+        return "is `<feature>/NN`; a feature is a ticket now, and a reference names a slug"
+    if not SLUG.fullmatch(str(ref)):
+        return "is no slug; a slug is lower case words joined by hyphens"
+    return None
+
+
+def layout_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
+    """The tracker is flat, and a ticket's file name is its id."""
+    name = ticket.path.name
+    if name == "spec.md":
+        return [Refusal(ticket.path, 1, "a spec is dropped, and becomes a top-level ticket named for the work, with the tickets sliced from it as its child tickets")]
+    if re.fullmatch(r"\d\d-.*\.md", name):
+        return [Refusal(ticket.path, 1, f"`{name}` carries a number; `NN` numbering is dropped, and the file is `agent/tickets/<slug>.md`")]
+    if not SLUG.fullmatch(ticket.slug):
+        return [Refusal(ticket.path, 1, f"`{name}` is no slug; a slug is lower case words joined by hyphens, descriptive enough to know the ticket from")]
+    if ticket.path.parent != tracker.root:
+        return [Refusal(ticket.path, 1, f"`{ticket.path.parent.name}/` is a feature directory; the tracker is flat, and a feature is a top-level ticket its tickets name as their `parent`")]
+    return []
+
+
+def reference_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
+    """Every reference in the ticket resolves: its parent, what blocks it, and every property it
+    cites through its ancestry."""
+    found = []
+    for key, ref in refs_of(ticket):
+        if unreadable_ref(ref) is None and str(ref) not in tracker.tickets:
+            found.append(Refusal(ticket.path, at(ticket, key), f"`{key}: {ref}` names no ticket at {tracker.root / f'{ref}.md'}"))
+    if ticket.parent in tracker.tickets and ticket.slug in {one.slug for one in tracker.ancestors(ticket.parent)}:
+        found.append(Refusal(ticket.path, at(ticket, "parent"), f"`parent: {ticket.parent}` closes a cycle; a ticket's ancestry is a line to a top-level ticket"))
+    for ref, line in ticket.cites:
+        slug, _, number = ref.partition("#")
+        if slug not in tracker.tickets:
+            found.append(Refusal(ticket.path, line, f"`{ref}` names no ticket at {tracker.root / f'{slug}.md'}"))
+        elif number not in {one.id for one in tracker.tickets[slug].properties}:
+            found.append(Refusal(ticket.path, line, f"`{ref}` names no property; {slug} states {', '.join(one.id for one in tracker.tickets[slug].properties) or 'none'}"))
+    for slug, claimed in tracker.collisions.items():
+        if ticket.path in claimed:
+            found.append(Refusal(ticket.path, 1, f"two files claim the slug {slug}: {', '.join(str(one) for one in claimed)}"))
+    return found
 
 
 # ---- what a ticket file holds ----------------------------------------------
@@ -272,19 +927,20 @@ def frontmatter(path: Path, text: str, refusals: list[Refusal]) -> tuple[dict, d
         refusals.append(Refusal(path, 1, "no frontmatter; a ticket opens with `---` and declares status, priority and size"))
         return {}, {}, 1, text
     block = match.group(1)
+    opens = block.count("\n") + 4  # the line the body starts on, which a refusal in the body counts from
     try:
         meta = yaml.safe_load(block) or {}
     except yaml.YAMLError as broken:
-        refusals.append(Refusal(path, 1, f"frontmatter is not YAML: {' '.join(str(broken).split())}"))
-        return {}, {}, 1, match.group(2)
+        refusals.append(Refusal(path, 1, f"frontmatter is not YAML, {' '.join(str(broken).split())}"))
+        return {}, {}, opens, match.group(2)
     if not isinstance(meta, dict):
         refusals.append(Refusal(path, 1, "frontmatter is not a mapping of fields"))
-        return {}, {}, 1, match.group(2)
+        return {}, {}, opens, match.group(2)
     at = {}
     for number, line in enumerate(block.splitlines(), start=2):
         if key := re.match(r"([\w-]+):", line):
             at.setdefault(key.group(1), number)
-    return meta, at, block.count("\n") + 4, match.group(2)
+    return meta, at, opens, match.group(2)
 
 
 def sections(lines: Sequence[tuple[int, str]], raw: dict[int, str]) -> list[Section]:
@@ -324,6 +980,9 @@ def read_questions(path: Path, written: Sequence[Section], refusals: list[Refusa
     found = []
     for section in section_named(written, "questions"):
         asking = False
+        for bullet in flat(section.bullets):
+            if bullet.indent and ASKED.fullmatch(bullet.head):
+                refusals.append(Refusal(path, bullet.line, "this question is indented, and every reader of one looks for it at the start of a line"))
         for bullet in [bullet for bullet in section.bullets if not bullet.indent]:
             item = ASKED.fullmatch(bullet.head)
             if not item:
@@ -418,7 +1077,7 @@ def read_criteria(path: Path, written: Sequence[Section], refusals: list[Refusal
     for section in section_named(written, "acceptance criteria"):
         for bullet in section.bullets:
             if OLD_CLAIM.match(bullet.head):
-                refusals.append(Refusal(path, bullet.line, "a criterion no longer stamps a property of its own spec; a property is stated once and cited `<slug>#P<n>`, read through the ticket's ancestry"))
+                refusals.append(Refusal(path, bullet.line, "a criterion does not stamp a property of its own; a property is stated once and cited `<slug>#P<n>`, read through the ticket's ancestry"))
                 continue
             ticked = CRITERION.fullmatch(bullet.head)
             if not ticked:
@@ -439,8 +1098,13 @@ def cited(text: str) -> list[tuple[str, int]]:
 
 
 def read_citations(path: Path, lines: Sequence[tuple[int, str]], refusals: list[Refusal]) -> list[tuple[str, int]]:
+    """Every property the body cites, read off the bullets and the lines outside them: a bullet is
+    read whole, so the column its writer wrapped at cannot change what it cites."""
+    written = [(bullet.line, bullet.head) for bullet in flat(bullets(lines))]
+    inside = {number for bullet in flat(bullets(lines)) for number in range(bullet.line, bullet.last + 1)}
+    written += [(number, line) for number, line in lines if number not in inside]
     found = []
-    for number, line in lines:
+    for number, line in sorted(written):
         for ref, _ in cited(line):
             if ref.startswith("#"):
                 refusals.append(Refusal(path, number, f"`{ref}` names no ticket; a property is cited `<slug>{ref}`"))
@@ -463,15 +1127,23 @@ def duplicates(path: Path, ids: Sequence[tuple[str, int]], what: str, refusals: 
 
 @dataclass(frozen=True)
 class Tracker:
-    """Every ticket under one `agent/tickets`, by slug."""
+    """Every ticket of one `agent/tickets`, by slug and by path. `collisions` holds the slugs two
+    files claim, which the flat layout has no room for."""
 
     root: Path
     tickets: dict[str, Ticket]
+    by_path: dict[Path, Ticket]
+    collisions: dict[str, list[Path]]
 
     def ticket(self, slug: str) -> Ticket:
         if slug not in self.tickets:
             raise Refused([f"no ticket {slug} at {self.root / f'{slug}.md'}"])
         return self.tickets[slug]
+
+    def at_path(self, path: Path) -> Ticket:
+        if path not in self.by_path:
+            raise Refused([f"no ticket at {path}"])
+        return self.by_path[path]
 
     def ancestors(self, slug: str) -> list[Ticket]:
         """The ticket's parent, its parent's parent, and so on: the context it is built in."""
@@ -484,13 +1156,18 @@ class Tracker:
         return found
 
     def children(self, slug: str) -> list[Ticket]:
-        return [t for t in self.tickets.values() if t.parent == slug]
+        return [one for one in self.tickets.values() if one.parent == slug]
+
+    def with_ticket(self, ticket: Ticket) -> "Tracker":
+        """The tracker as one ticket's text would leave it: what a write is checked against."""
+        return replace(self, tickets={**self.tickets, ticket.slug: ticket},
+                       by_path={**self.by_path, ticket.path: ticket})
 
 
 class Refused(Exception):
     """What the tracker's rules forbid, said with the rule that forbids it."""
 
-    def __init__(self, said: Sequence[object]) -> None:
+    def __init__(self, said: Sequence[Refusal | str]) -> None:
         super().__init__("\n".join(str(line) for line in said))
 
 
@@ -503,635 +1180,74 @@ def find_tracker(start: Path) -> Path:
 
 
 def tracker_of(root: Path, texts: dict[Path, str] | None = None) -> Tracker:
-    """Every ticket file in `root`, with `texts` standing in for what is on disk where it has a
-    copy: the commit hook reads the staged text, not the worktree's."""
-    said = dict(texts or {})
-    paths = sorted(set(root.glob("*.md")) | set(said))
-    return Tracker(root=root, tickets={
-        path.stem: read(path, said[path] if path in said else path.read_text())
-        for path in paths
-    })
-
-
-# ---- the check -------------------------------------------------------------
-# Every rule the tracker's format holds a ticket to, each refusal naming the rule. A construct the
-# one-ticket model dropped is refused with what replaced it, so a file written to the old shape
-# says so rather than reading as a ticket with fields missing.
-
-
-def holds(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
-    """What `ticket` says that no reader can read: its own refusals, its frontmatter, its layout,
-    and every reference in it that names no ticket or property."""
-    found = list(ticket.refusals)
-    found += frontmatter_holds(ticket)
-    found += layout_holds(ticket)
-    found += references_hold(ticket, tracker)
-    return sorted(found, key=lambda r: (str(r.path), r.line, r.what))
-
-
-def at(ticket: Ticket, key: str) -> int:
-    return ticket.at.get(key, 1)
-
-
-def frontmatter_holds(ticket: Ticket) -> list[Refusal]:
-    found, meta = [], ticket.meta
-    refuse = lambda key, what: found.append(Refusal(ticket.path, at(ticket, key), what))  # noqa: E731
-
-    for key in meta:
-        if key == "type":
-            refuse(key, "`type` is dropped: a ticket whose deliverable is an answer is a ticket like any other, and `needs-user` says whether the user is in the loop")
-        elif key not in FIELDS:
-            refuse(key, f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}")
-
-    status = meta.get("status")
-    if status in ("draft", "confirmed"):
-        refuse("status", f"`status: {status}` was a spec's; a spec is a top-level ticket now, and a ticket's status is one of {', '.join(STATUSES)}")
-    elif status is None:
-        refuse("status", f"no `status`; a ticket declares one of {', '.join(STATUSES)}")
-    elif status not in STATUSES:
-        refuse("status", f"`status: {status}` is no ticket status; a ticket declares one of {', '.join(STATUSES)}")
-
-    for key, allowed in (("priority", PRIORITIES), ("size", SIZES)):
-        value = meta.get(key)
-        if value is None:
-            refuse(key, f"no `{key}`; whoever files a ticket fills its priority and its size (the user's time on it)")
-        elif value not in allowed:
-            refuse(key, f"`{key}: {value}` is none of {', '.join(str(one) for one in allowed)}")
-
-    if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
-        refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
-
-    for key in ("parent", "blocked-by"):
-        for ref in ([meta["parent"]] if key == "parent" and meta.get("parent") is not None else meta.get(key) or []):
-            if what := unreadable_ref(ref):
-                refuse(key, f"`{key}: {ref}` {what}")
-    if not isinstance(meta.get("blocked-by") or [], list):
-        refuse("blocked-by", "`blocked-by` is a list of slugs: `blocked-by: [one-slug, another-slug]`")
-    if meta.get("parent") == ticket.slug:
-        refuse("parent", "a ticket is not its own parent ticket")
-
-    for ref in meta.get("diff") or []:
-        if not RANGE.fullmatch(str(ref)):
-            refuse("diff", f"`diff: {ref}` is no commit range; a range is `<sha>..<sha>`, never a branch name, since a ticket branch is deleted once it lands")
-    for ref in meta.get("gh") or []:
-        if not GH_REF.fullmatch(str(ref)):
-            refuse("gh", f"`gh: {ref}` is no reference; a reference is `owner/repo#number`")
-    return found
-
-
-def unreadable_ref(ref: object) -> str | None:
-    """Why a `parent` or `blocked-by` entry names no ticket, or None when it names one."""
-    if isinstance(ref, int) or str(ref).isdigit():
-        return "is a number; `NN` numbering is dropped, and a reference names the blocking ticket's slug"
-    if "/" in str(ref):
-        return "is `<feature>/NN`; a feature is a ticket now, and a reference names a slug"
-    if not SLUG.fullmatch(str(ref)):
-        return "is no slug; a slug is lower case words joined by hyphens"
-    return None
-
-
-def layout_holds(ticket: Ticket) -> list[Refusal]:
-    """The tracker is flat, and a ticket's file name is its id."""
-    name = ticket.path.name
-    if name == "spec.md":
-        return [Refusal(ticket.path, 1, "a spec is dropped: it becomes a top-level ticket named for the work, with the tickets sliced from it as its child tickets")]
-    if re.fullmatch(r"\d\d-.*\.md", name):
-        return [Refusal(ticket.path, 1, f"`{name}` carries a number; `NN` numbering is dropped, and the file is `agent/tickets/<slug>.md`")]
-    if not SLUG.fullmatch(ticket.slug):
-        return [Refusal(ticket.path, 1, f"`{name}` is no slug; a slug is lower case words joined by hyphens, descriptive enough to know the ticket from")]
-    return []
-
-
-def references_hold(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
-    """Every reference in the ticket resolves: its parent, what blocks it, and every property it
-    cites through its ancestry."""
-    found = []
-    for key in ("parent", "blocked-by"):
-        for ref in ([ticket.parent] if key == "parent" and ticket.parent else ticket.blocked_by):
-            if unreadable_ref(ref) is None and ref not in tracker.tickets:
-                found.append(Refusal(ticket.path, at(ticket, key), f"`{key}: {ref}` names no ticket at {tracker.root / f'{ref}.md'}"))
-    if ticket.parent in tracker.tickets and ticket.slug in {t.slug for t in tracker.ancestors(ticket.parent)}:
-        found.append(Refusal(ticket.path, at(ticket, "parent"), f"`parent: {ticket.parent}` closes a cycle; a ticket's ancestry is a line to a top-level ticket"))
-    for ref, line in ticket.cites:
-        slug, _, number = ref.partition("#")
-        if slug not in tracker.tickets:
-            found.append(Refusal(ticket.path, line, f"`{ref}` names no ticket at {tracker.root / f'{slug}.md'}"))
-        elif number not in {p.id for p in tracker.tickets[slug].properties}:
-            found.append(Refusal(ticket.path, line, f"`{ref}` names no property; {slug} states {', '.join(p.id for p in tracker.tickets[slug].properties) or 'none'}"))
-    return found
-
-
-# ---- git -------------------------------------------------------------------
-
-
-def git(root: Path, *args: str) -> str:
-    done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
-    if done.returncode != 0:
-        raise Refused([f"git {' '.join(args)} failed in {root}: {done.stderr.strip()}"])
-    return done.stdout
-
-
-def toplevel(start: Path) -> Path:
-    done = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-    if done.returncode != 0:
-        raise Refused([f"{start} is in no git checkout"])
-    return Path(done.stdout.strip())
-
-
-def staged(root: Path) -> Tracker:
-    """The tracker as the commit being made will leave it: the staged text of every ticket file it
-    touches, the rest as they stand."""
-    top = toplevel(root)
-    listed = [top / name for name in git(top, "ls-files", "--", str(root.relative_to(top))).splitlines() if name.endswith(".md")]
-    changed = {top / name for name in git(top, "diff", "--cached", "--name-only", "--", str(root.relative_to(top))).splitlines()}
-    texts = {}
-    for path in listed:
-        if path in changed or not path.exists():
-            texts[path] = git(top, "show", f":{path.relative_to(top)}")
-    return tracker_of(root, texts)
-
-
-def staged_paths(root: Path) -> list[Path]:
-    top = toplevel(root)
-    listed = git(top, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", str(root.relative_to(top)))
-    return [top / name for name in listed.splitlines() if name.endswith(".md")]
-
-
-# ---- the commands ----------------------------------------------------------
-
-app = SubcommandApp()
-
-
-@app.command(name="check")
-def check(paths: Annotated[tuple[str, ...], tyro.conf.Positional] = ()) -> int:
-    """Refuse every ticket file that says something no reader can read, one `file:line: message` per
-    finding. With no paths, the staged ticket files, which is what the commit hook runs.
-
-    Args:
-        paths: the ticket files to check; they are read as the tracker their directory holds.
-    """
-    if paths:
-        files = [Path(name) for name in paths]
-        roots = {path.parent.resolve() for path in files}
-        if len(roots) > 1:
-            raise Refused(["one tracker per run; these files are in " + ", ".join(sorted(str(one) for one in roots))])
-        tracker = tracker_of(roots.pop())
-    else:
-        tracker = staged(find_tracker(Path.cwd()))
-        files = staged_paths(tracker.root)
-    found = [refusal for path in files for refusal in holds(tracker.ticket(path.stem), tracker)]
-    for refusal in found:
-        print(refusal)
-    if refused := {refusal.path for refusal in found}:
-        print(f"{len(refused)} file{'s' if len(refused) > 1 else ''} refused")
-    return 1 if found else 0
-
-
-@app.command(name="get")
-def get(slug: Annotated[str, tyro.conf.Positional], field_name: Annotated[str, tyro.conf.Positional]) -> int:
-    """Print one frontmatter field of one ticket, a list field one entry per line. Exit 1 when the
-    ticket does not declare it.
-
-    Args:
-        slug: the ticket.
-        field_name: the field, one of status, parent, blocked-by, needs-user, priority, size, diff, gh.
-    """
-    ticket = here().ticket(slug)
-    if field_name not in ticket.meta:
-        raise Refused([f"{slug} declares no `{field_name}`"])
-    value = ticket.meta[field_name]
-    print("\n".join(str(one) for one in value) if isinstance(value, list) else value)
-    return 0
-
-
-@app.command(name="data")
-def data(source: Annotated[str, tyro.conf.Positional] = "") -> int:
-    """The tracker as JSON: every ticket with its frontmatter, sections, questions, properties,
-    acceptance criteria and assumptions. One ticket alone when given a slug, a path or `-`, which
-    reads a ticket file from stdin, as a review page does from a ticket branch.
-
-    JSON schema:
-
-        {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
-          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "priority": int,
-          "size": "str", "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
-          "sections": [{"heading": "str", "line": int, "text": "str"}],
-          "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
-                         "answer": "str", "line": int}],
-          "assumptions": [{"id": int, "path": "str", "line": int|null, "text": "str", "at": int}],
-          "resolved": ["str"], "properties": [{"id": "str", "text": "str", "line": int}],
-          "criteria": [{"met": bool, "text": "str", "cites": ["str"], "line": int}],
-          "children": ["str"], "ancestors": ["str"]}]}
-
-    Args:
-        source: a slug, a ticket file, or `-` for one on stdin; the whole tracker when absent.
-    """
-    if source == "-" or (source and source.endswith(".md")):
-        path = Path("-.md") if source == "-" else Path(source)
-        text = sys.stdin.read() if source == "-" else path.read_text()
-        ticket = read(path, text)
-        tracker = tracker_of(path.parent, {path: text})
-        refuse(ticket.refusals)
-        print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker)]}, indent=2))
-        return 0
-    tracker = here()
-    tickets = [tracker.ticket(source)] if source else list(tracker.tickets.values())
-    refuse([refusal for ticket in tickets for refusal in holds(ticket, tracker)])
-    print(json.dumps({"root": str(tracker.root), "tickets": [as_data(ticket, tracker) for ticket in tickets]}, indent=2))
-    return 0
-
-
-def as_data(ticket: Ticket, tracker: Tracker) -> dict:
-    return {
-        "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
-        "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
-        "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
-        "diff": [str(one) for one in ticket.meta.get("diff") or []],
-        "gh": [str(one) for one in ticket.meta.get("gh") or []],
-        "title": ticket.title, "brief": ticket.brief,
-        "sections": [{"heading": s.heading, "line": s.line, "text": s.text} for s in ticket.sections],
-        "questions": [vars(q) for q in ticket.questions],
-        "assumptions": [vars(a) for a in ticket.assumptions],
-        "resolved": ticket.resolved,
-        "properties": [vars(p) for p in ticket.properties],
-        "criteria": [vars(c) for c in ticket.criteria],
-        "children": [child.slug for child in tracker.children(ticket.slug)],
-        "ancestors": [one.slug for one in tracker.ancestors(ticket.slug)] if ticket.slug in tracker.tickets else [],
-    }
-
-
-@app.command(name="context")
-def context(slug: Annotated[str, tyro.conf.Positional]) -> int:
-    """The context a ticket is built and reviewed in: its own body, then every ancestor's body,
-    nearest first. A ticket whose parent names no ticket is refused, as any dangling reference is.
-
-    Args:
-        slug: the ticket.
-    """
-    tracker = here()
-    ticket = tracker.ticket(slug)
-    refuse([refusal for one in (ticket, *tracker.ancestors(slug)) for refusal in holds(one, tracker)])
-    print(assembled(ticket, tracker))
-    return 0
-
-
-def assembled(ticket: Ticket, tracker: Tracker) -> str:
-    """The one assembly every reader of a ticket's context gets: the worker's brief, the reviewer's
-    spec. The ticket comes first, since it is what is being built; its ancestors follow in the order
-    the work widens."""
-    written = [f"## {ticket.slug}\n{ticket.body.strip()}"]
-    written += [f"## parent ticket: {one.slug}\n{one.body.strip()}" for one in tracker.ancestors(ticket.slug)]
-    return "\n\n".join(written) + "\n"
-
-
-@app.command(name="frontier")
-def frontier() -> int:
-    """What can be started right now: the unclaimed, unblocked tickets that are open or proposed and
-    do not need the user. Everything else not done follows under `waiting`, with what holds it back.
-    """
-    tracker = here()
-    refuse([refusal for ticket in tracker.tickets.values() for refusal in holds(ticket, tracker)])
-    ready, waiting = [], []
-    for ticket in sorted(tracker.tickets.values(), key=lambda t: (t.meta.get("priority") or 9, t.slug)):
-        if ticket.status == "done":
-            continue
-        (waiting if held(ticket, tracker) else ready).append(ticket)
-    for ticket in ready:
-        print(line_of(ticket, tracker, f"parent {ticket.parent}" if ticket.parent else ""))
-    if waiting:
-        print("waiting")
-        for ticket in waiting:
-            print(line_of(ticket, tracker, held(ticket, tracker) or ""))
-    return 0
-
-
-def held(ticket: Ticket, tracker: Tracker) -> str:
-    """What holds a ticket back from being started now, or "" when nothing does."""
-    if ticket.status in ("claimed", "review"):
-        return f"{ticket.status}, not the frontier's"
-    if ticket.needs_user:
-        return "on the user, who is in the loop for it"
-    blocking = [ref for ref in ticket.blocked_by if tracker.tickets[ref].status != "done"]
-    if blocking:
-        return "on " + ", ".join(f"{ref} ({tracker.tickets[ref].status})" for ref in blocking)
-    return ""
-
-
-def line_of(ticket: Ticket, tracker: Tracker, said: str) -> str:
-    return f"{ticket.slug:<44}{ticket.status:<10}p{ticket.meta.get('priority')}  {str(ticket.meta.get('size')):<4}{said}".rstrip()
-
-
-@app.command(name="new")
-def new(
-    slug: Annotated[str, tyro.conf.Positional],
-    priority: Priority,
-    size: Size,
-    parent: str = "",
-    blocked_by: tuple[str, ...] = (),
-    status: Literal["proposed", "open"] = "proposed",
-    needs_user: bool = False,
-) -> int:
-    """File a ticket: its frontmatter and the skeleton of its body, which the filing agent writes
-    into. Prints the path. Refuses a slug the tracker already holds.
-
-    Args:
-        slug: the ticket's id, lower case words joined by hyphens, descriptive enough to know it from.
-        priority: how soon it matters to the user, 1 now to 5 someday.
-        size: the user's time on it: XS, S, M, L or XL.
-        parent: the ticket this one is part of; absent on a top-level ticket.
-        blocked_by: the tickets that have to be done first, by slug.
-        status: proposed for a ticket the agent files on its own reading, open for one already ruled.
-        needs_user: the ticket is worked with the user, so no worker is given it.
-    """
-    tracker = here()
-    path = tracker.root / f"{slug}.md"
-    if path.exists():
-        raise Refused([f"{path} is already a ticket"])
-    meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
-            "needs-user": needs_user, "priority": priority, "size": size}
-    written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
-    written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n## Acceptance criteria\n\n## Comments\n"
-    filed = read(path, written)
-    refuse(holds(filed, replace(tracker, tickets={**tracker.tickets, slug: filed})))
-    path.write_text(written)
-    print(path)
-    return 0
-
-
-def rendered(value: object) -> str:
-    if isinstance(value, list):
-        return "[" + ", ".join(str(one) for one in value) + "]"
-    return "true" if value is True else "false" if value is False else str(value)
-
-
-# What a status change follows: where it may come from, and the rule that says so. A ticket moves
-# along the tracker's transitions and nowhere else, so the rule is enforced where it is written.
-INTO = {
-    "claimed": (("open", "proposed", "review"), "a claim is taken from the frontier, a proposal like an open ticket, and a build the user sent back is claimed again"),
-    "review": (("claimed",), "review is where a finished build waits for the user's ruling, and a build starts from a claim"),
-    "done": (("review",), "done is the accept and nothing less, written once the user has ruled on the review page"),
-    "open": (("proposed", "review"), "open is a ticket ruled and not yet built: the ruling on a proposal, or the redo ruling that discards a build and keeps the ticket"),
-    "proposed": ((), "proposed is where an agent files a ticket the user has not ruled on, and nothing moves back to it"),
-}
-
-
-@app.command(name="set")
-def set_fields(
-    slug: Annotated[str, tyro.conf.Positional],
-    assignments: Annotated[tuple[str, ...], tyro.conf.Positional],
-) -> int:
-    """Write frontmatter fields, refusing what the tracker's rules forbid and saying which rule.
-    `field=value` sets one, `field+=value` appends to a list field.
-
-    Args:
-        slug: the ticket.
-        assignments: `status=claimed`, `diff+=4f2a91c..8b3ce07`, `blocked-by=[one, another]`.
-    """
-    tracker = here()
-    ticket = tracker.ticket(slug)
-    changes, said = {}, []
-    for assignment in assignments:
-        key, appended, value = assignment.partition("+=")
-        if not appended:
-            key, _, value = assignment.partition("=")
-        if key not in FIELDS:
-            raise Refused([f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}"])
-        if appended and key not in LIST_FIELDS:
-            raise Refused([f"`{key}` holds one value, not a list; `{key}=...` sets it"])
-        if key == "status":
-            refuse_transition(ticket, value, tracker)
-        changes[key] = listed(ticket, key, value) if appended else value
-        said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
-    written = written_with(ticket.path.read_text(), changes)
-    after = read(ticket.path, written)
-    refuse([r for r in holds(after, replace(tracker, tickets={**tracker.tickets, slug: after})) if r not in holds(ticket, tracker)])
-    ticket.path.write_text(written)
-    print(f"{slug}: " + "; ".join(said))
-    return 0
-
-
-def listed(ticket: Ticket, key: str, value: str) -> str:
-    return rendered([str(one) for one in ticket.meta.get(key) or []] + [value])
-
-
-def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
-    if want == ticket.status:
-        return
-    if want not in INTO:
-        raise Refused([f"`status: {want}` is no ticket status; a ticket declares one of {', '.join(STATUSES)}"])
-    allowed, rule = INTO[want]
-    if ticket.status not in allowed:
-        raise Refused([f"{ticket.slug} {ticket.status} → {want}: {rule}"])
-    if want == "done" and (why := unlanded(ticket, tracker)):
-        raise Refused([f"{ticket.slug} {ticket.status} → done: {why}"])
-
-
-def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
-    """Why the ticket's work has not landed here, or None once it has: its branch merged into the
-    branch ticket branches merge into, or, for a parent ticket, every child ticket done."""
-    top = toplevel(tracker.root)
-    branch = f"ticket/{ticket.slug}"
-    onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
-    tip = subprocess.run(["git", "-C", str(top), "rev-parse", "--verify", "-q", branch], capture_output=True, text=True)
-    if tip.returncode != 0:
-        children = tracker.children(ticket.slug)
-        if children and all(child.status == "done" for child in children):
-            return None
-        return f"no branch {branch} here; done follows the user's accept and the merge of what it built"
-    landed = subprocess.run(["git", "-C", str(top), "merge-base", "--is-ancestor", tip.stdout.strip(), "HEAD"])
-    return None if landed.returncode == 0 else f"{branch} is not merged into {onto}; done follows the user's accept and its merge"
-
-
-def written_with(text: str, changes: dict[str, str | None]) -> str:
-    """The file with its frontmatter carrying `changes`, a None dropping a field. A field it does not
-    have yet goes in as the last frontmatter line, away from `status`, which a ticket branch writes
-    too: adjacent lines would make the merge conflict."""
-    opening = re.match(r"\A---\n(.*?\n)---\n", text, re.DOTALL)
-    if not opening:
-        raise Refused(["no frontmatter to write into"])
-    lines, left = [], dict(changes)
-    for line in opening.group(1).splitlines():
-        key = re.match(r"([\w-]+):", line)
-        if key and key.group(1) in left:
-            value = left.pop(key.group(1))
-            if value is not None:
-                lines.append(f"{key.group(1)}: {value}")
+    """The tracker `root` holds, or exactly the files `texts` names: the commit hook reads the
+    staged text of every ticket the index has, never the worktree's."""
+    said = texts if texts is not None else {path: path.read_text() for path in sorted(root.glob("*.md"))}
+    by_path = {path: read(path, text) for path, text in sorted(said.items())}
+    tickets: dict[str, Ticket] = {}
+    collisions: dict[str, list[Path]] = {}
+    for ticket in by_path.values():
+        if ticket.slug in tickets:
+            collisions.setdefault(ticket.slug, [tickets[ticket.slug].path]).append(ticket.path)
         else:
-            lines.append(line)
-    lines += [f"{key}: {value}" for key, value in left.items() if value is not None]
-    return "---\n" + "\n".join(lines) + "\n---\n" + text[opening.end():]
-
-
-@app.command(name="rule")
-def rule(
-    slug: Annotated[str, tyro.conf.Positional],
-    tag: Annotated[str, tyro.conf.Positional],
-    answer: Annotated[str, tyro.conf.Positional],
-) -> int:
-    """Write the user's answer under the question it answers, in the tracker's own copy of the
-    ticket. Refuses a tag the ticket does not ask, and one already ruled.
-
-    Args:
-        slug: the ticket.
-        tag: the question's tag, D1 onward.
-        answer: what the user ruled, in their words.
-    """
-    tracker = here()
-    ticket = tracker.ticket(slug)
-    asked = next((question for question in ticket.questions if question.tag == tag), None)
-    if not asked:
-        raise Refused([f"{slug} asks no {tag}; it asks {', '.join(q.tag for q in ticket.questions) or 'nothing'}"])
-    if asked.ruled:
-        raise Refused([f"{slug} {tag} was ruled {asked.ruled}: {asked.answer}; a later decision amends that line in place, marked `(amended <date>, was …)`"])
-    item = next(bullet for section in ticket.sections for bullet in section.bullets if bullet.line == asked.line)
-    today = datetime.date.today().isoformat()
-    lines = ticket.path.read_text().splitlines()
-    lines.insert(item.last, f"{' ' * (item.indent + 2)}- Ruled {today}: {answer}")
-    written = "\n".join(lines) + "\n"
-    after = read(ticket.path, written)
-    refuse([r for r in holds(after, replace(tracker, tickets={**tracker.tickets, slug: after})) if r not in holds(ticket, tracker)])
-    ticket.path.write_text(written)
-    print(f"{slug}: {tag} ruled {today}")
-    return 0
-
-
-# ---- retiring --------------------------------------------------------------
-# Nothing leaves irrecoverably: a tracked file leaves by `git rm`, so history keeps it; an untracked
-# one is moved to ~/logs, unless it is a render whose generating source is tracked, which alone is
-# deleted. Every step is printed as it runs, and the commit stays with the caller.
-
-LINKED = re.compile(r"agent/(?:prototypes|research)/[\w./-]*[\w-]")
-
-
-@app.command(name="retire")
-def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
-    """Take a shipped ticket and its descendants out of the live tracker, with the show directories,
-    prototypes and research notes they own, and stage the removal. Prints every step it runs.
-
-    Args:
-        slug: the ticket; its child tickets are retired with it.
-    """
-    tracker = here()
-    top = toplevel(tracker.root)
-    retiring = [tracker.ticket(slug), *descendants(slug, tracker)]
-    if standing := [one.slug for one in retiring if one.status != "done"]:
-        raise Refused([f"{', '.join(standing)} is not done; a ticket is retired once the user's accept has merged its work"])
-
-    known = {top / name for name in git(top, "ls-files").splitlines()}
-    leaving = sorted(owned(retiring, tracker, top))
-    tracked = [path for path in leaving if path in known]
-    if dirty := [path for path in tracked if git(top, "status", "--porcelain", "--", str(path.relative_to(top))).strip()]:
-        raise Refused([f"{', '.join(str(path.relative_to(top)) for path in dirty)} has changes no commit holds; git history is what keeps a retired file, so commit them first"])
-    if tracked:
-        run(top, "git", "rm", "-q", *[str(path.relative_to(top)) for path in tracked])
-    for path in [path for path in leaving if path not in known and path.exists()]:
-        if renders(path, known):
-            run(top, "rm", str(path.relative_to(top)))
-        else:
-            kept = Path.home() / LOGS / "agent" / top.name / path.relative_to(top)
-            kept.parent.mkdir(parents=True, exist_ok=True)
-            run(top, "mv", str(path.relative_to(top)), str(kept))
-    for directory in sorted({path.parent for path in leaving if path.parent != tracker.root}, reverse=True):
-        if directory.is_dir() and not any(directory.iterdir()):
-            run(top, "rmdir", str(directory.relative_to(top)))
-    unblock([one.slug for one in retiring], tracker, top)
-    others = len(retiring) - 1
-    print(f"retired {slug}" + (f" and {others} child ticket{'s' if others > 1 else ''}" if others else "") + "; staged, not committed")
-    return 0
-
-
-def descendants(slug: str, tracker: Tracker) -> list[Ticket]:
-    found = []
-    for child in tracker.children(slug):
-        found += [child, *descendants(child.slug, tracker)]
-    return found
-
-
-def owned(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> set[Path]:
-    """Every file the retired tickets take with them: their own, their show directories, and the
-    prototypes and research notes they link that no surviving ticket links too."""
-    leaving = {one.path for one in retiring}
-    for one in retiring:
-        show = top / "agent" / "show" / one.slug
-        leaving |= {path for path in show.rglob("*") if path.is_file()} if show.is_dir() else set()
-    kept = "\n".join(one.body for one in tracker.tickets.values() if one not in retiring)
-    for one in retiring:
-        for link in LINKED.findall(one.body):
-            if (top / link).is_file() and link not in kept:
-                leaving.add(top / link)
-    return leaving
-
-
-def renders(path: Path, known: set[Path]) -> bool:
-    """Whether an untracked file is a render its tracked source regenerates: the SVG beside its
-    `.mmd`, the PNG beside the page that draws it, what a tracked `demo` wrote into `out/`."""
-    if path.parent.name == "out":
-        return any(source.parent == path.parent.parent for source in known)
-    return any(source.parent == path.parent and source.stem == path.stem for source in known)
-
-
-def unblock(retired: Sequence[str], tracker: Tracker, top: Path) -> None:
-    """The blocking edges onto the retired tickets, dropped from the tickets that stay: a retired
-    ticket has shipped, and an edge naming no ticket is refused by every reader."""
-    for ticket in tracker.tickets.values():
-        if ticket.slug in retired or not set(ticket.blocked_by) & set(retired):
-            continue
-        left = [ref for ref in ticket.blocked_by if ref not in retired]
-        ticket.path.write_text(written_with(ticket.path.read_text(), {"blocked-by": rendered(left) if left else None}))
-        print(f"+ drop {', '.join(sorted(set(ticket.blocked_by) & set(retired)))} from {ticket.slug}'s blocked-by")
-        run(top, "git", "add", str(ticket.path.relative_to(top)))
-
-
-def run(cwd: Path, *args: str) -> None:
-    print("+ " + " ".join(args), flush=True)
-    done = subprocess.run(args, cwd=cwd)
-    if done.returncode != 0:
-        raise Refused([f"{' '.join(args)} failed"])
-
-
-# ---- the commit hook -------------------------------------------------------
-
-HOOK = """#!/bin/sh
-# Installed by `tracker hook`: a ticket file no reader can read is refused where it was written.
-if ! command -v tracker >/dev/null 2>&1; then
-    echo "pre-commit: no tracker on PATH, so the staged ticket files went unchecked" >&2
-    exit 0
-fi
-exec tracker check
-"""
-
-
-@app.command(name="hook")
-def hook() -> int:
-    """Install the pre-commit hook that runs `tracker check` over the staged ticket files. Prints
-    the path it wrote. Leaves a pre-commit hook this did not write standing, and says so."""
-    top = toplevel(Path.cwd())
-    into = Path(git(top, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "hooks" / "pre-commit"
-    if into.exists() and into.read_text() != HOOK:
-        raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
-    into.parent.mkdir(parents=True, exist_ok=True)
-    into.write_text(HOOK)
-    into.chmod(0o755)
-    print(into)
-    return 0
-
-
-# ---- the command line ------------------------------------------------------
+            tickets[ticket.slug] = ticket
+    return Tracker(root=root, tickets=tickets, by_path=by_path, collisions=collisions)
 
 
 def here() -> Tracker:
     return tracker_of(find_tracker(Path.cwd()))
 
 
-def refuse(found: Sequence[object]) -> None:
+def refuse(found: Sequence[Refusal | str]) -> None:
     if found:
         raise Refused(found)
+
+
+# ---- git -------------------------------------------------------------------
+
+
+def git(root: Path, *args: str) -> str:
+    done = tried(root, *args)
+    if done.returncode != 0:
+        raise Refused([f"git {' '.join(args)} failed in {root}: {done.stderr.strip()}"])
+    return done.stdout
+
+
+def tried(root: Path, *args: str) -> subprocess.CompletedProcess:
+    """A git command whose failing is an answer rather than a refusal: whether a branch is there,
+    whether a tip has landed."""
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+
+
+def toplevel(start: Path) -> Path:
+    done = tried(start, "rev-parse", "--show-toplevel")
+    if done.returncode != 0:
+        raise Refused([f"{start} is in no git checkout"])
+    return Path(done.stdout.strip())
+
+
+def staged(root: Path) -> Tracker:
+    """The tracker as the commit being made will leave it: every ticket file the index holds, read
+    from the index, since the commit is made of that and not of the worktree."""
+    top = toplevel(root)
+    listed = git(top, "ls-files", "--", str(root.relative_to(top))).splitlines()
+    return tracker_of(root, {top / name: git(top, "show", f":{name}") for name in listed if name.endswith(".md")})
+
+
+def staged_paths(root: Path) -> list[Path]:
+    """The ticket files this commit writes: what the hook has to answer for."""
+    top = toplevel(root)
+    listed = git(top, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", str(root.relative_to(top)))
+    return [top / name for name in listed.splitlines() if name.endswith(".md")]
+
+
+# ---- the command line ------------------------------------------------------
 
 
 def cli(argv: Sequence[str]) -> int:
     """The command line as a call: what `main` runs, answering with the code it would exit on."""
     try:
-        return app.cli(args=list(argv), description=__doc__, config=(tyro.conf.OmitArgPrefixes,)) or 0
+        return app.cli(prog="tracker", args=list(argv), description=__doc__, config=(tyro.conf.OmitArgPrefixes,)) or 0
     except OSError as missing:
         print(f"tracker: refused: {missing}", file=sys.stderr)
         return 1
