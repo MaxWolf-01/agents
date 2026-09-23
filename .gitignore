@@ -8,3 +8,4 @@ __pycache__/
 agent/show/**/*.png
 agent/board.html*
 agent/diffviews/
+agent/show/context-format/*.json
