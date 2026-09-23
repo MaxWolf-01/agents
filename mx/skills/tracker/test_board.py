@@ -2105,15 +2105,15 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     chore = tracker / "new-chore.md"
     # the feature is read from the worktree on its own branch, which is where a worker flips a status
     second = repo.parent / "wt" / "agent" / "tickets" / FEAT / "02-second.md"
-    assert moved(watching, session, tracker, repo, out, lambda: ticket(chore, "open")), \
+    assert status_moved(watching, session, tracker, repo, out, lambda: ticket(chore, "open")), \
         "the briefing session was never told a ticket was filed"
     assert "standalone-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
-    assert not moved(watching, session, tracker, repo, out,
+    assert not status_moved(watching, session, tracker, repo, out,
                      lambda: ticket(chore, "open", brief="The `suite` is slow, and flaky with it.")), \
         "prose rewritten was sent to the session as a change"
-    assert moved(watching, session, tracker, repo, out, lambda: ticket(second, "claimed")), \
+    assert status_moved(watching, session, tracker, repo, out, lambda: ticket(second, "claimed")), \
         "a feature ticket claimed was never sent to the session"
-    assert moved(watching, session, tracker, repo, out, chore.unlink), \
+    assert status_moved(watching, session, tracker, repo, out, chore.unlink), \
         "a ticket retired was never sent to the session"
 
 
@@ -2134,7 +2134,7 @@ def test_a_status_that_goes_back_to_what_the_session_was_told_leaves_nothing_to_
     assert session.changed_at is None, "the tracker is back where the session left it, and it was told anyway"
 
 
-def moved(
+def status_moved(
     watching: list[Seen], session: "board.Briefer", tracker: Path, repo: Path, out: Path, change: Callable[[], None]
 ) -> bool:
     """Make one change under the tracker, run a pass of the watcher over it, and answer whether the
