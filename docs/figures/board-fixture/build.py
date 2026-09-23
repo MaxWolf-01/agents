@@ -25,6 +25,8 @@ OUT = HERE.parent
 BOARD = HERE.parents[2] / "mx" / "bin" / "board"  # this checkout's board, not whichever is on PATH
 REPO = Path("/var/tmp/mx-demo/ledger")
 CHROMIUM = shutil.which("chromium")
+WIDE = 1440  # past the board's 1400px breakpoint, where the graph panel sits beside the rows
+SCHEMES = {"light": "-light", "dark": ""}  # the suffixes render.py gives the other figures
 ENV = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com",
        "GIT_COMMITTER_NAME": "demo", "GIT_COMMITTER_EMAIL": "demo@example.com",
        "GIT_AUTHOR_DATE": "2026-03-02T09:12:00", "GIT_COMMITTER_DATE": "2026-03-02T09:12:00"}
@@ -78,9 +80,7 @@ def build_repo() -> tuple[str, str]:
         ("csv-import/04-commit-the-import.md", f"{mapping}..{commits}"),
     ]:
         stamp_diff(rel, rng)
-    needs = REPO / "agent" / "tickets" / "csv-import" / "needs-human.md"
-    needs.write_text(needs.read_text().replace("{fix_sha}", fix))
-    commit("csv-import: 01 through 04 landed, and the feature's debrief")
+    commit(f"csv-import: 01 through 04 landed; the debrief proposes 06, from a survivor no test pins ({fix})")
     return properties, report
 
 
@@ -96,55 +96,68 @@ def stamp_diff(rel: str, rng: str) -> None:
     path.write_text("\n".join(lines[:end] + [f"diff: [{rng}]"] + lines[end:]) + "\n")
 
 
-def render(base: str, head: str) -> tuple[Path, Path]:
-    notes = REPO / "agent" / "notes.json"
-    notes.write_text(json.dumps(NOTES))
-    review = REPO / "agent" / "diffviews" / "csv-import" / "02-upload-and-parse-report.html"
-    review.parent.mkdir(parents=True, exist_ok=True)
-    run("diffview", f"{REPO}@{base}..{head}", "-o", str(review), "--no-open", "--no-auto-summary",
-        "--notes", str(notes), "--title", "02 upload-and-parse-report",
-        "--summary", "The upload gets a report instead of a row list: every line the mapping could "
-                     "not read comes back with its number and the reason, so the human sees the whole "
-                     "statement before anything is committed. Lifts the two parse properties.")
+def render(base: str, head: str) -> tuple[Path, Path | None]:
+    """The board, and the review page where `diffview` is installed: without it the board shots
+    still build, and review-page.png stays as whichever run last had it."""
+    review = None
+    if shutil.which("diffview"):
+        notes = REPO / "agent" / "notes.json"
+        notes.write_text(json.dumps(NOTES))
+        review = REPO / "agent" / "diffviews" / "csv-import" / "02-upload-and-parse-report.html"
+        review.parent.mkdir(parents=True, exist_ok=True)
+        run("diffview", f"{REPO}@{base}..{head}", "-o", str(review), "--no-open", "--no-auto-summary",
+            "--notes", str(notes), "--title", "02 upload-and-parse-report",
+            "--summary", "The upload gets a report instead of a row list: every line the mapping could "
+                         "not read comes back with its number and the reason, so the human sees the whole "
+                         "statement before anything is committed. Lifts the two parse properties.")
+    else:
+        print("no diffview on PATH: skipping review-page.png, and the board's review links stay bare")
     board = REPO / "agent" / "board.html"
     run(str(BOARD), str(REPO / "agent" / "tickets"), "--no-watch", "--no-open")
     return board, review
 
 
-def shoot(board: Path, review: Path) -> None:
+def shoot(board: Path, review: Path | None) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROMIUM)
-        page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=2)
+        page = browser.new_page(viewport={"width": WIDE, "height": 900}, device_scale_factor=2)
 
-        page.goto(board.resolve().as_uri())
-        page.wait_for_selector(".btn[data-gmode].on", timeout=30_000)  # the module script has its listeners
-        # the whole tracker's graph beside the groups, the debrief entry open
-        page.evaluate("document.querySelector('.btn[data-gmode=all]').click()")
-        page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
-        page.evaluate("document.querySelector('#grp-needs .ticket').open = true")
-        page.wait_for_timeout(600)
-        band(page, "board-overview.png", "#grp-open")
+        for scheme, suffix in SCHEMES.items():
+            # the reader's system setting decides which the README shows, as it does for every
+            # other figure here; the board reads it when nothing is stored, so each pass starts clean
+            page.emulate_media(color_scheme=scheme)
+            page.goto(board.resolve().as_uri())
+            page.evaluate("localStorage.clear()")
+            page.reload()
+            page.wait_for_selector(".btn[data-gmode].on", timeout=30_000)  # the module script has its listeners
 
-        # one feature: the other hidden by its chip, the cursor on a blocked slice, its graph marked
-        page.evaluate("document.querySelector('#grp-needs .ticket').open = false")
-        page.evaluate("document.querySelector('.featchip[data-feature=csv-import]').click()")
-        page.evaluate("document.querySelector('.btn[data-gmode=feature]').click()")
-        page.evaluate("document.querySelector('#t-saved-views-03 > summary').click()")
-        page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
-        page.wait_for_timeout(600)
-        band(page, "board-feature.png", "#grp-proposed")
+            # the whole tracker's graph beside the groups, needs me with its questions at the top
+            page.evaluate("document.querySelector('.btn[data-gmode=all]').click()")
+            page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
+            page.wait_for_timeout(600)
+            band(page, f"board-overview{suffix}", "#grp-open")
 
-        page.goto(review.resolve().as_uri())
-        page.wait_for_timeout(1500)
-        page.evaluate(DISMISS_BANNER)
-        page.wait_for_timeout(300)
-        page.set_viewport_size({"width": 1280, "height": 1020})
-        page.evaluate(SCROLL_TO_NOTE)
-        page.wait_for_timeout(600)
-        page.screenshot(path=str(OUT / "review-page.png"))
-        print("review-page.png")
+            # one feature: the other hidden by its chip, a ticket opened to its blocks, its graph marked
+            page.evaluate("document.querySelector('.featchip[data-feature=csv-import]').click()")
+            page.evaluate("document.querySelector('.btn[data-gmode=feature]').click()")
+            page.evaluate("document.querySelector('#t-saved-views-03 > summary').click()")
+            page.wait_for_selector(".g:not([hidden]) .mermaid svg", timeout=30_000)
+            page.wait_for_timeout(600)
+            band(page, f"board-feature{suffix}", "#grp-proposed")
+
+        if review:
+            page.emulate_media(color_scheme="dark")
+            page.goto(review.resolve().as_uri())
+            page.wait_for_timeout(1500)
+            page.evaluate(DISMISS_BANNER)
+            page.wait_for_timeout(300)
+            page.set_viewport_size({"width": 1280, "height": 1020})
+            page.evaluate(SCROLL_TO_NOTE)
+            page.wait_for_timeout(600)
+            page.screenshot(path=str(OUT / "review-page.png"))
+            print("review-page.png")
         browser.close()
 
 
@@ -166,9 +179,9 @@ SCROLL_TO_NOTE = """() => {
 def band(page, name: str, bottom: str) -> None:
     """Screenshot from the top of the page to the bottom of `bottom`, full width."""
     height = page.evaluate("b => document.querySelector(b).getBoundingClientRect().bottom + scrollY", bottom)
-    page.screenshot(path=str(OUT / name), full_page=True,
-                    clip={"x": 0, "y": 0, "width": 1280, "height": height})
-    print(name)
+    page.screenshot(path=str(OUT / f"{name}.png"), full_page=True,
+                    clip={"x": 0, "y": 0, "width": WIDE, "height": height})
+    print(f"{name}.png")
 
 
 if __name__ == "__main__":

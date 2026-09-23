@@ -22,7 +22,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
-  <img alt="Ticket state: proposed, open, claimed, done, retired, with the one writer of each transition; a proposed ticket is on the frontier and built like any other, your ruling lands on what it built, and the board renders every state, the dependency graph with its frontier, and the needs-human queue" src="assets/ticket-state-light.png">
+  <img alt="Ticket state: proposed, open, claimed, review, done, retired, with the one writer of each transition; a proposed ticket is on the frontier and built like any other, a build in review waits on your ruling and your accept writes done through the merge, and the board renders every state, the dependency graph with its frontier, the needs-me group a ticket's open questions feed, and what each row asks of you" src="assets/ticket-state-light.png">
 </picture>
 
 </details>
@@ -40,13 +40,19 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 <details>
 <summary><b>The board: the tracker as one page</b></summary>
 
-`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, the ones waiting on you first with their open questions under them, each row tagged with its feature and expanding to its text. Feature chips hide a feature, a filter narrows the rows, and a panel beside the rows shows the dependency graph of the feature under the cursor, or the whole tracker's. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`docs/figures/board-fixture/build.py`](../docs/figures/board-fixture/build.py).
+`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, and everything that waits on you in one group at the top, with its open questions under the row and a copy button on each. A row says what it asks of you, how much of your time it wants and how much it matters, every mark explaining itself on hover, and it opens to the ticket's brief, questions, what to build and acceptance criteria. Feature chips hide a feature, a filter narrows the rows, and the column beside them carries a briefing — where things stand and what to pick up next, written by a model that has read the repo — over a preview of the dependency graph that opens full size. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`docs/figures/board-fixture/build.py`](../docs/figures/board-fixture/build.py).
 
-<img alt="The board: rows grouped by state, needs me first with a finished feature's debrief expanded, then the frontier; beside them the whole tracker's dependency graph across two features, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other" src="assets/board-overview.png">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/board-overview.png">
+  <img alt="The board: needs me at the top with a build to rule on, a prototype decision and a ticket wanting an answer, each carrying its open question and a copy button, and each row its priority and your time on it; the frontier below; beside the rows the briefing naming the next three picks with a reason each, over a preview of the whole tracker's dependency graph across two features" src="assets/board-overview-light.png">
+</picture>
 
-One feature, the other hidden by its chip; the cursor on a blocked slice, and the feature's graph beside the rows with that slice marked:
+One feature, the other hidden by its chip; a ticket opened to its blocks, and the feature's graph beside the rows:
 
-<img alt="One feature on the board, the other hidden by its chip: a research ticket and a prototype ticket claimed, two blocked slices, a proposed ticket in its own group; the cursor on a ticket expanded to the question it asks, and the feature's dependency graph beside the rows with that ticket marked" src="assets/board-feature.png">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/board-feature.png">
+  <img alt="One feature on the board, the other hidden by its chip: a blocked slice opened to the question it asks with the detail under it, what to build, and its acceptance criteria as a checklist; the frontier, a claimed research ticket, the remaining blocked slice and a proposed ticket below it, and the feature's dependency graph beside the rows" src="assets/board-feature-light.png">
+</picture>
 
 </details>
 
