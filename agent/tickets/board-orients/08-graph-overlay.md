@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 blocked-by: [07]
 priority: 3
 size: S
