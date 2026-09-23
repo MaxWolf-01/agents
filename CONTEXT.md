@@ -72,6 +72,30 @@ _Avoid_: needs ruling, pending, awaiting approval, done
 The user's answer on what a ticket built, made on its review page and demo: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
+**Question**:
+A decision only the user can make, held on the ticket it belongs to and open until the answer is recorded under it.
+_Avoid_: ask, call (a call is a spec's decision), needs-human entry, queue item
+
+**Needs me**:
+The board's group for every ticket waiting on the user: a build to rule on, a ticket stopped on a question, a near design session.
+_Avoid_: needs my review, needs human, inbox
+
+**Brief**:
+The few sentences under a ticket's name that tell the user, reading cold, what the ticket is and why it matters.
+_Avoid_: summary, description, tldr
+
+**Briefing**:
+The board's own account of where the tracker stands and what to take up next, written by a model.
+_Avoid_: brief (a ticket's), digest, status report
+
+**Priority**:
+The agent's reading of how soon a ticket matters to the user, from now to someday.
+_Avoid_: urgency, rank, importance
+
+**Size**:
+How much of the user's time a ticket will take, never the agent's.
+_Avoid_: effort, estimate, points
+
 **Board**:
 The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
 _Avoid_: dashboard
@@ -87,7 +111,7 @@ _Avoid_: deprecation notice, banner
 ### Dispatch
 
 **Orchestrator**:
-The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that writes `done` on the user's accept.
+The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that marks a ticket done on the user's accept.
 _Avoid_: dispatcher, coordinator, parent
 
 **Worker**:
