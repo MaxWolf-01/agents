@@ -1864,6 +1864,12 @@ def test_the_briefing_the_cache_holds_is_what_the_board_shows_with_the_time_it_w
     assert "21 Sep 09:30" in said, "the board shows when the briefing was written"
     assert "waits on you." not in said, "the board's own count stands in only until a session writes one"
     assert absences(page, "model") == 0, "a briefing already written is no absence whatever the machine has now"
+    # the mark's own words, which are what the user is told the cadence is (the every-mark-explains
+    # -itself Property, disposed reviewed): the numbers are the schedule's own, the sentence is not
+    tip = re.search(r'class="bwhen" title="([^"]*)"', page)
+    assert tip and "status" in tip.group(1), "the hover words do not say that a status is what reaches the session"
+    assert f"{QUIET.seconds // 60} minutes" in tip.group(1) and f"{CADENCE.seconds // 60} minutes" in tip.group(1), \
+        "the hover words do not carry both windows"
 
 
 def test_a_watched_board_re_renders_on_a_briefing_the_session_rewrote(
@@ -1890,37 +1896,66 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """The watcher's own reason to exist, which the pass above leaves out: a ticket file moves and
-    the page follows it. Only a status moving is the session's business, though (the user's rule,
-    2026-09-23): a ticket filed is a status appearing, and prose rewritten is a render and no more.
-    """
+    the page follows it. Only a status moving is the session's business, though (the spec's
+    Decisions under "The board briefing"): a ticket filed or retired is a status appearing or going,
+    prose rewritten is a render and no more, and a status that goes back to what the session was
+    last told leaves nothing to tell.
+
+    Both halves of the tracker are moved, since `statuses` reads the features and the standalone
+    tickets in two comprehensions and a board is mostly features."""
     out = tmp_path / "board.html"
     when = datetime.now().astimezone()  # a briefing already written, so the opening pass arms nothing
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
     render(tracker_roots(tracker), repo, out)  # as main() does before it starts watching
-    watching, session = Seen(), board.Briefer(repo, out)
-    watching = look(watching, session, tracker, repo, out)
-    rendered = out.stat().st_mtime_ns
+    watching, session = [Seen()], board.Briefer(repo, out)
+    watching[0] = look(watching[0], session, tracker, repo, out)
     assert session.changed_at is None, "the opening pass has nothing to tell the session about"
+    assert watching[0].statuses == render(tracker_roots(tracker), repo, out), \
+        "the baseline the first pass read is not the tracker the board draws"
 
-    ticket(tracker / "new-chore.md", "open")
-    watching = look(watching, session, tracker, repo, out)
-    assert out.stat().st_mtime_ns != rendered, "a ticket filed under the tracker never reached the page"
-    assert "standalone-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
-    told = session.changed_at
-    assert told is not None, "the briefing session was never told a ticket was filed"
-
-    rendered = out.stat().st_mtime_ns
     chore = tracker / "new-chore.md"
-    chore.write_text(chore.read_text().replace("the `suite` is slow", "the `suite` is slow, and flaky with it"))
-    watching = look(watching, session, tracker, repo, out)
-    assert out.stat().st_mtime_ns != rendered, "a ticket rewritten never reached the page"
-    assert session.changed_at == told, "prose rewritten was sent to the session as a change"
+    # the feature is read from the worktree on its own branch, which is where a worker flips a status
+    second = repo.parent / "wt" / "agent" / "tickets" / FEAT / "02-second.md"
+    assert moved(watching, session, tracker, repo, out, lambda: ticket(chore, "open")), \
+        "the briefing session was never told a ticket was filed"
+    assert "standalone-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
+    assert not moved(watching, session, tracker, repo, out,
+                     lambda: ticket(chore, "open", brief="The `suite` is slow, and flaky with it.")), \
+        "prose rewritten was sent to the session as a change"
+    assert moved(watching, session, tracker, repo, out, lambda: ticket(second, "claimed")), \
+        "a feature ticket claimed was never sent to the session"
+    assert moved(watching, session, tracker, repo, out, chore.unlink), \
+        "a ticket retired was never sent to the session"
 
-    rendered = out.stat().st_mtime_ns
-    chore.write_text(chore.read_text().replace("status: open", "status: claimed"))
-    look(watching, session, tracker, repo, out)
-    assert out.stat().st_mtime_ns != rendered, "a ticket claimed never reached the page"
-    assert session.changed_at != told, "the briefing session was never told a status moved"
+
+def test_a_status_that_goes_back_to_what_the_session_was_told_leaves_nothing_to_tell() -> None:
+    """A ticket claimed and unclaimed inside one window: the board re-renders twice and the session
+    is owed nothing, since what it holds is what the tracker says again. The other half of the same
+    rule is that a pass where no status moved leaves the quiet window where it was, so prose
+    rewritten every minute cannot hold a pending change open for ever."""
+    at = datetime.now().astimezone()
+    told = (("feat-a/02", "open"), ("small-chore", "open"))
+    session = board.Briefer(Path("."), Path("board.html"), told=(), told_statuses=told)
+
+    session.saw(claimed := (("feat-a/02", "claimed"), ("small-chore", "open")), told, at)
+    assert session.changed_at == at, "a status that moved never started the quiet window"
+    session.saw(claimed, claimed, at + timedelta(minutes=3))
+    assert session.changed_at == at, "a pass that moved no status started the quiet window again"
+    session.saw(told, claimed, at + timedelta(minutes=4))
+    assert session.changed_at is None, "the tracker is back where the session left it, and it was told anyway"
+
+
+def moved(
+    watching: list[Seen], session: "board.Briefer", tracker: Path, repo: Path, out: Path, change: Callable[[], None]
+) -> bool:
+    """Make one change under the tracker, run a pass of the watcher over it, and answer whether the
+    briefing session was told a status moved. The page is re-rendered either way, which is asserted
+    here so that every caller reads as the one thing it is about."""
+    rendered, told = out.stat().st_mtime_ns, session.changed_at
+    change()
+    watching[0] = look(watching[0], session, tracker, repo, out)
+    assert out.stat().st_mtime_ns != rendered, "a change under the tracker never reached the page"
+    return session.changed_at != told
 
 
 def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
@@ -2003,7 +2038,7 @@ def test_githubs_answer_arms_the_watchers_clock_once_per_answer() -> None:
     assert not run_out(None, None), "and a board that has asked nothing has no clock to run out"
 
 
-def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_until_it_answers(
+def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_until_it_answers(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """The watcher's side of the schedule, driven a tick at a time with claude stubbed: the first
@@ -2016,31 +2051,40 @@ def test_the_watcher_runs_the_model_once_a_window_and_keeps_what_it_was_told_unt
     at = datetime.now().astimezone()
     watcher = board.Briefer(repo, out)
 
-    watcher.opened(tracker_snapshot(roots, repo), at)
-    watcher.tick(roots, tracker_snapshot(roots, repo), at)
+    statuses = board.statuses(*board.loaded(roots, board.Diffviews(roots.main.parent / "diffviews", None)))
+    watcher.opened(tracker_snapshot(roots, repo), statuses, at)
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at)
     watcher.running.join(30)
     assert len(runs(claude)) == 1, "the change the watcher opened on starts one run"
     written = Briefing.read(cache_path(out))
     assert written and (written.text, written.session, written.pings) == (said["result"], "abc-123", 0)
     told = watcher.told
 
-    watcher.changed(at + timedelta(minutes=1))
-    watcher.tick(roots, tracker_snapshot(roots, repo), at + timedelta(minutes=1))
-    assert len(runs(claude)) == 1, "a change inside the window waits it out"
-    watcher.tick(roots, tracker_snapshot(roots, repo), at + QUIET + timedelta(minutes=1))
-    assert len(runs(claude)) == 1, "the tracker went quiet, but the last briefing is minutes old"
+    watcher.saw(statuses + (("feat-a/09", "open"),), statuses, at + timedelta(minutes=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + timedelta(minutes=1))
+    assert len(runs(claude)) == 1, "a change inside the quiet window waits it out"
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + QUIET + timedelta(minutes=1))
+    assert len(runs(claude)) == 1, "a run inside the cadence of the last one is not tried again (Briefer.tried)"
 
     path_with("claude", "echo '{\"is_error\": true}'")  # a login that has lapsed, a run past its limit
     (tracker / "small-chore.md").write_text("---\nstatus: done\n---\n\n# A chore\n")
     # stamped while the session was exploring: a run's clock is read before it starts, so a change
-    # landing during one reads as a change it has not heard, and the window after is when it does
-    watcher.changed(written.last_activity + timedelta(seconds=1))
-    watcher.tick(roots, tracker_snapshot(roots, repo), at + CADENCE + timedelta(seconds=1))
+    # landing during one reads as a change it has not heard, and the cadence after is when it does
+    watcher.saw(statuses + (("small-chore", "done"),), statuses, written.last_activity + timedelta(seconds=1))
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + CADENCE + timedelta(seconds=1))
     watcher.running.join(30)
-    assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the window after it"
-    assert f"--resume {written.session}" in runs(claude)[1], "the window's change started a fresh exploration"
+    assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the cadence after it"
+    assert f"--resume {written.session}" in runs(claude)[1], "the cadence's change started a fresh exploration"
     assert Briefing.read(cache_path(out)) == written, "a run that answered nothing writes nothing"
     assert watcher.told == told, "what the session was told about waits for the run that reaches it"
+
+    # and the run that answered nothing is tried again a cadence later, not on every pass after it
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + CADENCE + timedelta(seconds=30))
+    assert len(runs(claude)) == 2, "a run that answered nothing was retried on the next pass"
+    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + 2 * CADENCE + timedelta(seconds=2))
+    watcher.running.join(30)
+    assert len(runs(claude)) == 3, "a run that answered nothing was never retried"
+
     cache_path(out).unlink()  # and with no briefing to fall back on, the page says why there is none
     render(tracker_roots(tracker), repo, out)
     assert absences(out.read_text(), "model") == 1

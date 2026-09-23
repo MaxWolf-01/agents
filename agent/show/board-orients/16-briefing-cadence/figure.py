@@ -5,8 +5,8 @@
 # ///
 """Write figure.html beside this file: what forty minutes of a tracker cost the briefing, before and after.
 
-One run of events -- a build ruled on, a ticket reworded, a ticket claimed, then a closing comment
-written over twenty minutes -- driven through each version of the schedule and drawn as two lanes.
+One run of events, a build ruled on, a ticket reworded, a ticket claimed, then a closing comment
+written over twenty minutes, driven through each version of the schedule and drawn as two lanes.
 The `before` lane is the rule as this branch was cut from it, read out of git and run, so it is what
 the board did rather than an account of it; the `after` lane is the rule the user ruled on
 2026-09-23. Every mark on either lane is a run of the model.
@@ -21,6 +21,8 @@ import datetime
 import importlib.util
 import subprocess
 import sys
+import tempfile
+import types
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -31,7 +33,7 @@ HERE = Path(__file__).resolve().parent
 TRACKER = HERE.parents[3] / "mx" / "skills" / "tracker"
 sys.path.insert(0, str(TRACKER))
 
-import briefing as ruled  # noqa: E402
+import briefing  # noqa: E402
 
 START = datetime.datetime.fromisoformat("2026-09-23T09:00:00+02:00")
 SPAN = 40  # minutes drawn
@@ -41,8 +43,27 @@ EVENTS = {2: ("status", "02 accepted"), 4: ("prose", "04 reworded"), 11: ("statu
 COMMENT = range(16, 40, 4)  # a worker writing its closing comment: an edit every four minutes
 COMMENT_SAID = "a closing comment written: an edit every four minutes, no status moving"
 
+
+def kind_at(minute: int) -> str | None:
+    """What happens to the tracker at this minute, if anything: a status moving, or prose rewritten."""
+    if minute in EVENTS:
+        return EVENTS[minute][0]
+    return "prose" if minute in COMMENT else None
+
 X0, PER, TOP = 240, 20, 112  # the axis: where minute 0 sits, a minute's width, the axis line
-LANES = {"before": 200, "after": 292}  # where each lane's line sits
+@dataclass(frozen=True)
+class Lane:
+    """One rule's lane: where its line sits, and the two lines of the rule it draws."""
+
+    y: int
+    rule: str
+    under: str
+
+
+LANES = {
+    "before": Lane(200, "any edit under the tracker,", "five minutes apart"),
+    "after": Lane(292, "a status moving, five quiet", "minutes and ten apart"),
+}
 WIDE, HIGH = 1100, 436
 
 
@@ -56,7 +77,7 @@ class Args:
 
 def main(args: Args) -> None:
     was = schedule_at(args.before)
-    lanes = {"before": drive(was, prose_counts=True), "after": drive(ruled, prose_counts=False)}
+    lanes = {"before": drive(was, prose_counts=True), "after": drive(briefing, prose_counts=False)}
     args.out.write_text(page(lanes, args.before))
     print(args.out)
 
@@ -64,17 +85,20 @@ def main(args: Args) -> None:
 # ---- the two schedules, driven ---------------------------------------------
 
 
-def schedule_at(commit: str) -> object:
-    """The briefing's schedule as `commit` had it, imported from git rather than described."""
+def schedule_at(commit: str) -> types.ModuleType:
+    """The briefing's schedule as `commit` had it, read out of git and imported, so the `before`
+    lane is the rule that ran rather than an account of it."""
     src = subprocess.run(["git", "-C", str(HERE), "show", f"{commit}:mx/skills/tracker/briefing.py"],
                          capture_output=True, text=True, check=True).stdout
-    spec = importlib.util.spec_from_loader("briefing_before", loader=None)
+    kept = Path(tempfile.mkdtemp()) / "briefing_before.py"
+    kept.write_text(src)
+    spec = importlib.util.spec_from_file_location("briefing_before", kept)
     module = importlib.util.module_from_spec(spec)
-    exec(src, module.__dict__)  # noqa: S102 -- the repo's own file, at a commit this repo holds
+    spec.loader.exec_module(module)
     return module
 
 
-def drive(schedule: object, prose_counts: bool) -> list[int]:
+def drive(schedule: types.ModuleType, prose_counts: bool) -> list[int]:
     """The minutes this schedule wrote a briefing in, over the run of events above.
 
     The board opens on a tracker with no briefing, which is a change either way, and every later
@@ -82,7 +106,7 @@ def drive(schedule: object, prose_counts: bool) -> list[int]:
     cached, changed_at, runs = None, START, []
     for minute in range(SPAN + 1):
         now = START + timedelta(minutes=minute)
-        kind = EVENTS.get(minute, ("prose", ""))[0] if minute in EVENTS or minute in COMMENT else None
+        kind = kind_at(minute)
         if kind and (prose_counts or kind == "status"):
             changed_at = now
         verb = schedule.on_change(cached, changed_at, now)
@@ -124,18 +148,18 @@ def ticks() -> list[str]:
     prose was rewritten."""
     drawn = []
     for minute in sorted({*EVENTS, *COMMENT}):
-        kind = EVENTS.get(minute, ("prose", ""))[0]
+        kind = kind_at(minute)
         dash = '' if kind == "status" else ' stroke-dasharray="4,4"'
         stroke = "var(--body)" if kind == "status" else "var(--edge)"
-        drawn.append(f'<line x1="{x(minute)}" y1="{TOP - 16}" x2="{x(minute)}" y2="{LANES["after"] + 24}" '
+        drawn.append(f'<line x1="{x(minute)}" y1="{TOP - 16}" x2="{x(minute)}" y2="{LANES["after"].y + 24}" '
                      f'stroke="{stroke}" stroke-width="1"{dash}/>')
     return drawn
 
 
 def lane_lines() -> list[str]:
     drawn = [f'<line x1="{x(0)}" y1="{TOP}" x2="{x(SPAN)}" y2="{TOP}" stroke="var(--edge)" stroke-width="1"/>']
-    for y in LANES.values():
-        drawn.append(f'<line x1="{x(0)}" y1="{y}" x2="{x(SPAN)}" y2="{y}" stroke="var(--muted)" stroke-width="1.2"/>')
+    for lane in LANES.values():
+        drawn.append(f'<line x1="{x(0)}" y1="{lane.y}" x2="{x(SPAN)}" y2="{lane.y}" stroke="var(--muted)" stroke-width="1.2"/>')
     return drawn
 
 
@@ -144,7 +168,7 @@ def runs(lanes: dict[str, list[int]]) -> list[str]:
     drawn = []
     for name, minutes in lanes.items():
         for minute in minutes:
-            drawn.append(f'<circle cx="{x(minute)}" cy="{LANES[name]}" r="7" fill="var(--wash)" '
+            drawn.append(f'<circle cx="{x(minute)}" cy="{LANES[name].y}" r="8" fill="var(--wash)" '
                          f'stroke="var(--accent)" stroke-width="1.2"/>')
     return drawn
 
@@ -160,33 +184,34 @@ def labels(lanes: dict[str, list[int]]) -> list[str]:
                           "event" if kind == "status" else "quiet"))
     drawn.append(text(x(COMMENT[0]), TOP - 28, COMMENT_SAID, "quiet"))
     for name, minutes in lanes.items():
-        y = LANES[name]
-        drawn.append(text(24, y - 16, name, "name"))
-        drawn.append(text(24, y + 4, SAID[name], "role"))
-        drawn.append(text(24, y + 24, UNDER[name], "role"))
-        drawn.append(text(24, y + 46, f"{len(minutes)} runs of the model", "meta"))
+        lane = LANES[name]
+        drawn.append(text(24, lane.y - 16, name, "name"))
+        drawn.append(text(24, lane.y + 4, lane.rule, "role"))
+        drawn.append(text(24, lane.y + 24, lane.under, "role"))
+        drawn.append(text(24, lane.y + 44, f"{len(minutes)} runs of the model", "meta"))
     return drawn
 
 
-SAID = {
-    "before": "any edit under the tracker,",
-    "after": "a status moving, five quiet",
-}
-UNDER = {  # the second line of a lane's role, which does not fit on one
-    "before": "five minutes apart",
-    "after": "minutes and ten apart",
-}
+
+
+MONO = 7.25  # the width of one character of the mono at 12px, which is what a legend label is set in
+GAP = 40  # between one legend item and the next
 
 
 def legend() -> list[str]:
-    y = HIGH - 40
+    """The strip under the hairline, each item placed from the width of the one before it rather
+    than by eye."""
+    y, at = HIGH - 40, 24
     drawn = [f'<line x1="24" y1="{y - 28}" x2="{WIDE - 24}" y2="{y - 28}" stroke="var(--edge)" stroke-width="1"/>']
-    drawn.append(f'<circle cx="32" cy="{y - 4}" r="7" fill="var(--wash)" stroke="var(--accent)" stroke-width="1.2"/>')
-    drawn.append(text(48, y, "a run of the model", "meta"))
-    drawn.append(f'<line x1="228" y1="{y - 14}" x2="228" y2="{y + 6}" stroke="var(--body)" stroke-width="1"/>')
-    drawn.append(text(240, y, "a ticket's status moved", "meta"))
-    drawn.append(f'<line x1="468" y1="{y - 14}" x2="468" y2="{y + 6}" stroke="var(--edge)" stroke-width="1" stroke-dasharray="4,4"/>')
-    drawn.append(text(480, y, "a ticket's prose edited", "meta"))
+    for mark, said in (("run", "a run of the model"), ("status", "a ticket's status moved"), ("prose", "a ticket's prose edited")):
+        if mark == "run":
+            drawn.append(f'<circle cx="{at + 8}" cy="{y - 4}" r="8" fill="var(--wash)" stroke="var(--accent)" stroke-width="1.2"/>')
+        else:
+            dash = '' if mark == "status" else ' stroke-dasharray="4,4"'
+            stroke = "var(--body)" if mark == "status" else "var(--edge)"
+            drawn.append(f'<line x1="{at + 8}" y1="{y - 16}" x2="{at + 8}" y2="{y + 8}" stroke="{stroke}" stroke-width="1"{dash}/>')
+        drawn.append(text(at + 24, y, said, "meta"))
+        at += 24 + round(len(said) * MONO / 4) * 4 + GAP
     return drawn
 
 
@@ -200,6 +225,12 @@ TEMPLATE = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>the briefing's cadence, before and after</title>
+  <script>
+    // before the first paint, so a screenshot of ?theme=night never catches the day scheme
+    const asked = new URLSearchParams(location.search).get("theme")
+    document.documentElement.dataset.theme =
+      (asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches) ? "night" : "day"
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -251,21 +282,18 @@ TEMPLATE = """<!doctype html>
       </button>
     </div>
     <p class="lead">Forty minutes of one tracker, driven through both schedules: two tickets change
-      status, a brief is reworded, and a worker writes a closing comment. The briefing was rewritten
+      status, a brief is reworded, and a worker writes a closing comment. The briefing session ran
       {before} times under the rule as it was, and {after} under the one ruled on 2026-09-23.</p>
     <p class="meta">the before lane is mx/skills/tracker/briefing.py at {commit}, imported from git and run;
       the after lane is the same file on this branch</p>
     {figure}
   </div>
   <script>
-    const root = document.documentElement
-    const asked = new URLSearchParams(location.search).get("theme")
-    const set = (night) => {{
-      root.dataset.theme = night ? "night" : "day"
+    document.getElementById("scheme").addEventListener("click", () => {{
+      const night = document.documentElement.dataset.theme !== "night"
+      document.documentElement.dataset.theme = night ? "night" : "day"
       document.getElementById("scheme").setAttribute("aria-label", night ? "switch to day" : "switch to night")
-    }}
-    document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
-    set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches)
+    }})
   </script>
 </body>
 </html>

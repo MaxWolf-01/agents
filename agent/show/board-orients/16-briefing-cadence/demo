@@ -32,11 +32,10 @@ import io
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -96,11 +95,11 @@ def clock(work: Path, repo: Path) -> None:
 
     say("the tracker under the board", f"{tickets}\nthe board it renders: {out}")
     say("the windows the watcher holds to (mx/skills/tracker/briefing.py)",
-        f"a ping waits {mins(briefing.QUIET)} minutes after the last status to move, and no briefing is written\n"
-        f"sooner than {mins(briefing.CADENCE)} minutes after the one before it; the session retires after "
+        f"a ping waits {mins(briefing.QUIET)} minutes after the last status to move, and no run of the session\n"
+        f"is started sooner than {mins(briefing.CADENCE)} minutes after the one before it; it retires after "
         f"{briefing.IDLE.seconds // 3600} h idle or {briefing.PING_CAP} pings")
 
-    print(f"\n{'─' * 100}\nthe clock: what each pass of the watcher did\n{'─' * 100}")
+    print(heading("the clock: what each pass of the watcher did"))
     print(f"{'min':>4}  {'what happened to the tracker':<44}{'the page':<10}{'the session'}")
     seen, session, page, told = board.Seen(), board.Briefer(repo, out), 0, None
     for minute in range(MINUTES):
@@ -114,13 +113,14 @@ def clock(work: Path, repo: Path) -> None:
         launched = read(runs)[before:]
         drawn = out.stat().st_mtime_ns if out.exists() else 0
         did = "rendered" if drawn != page else ""
-        page, moved, told = drawn, session.changed_at != told, session.changed_at
+        moved = session.changed_at != told
+        page, told = drawn, session.changed_at
         print(f"{minute:>4}  {happened or '':<44}{did:<10}{account(launched, moved, at.now, session)}")
 
     print("\nMinute 1 is the briefing written at 0 reaching the page: the watcher re-renders on the cache\n"
           "file beside it as well as on the tracker. Minutes 3 to 9 and 12 to 19 are the two windows: the\n"
-          "tracker has to go five minutes without a status moving, and the last briefing has to be ten\n"
-          "minutes old. Minute 4 is the one the rule is for: prose is a render and nothing else.")
+          "tracker has to go five minutes without a status moving, and the last run of the session has to\n"
+          "be ten minutes back. Minute 4 is the one the rule is for: prose is a render and nothing else.")
     say("what the watcher launched, as it ran it (the stub recorded its own arguments)",
         "\n\n".join(elide(line) for line in read(runs)))
     say("what each ping told the session, in the words it was told them in",
@@ -128,6 +128,7 @@ def clock(work: Path, repo: Path) -> None:
         "among them; what decides whether a ping goes at all is the status.")
     say("the cache file beside the board", briefing.cache_path(out).read_text())
     print(f"\nThe board this left behind, with the last briefing at the head of its side column: {out}")
+    opened(out)
 
 
 def account(launched: list[str], moved: bool, now: datetime.datetime, session: board.Briefer) -> str:
@@ -245,27 +246,30 @@ def launch(work: Path, repo: Path) -> None:
     )
     os.environ.update({"CLAUDE_CONFIG_DIR": str(config), "ANTHROPIC_API_KEY": "recorded-not-sent"})
 
-    print(f"\n{'─' * 100}\nthe launch: the request a real run sends, captured\n{'─' * 100}")
+    print(heading("the launch: the request a real run sends, captured"))
     print(f"An output style is planted in {config},\nwhere the user's own would be read from, and three runs go to a recorder on localhost: the\n"
           "briefing as the board launches it, the same with its settings emptied, and a bare run of\n"
           "the model, which is what this machine gives a launch that says nothing about either.\n"
           "A run names its own session in a request of its own, which carries no tools; the one read\n"
           "here is the agent's, which carries them.\n")
     noise = io.StringIO()  # the recorder answers every run with an error, which each one says on its own stderr
-    with recorder(work) as captured, contextlib.redirect_stderr(noise):
+    with recorder() as captured, contextlib.redirect_stderr(noise):
         for name, file, launched in (
             ("the briefing, as the board launches it", "as-the-board-does", lambda: briefing.first(STATE, repo, board.now())),
             ("the briefing, with its settings emptied", "with-nothing-said", lambda: emptied(repo)),
             ("a bare run of the model on this machine", "as-the-machine-has-it", lambda: bare(repo)),
         ):
             request = capture(launched, work / f"{file}.json", captured)
-            style = CANARY in json.dumps(request)
+            style, briefed = CANARY in json.dumps(request), file != "as-the-machine-has-it"
             say(
                 f"{name}: {request.get('model')}, effort {request.get('output_config', {}).get('effort')}",
                 f"the planted output style is {'in the request' if style else 'nowhere in the request'}"
                 f" ({len(json.dumps(request)) // 1024} KB, {len(request.get('system') or [])} system blocks,"
                 f" {len(request.get('tools') or [])} tools)",
             )
+            assert request.get("model") == briefing.MODEL, f"{name}: the model is not the one the briefing runs on"
+            assert request.get("output_config", {}).get("effort") == briefing.EFFORT, f"{name}: the effort is not the briefing's"
+            assert style != briefed, f"{name}: the planted output style is on the wrong side of the comparison"
     print(
         "\nRead across the three: what this machine would put in a run is in the third and in neither\n"
         "of the briefing's, because the briefing replaces the system prompt the style is written into.\n"
@@ -295,20 +299,21 @@ def bare(repo: Path) -> None:
                     "--output-format", "json"], cwd=repo, capture_output=True, text=True, timeout=briefing.RUN_LIMIT)
 
 
-def capture(launch: "Callable[[], object]", keep: Path, captured: list[dict]) -> dict:
+def capture(run_it: Callable[[], object], keep: Path, captured: list[dict]) -> dict:
     """One launch at the recorder, and the request that carried the agent's own turn: a run names
     its session in a request of its own, and that one is given no tools."""
     captured.clear()
-    launch()
+    run_it()
     asked = next((request for request in captured if request.get("tools")), None)
     assert asked, f"the run sent no request carrying tools ({len(captured)} captured)"
     keep.write_text(json.dumps(asked, indent=1))
     return asked
 
 
-def recorder(work: Path):
-    """A server on localhost standing in for the API: it keeps the first request of each run and
-    answers with an error, so a run costs nothing and comes back at once."""
+@contextlib.contextmanager
+def recorder() -> "Iterator[list[dict]]":
+    """A server on localhost standing in for the API: it keeps every request of each run and answers
+    with an error, so a run costs nothing and comes back at once."""
     captured: list[dict] = []
 
     class Recording(BaseHTTPRequestHandler):
@@ -325,28 +330,24 @@ def recorder(work: Path):
         def log_message(self, *args: object) -> None:
             pass
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = HTTPServer(("127.0.0.1", port), Recording)
-    os.environ["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{port}"
+    server = HTTPServer(("127.0.0.1", 0), Recording)  # port 0: the kernel picks one that is free
+    os.environ["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
     threading.Thread(target=server.serve_forever, daemon=True).start()
-
-    class Running:
-        def __enter__(self) -> list[dict]:
-            return captured
-
-        def __exit__(self, *exc: object) -> None:
-            server.shutdown()
-
-    return Running()
+    try:
+        yield captured
+    finally:
+        server.shutdown()
 
 
 # ---- the printing ---------------------------------------------------------
 
 
+def heading(name: str) -> str:
+    return f"\n{'─' * 100}\n{name}\n{'─' * 100}"
+
+
 def say(name: str, text: str) -> None:
-    print(f"\n{'─' * 100}\n{name}\n{'─' * 100}\n{text.rstrip()}")
+    print(f"{heading(name)}\n{text.rstrip()}")
 
 
 def mins(window: datetime.timedelta) -> int:
@@ -355,6 +356,13 @@ def mins(window: datetime.timedelta) -> int:
 
 def read(path: Path) -> list[str]:
     return path.read_text().splitlines() if path.exists() else []
+
+
+def opened(page: Path) -> None:
+    """Open what the demo produced, where there is a display to open it on: a worker host has none,
+    and runs this for the files."""
+    if os.environ.get("DISPLAY") and shutil.which("xdg-open"):
+        subprocess.Popen(["xdg-open", str(page)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run(*args: object) -> None:

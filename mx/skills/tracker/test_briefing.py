@@ -36,7 +36,10 @@ from briefing import (CADENCE, DENIED, EFFORT, IDLE, MODEL, PING_CAP, QUIET, TOO
                       on_change, ping)
 
 START = datetime.fromisoformat("2026-09-21T09:00:00+02:00")
-RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=90), st.booleans()), min_size=1, max_size=60)
+# Gaps up to 18 minutes over up to 80 ticks: long enough that a session retires on the idle hour over
+# a few quiet ticks, short enough and long enough a run that the drawn runs reach the ping cap, which
+# wider gaps never do (they retire the session first, leaving the Property's cap clause no witness).
+RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=18), st.booleans()), min_size=1, max_size=80)
 
 
 def fresh(at: datetime, n: int) -> Briefing:
@@ -47,11 +50,16 @@ def retired(session: Briefing, now: datetime) -> bool:
     return now - session.last_activity >= IDLE or session.pings >= PING_CAP
 
 
-def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datetime, datetime]]:
+def drive(run: list[tuple[int, bool]], primed: int | None = None) -> list[tuple[str, Briefing | None, datetime, datetime]]:
     """The schedule's answer to each tick of a run, with the state it was asked about: minutes since
     the last tick, and whether a ticket's status changed at this one. A tick with no change yet asks
-    nothing; the watcher has nothing to tell the session about."""
-    answers, session, changed_at, now, n = [], None, None, START, 0
+    nothing; the watcher has nothing to tell the session about.
+
+    `primed` is the pings already spent by the session in the cache file the run starts from, which
+    is what a watcher restarted mid-afternoon reads; None starts from no cache file at all. Without
+    it a drawn run never reaches the ping cap, since it retires sessions on the idle hour long
+    before, and the Property's cap clause has no witness."""
+    answers, session, changed_at, now, n = [], None if primed is None else replace(fresh(START, 0), pings=primed), None, START, 0
     for minutes, changed in run:
         now += timedelta(minutes=minutes)
         if changed:
@@ -68,9 +76,11 @@ def drive(run: list[tuple[int, bool]]) -> list[tuple[str, Briefing | None, datet
     return answers
 
 
-@given(run=RUN)
-def test_the_briefing_session_is_pinged_a_quiet_window_after_a_status_moves_and_never_past_its_idle_hour_or_ping_cap(run: list[tuple[int, bool]]) -> None:
-    for verb, session, changed_at, now in drive(run):
+@given(run=RUN, primed=st.none() | st.integers(min_value=0, max_value=PING_CAP))
+def test_the_briefing_session_is_pinged_a_quiet_window_after_a_status_moves_and_never_past_its_idle_hour_or_ping_cap(
+    run: list[tuple[int, bool]], primed: int | None
+) -> None:
+    for verb, session, changed_at, now in drive(run, primed):
         assert verb in ("ping", "wait", "fresh")
         if verb in ("ping", "fresh") and session is not None:
             assert now - changed_at >= QUIET, "a briefing written while the tracker was still moving"
@@ -80,10 +90,12 @@ def test_the_briefing_session_is_pinged_a_quiet_window_after_a_status_moves_and_
             assert not retired(session, now), "a session past its idle hour or ping cap still pinged"
         if verb == "fresh":
             assert session is None or retired(session, now), "a live session replaced instead of pinged"
+            assert session is None or now - session.last_activity >= CADENCE, "a briefing inside ten minutes of the last"
         if verb == "wait":
             told = session is not None and session.last_activity >= changed_at
-            waiting = now - changed_at < QUIET or now - session.last_activity < CADENCE if session else False
-            assert told or waiting, "a change waiting past both its windows"
+            moving = now - changed_at < QUIET
+            recent = session is not None and now - session.last_activity < CADENCE
+            assert told or moving or recent, "a change waiting past both its windows"
 
 
 def test_a_session_retired_with_nothing_new_to_tell_it_is_left_where_it_is() -> None:
@@ -113,19 +125,32 @@ def test_the_two_windows_hold_a_briefing_back_and_then_let_it_through() -> None:
     assert on_change(wrote, START + timedelta(minutes=9), START + timedelta(minutes=14)) == "ping"
 
 
-def test_the_windows_the_property_is_stated_in_are_the_ones_the_user_ruled() -> None:
-    """The property above reads its windows off the module, so the numbers themselves are checked
-    here: five quiet minutes, a briefing every ten at most, and the idle hour.
+def test_a_session_at_its_ping_cap_is_replaced_by_a_fresh_one_and_no_sooner_than_the_cadence() -> None:
+    """The cap's own worked example, which the drawn runs above reach only now and then: a session
+    that has spent its pings is replaced rather than pinged, and the ten-minute floor governs that
+    replacement too, since a fresh exploration is the dearer of the two runs."""
+    spent = replace(fresh(START, 1), pings=PING_CAP)
+    assert on_change(spent, START + timedelta(minutes=1), START + timedelta(minutes=8)) == "wait", \
+        "a briefing written eight minutes after the last one"
+    assert on_change(spent, START + timedelta(minutes=1), START + timedelta(minutes=11)) == "fresh"
+    assert on_change(replace(spent, pings=PING_CAP - 1), START + timedelta(minutes=1), START + timedelta(minutes=11)) == "ping", \
+        "a session with a ping left explored the repo again instead of being told"
 
-    The user gave no number for the ping cap, only that there is one, so what is checked is the one
-    `briefing.py` gives it in prose beside it, "three hours and twenty minutes of a tracker whose
-    statuses move every window". A cap the schedule can never reach leaves the Property's own clause
-    unfalsifiable, which is what a cap raised "just for now" leaves behind."""
+
+def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
+    """The property above reads its windows off the module, so the numbers themselves are checked
+    here against the spec's Decisions under "The board briefing": five quiet minutes, a briefing
+    every ten at most, the idle hour, and the model and effort a run is launched on.
+
+    The spec gives no number for the ping cap, only that there is one, so what is checked is that a
+    cap the schedule can reach: one it cannot leaves the Property's own clause unfalsifiable, which
+    is what a cap raised "just for now" leaves behind. What a launch really carries to the API, this
+    model included, is read off the wire by the demo in agent/show/board-orients/16-briefing-cadence."""
     assert QUIET == timedelta(minutes=5)
     assert CADENCE == timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)
     assert CADENCE < IDLE, "a session retires before it can be pinged, so the cap is unreachable"
-    assert PING_CAP * CADENCE <= timedelta(hours=4), f"a cap of {PING_CAP} is past the hours beside it"
+    assert (MODEL, EFFORT) == ("claude-opus-5-5", "medium")
 
 
 def answered(said: str) -> str:

@@ -2,8 +2,8 @@
 
 A fresh `claude -p` session explores the repo and writes where things stand and the next picks; the
 board's watcher keeps it current by sending each change of a ticket's status to that same session
-with `--resume`, once the tracker has gone quiet and no sooner than a briefing every ten minutes,
-until the session retires and the next change starts a new one. This holds the cache file the
+with `--resume`, five minutes after the last status to move and no sooner than a briefing every ten
+minutes, until the session retires and the next change starts a new one. This holds the cache file the
 session's state lives in, beside the rendered board, the rule that decides a change's fate, and the
 two runs of the model behind it.
 
@@ -21,15 +21,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 QUIET = timedelta(minutes=5)  # a status change is pinged out once the tracker has been this long without another
-CADENCE = timedelta(minutes=10)  # and no briefing is written sooner than this after the one before it
+CADENCE = timedelta(minutes=10)  # and no run of the session is started sooner than this after the one before it
 # The prompt cache's lifetime, which is what a ping rereads the session's context at: a run of the
 # command below reports its input under `cache_creation.ephemeral_1h_input_tokens` and nothing
 # under the five-minute one, so it is the hour-long cache this is set against.
 IDLE = timedelta(hours=1)
-PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: three hours and twenty minutes of a tracker whose statuses move every window
+PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-MODEL = "claude-opus-5-5"  # what the briefing is written by, and how hard it thinks: ruled 2026-09-23
+MODEL = "claude-opus-5-5"  # what the briefing is written by, and how hard it thinks: the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The list is what the
 # run allows on top of the machine's own settings, which stand whatever it says, so the three that
@@ -102,9 +102,9 @@ def on_change(cached: Briefing | None, changed_at: datetime, now: datetime) -> s
     come round, or retire it and write a "fresh" briefing from a new session. A pure function of the
     cache file's state, the change's time and the clock.
 
-    The two windows are the user's (2026-09-23): a ping waits until nothing has changed status for
-    QUIET, so a dispatch wave that flips four tickets in a minute is one ping, and no briefing is
-    written sooner than CADENCE after the last run of the session, so a tracker moving all afternoon
+    The two windows are the spec's Decisions under "The board briefing": a ping waits until nothing
+    has changed status for QUIET, so a dispatch wave that flips four tickets in a minute is one ping,
+    and no run is started sooner than CADENCE after the last one, so a tracker moving all afternoon
     costs six briefings an hour at most. The same last activity, an hour untouched, retires it.
 
     A change the session already has is what a retired session is read against first: retirement is
@@ -118,9 +118,9 @@ def on_change(cached: Briefing | None, changed_at: datetime, now: datetime) -> s
         return "wait"  # this change reached it already, in the note of an earlier one
     if now - changed_at < QUIET:
         return "wait"  # the tracker is still moving; the ping carries what settles
-    if retired(cached, now):
-        return "fresh"
-    return "wait" if now - cached.last_activity < CADENCE else "ping"
+    if now - cached.last_activity < CADENCE:
+        return "wait"  # the cadence governs a retired session too: a fresh exploration is the dearer run of the two
+    return "fresh" if retired(cached, now) else "ping"
 
 
 def retired(cached: Briefing, now: datetime) -> bool:

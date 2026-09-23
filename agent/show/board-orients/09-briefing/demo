@@ -105,8 +105,8 @@ def main(args: Args) -> None:
     before = board.tracker_snapshot(roots, repo)
     accept(repo)
     note = board.changed_note(before, board.tracker_snapshot(roots, repo), repo)
-    said("what the watcher tells that same session, a window after the change", note)
-    verb = briefing.on_change(first, now(), now() + briefing.DEBOUNCE)
+    said("what the watcher tells that same session, a cadence after the change", note)
+    verb = briefing.on_change(first, now(), now() + briefing.CADENCE)
     assert verb == "ping", f"the schedule would {verb} this change, not ping it"
     pinged = briefing.ping(first, note, repo, now())
     assert pinged, "the model did not answer the ping"
