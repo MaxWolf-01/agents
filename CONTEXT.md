@@ -125,3 +125,7 @@ _Avoid_: mark (the provenance tag on a spec call), xfail, skip
 **Smart zone**:
 The stretch of a context window within which reasoning stays sharp; the limit is a fraction of the window, not a feeling.
 _Avoid_: context budget, token budget
+
+**Session page**:
+The one page a session's answers live on, the questions waiting on the user at its top; the chat reply is only its index.
+_Avoid_: session artifact, transcript, notebook, log
