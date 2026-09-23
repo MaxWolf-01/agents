@@ -73,11 +73,11 @@ The user's answer on what a ticket built, made on its review page and demo: acce
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Ticket question**:
-A decision only the user can make, held on the ticket it belongs to and open until the answer is recorded under it.
+A decision only the user can make, asked on the ticket whose work it holds up.
 _Avoid_: ask, call (a call is a spec's decision), needs-human entry, queue item
 
 **Needs-me group**:
-The board's group for every ticket waiting on the user: a build to rule on, a ticket stopped on a ticket question, a near design session.
+The board's one group for every ticket whose next step is the user's own time.
 _Avoid_: needs my review, needs human, inbox
 
 **Ticket brief**:
@@ -102,7 +102,7 @@ _Avoid_: dashboard
 
 **Row mark**:
 One tag on a board row, carrying a single fact about the ticket for scanning.
-_Avoid_: mark (bare; a spec mark is one too), badge, pill, label
+_Avoid_: badge, pill, label. The bare word is the board's own, where no spec mark is in the room
 
 **Retire**:
 Take a shipped feature's or ticket's record out of the live tracker; history keeps it.

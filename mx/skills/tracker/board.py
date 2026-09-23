@@ -504,7 +504,7 @@ def fallback(features: list["Feature"], standalone: list["Standalone"]) -> str:
     waiting = {
         ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
         ("question wanting a word", "questions wanting a word"): [q for t in mine for q in open_questions(t)],
-        ("design session", "design sessions"): [t for t in mine if asks_word(t) in ("design", "prototype")],
+        ("design session", "design sessions"): [t for t in mine if asks_word(t) in SITS_FOR.values()],
     }
     counts = [
         f"{counted(len(held))} {one if len(held) == 1 else many}" for (one, many), held in waiting.items() if held
@@ -1061,6 +1061,9 @@ TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by the dotfiles' git hook
 
 
+SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
+
+
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
     review, has an open question, or is an unclaimed design or prototype decision at p1 or p2."""
@@ -1068,8 +1071,8 @@ def needs_me(status: str, kind: str | None, priority: int | None, open_question:
         return False
     if status == "review" or open_question:
         return True
-    # the two decision types the user sits for, on a ticket nobody has taken up yet
-    return kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed")
+    # a decision type the user sits for, on a ticket nobody has taken up yet
+    return kind in SITS_FOR and priority in (1, 2) and status in ("open", "proposed")
 
 
 @dataclass(frozen=True)
@@ -1580,7 +1583,6 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 type Row = Ticket | Standalone
 
 
-SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
 WORKED_ALONE = {"research": "research", "legwork": "legwork"}  # the ones an agent takes away and comes back from
 
 

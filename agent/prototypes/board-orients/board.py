@@ -5,6 +5,10 @@
 # ///
 """PROTOTYPE, throwaway (board-orients): the board a returning user reads.
 
+Superseded 2026-09-23 by mx/skills/tracker/board.py, which the spec it settled
+(agent/tickets/board-orients/spec.md) was written from. Kept as the reasoning trail: what it
+groups, names and parses below is the reading the spec replaced, not the board's.
+
 Three variants of the "needs me" shape, one page each (board-A.html, -B, -C), with a
 floating switcher. Briefs, priority and size come from fixture.yaml beside this file;
 sessions from /var/tmp/board-orients-proto/sessions.json (a transcript scan standing in

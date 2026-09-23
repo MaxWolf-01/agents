@@ -17,15 +17,15 @@ All of a ticket's metadata is frontmatter; its body is the H1, the brief, what t
 
 ```yaml
 status: proposed | open | claimed | review | done
-priority: 1 # 1 now, 2 next, 3 soon, 4 later, 5 someday
-size: M # XS | S | M | L | XL, the user's own time on the ticket
+priority: 1 # 1 to 5, below
+size: M # XS to XL, below
 type: grilling # research | prototype | grilling | legwork on a decision ticket; omit on a build ticket
 blocked-by: [01, 02] # ticket numbers within the feature, qualified <feature>/NN, or a standalone ticket's slug; omit when nothing blocks it
 diff: [4f2a91c..8b3ce07] # commit ranges implementing the ticket; omit until the first lands
 gh: [owner/repo#317, owner/other-repo#412] # the pull requests and issues the ticket produced or tracks, as owner/repo#number, in any number of repositories; omit when there are none
 ```
 
-**Priority** is the agent's reading of how soon the ticket matters to the user, set from what they have said and changed when they say so; ranking tickets is never their chore. **Size** is the user's time on the ticket and never the agent's: reading it, trying the demo, deciding, learning. XS is under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions. Both are filled at filing, by whoever files the ticket.
+**Priority** is the agent's reading of how soon the ticket matters to the user, set from what they have said and changed when they say so; ranking tickets is never their chore: 1 now, 2 next, 3 soon, 4 later, 5 someday. **Size** is the user's time on the ticket and never the agent's: reading it, trying the demo, deciding, learning. XS is under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions. Both are filled at filing, by whoever files the ticket.
 
 **The H1 is the ticket's short name**, the few words a board row shows; the sentence a title would carry goes in the brief instead.
 
@@ -64,7 +64,7 @@ A question is open, and shows on the board's needs-me group, until a `Ruled <dat
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the board briefing and the dependency graph beside them. A ticket is in the needs-me group when it is not done and is a build in review, has an open question, or is a design or prototype decision at p1 or p2 that nobody has claimed. The briefing is a `claude -p` session's account of where things stand and what to take up next, which a watching board keeps current. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what it reads and which checkout's copy.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored, like `agent/diffviews/`): the tickets by state, the needs-me group first, with the board briefing and the dependency graph beside them. The needs-me group holds every ticket whose work waits on the user, and a ticket's own row says what it asks of them. The briefing is a `claude -p` session's account of where things stand and what to take up next, which a watching board keeps current. `board`, run from anywhere in the repo, renders it, opens the tab and keeps it current until Ctrl-C; its `--help` says what the page shows, what goes in the needs-me group, what it reads and which checkout's copy.
 
 The human runs `board`; the tab then follows every tracker change on its own. A session renders once, without opening a tab, after it changes tracker state (`board --no-watch --no-open`), so the page on disk is current for whoever opens it next.
 

@@ -970,7 +970,7 @@ def test_a_build_in_review_keeps_the_status_its_checkout_gives_it(built: tuple[P
 
 def test_a_ruling_in_the_tracker_answers_a_question_its_branch_asks(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The board hands out the tracker's path on the clipboard, so that is where the session taking
-    the user's answer writes the `Ruled` line — the branch's copy is the worker's and does not move
+    the user's answer writes the `Ruled` line; the branch's copy is the worker's and does not move
     again until the merge."""
     root, repo, path = built
     ticket(path, "review", priority=1, size="S")
@@ -2291,7 +2291,7 @@ def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_tic
 def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     gh = path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"
-    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731 — an auth probe is not a request for a reference
+    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731; an auth probe is not a request for a reference
     render(tracker_roots(tracker), repo, out)
     assert len(queries()) == 1, "one query per render resolves both references"
     render(tracker_roots(tracker), repo, out)

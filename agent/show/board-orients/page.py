@@ -25,7 +25,7 @@ ROWS = [
     (("show directory", "agent/show/<ticket>/demo, figures"), None, ("opened row", "artefacts · copy path"), ""),
     (("diffview --serve", "agent/diffviews/<ticket>.html"), ("served address", "a page that takes comments"), ("row", "the review page link"), ""),
     (("frontmatter", "blocked-by · gh"), ("blockers · links", "blocked status · dependents"), ("row, groups, graph", "chips · blocked group · graph"), ""),
-    (("everything above", ""), ("needs me", "to rule on · your answer · p1–p2 design"), ("side column", "brief · next · total time"), "accent"),
+    (("everything above", ""), ("needs me", "to rule on · your answer · p1 to p2 design"), ("side column", "brief · next · total time"), "accent"),
     (("fixture.yaml", "prototype only"), ("fills in", "priority · size · brief · name · why · asks"), ("real tickets", "until they carry the fields"), "dashed"),
 ]
 COLS = [(20, 320), (400, 320), (780, 320)]

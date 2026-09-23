@@ -248,7 +248,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         )
         assert not name["cut"], (
             f"{name['row']}: the name {name['text']!r} does not fit the column even with the row to itself"
-            " — a name this long renders truncated until it is edited (the spec's Decisions), so if"
+            ", a name this long renders truncated until it is edited (the spec's Decisions), so if"
             " the fixture meant it, this row wants a shorter H1"
         )
     for mark, tip in seen["tips"].items():

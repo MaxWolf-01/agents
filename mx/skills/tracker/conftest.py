@@ -48,7 +48,7 @@ def transcribed(demo: Demo, monkeypatch: pytest.MonkeyPatch) -> Demo:
 
 @pytest.fixture
 def path_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Path]:
-    """A PATH cut down to KEPT, so the board's optional tools — diffview, gh, the model — are
+    """A PATH cut down to KEPT, so the board's optional tools (diffview, gh, the model) are
     genuinely absent rather than the machine's own. Calling it puts a stub of `name` there that
     records one line per run and answers with `answer`, and returns the file it records into."""
     bin_dir = tmp_path / "path"
