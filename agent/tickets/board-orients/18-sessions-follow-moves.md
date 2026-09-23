@@ -1,7 +1,8 @@
 ---
-status: review
+status: done
 priority: 2
 size: XS
+diff: [74212f1fe06eac36917516d3b7f85a2af2396a1b..b905885989b6be41ca2b14fa037572eb64294560]
 ---
 
 # A moved ticket keeps its sessions
