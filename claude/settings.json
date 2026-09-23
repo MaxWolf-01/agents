@@ -492,6 +492,7 @@
     "keybindings-help": "user-invocable-only",
     "init": "user-invocable-only"
   },
+  "syncClaudeAiSkills": false,
   "worktree": {
     "baseRef": "head"
   },
