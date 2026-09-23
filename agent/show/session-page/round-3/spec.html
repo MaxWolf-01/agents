@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session page: a session&#x27;s answers on one page, the chat reply a link to it · spec page</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #6ea444);
+  --accent-2: light-dark(#674806, #cdb78a);
+  --wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.22));
+  --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+  --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+  --miss: color-mix(in srgb, var(--accent-2) 18%, transparent);
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --size-body: 19px;
+  --leading-body: 1.62;
+  --measure: 38rem;
+  --page: 62rem;
+  --radius: 6px;
+}
+[data-theme="day"] { color-scheme: light; }
+[data-theme="night"] { color-scheme: dark; }
+
+body { margin: 0; background: var(--ground); color: var(--body); font: 400 var(--size-body) / var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+::selection { background: var(--mark); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+a { color: inherit; text-decoration: none; transition: color 150ms; }
+a:hover { color: var(--accent); }
+code, kbd, pre { font-family: var(--font-mono); }
+code { font-size: 0.84em; background: var(--ground-2); padding: 0.08em 0.32em; border-radius: 3px; }
+kbd { display: inline-block; min-width: 1.35em; box-sizing: border-box; padding: 0 0.3em; border: 1px solid var(--edge); border-radius: 3px; background: var(--ground-2); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); text-align: center; }
+p { margin: 0; }
+h1, h2, h3, h4 { margin: 0; }
+.muted { color: var(--muted); }
+.v-title { font-weight: 600; font-size: clamp(1.875rem, 3.5vw, 2.5rem); line-height: 1.12; letter-spacing: -0.022em; color: var(--strong); }
+.v-h2 { font-weight: 600; font-size: 1.3em; line-height: 1.3; letter-spacing: -0.012em; color: var(--strong); }
+.v-h3 { font-weight: 600; font-size: 1.05em; line-height: 1.4; color: var(--strong); }
+.v-small { font-size: 0.92em; line-height: 1.6; }
+.v-meta { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+.v-num { font-family: var(--font-mono); font-size: 0.92em; font-variant-numeric: tabular-nums; }
+
+.prose { max-width: var(--measure); }
+.prose > * + * { margin-top: 0.9em; }
+.prose a, a.inline { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.prose a:hover { text-decoration-color: var(--accent); }
+.prose strong { font-weight: 600; color: var(--strong); }
+.prose > :first-child { margin-top: 0; }
+.prose ul, .prose ol { padding-left: 1.2em; margin-bottom: 0; }
+.prose > ul, .prose > ol { margin-top: 0; }
+.prose > * + ul, .prose > * + ol { margin-top: 0.9em; }
+.prose li + li { margin-top: 0.4em; }
+.prose li::marker { color: var(--muted); }
+.prose blockquote { margin: 0; border-left: 2px solid var(--edge); padding-left: 1.2em; color: var(--muted); }
+.prose pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.6; }
+.prose pre code { background: none; padding: 0; font-size: inherit; }
+
+.page { max-width: var(--page); margin: 0 auto; padding: 0 2rem; box-sizing: border-box; }
+.bar { display: flex; align-items: center; gap: 0.5rem; min-height: 3.25rem; border-bottom: 1px solid var(--edge); }
+.bar .where { flex: 1; }
+.icon { display: inline-flex; align-items: center; padding: 0.3rem; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color 150ms; }
+.icon:hover { color: var(--accent); }
+.icon kbd { font-size: 0.78rem; }
+.icon:hover kbd { color: var(--accent); border-color: var(--accent); }
+[data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
+.button { display: inline-flex; align-items: center; gap: 0.6rem; height: 2.25rem; padding: 0 0.85rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--body); font: 400 0.9rem/1 var(--font-body); cursor: pointer; text-decoration: none; white-space: nowrap; transition: color 150ms, border-color 150ms; }
+.button:hover { border-color: var(--accent); color: var(--accent); }
+.button:hover kbd { color: var(--accent); }
+.button.ghost { border-color: transparent; color: var(--muted); padding: 0 0.5rem; }
+.button.ghost:hover { color: var(--accent); }
+.divider { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 1.75rem; }
+.divider::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
+.missing { color: var(--accent-2); }
+
+.help { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: color-mix(in srgb, var(--strong) 40%, transparent); }
+.help[hidden] { display: none; }
+.help .card { background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.25rem 1.5rem 1rem; min-width: 20rem; }
+.help table { border-collapse: collapse; margin: 0.75rem 0; }
+.help td { padding: 0.3rem 1.5rem 0.3rem 0; font-size: 0.92rem; vertical-align: baseline; }
+.help td:first-child { white-space: nowrap; }
+.toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); max-width: min(40rem, calc(100vw - 3rem)); box-sizing: border-box; padding: 0.5rem 0.9rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); font: 400 0.8rem/1.5 var(--font-mono); color: var(--body); opacity: 0; pointer-events: none; transition: opacity 200ms; overflow-wrap: anywhere; }
+.toast.on { opacity: 1; }
+
+@media (max-width: 50rem) {
+  .page { padding: 0 1.25rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+}
+
+:root { --page: 76rem; --gutter: 5.25rem; }
+.bar #next { margin-right: 0.25rem; }
+.layout { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); column-gap: 2.5rem; align-items: start; }
+.toc { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; box-sizing: border-box; padding: 3.5rem 0 2rem; display: grid; gap: 0.3rem; align-content: start; }
+.toc > .v-meta { margin-bottom: 0.4rem; }
+.toc a { color: var(--muted); display: flex; justify-content: space-between; gap: 0.75rem; line-height: 1.4; padding: 0.1rem 0; }
+.toc a.h3 { padding-left: 0.9rem; }
+.toc a.current, .toc a:hover { color: var(--accent); }
+.toc a code { font-size: 0.8em; }
+.toc .n { font-size: 0.72rem; color: var(--muted); padding-top: 0.15rem; }
+.toc a.current .n { color: var(--accent); }
+
+.doc { padding: 3.5rem 0 6rem var(--gutter); min-width: 0; }
+.doc > .blk, .doc > ul, .doc > ol, .doc > .docmeta, .doc > .since, .doc > .legend { max-width: var(--measure); }
+.doc > .blk + .blk, .doc > .blk + ul, .doc > .blk + ol, .doc > ul + .blk, .doc > ol + .blk, .doc > ul + ul, .doc > ol + ol { margin-top: 1.05em; }
+.doc > .blk.h2 { margin-top: 2.6em; }
+.doc > .blk.h3 { margin-top: 1.9em; }
+.doc > .blk.h2 + .blk, .doc > .blk.h3 + .blk, .doc > .blk.h2 + ul, .doc > .blk.h3 + ul, .doc > .blk.h2 + ol, .doc > .blk.h3 + ol { margin-top: 0.7em; }
+.doc h2 { font-weight: 600; font-size: 1.3em; line-height: 1.3; letter-spacing: -0.012em; color: var(--strong); }
+.doc h3 { font-weight: 600; font-size: 1.05em; line-height: 1.4; color: var(--strong); }
+.doc a:not(.button, .pm) { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.doc strong { font-weight: 600; color: var(--strong); }
+.doc ul, .doc ol { margin: 0; padding-left: 1.3em; }
+.doc li + li { margin-top: 0.55em; }
+.doc li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.doc li > p + p { margin-top: 0.5em; }
+.docmeta { margin-top: 0.9rem; }
+.since { margin-top: 0.1rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1.25rem; margin-top: 0.9rem; padding-bottom: 0.5rem; }
+.lg { display: inline-flex; align-items: center; gap: 0.45rem; }
+.lg i { display: inline-block; width: 2px; height: 0.95rem; border-radius: 1px; }
+.lg.new i { background: var(--accent); }
+.lg.edited i { background: repeating-linear-gradient(var(--accent) 0 3px, transparent 3px 5px); }
+.lg.moved i { background: var(--edge); }
+.lg.removed i { background: var(--accent-2); height: 2px; width: 0.8rem; }
+
+/* change marks: a bar at the text's left edge, a word in the gutter */
+.blk { position: relative; scroll-margin-top: 2rem; }
+.blk:focus { outline: none; }
+.blk.new::before, .blk.edited::before, .blk.moved::before { content: ""; position: absolute; left: var(--bar, -1rem); top: 0.3em; bottom: 0.3em; width: 2px; border-radius: 1px; }
+.blk.new::before { background: var(--accent); }
+.blk.edited::before { background: repeating-linear-gradient(var(--accent) 0 4px, transparent 4px 7px); }
+.blk.moved::before { background: var(--edge); }
+li.blk { --bar: calc(-1rem - 1.3em); }
+.mk { position: absolute; left: var(--mk, calc(-1 * var(--gutter))); width: calc(var(--gutter) - 1.75rem); top: 0.28em; text-align: right; font-size: 0.72rem; line-height: 1.4; }
+li.blk > .mk { --mk: calc(-1 * var(--gutter) - 1.3em); }
+.blk.h1 > .mk, .blk.h2 > .mk { top: 0.55em; }
+span.mk { color: var(--accent); }
+button.mk { padding: 0; border: 0; background: none; cursor: pointer; color: var(--muted); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
+button.mk:hover, button.mk[aria-expanded="true"] { color: var(--accent); text-decoration-color: var(--accent); }
+.blk.cur > .mk { color: var(--accent); }
+.blk.cur::after { content: ""; position: absolute; inset: -0.35rem -0.6rem; border-radius: var(--radius); background: var(--wash-ink); z-index: -1; }
+.doc { position: relative; z-index: 0; }
+
+.was, .gone-body { margin: 0.75rem 0 0.25rem; padding: 0.1rem 0 0.15rem 1rem; border-left: 2px solid var(--edge); font-size: 0.9em; line-height: 1.65; }
+.was > .v-meta, .gone-body > .v-meta { margin-bottom: 0.3rem; font-size: 0.72rem; }
+.wd { color: var(--muted); }
+.wd del { color: var(--accent-2); background: var(--miss); text-decoration: line-through; text-decoration-thickness: 1px; border-radius: 2px; }
+.wd ins { color: var(--strong); background: var(--wash); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 2px; }
+
+.gone { list-style: none; }
+.doc > .gone { margin-top: 0.7em; }
+.gone-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0; border: 0; background: none; cursor: pointer; color: var(--accent-2); font-size: 0.72rem; }
+.gone-btn i { display: inline-block; width: 0.8rem; height: 2px; background: var(--accent-2); border-radius: 1px; }
+.gone-btn:hover, .gone-btn[aria-expanded="true"] { text-decoration: underline; text-underline-offset: 3px; }
+.gone-body { border-left-color: var(--accent-2); color: var(--muted); }
+.gone-body > * + * { margin-top: 0.6em; }
+.gone-body .gone-h { font-weight: 600; }
+.gone-body a { color: inherit; }
+.gone-body .pm, .gone-body .pm.open { color: inherit; background: none; padding: 0; font-weight: 400; pointer-events: none; }
+
+/* provenance marks */
+.pm { font: 400 0.7rem/1.4 var(--font-mono); color: var(--muted); white-space: nowrap; letter-spacing: 0; }
+.pm.long { white-space: normal; }
+.legend a.pm.open { margin-left: auto; }
+.pm.open { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--wash); color: var(--accent); text-decoration: none; font-weight: 500; }
+a.pm.open:hover { background: var(--accent); color: var(--ground); }
+.h2 .pm, .h3 .pm { font-weight: 400; }
+
+/* figures */
+.fig { margin: 1.1rem 0 0.4rem; display: grid; gap: 0.45rem; max-width: none; }
+.fig-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.fig-head .button { height: 1.75rem; font-size: 0.85rem; }
+.frame { border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); overflow: hidden; }
+.frame.sized { height: 72vh; min-height: 26rem; resize: vertical; }
+.frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--ground); }
+.frame img { display: block; max-width: 100%; }
+.fig.missing .ph { border: 1px dashed var(--edge); border-radius: var(--radius); padding: 1.25rem 1.25rem; color: var(--muted); }
+.doc > .blk:has(.fig) { max-width: none; }
+.doc > .blk:has(.fig) > p { max-width: var(--measure); }
+
+.sec-cur::after { content: ""; position: absolute; left: -1rem; top: 0.2em; bottom: 0.2em; width: 2px; background: var(--accent); border-radius: 1px; }
+
+@media (max-width: 62rem) {
+  :root { --gutter: 1.25rem; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .toc { position: static; max-height: none; padding: 2rem 0 0; display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; }
+  .toc > .v-meta { flex-basis: 100%; margin-bottom: 0.2rem; }
+  .toc a.h3 { padding-left: 0; }
+  .toc a { justify-content: flex-start; gap: 0.35rem; }
+  .doc { padding-top: 2rem; }
+  .mk { position: static; display: block; width: auto; text-align: left; margin-bottom: 0.1rem; }
+  .blk.new::before, .blk.edited::before, .blk.moved::before { left: -0.75rem; }
+  li.blk { --bar: calc(-0.75rem - 1.3em); }
+  .sec-cur::after { left: -0.75rem; }
+}
+</style>
+<script>
+(() => {
+  const t = new URLSearchParams(location.search).get("theme")
+  const night = t ? t === "night" : matchMedia("(prefers-color-scheme: dark)").matches
+  document.documentElement.dataset.theme = night ? "night" : "day"
+})()
+</script>
+</head>
+<body>
+<header class="page bar">
+  <span class="v-meta where">spec page · session-page</span>
+  <button class="button ghost" id="next" aria-keyshortcuts="d"><span>next change</span><kbd>d</kbd></button>
+  <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button><button class="icon" id="scheme" aria-label="switch to night">
+    <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+  </button>
+</header>
+<div class="page layout">
+  <nav class="toc" aria-label="contents"><span class="v-meta">contents</span><a class="v-small h2" href="#problem-statement" data-for="problem-statement">Problem Statement<span class="v-num n" title="3 changed blocks">3</span></a><a class="v-small h2" href="#solution" data-for="solution">Solution<span class="v-num n" title="5 changed blocks">5</span></a><a class="v-small h2" href="#user-stories" data-for="user-stories">User Stories<span class="v-num n" title="22 changed blocks">22</span></a><a class="v-small h2" href="#properties" data-for="properties">Properties<span class="v-num n" title="8 changed blocks">8</span></a><a class="v-small h2" href="#decisions" data-for="decisions">Decisions<span class="v-num n" title="34 changed blocks">34</span></a><a class="v-small h3" href="#the-session-page" data-for="the-session-page">The session page<span class="v-num n" title="9 changed blocks">9</span></a><a class="v-small h3" href="#the-turn-record" data-for="the-turn-record">The turn record<span class="v-num n" title="5 changed blocks">5</span></a><a class="v-small h3" href="#the-spec-page" data-for="the-spec-page">The spec page<span class="v-num n" title="4 changed blocks">4</span></a><a class="v-small h3" href="#producing-the-pages" data-for="producing-the-pages">Producing the pages<span class="v-num n" title="10 changed blocks">10</span></a><a class="v-small h3" href="#around-it" data-for="around-it">Around it<span class="v-num n" title="6 changed blocks">6</span></a><a class="v-small h2" href="#testing-decisions" data-for="testing-decisions">Testing Decisions<span class="v-num n" title="1 changed blocks">1</span></a><a class="v-small h2" href="#out-of-scope" data-for="out-of-scope">Out of Scope<span class="v-num n" title="2 changed blocks">2</span></a><a class="v-small h2" href="#fog" data-for="fog">Fog<span class="v-num n" title="2 changed blocks">2</span></a></nav>
+  <main class="doc">
+    <div class="blk h1 edited" id="b0" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was0">edited</button><h1 class="v-title">Session page: a session's answers on one page, the chat reply a link to it</h1><div class="was" id="was0" hidden><p class="v-meta">before this round</p><p class="wd">Session page: a session&#x27;s answers on one page, the chat reply <del>as</del><ins>a</ins> <del>its</del><ins>link</ins> <del>index</del><ins>to it</ins></p></div></div>
+    <p class="v-meta docmeta">draft · agent/tickets/session-page/spec.md</p>
+    <p class="v-meta since">changes since <span title="session-page: spec after round 2, and the session page in the glossary">185d279 · 2026-09-23</span></p>
+    <p class="legend v-meta"><span class="lg new"><i></i>36 new</span> <span class="lg edited"><i></i>28 edited</span> <span class="lg removed"><i></i>14 removed</span> <a class="pm open" href="#b61" title="the first open mark">open: Q7</a></p>
+    <div class="blk h2" id="problem-statement" data-state="same"><h2>Problem Statement</h2></div><div class="blk p edited" id="b2" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was2">edited</button><p>Every answer an agent gives lands in the terminal, and the terminal renders prose, code and diffs as text and nothing else. A figure, a before/after pair side by side or a rendered page cannot show there, so the agent describes what it would have shown, or builds an artifact that opens in a tab of its own and leaves its link in the chat, where it scrolls away with the next turn. A returning user cannot find what a session produced, and with a dozen sessions open cannot tell which pane holds which work.</p>
+<div class="was" id="was2" hidden><p class="v-meta">before this round</p><p class="wd">Every answer an agent gives lands in the terminal, and the terminal renders prose, code and diffs as text and nothing else. A figure, a before/after pair side by side<del>,</del><ins> or</ins> a rendered page<del> or an embedded demo</del> cannot show there, so the agent describes what it would have shown, or builds an artifact that opens in a tab of its own and leaves its link in the chat<del>.</del><ins>,</ins> <del>The</del><ins>where</ins> <del>link</del><ins>it</ins> scrolls away with the next turn. A returning user cannot find what a session produced, and with a dozen sessions open cannot tell which pane holds which work.</p></div></div><div class="blk p edited" id="b3" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was3">edited</button><p>The reply also restates what the artifact shows, so the user reads the same thing twice, and the user reads only the last message of a turn anyway. A line asking them to acknowledge calls that need no decision costs attention and asks for nothing.</p>
+<div class="was" id="was3" hidden><p class="v-meta">before this round</p><p class="wd">The reply also restates what the artifact<del> already</del> shows, so the user reads the same thing twice, and the user reads only the last message of a turn anyway<del>: a long reply is where they stop reading</del>. A line asking them to acknowledge calls that need no decision <del>(&quot;9 calls of mine wait on the page&quot;) </del>costs attention and asks for nothing.</p></div></div><div class="blk p new" id="b4" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><p>The spec has the same problem one level up. It is read on diffview as a markdown diff, where its figures do not show and the design reads as source; the user has never reviewed a spec there, and specs have gone under-reviewed because of it.</p>
+</div><div class="blk h2" id="solution" data-state="same"><h2>Solution</h2></div><div class="blk p new" id="b6" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><p>A session whose answers need more than a line gets one <strong>session page</strong>, opened once in the browser and re-rendered as each turn ends. It is a container: at the top the session's title, a short brief, the command that resumes it, and the questions waiting on the user; below, the turns newest first, each with its headline, the user's message, a short details block and links to the artifacts it produced, older turns collapsed. Artifacts are pages of their own and open in a new tab. The chat reply is one line and the page's link. <span class="pm you">you, r1, r2</span></p>
+</div><div class="blk p new" id="b7" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><p>A feature's spec gets a <strong>spec page</strong>: the spec rendered in the house style with its figures inside it and the current round's changes marked. It replaces diffview as the place a spec is read. <span class="pm you">you, r2</span></p>
+</div><div class="blk p new" id="b8" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><p>Neither page is written by hand. The agent writes plain text files, a turn record shaped like a ticket and the spec as it is today; a renderer turns them into the pages as the turn ends, and every artifact is built by a subagent or a fork. <span class="pm you">you, r2</span></p>
+</div><div class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Solution</p><p>A session whose answers need more than a few lines gets one page, opened once in the browser, that re-renders as the session goes. What needs the user sits at the top; below it the turns run newest first, each carrying its full answer with its artifacts inline, older turns collapsed. The chat reply becomes the page's index: one line on what happened, the link, and each question on one line, answerable from the terminal. The page carries the command that resumes its session, and the board lists every session that touched a ticket, each opening its page. <span class="pm you">you, r1</span></p>
+</div></div><div class="blk p edited" id="b9" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was9">edited</button><p>How the pages fit together, and one turn in order: <a href="pages.html" target="_blank" rel="noopener">pages.html</a>. <span class="pm figure">figure, r3</span></p>
+<figure class="fig"><div class="fig-head"><span class="v-meta">round-3/pages.html</span><a class="button ghost" href="pages.html" target="_blank" rel="noopener">open in its own tab</a></div><div class="frame sized"><iframe data-src="pages.html" title="round-3/pages.html" loading="lazy"></iframe></div></figure><div class="was" id="was9" hidden><p class="v-meta">before this round</p><p class="wd"><del>One turn reaching</del><ins>How</ins> the <del>page</del><ins>pages fit together</ins>,<ins> and one turn</ins> in order: <del>round-2/index</del><ins>pages</ins>.html<del>, section &quot;how a turn reaches the page&quot;</del>. figure, <del>r2</del><ins>r3</ins></p></div></div><div class="blk h2" id="user-stories" data-state="same"><h2>User Stories</h2></div><ol start="1"><li class="blk li new" id="b11" value="1" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the user, I want a turn's artifacts linked from the turn and opening in a new tab, so that each artifact gets the whole window and the session page stays a list I can scan.</li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from User Stories</p><div class="gone-li">As the user reading a turn, I want its figures, before/after pairs and rendered pages inline on one page, so that I see what the agent means instead of reading a description of it.</div></div></li><li class="blk li edited" id="b12" value="2" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was12">edited</button>As the user in the terminal, I want the reply to be one line and the page's link, so that I read the answer once, on the page, after the turn has ended.<div class="was" id="was12" hidden><p class="v-meta">before this round</p><p class="wd">As the user in the terminal, I want the reply to be one line<del>,</del><ins> and</ins> the page&#x27;s link<del> and the questions</del>, so that I <del>can</del><ins>read the</ins> answer <del>without</del><ins>once,</ins> <del>opening</del><ins>on</ins> the <del>browser</del><ins>page,</ins> <del>and open it when I want</del><ins>after</ins> the <del>why</del><ins>turn has ended</ins>.</p></div></li><li class="blk li edited" id="b13" value="3" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was13">edited</button>As the user, I want the questions waiting on me always at the top of the session page, so that I never scroll to find them.<div class="was" id="was13" hidden><p class="v-meta">before this round</p><p class="wd">As the user, I want the questions waiting on me always at the top of the <ins>session </ins>page, so that I never scroll to find them.</p></div></li><li class="blk li edited" id="b14" value="4" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was14">edited</button>As the user, I want only real questions asked, with every call I need not rule on kept out of the reply and out of the top, so that I am never asked to acknowledge something that needs no decision.<div class="was" id="was14" hidden><p class="v-meta">before this round</p><p class="wd">As the user, I want only real questions <del>at the top and in the chat</del><ins>asked</ins>, <del>and</del><ins>with</ins> every call I need not rule on kept <del>in</del><ins>out of</ins> the <del>detail</del><ins>reply and out of the top</ins>, so that I am never asked to acknowledge something that needs no decision.</p></div></li><li class="blk li edited" id="b15" value="5" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was15">edited</button>As the user returning to a session, I want its title, a brief of what it is about, and the turns newest first with the older ones collapsed, so that I know where it stands before reading any turn.<div class="was" id="was15" hidden><p class="v-meta">before this round</p><p class="wd">As the user returning to a session, I want<ins> its title, a brief of what it is about, and</ins> the turns newest first with the older ones collapsed, so that <del>the latest state is what </del>I <del>see</del><ins>know</ins> <del>first</del><ins>where</ins> <del>and</del><ins>it</ins> <del>the</del><ins>stands</ins> <del>history</del><ins>before</ins> <del>is</del><ins>reading</ins> <del>one</del><ins>any</ins> <del>keystroke away</del><ins>turn</ins>.</p></div></li><li class="blk li edited" id="b16" value="6" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was16">edited</button>As the user, I want my own message with each turn, whole, one click away, so that a turn read later says what it answered.<div class="was" id="was16" hidden><p class="v-meta">before this round</p><p class="wd">As the user<del> reading a turn later</del>, I want my <ins>own </ins>message <del>collapsed</del><ins>with</ins> <del>above</del><ins>each</ins> <del>the</del><ins>turn,</ins> <del>answer</del><ins>whole,</ins> <del>it</del><ins>one</ins> <del>got</del><ins>click away</ins>, so that <del>the</del><ins>a</ins> turn<ins> read later</ins> says what it answered.</p></div></li><li class="blk li new" id="b17" value="7" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the user, I want one short details block per turn rather than many folds to open, so that reading a turn takes one look.</li><li class="blk li edited" id="b18" value="8" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was18">edited</button>As the user, I want every part of both pages reachable by keyboard, on the keys diffview uses for the same moves, so that my muscle memory carries over.<div class="was" id="was18" hidden><p class="v-meta">before this round</p><p class="wd">As the user, I want every part of <del>the</del><ins>both</ins> <del>page</del><ins>pages</ins> reachable by keyboard, on the keys diffview uses for the same moves, so that my muscle memory carries over.</p></div></li><li class="blk li new" id="b19" value="9" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the user, I want one key to copy the session's resume command, one to open the spec page, and one per link to open it, so that I never reach for the mouse to act on a turn.</li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from User Stories</p><div class="gone-li">As the user, I want the spec's review page and any other whole page linked as a button that opens its own tab, so that the browser does the window management.</div></div></li><li class="blk li edited" id="b20" value="10" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was20">edited</button>As the user with a dozen sessions open, I want the page to carry its session's resume command, so that I can close panes freely.<div class="was" id="was20" hidden><p class="v-meta">before this round</p><p class="wd">As the user with a dozen sessions open, I want the page to carry its session&#x27;s resume command, <del>copyable, </del>so that I can close panes freely.</p></div></li><li class="blk li edited" id="b21" value="11" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was21">edited</button>As the user on the board, I want each session listed on a ticket to link its session page, and a feature's row to link its spec page, so that I reach a session's work and a feature's design from the work.<div class="was" id="was21" hidden><p class="v-meta">before this round</p><p class="wd">As the user on the board, I want <del>every</del><ins>each</ins> session <del>that</del><ins>listed</ins> <del>touched</del><ins>on</ins> a ticket <del>listed</del><ins>to</ins> <del>on that ticket, each opening</del><ins>link</ins> its session page<ins>,</ins> and <del>offering</del><ins>a feature&#x27;s row to link</ins> its <del>resume</del><ins>spec</ins> <del>command</del><ins>page</ins>, so that I reach a session&#x27;s work <ins>and a feature&#x27;s design </ins>from the work.</p></div></li><li class="blk li" id="b22" value="12" data-state="same">As the user asking a quick question, I want no page to appear, so that a one-line answer stays a one-line answer.</li><li class="blk li new" id="b23" value="13" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the user judging a grilling round, I want the spec as a rendered page with its figures inside and this round's changes marked, so that I review the design itself and not its markdown source.</li><li class="blk li edited" id="b24" value="14" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was24">edited</button>As the user in a grilling, debugging or planning session, I want to decide in front of visuals, so that a round, a hypothesis or a plan is judged as a render.<div class="was" id="was24" hidden><p class="v-meta">before this round</p><p class="wd">As the user in a grilling, debugging or planning session, I want <del>the round&#x27;s figures and questions on the page and the spec&#x27;s delta on diffview, so that I</del><ins>to</ins> decide in front of visuals<ins>,</ins> <del>and</del><ins>so</ins> <del>neither</del><ins>that</ins> <del>surface</del><ins>a</ins> <del>repeats</del><ins>round,</ins> <del>the</del><ins>a</ins> <del>other</del><ins>hypothesis or a plan is judged as a render</ins>.</p></div></li><li class="blk li new" id="b25" value="15" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the agent, I want a turn to be a file shaped like the ticket files I already write, so that no markup of its own has to be taught to every session.</li><li class="blk li new" id="b26" value="16" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the agent, I want to write no HTML at any step, and hand every artifact to a subagent or a fork, so that render loops never fill the session's context.</li><li class="blk li new" id="b27" value="17" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>As the agent, I want a turn record that does not parse sent back to me with the reason, so that a broken record never renders as half a turn.</li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>2 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from User Stories</p><div class="gone-li">As the agent, I want to write a turn's answer as markdown with its figures embedded by path, so that a turn costs what a chat reply costs today and no HTML is written per turn.</div><div class="gone-li">As the agent, I want a small fixed set of blocks (a figure, an embedded page, a before/after pair, a question) and raw HTML where they fall short, so that a turn can show anything while the layout stays the same from turn to turn.</div></div></li><li class="blk li edited" id="b28" value="18" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was28">edited</button>As the agent ending a turn with its answer in the chat and no turn record, I want to be sent back to move it onto the page, so that the terminal never carries the answer by accident.<div class="was" id="was28" hidden><p class="v-meta">before this round</p><p class="wd">As the agent ending a turn with <del>a</del><ins>its</ins> <del>long</del><ins>answer</ins> <del>reply</del><ins>in the chat</ins> and no <del>page</del><ins>turn</ins> <del>body</del><ins>record</ins>, I want to be sent back to move it onto the page, so that the terminal never carries the <del>body</del><ins>answer</ins> by accident.</p></div></li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from User Stories</p><div class="gone-li">As the agent, I want the turn's body reviewed for prose tells as the turn ends, so that the review the chat reply had follows the content onto the page.</div></div></li><li class="blk li" id="b29" value="19" data-state="same">As a later session, I want session pages outside git, so that conversation residue is never read as a tracked artifact.</li></ol><div class="blk h2" id="properties" data-state="same"><h2>Properties</h2></div><ul><li class="blk li edited" id="b31" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was31">edited</button>The top of the session page holds open questions and nothing else; a question a later turn answers or supersedes leaves it.<div class="was" id="was31" hidden><p class="v-meta">before this round</p><p class="wd">The top of the<ins> session</ins> page holds open questions and nothing else; a question <del>answered in </del>a later turn <ins>answers or supersedes </ins>leaves it.</p></div></li><li class="blk li edited" id="b32" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was32">edited</button>A turn's record is the only source of its section, and the session page is regenerated from the records and the transcript alone.<div class="was" id="was32" hidden><p class="v-meta">before this round</p><p class="wd">A turn&#x27;s <del>body file</del><ins>record</ins> is the only source of its section, and the <ins>session </ins>page is regenerated from the <del>bodies</del><ins>records and the transcript</ins> alone.</p></div></li><li class="blk li" id="b33" data-state="same">A session that never needed a page writes nothing under <code>agent/sessions/</code>.</li><li class="blk li new" id="b34" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>A move either page shares with diffview is on diffview's key.</li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Properties</p><div class="gone-li">A key the page binds does what the same key does in diffview wherever diffview binds it.</div></div></li><li class="blk li edited" id="b35" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was35">edited</button>The chat reply of a session that has a page is one line and the page's link.<div class="was" id="was35" hidden><p class="v-meta">before this round</p><p class="wd">The chat reply of a session that has a page <del>carries</del><ins>is</ins> <del>no body: the</del><ins>one</ins> line<del>, the link</del> and the <del>questions</del><ins>page&#x27;s link</ins>.</p></div></li><li class="blk li new" id="b36" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>The main session writes no HTML.</li><li class="blk li new" id="b37" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>The spec page shows every figure the spec links, and marks exactly what changed since the previous round's commit.</li><li class="blk li new" id="b38" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>A turn record that does not parse is sent back and never rendered.</li></ul><div class="blk h2" id="decisions" data-state="same"><h2>Decisions</h2></div><div class="blk h3 new" id="the-session-page" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><h3>The session page</h3></div><ul><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Decisions</p><div class="gone-li"><strong>Two features.</strong> The grid's words (prose, concept figure, concept diff, code listing, code diff, output, output diff) land in <code>/mx:show</code> as a change of their own once <code>figures-and-demos</code> merges; this spec is the page. <span class="pm you">you, r1</span></div></div></li><li class="blk li edited" id="b41" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was41">edited</button><strong>One page per session</strong>, linking into the work's artifacts, not one per feature or ticket: a session's turns belong to it, and a session often spans several tickets or none. <span class="pm you">you, r1</span><div class="was" id="was41" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">One page per session, linking into the work&#x27;s artifacts<ins>,</ins> <del>rather</del><ins>not</ins> <del>than</del><ins>one</ins> per feature or ticket: a session&#x27;s turns belong to it, and a session often spans several tickets or none. you, r1</p></div></li><li class="blk li new" id="b42" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>A container of links.</strong> Artifacts are pages of their own, open in a new tab, and have the full freedom <code>/mx:show</code> gives them; nothing is framed into the session page. <span class="pm you">you, r2</span></li><li class="blk li edited" id="b43" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was43">edited</button><strong>Layout.</strong> Top-down: the session's title, its brief and the resume command, then the open questions, then the turns newest first, the newest open and the older ones collapsed. A turn shows its headline, the user's message whole behind one click, its details block, and its links. <span class="pm you">you, r1, r2</span><div class="was" id="was43" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Layout. Top-down:<ins> the session&#x27;s title, its brief and the resume command, then</ins> the open questions, then the turns newest first, <ins>the newest open and the </ins>older ones collapsed<ins>. A turn shows its headline</ins>,<del> each with</del> the user&#x27;s message <del>collapsed</del><ins>whole</ins> <del>above the answer. Every part keyboard-reachable, on diffview&#x27;s keys where a move has</del><ins>behind</ins> one <del>(j/k between items</del><ins>click</ins>, <del>o/Enter</del><ins>its</ins> <del>to</del><ins>details</ins> <del>open one</del><ins>block</ins>, <del>O</del><ins>and</ins> <del>for</del><ins>its</ins> <del>all, g/G to the ends, ? for the key list, y to copy)</del><ins>links</ins>. you, r1<del>;</del><ins>,</ins> <del>the user&#x27;s message per turn is my call</del><ins>r2</ins></p></div></li><li class="blk li new" id="b44" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>Keys</strong>, diffview's where a move has one: <code>j</code>/<code>k</code> between blocks, <code>o</code>/Enter to open or close one, <code>O</code> for every turn, <code>gg</code>/<code>G</code> to the ends, <code>?</code> for the key list, <code>y</code> to copy the resume command <span class="pm you">you, r2</span>. Moves diffview has no key for take their own: <code>S</code> opens the spec page, <code>1</code> to <code>9</code> the focused turn's links, and on the spec page <code>d</code>/<code>D</code> jump to the next and previous change <span class="pm mine">my call, r3</span>.</li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Decisions</p><div class="gone-li"><strong>The chat reply is the index</strong>: one line, the link, one line per question. <span class="pm you long">you, r1: read from your &quot;today versus proposed&quot; and your strike of the calls line; unconfirmed as a reading</span></div></div></li><li class="blk li edited" id="b45" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was45">edited</button><strong>Only questions ask.</strong> A call that needs the user is a numbered question; every other call is detail, a mark in the spec, and no line asks the user to acknowledge it. <code>/mx:grilling</code>'s end-of-round re-listing of unconfirmed calls leaves the reply. <span class="pm you">you, r1</span><div class="was" id="was45" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Only questions ask. A call that needs the user is a <ins>numbered </ins>question<del> with a number</del>; every other call is detail,<del> on the page and as</del> a mark in the spec, and no line asks the user to acknowledge it. <del>This moves </del>/mx:grilling&#x27;s end-of-round re-listing of unconfirmed calls <del>out of</del><ins>leaves</ins> the reply<del>: the marks stay, the nagging goes</del>. you, r1</p></div></li><li class="blk li new" id="b46" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The chat reply</strong> is one line and the page's link. <span class="pm you long">you, r2: &quot;look at the html thing&quot; once the turn ends; supersedes the index with questions of r1</span></li></ul><div class="blk h3 new" id="the-turn-record" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><h3>The turn record</h3></div><ul><li class="blk li new" id="b48" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>Fields, not a markup.</strong> A turn is <code>turns/NN.md</code> in the shape of a ticket file: frontmatter for what the renderer reads as data (<code>answered</code>, <code>superseded</code>), an H1 that is the turn's headline, and three fixed sections, <code>## Questions</code>, <code>## Links</code>, <code>## Details</code>, any of them absent when the turn has none. A question is written as a ticket's questions are in <code>board-orients</code> (<code>- [Q7] **headline** detail</code>), with its options as sub-items and the pick marked. Details is plain markdown, short. <span class="pm you long">you, r2: structured fields, no DSL; the ticket&#x27;s shape is my call, r3</span> The worked example is this session: <code>agent/prototypes/session-page/sample/</code>.</li><li class="blk li new" id="b49" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>Records are written once and never edited.</strong> A question clears through the frontmatter of the turn that received the answer: <code>answered</code> holds the option's letter, or the user's own words when the answer was neither option; <code>superseded</code> names the question that replaced it. A ticket's question clears through a <code>Ruled</code> line under it instead (<code>board-orients</code>), since a ticket is edited in place. Links in a record are paths from the repo root, which the renderer resolves, so a record reads the same wherever the session directory sits. <span class="pm mine">my call, r3</span></li><li class="blk li new" id="b50" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The session record</strong> is <code>session.md</code> beside the turns: frontmatter with the session id, the repo and the spec's path, an H1 title and a <code>## Brief</code>. The agent writes it when the page is created and rewrites the brief when the session's scope moves. <span class="pm you long">you, r2: a brief of what the session is about; the file is my call, r3</span></li><li class="blk li new" id="b51" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The user's message is not the agent's to write.</strong> The renderer reads it from the session's transcript: the user's own messages and the ones queued mid-turn, whole. <span class="pm you long">you, r2: the full message; my call, r3: from the transcript</span></li></ul><div class="blk h3 new" id="the-spec-page" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><h3>The spec page</h3></div><ul><li class="blk li new" id="b53" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The spec rendered</strong>, in the house style, from <code>spec.md</code> as it stands: the marks as small tags (written bare or in code spans), each figure the spec links shown inside it, and the changes since the previous round's commit marked in place. A link into the feature's show directory is what makes a figure; nothing else marks one. <code>spec.md</code> stays the source an agent reads and the work order a worker builds from. <span class="pm you">you, r2</span></li><li class="blk li new" id="b54" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>It replaces diffview for specs.</strong> <code>/mx:grilling</code>'s round opens the spec page instead of a diffview page on the spec. <span class="pm you">you, r2</span></li><li class="blk li new" id="b55" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>In this feature, as its own slice</strong>, since a grilling round changes both pages at once and they share a renderer. <span class="pm mine">my call, r3</span></li></ul><div class="blk h3 new" id="producing-the-pages" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><h3>Producing the pages</h3></div><ul><li class="blk li new" id="b57" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>One fixed renderer</strong> turns the records into the session page and the spec into the spec page. <span class="pm you">you, r2: Q4</span></li><li class="blk li new" id="b58" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The agent writes no HTML, and every artifact is built by a subagent or a fork</strong> through <code>/mx:show</code>, which keeps the render loops out of the session's context. A small figure now costs a spawn. <span class="pm you">you, r2</span></li><li class="blk li new" id="b59" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>The main session waits for a turn's artifacts</strong> before it writes the record, so every link in the record points at a page that exists. <span class="pm mine">my call, r3</span></li><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>2 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Decisions</p><div class="gone-li"><strong>Markdown bodies, a fixed but flexible renderer.</strong> The agent writes <code>turns/NN.md</code>; a renderer turns every body into the page in the house style. <span class="pm you">you, r1</span> The interface: plain markdown; <code>![caption](path)</code> inlines an SVG so it takes the scheme, shows an image, or frames an HTML page; a <code>before</code> fence followed by an <code>after</code> fence renders as a pair side by side; a link alone on its line renders as a button that opens its own tab; the turn's questions section is lifted to the top while open; raw HTML passes through with the house classes available. <span class="pm mine">my call, r2</span> Whether a model lays the page out instead: <span class="pm open" title="a question waiting on you">open → Q4</span></div><div class="gone-li"><strong>One Stop hook replaces <code>chat_review.py</code>.</strong> As a turn ends it renders the page from the bodies, sends the agent back when the reply is long and the turn wrote no body, and reviews the new body's prose with the catalogue <code>chat_review.py</code> uses today. <span class="pm mine">my call, r2</span> Whether a hook reviews at all: <span class="pm open" title="a question waiting on you">open → Q5</span></div></div></li><li class="blk li edited" id="b60" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was60">edited</button><strong>The Stop hook</strong> validates the turn record and sends back one that does not parse, sends the agent back when it answered in the chat and wrote no record (in a session that has a page, a reply longer than three lines with no record written this turn), and renders both pages. Rendering is a pure function over the files and runs in milliseconds, so no process runs between turns. <span class="pm mine">my call, r1 to r3</span> How an open tab learns to reload (a served page as diffview's are, or polling) is an interchangeable part behind that seam; left undecided, the page is right on a manual reload.<div class="was" id="was60" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd"><del>Rendering</del><ins>The</ins> <del>happens</del><ins>Stop hook validates the turn record and sends back one that does not parse, sends the agent back when it answered</ins> in the <del>hook,</del><ins>chat</ins> <del>not</del><ins>and</ins> <ins>wrote no record (</ins>in a <del>watcher</del><ins>session that has a page, a reply longer than three lines with no record written this turn), and renders both pages</ins>. <del>A</del><ins>Rendering is a</ins> pure function over the <del>bodies</del><ins>files and</ins> runs in milliseconds, so no <del>background </del>process <del>per</del><ins>runs</ins> <del>session</del><ins>between</ins> <del>exists</del><ins>turns. my call, r1</ins> to <del>start, find or stop.</del><ins>r3</ins> How <del>the</del><ins>an</ins> open tab learns to reload (a served page<del>,</del> as diffview&#x27;s are, or polling) is an interchangeable part behind that seam; left undecided, the page is <del>still </del>right on a manual reload.<del> my call, r2</del></p></div></li><li class="blk li new" id="b61" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><strong>Review.</strong> An artifact's prose is reviewed inside <code>/mx:show</code> as it is built, so its rules have one home and every artifact gets them <span class="pm you">you, r2</span>. <code>chat_review.py</code>'s hook on the chat reply goes, since the reply is one line <span class="pm you">you, r2</span>. Whether the turn record's own prose is reviewed <a class="pm open" href="session.html#q7" target="_blank" rel="noopener" title="a question waiting on you">open → Q7</a>.</li><li class="blk li edited" id="b62" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was62">edited</button><strong>Created lazily</strong> by the first turn whose answer needs more than a line; a <code>qq</code> never gets a page. <span class="pm you">you, r1</span><div class="was" id="was62" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Created lazily by the first turn whose answer needs more than <del>the</del><ins>a</ins> <del>index</del><ins>line</ins>; a qq never gets a page. you, r1</p></div></li><li class="blk li edited" id="b63" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was63">edited</button><strong>Where it lives.</strong> <code>agent/sessions/&lt;session-id&gt;/</code>, ignored through the global git ignore list in dotfiles (<code>nix/home/common.nix</code>, beside <code>agent/handoffs</code>). <span class="pm you">you, r1</span> Keyed by the session id, which the hook receives. <span class="pm mine">my call, r2</span> The session page is <code>index.html</code> in that directory; the spec page is <code>spec.html</code> beside its <code>spec.md</code>, untracked like the board, since both regenerate from their sources. <span class="pm mine">my call, r3</span><div class="was" id="was63" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Where it lives. agent/sessions/&lt;session-id&gt;/, ignored through the global git ignore list in dotfiles (nix/home/common.nix, beside agent/handoffs). you, r1 Keyed by the session id, which the hook receives<del>, with the session&#x27;s title as the page title</del>. my call, r2<ins> The session page is index.html in that directory; the spec page is spec.html beside its spec.md, untracked like the board, since both regenerate from their sources. my call, r3</ins></p></div></li></ul><div class="blk h3 new" id="around-it" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><h3>Around it</h3></div><ul><li class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>2 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Decisions</p><div class="gone-li"><strong>Whole pages open in their own tab</strong>, the spec's review page included; the page has no tabs of its own. Your skilltree ruling of 2026-08-15 decides it: no reinventing window management. <span class="pm mine">my call, r2</span></div><div class="gone-li"><strong>Artifacts are inline.</strong> An SVG, an image, an HTML page in a frame, a before/after pair all sit in the turn that produced them. <span class="pm you">you, r1</span></div></div></li><li class="blk li edited" id="b65" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was65">edited</button><strong>The board</strong>, after <code>board-orients</code> merges: its spec lists a ticket's sessions from <code>Session:</code> commit trailers with a resume copy button; this feature links each listed session to its session page and each feature's row to its spec page. <span class="pm you long">you, r1: wait for board-orients; my call, r3: the two links</span><div class="was" id="was65" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">The board, <del>per</del><ins>after</ins> <del>ticket</del><ins>board-orients merges</ins>: <del>every</del><ins>its spec lists a ticket&#x27;s sessions from Session: commit trailers with a resume copy button; this feature links each listed</ins> session <del>that touched it,</del><ins>to</ins> its<del> title opening the</del> session page and <del>a</del><ins>each</ins> <del>copy</del><ins>feature&#x27;s</ins> <del>button</del><ins>row</ins> <del>beside</del><ins>to</ins> <del>it</del><ins>its</ins> <del>for the resume command. Two controls, since opening a</del><ins>spec</ins> page<del> should never overwrite the clipboard. Built after board-orients merges; recording which sessions touched a ticket is A ticket records the sessions that touched it</del>. you, r1: wait for board-orients; <del>two controls </del>my call, <del>r2</del><ins>r3: the two links</ins></p></div></li><li class="blk li" id="b66" data-state="same"><strong>The user replies in the terminal.</strong> <span class="pm you">you, r1</span></li><li class="blk li edited" id="b67" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was67">edited</button><strong>Reverses a call of <code>figures-and-demos</code></strong>, which put &quot;rendering the grilling round as a page&quot; out of scope as duplicating diffview. The diff shows the code that finally ships; a round, a debugging session or a planning session decides in front of visuals. <span class="pm you">you, r1</span><div class="was" id="was67" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Reverses a call of figures-and-demos, which put &quot;rendering the grilling round as a page&quot; out of scope as duplicating diffview. The diff shows the code that finally ships; a round, a debugging session or a planning session decides in front of visuals<del>, which diffview does not carry</del>. you, r1</p></div></li><li class="blk li edited" id="b68" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was68">edited</button><strong>Claude Docs is not the page.</strong> The claude.ai living-docs connector does this as a hosted product; it would send repo content to claude.ai, tie the pages to one harness, and show no local file. <span class="pm mine">my call, r1</span><div class="was" id="was68" hidden><p class="v-meta">before this round, under Decisions</p><p class="wd">Claude Docs is not the page. The claude.ai living-docs connector does this as a hosted product; it would send repo content to claude.ai, tie the <del>page</del><ins>pages</ins> to one harness, and show no local file. my call, r1</p></div></li></ul><div class="blk h2" id="testing-decisions" data-state="same"><h2>Testing Decisions</h2></div><div class="blk p edited" id="b70" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was70">edited</button><p>Three seams. The session renderer: a session directory and a transcript in, the page out; the oracle is the worked example in <code>agent/prototypes/session-page/sample/</code> and the Properties. The spec renderer: a spec, its figures and a base commit in, the page out; the oracle is a spec with one figure and one changed section. The Stop hook at its input: the hook's JSON and the session directory in, its decision out (render, send back with a reason); <code>chat_review.py</code>'s tests are the prior art. The first, second, third, seventh and eighth Properties are executable at those seams; the key, reply-shape and no-HTML Properties are reviewed.</p>
+<div class="was" id="was70" hidden><p class="v-meta">before this round</p><p class="wd"><del>Two</del><ins>Three</ins> seams. The <ins>session </ins>renderer<del>,</del><ins>:</ins> <del>bodies</del><ins>a</ins> <del>in</del><ins>session directory</ins> and a <ins>transcript in, the </ins>page out<del>, with worked examples as</del><ins>;</ins> the oracle<del>:</del> <del>a</del><ins>is</ins> <del>body</del><ins>the</ins> <del>per</del><ins>worked</ins> <del>block</del><ins>example in agent/prototypes/session-page/sample/</ins> and the <ins>Properties. The spec renderer: a spec, its figures and a base commit in, the page out; the oracle is a spec with one figure and one changed </ins>section<del> it must produce</del>. The Stop hook at its input<del>,</del><ins>:</ins> the hook&#x27;s JSON and the <del>session&#x27;s</del><ins>session</ins> directory in<del> and</del><ins>,</ins> its decision out (render, send back<del>, review findings),</del> with <del>the</del><ins>a</ins> <del>cases in the Decisions as the oracle</del><ins>reason)</ins>; chat_review.py&#x27;s tests are the prior art. The first<ins>,</ins> <del>two</del><ins>second,</ins> <del>Properties</del><ins>third, seventh</ins> and <del>the</del><ins>eighth</ins> <del>lazy-creation Property</del><ins>Properties</ins> are executable at those seams; the key<ins>,</ins> <del>Property</del><ins>reply-shape</ins> and <del>the</del><ins>no-HTML</ins> <del>reply-shape Property</del><ins>Properties</ins> are reviewed.</p></div></div><div class="blk h2" id="out-of-scope" data-state="same"><h2>Out of Scope</h2></div><ul><li class="blk li edited" id="b72" tabindex="-1" data-state="edited"><button class="mk v-meta" aria-expanded="false" aria-controls="was72">edited</button>The grid's words: their own change in <code>/mx:show</code> once <code>figures-and-demos</code> merges, the prose cell named &quot;prose&quot; so &quot;tell&quot; keeps its catalogue meaning. <span class="pm you long">you, r1; the name is yours, r2: Q6</span><div class="was" id="was72" hidden><p class="v-meta">before this round</p><p class="wd">The grid&#x27;s words: their own change<ins> in /mx:show once figures-and-demos merges</ins>, <del>above</del><ins>the prose cell named &quot;prose&quot; so &quot;tell&quot; keeps its catalogue meaning</ins>. you, r1<ins>; the name is yours, r2: Q6</ins></p></div></li><li class="blk li" id="b73" data-state="same">Replying on the page. <span class="pm you">you, r1</span></li><li class="blk li new" id="b74" tabindex="-1" data-state="new"><span class="mk v-meta">new</span>An agent review of a spec before its gate: raised in round 2, not decided; its own decision ticket if it is wanted.</li></ul><div class="blk h2" id="fog" data-state="same"><h2>Fog</h2></div><div class="blk gone" tabindex="-1" data-state="removed"><button class="gone-btn v-meta" aria-expanded="false"><i></i>1 removed</button><div class="gone-body" hidden><p class="v-meta">removed this round, from Fog</p><div class="gone-li">How the page's open questions relate to the needs-human queue and the board's needs-me section, both being redesigned in <code>board-orients</code>; the queue may dissolve into the page.</div></div></div><div class="blk p new" id="b76" tabindex="-1" data-state="new"><span class="mk v-meta">new</span><p>None. The needs-human queue this spec once left open retires in <code>board-orients</code>: every question there belongs to a ticket, and a session that ends with its questions open files them as decision tickets, as <code>/mx:grilling</code> already does.</p>
+</div>
+  </main>
+</div>
+
+<div class="help" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
+  <div class="card">
+    <p class="v-h3" id="help-title">Keys</p>
+    <table><tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next, previous section</td></tr><tr><td><kbd>d</kbd> <kbd>D</kbd></td><td>next, previous change</td></tr><tr><td><kbd>o</kbd> <kbd>Enter</kbd></td><td>show or hide what the change was</td></tr><tr><td><kbd>g</kbd> <kbd>g</kbd></td><td>top</td></tr><tr><td><kbd>G</kbd></td><td>bottom</td></tr><tr><td><kbd>?</kbd></td><td>this list</td></tr></table>
+    <p class="v-meta">diffview's keys, where diffview has the move</p>
+  </div>
+</div>
+<script>
+const root = document.documentElement
+const reduce = matchMedia("(prefers-reduced-motion: reduce)")
+const behavior = () => (reduce.matches ? "auto" : "smooth")
+const scheme = document.getElementById("scheme")
+const onTheme = []
+const setTheme = (night) => {
+  root.dataset.theme = night ? "night" : "day"
+  scheme.setAttribute("aria-label", night ? "switch to day" : "switch to night")
+  onTheme.forEach((f) => f())
+}
+scheme.addEventListener("click", () => setTheme(root.dataset.theme !== "night"))
+setTheme(root.dataset.theme === "night")
+
+const help = document.getElementById("help")
+const toggleHelp = (on = help.hidden) => { help.hidden = !on }
+document.getElementById("keys").addEventListener("click", () => toggleHelp())
+help.addEventListener("click", (e) => { if (e.target === help) toggleHelp(false) })
+
+// diffview's gg: a first g arms, a second within half a second goes to the top
+let gArmed = false, gTimer = null
+const gg = (go) => {
+  if (gArmed) { clearTimeout(gTimer); gArmed = false; go() }
+  else { gArmed = true; gTimer = setTimeout(() => (gArmed = false), 500) }
+}
+const typing = (e) => e.target.matches && e.target.matches("input, textarea, select, [contenteditable]")
+const nativeKey = (e) => (e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button, a, summary")
+
+const doc = document.querySelector(".doc")
+const sections = [...doc.querySelectorAll(".blk.h2, .blk.h3")]
+const changes = [...doc.querySelectorAll('.blk[data-state="new"], .blk[data-state="edited"], .blk[data-state="moved"], .blk[data-state="removed"]')]
+const tocLinks = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.dataset.for, a]))
+
+// figures follow the page's scheme
+const frames = [...document.querySelectorAll("iframe[data-src]")]
+const paintFrames = () => frames.forEach((f) => {
+  const src = f.dataset.src, sep = src.includes("?") ? "&" : "?"
+  const want = `${src}${sep}theme=${root.dataset.theme}`
+  if (f.getAttribute("src") !== want) f.setAttribute("src", want)
+})
+onTheme.push(paintFrames)
+paintFrames()
+
+// contents: the section in view is the current one
+const here = () => {
+  const y = 120
+  let at = null
+  for (const s of sections) { if (s.getBoundingClientRect().top <= y) at = s; else break }
+  return at
+}
+const paintToc = () => {
+  const at = here()
+  tocLinks.forEach((a, id) => a.classList.toggle("current", !!at && at.id === id))
+}
+addEventListener("scroll", paintToc, { passive: true })
+paintToc()
+
+// o and Enter, and a click on a mark, show what a change was
+const toggleWas = (blk) => {
+  const btn = blk.querySelector(":scope > .mk[aria-expanded], :scope > .gone-btn")
+  if (!btn) return
+  const panel = blk.querySelector(":scope > .was, :scope > .gone-body")
+  const open = btn.getAttribute("aria-expanded") !== "true"
+  btn.setAttribute("aria-expanded", String(open))
+  panel.hidden = !open
+}
+doc.addEventListener("click", (e) => {
+  const btn = e.target.closest(".mk[aria-expanded], .gone-btn")
+  if (btn) toggleWas(btn.closest(".blk"))
+})
+
+let curChange = -1, curSection = null
+const markChange = (i) => {
+  changes.forEach((c, n) => c.classList.toggle("cur", n === i))
+}
+const goChange = (dir) => {
+  if (!changes.length) return
+  let i = curChange
+  const inView = (c) => { const r = c.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight }
+  if (i < 0 || !inView(changes[i])) {
+    // start from the viewport: the first change below its top, or the last one above it
+    const tops = changes.map((c) => c.getBoundingClientRect().top)
+    i = dir > 0 ? tops.findIndex((t) => t > 8) : tops.findLastIndex((t) => t < -8)
+    if (i < 0) i = dir > 0 ? changes.length - 1 : 0
+  } else i = Math.max(0, Math.min(changes.length - 1, i + dir))
+  curChange = i
+  markChange(i)
+  changes[i].focus({ preventScroll: true })
+  changes[i].scrollIntoView({ block: "center", behavior: behavior() })
+}
+document.getElementById("next").addEventListener("click", () => goChange(1))
+doc.addEventListener("focusin", (e) => {
+  const i = changes.indexOf(e.target.closest(".blk"))
+  if (i >= 0) { curChange = i; markChange(i) }
+})
+
+const goSection = (dir) => {
+  if (!sections.length) return
+  const at = curSection && Math.abs(curSection.getBoundingClientRect().top) < 40 ? curSection : here()
+  let i = at ? sections.indexOf(at) : -1
+  i = dir > 0 ? i + 1 : at && at.getBoundingClientRect().top < -40 ? i : i - 1
+  i = Math.max(0, Math.min(sections.length - 1, i))
+  showSection(sections[i])
+}
+const showSection = (s) => {
+  sections.forEach((x) => x.classList.toggle("sec-cur", x === s))
+  curSection = s
+  s.scrollIntoView({ block: "start", behavior: behavior() })
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return
+  if (e.key === "?") { toggleHelp(); e.preventDefault(); return }
+  if (e.key === "Escape") { toggleHelp(false); return }
+  if (nativeKey(e)) return
+  if (e.key === "g") { gg(() => { window.scrollTo({ top: 0, behavior: behavior() }); sections.forEach((x) => x.classList.remove("sec-cur")); curSection = null }); return }
+  switch (e.key) {
+    case "j": goSection(1); break
+    case "k": goSection(-1); break
+    case "G": window.scrollTo({ top: document.body.scrollHeight, behavior: behavior() }); break
+    case "d": goChange(1); break
+    case "D": goChange(-1); break
+    case "o": case "Enter": if (curChange >= 0) toggleWas(changes[curChange]); break
+    default: return
+  }
+  e.preventDefault()
+})
+</script>
+</body>
+</html>

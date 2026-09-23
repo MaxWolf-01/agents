@@ -30,6 +30,8 @@ A LONG, numbered list of user stories: extremely extensive, covering every actor
 
 What the app must *be*, where stories say what a user can *do*; the story format cannot express these, and a property with no story gets no ticket. One sentence each, in the project's ubiquitous language, phrased as an always/never that a reviewer can check a diff against. Rendering, error containment, lifecycle/session models, copy discipline live here. A living list: it starts small and grows as the build surfaces new properties, so discovering one mid-build means adding it here, not noting it in a ticket comment.
 
+Each opens with its **id**, `- P1 <the property>`, assigned in order and permanent: the tickets cite it (`/mx:to-tickets`), so a retired property leaves its number behind rather than passing it on, and a property added in a later round takes the next one.
+
 ## Decisions
 
 The decisions made, each marked with the round or decision ticket that settled it while the spec is a draft. This can include:
@@ -59,7 +61,7 @@ The **seams** at which the feature is tested: a design call put to the user in a
 - The **oracle**: the independent truth its tests compare against, in one phrase (a sentence of this spec, a worked example, a reference implementation, an invariant of the domain, a captured production payload). A seam whose only available answer is what the code returns today says so, and the reviewer reads its tests knowing it.
 - Prior art: the existing tests at that seam, named, as the pattern the new ones follow.
 
-Then **dispose of every Property**, one line each:
+Then **dispose of every Property**, one line each, by its id:
 
 - **executable**: a check over generated inputs at a named seam, built by one early ticket ahead of the slices.
 - **reviewed**: prose the Spec reviewer checks each diff against.
