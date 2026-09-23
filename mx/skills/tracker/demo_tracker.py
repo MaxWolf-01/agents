@@ -611,7 +611,7 @@ def transcripts(root: Path, sessions: dict[str, dict]) -> None:
         transcript(root, sid, info["cwd"], info["ai_title"], info.get("renamed"))
 
 
-def transcript(root: Path, session: str, cwd: str, ai_title: str, renamed: str | None = None) -> Path:
+def transcript(root: Path, session: str, cwd: str, ai_title: str, renamed: str | None = None) -> None:
     """One session's transcript, where and as Claude Code writes them: under a directory per
     working directory, every non-alphanumeric character dashed, with the title as an `ai-title`
     record and a `/rename` name as a summary record."""
@@ -624,7 +624,6 @@ def transcript(root: Path, session: str, cwd: str, ai_title: str, renamed: str |
     if renamed:
         lines.append({"type": "summary", "customTitle": renamed, "sessionId": session})
     path.write_text("".join(json.dumps(line) + "\n" for line in lines))
-    return path
 
 
 # ---- writing it ------------------------------------------------------------
