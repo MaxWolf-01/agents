@@ -11,22 +11,37 @@ workspace repo both work), renders, opens the tab, and keeps re-rendering until
 Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
-status/blocked-by/type frontmatter, cross-feature refs as <feature>/NN) and
-every standalone ticket (*.md at the tracker root, the queue file aside) and writes one
-self-contained page beside the tracker, agent/board.html. The page is the
-tickets as rows grouped by state: needs me (the merged needs-human queue),
-needs my review (work waiting for the user's ruling), frontier, claimed,
-blocked, proposed, done folded. A row carries its feature, expands to the
-ticket's text, and links its review page and the pull requests and issues
-its `gh` list names. A click on a row's number copies the absolute path of
-the file the row was read from: the ticket, or for a needs-me entry its
-needs-human.md. Feature chips in the top bar hide and show a feature's
-rows; a filter box narrows the rows to a word. Beside the rows a graph panel shows the dependency graph of the feature
-of the row under the cursor with that ticket marked, or the whole tracker's
-graph with its cross-feature edges, hidden features left out. A graph draws only tickets that wait on
-something or are waited on: a ticket with no edge is a row, not a node. A
-proposed ticket, one the user has not ruled on, keeps its status whatever
-blocks it and is drawn in its own colour.
+status/blocked-by/type/priority/size frontmatter, cross-feature refs as
+<feature>/NN) and every standalone ticket (*.md at the tracker root, the queue
+file aside) and writes one self-contained page beside the tracker,
+agent/board.html. The page is the tickets as rows grouped by state: needs me
+(the merged needs-human queue), needs my review (work waiting for the user's
+ruling), frontier, claimed, blocked, proposed, done folded.
+
+A row reads left to right in fixed columns: the feature, the number, what the
+row asks of the user (to rule on, your answer, design session, prototype,
+research, legwork, build), the ticket's short name with its review page and the
+pull requests and issues its `gh` list names, the ticket brief under the name,
+the user's time on it, the priority as a word, and what it waits on. The name
+is the ticket's H1, the brief its `## Brief` section, the priority and the size
+its frontmatter; a ticket silent on one of those shows its row without that
+mark. Rows sort by priority, then by the user's time, within each group. Every
+mark says on hover what it means. Below a width the time, the priority and the
+blockers move under the name. A click on a row's number copies the absolute
+path of the file the row was read from: the ticket, or for a needs-me entry its
+needs-human.md.
+
+The page wears the house style in both schemes: it follows the system's, the
+switch in the top bar pins one, and ?theme=day|night on the address pins one for
+a screenshot. Feature pills in the top bar hide and show a feature's rows, each
+counting its done tickets out of all of them, proposed included; a filter box
+narrows the rows to a word. An optional source the render did without is said
+once at the top of the page. Beside the rows a graph panel shows the dependency
+graph of the feature of the row under the cursor with that ticket marked, or the
+whole tracker's graph with its cross-feature edges, hidden features left out. A
+graph draws only tickets that wait on something or are waited on: a ticket with
+no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
+keeps its status whatever blocks it and is drawn dashed.
 
 One board per tracker, showing what is actionable now. The tracker is read
 from the repo's main checkout whatever checkout the command runs in; a feature
@@ -93,6 +108,29 @@ import yaml
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
+
+# What a row's marks stand for, and the words each says on hover.
+PRIORITY_WORD = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
+PRIORITY_TIP = (
+    "The priority, an agent's reading of what you have said; tell any session to change one.\n"
+    "p1 now: today\np2 next: this week\np3 soon: once the ones above are out\n"
+    "p4 later: when there is room\np5 someday: parked"
+)
+SIZE_LABEL = {"XS": "15 min", "S": "20 min", "M": "1 h", "L": "half a day", "XL": "several sessions"}
+SIZE_RANK = {size: rank for rank, size in enumerate(SIZE_LABEL)}
+SIZE_TIP = (
+    "Your time on this ticket, never the agent's: reading the diff or the design, trying the demo, deciding.\n"
+    "XS under 15 min\nS about 20 min\nM about an hour\nL half a day\nXL several sessions"
+)
+ASKS = {  # what a row asks of the user: the word in its column, and what that word means
+    "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
+    "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
+    "design": ("design session", "A decision to talk through with you; nothing is built on it until it is settled."),
+    "prototype": ("prototype", "A decision you take in front of something built to compare. You judge the render."),
+    "research": ("research", "An agent reads up on this alone. You read what it found when it lands."),
+    "legwork": ("legwork", "Work that unblocks a decision: an agent does it, or hands you a checklist."),
+    "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
+}
 GROUPS = [
     ("needs", "needs me"), ("review", "needs my review"), ("open", "frontier"), ("claimed", "claimed"),
     ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done"),
@@ -301,7 +339,7 @@ class Diffviews:
 @dataclass
 class Ticket:
     num: str
-    title: str
+    title: str  # the H1: the short name a row shows
     status: str  # proposed | open | claimed | review | done, plus derived: blocked
     kind: str | None  # a decision ticket's type (research | prototype | grilling | legwork); None on a build ticket
     blocked_by: list[str]
@@ -310,6 +348,9 @@ class Ticket:
     body_html: str
     diffview: str | None
     path: Path  # the file read, in whichever checkout holds the feature
+    priority: int | None = None  # 1 to 5; None on a ticket whose frontmatter is silent
+    size: str | None = None  # XS | S | M | L | XL, the user's time on it
+    brief: str = ""  # the ## Brief section, as inline HTML
 
 
 @dataclass
@@ -340,6 +381,9 @@ class Standalone:
     diffview: str | None
     path: Path
     source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
+    priority: int | None = None
+    size: str | None = None
+    brief: str = ""
 
 
 def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Feature]:
@@ -395,6 +439,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
     status = declared_status(meta, path)
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
+    brief, body = take_brief(body)
     return Standalone(
         slug=path.stem,
         title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
@@ -406,6 +451,9 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
+        priority=ticket_priority(meta, path),
+        size=ticket_size(meta, path),
+        brief=brief,
     )
 
 
@@ -459,6 +507,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
         heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         body = body[heading.end():] if heading else body
         blockers = meta.get("blocked-by") or []
+        brief, body = take_brief(body)
         tickets.append(
             Ticket(
                 num=path.name[:2],
@@ -471,6 +520,9 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 body_html=render_body(body, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
+                priority=ticket_priority(meta, path),
+                size=ticket_size(meta, path),
+                brief=brief,
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -497,6 +549,36 @@ def ticket_kind(meta: dict) -> str | None:
     return str(kind) if kind else None
 
 
+def ticket_priority(meta: dict, path: Path) -> int | None:
+    priority = meta.get("priority")
+    if priority is None:
+        return None
+    assert priority in PRIORITY_WORD, f"{path}: priority {priority!r}; a ticket declares one of {sorted(PRIORITY_WORD)}"
+    return int(priority)
+
+
+def ticket_size(meta: dict, path: Path) -> str | None:
+    size = meta.get("size")
+    if size is None:
+        return None
+    assert str(size) in SIZE_LABEL, f"{path}: size {size!r}; a ticket declares one of {list(SIZE_LABEL)}"
+    return str(size)
+
+
+def take_brief(body: str) -> tuple[str, str]:
+    """(the ## Brief section as inline HTML, the body without it): what the row shows under the name,
+    and the text that is left to fold under the row. One home per fact, on the row as on the page."""
+    match = re.search(r"^##\s+Brief\s*$(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
+    if not match:
+        return "", body
+    return inline_md(" ".join(match.group(1).split())), body[: match.start()] + body[match.end() :]
+
+
+def inline_md(text: str) -> str:
+    """Markdown as one line of HTML: a brief or a headline carries code and emphasis, never a block."""
+    return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip())
+
+
 GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
 
 
@@ -505,10 +587,6 @@ def gh_refs(meta: dict, path: Path) -> list[str]:
     for ref in refs:
         assert GH_REF.fullmatch(ref), f"{path}: gh reference {ref!r}; a reference is owner/repo#number"
     return refs
-
-
-def kind_badge(kind: str | None) -> str:
-    return f'<span class="badge kind">{html.escape(kind)}</span>' if kind else ""
 
 
 def is_local_ref(n: object) -> bool:
@@ -563,9 +641,11 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
     key = repr((
         project,
         [(f.name, f.needs_human, f.spec_status,
-          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path) for t in f.tickets])
+          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path,
+            t.priority, t.size, t.brief) for t in f.tickets])
          for f in features],
-        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source) for k in standalone],
+        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source,
+          k.priority, k.size, k.brief) for k in standalone],
         queue,
         log,
     ))
@@ -757,33 +837,69 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 
 # ---- page -----------------------------------------------------------------
 
+type Row = Ticket | Standalone
+
+
+def asks(status: str, kind: str | None, open_question: bool = False) -> str:
+    """Which of ASKS a row asks of the user, from what its ticket file says."""
+    if status == "review":
+        return "review"
+    if open_question and status != "done":
+        return "answer"
+    return {"grilling": "design", "prototype": "prototype", "research": "research", "legwork": "legwork"}.get(kind or "", "build")
+
+
+def asks_tag(t: Row) -> str:
+    kind = asks(t.status, t.kind)
+    word, meaning = ASKS[kind]
+    return f'<span class="asks a-{kind}" data-tip="{html.escape(meaning)}">{word}</span>'
+
+
+def time_tag(t: Row) -> str:
+    if not t.size:
+        return ""  # a ticket whose file says no size shows none; its column stays, empty
+    return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZE_LABEL[t.size]}</span>'
+
+
+def priority_tag(t: Row) -> str:
+    if not t.priority:
+        return ""
+    return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRIORITY_TIP)}">p{t.priority} {PRIORITY_WORD[t.priority]}</span>'
+
+
+def sort_key(t: Row) -> tuple:
+    """A row's place within its group: the priority first, then the user's time, then the name. A
+    ticket whose frontmatter says neither sorts after the ones that do."""
+    return (t.priority or len(PRIORITY_WORD) + 1, SIZE_RANK.get(t.size or "", len(SIZE_RANK)), t.title.lower())
+
 
 def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
-    local = "".join(
-        f'<a class="chip {by_num[b].status}" href="#t-{feature}-{b}">{b}</a>' for b in t.blocked_by
-    )
+    local = "".join(blocker_chip(b, by_num[b].status, f"#t-{feature}-{b}") for b in t.blocked_by)
     return local + ext_chips(t.ext_by)
 
 
 def ext_chips(refs: list[tuple[str, str]]) -> str:
-    return "".join(
-        f'<a class="chip {s}" href="{ref_anchor(ref)}" title="external blocker">{html.escape(ref)}</a>'
-        for ref, s in refs
-    )
+    return "".join(blocker_chip(ref, status, ref_anchor(ref)) for ref, status in refs)
 
 
-def dv_link(path: str | None, label: str = "diff") -> str:
-    if not path:
+def blocker_chip(ref: str, status: str, href: str) -> str:
+    done = "done" if status == "done" else "not done yet"
+    return (f'<a class="chip {status}" href="{html.escape(href)}" onclick="event.stopPropagation()" '
+            f'data-tip="Waits on {html.escape(ref)}, {done}.">{html.escape(ref)}</a>')
+
+
+def review_link(address: str | None) -> str:
+    if not address:
         return ""
-    return (f'<a class="dv" href="{html.escape(path)}" target="_blank" '
-            f'onclick="event.stopPropagation()" title="{html.escape(path)}">{label}</a>')
+    return (f'<a class="rp" href="{html.escape(address)}" target="_blank" onclick="event.stopPropagation()" '
+            f'data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a>')
 
 
 def gh_links(refs: Sequence[str]) -> str:
     # the issues URL serves a pull request too: GitHub redirects it to the pull page
     return "".join(
-        f'<a class="dv gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
-        f'onclick="event.stopPropagation()" title="on GitHub">{html.escape(ref)}</a>'
+        f'<a class="gh" href="https://github.com/{repo}/issues/{num}" target="_blank" '
+        f'onclick="event.stopPropagation()" data-tip="A pull request or issue this ticket names, on GitHub.">{html.escape(ref)}</a>'
         for ref in refs for repo, num in [ref.split("#")]
     )
 
@@ -792,51 +908,70 @@ def search_text(*parts: str) -> str:
     return html.escape(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", " ", p) for p in parts)).strip().lower(), quote=True)
 
 
-def row(
-    row_id: str, feature: str, num: str, title: str, status: str, badges: str, chips: str, body: str, path: Path,
-    dv: str | None = None, gh: Sequence[str] = (),
-) -> str:
-    """One ticket row: feature tag, number (a click copies `path`), title with its review page and GitHub links, badges, blocker chips; the body folded under it."""
+def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str = "") -> str:
+    """One ticket row, every mark in a fixed column: the feature, the number (a click copies the
+    file's path), what the row asks of the user, the name with its review page and GitHub
+    references, the ticket brief under the name, the user's time, the priority, the blockers.
+    Below a width the time, the priority and the blockers move under the name. The ticket's
+    remaining text folds under the row."""
+    brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
     return (
-        f'<details class="ticket row-{status}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
-        f'data-search="{search_text(num, title, body, *gh)}" data-path="{html.escape(str(path))}"><summary>'
-        f'<span class="ftag">{html.escape(feature)}</span><span class="num" title="copy {html.escape(str(path))} (y)">{html.escape(num)}</span>'
-        f'<span class="title">{html.escape(title)}{dv_link(dv)}{gh_links(gh)}</span>'
-        f'<span class="badges">{badges}</span>'
-        f'<span class="chips">{chips or "<span class=deps>—</span>"}</span></summary>'
-        f'<div class="body">{f"<p class=dvline>{dv_link(dv, 'open the review page')}</p>" if dv else ""}{body}</div></details>'
+        f'<details class="ticket row-{t.status}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
+        f'data-search="{search_text(num, t.title, t.brief, t.body_html, *t.gh)}" data-path="{html.escape(str(t.path))}"><summary>'
+        f'<span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows.">{html.escape(feature)}</span>'
+        f'<span class="num" data-tip="Click to copy this ticket&#39;s path (y).">{html.escape(num)}</span>'
+        f'{asks_tag(t)}'
+        f'<span class="main"><span class="titleline"><span class="title">{html.escape(t.title)}</span>'
+        f'{review_link(t.diffview)}{gh_links(t.gh)}{on_branch}</span>{brief}</span>'
+        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{chips}</span></span>'
+        f'</summary><div class="body">{t.body_html}</div></details>'
     )
 
 
 def ticket_row(f: Feature, t: Ticket) -> str:
     by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t.title, t.status, kind_badge(t.kind), dep_chips(f.name, by_num, t), t.body_html, t.path, t.diffview, t.gh)
+    return row(f"t-{f.name}-{t.num}", f.name, t.num, t, dep_chips(f.name, by_num, t))
 
 
 def standalone_row(k: Standalone) -> str:
-    badges = kind_badge(k.kind)
-    if k.source:
-        badges += f'<span class="badge source" title="filed on branch {html.escape(k.source)}, not on the main branch">on {html.escape(k.source)}</span>'
-    return row(f"standalone-{k.slug}", "standalone", "--", k.title, k.status, badges, ext_chips(k.blocked_by), k.body_html, k.path, k.diffview, k.gh)
+    on_branch = (
+        f'<span class="src" data-tip="Filed on branch {html.escape(k.source)}, not on the main branch.">on {html.escape(k.source)}</span>'
+        if k.source else ""
+    )
+    return row(f"standalone-{k.slug}", "standalone", "--", k, ext_chips(k.blocked_by), on_branch)
 
 
 def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
+    """A needs-human.md entry, which is not a ticket and has none of a ticket's marks. The queue
+    retires into the tickets its entries belong to (`/mx:tracker`)."""
     summary, sep, detail = item.partition(" :: ")
     body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
-    return row(f"needs-{owner}-{i}", owner, "!", summary if sep else item, "needs", '<span class="badge needs">needs me</span>', "", body, queue)
+    return (
+        f'<details class="ticket row-needs" id="needs-{owner}-{i}" data-feature="{html.escape(owner)}" data-num="!" '
+        f'data-search="{search_text(summary, body)}" data-path="{html.escape(str(queue))}"><summary>'
+        f'<span class="ftag" data-tip="The feature this entry was filed under.">{html.escape(owner)}</span>'
+        f'<span class="num" data-tip="Click to copy the path of the queue file this entry is in (y).">!</span>'
+        f'<span class="asks a-queue" data-tip="A queue entry: work that waits on you and has no ticket of its own yet.">your answer</span>'
+        f'<span class="main"><span class="titleline"><span class="title">{html.escape(summary if sep else item)}</span></span></span>'
+        f'</summary><div class="body">{body}</div></details>'
+    )
 
 
 def feature_chip(f: Feature) -> str:
+    """A feature's pill in the top bar: its counts, and the click that hides and shows its rows.
+
+    The done count is out of every ticket the feature has, proposed ones included, so a breakdown
+    just cut off a spec reads 0/4 rather than 0/0."""
     counts = Counter(t.status for t in f.tickets)
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
-    bits += [f"{counts['done']}/{len(f.tickets) - counts['proposed']} done"] if f.tickets else ["no tickets yet"]
+    bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
     if f.needs_human.entries:
         bits.append(f"{len(f.needs_human.entries)} need me")
     dot = '<i class="dot"></i>' if f.needs_human.entries or counts["review"] else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
-        f'<span class="dim">{counts["done"]}/{len(f.tickets) - counts["proposed"]}</span></button>'
+        f'<span class="dim">{counts["done"]}/{len(f.tickets)}</span></button>'
     )
 
 
@@ -848,15 +983,18 @@ def render_page(
     for f in features:
         rows["needs"].extend(needs_row(f.name, i, item, f.needs_human.path) for i, item in enumerate(f.needs_human.entries))
     rows["needs"].extend(needs_row("standalone", i, item, queue.path) for i, item in enumerate(queue.entries))
+    ranked: dict[str, list[tuple[tuple, str]]] = {state: [] for state, _ in GROUPS}
     for f in features:
         for t in f.tickets:
-            rows[t.status].append(ticket_row(f, t))
+            ranked[t.status].append((sort_key(t), ticket_row(f, t)))
     for k in standalone:
-        rows[k.status].append(standalone_row(k))
+        ranked[k.status].append((sort_key(k), standalone_row(k)))
+    for state, sortable in ranked.items():
+        rows[state].extend(page for _, page in sorted(sortable, key=lambda pair: pair[0]))
     groups = "".join(
         f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
         f'<summary><h2>{label} <span class="n">{len(rows[state])}</span></h2></summary>'
-        f'<div class="tickets panel-b">{"".join(rows[state])}</div></details>'
+        f'<div class="tickets">{"".join(rows[state])}</div></details>'
         for state, label in GROUPS if rows[state]
     )
 
@@ -883,8 +1021,21 @@ def render_page(
     footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
+        absences="".join(absences(features, standalone)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
+
+
+def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+    """What this render did without, said once each (the board renders with any optional source
+    missing). A review page linked as a file is one nothing answered for."""
+    pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
+    if any(page and page.startswith("file://") for page in pages):
+        return [absence_note(
+            "review-page-server",
+            "Nothing is serving the review pages, so they open as files and what you write on one is not saved.",
+        )]
+    return []
 
 
 PAGE = Template(r"""<!doctype html>
@@ -893,184 +1044,278 @@ PAGE = Template(r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>board — ${project}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+  // The scheme before first paint: ?theme= pins it, for a screenshot or a layout check; else the
+  // switch's last answer, else the system's.
+  (() => {
+    const asked = new URLSearchParams(location.search).get("theme");
+    const kept = localStorage.getItem("board-theme");
+    const night = asked ? asked === "night" : kept ? kept === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = night ? "night" : "day";
+  })();
+</script>
 <style>
+  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
+     the fonts, and the base rules. The type roles there are for a page of prose; a board sets its
+     own below. --muted goes darker than the house value, which is a day-scheme readability fix:
+     the board's small text is read on parchment at 100% zoom. */
   :root {
-    color-scheme: dark;
-    --bg: #141519; --panel: #1b1d23; --raised: #22252c; --border: #2c303a; --border-strong: #3a4050;
-    --ink: #d6dae2; --ink2: #9aa1af; --ink3: #6a7180; --edge: #4d5665;
-    --accent: #7aa2f7; --accent-dim: #4b689f;
-    --done-bg: #17251a; --done-br: #3f7a44; --done-tx: #85d18d;
-    --claimed-bg: #2a2214; --claimed-br: #9a7a34; --claimed-tx: #e2bc66;
-    --review-bg: #2a1622; --review-br: #9c4d78; --review-tx: #ee9ccb;
-    --open-bg: #16202f; --open-br: #4b689f; --open-tx: #9dbcf9;
-    --blocked-bg: #1e2026; --blocked-br: #3a4050; --blocked-tx: #8b93a1;
-    --proposed-bg: #1d1a26; --proposed-br: #5b4f7a; --proposed-tx: #a397c4;
-    --human: #e5534b; --human-bg: #291414; --flash: #2a2214;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --topbar-h: 46px;
+    color-scheme: light dark;
+    --ground: light-dark(#f4e4cd, #1a1714);
+    --ground-2: light-dark(#eddabe, #201c18);
+    --edge: light-dark(#cfbca3, #4a433b);
+    --muted: light-dark(#4c443c, #b0a89e);
+    --body: light-dark(#37261d, #ede3d2);
+    --strong: light-dark(#22140b, #faf2dc);
+    --accent: light-dark(#426724, #6ea444);
+    --accent-2: light-dark(#674806, #cdb78a);
+    --wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.22));
+    --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+    --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+    --font-body: "Newsreader", Georgia, serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --radius: 6px;
+    --topbar-h: 52px;  /* measured once the bar is laid out, since it wraps on a narrow window */
   }
+  [data-theme="day"] { color-scheme: light; }
+  [data-theme="night"] { color-scheme: dark; }
+
+  /* The callout hues of mwolf.dev, deepened for parchment: what a row asks wears one each, the
+     priority ramps on the first, and the user's time has the last to itself. The teal is picked
+     again from the prototype's, away from the moss accent, which it read as by day. */
+  :root {
+    --c-pink: light-dark(#8e4a82, #d9a2d0);
+    --c-gold: light-dark(#7d5f16, #d9b36f);
+    --c-rose: light-dark(#a3453c, #fabeb4);
+    --c-purple: light-dark(#6546b3, #b8a4ff);
+    --c-orange: light-dark(#9a5516, #ffc387);
+    --c-blue: light-dark(#2a6aa3, #85baeb);
+    --c-slate: light-dark(#52627f, #9aaacb);
+    --c-lav: light-dark(#5a53c2, #afaaff);
+    --c-time: light-dark(#255a63, #86bcc4);
+  }
+
   * { box-sizing: border-box; }
-  html { scrollbar-color: #3a3f4b var(--bg); }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
-  a { color: var(--accent); text-decoration: none; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .dim { color: var(--ink3); font-weight: 400; }
-  .eyebrow, .badge, .num, .deps, .chip, .log, .mermaid, .featchip, .ftag, .search, .n, .gname, .gnote, .keys { font-family: var(--mono); }
+  html { scrollbar-color: var(--edge) var(--ground); }
+  body { margin: 0; background: var(--ground); color: var(--body);
+    font: 400 15.5px/1.5 var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; transition: color 150ms; }
+  a:hover { color: var(--accent); }
+  ::selection { background: var(--mark); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code, kbd, pre { font-family: var(--font-mono); }
+  .mono, .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
+    .btn, .gname, .gnote, .log, .footmeta, .absent, kbd { font-family: var(--font-mono); }
 
-  /* ---- sticky topbar: identity, feature chips, filter, graph mode ---- */
-  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 12px; align-items: center; height: var(--topbar-h);
-    padding: 0 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px);
-    border-bottom: 1px solid var(--border); }
-  .top h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
-  .top .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink3); }
-  .featnav { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
-  .featchip { font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; background: none;
-    color: var(--ink2); white-space: nowrap; cursor: pointer; display: inline-flex; gap: .3em; align-items: center; }
-  .featchip:hover { color: var(--ink); border-color: var(--border-strong); }
-  .featchip.off { opacity: .45; text-decoration: line-through; }
-  .dot { display: inline-block; width: .5em; height: .5em; border-radius: 50%; background: var(--human); }
-  .search { background: var(--raised); border: 1px solid var(--border); color: var(--ink); font-size: 12px; padding: 3px 8px;
-    border-radius: 6px; width: 15rem; }
-  .search:focus { outline: 1px solid var(--accent-dim); }
-  .modes { display: flex; gap: 4px; }
-  .btn { background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px;
-    cursor: pointer; color: var(--ink2); font-size: 12.5px; white-space: nowrap; font-family: var(--sans); }
-  .btn:hover { color: var(--ink); border-color: var(--border-strong); }
-  .btn.on { color: var(--accent); border-color: var(--accent-dim); }
+  /* ---- the top bar: the project, the feature pills, the filter, the graph mode, the scheme ---- */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; align-items: center; min-height: 52px;
+    padding: .4rem 1.25rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
+  .top .name { font-weight: 600; color: var(--strong); white-space: nowrap; }
+  .top .name span { color: var(--muted); font-weight: 400; }
+  .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .featchip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
+    font-size: .8rem; color: var(--muted); cursor: pointer; white-space: nowrap; display: inline-flex; gap: .4em;
+    align-items: center; transition: color 150ms, border-color 150ms; }
+  .featchip:hover { color: var(--accent); border-color: var(--accent); }
+  .featchip.off { opacity: .5; text-decoration: line-through; }
+  .dim { color: var(--muted); }
+  .dot { display: inline-block; width: .45em; height: .45em; border-radius: 50%; background: var(--accent-2); }
+  .search { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); color: var(--body);
+    font-size: .82rem; padding: .25rem .6rem; width: 12rem; }
+  .search:focus { outline: none; border-color: var(--accent); }
+  .btn { background: none; border: 0; color: var(--muted); font-size: .82rem; cursor: pointer; padding: .2rem .45rem;
+    transition: color 150ms; white-space: nowrap; }
+  .btn:hover, .btn.on { color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: var(--radius); }
+  .seg .btn.on { background: var(--wash); }
+  .seg .btn + .btn { border-left: 1px solid var(--edge); }
+  .scheme { display: inline-flex; align-items: center; }
+  [data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
 
-  /* ---- rows beside the graph panel; one column when the window is narrow ---- */
-  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 38%); gap: 1rem; padding: .6rem 1.25rem 6rem; align-items: start; }
-  .side { position: sticky; top: calc(var(--topbar-h) + 8px); max-height: calc(100vh - var(--topbar-h) - 16px); overflow: auto;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; }
+  /* what this render did without, said once each */
+  .absences { padding: .6rem 1.25rem 0; display: grid; gap: .2rem; max-width: 110rem; margin: 0 auto; }
+  .absences:empty { display: none; }
+  .absent { font-size: .8rem; color: var(--muted); border-left: 2px solid var(--accent-2); padding-left: .6rem; }
+
+  /* ---- the rows, the graph panel beside them on a wide window ---- */
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1rem 1.25rem 5rem;
+    align-items: start; max-width: 110rem; margin: 0 auto; }
+  .side { border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
   .side.folded .gbody { display: none; }
-  @media (max-width: 1100px) {
-    /* half a screen: the graph above the rows, sticky, the top bar wrapping and scrolling away */
-    main { grid-template-columns: 1fr; }
-    .top { height: auto; flex-wrap: wrap; padding: 6px 12px; }
-    .featnav { flex-basis: 100%; order: 1; }
-    .search { width: 9rem; margin-left: auto; }
-    .side { order: -1; top: var(--topbar-h); max-height: 40vh; }
+  @media (min-width: 1400px) {
+    main { grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 2.5rem; }
+    .side { position: sticky; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
+      overflow: auto; border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
   }
-  .ghead { display: flex; gap: .5rem; align-items: center; margin-bottom: .4rem; }
-  .gname { color: var(--ink2); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gnote { color: var(--ink3); font-size: 12px; padding: .4rem .2rem; }
-  .mermaid { margin: 0; display: flex; justify-content: center; color: var(--ink3); }
-  .mermaid:not(:has(svg)) { visibility: hidden; }
+  .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
+  .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gnote { color: var(--muted); font-size: .8rem; padding: .4rem 0; }
+  .mermaid { margin: 0; display: flex; justify-content: center; }
+  /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
+     that has not come back yet would widen the column it sits in */
+  .mermaid:not(:has(svg)) { display: none; }
   .mermaid svg { max-width: 100%; height: auto; }
-  .side g.node.cur rect, .side g.node.cur polygon { stroke: #fff !important; stroke-width: 3px !important; filter: drop-shadow(0 0 4px #fff8); }
+  .side g.node.cur rect, .side g.node.cur polygon { stroke-width: 2.5px !important; }
 
-  h2 { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; font-weight: 600;
-    color: var(--ink2); margin: 0; display: flex; align-items: baseline; gap: .8rem; font-family: var(--sans); }
-  h2::after { content: ""; flex: 1; border-top: 1px solid var(--border); align-self: center; }
-  h2 .n { letter-spacing: 0; font-size: 11.5px; color: var(--ink3); font-weight: 400; }
-  .grp { margin-bottom: 1.2rem; }
-  .grp > summary { list-style: none; cursor: pointer; padding: .5rem 0 .5rem; }
+  /* ---- a group of rows ---- */
+  .grp { margin-bottom: 1.75rem; }
+  .grp > summary { list-style: none; cursor: pointer; padding: .3rem 0 .6rem; }
   .grp > summary::-webkit-details-marker { display: none; }
-  .grp > summary::before { content: "▾"; color: var(--ink3); font-size: 11px; margin-right: .5rem; float: left; line-height: 1.6; }
-  .grp:not([open]) > summary::before { content: "▸"; }
   .grp.empty { display: none; }
+  h2 { font-size: .82rem; font-weight: 400; color: var(--muted); margin: 0; display: flex; align-items: center;
+    gap: .6rem; font-family: var(--font-mono); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--edge); }
+  h2 .n { color: var(--muted); }
+  .grp > summary::before { content: "▾"; color: var(--muted); font-size: .7rem; margin-right: .4rem; }
+  .grp:not([open]) > summary::before { content: "▸"; }
+  .label { font-size: .82rem; color: var(--muted); font-family: var(--font-mono); }
 
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
-  .panel-b { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0 .6rem; }
-
-  .done { background: var(--done-bg); border-color: var(--done-br); color: var(--done-tx); }
-  .claimed { background: var(--claimed-bg); border-color: var(--claimed-br); color: var(--claimed-tx); }
-  .review { background: var(--review-bg); border-color: var(--review-br); color: var(--review-tx); }
-  .open { background: var(--open-bg); border-color: var(--open-br); color: var(--open-tx); }
-  .blocked { background: var(--blocked-bg); border-color: var(--blocked-br); color: var(--blocked-tx); }
-  .proposed { background: var(--proposed-bg); border-color: var(--proposed-br); color: var(--proposed-tx); }
-  .needs { background: var(--human-bg); border-color: var(--human); color: var(--human); }
-  .badge.kind { border-color: var(--border); color: var(--ink3); border-style: dashed; }
-  .badge.source { border-style: dashed; border-color: var(--claimed-br); color: var(--claimed-tx); }
-
-  /* ---- ticket rows ---- */
-  .ticket { border-bottom: 1px solid var(--border); }
-  .ticket:last-child { border-bottom: 0; }
+  /* ---- a row: every mark in a fixed column, so the eye scans one ---- */
+  .ticket { border-top: 1px solid var(--edge); scroll-margin-top: calc(var(--topbar-h) + 3rem); scroll-margin-bottom: 3rem; }
+  .ticket:first-child { border-top: 0; }
   .ticket.off, .ticket.miss { display: none; }
-  .ticket summary { display: grid; grid-template-columns: 9.5rem 1.6rem 1fr 8rem 5rem; gap: .8rem; align-items: baseline;
-    padding: .45rem .3rem; cursor: pointer; list-style: none; }
-  .ticket summary::-webkit-details-marker { display: none; }
-  .ticket summary:hover { background: var(--raised); }
-  .ftag { font-size: 10.5px; color: var(--ink3); border: 1px dashed var(--border); border-radius: 4px; padding: 0 .35rem; white-space: nowrap;
-    justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  /* the number copies the row's path: its click target is the whole cell, row padding included */
-  .ticket .num { color: var(--ink3); font-size: 12px; text-align: right; cursor: copy; white-space: nowrap;
-    padding: .45rem .3rem; margin: -.45rem -.3rem; border: 1px solid transparent; border-radius: 5px; }
-  .ticket .num:hover { color: var(--accent); background: var(--raised); border-color: var(--border-strong); }
-  .ticket .title { font-size: 13.5px; }
-  .row-needs .title { color: var(--ink); }
-  .row-open .title { color: var(--open-tx); }
-  .row-claimed .title { color: var(--claimed-tx); }
-  .row-review .title { color: var(--review-tx); }
-  .row-done .title, .row-proposed .title, .row-blocked .title { color: var(--ink2); }
-  .row-needs { border-left: 3px solid var(--human); margin-left: -.6rem; padding-left: calc(.6rem - 3px); }
-  .dv { font-family: var(--mono); font-size: 10.5px; margin-left: .5rem; padding: 0 .3rem; text-decoration: none;
-    color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; }
-  .dv:hover { color: var(--ink); border-color: var(--ink3); }
-  .dv.gh { border-style: dashed; }
-  .dvline { margin: .4rem 0 0; } .dvline .dv { margin-left: 0; padding: .1rem .5rem; }
-  .ticket .badges { display: inline-flex; gap: .35rem; white-space: nowrap; justify-self: end; }
-  .badge { display: inline-block; border: 1px solid; padding: .02rem .55rem; border-radius: 99px; font-size: 11px; white-space: nowrap; }
-  .chips { display: inline-flex; gap: .25rem; min-width: 3rem; justify-content: flex-end; flex-wrap: wrap; }
-  .chip { border: 1px solid; border-radius: 4px; font-size: 10.5px; padding: 0 .3rem; text-decoration: none; }
-  .deps { color: var(--ink3); font-size: 12px; }
-  .ticket .body { padding: .2rem 1rem 1rem 3rem; font-size: 13px; color: var(--ink);
-    border-left: 3px solid var(--border); margin: 0 0 .8rem .6rem; max-width: 80ch; }
-  .ticket .body h2 { text-transform: none; letter-spacing: 0; font-size: 13.5px; color: var(--ink); margin: 1rem 0 .3rem; }
-  .ticket .body h2::after { display: none; }
-  .ticket .body code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 .25rem; font-size: .85em; font-family: var(--mono); }
-  .ticket .body pre code { display: block; padding: .6rem .8rem; overflow-x: auto; }
-  .ticket.flash > summary { background: var(--flash); outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-  .ticket > summary { transition: background .6s, outline-color .6s; }
-  .ticket.kcur > summary { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-  .ticket { scroll-margin-top: calc(var(--topbar-h) + 60px); scroll-margin-bottom: 60px; }
-  @media (max-width: 1100px) { .ticket summary { grid-template-columns: 6rem 1.6rem 1fr auto auto; } }
-  .grp { scroll-margin-top: calc(var(--topbar-h) + 10px); }
+  .ticket > summary { display: grid; column-gap: .9rem; row-gap: .2rem; align-items: baseline; padding: .55rem .5rem;
+    cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms;
+    grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr) 7.2rem 6rem 8rem;
+    grid-template-areas: "ftag num asks main time pri chips"; }
+  .ticket > summary::-webkit-details-marker { display: none; }
+  .ticket > summary:hover { background: var(--wash-ink); }
+  .ticket.kcur > summary, .ticket.flash > summary { background: var(--wash); }
+  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
+  .num:hover { color: var(--accent); }
+  .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
+  .titleline { display: flex; gap: .6rem; align-items: baseline; min-width: 0; }
+  .title { color: var(--strong); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
+  .titleline > a, .titleline > .src { flex: none; }
+  .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticket[open] .brief { white-space: normal; }
+  .meta { display: contents; }
+  .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
+  .chip { font-size: .78rem; }
+  .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%; overflow: hidden;
+    text-overflow: ellipsis; background: color-mix(in srgb, var(--c) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
+  .a-review { --c: var(--c-gold); }
+  .a-answer, .a-queue { --c: var(--c-rose); }
+  .a-design { --c: var(--c-purple); }
+  .a-prototype { --c: var(--c-orange); }
+  .a-research { --c: var(--c-blue); }
+  .a-legwork { --c: var(--c-slate); }
+  .a-build { background: none; border-color: transparent; padding-left: 0; }
+  .time { grid-area: time; color: var(--c-time); justify-self: end; font-variant-numeric: tabular-nums; }
+  /* the priority is a ramp, not a set of categories: one hue, strongest at p1 */
+  .pri { grid-area: pri; color: var(--c-pink); justify-self: start; padding: 0 .45rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--c-pink) 16%, transparent); }
+  .pri.p3 { background: color-mix(in srgb, var(--c-pink) 8%, transparent); }
+  .pri.p4, .pri.p5 { color: var(--muted); background: none; padding-left: 0; }
+  /* the blockers' column is as fixed as the rest, so a long cross-feature reference wraps within
+     it rather than widening it and pulling the time and the priority out of line */
+  .chips { grid-area: chips; display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
+  .chip { color: var(--body); overflow-wrap: anywhere; }
+  .chip.done { color: var(--muted); text-decoration: line-through; }
+  .rp { color: var(--accent); }
+  .rp:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .gh { color: var(--muted); }
+  .src { color: var(--accent-2); }
 
-  .log { padding: .9rem 1.1rem; margin: 0; font-size: 12px; line-height: 1.75; overflow-x: auto; }
-  .hash { color: var(--claimed-tx); }
-  .footmeta { color: var(--ink3); font-size: 11.5px; font-family: var(--mono); margin-top: .8rem; }
+  /* below this width the time, the priority and the blockers move under the name, and the top
+     bar's pills take a line of their own rather than scrolling out of sight */
+  @media (max-width: 1000px) {
+    .top { flex-wrap: wrap; padding: .4rem .75rem; }
+    .featnav { flex-basis: 100%; order: 1; }
+    main { padding: 1rem .75rem 5rem; }
+    .absences { padding: .6rem .75rem 0; }
+    .ticket > summary { grid-template-columns: 7rem 2rem 7.6rem minmax(0, 1fr);
+      grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
+    .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
+    .time, .pri, .chips { grid-area: auto; justify-self: auto; }
+  }
+  /* narrower still: the name takes the row's width, with its marks over it and under it */
+  @media (max-width: 620px) {
+    .ticket > summary { grid-template-columns: minmax(0, 6.4rem) 2rem minmax(0, 1fr);
+      grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
+    .titleline { flex-wrap: wrap; }
+    .search { flex: 1; width: auto; }
+  }
+
+  /* ---- a row, opened ---- */
+  .body { padding: .4rem .5rem 1.4rem 1rem; margin-left: .5rem; border-left: 1px solid var(--edge);
+    max-width: 46rem; color: var(--body); font-size: .96rem; }
+  .body > * + * { margin-top: .8em; }
+  .body h2 { font-family: var(--font-body); font-size: 1rem; font-weight: 600; color: var(--strong); margin-top: 1.4em; }
+  .body h2::after { display: none; }
+  .body h3 { font-size: .96rem; font-weight: 600; color: var(--strong); }
+  .body a { color: var(--accent); }
+  .body code { background: var(--ground-2); border-radius: 3px; padding: 0 .25em; font-size: .85em; }
+  .body pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius);
+    padding: .6rem .8rem; overflow-x: auto; font-size: .82rem; }
+  .body pre code { background: none; padding: 0; }
+  .body ul, .body ol { padding-left: 1.2em; }
+  .body li + li { margin-top: .3em; }
+  .body li::marker { color: var(--muted); }
+  .body table { border-collapse: collapse; font-size: .9rem; }
+  .body th, .body td { text-align: left; padding: .2rem .8rem .2rem 0; border-bottom: 1px solid var(--edge); }
+
+  /* ---- a mark says in words what it means ---- */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% + .4rem); left: 0;
+    width: max-content; max-width: 24rem; white-space: pre-line; background: var(--ground); color: var(--body);
+    border: 1px solid var(--edge); border-radius: var(--radius); padding: .5rem .7rem;
+    font: .8rem/1.5 var(--font-mono); text-decoration: none; pointer-events: none;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--strong) 14%, transparent); }
+  .time[data-tip]:hover::after, .pri[data-tip]:hover::after, .chips [data-tip]:hover::after { left: auto; right: 0; }
+
+  .log { margin: 0; font-size: .8rem; line-height: 1.8; overflow-x: auto; white-space: pre-wrap; }
+  .hash { color: var(--muted); }
+  .footmeta { color: var(--muted); font-size: .78rem; margin-top: .8rem; }
 
   #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 50; max-width: 90vw;
-    background: var(--raised); border: 1px solid var(--border-strong); border-radius: 6px; padding: .3rem .8rem;
-    font: 12px var(--mono); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    opacity: 0; transition: opacity .2s; pointer-events: none; }
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .3rem .9rem;
+    font: .8rem var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity 200ms; pointer-events: none; }
   #toast.on { opacity: 1; }
 
-  #help { position: fixed; inset: 0; z-index: 100; background: rgba(10,11,13,.7); display: none; align-items: center; justify-content: center; }
+  #help { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--strong) 40%, transparent); }
   #help.open { display: flex; }
-  #help .card { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 20px 26px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
-  #help table { border-collapse: collapse; font-size: 13px; }
-  #help td { padding: 3px 14px 3px 0; }
-  #help kbd { font-family: var(--mono); background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; font-size: 12px; }
+  #help .card { background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: 1.2rem 1.5rem; }
+  #help table { border-collapse: collapse; font-size: .9rem; }
+  #help td { padding: .2rem 1rem .2rem 0; }
+  kbd { font-size: .78rem; border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; color: var(--body); }
 </style>
 </head>
 <body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
 <div class="top">
-  <span class="eyebrow">board</span>
-  <h1>${project}</h1>
+  <span class="name">board <span>${project}</span></span>
   <nav class="featnav" id="featnav">${chips}</nav>
-  <input class="search" id="search" type="search" placeholder="filter  (/)" autocomplete="off">
-  <div class="modes" id="modes">
-    <button class="btn" data-gmode="feature" title="graph of the feature under the cursor (a)">feature</button>
-    <button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button>
-    <button class="btn" id="helpbtn" title="keyboard help (?)">?</button>
-  </div>
+  <input class="search" id="search" type="search" placeholder="filter  /" autocomplete="off">
+  <span class="seg" id="modes"><button class="btn" data-gmode="feature" title="the graph of the row's feature (a)">feature</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
+  <button class="btn" id="helpbtn" title="keys (?)">?</button>
+  <button class="btn scheme" id="scheme" title="the other colour scheme">
+    <svg class="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+  </button>
 </div>
+<div class="absences">${absences}</div>
 <main>
 <div class="rows" id="rows">
 ${groups}
 <details class="grp" id="grp-log"><summary><h2>recent commits</h2></summary>
-  <pre class="panel log">${log}</pre>
+  <pre class="log">${log}</pre>
   <p class="footmeta">${footmeta}</p>
 </details>
 </div>
 <aside class="side" id="side">
-  <div class="ghead"><span class="eyebrow">dependencies</span><span class="gname" id="gname"></span>
-    <button class="btn" id="sidefold" title="fold the graph panel (b)">▾</button></div>
+  <div class="ghead"><span class="label">dependencies</span><span class="gname" id="gname"></span>
+    <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
   <div class="gbody" id="gbody">
-    <div class="g" data-feature="" ><div class="gnote">expand a row or move onto one (j / k)</div></div>
+    <div class="g" data-feature=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
   </div>
 </aside>
@@ -1080,13 +1325,14 @@ ${groups}
 <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>next / previous row (the graph follows)</td></tr>
 <tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>next / previous group</td></tr>
 <tr><td><kbd>gg</kbd> <kbd>G</kbd></td><td>top / bottom</td></tr>
-<tr><td><kbd>x</kbd> <kbd>o</kbd> <kbd>Enter</kbd></td><td>expand / collapse the row</td></tr>
-<tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>collapse / expand every group</td></tr>
+<tr><td><kbd>x</kbd> <kbd>o</kbd> <kbd>Enter</kbd></td><td>open / close the row</td></tr>
+<tr><td><kbd>X</kbd> <kbd>O</kbd></td><td>close / open every group</td></tr>
 <tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
 <tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
 <tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
-<tr><td><kbd>b</kbd></td><td>fold / unfold the graph panel</td></tr>
+<tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
+<tr><td><kbd>t</kbd></td><td>the other colour scheme</td></tr>
 <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
@@ -1110,9 +1356,10 @@ ${groups}
     const off = new Set(JSON.parse(localStorage.getItem("board-off:" + document.title) ?? "[]"));
     for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
     for (const t of document.querySelectorAll(".ticket")) t.classList.toggle("off", off.has(t.dataset.feature));
-    // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid
+    // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid.
+    // Keyed by the scheme too, since mermaid bakes the palette into the SVG.
     for (const el of document.querySelectorAll(".mermaid")) {
-      const hit = cache[el.dataset.key];
+      const hit = cache[el.dataset.key + "@" + document.documentElement.dataset.theme];
       if (hit && hit.src === el.textContent) { el.dataset.src = hit.src; el.innerHTML = hit.svg; }
     }
     if (saved) {
@@ -1130,31 +1377,48 @@ ${groups}
   import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs";
   mermaid.registerLayoutLoaders(elkLayouts);
 
-  const css = getComputedStyle(document.body);
-  const v = (name) => css.getPropertyValue(name).trim();
-  // Mermaid bakes colors into the SVG, so the palette is read off the CSS tokens at load time.
-  // ghost = done ticket shown as context: done palette (so it never reads as
-  // blocked-grey), dashed border marking it inactive
-  const classDefs = ["done", "review", "claimed", "open", "blocked", "proposed"].map((s) =>
-    "  classDef " + s + " fill:" + v("--" + s + "-bg") + ",stroke:" + v("--" + s + "-br") + ",color:" + v("--" + s + "-tx")
-  ).join("\n") + "\n  classDef ghost fill:" + v("--done-bg") + ",stroke:" + v("--done-br") + ",color:" + v("--done-tx") + ",stroke-dasharray:4 3";
-  // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
-  // mode only when its measured width equals the wrap width exactly, and the
-  // measurement misses by a fraction of a pixel at any page zoom other than 100%
-  // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
-  // every long label stays on one line and clips (mermaid-js/mermaid#7794).
-  // SVG labels wrap by mermaid's own measure.
-  mermaid.initialize({
-    startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
-    elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
-    themeVariables: {
-      fontFamily: v("--mono"), fontSize: "13px",
-      primaryColor: v("--panel"), primaryTextColor: v("--ink"),
-      primaryBorderColor: v("--border"), lineColor: v("--edge"),
-      clusterBkg: v("--panel"), clusterBorder: v("--border-strong"),
-      titleColor: v("--ink2"),
-    },
-  });
+  // Mermaid bakes the colours into the SVG, and a light-dark() token never resolves through
+  // getPropertyValue, so every colour is read off a probe element in the scheme on show, and read
+  // again when the scheme switches. A status is drawn in the house ink: the work that wants the
+  // user wears the accent, the rest steps back to the edge. ghost = a done ticket shown as
+  // context, and proposed = not ruled on: both dashed.
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.append(probe);
+  const rgb = (name) => { probe.style.color = "var(" + name + ")"; return getComputedStyle(probe).color.match(/[\d.]+/g).map(Number); };
+  // mermaid's classDef parser takes no rgba(), so a translucent token is laid over the ground and written as hex
+  const hex = ([r, g, b, a = 1], [R, G, B] = [0, 0, 0]) =>
+    "#" + [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+  let classDefs = "";
+  function setupMermaid() {
+    const ground = rgb("--ground");
+    const c = Object.fromEntries(["ground", "ground-2", "edge", "muted", "body", "strong", "accent", "wash"]
+      .map((n) => [n, hex(rgb("--" + n), ground)]));
+    const cls = {
+      review: [c.wash, c.accent, c.strong, ""], open: [c["ground-2"], c.body, c.body, ""],
+      claimed: [c["ground-2"], c.muted, c.body, ""], blocked: [c.ground, c.edge, c.muted, ""],
+      proposed: [c.ground, c.muted, c.body, ",stroke-dasharray:4 3"], done: [c.ground, c.edge, c.muted, ""],
+      ghost: [c.ground, c.edge, c.muted, ",stroke-dasharray:2 3"],
+    };
+    classDefs = Object.entries(cls).map(([s, [fill, stroke, text, extra]]) =>
+      "  classDef " + s + " fill:" + fill + ",stroke:" + stroke + ",color:" + text + extra).join("\n");
+    // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
+    // mode only when its measured width equals the wrap width exactly, and the
+    // measurement misses by a fraction of a pixel at any page zoom other than 100%
+    // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
+    // every long label stays on one line and clips (mermaid-js/mermaid#7794).
+    // SVG labels wrap by mermaid's own measure.
+    mermaid.initialize({
+      startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
+      elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
+      themeVariables: {
+        fontFamily: getComputedStyle(document.body).getPropertyValue("--font-mono").trim(), fontSize: "13px",
+        primaryColor: c.ground, primaryTextColor: c.body, primaryBorderColor: c.edge, lineColor: c.muted,
+        clusterBkg: c.ground, clusterBorder: c.edge, titleColor: c.muted,
+      },
+    });
+  }
+  setupMermaid();
 
   let seq = 0;
   async function renderGraphs() {
@@ -1164,6 +1428,7 @@ ${groups}
     for (const el of document.querySelectorAll(".g:not([hidden]) .mermaid")) {
       if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
       el.dataset.src = el.textContent;
+      if (!el.dataset.src.trim()) continue;
       const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
       el.innerHTML = svg;
       nodeHover(el);
@@ -1237,7 +1502,7 @@ ${groups}
     delete pre.dataset.src;
     pre.hidden = !edges.length;
     g.querySelector(".gnote").hidden = !!edges.length;
-    const hit = cache[key];
+    const hit = cache[key + "@" + document.documentElement.dataset.theme];
     if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; nodeHover(pre); }
   }
 
@@ -1326,6 +1591,17 @@ ${groups}
   document.getElementById("helpbtn").addEventListener("click", () => help.classList.toggle("open"));
   help.addEventListener("click", () => help.classList.remove("open"));
 
+  // The scheme the switch lands on is kept, and outlives a re-render; ?theme= overrides it.
+  function switchScheme() {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === "night" ? "day" : "night";
+    localStorage.setItem("board-theme", root.dataset.theme);
+    setupMermaid();
+    for (const el of document.querySelectorAll(".mermaid")) { el.innerHTML = ""; delete el.dataset.src; }
+    renderGraphs();
+  }
+  document.getElementById("scheme").addEventListener("click", switchScheme);
+
   // The keys are diffview's where the two pages have the same move (j/k, J/K, gg/G, x/o/Enter,
   // X/O, z, b, /, ?), so one set of habits drives both.
   let gPending = false, gTimer = null;
@@ -1356,10 +1632,11 @@ ${groups}
         break;
       }
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
-      case "d": { const href = cur?.querySelector("a.dv:not(.gh)")?.href; if (href) window.open(href, "_blank"); break; }
+      case "d": { const href = cur?.querySelector("a.rp")?.href; if (href) window.open(href, "_blank"); break; }
       case "y": copyPath(cur); break;
       case "a": mode = mode === "all" ? "feature" : "all"; showGraph(); break;
       case "b": side.classList.toggle("folded"); break;
+      case "t": switchScheme(); break;
       case "0": off.clear(); applyFilters(); break;
       default:
         if (/^[1-9]$$/.test(e.key)) {  // the doubled dollar is the page template's escape
@@ -1399,7 +1676,7 @@ ${groups}
     };
     const svgs = {};
     for (const el of document.querySelectorAll(".mermaid")) {
-      if (el.querySelector("svg")) svgs[el.dataset.key] = { src: el.dataset.src, svg: el.innerHTML };
+      if (el.querySelector("svg")) svgs[el.dataset.key + "@" + document.documentElement.dataset.theme] = { src: el.dataset.src, svg: el.innerHTML };
     }
     try {
       sessionStorage.setItem("board-view", JSON.stringify(state));
