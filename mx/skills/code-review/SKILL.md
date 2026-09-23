@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along four axes: Correctness (does it break anything?), Standards (repo coding standards plus a smell baseline), Spec (does it match what the originating ticket/issue asked for?), and Tests (what do the tests it touches actually catch?). Runs the axes as separate reviewers; specless work runs light, one reviewer and no spec axis. Use when the user wants to review a branch, work-in-progress changes, finished unspecced work, or asks to \"review since X\" or a \"light review\"."
+description: "Review the changes since a fixed point (a commit, branch or tag). Use when the user asks to review a branch or work in progress, to \"review since X\", or for a \"light review\"."
 ---
 
 Review of the diff between `HEAD` and a fixed point, along four axes:
@@ -46,7 +46,7 @@ The standards sources are the script's to gather, and the brief it writes for ea
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--model`: Opus by default, Sonnet when the diff is small or trivial, never Fable unless the user names it for this review. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
+`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort`: `high` by default, lower for a small or trivial diff. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
 
 ### 5. Aggregate
 
@@ -68,7 +68,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-For specless work, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where there is no spec for a Spec axis to check and no Testing Decisions to check the tests against. Model rule inverted from step 4: Sonnet by default, Opus by your judgment when the diff is complex enough to warrant it. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
+For specless work, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where there is no spec for a Spec axis to check and no Testing Decisions to check the tests against. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 

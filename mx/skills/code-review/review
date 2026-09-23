@@ -5,7 +5,7 @@
 # point, where the spec is, light or full, and what to do with the findings.
 #
 # Usage: review <fixed-point> [--axes correctness,standards,spec,tests]
-#               [--spec <path>] [--light] [--model <model>]
+#               [--spec <path>] [--light] [--effort <level>] [--model <model>]
 #   <fixed-point>  the commit, branch or tag the diff is measured from. What
 #                  the reviewers get is the three-dot diff with both ends
 #                  pinned to SHAs, so it holds still while they read and
@@ -21,17 +21,24 @@
 #            need it.
 #   --light  one reviewer over the correctness and standards briefs joined,
 #            for work with no spec to check, reporting as the `light` axis.
-#   --model  every reviewer's model, `opus` by default, `sonnet` under --light.
+#   --effort every reviewer's effort, `high` by default: low, medium, high,
+#            xhigh or max.
+#   --model  every reviewer's model, `opus` by default.
 # Reports land in <repo>/agent/reviews/<range>/<axis>.md, the brief each
 # reviewer read under briefs/ beside them and its output in <axis>.log, and
 # the reports' paths are this script's own output. Exit 1 names an axis whose
-# report never arrived, to re-run with --axes.
+# report never arrived, to re-run with --axes. One review of a range runs at a
+# time; a second is refused while the first is alive.
+#
+# A reviewer starts from none of the caller's setup: no settings files, MCP
+# servers, skills or memory, so what it works from is its brief, the same on
+# every machine.
 #
 # A reviewer runs on `--permission-mode manual`: it reads anything, runs the
 # git commands the `git_reads` list at the top of this script names, and writes
 # inside its report directory. The Tests reviewer works in <range>/checkout, a
 # worktree of the pinned tip this script adds before it starts and removes when
-# it ends, so the code it mutates to see what the tests catch is its own; the
+# it ends, or the next review removes when this one was killed, so the code it mutates to see what the tests catch is its own; the
 # same one Edit rule covers that checkout and its report, and it may run the
 # test commands the `runners` list at the top of this script names, in a tree
 # that holds what the commit holds and nothing an install would add. Running a
@@ -77,12 +84,13 @@ case ${1:-} in
 esac
 fixed=$1; shift
 
-axes= spec= light= model=
+axes= spec= light= model=opus effort=high
 while [ $# -gt 0 ]; do
     case $1 in
         --axes)  axes=${2:-};  [ -n "$axes" ]  || die "--axes takes a comma-separated list of axes"; shift 2 ;;
         --spec)  spec=${2:-};  [ -n "$spec" ]  || die "--spec takes a path"; shift 2 ;;
         --model) model=${2:-}; [ -n "$model" ] || die "--model takes a model alias or id"; shift 2 ;;
+        --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
         --light) light=1; shift ;;
         *) die "unknown argument: $1" ;;
     esac
@@ -135,7 +143,6 @@ for axis in $axis_list; do
         spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against the spec: pass --spec <path>" ;;
     esac
 done
-[ -n "$model" ] || case " $axis_list " in *" light "*) model=sonnet ;; *) model=opus ;; esac
 
 # Everything that documents how code is written here: the baselines this
 # workflow carries, and the repo's own, which it reads at the root and nowhere
@@ -160,6 +167,14 @@ esac
 dir=$root/agent/reviews/$range
 mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 
+# One review of a range at a time, and the kernel says whether one is running:
+# this script holds the range's lock on fd 9, every reviewer it starts inherits
+# it, and the kernel releases it when the last of them exits, however that
+# happens, a kill -9, a crash and a reboot included. A lock this run can take
+# means nothing of an earlier run is left alive in the range.
+exec 9>"$dir/.lock"
+flock -n 9 || die "a review of $range is running: its processes hold $dir/.lock"
+
 # The Tests axis is the one that runs what it reads, so it gets a checkout of
 # the pinned tip to itself, inside its report directory: it mutates code there
 # to find out what the suite catches, and the tree the caller works in and the
@@ -167,18 +182,29 @@ mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 checkout=$dir/checkout
 
 # Removed once the reviewer is done with it, and the transcript says which way
-# that went: a checkout still standing is what stops the next review of this
-# range, so it is not something to report as gone.
-drop_checkout() {
+# that went: a checkout still standing is not something to report as gone.
+drop_checkout() { # <checkout>
     local out
-    if out=$(git worktree remove --force "$checkout" 2>&1); then
-        echo "review: the Tests reviewer's checkout is removed" >&2
-    elif rm -rf "$checkout" && [ ! -e "$checkout" ]; then
-        echo "review: git would not remove the Tests reviewer's checkout ($out); the directory is gone, its worktree entry may not be: git worktree prune" >&2
+    if out=$(git worktree remove --force "$1" 2>&1); then
+        echo "review: the Tests reviewer's checkout at $1 is removed" >&2
+    elif rm -rf "$1" && [ ! -e "$1" ]; then
+        echo "review: git would not remove the Tests reviewer's checkout ($out); the directory is gone, and git worktree prune drops its entry" >&2
     else
-        echo "review: the Tests reviewer's checkout is still at $checkout ($out); remove it before reviewing $range again" >&2
+        echo "review: the Tests reviewer's checkout is still at $1 ($out)" >&2
     fi
 }
+
+# A checkout under a range whose lock nobody holds belongs to a review that is
+# no longer running, this range's or another's, killed before it could remove
+# it: removed before anything else starts.
+for left in "$root"/agent/reviews/*/checkout; do
+    [ -e "$left" ] || continue
+    if [ "$left" = "$checkout" ] || flock -n "${left%/checkout}/.lock" true; then
+        echo "review: $left was left by a review that is no longer running" >&2
+        drop_checkout "$left"
+    fi
+done
+git worktree prune
 
 # The brief a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis both briefs it folds together. The templates hold every
@@ -225,13 +251,8 @@ for axis in $axis_list; do
 done
 
 # After the briefs, so a template this run cannot render costs nothing: the
-# checkout outlives only a run that started. A checkout already there is a
-# review of this range still running or one that was killed, and this script
-# can tell neither from the other, so both are the caller's to settle; removing
-# it blind would pull the tree out from under a live reviewer.
+# checkout outlives only a run that started.
 case " $axis_list " in *" tests "*)
-    [ ! -e "$checkout" ] ||
-        die "$checkout is already there, from a review of $range still running or killed; when none is running: git worktree remove --force $checkout"
     echo "+ git worktree add --detach $checkout $head" >&2
     git worktree add --quiet --detach "$checkout" "$head" ||
         die "cannot give the Tests reviewer a checkout at $checkout"
@@ -249,18 +270,22 @@ reviewer() { # <axis>
     # Echoed whole, redirections and working directory included, so the
     # transcript holds the command that produced a report, or the one that
     # produced nothing.
-    local cmd=(claude -p --model "$model" --permission-mode manual --allowedTools "${allowed[@]}")
+    local cmd=(claude -p --model "$model" --effort "$effort"
+               --setting-sources "" --strict-mcp-config --disable-slash-commands
+               --settings '{"autoMemoryEnabled": false}'
+               --tools Read,Grep,Glob,Bash,Edit,Write
+               --permission-mode manual --allowedTools "${allowed[@]}")
     echo "+ (cd $cwd && ${cmd[*]} < $dir/briefs/$axis.md > $dir/$axis.log)" >&2
     ( cd "$cwd" && "${cmd[@]}" < "$dir/briefs/$axis.md" > "$dir/$axis.log" 2>&1 )
     rc=$?
     echo "review: the $axis reviewer exited $rc" >&2
     # Whatever it left there, and whether it finished or died: the checkout is
     # this run's, not the worktree's.
-    [ "$axis" = tests ] && drop_checkout
+    [ "$axis" = tests ] && drop_checkout "$checkout"
     return 0
 }
 
-echo "review: $range, ${axis_list// /, } on $model; reports in $dir" >&2
+echo "review: $range, ${axis_list// /, } on $model at $effort effort; reports in $dir" >&2
 for axis in $axis_list; do reviewer "$axis" & done
 wait
 
@@ -276,5 +301,5 @@ if [ ${#missing[@]} -gt 0 ]; then
     done
     # The merge-base rather than the caller's fixed point, and before HEAD
     # moves: a re-run after a commit lands its report under another range.
-    die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model"
+    die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model --effort $effort"
 fi

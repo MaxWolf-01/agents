@@ -288,3 +288,10 @@ The commits are the same work at new SHAs: the lists above name the rebased ones
 - [D17] Friction
 
   - A ticket comment that names commits goes stale the moment the branch is rebased, and this one named nine. Nothing catches that: the review page renders from `diff:` ranges the orchestrator writes, and the prose around them is on its own. Rewriting them by hand is what this round did.
+
+**2026-09-23** Ruled by the user on review, from the calls page (`~/Downloads/show/review-launcher-calls/`):
+
+- D113, replacing D58: one review of a range runs at a time, held by a `flock` on `agent/reviews/<range>/.lock` that the kernel releases when the run and its reviewers die. A checkout under a range whose lock is free belongs to a dead run and is removed at the next start, so a killed or crashed review never blocks a later one. `test_review.py` holds it.
+- D114: a reviewer starts from none of the caller's setup (`--setting-sources ""`, no MCP servers, no skills, no auto-memory, the five file and shell tools).
+- D115: every reviewer runs Opus, `--effort high` by default; `--effort` is the knob the skill leaves the caller. The other unattended launches move together in `unattended-launch`.
+- D116: the skill's description carries only its triggers.
