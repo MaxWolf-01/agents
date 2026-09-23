@@ -581,11 +581,12 @@ def git_log(repo: Path) -> str:
 
 
 # ---- what a ticket asks of the user ---------------------------------------
-# The seams agent/tickets/board-orients/spec.md decides and its later slices fill in. The
-# properties in test_board.py are the oracle: each stub's check is an expected failure naming
-# the slice that lifts it.
+# The seams agent/tickets/board-orients/spec.md decides and its later slices fill in. That spec is
+# their oracle, held as the properties in test_board.py: each stub's check is an expected failure
+# naming the slice that lifts it.
 
-TRANSCRIPTS = Path.home() / ".claude" / "projects"  # where a session's transcript is on this machine
+# where a session's transcript is on this machine, as the rest of the repo resolves it
+TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 
 
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:

@@ -23,8 +23,8 @@ the slice that lifts it; that spec is their oracle.
 """
 
 import html
+import itertools
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -537,26 +537,8 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
 # is an expected failure naming the slice that lifts it; one that already holds carries none.
 
 
-@pytest.fixture
-def path_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Path]:
-    """A PATH holding git and whichever stubs a check asks for, so every other tool the board
-    reaches for is genuinely absent. A stub records each run, and answers with `answer`."""
-    bin_dir = tmp_path / "path"
-    bin_dir.mkdir()
-    (bin_dir / "git").symlink_to(shutil.which("git"))
-    monkeypatch.setenv("PATH", str(bin_dir))
-
-    def stub(name: str, answer: str = "") -> Path:
-        """Where the runs of `name` are recorded, one line each."""
-        script = bin_dir / name
-        script.write_text(f'#!/bin/sh\necho "$*" >> "{bin_dir / f"{name}.runs"}"\n{answer}\n')
-        script.chmod(0o755)
-        return bin_dir / f"{name}.runs"
-
-    return stub
-
-
 def runs(record: Path) -> list[str]:
+    """What the board ran a stub tool with, one line per run (the path_with fixture)."""
     return record.read_text().splitlines() if record.exists() else []
 
 
@@ -565,51 +547,87 @@ def absences(page: str, source: str) -> int:
     return page.count(f'data-absent="{source}"')
 
 
+def rows_in(page: str, group: str) -> set[str]:
+    """The ticket rows one of the board's groups holds; a queue entry, which is not a ticket, is not one."""
+    body = page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
+    return {r for r in re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body) if r.startswith(("t-", "standalone-"))}
+
+
 @pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="needs_me is a stub; lifted by 03-questions-and-needs-me")
-@given(
-    status=st.sampled_from(sorted(TICKET_STATUSES | {"blocked"})),
-    kind=st.sampled_from([None, "research", "prototype", "grilling", "legwork"]),
-    priority=st.one_of(st.none(), st.integers(min_value=1, max_value=5)),
-    open_question=st.booleans(),
-)
-def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_design_session(
-    status: str, kind: str | None, priority: int | None, open_question: bool
-) -> None:
-    waits = (
-        status == "review"
-        or open_question
-        or (kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed"))
+def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_design_session() -> None:
+    """The whole space of what a ticket file can say, since it is small enough to enumerate.
+
+    Two readings the spec's sentence leaves open: a design session is a grilling or a prototype
+    decision, the two types the user sits for; and "nobody has claimed" means open or proposed,
+    since a blocked or done ticket is not the user's to sit for either.
+    """
+    space = itertools.product(
+        sorted(TICKET_STATUSES | {"blocked"}),
+        [None, "research", "prototype", "grilling", "legwork"],
+        [None, 1, 2, 3, 4, 5],
+        [False, True],
     )
-    assert needs_me(status, kind, priority, open_question) is waits
+    for status, kind, priority, open_question in space:
+        waits = (
+            status == "review"
+            or open_question
+            or (kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed"))
+        )
+        assert needs_me(status, kind, priority, open_question) is waits, (status, kind, priority, open_question)
 
 
 PHRASE = st.lists(st.sampled_from("retry the clock suite upload mapping bank payee ledger".split()), min_size=2, max_size=6).map(" ".join)
-QUESTIONS = st.lists(st.tuples(PHRASE, PHRASE, st.one_of(st.none(), st.sampled_from(["2026-09-21", "2026-09-22"]))), min_size=1, max_size=6)
+HEADLINE = st.builds(lambda words, end: words + end, PHRASE, st.sampled_from("?.:"))
+DETAIL = st.builds(lambda words, path: f"{words}, in {path}." if path else f"{words}.", PHRASE, st.sampled_from(["", "`src/mapping.py`", "`~/.config/ledger/mappings.toml`"]))
+QUESTION = st.tuples(HEADLINE, DETAIL, st.one_of(st.none(), st.sampled_from(["2026-09-21", "2026-09-22"])))
+# the first tag, since a ticket's Dn sequence runs on across its comment too and its questions need not open it
+QUESTIONS = st.tuples(st.integers(min_value=1, max_value=4), st.lists(QUESTION, min_size=1, max_size=6))
 
 
-def ticket_asking(items: list[tuple[str, str, str | None]]) -> str:
+def ticket_asking(first: int, items: list[tuple[str, str, str | None]]) -> str:
     """A ticket file whose `## Questions` holds `items`, some of them ruled, and whose closing
     comment carries tags of the same running sequence that are not questions."""
     asked = "\n".join(
-        f"- [D{n}] **{headline}?** {detail}." + (f"\n  - Ruled {ruled}: the answer, relayed." if ruled else "")
-        for n, (headline, detail, ruled) in enumerate(items, start=1)
+        f"- [D{n}] **{headline}** {detail}" + (f"\n  - Ruled {ruled}: the answer, relayed." if ruled else "")
+        for n, (headline, detail, ruled) in enumerate(items, start=first)
     )
+    after = first + len(items)
     return (
         "---\nstatus: review\npriority: 1\nsize: S\n---\n\n# A ticket\n\n## Brief\n\nWhat it is, cold.\n\n"
         f"## Questions\n\n{asked}\n\n"
         "## Comments\n\nBuilt on its branch, not merged.\n\n"
-        "**Details, if you want them**\n\n- [D9] Assumptions\n  - A1 `src/mapping.py:1`: one mapping per bank.\n"
+        f"**Details, if you want them**\n\n- [D{after}] Assumptions\n  - A1 `src/mapping.py:1`: one mapping per bank.\n"
     )
 
 
 @pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="read_questions is a stub; lifted by 03-questions-and-needs-me")
-@given(items=QUESTIONS)
-def test_a_question_a_ruled_line_answers_is_never_open(items: list[tuple[str, str, str | None]]) -> None:
-    read = read_questions(ticket_asking(items))
-    assert [q.tag for q in read] == [f"D{n}" for n in range(1, len(items) + 1)]
-    assert [q.headline for q in read] == [f"{headline}?" for headline, _, _ in items]
+@given(asked=QUESTIONS)
+def test_a_question_a_ruled_line_answers_is_never_open(asked: tuple[int, list[tuple[str, str, str | None]]]) -> None:
+    first, items = asked
+    read = read_questions(ticket_asking(first, items))
+    assert [q.tag for q in read] == [f"D{n}" for n in range(first, first + len(items))]
+    assert [q.headline for q in read] == [headline for headline, _, _ in items]
     assert [q.ruled is None for q in read] == [ruled is None for _, _, ruled in items]
-    assert all(detail in q.detail for q, (_, detail, _) in zip(read, items))
+    assert all(detail in q.detail and "Ruled" not in q.detail for q, (_, detail, _) in zip(read, items))
+
+
+# what the demo tracker's tickets ask of the user: the two builds in review, and every ticket with a
+# question no Ruled line answers. staging-credentials, whose one question is ruled, is not one.
+NEEDS_ME = {
+    "t-csv-import-02", "t-saved-views-01", "t-saved-views-03", "standalone-flaky-upload-test",
+    "standalone-pick-a-date-library", "standalone-retire-legacy-exporter", "standalone-speed-up-tests",
+}
+
+
+@pytest.mark.xfail(strict=True, reason="the board has no needs-me group yet; lifted by 03-questions-and-needs-me")
+def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The same two properties as the checks above, at the seam the spec's Testing Decisions names:
+    a fixture tracker on disk in, groups out. 02-map-columns keeps its questions on its ticket
+    branch, so the board has to read them there."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    assert rows_in(out.read_text(), "needs") == NEEDS_ME
+    assert "standalone-staging-credentials" not in rows_in(out.read_text(), "needs"), "its one question is ruled"
 
 
 @pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="ticket_sessions is a stub; lifted by 05-sessions")
@@ -623,7 +641,7 @@ def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo:
 
 
 @pytest.mark.xfail(strict=True, reason="the board lists no sessions yet; lifted by 05-sessions")
-def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: Demo, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: Demo, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_with: Callable[..., Path]) -> None:
     monkeypatch.setattr(board, "TRANSCRIPTS", tmp_path / "no-transcripts")
     out = tmp_path / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
@@ -661,10 +679,11 @@ def test_the_board_renders_with_no_review_page_server_and_links_its_pages_as_fil
 def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     gh = path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"
+    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731 — an auth probe is not a request for a reference
     render(tracker_roots(tracker), repo, out)
-    assert len(runs(gh)) == 1, "one query per render resolves every reference"
+    assert len(queries()) == 1, "one query per render resolves both references"
     render(tracker_roots(tracker), repo, out)
-    assert len(runs(gh)) == 1, "the answer cached beside the board serves the unchanged render"
+    assert len(queries()) == 1, "the answer cached beside the board serves the unchanged render"
 
 
 @pytest.mark.xfail(strict=True, reason="the board has no briefing yet; lifted by 09-briefing")

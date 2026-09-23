@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "hypothesis"]
+# dependencies = ["pytest", "hypothesis", "tyro"]  # tyro: the demo tracker the shared fixtures build
 # ///
 """The briefing session's schedule. Run: uv run test_briefing.py
 
@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from briefing import DEBOUNCE, IDLE, PING_CAP, Briefing, cache_path, on_change
 
 START = datetime.fromisoformat("2026-09-21T09:00:00+02:00")
-RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=90), st.booleans()), min_size=1, max_size=40)
+RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=90), st.booleans()), min_size=1, max_size=60)
 
 
 def fresh(at: datetime, n: int) -> Briefing:
@@ -73,6 +73,13 @@ def test_the_briefing_session_is_pinged_once_a_window_and_never_past_its_idle_ho
         if verb == "wait":
             told = session is not None and session.last_activity >= changed_at
             assert told or now - changed_at < DEBOUNCE, "a change waiting past its debounce window"
+
+
+def test_the_windows_the_property_is_stated_in_are_the_spec_s() -> None:
+    """The property above reads its windows off the module, so the spec's own numbers are checked
+    here: five to ten minutes of debounce, and the idle hour."""
+    assert timedelta(minutes=5) <= DEBOUNCE <= timedelta(minutes=10)
+    assert IDLE == timedelta(hours=1)
 
 
 def test_the_cache_file_reads_back_what_it_was_written_with(tmp_path: Path) -> None:

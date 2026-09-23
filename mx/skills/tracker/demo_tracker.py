@@ -6,22 +6,24 @@
 """Build the demo tracker the board's checks render: a git repo for a fictional bookkeeping CLI,
 "ledger", whose tickets exercise every element the board shows.
 
-Two features (a confirmed spec with six slices, a draft spec with three decision tickets), eight
-standalone tickets covering every decision type, two builds waiting on a ruling on their ticket
-branches with their questions there, one build stopped on two questions of which one is ruled,
-review pages beside the tickets, demo scripts and a figure under agent/show, and four sessions on
-the commits: three with a transcript under the transcripts directory this writes, one worker on
-another host with none.
+Two features (a confirmed spec with six slices, a draft spec with three tickets, two of them
+decisions), eight standalone tickets covering every decision type, two builds waiting on a ruling
+on their ticket branches with their questions there, one build stopped on two questions of which
+one is ruled, one ticket whose only question is ruled, a needs-human queue, review pages beside the
+tickets, demo scripts and a figure under agent/show, and four sessions on the commits: three with a
+transcript under the transcripts directory this writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
-
-Promoted from agent/prototypes/board-orients/demo-tracker/build.sh, with its tickets moved to the
-ticket file the board-orients spec decides: the H1 as the short name, `## Brief`, `## Questions`
-with `Ruled` lines, priority and size in frontmatter.
 """
+
+# Promoted from agent/prototypes/board-orients/demo-tracker/build.sh, with its tickets moved to the
+# ticket file the board-orients spec decides: the H1 as the short name, `## Brief`, `## Questions`
+# with `Ruled` lines, priority and size in frontmatter.
 
 import json
 import os
+import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,10 +36,11 @@ S2 = "b52e7d10-9a3c-4f68-8e17-3c9b2a5d4e81"  # orchestrating csv-import
 S3 = "c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12"  # loose triage
 S4 = "d9e1b2c3-7f40-4a5b-8c6d-2e3f4a5b6c7d"  # a worker on agent@pc: no transcript here
 
-TRANSCRIBED = {  # the sessions whose transcript is on this machine, as the board reads them
-    S1: {"title": "Grilling the CSV import", "cwd": "/home/max/repos/ledger"},
-    S2: {"title": "Dispatching csv-import, wave 1", "cwd": "/home/max/repos/ledger-csv-import"},
-    S3: {"title": "Triage after the holidays", "cwd": "/home/max/repos/ledger"},
+TRANSCRIBED = {  # the sessions whose transcript is on this machine: what the board shows for each
+    S1: {"title": "Grilling the CSV import", "ai_title": "Grilling the CSV import", "cwd": "/home/max/repos/ledger"},
+    S2: {"title": "Dispatching csv-import, wave 1", "ai_title": "Wave 1 of csv-import",
+         "renamed": "Dispatching csv-import, wave 1", "cwd": "/home/max/repos/ledger-csv-import"},
+    S3: {"title": "Triage after the holidays", "ai_title": "Triage after the holidays", "cwd": "/home/max/repos/ledger"},
 }
 
 
@@ -48,7 +51,7 @@ class Demo:
     repo: Path
     root: Path  # agent/tickets, what the board is pointed at
     transcripts: Path  # stands in for ~/.claude/projects: <project>/<session id>.jsonl
-    sessions: dict[str, dict]  # session id -> title and cwd, for the ones with a transcript
+    sessions: dict[str, dict]  # session id -> the title the board should show, and the cwd, for the ones with a transcript
 
 
 def build(dest: Path) -> Demo:
@@ -56,7 +59,7 @@ def build(dest: Path) -> Demo:
     repo = Path(dest).resolve()
     repo.mkdir(parents=True, exist_ok=True)
     for stale in (repo / ".git", repo / "agent", repo / "src", repo / "transcripts"):
-        subprocess.run(["rm", "-rf", str(stale)], check=True)
+        shutil.rmtree(stale, ignore_errors=True)
     demo = Demo(repo, repo / "agent" / "tickets", repo / "transcripts", TRANSCRIBED)
     write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\ntranscripts/\n")
     git(repo, "init", "-q", "-b", "master")
@@ -340,10 +343,17 @@ size: XS
 
 The importer can only be tried against real exports with sandbox access; someone has to sign up and put the key where the tests find it.
 
+## Questions
+
+- [D1] **Whose card does the sandbox go on?** It is free for a year, then billed.
+  - Ruled 2026-09-16: the team card.
+
 ## What to do
 
 Sign up for the sandbox, store the key in the test secrets.
 """)
+    # the queue the board reads until the spec's ticket 10 migrates it into the tickets it belongs to
+    write(repo / "agent/tickets/needs-human.md", "- the QIF exporter's three users :: ask them what they export it for, before retire-legacy-exporter is decided\n")
     write(repo / "agent/tickets/speed-up-tests.md", """---
 status: open
 priority: 2
@@ -526,14 +536,22 @@ def review_pages(repo: Path) -> None:
 
 
 def transcripts(root: Path) -> None:
-    """A transcript per session on this machine, in the shape the board reads a title and cwd from."""
+    """A transcript per session, where and as Claude Code writes them: one directory per working
+    directory, every non-alphanumeric character dashed, and the title as an `ai-title` record.
+
+    S2 also carries the `/rename` name, so a reader has both to tell apart; the other two have only
+    Claude Code's own title, which is what every transcript on this machine carries.
+    """
     for sid, info in TRANSCRIBED.items():
-        path = root / info["cwd"].strip("/").replace("/", "-") / f"{sid}.jsonl"
+        path = root / re.sub(r"[^A-Za-z0-9]", "-", info["cwd"]) / f"{sid}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps({"type": "user", "sessionId": sid, "cwd": info["cwd"]}) + "\n"
-            + json.dumps({"type": "summary", "customTitle": info["title"]}) + "\n"
-        )
+        lines = [
+            {"type": "user", "sessionId": sid, "cwd": info["cwd"]},
+            {"type": "ai-title", "aiTitle": info["ai_title"], "sessionId": sid},
+        ]
+        if renamed := info.get("renamed"):
+            lines.append({"type": "summary", "customTitle": renamed, "sessionId": sid})
+        path.write_text("".join(json.dumps(line) + "\n" for line in lines))
 
 
 # ---- writing it ------------------------------------------------------------

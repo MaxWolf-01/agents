@@ -11,15 +11,23 @@ either scheme.
 
 Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page out in W/Z CSS
 pixels, which is what render-lint's --width takes: WIDTHS is that quotient over the corners of the
-matrix, 900px at 200% being the narrowest and 2560px at 80% the widest. A page that ignores
+matrix. A page that ignores
 `?theme=` would be measured twice in the same scheme, so the scheme switch the house style
 prescribes is the check's precondition rather than a second check.
+
+Fourteen widths in two schemes is fourteen browser runs, seconds of the suite once the check goes
+green: the matrix the Property states, rather than a sample of it.
+
+What render-lint measures is text against its own box, and SVG text against other SVG text: two
+HTML marks overlapping each other are outside its reach, and so is text a box clips rather than
+spills. The Property is executable as far as that reaches.
 """
 
 import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -30,7 +38,9 @@ from board import render, tracker_roots
 from demo_tracker import Demo
 
 RENDER_LINT = Path(__file__).resolve().parents[1] / "show" / "render_lint.py"
-WIDTHS = (450, 600, 900, 1280, 1920, 3200)
+WINDOWS = (900, 1280, 1920, 2560)  # from the Property's floor to a wide monitor
+ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
+WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
 
 
@@ -44,15 +54,15 @@ def lint(pages: list[str], width: int) -> list[dict]:
     return [f for f in json.loads(done.stdout) if f["kind"] != "tight"]
 
 
-@pytest.mark.xfail(strict=True, reason="the board has one scheme and rows that do not reflow; lifted by 02-rows")
-def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(demo: Demo, tmp_path: Path) -> None:
+@pytest.mark.xfail(strict=True, reason="the board wears one scheme, so neither can be measured; lifted by 02-rows")
+def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
     page = out.read_text()
-    assert "data-theme" in page and "light-dark(" in page, "the page pins no scheme, so both schemes cannot be measured"
+    assert "data-theme" in page and "light-dark(" in page, "the page carries no scheme switch, so neither scheme can be measured"
     for width in WIDTHS:
         assert lint([f"{out}?theme={scheme}" for scheme in SCHEMES], width) == [], f"at {width}px"
 
