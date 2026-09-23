@@ -19,12 +19,13 @@ needs me, frontier, claimed, blocked, proposed, done folded.
 
 Needs me holds every ticket whose next step is the user's own time: a build to
 rule on, a ticket stopped on a question, a near design session (board.needs_me).
-Its open questions show under its row, each with a button that copies it, one
-that copies the ticket's own, and one on the group that copies every question on
-the board; each button says on hover what it will copy. A build in review is
-read from its own ticket branch (board.ticket_branches), where the worker's
-questions and closing comment are until the merge, while the tracker's copy says
-where the ticket stands and carries the `Ruled` lines that answer its questions.
+Its open questions show under its row while the row is folded, each with a
+button that copies it, one that copies the ticket's own, and one on the group
+that copies every question on the board; each button says on hover what it will
+copy. A build in review is read from its own ticket branch
+(board.ticket_branches), where the worker's questions and closing comment are
+until the merge, while the tracker's copy says where the ticket stands and
+carries the `Ruled` lines that answer its questions.
 
 A row reads left to right in fixed columns: the feature, the number, what the
 row asks of the user (to rule on, your answer, design session, prototype,
@@ -40,11 +41,12 @@ mark says on hover what it means. Below a width the time, the priority and the
 blockers move under the name. A click on a row's number copies the absolute
 path of the ticket file the row was read from.
 
-An opened row reads as blocks rather than the ticket's whole text: its questions
-with the detail the row has no room for and the ruling on each answered one, the
-sessions that worked on it, its artefacts, then the ticket's own sections in the
-order the file writes them, with the comments folded away as history. The
-artefacts are read from the ticket's show directory,
+An opened row reads as blocks rather than the ticket's whole text: its
+questions, each with the detail the row has no room for, a copy button while it
+is open and the ruling that answered it, the sessions that worked on it, its
+artefacts, then the ticket's own sections in the order the file writes them,
+with the comments folded away as history. The artefacts are read from the
+ticket's show directory,
 agent/show/<feature>/<NN-slug>/ or agent/show/<slug>/: the file named `demo` on a
 button that copies its path, every other file as a link. The sessions are read
 from the `Session:` trailer on every commit that changed the ticket file, on
@@ -806,7 +808,7 @@ def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str 
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
         gh=gh_refs(meta, path),
-        body_html=ticket_blocks(written, None, asked, show_dir(path, None), worked),
+        body_html=ticket_blocks(written, None, asked, path, status, worked),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
@@ -867,7 +869,7 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 ext_by=[(normalize_ref(str(n)), ref_status(root, overrides, str(n)))
                         for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
-                body_html=ticket_blocks(written, feature_dir.name, asked, show_dir(path, feature_dir.name), worked),
+                body_html=ticket_blocks(written, feature_dir.name, asked, path, status, worked),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
                 priority=ticket_priority(meta, path),
@@ -1307,7 +1309,7 @@ def absence_note(source: str, words: str) -> str:
 
 
 def ticket_blocks(
-    body: str, feature: str | None, asked: Sequence[Question], show: Path, worked: Sequence[Session]
+    body: str, feature: str | None, asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
 ) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
@@ -1327,7 +1329,8 @@ def ticket_blocks(
             history.append(text)
         else:
             blocks.append(block(heading, prose(heading, text, feature)))
-    front = [asked_block(asked, prose(None, "".join(said), feature)), sessions_block(worked), artefacts_block(show)]
+    front = [asked_block(asked, prose(None, "".join(said), feature), path, status),
+             sessions_block(worked), artefacts_block(show_dir(path, feature))]
     return "".join(filter(None, front + blocks)) + history_block("".join(history), feature)
 
 
@@ -1368,19 +1371,24 @@ def ticked(criterion: re.Match) -> str:
     return f'<li class="tick{which}" data-tip="{html.escape(words)}">{criterion.group(1) or ""}'
 
 
-def asked_block(asked: Sequence[Question], said: str) -> str:
-    """Every question the ticket asks, the answered ones marked with the ruling that answered them:
-    the row carries the open headlines, and the detail and the history are here. `said` is whatever
-    else its `## Questions` section says, which is the ticket's own and stands above them."""
+def asked_block(asked: Sequence[Question], said: str, path: Path, status: str) -> str:
+    """Every question the ticket asks, the answered ones marked with the ruling that answered them
+    and every open one with the button that copies it: the row lists its questions only while it is
+    folded, so this block is where an opened ticket's questions are read and copied. `said` is
+    whatever else its `## Questions` section says, which is the ticket's own and stands above them."""
     if not asked and not said:
         return ""
+    copyable = {q.tag for q in shown(status, asked)}
     items = "".join(
         f'<li class="question{" ruled" if q.ruled else ""}">'
         f'<span class="tag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span><div>'
         f'<p class="head">{inline_md(q.headline)}</p>'
         + (f'<p class="detail">{inline_md(q.detail)}</p>' if q.detail else "")
         + (f'<p class="ruling">Ruled {q.ruled}: {inline_md(q.answer)}</p>' if q.ruled else "")
-        + "</div></li>"
+        + "</div>"
+        + (copy_button("qcopy", "copy", QCOPY_TIP, copy_text(path, [q]), f"{q.tag} of {path.name}")
+           if q.tag in copyable else "")
+        + "</li>"
         for q in asked
     )
     return block("questions", said + (f'<ul class="asked">{items}</ul>' if asked else ""))
@@ -1712,24 +1720,31 @@ def group_of(t: Row) -> str:
 
 
 def shown_questions(t: Row) -> list["Question"]:
-    """The open questions a row shows, which is what any button on it copies.
+    return shown(t.status, t.questions)
+
+
+def shown(status: str, asked: Sequence["Question"]) -> list["Question"]:
+    """The open questions a ticket shows, which is what any button on it copies, on the row and in
+    the block an opened row reads as.
 
     A done ticket shows none: a question still open when the user rules on the build is filed as a
     proposed ticket then (the spec's Decisions), so one left on a done ticket is a leftover."""
-    return [] if t.status == "done" else open_questions(t)
+    return [] if status == "done" else [q for q in asked if not q.ruled]
 
 
 def questions_block(t: Row) -> str:
-    """The open questions under a needs-me row: each one's tag and headline with a button that
-    copies it, and one that copies the ticket's own once there are two to copy."""
+    """The open questions under a folded needs-me row: each one's tag and headline with a button
+    that copies it, and one that copies the ticket's own once there are two to copy.
+
+    The page's style hides the list while the row is open, where the block below carries the same
+    questions with their detail, so an opened row shows each of them once."""
     asked = shown_questions(t)
     if not asked:
         return ""
     lines = "".join(
         f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span>'
         f'<span class="qhead" data-tip="{html.escape(question_tip(q))}">{clipped_html(inline_md(q.headline))}</span>'
-        + copy_button("qcopy", "copy", "Click to copy this question under the path of its ticket, to answer in any session.",
-                      copy_text(t.path, [q]), f"{q.tag} of {t.path.name}")
+        + copy_button("qcopy", "copy", QCOPY_TIP, copy_text(t.path, [q]), f"{q.tag} of {t.path.name}")
         + "</span>"
         for q in asked
     )
@@ -1765,6 +1780,8 @@ def copy_text(path: Path, asked: Sequence[Question]) -> str:
     written = (f"- [{q.tag}] **{q.headline}**" + (f" {q.detail}" if q.detail else "") for q in asked)
     return "\n".join([str(path), *written])
 
+
+QCOPY_TIP = "Click to copy this question under the path of its ticket, to answer in any session."
 
 TAG_TIP = (
     "The ticket's own numbering for this question.\n"
@@ -2311,8 +2328,11 @@ ${columns}
   .titleline > a, .titleline > .src { flex: none; }
   .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ticket[open] .brief { white-space: normal; }
-  /* a needs-me row's open questions, under the name they belong to */
+  /* a needs-me row's open questions, under the name they belong to. An opened row reads them in
+     the questions block instead, with their detail and the same buttons, so the list under the
+     name goes rather than saying everything twice */
   .qs { display: grid; gap: .15rem; justify-items: start; padding: .2rem 0 .1rem; min-width: 0; }
+  .ticket[open] .qs { display: none; }
   .q { display: flex; gap: .5rem; align-items: baseline; max-width: 100%; min-width: 0; }
   .qtag, .asked .tag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
   .qhead { color: var(--body); font-size: .88rem; min-width: 0; }
@@ -2401,6 +2421,8 @@ ${columns}
   .asked > li, .artefacts > li, .sessions > li { display: flex; gap: .6rem; align-items: baseline; position: relative; }
   .asked .head { color: var(--strong); }
   .asked > li > div > * + * { margin-top: .2rem; }
+  /* the button that copies the question sits at the end of its line, clear of the words */
+  .asked > li > .copier { margin-left: auto; }
   /* a question the user has answered is history: its words stay, the colours that call for one go */
   .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
   .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }

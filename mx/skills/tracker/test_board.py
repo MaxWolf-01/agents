@@ -1205,6 +1205,23 @@ def test_an_opened_ticket_carries_every_question_with_its_detail_and_the_ruling_
     assert '<li class="question ruled">' in body_of(row), "an answered question is marked answered"
 
 
+def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_did(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """An opened row lists its questions once: the list under the name goes (the page's style) and
+    the block carries the same buttons beside the detail, copying the same line under the same
+    path. The row's copy-all goes with the list it copies."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    rows = rows_of(out.read_text())
+    row = rows["standalone-flaky-upload-test"]
+    assert copiers(body_of(row)) == copiers(summary_of(row)), "the same button, and none on the question a ruling answered"
+    three = rows["t-csv-import-02"]
+    assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "democopy"]
+    assert [which for which, _, _, _ in copiers(summary_of(three))] == ["qcopy", "qcopy", "qcopy", "qall"]
+    assert [text for _, text, _, _ in copiers(body_of(three))[:3]] == [
+        text for _, text, _, _ in copiers(summary_of(three))[:3]
+    ], "a question is copied the same way wherever the button for it sits"
+
+
 def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The demo on a button that copies its path, since a demo is a command to run, and the figures
     beside it as links. Nothing in the ticket declares either: the directory is read."""
@@ -1215,7 +1232,8 @@ def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_pa
     assert artefacts_in(rows["t-csv-import-02"]) == [
         ("demo", str(show / "demo")), ("mapping.svg", f"file://{show / 'mapping.svg'}"),
     ]
-    assert [which for which, _, _, _ in copiers(body_of(rows["t-csv-import-02"]))] == ["democopy"]
+    listed = re.search(r'<ul class="artefacts">.*?</ul>', body_of(rows["t-csv-import-02"]), re.S).group()
+    assert [which for which, _, _, _ in copiers(listed)] == ["democopy"], "the demo is the one artefact on a button"
     # a standalone ticket's show directory is its slug's own, beside the tracker it was read from
     alone = demo.repo / "agent" / "show" / "speed-up-tests"
     assert artefacts_in(rows["standalone-speed-up-tests"]) == [("demo", str(alone / "demo"))]
