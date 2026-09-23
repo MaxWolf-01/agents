@@ -11,10 +11,9 @@ Two features (a confirmed spec with six slices, a draft spec with three tickets,
 decisions), nine standalone tickets covering every decision type, two builds waiting on a ruling
 on their ticket branches with their questions there, one build stopped on two questions of which
 one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
-a needs-human queue, review pages beside the tickets, acceptance criteria a build in review has
-half met, demo scripts and a figure under agent/show,
-and four sessions on the commits: three with a transcript under the transcripts directory this
-writes, one worker on another host with none.
+a needs-human queue, review pages beside the tickets, acceptance criteria a build in review has half
+met, demo scripts and a figure under agent/show, and four sessions on the commits: three with a
+transcript under the transcripts directory this writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
 """

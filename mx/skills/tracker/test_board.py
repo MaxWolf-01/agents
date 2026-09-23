@@ -653,7 +653,7 @@ def test_a_rows_marks_are_read_from_the_ticket_file(tmp_path: Path) -> None:
     assert "Map columns once per bank" in rows["t-ledger-01"]
     assert "which column holds the <code>date</code>" in rows["t-ledger-01"]
     assert {mark for mark, _, _ in marks_on(rows["t-ledger-02"])}.isdisjoint({"time", "pri", "brief"})
-    assert "## Brief" not in page and "<h2>Brief</h2>" not in page, "the brief has one home, and it is the row"
+    assert "## Brief" not in page and "brief" not in labels_of(rows["t-ledger-01"]), "the brief has one home, and it is the row"
     # the brief is searchable, since the filter is how a reader narrows to a word they remember
     assert "which column holds the date" in html.unescape(
         re.search(r'id="t-ledger-01" [^>]*data-search="([^"]*)"', page).group(1)
@@ -919,7 +919,7 @@ def test_a_build_in_review_keeps_the_status_its_checkout_gives_it(built: tuple[P
     assert rows_in(page, "needs") == {"t-ledger-01"}
     assert questions_on(rows_of(page)["t-ledger-01"]) == [("D1", "Per bank or per file name?")]
     assert 'class="ticket row-review" id="t-ledger-01"' in page, "the branch's own claimed does not outrank the tracker"
-    assert "<h2>Brief</h2>" not in page, "the brief has one home, and the branch's copy does not open a second"
+    assert "brief" not in labels_of(rows_of(page)["t-ledger-01"]), "the brief has one home, and the branch's copy does not open a second"
 
 
 def test_a_ruling_in_the_tracker_answers_a_question_its_branch_asks(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -930,8 +930,12 @@ def test_a_ruling_in_the_tracker_answers_a_question_its_branch_asks(built: tuple
     ticket(path, "review", priority=1, size="S")
     path.write_text(path.read_text() + "\n## Questions\n\n- [D1] Ruled 2026-09-23: per bank.\n")
     page = rendered(root, repo, tmp_path / "board.html")
-    assert questions_on(rows_of(page)["t-ledger-01"]) == [], "the ruling is in the file the board named"
+    assert questions_on(summary_of(rows_of(page)["t-ledger-01"])) == [], "the ruling is in the file the board named"
     assert rows_in(page, "needs") == {"t-ledger-01"}, "the build still waits for its ruling"
+    assert asked_in(rows_of(page)["t-ledger-01"]) == [{
+        "tag": "D1", "head": "Per bank or per file name?", "detail": "A bank renames its export.",
+        "ruling": "Ruled 2026-09-23: per bank.",
+    }], "the opened ticket reads the branch's question with the ruling the tracker's copy carries"
 
 
 def test_a_feature_ticket_reads_the_branch_its_own_feature_names_and_no_other(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1075,6 +1079,23 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
 QUESTION_PARTS = ("tag", "head", "detail", "ruling")
 
 
+def put(path: Path, text: str) -> None:
+    """A file under a directory that may not exist yet: an artefact beside a ticket."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def artefacts_in(row: str) -> list[tuple[str, str]]:
+    """What an opened ticket lists as its artefacts, in order: ("demo", the path its button copies)
+    for the demo, and (the words of the link, where it points) for a figure."""
+    listed = re.search(r'<ul class="artefacts">(.*?)</ul>', body_of(row), re.S)
+    found = []
+    for item in re.findall(r"<li>(.*?)</li>", listed.group(1) if listed else "", re.S):
+        link = re.search(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', item)
+        found.append((link.group(2), link.group(1)) if link else ("demo", re.search(r'data-copy="([^"]+)"', item).group(1)))
+    return found
+
+
 def labels_of(row: str) -> list[str]:
     """The word over each block of an opened ticket, in the order the reader meets them."""
     return [text for mark, text, _ in marks_on(body_of(row)) if mark == "label"]
@@ -1082,13 +1103,15 @@ def labels_of(row: str) -> list[str]:
 
 def asked_in(row: str) -> list[dict[str, str]]:
     """Every question an opened ticket holds, as the parts it shows of each: its tag, its headline,
-    its detail, and the ruling that answered it where one has."""
+    its detail, and the ruling that answered it where one has, each shown once and in that order."""
     found: list[dict[str, str]] = []
     for mark, text, _ in marks_on(body_of(row)):
         if mark == "question":
             found.append({})
         elif mark in QUESTION_PARTS and found:
+            assert mark not in found[-1], f"a question shows its {mark} twice"
             found[-1][mark] = text
+    assert all(list(q) == [part for part in QUESTION_PARTS if part in q] for q in found), f"out of order: {found}"
     return found
 
 
@@ -1129,13 +1152,34 @@ def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_pa
     render(tracker_roots(demo.root), demo.repo, out)
     rows = rows_of(out.read_text())
     show = demo.repo / "agent" / "show" / "csv-import" / "02-map-columns"
-    body = body_of(rows["t-csv-import-02"])
-    assert [(which, text) for which, text, _, _ in copiers(body)] == [("democopy", str(show / "demo"))]
-    assert f'<a href="file://{show / "mapping.svg"}" target="_blank">mapping.svg</a>' in body
+    assert artefacts_in(rows["t-csv-import-02"]) == [
+        ("demo", str(show / "demo")), ("mapping.svg", f"file://{show / 'mapping.svg'}"),
+    ]
+    assert [which for which, _, _, _ in copiers(body_of(rows["t-csv-import-02"]))] == ["democopy"]
     # a standalone ticket's show directory is its slug's own, beside the tracker it was read from
-    alone = body_of(rows["standalone-speed-up-tests"])
-    assert str(demo.repo / "agent" / "show" / "speed-up-tests" / "demo") in alone
+    alone = demo.repo / "agent" / "show" / "speed-up-tests"
+    assert artefacts_in(rows["standalone-speed-up-tests"]) == [("demo", str(alone / "demo"))]
     assert "artefacts" not in labels_of(rows["standalone-flaky-upload-test"]), "nothing has been built on it yet"
+
+
+def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
+    """A figure under it keeps the path that names it, what the demo regenerates under out/ is not
+    an artefact, and a ticket with figures and no demo has the block all the same."""
+    root = tmp_path / "agent" / "tickets"
+    root.mkdir(parents=True)
+    ticket(root / "map-columns.md", "review")
+    ticket(root / "view-list.md", "open")
+    show = tmp_path / "agent" / "show"
+    put(show / "map-columns" / "demo", "#!/bin/sh\necho two imports\n")
+    put(show / "map-columns" / "shots" / "mapping.svg", "<svg/>")
+    put(show / "map-columns" / "out" / "frame-01.png", "generated")
+    put(show / "view-list" / "layouts.svg", "<svg/>")
+    rows = rows_of(page_of(root))
+    assert artefacts_in(rows["standalone-map-columns"]) == [
+        ("demo", str(show / "map-columns" / "demo")),
+        ("shots/mapping.svg", f"file://{show / 'map-columns' / 'shots' / 'mapping.svg'}"),
+    ]
+    assert artefacts_in(rows["standalone-view-list"]) == [("layouts.svg", f"file://{show / 'view-list' / 'layouts.svg'}")]
 
 
 def test_the_comments_fold_under_an_opened_ticket_as_history(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1160,28 +1204,58 @@ def test_the_acceptance_criteria_read_as_a_checklist(demo: Demo, tmp_path: Path,
         ("tick", "The second import from a bank asks nothing and maps the columns the first one did."),
         ("tick", "Property, reviewed: a mapping that fails halfway writes nothing."),
     ]
-    assert body.count('<li class="tick met">') == 1 and body.count('<li class="tick">') == 1
+    assert body.count('<li class="tick met"') == 1 and body.count('<li class="tick"') == 1
     assert "[x]" not in body and "[ ]" not in body
 
 
 def test_an_opened_ticket_leaves_none_of_the_file_behind(tmp_path: Path) -> None:
     """A ticket writes the sections it needs: a proposed one opens with its provenance under no
-    heading of its own, a decision ticket answers under one the board has no word for. Both keep
-    the place the file gives them, between the blocks the board does name."""
+    heading of its own, a decision ticket answers under one the board has no word for, and a
+    `## Questions` section says more than its items. Each keeps the place the file gives it, and a
+    `##` line inside a fence is code the ticket quotes, not a heading that splits it."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)
     (root / "pick-a-format.md").write_text(
         "---\nstatus: review\ntype: research\npriority: 2\nsize: S\n---\n\n# A wire format\n\n"
         "Proposed by the orchestrator from 03's closing comment.\n\n"
         "## Brief\n\nWhich format the two services speak.\n\n"
-        "## Questions\n\n- [D1] **Protobuf or JSON?** One is smaller, the other is read by hand.\n\n"
+        "## Questions\n\nThe two are coupled: the second only arises if you say Protobuf.\n\n"
+        "- [D1] **Protobuf or JSON?** One is smaller, the other is read by hand.\n\n"
         "## Answer\n\nJSON, until a profile says otherwise.\n\n"
-        "## Comments\n\n**2026-09-22** The profile is in `agent/research/`.\n"
+        "## Comments\n\nThe worker's closing comment quoted the shape of a ticket:\n\n"
+        "```markdown\n## Questions\n\n- [D1] **A question?** Its detail.\n```\n"
     )
     row = rows_of(page_of(root))["standalone-pick-a-format"]
     assert labels_of(row) == ["questions", "answer", "comments"]
-    assert "Proposed by the orchestrator" in body_of(row), "the provenance line, under no heading of its own"
-    assert "JSON, until a profile says otherwise." in body_of(row)
+    written = body_of(row)
+    assert "The two are coupled" in written, "what the questions section says besides its items"
+    assert written.index("The two are coupled") < written.index("Protobuf or JSON?"), "above the questions it introduces"
+    assert "Proposed by the orchestrator" in written, "the provenance line, under no heading of its own"
+    assert written.index("Proposed by the orchestrator") < written.index("JSON, until a profile says otherwise.")
+    assert asked_in(row) == [{"tag": "D1", "head": "Protobuf or JSON?", "detail": "One is smaller, the other is read by hand."}]
+    quoted = re.search(r'<details class="history".*</details>', written, re.S)
+    assert quoted and "## Questions" in quoted.group(), "the fenced sample is quoted, not read as a section of its own"
+
+
+def test_a_ticket_that_says_less_gets_fewer_blocks(tmp_path: Path) -> None:
+    """The board invents no block: a ticket with no questions, no artefacts and no comments opens
+    as what it does say, a question with no detail shows none, and a checkbox outside the
+    acceptance criteria is the ticket's own writing rather than a criterion."""
+    root = tmp_path / "agent" / "tickets"
+    root.mkdir(parents=True)
+    (root / "skip-imported-rows.md").write_text(
+        "---\nstatus: open\npriority: 2\nsize: S\n---\n\n# Skip rows already imported\n\n"
+        "## Brief\n\nImporting the same export twice adds nothing the second time.\n\n"
+        "## What to build\n\nA row matches on date, amount and payee. The report then reads:\n\n"
+        "- [ ] 12 rows added\n- [x] 3 rows skipped\n\n"
+        "## Questions\n\n- [D1] Match on the payee too, or only date and amount?\n"
+    )
+    row = rows_of(page_of(root))["standalone-skip-imported-rows"]
+    assert labels_of(row) == ["questions", "what to build"], "no artefacts, and nothing folded away"
+    assert "<details" not in body_of(row), "a ticket with no comments has no history to fold"
+    assert asked_in(row) == [{"tag": "D1", "head": "Match on the payee too, or only date and amount?"}]
+    assert 'class="tick' not in body_of(row), "the checkbox is in what to build, and only the criteria are a checklist"
+    assert "[x] 3 rows skipped" in body_of(row), "the ticket's own words, as it wrote them"
 
 
 def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, tracker: Path) -> None:

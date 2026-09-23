@@ -160,9 +160,9 @@ print(json.dumps(out))
 
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "democopy",
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "democopy", "tick",
          "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
-         "#t-csv-import-02 .q:first-child .qcopy", "#grp-needs .qgroup")
+         "#t-csv-import-02 .q:first-child .qcopy", "#t-csv-import-02 .asked .tag", "#grp-needs .qgroup")
 
 
 def probe(page: Path, width: int) -> dict:
