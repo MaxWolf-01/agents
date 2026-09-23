@@ -1,7 +1,8 @@
 ---
-status: review
+status: done
 priority: 2
 size: S
+diff: [7093bf7e44222c4420b26036a2b647c798f2a833..215cc74fac1802a4ecaecf81af236d7b3f135de4]
 ---
 
 # render-lint sees HTML text colliding
