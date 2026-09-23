@@ -91,7 +91,7 @@ Every transcript below is a real run of the script on this branch; the two runs 
   - A3 `mx/skills/code-review/review:146`: five filenames at the repo root are the whole of a repo's own standards sources, and there is no flag to add one. Declined the review's `--standards` finding as unexercised; the skill and `--help` now say root-only, so a caller in a repo it does not fit can see it.
   - A4 `mx/skills/code-review/review:30`: `--permission-mode manual` with allow rules for reading, git and the report directory, fixed in the script rather than inherited from the session or taken from an env knob.
   - A5 `mx/skills/code-review/review:7`: no `--out`, against the usage line I first shipped: nothing in the repo passed it, and the failure path forgot to print it. A PR review's reports now live in the clone the review ran in.
-  - A6 `mx/skills/code-review/SKILL.md:49`: the model stays the skill's judgment (`--model`), which the ticket's list of what the skill keeps does not name either; the script defaults it (Opus, Sonnet under `--light`) so a caller that says nothing still gets an explicit model.
+  - A6 *(superseded by D115, 2026-09-23)* `mx/skills/code-review/SKILL.md:49`: the model stays the skill's judgment (`--model`), which the ticket's list of what the skill keeps does not name either; the script defaults it (Opus, Sonnet under `--light`) so a caller that says nothing still gets an explicit model.
   - A7 `agent/tickets/review-launcher.md:15`: the criterion is ticked for the substance, not the count: `review <fixed-point>` runs correctness and standards, `--spec` adds the Spec axis, and a diff touching test files adds the Tests axis.
   - A8 `mx/skills/review-pr/SKILL.md:17`: the prior PR discussion travels inside the spec file now, since the briefs are fixed templates. Declined a `--context` flag; that skill's step 3 says so and the Spec brief tells the reviewer a point the discussion settled is not a finding.
   - A9 `mx/skills/code-review/review:1`: no test for the script, `make check`'s `--help` as the ticket asked.
@@ -200,7 +200,7 @@ The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected
 - [D9] The Tests axis runs the tip's own test files and build recipes; that is what running a suite is, and the checkout bounds where the code sits rather than what it can reach (A13). `/mx:review-pr` now says to leave the axis off an incoming PR unless you would run that PR's suite on this machine anyway. Is that the right line, or should the axis be barred from an untrusted tip outright, or only run on an isolated host?
 - [D10] A fresh checkout holds what the commit holds and no reviewer can install into it, so a suite needing `npm install` or `uv sync` gets reported rather than run (A12). `dispatch-ctl` solves the same problem by running the project's setup command in every worktree it makes. Should the script do that too, at the cost of a build per Tests axis?
 - [D11] `git restore` is a state mutation, which the permissions bar says never to allowlist; it is in the Tests reviewer's rules because it is how a mutation is undone between runs, and it cannot reach past the checkout the reviewer stands in (A11). Keep it?
-- [D12] A checkout already at the path now refuses the run, naming the recovery, because a live review and a killed one look identical from here (A14). The cost is a manual `git worktree remove` after a killed run. Worth a lock file that tells them apart?
+- [D12] *(answered by D113, 2026-09-23)* A checkout already at the path now refuses the run, naming the recovery, because a live review and a killed one look identical from here (A14). The cost is a manual `git worktree remove` after a killed run. Worth a lock file that tells them apart?
 
 **Details, if you want them**
 
@@ -210,7 +210,7 @@ The amend round. Ruled by you: the two-at-a-time cap is gone, and every selected
   - A11 `mx/skills/code-review/review:64`: the Tests reviewer's extra rules are the test targets by name plus `uv run`/`uvx`, and `git restore`. Supersedes A4 for this axis: "nothing else" now means nothing outside that list, and the list runs the tree's own code by design.
   - A12 `mx/skills/code-review/briefs/tests.md:12`: the checkout is the commit as committed, and a suite that cannot run without an install is a line in the report rather than an install the reviewer performs.
   - A13 `mx/skills/review-pr/SKILL.md:18`: an incoming PR's Tests axis is the caller's call, taken in `/mx:review-pr` rather than by a rule in the script, since only the caller knows whether that tip is one they would run tests from.
-  - A14 `mx/skills/code-review/review:233`: a checkout already at the path refuses the run instead of being removed, because removing it blind would pull the tree out from under a reviewer still using it.
+  - A14 *(superseded by D113, 2026-09-23)* `mx/skills/code-review/review:233`: a checkout already at the path refuses the run instead of being removed, because removing it blind would pull the tree out from under a reviewer still using it.
 
 - [D14] Findings, two rounds over the amend, both light on Opus since the diff is the review's own.
 
@@ -289,9 +289,9 @@ The commits are the same work at new SHAs: the lists above name the rebased ones
 
   - A ticket comment that names commits goes stale the moment the branch is rebased, and this one named nine. Nothing catches that: the review page renders from `diff:` ranges the orchestrator writes, and the prose around them is on its own. Rewriting them by hand is what this round did.
 
-**2026-09-23** Ruled by the user on review, from the calls page (`~/Downloads/show/review-launcher-calls/`):
+**2026-09-23** Ruled by the user on review, from the calls page (`~/Downloads/show/review-launcher-calls/`). These supersede D58 (the earlier "no lock file"), A6, A14, and the amend demo's refusal of a leftover checkout.
 
-- D113, replacing D58: one review of a range runs at a time, held by a `flock` on `agent/reviews/<range>/.lock` that the kernel releases when the run and its reviewers die. A checkout under a range whose lock is free belongs to a dead run and is removed at the next start, so a killed or crashed review never blocks a later one. `test_review.py` holds it.
-- D114: a reviewer starts from none of the caller's setup (`--setting-sources ""`, no MCP servers, no skills, no auto-memory, the five file and shell tools).
-- D115: every reviewer runs Opus, `--effort high` by default; `--effort` is the knob the skill leaves the caller. The other unattended launches move together in `unattended-launch`.
-- D116: the skill's description carries only its triggers.
+- D113, answering D12: one review of a range runs at a time, held by a `flock` on `agent/reviews/<range>/.lock` that every process of the review inherits and the kernel releases when the last of them dies. A checkout under a range whose lock is free belongs to a dead run and is removed at the next start, so a killed or crashed review never blocks a later one. `test_review.py` checks it.
+- D114: a reviewer starts from none of the caller's setup: no settings files, MCP servers, skills or auto-memory, and only the file and shell tools.
+- D115: every reviewer runs Opus, `--effort high` by default; `--effort` is the knob the skill leaves the caller. The other unattended launches change together under [How every unattended `claude` run is launched](unattended-launch.md).
+- D116: the skill's description says what the skill is and its triggers; the four axes and the light-mode rule left it.

@@ -46,7 +46,7 @@ The standards sources are the script's to gather, and the brief it writes for ea
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort`: `high` by default, lower for a small or trivial diff. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
+`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort`: lower than its default for a small or trivial diff. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
 
 ### 5. Aggregate
 
