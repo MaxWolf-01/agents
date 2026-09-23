@@ -16,7 +16,7 @@ Dispose of every finding under the review skill's own rule: fix it on this branc
 
 - [x] Four axes ran against the merge-base with `master`, their reports are on disk under the range, and every finding has one disposition in the finding index.
 - [x] `make check` and `make test` pass on the branch after the fixes.
-- [ ] No skill, README line, figure or spec line on the branch describes a mechanism another slice of this feature retired (show's "Heavy artifacts fork" rule, the worker contract's "expected transcript", a promotion that copies rather than moves, the `agent/show/mx-readme-figures/` pipeline, the `landing.mmd`/`landing.svg` pair).
+- [x] No skill, README line, figure or spec line on the branch describes a mechanism another slice of this feature retired (show's "Heavy artifacts fork" rule, the worker contract's "expected transcript", a promotion that copies rather than moves, the `agent/show/mx-readme-figures/` pipeline, the `landing.mmd`/`landing.svg` pair).
 - [x] Demo: the diff is the demo; the closing comment carries the finding index and the commands that list the reports on disk.
 
 ## Comments
@@ -46,7 +46,7 @@ All five demos were re-run on this host after the fixes, green: `01` drew its pa
 
 - [D1] **Seven calls rewrite a spec Decision, a Property, a Solution line or the Testing Decisions**, which is a round's pen and not a worker's, so they wait in `agent/tickets/figures-and-demos/needs-human.md` with the edit each would take: promotion copies in two lines where round 7 ruled moves; the staging ends on two rulings where the code, the figure and the skill say four; the figure's file shape names a mermaid pair where every figure this repo ships is an authored page; the rows Decision is narrower than the table your own comments on ticket 01 produced; **your C5 asked for a page figure, ticket 01's comment says it landed, and the Figure cell still reads `none`**; a Property says a render is never tracked where the README's two are, deliberately; and the Testing Decisions has no line for the twenty-five assertions this feature's demos carry.
 - [D2] **The third acceptance criterion stays unticked**, and only because of the first of those: four of its five named mechanisms are gone from the branch, and "a promotion that copies rather than moves" survives in exactly the two spec lines this ticket forbids me to rewrite. Tick it when you take that edit.
-- [D3] **`job` still has no staged mode**, so the feature's central mechanism has never run against its real dependency. `job --help` on this host lists `run | wait | probe | log | stop | rm`. The spec files it to dotfiles as loose work "before ticket 03 starts"; ticket 03 raised it as its `[D1]` and shipped a shim inside its own demo. Every landing since has printed "the `job` here has no staged mode; nothing staged" and carried on, which is the right shape, but user story 14 has never been exercised end to end. It is outside every worktree, so it is yours.
+- [D3] ~~**`job` still has no staged mode**~~ **Wrong, corrected in the amend round below.** The mode landed in the dotfiles on 2026-09-18 (`3192353`). What this host had was a `job` fetched before that date, which `dispatch-ctl init` never replaces once it finds one, so every landing dispatched here has printed "the `job` here has no staged mode; nothing staged" against a mechanism that existed. That copy is now current and ticket 03's demo drives the real mode. The stale-tool hazard is filed as [A worker host keeps the `job` it was first given](../worker-host-tools-go-stale.md).
 - [D4] **`agent/show/house-style-rulings/` is deleted on this branch.** Its work shipped on master and the rule this feature lands says the merge that lands loose work carries the removal; it arrived here in the master merge, so no slice saw it. `git show master:agent/show/house-style-rulings/index.html` brings it back if you still want the comparison.
 
 **Details, if you want them**
@@ -66,3 +66,49 @@ All five demos were re-run on this host after the fixes, green: `01` drew its pa
   - **The board cannot render from a worker's worktree.** `board agent/tickets` reads the main checkout and dies with "no tracker at .../agents.git/agent/tickets", so I could not see the queue I wrote as the user will. I parsed it through `load_needs_human` instead, which reads the entries but not the page.
   - **Two of this feature's five demos cost ten minutes and four live Sonnet sessions to re-run**, and I re-ran them twice, once to verify the isolation port and once after the self-review's findings. That is the right cost for what they demonstrate and the wrong cost for a check; it is what makes `show-conventions-checked.md`'s fourth reading an open question rather than a line.
   - **The installed plugin predates this branch**, so my own worker contract asks for "the command and its expected transcript" where the branch's asks for a demo file and a pasted run. The ticket warned me; a worker whose ticket does not would follow the older rule.
+
+Addressed: C1, C2, C3, C4
+
+**2026-09-23** The seven calls that were the user's are built into the spec, the queue is gone, and the third acceptance criterion is ticked: no skill, README line, figure or spec line on the branch describes a mechanism another slice of this feature retired. None of the seven is ruled, so each lands as an anchored assumption below, on the line it changed. Nothing is merged: `5a322f6..HEAD` on `ticket/figures-and-demos/06-whole-feature-review`.
+
+**Demo**
+
+The diff is the demo. `03-landing-demo` was re-run on agent@pc against `job`'s own staged mode, no shim:
+
+```
+$ ./agent/show/figures-and-demos/03-landing-demo/demo
+
+  the staged mode below is job's own
+
+  the pane of job-lamp-lamp-ui-01-demo, as the user finds it:
+
+    | JOB_STATE_DIR=/tmp/landing-demo.Gd1m/jobs /home/agent/.local/bin/job go lamp-lamp-ui-01-demo -- ./agent/show/lamp-ui/01-warm-preset/demo
+  ok  the ticket branch is checked out beside the feature worktree
+  ok  the demo's path is typed at the session's prompt
+  ok  nothing ran it: the demo has produced nothing yet
+  ...
+  ok  the Enter ran it, and it wrote what the preset says
+```
+
+Thirteen checks, all green, with the state directory now on the typed line and the toy's demo letting go of what it opens. The other four demos are unchanged and were not re-run.
+
+**I need from you**
+
+- [D9] **The seven spec edits are built and none is ruled.** Five are the ones this ticket's first round proposed: promotion moves rather than copies (the Solution line and the Promotion decision), the staging ends on four rulings rather than two, the figure has two file shapes, the rows Decision is swept to the table your comments on ticket 01 produced, and the render Property is scoped to "never tracked beside its source". Two are the orchestrator's recommendation, built so you can rule on the result rather than in the abstract: a page's figure is a prototype of it, and the Testing Decisions gains the line about a demo that asserts. They are A8 to A14 below, each anchored where it landed.
+- [D10] **The page row is the one that changes what an agent does next.** A decision about a page or a UI now owes a prototype at the grilling station, where it owed nothing, and `/mx:prototype` owns where that lives, so it is the one row whose figure is not in the show directory. If that is heavier than you meant, the cheaper reading is a rough render committed as an ordinary figure and no prototype flow.
+- [D11] **Nothing was promoted under `make check` this round**, as instructed, so the Testing Decisions line now states a rule the repo does not yet practise: the twenty-five assertions in this feature's demos still retire with the feature. [The show conventions get a mechanical check](../show-conventions-checked.md) is where the promotion would happen and is unblocked now that the line exists.
+
+**Details, if you want them**
+
+- [D12] Assumptions, continuing from A7
+  - A8 `agent/tickets/figures-and-demos/spec.md:29`: the Solution line and the Promotion decision both say moved, and the decision states it once, keeping what the destination takes as a list rather than a second rule. Round 7's ruling, applied to the two lines `b58c2ae` missed.
+  - A9 `agent/tickets/figures-and-demos/spec.md:70`: the staging ends at accept, redo and reject through `ctl cleanup` and at amend's next fetch, which is what the code, the figure and `/mx:dispatch` already said.
+  - A10 `agent/tickets/figures-and-demos/spec.md:75`: the figure has two file shapes, the mermaid pair and the self-contained HTML page, worded as `/mx:show` now carries it.
+  - A11 `agent/tickets/figures-and-demos/spec.md:67`: the rows Decision is swept to the landed table. It gains the figure cells for a prompt and for a script, drops the mermaid default, and names the cells that read nothing, so the Decision and the table can be read against each other line for line.
+  - A12 `agent/tickets/figures-and-demos/spec.md:57`: the render Property says "never tracked beside its source", and adds that a document in the tree tracks the copy it reads, since that is what `mx/assets/` is.
+  - A13 `mx/skills/show/SKILL.md:20`: a page or a UI gets a prototype of it at the figure station, the orchestrator's recommendation, in the table and in the rows Decision. The clause under the table says `/mx:prototype` owns where it lives, so nobody puts a prototype in a show directory.
+  - A14 `agent/tickets/figures-and-demos/spec.md:84`: the Testing Decisions gains the line the demos earned, as drafted, and nothing is promoted this round.
+  - A15 `agent/show/figures-and-demos/03-landing-demo/demo:38`: the run's state directory moves out from under its own HOME. `job stage` types it onto the staged line only when it is not the default, and the pane's shell has the tmux server's HOME, so a default-looking path sent the user's Enter to the real state directory.
+  - A16 `agent/show/figures-and-demos/03-landing-demo/demo:95`: the toy's demo lets go of what it opens. The staged pane runs in the user's own environment, where the handler for a text file can be a terminal, and waiting on it kept the job running until that window closed. `/mx:show` carries the rule, since it binds every demo and not this toy.
+- [D13] The queue file is deleted rather than emptied: its seven entries are all applied, and a queue with nothing in it is not one. What each entry asked for is A8 to A14, and the spec diff is the rest.
+- [D14] Filed this round: [A worker host keeps the `job` it was first given](../worker-host-tools-go-stale.md). `dispatch-ctl init` fetches `job` only when the host has none, so agent@pc ran a copy from before the staged mode landed and every landing dispatched here reported the mode missing. That reading is what my D3 repeated to you.
