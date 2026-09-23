@@ -21,7 +21,10 @@ from typing import Annotated
 
 import tyro
 
-sys.path.insert(0, str(Path(__file__).parents[4] / "mx" / "skills" / "tracker"))
+HERE = Path(__file__).parent
+ROOT = HERE.parents[3]
+TRACKER = ROOT / "mx" / "skills" / "tracker"
+sys.path.insert(0, str(TRACKER))
 
 import board  # noqa: E402
 

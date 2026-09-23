@@ -58,7 +58,8 @@ def run(*args, **kwargs) -> subprocess.CompletedProcess:
 def moved_tracker(dest: Path) -> Path:
     """The demo tracker with its build in review moved out of csv-import, in one commit of its own:
     the blocking edge goes with the move, since the feature's 01 is not a standalone ticket's
-    blocker. Three sessions committed on it under the feature; one commits on it after the move."""
+    blocker. Three sessions committed on it under the feature, one of them a worker on another host
+    the board leaves off; a fourth moves it out."""
     run("uv", "run", TRACKER / "demo_tracker.py", dest)
     ticket = dest / WAS
     ticket.write_text(re.sub(r"^blocked-by: .*\n", "", ticket.read_text(), flags=re.M))
@@ -87,21 +88,22 @@ def render(board: Path, tracker: Path, out: Path) -> str:
     return out.read_text()
 
 
-def opened(page: str, row_id: str) -> str:
+def opened(page: str, row_id: str, which: str) -> str:
     """The row as the board wrote it, opened, with its sessions block and nothing else of its body:
     the block is what this slice changed, and the rest of an opened ticket runs for pages."""
     at = page.index(f'id="{row_id}"')
     start = page.rindex("<details", 0, at)
     summary = page[start: page.index("</summary>", at) + len("</summary>")]
-    return summary.replace("<details ", "<details open ", 1) + f'<div class="body">{sessions(page, at)}</div></details>'
+    return summary.replace("<details ", "<details open ", 1) + f'<div class="body">{sessions(page, at, which)}</div></details>'
 
 
-def sessions(page: str, at: int) -> str:
-    """The sessions block of the row that starts at `at`, or the empty string where it has none."""
+def sessions(page: str, at: int, which: str) -> str:
+    """The sessions block of the row that starts at `at`. Both renders list at least the session
+    that moved the ticket, so no block at all means the board's markup has moved under this figure,
+    which would otherwise draw an empty box and read as a board that lists nothing."""
     label = '<p class="label">sessions on this machine</p>'
     found = page.find(label, at)
-    if found < 0:
-        return ""
+    assert found >= 0, f"the {which} render gives {ROW} no sessions block"
     start = page.rindex("<section", at, found)
     return page[start: page.index("</section>", found) + len("</section>")]
 
@@ -129,7 +131,7 @@ def build(args: Args) -> str:
     }
     style = pages["after"].split("<style>", 1)[1].split("</style>", 1)[0]
 
-    rows = {name: opened(page, ROW) for name, page in pages.items()}
+    rows = {name: opened(page, ROW, name) for name, page in pages.items()}
     rows["before"] = mark(rows["before"], 1, "Triage after the holidays")
     rows["after"] = mark(mark(mark(rows["after"], 1, "Grilling the CSV import"),
                               2, "Dispatching csv-import, wave 1"), 3, "Triage after the holidays")
@@ -149,8 +151,8 @@ def build(args: Args) -> str:
          "the slice and flipped it to review, likewise under the old path. Its span is what it did across "
          "both days, unchanged by the move.",
          "<b>Triage after the holidays</b>, 2026-09-20: the session that moved the ticket, where it was "
-         "before. A ticket that moved twice lists all three the same way: each move carries what the path "
-         "before it held."],
+         "before. A ticket that moved twice lists the sessions from all three of its paths the same way: "
+         "each move carries what the path before it held."],
     )
     return PAGE.replace("${style}", style).replace("${panels}", panels).replace("${work}", html.escape(str(args.work)))
 
@@ -205,7 +207,9 @@ ${style}
 <p class="lead">One demo tracker, rendered twice. Its build in review was filed and worked on inside
 the feature <code>csv-import</code>, then moved out to <code>agent/tickets/map-columns.md</code> as a
 standalone ticket, which is what board-orients 15 did on 2026-09-23 when it became
-<code>debrief-ticket</code>. Three sessions committed on it before the move, one moved it.</p>
+<code>debrief-ticket</code>. Three sessions committed on it before the move and a fourth moved it
+out. Three of the four are below: the worker that built it ran on another host, and the board lists
+no session this machine could not resume.</p>
 <p class="lead">Both rows below are the board's own markup under the board's own stylesheet, opened,
 with everything but the sessions block cut away. Hover a date for the words the board says about it.
 The full renders are <a href="file://${work}/before.html">before.html</a> and

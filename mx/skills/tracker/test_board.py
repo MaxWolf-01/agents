@@ -1502,8 +1502,12 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
 @pytest.fixture
 def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """(the tracker, its repo) of two tickets that moved: one standalone ticket grilled into a
-    feature, and one grilled in that later left it again under a name of its own. A session commits
-    at every stop, so a session listed on either ticket names the path it worked under.
+    feature, and one grilled in that later left it again under a name of its own.
+
+    The cast, so a session listed on either ticket names the path and the commit it worked under:
+    HERE files both, AWAY is a worker on another host that edits one under its first path, NAMED
+    grills them into the feature and then cherry-picks a commit back, the user's own `git mv` takes
+    one out again under no session at all, and NEW works on it where it lands.
     """
     repo = tmp_path / "the ledger"
     root = repo / "agent" / "tickets"
@@ -1512,20 +1516,25 @@ def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     ticket(root / "split-rows.md", "open")
     ticket(root / "name-columns.md", "open")
     demo_commit(repo, HERE, "2026-09-14T10:00:00+02:00", "two csv tickets filed", "agent/tickets")
+    append(root / "split-rows.md", "\nOne row per transaction.\n")
+    demo_commit(repo, AWAY, "2026-09-15T11:00:00+02:00", "split-rows: one row per transaction", "agent/tickets")
 
     demo_git(repo, "mv", "agent/tickets/split-rows.md", "agent/tickets/csv-import/02-split-rows.md")
     demo_git(repo, "mv", "agent/tickets/name-columns.md", "agent/tickets/csv-import/01-name-columns.md")
     demo_commit(repo, NAMED, "2026-09-16T09:00:00+02:00", "csv-import: grilled, two slices", "agent/tickets")
     append(root / "csv-import" / "01-name-columns.md", "\nThe header row names the bank.\n")
-    demo_commit(repo, NAMED, "2026-09-17T09:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
+    # written in the grilling and cherry-picked over after the move: the walk reaches it last and
+    # its date is the earliest NAMED has on the file
+    demo_commit(repo, NAMED, "2026-09-15T16:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
 
     demo_git(repo, "mv", "agent/tickets/csv-import/01-name-columns.md", "agent/tickets/header-row.md")
+    demo_git(repo, "commit", "-q", "-m", "header-row: out of csv-import")  # moved by hand, no session
     append(root / "header-row.md", "\nAsked once per bank.\n")
-    demo_commit(repo, NEW, "2026-09-19T08:00:00+02:00", "header-row: out of csv-import", "agent/tickets")
+    demo_commit(repo, NEW, "2026-09-19T08:00:00+02:00", "header-row: asked once per bank", "agent/tickets")
 
     written = tmp_path / "claude" / "projects"
-    for sid in (HERE, NAMED, NEW):
-        write_transcript(written, sid, str(repo), f"Worked as {sid[:4]}")
+    for sid, title in ((HERE, "Filing the csv tickets"), (NAMED, "Grilling csv-import"), (NEW, "The header row")):
+        write_transcript(written, sid, str(repo), title)
     monkeypatch.setattr(board, "TRANSCRIPTS", written)
     return root, repo
 
@@ -1541,19 +1550,54 @@ def test_a_ticket_that_moved_lists_the_sessions_from_under_its_old_path(moved: t
     twice = ticket_sessions(root / "header-row.md", repo)
     assert [(s.id, s.first, s.last) for s in twice] == [
         (HERE, "2026-09-14", "2026-09-14"),
-        (NAMED, "2026-09-16", "2026-09-17"),
+        (NAMED, "2026-09-15", "2026-09-16"),
         (NEW, "2026-09-19", "2026-09-19"),
-    ], "standalone, then the feature's 01, then standalone again: oldest session first, spans intact"
-    assert ticket_sessions(root / "split-rows.md", repo) == [], "the path it left holds no ticket"
+    ], "standalone, then the feature's 01, then standalone again, the move itself under no session"
+
+
+def test_a_session_the_board_cannot_resume_is_left_off_a_moved_ticket_too(moved: tuple[Path, Path]) -> None:
+    """The Property that a listed session has a transcript on this machine, over a carried session:
+    AWAY worked on the ticket under its first path and has no transcript here."""
+    root, repo = moved
+    under = board.session_log(repo)["agent/tickets/csv-import/02-split-rows.md"]
+    assert AWAY in under, "it committed on the ticket while it was agent/tickets/split-rows.md"
+    assert AWAY not in {s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)}
+
+
+def test_a_move_on_one_branch_leaves_the_sessions_on_the_path_another_branch_still_has(
+    moved: tuple[Path, Path],
+) -> None:
+    """A move is a fact of the branch that made it, and the walk is over every branch at once. The
+    ticket a worker moves on its own branch keeps its sessions where the main checkout still has
+    it, until the merge."""
+    root, repo = moved
+    demo_git(repo, "checkout", "-q", "-b", "ticket/master/split-rows")
+    demo_git(repo, "mv", "agent/tickets/csv-import/02-split-rows.md", "agent/tickets/split-rows.md")
+    demo_commit(repo, NEW, "2026-09-21T10:00:00+02:00", "split-rows: out of csv-import", "agent/tickets")
+    demo_git(repo, "checkout", "-q", "master")
+    assert [s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)] == [HERE, NAMED], (
+        "the path master still holds the ticket at, whose board the move has not reached"
+    )
+    assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [HERE, NAMED, NEW]
 
 
 def test_a_ticket_born_at_a_path_another_left_lists_only_its_own_sessions(moved: tuple[Path, Path]) -> None:
-    """The moves carry as the walk reaches them, not at the end: a new ticket filed at a freed path
-    is another ticket, and inherits nothing from the one that moved away."""
+    """A ticket filed at a path a move freed is another ticket, and inherits nothing from the one
+    that moved away."""
     root, repo = moved
     ticket(root / "split-rows.md", "open")  # a second ticket, named for the gap the first one left
     demo_commit(repo, NEW, "2026-09-20T10:00:00+02:00", "split-rows: filed again", "agent/tickets")
     assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [NEW]
+
+
+def test_a_commit_message_line_that_names_no_file_does_not_stop_the_walk(moved: tuple[Path, Path]) -> None:
+    """What the log prints under a commit is its files, except where a trailer's value runs on to a
+    line of its own, which git folds into the value and the format string prints as written."""
+    root, repo = moved
+    append(root / "header-row.md", "\nThe bank is asked for once.\n")
+    demo_git(repo, "add", "--", "agent/tickets")
+    demo_git(repo, "commit", "-q", "-m", "header-row: the bank is asked for once", "-m", f"Session: {NEW}\n  resumed")
+    assert [s.id for s in ticket_sessions(root / "header-row.md", repo)] == [HERE, NAMED, NEW]
 
 
 def test_the_sessions_of_every_ticket_come_from_one_pass_over_the_repo(
@@ -1574,7 +1618,7 @@ def test_the_sessions_of_every_ticket_come_from_one_pass_over_the_repo(
     assert len(tickets) == 2, "two tickets, so one call for both is a reading and not a coincidence"
     for path in tickets:
         ticket_sessions(path, repo)
-    assert ran == ["log"]
+    assert ran.count("log") == 1, ran
 
 
 # ---- the state of a GitHub reference ---------------------------------------

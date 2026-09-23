@@ -8,18 +8,26 @@ root=$(cd "$here/../../../.." && pwd)
 out=$here/out
 ticket=agent/tickets/debrief-ticket.md
 
+branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
+[[ $branch != HEAD ]] || { echo "demo: $root is on no branch, and the board is rendered from a clone of one" >&2; exit 1; }
+
 # The board renders the tracker of its repo's main checkout, and this ticket lives on a feature
 # branch, whose main checkout is a worktree or a bare repo. A clone of the branch is a main checkout
 # that holds it. Its ticket branches come back under refs/heads, which is where the board reads a
 # ticket's questions from.
 rm -rf "$out"
 mkdir -p "$out"
-branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
 git clone --quiet --shared --branch "$branch" \
     "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)" "$out/repo"
 git -C "$out/repo" for-each-ref --format='%(refname:lstrip=3)' 'refs/remotes/origin/ticket/**' |
-    while read -r ref; do git -C "$out/repo" branch --quiet "$ref" "origin/$ref" 2>/dev/null || true; done
+    while read -r ref; do
+        # a branch of that name is already here when it is the one the clone checked out
+        git -C "$out/repo" branch --quiet "$ref" "origin/$ref" 2>/dev/null ||
+            git -C "$out/repo" rev-parse --verify --quiet "$ref" >/dev/null
+    done
 
+recorded=$(git -C "$out/repo" log --all --follow --diff-filter=R --name-status -M --format='%as %s' -- "$ticket")
+[[ -n $recorded ]] || { echo "demo: $branch records no move of $ticket, so there is nothing here to show" >&2; exit 1; }
 "$here/sessions.py" "$out/repo" "$ticket" >"$out/sessions.txt"
 named=$(grep -cv "no transcript here" "$out/sessions.txt" || true)
 
@@ -28,7 +36,7 @@ This ticket moved on 2026-09-23: it was filed inside the feature board-orients a
 left the feature to stand on its own. What git wrote down for that commit, which is the whole of
 what the board has to go on:
 
-$(git -C "$out/repo" log --all --follow --diff-filter=R --name-status -M --format='%as %s' -- "$ticket" | sed 's/^/    /')
+$(sed 's/^/    /' <<<"$recorded")
 
 The old path on the left, the new one on the right. Until this slice the board keyed a session by
 the path its commit changed, so the ticket on the right kept none of the sessions that worked on it
@@ -48,19 +56,20 @@ board_flags=(--no-watch --out "$out/board.html")
 
 cat <<TEXT
 
-Open the page above and click "The debrief is a ticket" in the frontier.
+Open the page above and find "The debrief is a ticket". It sits in blocked while its blocker,
+retro-semi-automated, is open, and in the frontier once that is ruled away. Click it.
 TEXT
 if [[ $named -gt 0 ]]; then
 cat <<TEXT
-Under *sessions on this machine* are the $named of them this machine can name, the one that filed
-the ticket dated where it worked under the old path. Until this slice that block was not there at
-all, or held the mover alone.
+Its *sessions on this machine* block lists the sessions named above, each with the days it committed
+on the ticket and a button that copies the command resuming it. Until this slice the block held the
+session that moved the ticket and no other, because every other one committed under the old path.
 TEXT
 else
 cat <<TEXT
-It has no *sessions on this machine* block: this machine holds a transcript of neither session, so
-there is nothing here it could resume, and the board says nothing rather than listing a dead
-command. Run this on the machine those two sessions ran on and the block is there.
+It has no *sessions on this machine* block. Both sessions above ran on another machine, so there is
+nothing here to resume, and the board lists nothing rather than a command that would fail. On the
+machine they ran on, the block is there with both.
 TEXT
 fi
 cat <<TEXT

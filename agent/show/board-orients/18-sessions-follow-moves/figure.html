@@ -405,7 +405,9 @@
 <p class="lead">One demo tracker, rendered twice. Its build in review was filed and worked on inside
 the feature <code>csv-import</code>, then moved out to <code>agent/tickets/map-columns.md</code> as a
 standalone ticket, which is what board-orients 15 did on 2026-09-23 when it became
-<code>debrief-ticket</code>. Three sessions committed on it before the move, one moved it.</p>
+<code>debrief-ticket</code>. Three sessions committed on it before the move and a fourth moved it
+out. Three of the four are below: the worker that built it ran on another host, and the board lists
+no session this machine could not resume.</p>
 <p class="lead">Both rows below are the board's own markup under the board's own stylesheet, opened,
 with everything but the sessions block cut away. Hover a date for the words the board says about it.
 The full renders are <a href="file:///tmp/board-moves-figure/before.html">before.html</a> and
@@ -443,7 +445,7 @@ cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume a1f3c9e2-4b7d-4e21-9c
 
 claude --resume b52e7d10-9a3c-4f68-8e17-3c9b2a5d4e81">copy resume</span></li><li><span class="mk">3</span><span class="stitle">Triage after the holidays</span><span class="when" data-tip="When this session first committed on the ticket, and when it last did.">2026-09-20</span><span class="copier resume" data-copy="cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12" data-copied="the command resuming Triage after the holidays" data-tip="Click to copy the command that resumes this session in the directory it ran in.
 
-cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12">copy resume</span></li></ul></section></div></details></div><ol class="notes"><li><span class="mk">1</span><span><b>Grilling the CSV import</b>, 2026-09-14: the session that filed the ticket, back on it. It committed under <code>csv-import/02-map-columns.md</code>, and git records the move, so the board follows it.</span></li><li><span class="mk">2</span><span><b>Dispatching csv-import, wave 1</b>, 2026-09-17 → 2026-09-18: the orchestrator that claimed the slice and flipped it to review, likewise under the old path. Its span is what it did across both days, unchanged by the move.</span></li><li><span class="mk">3</span><span><b>Triage after the holidays</b>, 2026-09-20: the session that moved the ticket, where it was before. A ticket that moved twice lists all three the same way: each move carries what the path before it held.</span></li></ol></figure>
+cd /tmp/board-moves-figure/demo &amp;&amp; claude --resume c7d04a58-1e2f-4b93-a6c8-5f0e9d3b7c12">copy resume</span></li></ul></section></div></details></div><ol class="notes"><li><span class="mk">1</span><span><b>Grilling the CSV import</b>, 2026-09-14: the session that filed the ticket, back on it. It committed under <code>csv-import/02-map-columns.md</code>, and git records the move, so the board follows it.</span></li><li><span class="mk">2</span><span><b>Dispatching csv-import, wave 1</b>, 2026-09-17 → 2026-09-18: the orchestrator that claimed the slice and flipped it to review, likewise under the old path. Its span is what it did across both days, unchanged by the move.</span></li><li><span class="mk">3</span><span><b>Triage after the holidays</b>, 2026-09-20: the session that moved the ticket, where it was before. A ticket that moved twice lists the sessions from all three of its paths the same way: each move carries what the path before it held.</span></li></ol></figure>
 </div>
 </body>
 </html>
