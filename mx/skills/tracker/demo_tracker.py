@@ -19,7 +19,7 @@ claude/ config directory this writes, one worker on another host with none.
     CLAUDE_CONFIG_DIR=/tmp/demo/claude board /tmp/demo/agent/tickets --no-watch --no-open
 """
 
-# Promoted from agent/prototypes/board-orients/demo-tracker/build.sh, with its tickets moved to the
+# Promoted from agent/prototypes/board-orients/demo-tracker/build.sh (retired with the feature, in git history), with its tickets moved to the
 # ticket file the board-orients spec decides: the H1 as the short name, `## Brief`, `## Questions`
 # with `Ruled` lines, priority and size in frontmatter.
 

@@ -1,7 +1,6 @@
 ---
 status: open
 type: grilling
-blocked-by: [board-orients/05]
 priority: 4
 size: M
 ---

@@ -145,7 +145,7 @@ def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
     The spec gives no number for the ping cap, only that there is one, so what is checked is that a
     cap the schedule can reach: one it cannot leaves the Property's own clause unfalsifiable, which
     is what a cap raised "just for now" leaves behind. What a launch really carries to the API, this
-    model included, is read off the wire by the demo in agent/show/board-orients/16-briefing-cadence."""
+    model included, was read off the wire by board-orients 16's demo, retired with that feature (git log --diff-filter=D finds it)."""
     assert QUIET == timedelta(minutes=5)
     assert CADENCE == timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)

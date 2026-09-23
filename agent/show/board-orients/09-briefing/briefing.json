@@ -1,8 +1,0 @@
-{
- "text": "Two reviews are waiting on you, not on anyone's build: csv-import/02 and speed-up-tests both have a PR up (#57, #42), plus a rendered diff and a runnable demo under `agent/show/` so you can decide from the demo rather than the diff. csv-import/02 is the keystone: its three questions gate 04, and four other tickets depend on that. Meanwhile 03 is claimed and building on landed 01, and flaky-upload-test already has D2 settled, so only the retry-vs-fake-clock call is left.\n\n## next\n\n- csv-import/02: answer D1 to D3; it unblocks the longest chain on the board.\n- flaky-upload-test: one question left, 15 minutes, and a p1 clears.\n- speed-up-tests: two small calls over a demo; the suite goes from four minutes to under one.\n\nAll three are independent, so they can run at the same time, as one wave.",
- "written": "2026-09-23T12:28:42+00:00",
- "session": "a74a6418-9499-4db0-8f49-e02c09355ee3",
- "started": "2026-09-23T12:28:42+00:00",
- "last_activity": "2026-09-23T12:28:42+00:00",
- "pings": 0
-}
