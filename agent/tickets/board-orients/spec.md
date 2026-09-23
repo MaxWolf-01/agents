@@ -20,7 +20,7 @@ A side column opens with the **board briefing**: where things stand and the next
 
 Rows are calm and legible: the house style with colour where it carries meaning: what the row asks of the user, its priority, its time. Every mark explains itself on hover. An opened ticket reads as structured blocks, not a wall of text.
 
-The prototype that settled the shape: `agent/prototypes/board-orients/` (board v4, and the explainer at `agent/show/board-orients/index.html`, rendered from the demo tracker `/var/tmp/board-orients-demo/`, rebuilt by its `build.sh`).
+The prototype that settled the shape: `agent/prototypes/board-orients/` (board v4, and the explainer at `agent/show/board-orients/index.html`, rendered from the demo tracker its `demo-tracker/build.sh` writes).
 
 ## User Stories
 
@@ -134,7 +134,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 ## Testing Decisions
 
 - **The board's loader and page** (`test_board.py`, the existing seam): a fixture tracker on disk in, groups, rows and marks out. Oracle: the tracker conventions and this spec's Decisions. New checks: frontmatter priority and size, the H1 as name, the Brief and Questions sections, a `Ruled:` line clearing a question, needs-me membership, sessions from trailers with a transcript present and absent, GitHub state from a stubbed query, the briefing fallback.
-- **The rendered page's layout**: `render-lint` over the demo tracker, promoted from `/var/tmp/board-orients-demo/build.sh` into the tests' fixtures, at several widths and both schemes. Oracle: the no-overlap Property.
+- **The rendered page's layout**: `render-lint` over the demo tracker, promoted from the prototype's `demo-tracker/build.sh` into the tests' fixtures, at several widths and both schemes. Oracle: the no-overlap Property.
 - **The briefing session's schedule**: whether a change pings the session, waits out the debounce, or retires the session and starts a fresh one, as a pure function of the cache file's state, the change's time and the clock, with `claude` stubbed as the review script's demo stubbed it. Oracle: the Property on pings and retirement.
 
 Properties:

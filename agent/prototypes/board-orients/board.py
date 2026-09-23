@@ -3,7 +3,11 @@
 # requires-python = ">=3.14"
 # dependencies = ["tyro", "pyyaml", "markdown"]
 # ///
-"""PROTOTYPE, throwaway (board-orients): the board a returning user reads.
+"""Historical artifact as of 2026-09-23, superseded by mx/skills/tracker/board.py. Not current; kept as the reasoning trail.
+
+What it groups, names and parses is the reading agent/tickets/board-orients/spec.md replaced.
+
+PROTOTYPE, throwaway (board-orients): the board a returning user reads.
 
 Three variants of the "needs me" shape, one page each (board-A.html, -B, -C), with a
 floating switcher. Briefs, priority and size come from fixture.yaml beside this file;

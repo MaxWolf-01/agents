@@ -4,9 +4,11 @@
 # ///
 """The briefing session's schedule. Run: uv run test_briefing.py
 
-The seam is `on_change`, a pure function of the cache file's state, the change's time and the
-clock. The oracle is the Property of agent/tickets/board-orients/spec.md: the briefing session is
-pinged at most once per debounce window, and never outlives its idle hour or its ping cap.
+The seam the spec names is `on_change`, a pure function of the cache file's state, the change's
+time and the clock. The oracle is the Property of agent/tickets/board-orients/spec.md: the briefing
+session is pinged at most once per debounce window, and never outlives its idle hour or its ping
+cap. `ping` is a second seam, which the Testing Decisions does not name (ticket 13's D9): what the
+session is resumed with and what its answer does to the cache, with `claude` stubbed.
 
 A run of tracker changes and quiet ticks is drawn, driven through the schedule, and the answers are
 read back against that Property. The spec's third retirement limit, the session's context, is not a
@@ -14,7 +16,10 @@ function of the cache file, so it is not checked here. Liveness is: a change the
 been told about, once the debounce window has passed, reaches it.
 """
 
+import json
+import shlex
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -24,7 +29,8 @@ from hypothesis import given, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from briefing import DEBOUNCE, IDLE, PING_CAP, Briefing, cache_path, on_change
+import briefing
+from briefing import DEBOUNCE, DENIED, IDLE, PING_CAP, TOOLS, UNCHANGED, Briefing, cache_path, on_change, ping
 
 START = datetime.fromisoformat("2026-09-21T09:00:00+02:00")
 RUN = st.lists(st.tuples(st.integers(min_value=0, max_value=90), st.booleans()), min_size=1, max_size=60)
@@ -85,9 +91,58 @@ def test_a_session_retired_with_nothing_new_to_tell_it_is_left_where_it_is() -> 
 
 def test_the_windows_the_property_is_stated_in_are_the_spec_s() -> None:
     """The property above reads its windows off the module, so the spec's own numbers are checked
-    here: five to ten minutes of debounce, and the idle hour."""
+    here: five to ten minutes of debounce, and the idle hour.
+
+    The spec gives no number for the ping cap, only that there is one, so what is checked is the
+    one `briefing.py` gives it in prose beside it, "two hours of a tracker changing every window".
+    A cap the schedule can never reach leaves the Property's own clause unfalsifiable, which is
+    what a cap raised "just for now" leaves behind."""
     assert timedelta(minutes=5) <= DEBOUNCE <= timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)
+    assert PING_CAP * DEBOUNCE <= timedelta(hours=2), f"a cap of {PING_CAP} is past the two hours beside it"
+
+
+def answered(said: str) -> str:
+    return "echo " + shlex.quote(json.dumps({"is_error": False, "session_id": "def-456", "result": said}))
+
+
+def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_ping(
+    tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The answer the prompt asks for where nothing it was told changes what it wrote. The briefing
+    and the time it was written stay as they are, so the column does not claim to be newer than it
+    is, and the ping is spent either way: it is what the session's retirement is counted in."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    claude = path_with("claude", answered(f"`{UNCHANGED}`."))
+    cached = Briefing("where things stand", START, "abc-123", START, START, 3)
+    now = START + timedelta(minutes=20)
+    said = ping(cached, "new: agent/tickets/a-chore.md", tmp_path, now)
+    assert said and (said.text, said.written) == (cached.text, cached.written), "it rewrote a briefing it left standing"
+    assert (said.session, said.last_activity, said.pings) == ("def-456", now, 4)
+    run = claude.read_text()
+    assert f"--resume {cached.session}" in run, "the ping started a session of its own instead of resuming"
+    assert f"--allowedTools {TOOLS}" in run and f"--disallowedTools {DENIED}" in run, "the unattended run could write"
+    assert str(tmp_path / "cfg" / "CLAUDE.md") in run, "it was given the user's own memory to read"
+
+
+def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    path_with("claude", answered("Two builds wait on your ruling.\n\n## next\n\n- **A chore**: it is quick."))
+    cached = Briefing("where things stand", START, "abc-123", START, START, 3)
+    now = START + timedelta(minutes=20)
+    said = ping(cached, "new: agent/tickets/a-chore.md", tmp_path, now)
+    assert said and said.text.startswith("Two builds wait on your ruling.")
+    assert (said.written, said.pings) == (now, 4), "a rewritten briefing is one written now"
+
+
+def test_a_ping_the_session_does_not_answer_leaves_the_cache_where_it_is(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    path_with("claude", "echo '{\"is_error\": true}'")
+    cached = Briefing("where things stand", START, "abc-123", START, START, 3)
+    assert ping(cached, "new: agent/tickets/a-chore.md", tmp_path, START + timedelta(minutes=20)) is None
+    assert briefing.SILENT, "a run that answered nothing said nothing of itself"
 
 
 def test_the_cache_file_reads_back_what_it_was_written_with(tmp_path: Path) -> None:

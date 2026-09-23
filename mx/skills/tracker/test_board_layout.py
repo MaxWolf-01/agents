@@ -17,7 +17,8 @@ prescribes is the check's precondition rather than a second check.
 
 Each width is measured on six pages: both schemes with every row folded, both schemes with one row
 opened through its anchor, which lays out the blocks the ticket reads as and paints the dependency
-graph beside it, and both schemes with the graph at full size over the board, which #graph opens.
+graph beside it, and both schemes with the graph at full size over the board, which `&graph=1` on
+the address opens.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
 Property covers is never laid out.
 
@@ -91,7 +92,8 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(tracker_roots(transcribed.root), transcribed.repo, out)
-    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in ("", f"#{OPENED}", "#graph")]
+    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
+             for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
     found = {width: lint(pages, width) for width in WIDTHS}
     assert {width: f for width, f in found.items() if f} == {}
 
@@ -246,7 +248,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         )
         assert not name["cut"], (
             f"{name['row']}: the name {name['text']!r} does not fit the column even with the row to itself"
-            " — a name this long renders truncated until it is edited (the spec's Decisions), so if"
+            ", a name this long renders truncated until it is edited (the spec's Decisions), so if"
             " the fixture meant it, this row wants a shorter H1"
         )
     for mark, tip in seen["tips"].items():

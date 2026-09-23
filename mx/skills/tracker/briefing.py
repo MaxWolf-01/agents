@@ -11,6 +11,7 @@ and tools that only read: it runs unattended, on the repo the board is rendered 
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -31,9 +32,6 @@ COMMAND = "claude"
 # write are named as denied rather than left out.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
-# The user's own sessions carry their memory files and hooks; a briefing session is none of their
-# conversations, and the repo's own CLAUDE.md is the one thing about it worth reading.
-SETTINGS = json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(Path.home() / ".claude" / "CLAUDE.md")]})
 RUN_LIMIT = 900  # seconds a run gets; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
@@ -43,7 +41,7 @@ SYSTEM = """You write the briefing at the head of one person's ticket board, for
 
 Your reader is that person, back after a week away, reading a narrow column beside their tickets. Write markdown, under 150 words, opening with the words themselves rather than a title:
 
-- Two or three sentences on where things stand, in plain words.
+- Two or three sentences on where things stand, in plain words. No em dashes, no marketing.
 - Then `## next` and three picks, one line each: the ticket, and why it is a pick. Say which of them can run at the same time, in those words, so dispatching a wave is one decision.
 
 The tracker's state is given to you below. Read the repo for what it cannot say: the commits, the code, the specs, a ticket's own file. What earns a sentence is what someone who has only read the board would not know."""
@@ -127,6 +125,17 @@ def available() -> bool:
     return bool(shutil.which(COMMAND))
 
 
+def settings() -> str:
+    """What the run is given instead of the user's own: no memory, and their global CLAUDE.md left
+    out. The user's sessions carry their memory files and hooks; a briefing session is none of their
+    conversations, and the repo's own CLAUDE.md is the one thing about it worth reading.
+
+    Read when the run is assembled rather than when this file is imported: the config directory is
+    where the board reads transcripts from (board.TRANSCRIPTS), and a watcher outlives its start."""
+    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    return json.dumps({"autoMemoryEnabled": False, "claudeMdExcludes": [str(config / "CLAUDE.md")]})
+
+
 def first(state: str, repo: Path, now: datetime) -> Briefing | None:
     """The briefing a fresh session writes from the tracker's state, exploring `repo` from there,
     or None where the model did not answer.
@@ -135,7 +144,7 @@ def first(state: str, repo: Path, now: datetime) -> Briefing | None:
     what a change is read as told or untold against (on_change), and a change arriving while the
     repo is being explored is one the session has not heard."""
     answer = ask(["--system-prompt", SYSTEM, "-p", state], repo)
-    if not answer or not answer["result"].strip():
+    if not answer:
         return None
     return Briefing(answer["result"].strip(), now, answer["session_id"], now, now, 0)
 
@@ -149,7 +158,7 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
     said = answer["result"].strip()
     # the word as the prompt writes it, which is in backticks: an answer that keeps them, or ends
     # the sentence, is the same answer, and taking it for a briefing would put it in the column
-    stands = not said or said.strip("`*. ").lower() == UNCHANGED
+    stands = said.strip("`*. ").lower() == UNCHANGED
     return replace(
         cached,
         text=cached.text if stands else said,
@@ -174,7 +183,7 @@ def ask(args: list[str], repo: Path) -> dict | None:
     try:
         done = subprocess.run(
             [COMMAND, *args, "--output-format", "json", "--allowedTools", TOOLS, "--disallowedTools", DENIED,
-             "--settings", SETTINGS],
+             "--settings", settings()],
             cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -184,9 +193,10 @@ def ask(args: list[str], repo: Path) -> dict | None:
         answer = json.loads(done.stdout)
     except ValueError:
         answer = None
-    if not isinstance(answer, dict) or answer.get("is_error") or not answer.get("session_id"):
+    if not isinstance(answer, dict) or answer.get("is_error") or not answer.get("session_id") \
+            or not str(answer.get("result", "")).strip():
         said = (answer or {}).get("result") or next((line for line in done.stderr.splitlines() if line.strip()), "")
-        quiet(str(said) or "it answered nothing")
+        quiet(str(said).strip() or "it answered nothing")
         return None
     SILENT = ""
     return answer | {"result": str(answer.get("result", ""))}

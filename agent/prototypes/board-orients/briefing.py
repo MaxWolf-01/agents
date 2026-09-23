@@ -3,7 +3,11 @@
 # requires-python = ">=3.14"
 # dependencies = ["tyro", "pyyaml", "markdown"]
 # ///
-"""PROTOTYPE, throwaway (board-orients): the board as a briefing a returning user reads top down.
+"""Historical artifact as of 2026-09-23, superseded by mx/skills/tracker/briefing.py. Not current; kept as the reasoning trail.
+
+What it groups, names and parses is the reading agent/tickets/board-orients/spec.md replaced.
+
+PROTOTYPE, throwaway (board-orients): the board as a briefing a returning user reads top down.
 
 Answers, in order: where things stand, what is my turn, what agents can do without me, what is
 parked, what landed this week. House style. Reads the live tracker through board.py's loaders,

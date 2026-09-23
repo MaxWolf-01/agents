@@ -114,9 +114,10 @@ once.
 
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
-re-renders on one. It also re-renders on the two things that move with no file
-under the tracker moving: a briefing the session has rewritten, and GitHub's
-answer running past the five minutes it is cached for. One watcher per board:
+re-renders on one. It also re-renders on the three things that move with no
+file under the tracker moving: a briefing the session has rewritten, GitHub's
+answer running past the five minutes it is cached for, and a run of the model
+that answered nothing, which the page says once. One watcher per board:
 several of them write the same page from the same tracker, and share GitHub's
 answer through the cache beside it, but each keeps its own briefing schedule, so
 a second one pays for every briefing again and resumes the session while the
@@ -257,12 +258,14 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     """Re-render on any change under the tracker, in every checkout that contributes to it, and on
-    the two things that move on their own: the briefing a session has rewritten since the page was
-    written, and GitHub's answer running out of the lifetime it is cached for.
+    the three things that move on their own: the briefing a session has rewritten since the page
+    was written, GitHub's answer running out of the lifetime it is cached for, and a run of the
+    model that came back with nothing.
 
-    Those two are what the watcher is for as much as the tracker is. A pull request merged while
-    the tracker sits still would otherwise show as open until someone touched a ticket, and a
-    briefing written minutes after the change that asked for it would not show at all."""
+    Those three are what the watcher is for as much as the tracker is. A pull request merged while
+    the tracker sits still would otherwise show as open until someone touched a ticket, a briefing
+    written minutes after the change that asked for it would not show at all, and a run that
+    answered nothing writes no file for anything else to notice."""
     seen, session = Seen(), Briefer(repo, out)
     while True:
         try:
@@ -278,13 +281,16 @@ class Seen:
 
     `snapshot` is the tracker as `tracker_snapshot` reads it and None before the first pass;
     `briefing` is when the cache file the rendered page holds was written; `asked` is when GitHub's
-    answer beside the board was got, and `armed` the answer a re-render has already been done for.
+    answer beside the board was got, and `armed` the answer the render that asked again has been
+    done for. `quiet` is what the last run of the model that answered nothing said: it writes no
+    cache file, so nothing else here moves with it.
     """
 
     snapshot: tuple | None = None
     briefing: int = 0
     asked: datetime.datetime | None = None
     armed: datetime.datetime | None = None
+    quiet: str = ""
 
 
 def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Path) -> Seen:
@@ -294,7 +300,8 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
     cache = briefing.cache_path(out)
     snapshot = tracker_snapshot(roots, repo)
     written = cache.stat().st_mtime_ns if cache.exists() else 0
-    armed = seen.armed
+    quiet = briefing.SILENT  # read with the rest of what this pass reads: a run lands on its own thread
+    armed, lapsed = seen.armed, run_out(seen.asked, seen.armed)
     if snapshot != seen.snapshot:
         if seen.snapshot is not None:
             session.changed(now())
@@ -303,11 +310,12 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
             # the start is itself a change where no briefing has ever been written, since a tracker
             # quiet since the last one is the board a returning user opens
             session.opened(snapshot, None if briefing.Briefing.read(cache) else now())
-    elif written != seen.briefing or run_out(seen.asked, seen.armed):
+    elif written != seen.briefing or quiet != seen.quiet or lapsed:
         render(roots, repo, out)
-        armed = seen.asked  # this answer has had its render; only a later one arms the clock again
+        if lapsed:
+            armed = seen.asked  # only the render that asked again is done with this answer
     session.tick(roots, snapshot, now())
-    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed)
+    return Seen(snapshot, written, github.asked_at(github.cache_path(out)), armed, quiet)
 
 
 def now() -> datetime.datetime:
@@ -447,7 +455,7 @@ def state_line(ref: str, t: "Row") -> str:
         said += f"  brief: {plain(t.brief)}\n"
     if waits := blockers_of(t):
         said += f"  waits on: {', '.join(waits)}\n"
-    for q in open_questions(t):
+    for q in shown_questions(t):
         said += f"  asks: [{q.tag}] {plain(inline_md(q.headline))} {plain(inline_md(q.detail))}\n".rstrip() + "\n"
     return said
 
@@ -500,7 +508,7 @@ def fallback(features: list["Feature"], standalone: list["Standalone"]) -> str:
     waiting = {
         ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
         ("question wanting a word", "questions wanting a word"): [q for t in mine for q in open_questions(t)],
-        ("design session", "design sessions"): [t for t in mine if asks_word(t) in ("design", "prototype")],
+        ("design session", "design sessions"): [t for t in mine if asks_word(t) in SITS_FOR.values()],
     }
     counts = [
         f"{counted(len(held))} {one if len(held) == 1 else many}" for (one, many), held in waiting.items() if held
@@ -783,7 +791,8 @@ def is_ticket(path: Path) -> bool:
 def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
     assert_safe_name(path.stem)
     meta, name, brief, body = read_ticket(path.read_text())
-    blocked_by = [(str(n), ref_status(roots.main, roots.overrides, str(n))) for n in meta.get("blocked-by") or []]
+    blocked_by = [(normalize_ref(str(n)), ref_status(roots.main, roots.overrides, str(n)))
+                  for n in meta.get("blocked-by") or []]
     status = declared_status(meta, path)
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
@@ -855,7 +864,8 @@ def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Pa
                 status=status,
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
-                ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
+                ext_by=[(normalize_ref(str(n)), ref_status(root, overrides, str(n)))
+                        for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
                 body_html=ticket_blocks(written, feature_dir.name, asked, show_dir(path, feature_dir.name), worked),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
@@ -957,6 +967,16 @@ def is_local_ref(n: object) -> bool:
     return isinstance(n, int) or str(n).isdigit()
 
 
+def normalize_ref(ref: str) -> str:
+    """An external blocking reference as the board writes it everywhere it keys on one: a standalone
+    ticket's slug, or `<feature>/NN` with the number two digits, which a ticket file may write
+    either way."""
+    if "/" not in ref:
+        return ref
+    feature, num = ref.rsplit("/", 1)
+    return f"{feature}/{normalize_num(num)}"
+
+
 def ref_status(root: Path, overrides: dict[str, Path], ref: str) -> str:
     # External blocker: "<feature>/NN" or a standalone ticket's "<slug>", resolved in the
     # checkout that holds the feature (an in-flight feature lives in its worktree). A
@@ -1005,9 +1025,9 @@ def content_stamp(
     gh: github.Answer = github.NOTHING, said: "briefing.Briefing | None" = None,
 ) -> str:
     # everything the page shows except the render timestamp: an unchanged board
-    # keeps its stamp, so the open tab knows not to reload. A state GitHub gave a link and a
-    # briefing a session rewrote are two of those things, and the ones that move without a file
-    # under the tracker moving with them.
+    # keeps its stamp, so the open tab knows not to reload. A state GitHub gave a link, a briefing
+    # a session rewrote and an absence the page says are the three of those that move without a
+    # file under the tracker moving with them.
     key = repr((
         project,
         [(f.name, f.spec_status,
@@ -1020,6 +1040,7 @@ def content_stamp(
         sorted(gh.states.items()),
         gh.missing,
         said and (said.text, said.written),
+        absences(features, standalone, gh, said),
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
@@ -1044,6 +1065,9 @@ TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by the dotfiles' git hook
 
 
+SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
+
+
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
     review, has an open question, or is an unclaimed design or prototype decision at p1 or p2."""
@@ -1051,8 +1075,8 @@ def needs_me(status: str, kind: str | None, priority: int | None, open_question:
         return False
     if status == "review" or open_question:
         return True
-    # the two decision types the user sits for, on a ticket nobody has taken up yet
-    return kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed")
+    # a decision type the user sits for, on a ticket nobody has taken up yet
+    return kind in SITS_FOR and priority in (1, 2) and status in ("open", "proposed")
 
 
 @dataclass(frozen=True)
@@ -1499,7 +1523,9 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
     ghost = {f.name: visible(f.tickets)[1] for f in features}
     shown = [k for k in standalone if k.status != "done"]
     shown_slugs = {k.slug for k in shown}
+    ghost_slugs: set[str] = set()
     by_feature = {f.name: {t.num: t for t in f.tickets} for f in features}
+    by_slug = {k.slug: k for k in standalone}
     waits = [ref for f in features for t in f.tickets if t.status != "done" for ref, _ in t.ext_by]
     waits += [ref for k in shown for ref, _ in k.blocked_by]
     for ref in waits:
@@ -1509,6 +1535,10 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
             if (src := by_feature.get(src_feat, {}).get(src_num)) and src.status == "done":
                 include[src_feat].add(src_num)
                 ghost[src_feat].add(src_num)
+        elif ref not in shown_slugs and (k := by_slug.get(ref)) and k.status == "done":
+            shown.append(k)  # `waits` holds one entry per waiting ticket, so the guard is the set
+            shown_slugs.add(ref)
+            ghost_slugs.add(ref)
 
     def node(ref: str) -> tuple[str, str] | None:
         """(feature, node id) of a blocker that is on the board."""
@@ -1541,7 +1571,8 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
             parts["features"].append({"name": f.name, "nodes": nodes})
     nodes = [
         {"id": standalone_id(ns, k.slug), "lines": [
-            f'  {standalone_id(ns, k.slug)}["{STATUS_SYMBOL[k.status]} {node_label(k.title)}"]:::{k.status}',
+            f'  {standalone_id(ns, k.slug)}["{STATUS_SYMBOL[k.status]} {node_label(k.title)}"]'
+            f':::{"ghost" if k.slug in ghost_slugs else k.status}',
             f'  click {standalone_id(ns, k.slug)} "#standalone-{k.slug}"',
         ]}
         for k in shown if standalone_id(ns, k.slug) in connected
@@ -1556,7 +1587,6 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 type Row = Ticket | Standalone
 
 
-SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
 WORKED_ALONE = {"research": "research", "legwork": "legwork"}  # the ones an agent takes away and comes back from
 
 
@@ -1681,13 +1711,18 @@ def group_of(t: Row) -> str:
     return "needs" if needs_me(t.status, t.kind, t.priority, bool(open_questions(t))) else t.status
 
 
-def questions_block(t: Row) -> str:
-    """The open questions under a needs-me row: each one's tag and headline with a button that
-    copies it, and one that copies the ticket's own once there are two to copy.
+def shown_questions(t: Row) -> list["Question"]:
+    """The open questions a row shows, which is what any button on it copies.
 
     A done ticket shows none: a question still open when the user rules on the build is filed as a
     proposed ticket then (the spec's Decisions), so one left on a done ticket is a leftover."""
-    asked = [] if t.status == "done" else open_questions(t)
+    return [] if t.status == "done" else open_questions(t)
+
+
+def questions_block(t: Row) -> str:
+    """The open questions under a needs-me row: each one's tag and headline with a button that
+    copies it, and one that copies the ticket's own once there are two to copy."""
+    asked = shown_questions(t)
     if not asked:
         return ""
     lines = "".join(
@@ -1710,7 +1745,7 @@ def questions_block(t: Row) -> str:
 def group_copy(rows: Sequence[Row]) -> str:
     """The needs-me group's own copy button: every open question on the board at once, for pasting
     into an editor. Empty for a group whose rows ask nothing, which is every other group."""
-    asked = [(t.path, open_questions(t)) for t in rows]
+    asked = [(t.path, shown_questions(t)) for t in rows]
     asked = [(path, questions) for path, questions in asked if questions]
     if not asked:
         return ""

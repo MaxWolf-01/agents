@@ -6,7 +6,8 @@
 
 The seam is the command line: a page on disk in, findings and an exit code out, which is how
 every caller uses it and the only place the browser's own measurements can be read. Each page
-here exhibits one condition, and the oracle is what a reader sees on it: two labels printed
+here exhibits one condition, and the oracle is what a reader sees on it: a line wider than the box
+holding it escapes it and the same line in a box wide enough does not; two labels printed
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
 its title off, which is a finding that never fails a run; and text a clip leaves nothing of,
@@ -67,6 +68,22 @@ def png_size(path: Path) -> tuple[int, int]:
     """A PNG's pixel width and height, out of the IHDR chunk its header opens with."""
     header = path.read_bytes()[16:24]
     return int.from_bytes(header[:4]), int.from_bytes(header[4:])
+
+
+def test_a_line_wider_than_its_box_escapes_it(tmp_path):
+    """The kind the board's no-overlap Property leans on hardest and the one nothing here read: a
+    line of text wider than the box holding it, with nothing set to hide the rest. What the reader
+    sees is the text drawn over whatever sits beside it."""
+    code, findings = lint(tmp_path, '<div style="width:80px;white-space:nowrap">A title far too long for it</div>')
+    assert kinds(findings) == ["escapes"]
+    assert findings[0]["where"] == "html" and findings[0]["by"] > 0
+    assert code == 1
+
+
+def test_the_same_line_in_a_box_wide_enough_passes(tmp_path):
+    code, findings = lint(tmp_path, '<div style="width:400px;white-space:nowrap">A title far too long for it</div>')
+    assert findings == []
+    assert code == 0
 
 
 def test_two_labels_drawn_over_each_other_collide(tmp_path):
