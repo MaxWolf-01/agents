@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 parent: ticket-file-contract
 priority: 1
 size: L
