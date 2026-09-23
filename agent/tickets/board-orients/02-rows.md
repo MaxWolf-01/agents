@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 blocked-by: [01]
 priority: 1
 size: M
