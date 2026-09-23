@@ -49,9 +49,9 @@ the file writes them, with the comments folded away as history. The artefacts
 are read from the ticket's show directory, agent/show/<feature>/<NN-slug>/ or
 agent/show/<slug>/: the file named `demo` on a button that copies its path,
 every other file as a link. The sessions are read from the `Session:` trailer
-on every commit that changed the ticket file, on every branch, and named by
-their transcript under $CLAUDE_CONFIG_DIR/projects; one with no transcript on
-this machine, a worker on another host, is left out, and each of the rest
+on every commit that changed the ticket file, or an earlier path of it, on
+every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
+one with no transcript on this machine, a worker on another host, is left out, and each of the rest
 carries a button that copies the command resuming it. The brief is not repeated
 there: it is on the row.
 
@@ -1285,8 +1285,8 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
     return found
 
 
-# one record per commit, its files under it: the date the session wrote it, and the session that
-# signed it
+# one record per commit: the date the session wrote it, and the session that signed it, with the
+# files under it as `<status>\t<name>`, a move as `R<score>\t<old>\t<new>`
 SESSION_LOG = f"--format=%x1e%as %(trailers:key={SESSION_TRAILER},valueonly,separator=%x20)"
 
 
@@ -1295,20 +1295,50 @@ def session_log(repo: Path) -> dict[str, dict[str, tuple[str, str]]]:
     """Which sessions changed which file, and the dates of each session's first and last commit on
     it, oldest session first: one pass over every branch of the repo.
 
+    A file that moved is one file: git records the move, so the sessions under its old path are
+    carried to the new one as the walk reaches the commit that moved it, through a chain of moves
+    too. The old path keeps them as well, since a checkout that has not taken the move still holds
+    the file there; a file that arrives at the freed path afterwards carries its own sessions alone.
+
+    Where the carry gets a file's sessions wrong, all of it out of one flat walk over every ref:
+
+    - A commit that moves a file and rewrites more than half of it scores as a delete and an add
+      rather than a move, and nothing is carried.
+    - A commit on the old path that the walk reaches after the move is not carried either. The walk
+      is in commit order across every ref at once, so which side of the move a commit falls on is
+      not decided by the branch it is on.
+    - A move onto a path some earlier file was deleted from inherits that file's sessions.
+
     The dates are min and max rather than the ends of the walk, which is in commit order while the
     dates are the author's: a cherry-picked commit would otherwise leave a range running backwards.
     """
     changed: dict[str, dict[str, tuple[str, str]]] = {}
+    vacated: set[str] = set()  # paths a move emptied
     # a commit's own account of which session made it, written by the prepare-commit-msg hook
-    written = git(repo, "log", "--all", "--reverse", "--name-only", SESSION_LOG)
+    written = git(repo, "log", "--all", "--reverse", "--name-status", "-M", SESSION_LOG)
     for record in filter(None, written.split("\x1e")):  # git()'s strip eats the leading separator
         head, _, names = record.partition("\n")
         date, *sessions = head.split()
-        for sid in sessions:
-            for name in filter(None, names.split("\n")):
-                first, last = changed.setdefault(name, {}).get(sid, (date, date))
-                changed[name][sid] = (min(first, date), max(last, date))
+        for line in filter(None, names.split("\n")):
+            status, *paths = line.split("\t")
+            if not paths:  # no file: a trailer whose value ran on to a line of its own
+                continue
+            name = paths[-1]  # a move names its destination second
+            if status[0] in "AR" and name in vacated:
+                changed[name] = {}  # a file arriving where one moved away is its own file
+            if status.startswith("R"):
+                carry(changed.get(paths[0], {}), changed.setdefault(name, {}))
+                vacated.add(paths[0])
+            carry({sid: (date, date) for sid in sessions}, changed.setdefault(name, {}))
     return changed
+
+
+def carry(worked: dict[str, tuple[str, str]], into: dict[str, tuple[str, str]]) -> None:
+    """Merge sessions and their first and last dates into `into`, widening the span of one already
+    there."""
+    for sid, (first, last) in worked.items():
+        was_first, was_last = into.get(sid, (first, last))
+        into[sid] = (min(was_first, first), max(was_last, last))
 
 
 def repo_name(path: Path) -> str | None:
