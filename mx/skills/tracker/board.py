@@ -12,10 +12,10 @@ Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 
 Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type/priority/size frontmatter, cross-feature refs as
-<feature>/NN) and every standalone ticket (*.md at the tracker root, the queue
-file aside) and writes one self-contained page beside the tracker,
-agent/board.html. The page is the tickets as rows grouped by state: needs me,
-frontier, claimed, blocked, proposed, done folded.
+<feature>/NN) and every standalone ticket (*.md at the tracker root whose
+frontmatter declares a status) and writes one self-contained page beside the
+tracker, agent/board.html. The page is the tickets as rows grouped by state:
+needs me, frontier, claimed, blocked, proposed, done folded.
 
 Needs me holds every ticket whose next step is the user's own time: a build to
 rule on, a ticket stopped on a question, a near design session (board.needs_me).
@@ -25,7 +25,6 @@ the board; each button says on hover what it will copy. A build in review is
 read from its own ticket branch (board.ticket_branches), where the worker's
 questions and closing comment are until the merge, while the tracker's copy says
 where the ticket stands and carries the `Ruled` lines that answer its questions.
-The needs-human.md queues are shown there too until they retire.
 
 A row reads left to right in fixed columns: the feature, the number, what the
 row asks of the user (to rule on, your answer, design session, prototype,
@@ -38,8 +37,7 @@ size its frontmatter; a ticket silent on one of those shows its row without that
 mark. Rows sort by priority, then by the user's time, within each group. Every
 mark says on hover what it means. Below a width the time, the priority and the
 blockers move under the name. A click on a row's number copies the absolute
-path of the file the row was read from: the ticket, or for a needs-me entry its
-needs-human.md.
+path of the ticket file the row was read from.
 
 An opened row reads as blocks rather than the ticket's whole text: its questions
 with the detail the row has no room for and the ruling on each answered one, the
@@ -90,10 +88,7 @@ be served the link is the file, which the page itself says is read-only.
 Watching means: every few seconds it looks for a change under the tracker,
 any worktree's copy included, a worktree cut after the start too, and
 re-renders on one. Several watchers writing the same page is harmless since the
-render is deterministic from disk. The queue is read from the needs-human.md
-beside the tickets it belongs to, agent/tickets/<feature>/ for a feature and the
-tracker root for the standalone ones: one `- summary :: markdown detail` bullet
-per pending entry; indented lines under a bullet continue its detail.
+render is deterministic from disk.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections, the cursor and the hidden
@@ -216,11 +211,10 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     features = load_features(root, roots.overrides, diffviews, roots.repo)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
-    queue = load_needs_human(root / "needs-human.md")
     log = git_log(repo)
-    stamp = content_stamp(project, features, standalone, queue, log)
+    stamp = content_stamp(project, features, standalone, log)
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render_page(project, features, standalone, queue, log, stamp, out.name + ".stamp.js")
+    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js")
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
@@ -390,18 +384,9 @@ class Ticket:
 
 
 @dataclass
-class Queue:
-    """A needs-human.md: where it is, and its pending entries."""
-
-    path: Path
-    entries: list[str]
-
-
-@dataclass
 class Feature:
     name: str
     tickets: list[Ticket]
-    needs_human: Queue
     spec_status: str | None  # spec.md's status; None when the feature has no spec
 
 
@@ -437,7 +422,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, 
         if not tickets and spec_status is None:
             continue
         assert_safe_name(name)
-        features.append(Feature(name, tickets, load_needs_human(d / "needs-human.md"), spec_status))
+        features.append(Feature(name, tickets, spec_status))
     ids = [slug_id(f.name) for f in features]
     assert len(ids) == len(set(ids)), f"feature names collide as mermaid ids: {sorted(ids)}"
     return features
@@ -453,18 +438,24 @@ def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
     standalone = [
         read_standalone(p, roots, diffviews, None)
         for p in (sorted(root.glob("*.md")) if root.is_dir() else [])
-        if p.name != "needs-human.md"  # the standalone tickets' queue, beside them as a feature's is
+        if is_ticket(p)
     ]
     have = {k.slug for k in standalone}
     for branch, tracker in roots.branches:
         dv = serve_diffviews(tracker.parent / "diffviews")
         for path in branch_added(tracker, roots.repo):
-            meta, _ = split_frontmatter(path.read_text())
-            if path.stem in have or str(meta.get("status")) not in TICKET_STATUSES:
+            if path.stem in have or not is_ticket(path):
                 continue
             standalone.append(read_standalone(path, roots, dv, branch))
             have.add(path.stem)
     return standalone
+
+
+def is_ticket(path: Path) -> bool:
+    """Whether a markdown file at the tracker root is a ticket: a README, a note, a leftover queue
+    file live there too, and what a ticket declares is a status (`/mx:tracker`). A status that is
+    not one of the five is a typo in a ticket, which `declared_status` names rather than hides."""
+    return "status" in split_frontmatter(path.read_text())[0]
 
 
 def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
@@ -524,18 +515,6 @@ def spec_state(path: Path) -> str | None:
         return None
     meta, _ = split_frontmatter(path.read_text())
     return str(meta.get("status", "status missing"))
-
-
-def load_needs_human(path: Path) -> Queue:
-    if not path.exists():
-        return Queue(path, [])
-    entries: list[str] = []
-    for line in path.read_text().splitlines():
-        if line.startswith("- "):
-            entries.append(line[2:].strip())
-        elif entries and (line[:1] in (" ", "\t") or not line.strip()):
-            entries[-1] += "\n" + line.strip()
-    return Queue(path, [e.strip() for e in entries])
 
 
 def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path], repo: Path | None) -> list[Ticket]:
@@ -702,18 +681,17 @@ def normalize_num(n: object) -> str:
     return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
 
 
-def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], queue: Queue, log: str) -> str:
+def content_stamp(project: str, features: list[Feature], standalone: list[Standalone], log: str) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload
     key = repr((
         project,
-        [(f.name, f.needs_human, f.spec_status,
+        [(f.name, f.spec_status,
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path,
             t.priority, t.size, t.brief, t.questions) for t in f.tickets])
          for f in features],
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source,
           k.priority, k.size, k.brief, k.questions) for k in standalone],
-        queue,
         log,
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
@@ -1469,22 +1447,6 @@ def standalone_row(k: Standalone) -> str:
     return row(f"standalone-{k.slug}", "standalone", "--", k, ext_chips(k.blocked_by), on_branch)
 
 
-def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
-    """A needs-human.md entry, which is not a ticket and has none of a ticket's marks. The queue
-    retires into the tickets its entries belong to (agent/tickets/board-orients/spec.md, ticket 10)."""
-    summary, sep, detail = item.partition(" :: ")
-    body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
-    title = summary if sep else item
-    return (
-        row_open(f"needs-{owner}-{i}", "needs", owner, "!", search_text(summary, body), queue)
-        + f'<span class="ftag" data-tip="The feature this entry was filed under.">{clipped(owner)}</span>'
-        f'<span class="num" data-tip="Click to copy the path of the queue file this entry is in (y):\n{html.escape(str(queue))}">!</span>'
-        f'<span class="asks a-queue" data-tip="A queue entry: work that waits on you and has no ticket of its own yet.">{ASKS["answer"][0]}</span>'
-        f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(title)}">{clipped(title)}</span></span></span>'
-        f'</summary><div class="body">{body}</div></details>'
-    )
-
-
 def feature_chip(f: Feature) -> str:
     """A feature's pill in the top bar: its counts, and the click that hides and shows its rows.
 
@@ -1494,9 +1456,8 @@ def feature_chip(f: Feature) -> str:
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    if f.needs_human.entries:
-        bits.append(f"{len(f.needs_human.entries)} need me")
-    dot = '<i class="dot"></i>' if f.needs_human.entries or counts["review"] else ""
+    # the dot says the feature holds work of the user's own; the counts above already say how much
+    dot = '<i class="dot"></i>' if any(group_of(t) == "needs" for t in f.tickets) else ""
     return (
         f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
         f'<span class="dim">{counts["done"]}/{len(f.tickets)}</span></button>'
@@ -1504,13 +1465,10 @@ def feature_chip(f: Feature) -> str:
 
 
 def render_page(
-    project: str, features: list[Feature], standalone: list[Standalone], queue: Queue,
+    project: str, features: list[Feature], standalone: list[Standalone],
     log: str, stamp: str, stamp_src: str
 ) -> str:
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
-    for f in features:
-        rows["needs"].extend(needs_row(f.name, i, item, f.needs_human.path) for i, item in enumerate(f.needs_human.entries))
-    rows["needs"].extend(needs_row("standalone", i, item, queue.path) for i, item in enumerate(queue.entries))
     ranked: dict[str, list[tuple[tuple, str, Row]]] = {state: [] for state, _ in GROUPS}
     for f in features:
         for t in f.tickets:
@@ -1529,7 +1487,7 @@ def render_page(
     )
 
     chips = "".join(feature_chip(f) for f in features)
-    if standalone or queue.entries:
+    if standalone:
         chips += f'<button class="featchip" data-feature="standalone" title="tickets without a spec">standalone <span class="dim">{len(standalone)}</span></button>'
 
     graphs = ""
@@ -1824,7 +1782,7 @@ ${columns}
     background: color-mix(in srgb, var(--c) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
   .a-review { --c: var(--c-gold); }
-  .a-answer, .a-queue { --c: var(--c-rose); }
+  .a-answer { --c: var(--c-rose); }
   .a-design { --c: var(--c-purple); }
   .a-prototype { --c: var(--c-orange); }
   .a-research { --c: var(--c-blue); }

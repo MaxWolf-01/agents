@@ -40,7 +40,7 @@ File-based specs and tickets, domain glossary + ADRs, research artefacts, and se
 <details>
 <summary><b>The board: the tracker as one page</b></summary>
 
-`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, the queue of things only you can answer first, each row tagged with its feature and expanding to its text. Feature chips hide a feature, a filter narrows the rows, and a panel beside the rows shows the dependency graph of the feature under the cursor, or the whole tracker's. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
+`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, the ones waiting on you first with their open questions under them, each row tagged with its feature and expanding to its text. Feature chips hide a feature, a filter narrows the rows, and a panel beside the rows shows the dependency graph of the feature under the cursor, or the whole tracker's. It watches the tracker and the open tab re-renders itself, so it stays current while a feature is in flight. Screenshots of a demo tracker, rebuilt by [`agent/show/mx-readme-figures/demo/build.py`](../agent/show/mx-readme-figures/demo/build.py).
 
 <img alt="The board: rows grouped by state, needs me first with a finished feature's debrief expanded, then the frontier; beside them the whole tracker's dependency graph across two features, done in green, claimed in amber, blocked and proposed in their own colours, with an edge crossing from one feature into the other" src="assets/board-overview.png">
 
