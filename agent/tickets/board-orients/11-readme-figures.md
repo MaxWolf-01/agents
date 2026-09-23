@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [09, 10]
 priority: 3
 size: XS
+diff: [8deb316162c035f12f2782dbbe5ced14af7c3c9a..264f619a56d2f84d24c3bdfa74c15c58b688fd80]
 ---
 
 # The README shows the board as it is
