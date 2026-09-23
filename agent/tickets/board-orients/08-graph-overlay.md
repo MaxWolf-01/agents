@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 blocked-by: [07]
 priority: 3
 size: S
