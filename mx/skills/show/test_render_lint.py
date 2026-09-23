@@ -9,8 +9,9 @@ every caller uses it and the only place the browser's own measurements can be re
 here exhibits one condition, and the oracle is what a reader sees on it: two labels printed
 over each other collide and the same two apart do not; a link in a paragraph and a span in a
 button sit inside their parents' text rather than across it; a box with overflow hidden cuts
-its title off, which is a finding that never fails a run; text a clip leaves nothing of is
-hidden on purpose.
+its title off, which is a finding that never fails a run; text a clip leaves nothing of, and
+text a folded disclosure holds, are both hidden on purpose; and a box cuts off only what it
+is the containing block of.
 
 A run launches Chromium, so these take a second or two each.
 """
@@ -96,6 +97,47 @@ def test_text_a_clip_leaves_nothing_of_is_hidden_rather_than_clipped(tmp_path):
         """,
     )
     assert findings == []
+    assert code == 0
+
+
+def test_a_folded_disclosure_holds_no_visible_text(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <details><summary>Ticket one</summary><p>The brief, folded away.</p><p>More of it.</p></details>
+        <p>A paragraph after it.</p>
+        <p>And another.</p>
+        """,
+    )
+    assert findings == []
+    assert code == 0
+
+
+def test_a_static_box_does_not_clip_the_labels_absolutely_positioned_inside_it(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="overflow:hidden;height:100px">
+          <span style="position:absolute;left:40px;top:200px">Label A over label B</span>
+          <p style="position:absolute;left:40px;top:202px;margin:0">Label B under label A</p>
+        </div>
+        """,
+    )
+    assert kinds(findings) == ["overlap"]
+    assert findings[0]["text"] == "Label A over label B | Label B under label A"
+    assert code == 1
+
+
+def test_a_positioned_box_does_clip_what_it_holds(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="position:relative;overflow:hidden;height:40px;width:120px">
+          <span style="position:absolute;left:8px;top:8px;white-space:nowrap">A label the box really does cut off</span>
+        </div>
+        """,
+    )
+    assert kinds(findings) == ["clipped"]
     assert code == 0
 
 

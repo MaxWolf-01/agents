@@ -19,9 +19,10 @@ Kinds, by severity:
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
   (reported, never fatal: a truncated title is sometimes the design).
 
-Skipped on purpose: text inside a scrolling ancestor, overflow under 2px, the touching
-line boxes of a multi-line label, text a clip leaves less than 4px of, and two texts whose
-glyphs cross by less than half the shorter one's height.
+Skipped on purpose: a scrolling ancestor, which is what keeps text inside it from counting
+as escaped or cut off; overflow under 2px; the touching line boxes of a multi-line label;
+text a clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs
+cross by less than half the shorter one's height.
 
 Exit code 1 when any escape or overlap was found.
 
@@ -61,12 +62,18 @@ MEASURE = r"""
     if (el.scrollWidth > el.clientWidth + 2)
       out.push({ kind: 'escapes', where: 'html', text: snip(el.textContent), by: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) })
   }
-  // What a reader sees of one text rect: every ancestor that clips narrows it, and the ones it
-  // cannot scroll say how much they cut off.
+  // Whether an ancestor's clip reaches a box positioned this way: an absolute box is cut only
+  // by its containing-block chain, a fixed one only by an ancestor that takes it out of the
+  // viewport's frame.
+  const holds = (cs, pos) => cs.transform !== 'none' || cs.filter !== 'none' || cs.contain !== 'none' || cs.willChange !== 'auto' || (pos === 'absolute' && cs.position !== 'static')
+  // What a reader sees of one text rect: every ancestor that clips it narrows it, and the ones
+  // it cannot scroll say how much they cut off.
   const clip = (el, r) => {
-    let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0
+    let seen = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, cut = 0, pos = 'static'
     for (let a = el; a; a = a.parentElement) {
       const cs = getComputedStyle(a)
+      if (a !== el && (pos === 'absolute' || pos === 'fixed') && !holds(cs, pos)) continue
+      pos = cs.position
       if (cs.overflowX === 'visible' || cs.display === 'inline') continue
       const ab = a.getBoundingClientRect()
       const c = { left: ab.left + parseFloat(cs.borderLeftWidth), top: ab.top + parseFloat(cs.borderTopWidth), right: ab.right - parseFloat(cs.borderRightWidth), bottom: ab.bottom - parseFloat(cs.borderBottomWidth) }
@@ -76,13 +83,12 @@ MEASURE = r"""
     }
     return { seen, cut }
   }
-  const faded = (el) => { for (let a = el; a; a = a.parentElement) if (getComputedStyle(a).opacity === '0') return true; return false }
   const runs = []
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     const el = n.parentElement
     if (!n.nodeValue.trim() || !el || el instanceof SVGElement) continue
-    if (getComputedStyle(el).visibility !== 'visible' || faded(el)) continue
+    if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true, contentVisibilityAuto: true })) continue
     const range = document.createRange()
     range.selectNodeContents(n)
     const seen = []

@@ -16,17 +16,22 @@ repo=$(git -C "$here" rev-parse --show-toplevel)
 lint=$repo/mx/bin/render-lint
 page=$here/rows.html
 work=${1:-$(mktemp -d /tmp/render-lint-html-overlap.XXXX)}
+found=$work/findings.txt
+summary=$work/summary.txt
+mkdir -p "$work"
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
-# Each run's claim, as something that can fail: the findings and the exit code together,
-# since a kind that stopped failing the run would still print the same line.
+# Each run's claim, as something that can fail: the kinds it found and the exit code
+# together, since a kind that stopped failing the run would still print the same line.
+# The run happens once; what is printed is what is checked.
 run() { # <crops dir> <expected exit> <page> <expected kinds, one per line>
     crops=$work/$1; shift
     printf '$ render-lint %s --crops %s\n' "${2/#$repo\//}" "$crops"
     code=0
-    "$lint" "$2" --crops "$crops" || code=$?
-    kinds=$("$lint" "$2" --json | grep -o '"kind": "[a-z]*"' | cut -d'"' -f4) || true
+    "$lint" "$2" --crops "$crops" >"$found" 2>"$summary" || code=$?
+    cat "$found" "$summary"
+    kinds=$(awk '{ print $2 }' "$found")
     [ "$code" = "$1" ] && [ "$kinds" = "$3" ] || {
         printf 'FAIL: expected exit %s on\n%s\ngot exit %s on\n%s\n' "$1" "$3" "$code" "$kinds" >&2
         exit 1
@@ -42,5 +47,5 @@ step "the same marks on a grid: the cut-off feature tag, and nothing colliding"
 run grid 0 "$page?fixed" "clipped"
 
 step "the crops are in $work"
-ls "$work"/*
+ls "$work"/*/
 printf '\nopen the page itself at %s, and %s?fixed\n' "$page" "$page"
