@@ -480,7 +480,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "opus[1m]",
   "skillOverrides": {
     "loop": "off",
     "security-review": "user-invocable-only",
@@ -542,6 +542,9 @@
     },
     "claude-opus-5": {
       "effortLevel": "xhigh"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "high"
     }
   },
   "promptSuggestionEnabled": false,
@@ -560,6 +563,7 @@
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "autoCompactEnabled": false,
+  "promptCacheTtl": "1h",
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
