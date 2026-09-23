@@ -36,7 +36,17 @@ Break the work into **tracer bullet** tickets.
 
 Give each ticket its **blocking edges**: the other tickets that must complete before it can start. A ticket with no blockers can start immediately. Prefer orderings that make the feature **drivable early**: human QA is gated on demo cost, and every ticket that lands before a drivable surface exists accumulates unreviewed taste debt.
 
-**Dispose of every spec property**, following the disposition the spec's Testing Decisions already gave it. Every property marked **executable** shares one ticket that builds them all as checks in the project's properties directory (`tests/properties/`): blocked by nothing, blocking every slice at their seams, and briefed with the spec and the seams' interfaces, since the implementation it must not copy does not exist yet when its worktree is cut. Where a seam is a function or a module API that does not exist yet, that ticket lands its interface as a stub, transcribed from the spec's Decisions, so the suite collects; a property that cannot hold yet lands as an expected failure (`/mx:testing`) naming the slice that lifts it, and the ticket's body assigns each property its one lifting slice beside its seam. A property no single slice can make hold is a slicing signal: merge the slices, or split the property at the seam. It is an ordinary build ticket in the cross-cutting position below. Every **reviewed** property becomes a named acceptance criterion stamped onto each ticket touching its area. A property left undisposed is a feature nobody builds.
+**Dispose of every spec property**, following the disposition the spec's Testing Decisions already gave it. Every property marked **executable** shares one ticket that builds them all as checks in the project's properties directory (`tests/properties/`): blocked by nothing, blocking every slice at their seams, and briefed with the spec and the seams' interfaces, since the implementation it must not copy does not exist yet when its worktree is cut. Where a seam is a function or a module API that does not exist yet, that ticket lands its interface as a stub, transcribed from the spec's Decisions, so the suite collects; a property that cannot hold yet lands as an expected failure (`/mx:testing`) naming the slice that lifts it, and the ticket's body assigns each property its one lifting slice beside its seam. A property no single slice can make hold is a slicing signal: merge the slices, or split the property at the seam. It is an ordinary build ticket in the cross-cutting position below. Every **reviewed** property becomes a named acceptance criterion stamped onto each ticket touching its area.
+
+Each criterion names its property by the id the spec gave it, and sits under the ticket's `## Acceptance criteria`, which is where step 4's check reads it:
+
+```
+- [ ] Property P3, reviewed: what this slice has to hold
+- [ ] Property P4, executable: the seam its check enters at
+- Property P7, unsliced: no slice holds it, and why
+```
+
+The first two words are the spec's dispositions. The third is the breakdown's own, for the property the slicing signal above cannot resolve, one that holds across the feature rather than inside any one slice: its spec disposition still says how it is checked, and the line records that no slice owns it, so a property nobody built reads differently from one no slice could hold. A property left undisposed is a feature nobody builds, and the check is what names it.
 
 **Stamp floors.** A ticket building a surface with a promoted floor (see the spec's Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
 
@@ -48,7 +58,7 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 ### 4. Publish the tickets
 
-Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec. A build ticket is `proposed`: its ruling comes from what it built (`/mx:tracker`).
+Publish per `/mx:tracker`: one `NN-<slug>.md` per ticket in the feature's directory, numbered in dependency order (blockers first), each using the template below. Do NOT modify the spec, beyond numbering properties an older spec left without ids (`/mx:grilling`, SPEC-FORMAT): an id is bookkeeping, not design. A build ticket is `proposed`: its ruling comes from what it built (`/mx:tracker`).
 
 **Name the calls each slice builds on.** A draft spec's marks (`/mx:grilling`) say which decisions are the user's and which are the agent's; the provenance line names the ones this slice rests on, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
@@ -77,6 +87,8 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 A decision ticket is `open` and carries its `type`: its answer is the ruling, and nothing builds from it meanwhile. Its body is a `## Question` (the decision, sized to one session) in place of What-to-build and acceptance criteria.
 
 Avoid specific file paths or code snippets; they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts: not a working demo, just the important bits.
+
+**The breakdown is published when the check is clean.** `property-coverage <the feature directory>` holds every ticket's criteria against the spec's properties and names what does not line up, at the line it read. Fix the criteria and run it again.
 
 ### 5. Show the breakdown, then dispatch
 

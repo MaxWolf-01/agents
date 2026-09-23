@@ -30,9 +30,9 @@ commit the accepted ones as entries.
 
 ## Properties
 
-- Every accepted row carries a date, a payee and an integer amount in cents.
-- A line is either accepted or reported, never both and never neither.
-- Importing the same statement twice adds no entry the second time.
+- P1 Every accepted row carries a date, a payee and an integer amount in cents.
+- P2 A line is either accepted or reported, never both and never neither.
+- P3 Importing the same statement twice adds no entry the second time.
 
 ## Decisions
 
