@@ -6,7 +6,8 @@
 #   agent/prototypes/board-orients/demo-tracker/build.sh [output directory, default /var/tmp/board-orients-demo]
 #
 # Its tickets follow the prototype's reading (questions under a closing comment's "I need from you",
-# a "Ruled: D2" line, a `name:` field), not yet the spec's ticket file.
+# a "Ruled: D2" line, a `name:` field), not yet the spec's ticket file; the copy promoted into the
+# board's checks, mx/skills/tracker/demo_tracker.py, is the one that follows the spec.
 set -euo pipefail
 
 proto=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/board.py

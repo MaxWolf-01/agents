@@ -580,6 +580,64 @@ def git_log(repo: Path) -> str:
     return result.stdout
 
 
+# ---- what a ticket asks of the user ---------------------------------------
+# The seams agent/tickets/board-orients/spec.md decides and its later slices fill in. That spec is
+# their oracle, held as the properties in test_board.py: each stub's check is an expected failure
+# naming the slice that lifts it.
+
+# where a session's transcript is on this machine, as the rest of the repo resolves it
+TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
+
+
+def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
+    """Whether a ticket waits on the user, from what its file says: a build in review, a ticket with
+    an open question, or an unclaimed design or prototype decision at p1 or p2.
+    Lifted by 03-questions-and-needs-me."""
+    raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class Question:
+    """One `[Dn]` item under a ticket's `## Questions`: a call only the user can make."""
+
+    tag: str  # D1, D2, ... the ticket's running sequence
+    headline: str  # the bold sentence the board shows under the row
+    detail: str  # the rest of the item, as written
+    ruled: str | None  # the date on the `Ruled <date>:` line under it; None while the question is open
+
+
+def read_questions(text: str) -> list[Question]:
+    """The questions a ticket file holds, ruled ones included, in file order. The `[Dn]` tags a
+    closing comment carries elsewhere in the file are not questions. Lifted by
+    03-questions-and-needs-me."""
+    raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class Session:
+    """A session whose commits changed a ticket, as the user resumes it."""
+
+    id: str
+    title: str  # its /rename name, else Claude Code's own
+    cwd: str  # the working directory its transcript records
+    first: str  # when it first committed on the ticket
+    last: str
+
+
+def ticket_sessions(path: Path, repo: Path, transcripts: Path | None = None) -> list[Session]:
+    """The sessions whose commits changed the ticket file, from the `Session:` trailers on every
+    branch, oldest first. A session with no transcript under `transcripts` (TRANSCRIPTS, this
+    machine's, by default) is a worker on another host and is left out: the user cannot resume it.
+    Lifted by 05-sessions."""
+    raise NotImplementedError
+
+
+def absence_note(source: str, words: str) -> str:
+    """An optional source the render did without, said once on the page: GitHub, the model, the
+    transcripts, the review-page server."""
+    return f'<p class="absent" data-absent="{html.escape(source)}">{html.escape(words)}</p>'
+
+
 # ---- graphs ---------------------------------------------------------------
 
 
