@@ -36,9 +36,9 @@ switch in the top bar pins one, and ?theme=day|night on the address pins one for
 a screenshot. Feature pills in the top bar hide and show a feature's rows, each
 counting its done tickets out of all of them, proposed included; a filter box
 narrows the rows to a word. An optional source the render did without is said
-once at the top of the page. Beside the rows a graph panel shows the dependency
-graph of the feature of the row under the cursor with that ticket marked, or the
-whole tracker's graph with its cross-feature edges, hidden features left out. A
+once at the top of the page. A graph panel, beside the rows on a wide window and
+above them on a narrow one, shows the dependency graph of the feature of the row
+under the cursor with that ticket marked, or the whole tracker's graph with its cross-feature edges, hidden features left out. A
 graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
@@ -109,19 +109,23 @@ import yaml
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
 
-# What a row's marks stand for, and the words each says on hover.
-PRIORITY_WORD = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
-PRIORITY_TIP = (
-    "The priority, an agent's reading of what you have said; tell any session to change one.\n"
-    "p1 now: today\np2 next: this week\np3 soon: once the ones above are out\n"
-    "p4 later: when there is room\np5 someday: parked"
+# What a row's marks stand for: the word the row shows, and what that word means. Each tip is
+# built from the map beside it, so the row and its own explanation cannot drift apart.
+PRIORITY = {  # how soon a ticket matters to the user
+    1: ("now", "today"), 2: ("next", "this week"), 3: ("soon", "once the ones above are out"),
+    4: ("later", "when there is room"), 5: ("someday", "parked"),
+}
+PRIORITY_TIP = "The priority, an agent's reading of what you have said; tell any session to change one.\n" + "\n".join(
+    f"p{level} {word}: {means}" for level, (word, means) in PRIORITY.items()
 )
-SIZE_LABEL = {"XS": "15 min", "S": "20 min", "M": "1 h", "L": "half a day", "XL": "several sessions"}
-SIZE_RANK = {size: rank for rank, size in enumerate(SIZE_LABEL)}
+SIZES = {  # the user's own time on a ticket
+    "XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"), "M": ("1 h", "about an hour"),
+    "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions"),
+}
+SIZE_RANK = {size: rank for rank, size in enumerate(SIZES)}
 SIZE_TIP = (
     "Your time on this ticket, never the agent's: reading the diff or the design, trying the demo, deciding.\n"
-    "XS under 15 min\nS about 20 min\nM about an hour\nL half a day\nXL several sessions"
-)
+) + "\n".join(f"{size} {means}" for size, (_, means) in SIZES.items())
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
     "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
@@ -553,7 +557,7 @@ def ticket_priority(meta: dict, path: Path) -> int | None:
     priority = meta.get("priority")
     if priority is None:
         return None
-    assert priority in PRIORITY_WORD, f"{path}: priority {priority!r}; a ticket declares one of {sorted(PRIORITY_WORD)}"
+    assert priority in PRIORITY, f"{path}: priority {priority!r}; a ticket declares one of {sorted(PRIORITY)}"
     return int(priority)
 
 
@@ -561,7 +565,7 @@ def ticket_size(meta: dict, path: Path) -> str | None:
     size = meta.get("size")
     if size is None:
         return None
-    assert str(size) in SIZE_LABEL, f"{path}: size {size!r}; a ticket declares one of {list(SIZE_LABEL)}"
+    assert str(size) in SIZES, f"{path}: size {size!r}; a ticket declares one of {list(SIZES)}"
     return str(size)
 
 
@@ -841,7 +845,9 @@ type Row = Ticket | Standalone
 
 
 def asks(status: str, kind: str | None, open_question: bool = False) -> str:
-    """Which of ASKS a row asks of the user, from what its ticket file says."""
+    """Which of ASKS a row asks of the user, from what its ticket file says. `open_question` is
+    what 03-questions-and-needs-me passes once it reads a ticket's questions; until then no row
+    asks for an answer."""
     if status == "review":
         return "review"
     if open_question and status != "done":
@@ -858,19 +864,19 @@ def asks_tag(t: Row) -> str:
 def time_tag(t: Row) -> str:
     if not t.size:
         return ""  # a ticket whose file says no size shows none; its column stays, empty
-    return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZE_LABEL[t.size]}</span>'
+    return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZES[t.size][0]}</span>'
 
 
 def priority_tag(t: Row) -> str:
     if not t.priority:
         return ""
-    return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRIORITY_TIP)}">p{t.priority} {PRIORITY_WORD[t.priority]}</span>'
+    return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRIORITY_TIP)}">p{t.priority} {PRIORITY[t.priority][0]}</span>'
 
 
 def sort_key(t: Row) -> tuple:
     """A row's place within its group: the priority first, then the user's time, then the name. A
     ticket whose frontmatter says neither sorts after the ones that do."""
-    return (t.priority or len(PRIORITY_WORD) + 1, SIZE_RANK.get(t.size or "", len(SIZE_RANK)), t.title.lower())
+    return (t.priority or len(PRIORITY) + 1, SIZE_RANK.get(t.size or "", len(SIZE_RANK)), t.title.lower())
 
 
 def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
@@ -908,6 +914,21 @@ def search_text(*parts: str) -> str:
     return html.escape(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", " ", p) for p in parts)).strip().lower(), quote=True)
 
 
+def row_open(row_id: str, status: str, feature: str, num: str, search: str, path: Path) -> str:
+    """The element every row is: what the page's script matches a row on, and the file a click on
+    its number copies."""
+    return (
+        f'<details class="ticket row-{status}" id="{row_id}" data-feature="{html.escape(feature)}" '
+        f'data-num="{html.escape(num)}" data-search="{search}" data-path="{html.escape(str(path))}"><summary>'
+    )
+
+
+def clipped(text: str) -> str:
+    """A mark's words, cut off with an ellipsis where its column is too narrow. The clipping sits on
+    this inner element, since a box that hides its overflow would hide its own hover words too."""
+    return f'<span class="clip">{html.escape(text)}</span>'
+
+
 def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str = "") -> str:
     """One ticket row, every mark in a fixed column: the feature, the number (a click copies the
     file's path), what the row asks of the user, the name with its review page and GitHub
@@ -916,12 +937,11 @@ def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str 
     remaining text folds under the row."""
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
     return (
-        f'<details class="ticket row-{t.status}" id="{row_id}" data-feature="{html.escape(feature)}" data-num="{html.escape(num)}" '
-        f'data-search="{search_text(num, t.title, t.brief, t.body_html, *t.gh)}" data-path="{html.escape(str(t.path))}"><summary>'
-        f'<span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows.">{html.escape(feature)}</span>'
-        f'<span class="num" data-tip="Click to copy this ticket&#39;s path (y).">{html.escape(num)}</span>'
+        row_open(row_id, t.status, feature, num, search_text(num, t.title, t.brief, t.body_html, *t.gh), t.path)
+        + f'<span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows.">{clipped(feature)}</span>'
+        f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{html.escape(num)}</span>'
         f'{asks_tag(t)}'
-        f'<span class="main"><span class="titleline"><span class="title">{html.escape(t.title)}</span>'
+        f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{review_link(t.diffview)}{gh_links(t.gh)}{on_branch}</span>{brief}</span>'
         f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{chips}</span></span>'
         f'</summary><div class="body">{t.body_html}</div></details>'
@@ -943,16 +963,16 @@ def standalone_row(k: Standalone) -> str:
 
 def needs_row(owner: str, i: int, item: str, queue: Path) -> str:
     """A needs-human.md entry, which is not a ticket and has none of a ticket's marks. The queue
-    retires into the tickets its entries belong to (`/mx:tracker`)."""
+    retires into the tickets its entries belong to (agent/tickets/board-orients/spec.md, ticket 10)."""
     summary, sep, detail = item.partition(" :: ")
     body = markdown.markdown(detail, extensions=["fenced_code"]) if sep else ""
+    title = summary if sep else item
     return (
-        f'<details class="ticket row-needs" id="needs-{owner}-{i}" data-feature="{html.escape(owner)}" data-num="!" '
-        f'data-search="{search_text(summary, body)}" data-path="{html.escape(str(queue))}"><summary>'
-        f'<span class="ftag" data-tip="The feature this entry was filed under.">{html.escape(owner)}</span>'
-        f'<span class="num" data-tip="Click to copy the path of the queue file this entry is in (y).">!</span>'
-        f'<span class="asks a-queue" data-tip="A queue entry: work that waits on you and has no ticket of its own yet.">your answer</span>'
-        f'<span class="main"><span class="titleline"><span class="title">{html.escape(summary if sep else item)}</span></span></span>'
+        row_open(f"needs-{owner}-{i}", "needs", owner, "!", search_text(summary, body), queue)
+        + f'<span class="ftag" data-tip="The feature this entry was filed under.">{clipped(owner)}</span>'
+        f'<span class="num" data-tip="Click to copy the path of the queue file this entry is in (y):\n{html.escape(str(queue))}">!</span>'
+        f'<span class="asks a-queue" data-tip="A queue entry: work that waits on you and has no ticket of its own yet.">{ASKS["answer"][0]}</span>'
+        f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(title)}">{clipped(title)}</span></span></span>'
         f'</summary><div class="body">{body}</div></details>'
     )
 
@@ -961,7 +981,7 @@ def feature_chip(f: Feature) -> str:
     """A feature's pill in the top bar: its counts, and the click that hides and shows its rows.
 
     The done count is out of every ticket the feature has, proposed ones included, so a breakdown
-    just cut off a spec reads 0/4 rather than 0/0."""
+    just cut off a spec reads 0/4."""
     counts = Counter(t.status for t in f.tickets)
     bits = [f"spec {f.spec_status}"] if f.spec_status else []
     bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
@@ -1028,7 +1048,8 @@ def render_page(
 
 def absences(features: list[Feature], standalone: list[Standalone]) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
-    missing). A review page linked as a file is one nothing answered for."""
+    missing). A review page linked as a file is one nothing answered for; a tracker with no page
+    rendered yet has no server to miss, so it says nothing."""
     pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
     if any(page and page.startswith("file://") for page in pages):
         return [absence_note(
@@ -1083,18 +1104,18 @@ PAGE = Template(r"""<!doctype html>
   [data-theme="day"] { color-scheme: light; }
   [data-theme="night"] { color-scheme: dark; }
 
-  /* The callout hues of mwolf.dev, deepened for parchment: what a row asks wears one each, the
-     priority ramps on the first, and the user's time has the last to itself. The teal is picked
-     again from the prototype's, away from the moss accent, which it read as by day. */
+  /* The callout hues of mwolf.dev: what a row asks wears one each, the priority ramps on the
+     first, and the user's time has the last to itself. The teal is picked again from the
+     prototype's, away from the moss accent, which it read as by day. Each day value clears 4.6:1
+     against its own 12% tint, since that is the background the tag's text sits on. */
   :root {
-    --c-pink: light-dark(#8e4a82, #d9a2d0);
-    --c-gold: light-dark(#7d5f16, #d9b36f);
-    --c-rose: light-dark(#a3453c, #fabeb4);
+    --c-pink: light-dark(#7d4172, #d9a2d0);
+    --c-gold: light-dark(#725614, #d9b36f);
+    --c-rose: light-dark(#963f37, #fabeb4);
     --c-purple: light-dark(#6546b3, #b8a4ff);
-    --c-orange: light-dark(#9a5516, #ffc387);
-    --c-blue: light-dark(#2a6aa3, #85baeb);
-    --c-slate: light-dark(#52627f, #9aaacb);
-    --c-lav: light-dark(#5a53c2, #afaaff);
+    --c-orange: light-dark(#894c14, #ffc387);
+    --c-blue: light-dark(#255d8f, #85baeb);
+    --c-slate: light-dark(#4c5b76, #9aaacb);
     --c-time: light-dark(#255a63, #86bcc4);
   }
 
@@ -1108,8 +1129,8 @@ PAGE = Template(r"""<!doctype html>
   ::selection { background: var(--mark); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   code, kbd, pre { font-family: var(--font-mono); }
-  .mono, .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
-    .btn, .gname, .gnote, .log, .footmeta, .absent, kbd { font-family: var(--font-mono); }
+  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
+    .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
 
   /* ---- the top bar: the project, the feature pills, the filter, the graph mode, the scheme ---- */
   .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; align-items: center; min-height: 52px;
@@ -1139,21 +1160,23 @@ PAGE = Template(r"""<!doctype html>
   /* what this render did without, said once each */
   .absences { padding: .6rem 1.25rem 0; display: grid; gap: .2rem; max-width: 110rem; margin: 0 auto; }
   .absences:empty { display: none; }
-  .absent { font-size: .8rem; color: var(--muted); border-left: 2px solid var(--accent-2); padding-left: .6rem; }
+  .absent { font-size: .92rem; color: var(--muted); border-left: 2px solid var(--accent-2); padding-left: .6rem; }
 
   /* ---- the rows, the graph panel beside them on a wide window ---- */
   main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1rem 1.25rem 5rem;
     align-items: start; max-width: 110rem; margin: 0 auto; }
-  .side { border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
+  /* one column: the graph above the rows, where a glance still reaches it, rather than past every group */
+  .side { order: -1; position: sticky; top: var(--topbar-h); max-height: 40vh; overflow: auto; z-index: 5;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: var(--radius); padding: .7rem .9rem; }
   .side.folded .gbody { display: none; }
   @media (min-width: 1400px) {
     main { grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 2.5rem; }
-    .side { position: sticky; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
-      overflow: auto; border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
+    .side { order: 0; top: calc(var(--topbar-h) + 1rem); max-height: calc(100vh - var(--topbar-h) - 2rem);
+      border: 0; border-left: 1px solid var(--edge); border-radius: 0; padding: 0 0 0 1.75rem; }
   }
   .ghead { display: flex; gap: .5rem; align-items: baseline; margin-bottom: .3rem; }
   .gname { color: var(--muted); font-size: .8rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gnote { color: var(--muted); font-size: .8rem; padding: .4rem 0; }
+  .gnote { color: var(--muted); font-size: .92rem; padding: .4rem 0; }
   .mermaid { margin: 0; display: flex; justify-content: center; }
   /* out of the layout, not merely invisible: a graph source is one unwrappable line, and a render
      that has not come back yet would widen the column it sits in */
@@ -1185,12 +1208,14 @@ PAGE = Template(r"""<!doctype html>
   .ticket > summary::-webkit-details-marker { display: none; }
   .ticket > summary:hover { background: var(--wash-ink); }
   .ticket.kcur > summary, .ticket.flash > summary { background: var(--wash); }
-  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); min-width: 0; }
+  /* a box that hides its overflow hides its own tooltip with it, so the ellipsis sits one level in */
+  .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
   .num:hover { color: var(--accent); }
   .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
   .titleline { display: flex; gap: .6rem; align-items: baseline; min-width: 0; }
-  .title { color: var(--strong); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title { color: var(--strong); min-width: 0; }
   .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
   .titleline > a, .titleline > .src { flex: none; }
   .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1198,8 +1223,8 @@ PAGE = Template(r"""<!doctype html>
   .meta { display: contents; }
   .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
   .chip { font-size: .78rem; }
-  .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%; overflow: hidden;
-    text-overflow: ellipsis; background: color-mix(in srgb, var(--c) 12%, transparent);
+  .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%;
+    background: color-mix(in srgb, var(--c) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
   .a-review { --c: var(--c-gold); }
   .a-answer, .a-queue { --c: var(--c-rose); }
@@ -1235,12 +1260,13 @@ PAGE = Template(r"""<!doctype html>
       grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
     .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
     .time, .pri, .chips { grid-area: auto; justify-self: auto; }
+    /* the name takes the row's width; its links follow on the next line rather than squeezing it */
+    .titleline { flex-wrap: wrap; }
   }
   /* narrower still: the name takes the row's width, with its marks over it and under it */
   @media (max-width: 620px) {
     .ticket > summary { grid-template-columns: minmax(0, 6.4rem) 2rem minmax(0, 1fr);
       grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
-    .titleline { flex-wrap: wrap; }
     .search { flex: 1; width: auto; }
   }
 
@@ -1263,13 +1289,15 @@ PAGE = Template(r"""<!doctype html>
   .body th, .body td { text-align: left; padding: .2rem .8rem .2rem 0; border-bottom: 1px solid var(--edge); }
 
   /* ---- a mark says in words what it means ---- */
-  [data-tip] { position: relative; }
-  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% + .4rem); left: 0;
-    width: max-content; max-width: 24rem; white-space: pre-line; background: var(--ground); color: var(--body);
+  /* The words appear under the row, at its left edge: the row is the box that is always on screen
+     and never hides its overflow, so they cannot be clipped by the mark they belong to or run off
+     a narrow window, wherever in the row that mark sits. */
+  .ticket > summary { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% - .2rem); left: .5rem;
+    width: max-content; max-width: min(28rem, 100%); white-space: pre-line; background: var(--ground); color: var(--body);
     border: 1px solid var(--edge); border-radius: var(--radius); padding: .5rem .7rem;
     font: .8rem/1.5 var(--font-mono); text-decoration: none; pointer-events: none;
     box-shadow: 0 2px 10px color-mix(in srgb, var(--strong) 14%, transparent); }
-  .time[data-tip]:hover::after, .pri[data-tip]:hover::after, .chips [data-tip]:hover::after { left: auto; right: 0; }
 
   .log { margin: 0; font-size: .8rem; line-height: 1.8; overflow-x: auto; white-space: pre-wrap; }
   .hash { color: var(--muted); }
@@ -1412,7 +1440,7 @@ ${groups}
       startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
       elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
       themeVariables: {
-        fontFamily: getComputedStyle(document.body).getPropertyValue("--font-mono").trim(), fontSize: "13px",
+        fontFamily: getComputedStyle(document.body).getPropertyValue("--font-body").trim(), fontSize: "13px",
         primaryColor: c.ground, primaryTextColor: c.body, primaryBorderColor: c.edge, lineColor: c.muted,
         clusterBkg: c.ground, clusterBorder: c.edge, titleColor: c.muted,
       },
@@ -1428,7 +1456,7 @@ ${groups}
     for (const el of document.querySelectorAll(".g:not([hidden]) .mermaid")) {
       if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
       el.dataset.src = el.textContent;
-      if (!el.dataset.src.trim()) continue;
+      if (!el.dataset.src.trim()) continue;  // the composed graph with every feature hidden: its note shows instead
       const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
       el.innerHTML = svg;
       nodeHover(el);
@@ -1597,7 +1625,9 @@ ${groups}
     root.dataset.theme = root.dataset.theme === "night" ? "day" : "night";
     localStorage.setItem("board-theme", root.dataset.theme);
     setupMermaid();
-    for (const el of document.querySelectorAll(".mermaid")) { el.innerHTML = ""; delete el.dataset.src; }
+    // a rendered element holds the SVG and its source only in dataset.src; assigning textContent
+    // puts the source back and drops the SVG in one step, so the graph returns in the new palette
+    for (const el of document.querySelectorAll(".mermaid")) if (el.dataset.src) el.textContent = el.dataset.src;
     renderGraphs();
   }
   document.getElementById("scheme").addEventListener("click", switchScheme);

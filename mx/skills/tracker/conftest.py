@@ -18,7 +18,11 @@ KEPT = ("git", "uv", "chromium")  # what a check may still need: the repo, a scr
 @pytest.fixture(scope="session")
 def demo(tmp_path_factory: pytest.TempPathFactory) -> Demo:
     """A tracker exercising every element the board shows, with its git history, sessions and
-    review pages: the fixture the layout and session checks read."""
+    review pages: the fixture the layout, row and session checks read.
+
+    The row checks name its tickets: which ask what of the user, which blocker is done, and which
+    session committed on which ticket. Changing a ticket's status, type, priority or blocking edge
+    moves those checks with it."""
     return build(tmp_path_factory.mktemp("demo-tracker"))
 
 
