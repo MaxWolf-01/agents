@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 blocked-by: [07, 08, 09, 11]
 priority: 2
 size: S
+diff: [411f304c626a520f867e0fae1144d369eff11c78..32ce76a4a6981c0e45be812ead8d557b31646632]
 ---
 
 # Whole-feature review of board-orients
