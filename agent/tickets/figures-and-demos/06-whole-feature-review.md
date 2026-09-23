@@ -1,5 +1,5 @@
 ---
-status: review
+status: claimed
 ---
 
 # Whole-feature review of figures-and-demos against master
