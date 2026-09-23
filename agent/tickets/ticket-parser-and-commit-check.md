@@ -7,7 +7,7 @@ size: M
 
 # The ticket parser, and the commit check that runs it
 
-Child ticket of `ticket-file-contract`, building on its Decisions: one parser on PATH (you, r1), the flat layout with slugs as ids and `parent:` (you, r1 and r2), the pre-commit check (you, r3) installed per repo (my call, r3), and its Properties P1 to P4 (my call, r2).
+Child ticket of `ticket-file-contract`, building on its Decisions: one parser on PATH (you, r1), the flat layout with slugs as ids and `parent:` (you, r1 and r2), the pre-commit check (you, r3) installed per repo (you, r4), and its Properties P1 to P4 (my call, r2).
 
 ## Brief
 

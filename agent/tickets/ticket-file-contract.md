@@ -44,18 +44,19 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 
 - Sections: Brief (the intent and why, as a technical stakeholder writes it) always; Properties when the ticket has any, as short always/never sentences; Acceptance criteria; Decisions where a call needs its mark; User stories, Testing seams, Out of scope and Fog only when they have content; Comments. (you, r2)
 - There is no decision ticket. A ticket whose deliverable is an answer is a ticket like any other: its acceptance criteria say what is decided, and the answer lands in the parent ticket's Decisions (its own, for a top-level ticket), the reasoning in its Comments. The four types (research, prototype, grilling, legwork) go. One frontmatter field says a ticket needs the user in the loop (a grilling, work only the user can do), and dispatch keeps that ticket from a worker; every other ticket, research and prototypes included, goes to a worker and is ruled on its review page. (you, r3)
-- Research lands in the ticket that asked for it: the gist, the sources, the answers its criteria asked for. A companion file only when the material is too long for the ticket; a `/mx:show` artifact when the findings are for the user. `/mx:research` is trimmed to that, and `agent/research/` as a standing artefact goes. (you, r3; trim rather than delete, since `/mx:research` also answers questions outside any ticket: my call)
+- Research lands in the ticket that asked for it: the gist, the sources, the answers its criteria asked for. Extra detail too long for the ticket goes to `agent/research/`, only when there is some; what the user has to see or understand is a `/mx:show` artifact. `/mx:research` is trimmed to that. (you, r3 and r4)
+- `/mx:to-tickets` is overhauled, possibly into a companion file of the tracker skill read when a ticket is split into child tickets. (you, r4; where it lands is the prose worker's call)
 
 **The parser**
 
 - One parser, a script in the tracker skill on PATH, called by every script that reads tickets: `board.py`, `property_coverage.py`, `dispatch` (`notes_of`, the `^status:` reads), `dispatch-ctl`, `run-worker.sh`. (you, r1)
-- A mismatch is refused at commit, by a git pre-commit hook that runs the parser over the staged ticket files, and again by every reader, each naming the file and line. (you, r3) The hook is installed per repo: `/mx:project-setup` wires it, and dispatch wires it into the repo it stages on a worker host. (my call, r3; the other way is one machine-wide config hook, as the dotfiles do for the session trailer)
+- A mismatch is refused at commit, by a git pre-commit hook that runs the parser over the staged ticket files, and again by every reader, each naming the file and line. (you, r3) The hook is installed per repo: `/mx:project-setup` wires it, and dispatch wires it into the repo it stages on a worker host. (you, r4)
 
 **The build**
 
 - Three child tickets: the parser and its tests first; then, in parallel, the scripts moved onto the parser and the new model, and the prose (tracker, grilling, to-tickets, orient, dispatch, code-review, the worker contract, the glossary) in one worker. This ticket's own close-out review is the pass over the whole output. (you, r2)
 - The live tracker is converted by the scripts ticket's worker, with judgment, not by a migration script: each feature's `spec.md` becomes a top-level ticket and its `NN-slug.md` tickets its child tickets. A shipped feature whose tickets are all done is retired instead of converted. (you, r2; the retire rule my call)
-- The build starts from master once board-orients has merged. (you, r2)
+- The build starts from master once board-orients has merged, and the child tickets were written against the master before it: each worker reads what board-orients landed first (it removed the needs-human queue files, for one). (you, r2)
 
 ## Testing seams
 

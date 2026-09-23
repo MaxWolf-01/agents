@@ -12,13 +12,14 @@ Child ticket of `ticket-file-contract`, building on its Decisions: one kind of t
 
 ## Brief
 
+This ticket builds on master after board-orients has merged, which reworked the board, the tracker and dispatch (its queue file among them); read what it landed before the list below, which was written against the master before it, and treat any item it already settled as settled.
+
 The scripts that read or write ticket files move onto the parser from `ticket-parser-and-commit-check` and onto the new model, and the live tracker is converted in the same branch, so no commit has scripts and tracker disagreeing.
 
 - `board.py`: one ticket kind in place of the Feature and Standalone classes; the parent-ticket tree shown where the feature grouping was; the slug as a row's id; the spec-status chip and the absorbed-standalone filter gone; the worktree override generalised to "the branch a parent ticket is built on". It renders nested lists the way the writers write them (CommonMark's three-space nesting; the parent ticket's incident).
 - `dispatch`, `dispatch-ctl`, `run-worker.sh`: the feature-or-standalone case detection goes; a ticket branch `ticket/<slug>` is cut from the branch dispatch runs on, which is the parent ticket's; every status read and write goes through the parser; `spawn` refuses a ticket that needs the user, in place of refusing a `type`; `notes_of` takes the parser's Assumptions; a review page lives at `agent/diffviews/<slug>.html`; the fuzz run and the close-out helpers take a parent ticket where they took a feature. `dispatch-ctl` wires the commit check into the repo it stages on a worker host.
 - `property_coverage.py`: every executable property has a check; a citation `<slug>#P<n>` resolves or is refused.
 - code-review's `review`: `--spec` takes the parser's context for a ticket; nothing in it keys on a `spec.md`.
-- The needs-human queue: today one `needs-human.md` per feature directory and one at the root. In a flat tracker whose ticket files ride different branches, a single queue file conflicts on every merge. Make the call and anchor it; the direction I would take is a queue derived from the tickets themselves (the needs-the-user field, plus the `review` status the board already lists), so no queue file exists. (my call, r3; unconfirmed, and user-visible, so put it in front of the user on the review page)
 - The conversion, with judgment: each feature's `spec.md` becomes a top-level ticket named after the feature, its `NN-slug.md` tickets become child tickets with descriptive slugs, and every `blocked-by` and cross-reference is rewritten to slugs. A feature that has shipped with every ticket done is retired per `/mx:tracker` instead. Tickets filed on master in the old format after this branch was cut are converted when this ticket's parent merges.
 
 ## Acceptance criteria
