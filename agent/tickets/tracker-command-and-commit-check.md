@@ -41,7 +41,7 @@ The pre-commit hook is a few lines that run `tracker`'s check over the staged fi
 
 ## Acceptance criteria
 
-- [ ] `ticket-file-contract#P1`, `#P2` and `#P3` hold as checks over generated ticket files at `tracker`'s command line, in this repo's properties directory.
+- [ ] `ticket-file-contract#P1`, `#P2` and `#P3` hold as checks over generated ticket files at `tracker`'s command line, beside the tracker skill's other tests (this repo has no `tests/properties/`).
 - [ ] `ticket-file-contract#P4`: a ticket's context is its body with its ancestors' bodies, in one order you choose and record, and a missing ancestor is refused like any dangling reference.
 - [ ] `ticket-file-contract#P6`: retiring deletes nothing that git history or `~/logs` does not keep, beyond renders whose generating source is tracked; a run over a fixture tracker shows each file's route.
 - [ ] Every status transition the tracker skill defines is accepted, and each one it forbids is refused with the rule named.
