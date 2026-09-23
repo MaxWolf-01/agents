@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: claimed
 priority: 2
 size: XS
 ---
