@@ -76,10 +76,10 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
-# opened a row, whether the graph beside it came back, and what each mark shows on hover. A
-# pseudo-element has no rect of its own, so a tooltip's box is its host's plus the offsets the
-# element resolves; `clipped` is the ancestor that would hide it, which is how two marks came to
-# carry words no reader could see.
+# opened a row, whether the graph beside it came back, and what each mark shows on hover, a copy
+# button's account of what it copies among them. A pseudo-element has no rect of its own, so a
+# tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
+# would hide it, which is how two marks came to carry words no reader could see.
 PROBE = r'''
 import json, shutil, sys
 from pathlib import Path
@@ -134,8 +134,9 @@ with sync_playwright() as pw:
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
-        page.hover(f"#t-csv-import-02 .{mark}" if mark != "num" else "#t-csv-import-02 .num")
-        out["tips"][mark] = page.evaluate(TIP, f"#t-csv-import-02 .{mark}")
+        where = mark if mark.startswith("#") else f"#t-csv-import-02 .{mark}"
+        page.hover(where)
+        out["tips"][mark] = page.evaluate(TIP, where)
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
     page.wait_for_timeout(2500)
@@ -145,7 +146,8 @@ with sync_playwright() as pw:
 print(json.dumps(out))
 '''
 
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh")
+# a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall", "#grp-needs .qgroup")
 
 
 def probe(page: Path, width: int) -> dict:
@@ -160,9 +162,10 @@ def probe(page: Path, width: int) -> dict:
 # the row beside the graph panel, the row on its own, and the row reflowed
 @pytest.mark.parametrize("width", [1500, 1100, 920])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
-    """The rendered half of the spec's "Every mark explains itself on hover": that the words the
-    markup carries (test_board.py) reach the reader. A mark whose box hides its overflow hides its
-    own tooltip, and one anchored to the wrong side runs off the edge of the window.
+    """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
+    shows what it copies": that the words the markup carries (test_board.py) reach the reader. A
+    mark whose box hides its overflow hides its own tooltip, and one anchored to the wrong side
+    runs off the edge of the window.
 
     The same run says what the rest of the page did, since it is the only one that drives a browser:
     that the name keeps its words while the links beside it give way, that ?theme= pinned each

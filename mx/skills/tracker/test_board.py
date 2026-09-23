@@ -280,12 +280,13 @@ def test_a_done_ticket_another_feature_waits_on_is_drawn_as_its_context(tmp_path
 
 def test_the_page_groups_rows_by_state_needs_me_first_and_done_folded(tracker: Path) -> None:
     page = page_of(tracker)
-    assert re.findall(r'id="grp-(\w+)"', page) == ["needs", "review", "open", "blocked", "proposed", "done", "log"]
+    assert re.findall(r'id="grp-(\w+)"', page) == ["needs", "open", "blocked", "proposed", "done", "log"]
     assert '<h2>proposed <span class="n">2</span></h2>' in page  # 03 and the loose idea
     assert '<details class="grp" id="grp-done" data-state="done"><summary>' in page
     assert '<details class="grp" id="grp-open" data-state="open" open>' in page
-    # a build waiting for the ruling is the user's to act on: its group sits right after the queue, unfolded
-    assert '<details class="grp" id="grp-review" data-state="review" open><summary><h2>needs my review <span class="n">1</span></h2>' in page
+    # a build waiting for the ruling is the user's to act on: it sits in needs me, beside the queue
+    assert '<details class="grp" id="grp-needs" data-state="needs" open><summary><h2>needs me <span class="n">2</span>' in page
+    assert rows_in(page, "needs") == {f"t-{FEAT}-07"}, "the queue entry is not a ticket"
     assert f'class="ticket row-review" id="t-{FEAT}-07"' in page
     assert f'class="ticket row-proposed" id="t-{FEAT}-03" data-feature="{FEAT}" data-num="03"' in page
     assert f'id="t-{FEAT}-03"' in page and 'class="badge proposed"' not in page  # the group says the status; a row does not repeat it
@@ -695,7 +696,7 @@ def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_pat
     }
     # the group whose only ticket is an S at p2 with nothing waiting on it leaves the rest of that
     # width to the name and the brief
-    assert columns_for(page, "#grp-review") == {"time": str(len("20 min")), "pri": str(len("p2 next")), "chips": "0"}
+    assert columns_for(page, "#grp-needs") == {"time": str(len("20 min")), "pri": str(len("p2 next")), "chips": "0"}
     # the group that holds the XL ticket keeps the board's width for every one of the three
     # the group holding the XL ticket and the widest reference narrows none of the three
     narrowed = columns_for(page, "#grp-blocked")
@@ -732,8 +733,8 @@ def test_the_stamp_the_open_tab_polls_moves_when_a_ticket_is_reprioritised(track
 
 def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The spec's seven words, each against the fixture ticket that earns it: a build in review
-    asks for a ruling, a decision ticket asks for the session its type names, and a build ticket
-    asks nothing of the user."""
+    asks for a ruling, a decision ticket asks for the session its type names, a build stopped on a
+    question asks for the answer, and a build with none asks nothing of the user."""
     out = tmp_path / "board.html"
     render(tracker_roots(demo.root), demo.repo, out)
     rows = rows_of(out.read_text())
@@ -744,9 +745,9 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, t
         "t-saved-views-03": "prototype",
         "t-saved-views-01": "research",
         "standalone-pick-a-date-library": "research",
-        "standalone-staging-credentials": "legwork",
-        "t-csv-import-01": "build",  # no type, not in review
-        "standalone-flaky-upload-test": "build",
+        "standalone-staging-credentials": "legwork",  # its one question is ruled, and legwork is what is left
+        "standalone-flaky-upload-test": "answer",  # a build stopped on a question of its own
+        "t-csv-import-01": "build",  # no type, no question, not in review
     }
     for row_id, kind in expected.items():
         shown = {mark: text for mark, text, _ in marks_on(rows[row_id]) if mark in MARKS}
@@ -786,6 +787,112 @@ def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: P
     assert "has no ticket of its own yet" in tips_on(rows_of(page)["needs-standalone-0"])["asks"]
 
 
+# ---- questions and the needs-me group -------------------------------------
+# The spec's Decisions on `## Questions` and on the board: every question lives on its ticket,
+# shows under its row in the one needs-me group, and is copyable one at a time, per ticket, or all
+# at once, each button saying what it will copy.
+
+COPIER = re.compile(r'<span class="(q\w+)" data-copy="([^"]*)" data-copied="([^"]*)" data-tip="([^"]*)"')
+
+
+def copiers(markup: str) -> list[tuple[str, str, str, str]]:
+    """(kind, what it copies, what the page says once it has, the words it shows) per copy button."""
+    return [tuple(html.unescape(group) for group in found) for found in COPIER.findall(markup)]
+
+
+def questions_on(row: str) -> list[tuple[str, str]]:
+    """(tag, headline) of every question a row lists, in the order it lists them."""
+    marks = marks_on(row)
+    tags = [text for mark, text, _ in marks if mark == "qtag"]
+    return list(zip(tags, [text for mark, text, _ in marks if mark == "qhead"], strict=True))
+
+
+def test_a_needs_me_row_lists_the_questions_its_ticket_file_asks_and_no_ruled_one(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The fixture's build stopped on two questions, of which a `Ruled` line answered one."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    row = rows_of(out.read_text())["standalone-flaky-upload-test"]
+    assert questions_on(row) == [("D1", "Retry the upload, or fake the clock?")], "D2 is ruled, and a ruled question is answered"
+    written = f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?** A retry hides a real slowdown; a fake clock makes the test say nothing about timing."
+    assert [(kind, text) for kind, text, _, _ in copiers(row)] == [("qcopy", written), ("qall", written)]
+
+
+def test_a_build_in_review_shows_the_questions_and_the_closing_comment_on_its_ticket_branch(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """Both live on the branch until the merge, and the checkout's copy of the ticket has neither."""
+    checkout = (demo.root / "csv-import" / "02-map-columns.md").read_text()
+    assert "## Questions" not in checkout and "## Comments" not in checkout
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    row = rows_of(out.read_text())["t-csv-import-02"]
+    assert [tag for tag, _ in questions_on(row)] == ["D1", "D2", "D3"]
+    assert "Remember the mapping per bank or per file name?" in row
+    assert "The mapping step is built and remembers a bank" in row, "the closing comment, folded under the row"
+    assert "[D4]" not in "".join(text for _, text, _, _ in copiers(row)), "the tags a closing comment carries are not questions"
+
+
+def test_a_build_in_review_keeps_the_status_its_checkout_gives_it(tmp_path: Path) -> None:
+    """The branch says what the worker wrote, the checkout where the ticket stands: the review flip
+    is the orchestrator's and lands on the tracker's copy, not on the worker's branch."""
+    root = tmp_path / "repo" / "agent" / "tickets"
+    (root / "ledger").mkdir(parents=True)
+    repo = root.parent.parent
+    path = root / "ledger" / "01-map-columns.md"
+    ticket(path, "claimed", priority=1, size="S")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tracker")
+    git(repo, "checkout", "-q", "-b", "ticket/ledger/01-map-columns")
+    path.write_text(path.read_text() + "\n## Questions\n\n- [D1] **Per bank or per file name?** A bank renames its export.\n\n## Comments\n\nBuilt on its branch, not merged.\n")
+    git(repo, "commit", "-q", "-am", "the build")
+    git(repo, "checkout", "-q", "main")
+    ticket(path, "review", priority=1, size="S")  # the flip the orchestrator makes on the tracker's copy
+    out = tmp_path / "board.html"
+    render(tracker_roots(root), repo, out)
+    page = out.read_text()
+    assert rows_in(page, "needs") == {"t-ledger-01"}
+    assert questions_on(rows_of(page)["t-ledger-01"]) == [("D1", "Per bank or per file name?")]
+    assert 'class="ticket row-review" id="t-ledger-01"' in page, "the branch's own claimed does not outrank the tracker"
+
+
+def test_every_copy_button_on_the_board_shows_what_it_copies(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The spec's reviewed Property, at the loader-and-page seam its Testing Decisions names: the
+    words a button shows on hover are what its click puts on the clipboard, cut off only where they
+    run long."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    page = out.read_text()
+    found = copiers(page)
+    assert {kind for kind, _, _, _ in found} == {"qcopy", "qall", "qgroup"}
+    for kind, text, said, tip in found:
+        what, _, shown = tip.partition("\n\n")
+        assert len(what.split()) >= 4 and "copy" in what, f"the {kind} button says {what!r} of the click"
+        assert text.startswith(shown.removesuffix("…")), f"the {kind} button shows {shown!r} and copies {text!r}"
+        assert len(shown) <= board.COPY_CAP + 1, f"the {kind} button shows {len(shown)} characters of what it copies"
+        assert said and len(said) < len(text), f"the {kind} button's note says {said!r} of what it copied"
+    # the copy button the row already had says the same of itself (02-rows)
+    assert str(demo.root / "flaky-upload-test.md") in tips_on(rows_of(page)["standalone-flaky-upload-test"])["num"]
+
+
+def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tickets_path(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """What the user pastes into an editor to answer a board's worth of questions at once."""
+    out = tmp_path / "board.html"
+    render(tracker_roots(demo.root), demo.repo, out)
+    page = out.read_text()
+    (text,) = [text for kind, text, _, _ in copiers(page) if kind == "qgroup"]
+    blocks = [block.splitlines() for block in text.split("\n\n")]
+    assert {lines[0] for lines in blocks} == {
+        str(demo.root / feature / name) for feature, name in [
+            ("csv-import", "02-map-columns.md"), ("saved-views", "01-view-storage.md"),
+            ("saved-views", "03-view-list-shape.md"), (".", "flaky-upload-test.md"),
+            (".", "pick-a-date-library.md"), (".", "retire-legacy-exporter.md"), (".", "speed-up-tests.md"),
+        ]
+    }
+    asked = [line for lines in blocks for line in lines[1:]]
+    assert len(asked) == 10 and all(line.startswith("- [D") for line in asked)
+    assert any("Remember the mapping per bank" in line for line in asked), "the questions on a ticket branch are in it too"
+    assert not any("Whose card does the sandbox go on" in line for line in asked), "a ruled question is answered"
+
+
 # ---- properties -----------------------------------------------------------
 # The executable Properties of agent/tickets/board-orients/spec.md that live at these seams. Each
 # is an expected failure naming the slice that lifts it; one that already holds carries none.
@@ -807,7 +914,6 @@ def rows_in(page: str, group: str) -> set[str]:
     return {r for r in re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body) if r.startswith(("t-", "standalone-"))}
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="needs_me is a stub; lifted by 03-questions-and-needs-me")
 def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_design_session() -> None:
     """The whole space of what a ticket file can say, since it is small enough to enumerate.
 
@@ -854,7 +960,6 @@ def ticket_asking(first: int, items: list[tuple[str, str, str | None]]) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="read_questions is a stub; lifted by 03-questions-and-needs-me")
 @given(asked=QUESTIONS)
 def test_a_question_a_ruled_line_answers_is_never_open(asked: tuple[int, list[tuple[str, str, str | None]]]) -> None:
     first, items = asked
@@ -873,7 +978,6 @@ NEEDS_ME = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="the board has no needs-me group yet; lifted by 03-questions-and-needs-me")
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The same two properties as the checks above, at the seam the spec's Testing Decisions names:
     a fixture tracker on disk in, groups out. 02-map-columns keeps its questions on its ticket
