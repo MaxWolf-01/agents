@@ -1,7 +1,8 @@
 ---
-status: review
+status: done
 priority: 1
 size: S
+diff: [faf6f0f3366724e2e75d03f2919d939948ed97f9..6268bad46c4d370ce0dbcaa426af2e09216da496]
 ---
 
 # Property checks for the board
