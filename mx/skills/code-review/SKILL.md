@@ -8,7 +8,7 @@ Review of the diff between `HEAD` and a fixed point, along four axes:
 - **Correctness**: does the change work, without breaking callers, contracts, or edge cases?
 - **Standards**: does it conform to the repo's documented standards and the smell baseline?
 - **Spec**: does it faithfully implement the originating ticket / issue / spec?
-- **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug?
+- **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? It answers that in a checkout of its own, where it can mutate the code and run the suite.
 
 The axes run as separate reviewers so they don't pollute each other's context, and their reports are read by the session or worker that owns the branch (step 5). [`review`](review), beside this file, runs them; this skill is the judgment around that script.
 

@@ -11,7 +11,7 @@
 #                  pinned to SHAs, so it holds still while they read and
 #                  stays what the range says: <merge-base>..<HEAD>, short.
 #                  Uncommitted work is in no part of it.
-#   --axes   which axes to run, one brief each, two axes at a time. Default:
+#   --axes   which axes to run, one brief each, all of them at once. Default:
 #            correctness and standards, plus spec when --spec names one, plus
 #            tests when the diff touches test files too. An axis is a file in
 #            briefs/, and a repo with no spec runs two of the four.
@@ -28,14 +28,23 @@
 # report never arrived, to re-run with --axes.
 #
 # A reviewer runs on `--permission-mode manual`: allowed to read, to run git,
-# and to write inside the report directory, and nothing else.
+# and to write inside the report directory, and nothing else. The Tests
+# reviewer works in <range>/checkout, a worktree of the pinned tip this script
+# adds before it starts and removes when it ends, so the code it mutates to
+# see what the tests catch is its own; the same one Edit rule covers that
+# checkout and its report, and it may call the test runners named in `runners`
+# below and nothing more.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/briefs
-# A reviewer is a whole session reading a diff end to end; two at a time keeps
-# the box and the rate limit out of the review's way.
-concurrency=2
+# The project's test command, whichever of these this project uses: the Tests
+# reviewer runs it in its checkout. A runner missing from this list is a
+# denial it reports, never a workaround it finds.
+runners=("Bash(make *)" "Bash(nix develop *)"
+         "Bash(uv run *)" "Bash(uvx *)" "Bash(pytest *)" "Bash(python *)" "Bash(python3 *)"
+         "Bash(npm *)" "Bash(npx *)" "Bash(node *)" "Bash(bun *)"
+         "Bash(cargo *)" "Bash(go *)")
 
 die() { echo "review: $1" >&2; exit 1; }
 help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
@@ -126,6 +135,21 @@ esac
 dir=$root/agent/reviews/$range
 mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 
+# The Tests axis is the one that runs what it reads, so it gets a checkout of
+# the pinned tip to itself, inside its report directory: it mutates code there
+# to find out what the suite catches, and the tree the caller works in and the
+# trees the other axes read stay as they are. Any checkout a killed run left
+# behind goes first, so the same range can be reviewed again.
+checkout=$dir/checkout
+drop_checkout() { git worktree remove --force "$checkout" >/dev/null 2>&1 || rm -rf "$checkout"; }
+case " $axis_list " in *" tests "*)
+    drop_checkout
+    echo "+ git worktree add --detach $checkout $head" >&2
+    git worktree add --quiet --detach "$checkout" "$head" ||
+        die "cannot give the Tests reviewer a checkout at $checkout"
+    ;;
+esac
+
 # The brief a reviewer reads, whole: the preamble, the axis's own template, and
 # for the light axis both briefs it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
@@ -149,6 +173,7 @@ render() { # <axis>
         one=${one//'{{DIFF_COMMAND}}'/$diff_cmd}
         one=${one//'{{STANDARDS}}'/$sources_block}
         one=${one//'{{SPEC}}'/$spec}
+        one=${one//'{{CHECKOUT}}'/$checkout}
         left=$(printf '%s' "$one" | grep -o '{{[A-Z_]*}}' | sort -u | grep -v '^{{COMMITS}}$' | tr '\n' ' ')
         [ -z "$left" ] || die "briefs/$part.md asks for ${left% }, which this script does not substitute"
         # The commit messages go in last, and are checked over above: a message
@@ -170,24 +195,27 @@ for axis in $axis_list; do
 done
 
 reviewer() { # <axis>
-    local axis=$1 rc
-    # Echoed whole, redirections included, so the transcript holds the command
-    # that produced a report, or the one that produced nothing.
-    local cmd=(claude -p --model "$model" --permission-mode manual
-        --allowedTools Read Grep Glob "Bash(git *)" "Edit(/$dir/**)")
-    echo "+ ${cmd[*]} < $dir/briefs/$axis.md > $dir/$axis.log" >&2
-    "${cmd[@]}" < "$dir/briefs/$axis.md" > "$dir/$axis.log" 2>&1
+    local axis=$1 rc cwd=$root allowed
+    allowed=(Read Grep Glob "Bash(git *)" "Edit(/$dir/**)")
+    # The Tests reviewer starts in its own checkout, so the test command it
+    # finds runs there without a path of its own.
+    if [ "$axis" = tests ]; then cwd=$checkout; allowed+=("${runners[@]}"); fi
+    # Echoed whole, redirections and working directory included, so the
+    # transcript holds the command that produced a report, or the one that
+    # produced nothing.
+    local cmd=(claude -p --model "$model" --permission-mode manual --allowedTools "${allowed[@]}")
+    echo "+ (cd $cwd && ${cmd[*]} < $dir/briefs/$axis.md > $dir/$axis.log)" >&2
+    ( cd "$cwd" && "${cmd[@]}" < "$dir/briefs/$axis.md" > "$dir/$axis.log" 2>&1 )
     rc=$?
     echo "review: the $axis reviewer exited $rc" >&2
+    # Whatever it left there, and whether it finished or died: the checkout is
+    # this run's, not the worktree's.
+    [ "$axis" = tests ] && { drop_checkout; echo "review: the Tests reviewer's checkout is removed" >&2; }
+    return 0
 }
 
-echo "review: $range, ${axis_list// /, } on $model, $concurrency at a time; reports in $dir" >&2
-running=0
-for axis in $axis_list; do
-    reviewer "$axis" &
-    running=$((running + 1))
-    if [ "$running" -ge "$concurrency" ]; then wait -n; running=$((running - 1)); fi
-done
+echo "review: $range, ${axis_list// /, } on $model; reports in $dir" >&2
+for axis in $axis_list; do reviewer "$axis" & done
 wait
 
 # An absent report is an axis to re-run, never a clean axis, which is what this
