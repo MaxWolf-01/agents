@@ -14,17 +14,27 @@ Reads every feature directory (spec.md, NN-<slug>.md tickets with
 status/blocked-by/type/priority/size frontmatter, cross-feature refs as
 <feature>/NN) and every standalone ticket (*.md at the tracker root, the queue
 file aside) and writes one self-contained page beside the tracker,
-agent/board.html. The page is the tickets as rows grouped by state: needs me
-(the merged needs-human queue), needs my review (work waiting for the user's
-ruling), frontier, claimed, blocked, proposed, done folded.
+agent/board.html. The page is the tickets as rows grouped by state: needs me,
+frontier, claimed, blocked, proposed, done folded.
+
+Needs me holds every ticket whose next step is the user's own time: a build to
+rule on, a ticket stopped on a question, a near design session (board.needs_me).
+Its open questions show under its row, each with a button that copies it, one
+that copies the ticket's own, and one on the group that copies every question on
+the board; each button says on hover what it will copy. A build in review is
+read from its own ticket branch (board.ticket_branches), where the worker's
+questions and closing comment are until the merge, while the tracker's copy says
+where the ticket stands and carries the `Ruled` lines that answer its questions.
+The needs-human.md queues are shown there too until they retire.
 
 A row reads left to right in fixed columns: the feature, the number, what the
 row asks of the user (to rule on, your answer, design session, prototype,
 research, legwork, build), the ticket's short name with its review page and the
-pull requests and issues its `gh` list names, the ticket brief under the name,
-the user's time on it, the priority as a word, and what it waits on. The name
-is the ticket's H1, the brief its `## Brief` section, the priority and the size
-its frontmatter; a ticket silent on one of those shows its row without that
+pull requests and issues its `gh` list names, the ticket brief under the name
+with the open questions under that, the user's time on it, the priority as a
+word, and what it waits on. The name is the ticket's H1, the brief its `##
+Brief` section, the questions its `## Questions` section, the priority and the
+size its frontmatter; a ticket silent on one of those shows its row without that
 mark. Rows sort by priority, then by the user's time, within each group. Every
 mark says on hover what it means. Below a width the time, the priority and the
 blockers move under the name. A click on a row's number copies the absolute
@@ -97,7 +107,7 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
 from typing import Annotated
@@ -135,8 +145,10 @@ ASKS = {  # what a row asks of the user: the word in its column, and what that w
     "legwork": ("legwork", "Work that unblocks a decision: an agent does it, or hands you a checklist."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
 }
+# what a row is grouped under (board.group_of); a ticket in review has no group of its own,
+# since needs me claims every one of them
 GROUPS = [
-    ("needs", "needs me"), ("review", "needs my review"), ("open", "frontier"), ("claimed", "claimed"),
+    ("needs", "needs me"), ("open", "frontier"), ("claimed", "claimed"),
     ("blocked", "blocked"), ("proposed", "proposed"), ("done", "done"),
 ]
 
@@ -184,8 +196,9 @@ def render(roots: "Roots", repo: Path, out: Path) -> None:
     project = repo.name
     root = roots.main
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
+    ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
     diffviews = serve_diffviews(root.parent / "diffviews")
-    features = load_features(root, roots.overrides, diffviews)
+    features = load_features(root, roots.overrides, diffviews, roots.repo)
     # a standalone ticket whose slug names an in-flight feature was absorbed into it (grilling)
     standalone = [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
     queue = load_needs_human(root / "needs-human.md")
@@ -219,11 +232,12 @@ def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
     contributes to it, the review pages beside them, and the commit the log comes from.
 
     A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
-    the render that follows is what puts the pages back on an address that answers.
+    the render that follows is what puts the pages back on an address that answers. So do the
+    ticket branches: a build in review is read from its own, where no file under the tracker moves.
     """
     dirs = [roots.main, roots.main.parent / "diffviews"]
     dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews")]
-    return (git(repo, "rev-parse", "HEAD"),) + tuple(
+    return (git(repo, "rev-parse", "HEAD"), git(repo, "for-each-ref", "--format=%(objectname) %(refname)", TICKET_BRANCHES)) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
@@ -355,6 +369,7 @@ class Ticket:
     priority: int | None = None  # 1 to 5; None on a ticket whose frontmatter is silent
     size: str | None = None  # XS | S | M | L | XL, the user's time on it
     brief: str = ""  # the ## Brief section, as inline HTML
+    questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
 
 
 @dataclass
@@ -388,9 +403,10 @@ class Standalone:
     priority: int | None = None
     size: str | None = None
     brief: str = ""
+    questions: list["Question"] = field(default_factory=list)
 
 
-def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) -> list[Feature]:
+def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, repo: Path | None) -> list[Feature]:
     features = []
     # the main checkout may not have the tracker yet: a first feature grilled in its own worktree
     names = sorted(({p.name for p in root.iterdir() if p.is_dir()} if root.is_dir() else set()) | set(overrides))
@@ -398,7 +414,7 @@ def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews) 
         d = overrides.get(name, root / name)
         # an in-flight feature's review pages are rendered and served from its own worktree
         dv = serve_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
-        tickets = load_tickets(d, dv, dv.root / name, root, overrides)
+        tickets = load_tickets(d, dv, dv.root / name, root, overrides, repo)
         spec_status = spec_state(d / "spec.md")
         # a directory with neither tickets nor a spec is not a feature (agent/tickets/done/, say)
         if not tickets and spec_status is None:
@@ -436,28 +452,27 @@ def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
 
 def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
     assert_safe_name(path.stem)
-    meta, body = split_frontmatter(path.read_text())
-    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-    body = body[heading.end():] if heading else body
+    meta, name, brief, body = read_ticket(path.read_text())
     blocked_by = [(str(n), ref_status(roots.main, roots.overrides, str(n))) for n in meta.get("blocked-by") or []]
     status = declared_status(meta, path)
     if status == "open" and any(s != "done" for _, s in blocked_by):
         status = "blocked"
-    brief, body = take_brief(body)
+    written = ticket_body(body, status, roots.repo, None, path)
     return Standalone(
         slug=path.stem,
-        title=heading.group(1).strip() if heading else path.stem.replace("-", " "),
+        title=name or path.stem.replace("-", " "),
         status=status,
         kind=ticket_kind(meta),
         blocked_by=blocked_by,
         gh=gh_refs(meta, path),
-        body_html=markdown.markdown(body, extensions=["fenced_code", "tables"]),
+        body_html=markdown.markdown(written, extensions=["fenced_code", "tables"]),
         diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
         path=path,
         source=source,
         priority=ticket_priority(meta, path),
         size=ticket_size(meta, path),
         brief=brief,
+        questions=questions_of(written, body),
     )
 
 
@@ -504,29 +519,29 @@ def load_needs_human(path: Path) -> Queue:
     return Queue(path, [e.strip() for e in entries])
 
 
-def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path]) -> list[Ticket]:
+def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path], repo: Path | None) -> list[Ticket]:
     tickets = []
     for path in sorted(feature_dir.glob("[0-9][0-9]-*.md")):
-        meta, body = split_frontmatter(path.read_text())
-        heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-        body = body[heading.end():] if heading else body
+        meta, name, brief, body = read_ticket(path.read_text())
+        status = declared_status(meta, path)
         blockers = meta.get("blocked-by") or []
-        brief, body = take_brief(body)
+        written = ticket_body(body, status, repo, feature_dir.name, path)
         tickets.append(
             Ticket(
                 num=path.name[:2],
-                title=heading.group(1).strip() if heading else path.stem[3:].replace("-", " "),
-                status=declared_status(meta, path),
+                title=name or path.stem[3:].replace("-", " "),
+                status=status,
                 kind=ticket_kind(meta),
                 blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
                 ext_by=[(str(n), ref_status(root, overrides, str(n))) for n in blockers if not is_local_ref(n)],
                 gh=gh_refs(meta, path),
-                body_html=render_body(body, feature_dir.name),
+                body_html=render_body(written, feature_dir.name),
                 diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
                 path=path,
                 priority=ticket_priority(meta, path),
                 size=ticket_size(meta, path),
                 brief=brief,
+                questions=questions_of(written, body),
             )
         )
     # a local blocker whose file is gone counts as done, as in ref_status
@@ -569,6 +584,16 @@ def ticket_size(meta: dict, path: Path) -> str | None:
     return str(size)
 
 
+def read_ticket(text: str) -> tuple[dict, str | None, str, str]:
+    """A ticket file as the board reads it: its frontmatter, its H1 (the short name a row shows, or
+    None where it has none), its brief as inline HTML, and the body left under those."""
+    meta, body = split_frontmatter(text)
+    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+    body = body[heading.end():] if heading else body
+    brief, body = take_brief(body)
+    return meta, heading.group(1).strip() if heading else None, brief, body
+
+
 def take_brief(body: str) -> tuple[str, str]:
     """(the ## Brief section as inline HTML, the body without it): what the row shows under the name,
     and the text that is left to fold under the row. One home per fact, on the row as on the page."""
@@ -576,6 +601,21 @@ def take_brief(body: str) -> tuple[str, str]:
     if not match:
         return "", body
     return inline_md(" ".join(match.group(1).split())), body[: match.start()] + body[match.end() :]
+
+
+def ticket_body(body: str, status: str, repo: Path | None, feature: str | None, path: Path) -> str:
+    """The ticket's text below its brief, read from its own branch while a build is in review: that
+    is where the worker's questions and closing comment are until the merge.
+
+    Three things stay the checkout's, whatever the branch's copy says: where the ticket stands, so
+    that a branch which never flipped its status cannot pull a build out of needs me; the brief,
+    which has one home and it is the row (02-rows); and a `Ruled` line, which is written in the file
+    the board hands out (`questions_of`).
+    """
+    if status != "review":
+        return body
+    text = branch_text(repo, feature, path)
+    return body if text is None else read_ticket(text)[3]
 
 
 def inline_md(text: str) -> str:
@@ -646,10 +686,10 @@ def content_stamp(project: str, features: list[Feature], standalone: list[Standa
         project,
         [(f.name, f.needs_human, f.spec_status,
           [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path,
-            t.priority, t.size, t.brief) for t in f.tickets])
+            t.priority, t.size, t.brief, t.questions) for t in f.tickets])
          for f in features],
         [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source,
-          k.priority, k.size, k.brief) for k in standalone],
+          k.priority, k.size, k.brief, k.questions) for k in standalone],
         queue,
         log,
     ))
@@ -669,15 +709,21 @@ def git_log(repo: Path) -> str:
 # their oracle, held as the properties in test_board.py: each stub's check is an expected failure
 # naming the slice that lifts it.
 
+TICKET_BRANCHES = "refs/heads/ticket/"  # where a ticket's own branch is, as dispatch cuts it
+
 # where a session's transcript is on this machine, as the rest of the repo resolves it
 TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 
 
 def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
-    review, has an open question, or is an unclaimed design or prototype decision at p1 or p2.
-    Lifted by 03-questions-and-needs-me."""
-    raise NotImplementedError
+    review, has an open question, or is an unclaimed design or prototype decision at p1 or p2."""
+    if status == "done":
+        return False
+    if status == "review" or open_question:
+        return True
+    # the two decision types the user sits for, on a ticket nobody has taken up yet
+    return kind in ("grilling", "prototype") and priority in (1, 2) and status in ("open", "proposed")
 
 
 @dataclass(frozen=True)
@@ -686,15 +732,89 @@ class Question:
 
     tag: str  # D1, D2, ... the ticket's running sequence
     headline: str  # the bold sentence the board shows under the row
-    detail: str  # the rest of the item, as written
+    detail: str  # the rest of the item, its own whitespace collapsed
     ruled: str | None  # the date on the `Ruled <date>:` line under it; None while the question is open
+
+
+QUESTIONS_SECTION = re.compile(r"^##\s+Questions\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
+ASKED = re.compile(r"^- \[(D\d+)\](.*)$", re.MULTILINE)
+HEADLINE = re.compile(r"\s*\*\*(.+?)\*\*\s*(.*)", re.DOTALL)
+# the date the spec's line carries, so that a rationale line opening "Ruled out:" is not a ruling
+RULED = re.compile(r"^\s*-?\s*Ruled\s+(\d{4}-\d\d-\d\d)\s*:", re.MULTILINE)
+
+
+def questions_of(asked: str, ruled_in: str) -> list[Question]:
+    """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
+    questions on its branch while the ruling is written in the tracker's own copy, the file the
+    board hands out on the clipboard, so the two texts are read together."""
+    answered = {q.tag: q.ruled for q in read_questions(ruled_in) if q.ruled}
+    return [replace(q, ruled=q.ruled or answered.get(q.tag)) for q in read_questions(asked)]
 
 
 def read_questions(text: str) -> list[Question]:
     """The questions a ticket file holds, ruled ones included, in file order. The `[Dn]` tags a
-    closing comment carries elsewhere in the file are not questions. Lifted by
-    03-questions-and-needs-me."""
-    raise NotImplementedError
+    closing comment carries elsewhere in the file are not questions: only `## Questions` is read,
+    every such section of it, since a worker appends its own to a ticket that may have one."""
+    asked = "\n".join(section.group(1) for section in QUESTIONS_SECTION.finditer(text))
+    if not asked:
+        return []
+    found = []
+    for item in ASKED.finditer(asked):
+        rest = asked[item.end():]
+        # the item runs to the next one, the lines under it continuing it
+        body = item.group(2) + rest[: next((m.start() for m in ASKED.finditer(rest)), len(rest))]
+        ruled = RULED.search(body)
+        written = body[: ruled.start()] if ruled else body
+        headline = HEADLINE.fullmatch(written)
+        found.append(Question(
+            tag=item.group(1),
+            headline=" ".join((headline.group(1) if headline else written).split()),
+            detail=" ".join((headline.group(2) if headline else "").split()),
+            ruled=ruled.group(1) if ruled else None,
+        ))
+    return found
+
+
+@functools.cache
+def ticket_branches(repo: Path) -> dict[str, list[str]]:
+    """The repo's ticket branches, by the slug each ends in: a worker builds a ticket on
+    `ticket/<feature>/<NN-slug>`, or `ticket/<integration branch>/<slug>` for a standalone one."""
+    result = subprocess.run(
+        ["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", TICKET_BRANCHES],
+        capture_output=True, text=True,
+    )
+    branches: dict[str, list[str]] = {}
+    for ref in result.stdout.split() if result.returncode == 0 else []:
+        branches.setdefault(ref.rsplit("/", 1)[-1], []).append(ref)
+    return branches
+
+
+def branch_text(repo: Path | None, feature: str | None, path: Path) -> str | None:
+    """The ticket file as its own branch has it, or None where the board finds no branch of that
+    ticket, a merged and deleted one included.
+
+    A feature ticket takes the branch its feature names and no other, since another feature holding
+    a ticket of the same number would otherwise answer for it. A standalone ticket's integration
+    branch is not knowable from the file, so the sole branch ending in its slug is its own.
+    """
+    if repo is None:
+        return None
+    named = ticket_branches(repo).get(path.stem, [])
+    if feature is not None:
+        branch = next((b for b in named if b == f"ticket/{feature}/{path.stem}"), None)
+    elif len(named) == 1:
+        branch = named[0]
+    else:
+        branch = None
+        if named:  # a standalone ticket, and nothing on it says which of those branches is its own
+            print(f"board: {path} could be any of {named}, so its questions are the checkout's", file=sys.stderr)
+    if branch is None:
+        return None
+    # ./ resolves against git's own cwd, so the file keeps the place it has in this checkout
+    done = subprocess.run(
+        ["git", "-C", str(path.parent), "show", f"{branch}:./{path.name}"], capture_output=True, text=True
+    )
+    return done.stdout if done.returncode == 0 else None
 
 
 @dataclass(frozen=True)
@@ -844,19 +964,29 @@ def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict |
 type Row = Ticket | Standalone
 
 
-def asks(status: str, kind: str | None, open_question: bool = False) -> str:
-    """Which of ASKS a row asks of the user, from what its ticket file says. `open_question` is
-    what 03-questions-and-needs-me passes once it reads a ticket's questions; until then no row
-    asks for an answer."""
+SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
+WORKED_ALONE = {"research": "research", "legwork": "legwork"}  # the ones an agent takes away and comes back from
+
+
+def asks(status: str, kind: str | None, open_question: bool) -> str:
+    """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
+    for a ruling, a ticket stopped on a question of its own asks for the answer, and a decision
+    ticket asks for the session its type names.
+
+    A grilling or a prototype decision asks for its session whether or not its question is written
+    down yet, since sitting down together is the work. Research and legwork an agent does alone, so
+    a question open on one is what stops it, and the row says so."""
     if status == "review":
         return "review"
+    if kind in SITS_FOR:
+        return SITS_FOR[kind]
     if open_question and status != "done":
         return "answer"
-    return {"grilling": "design", "prototype": "prototype", "research": "research", "legwork": "legwork"}.get(kind or "", "build")
+    return WORKED_ALONE.get(kind or "", "build")
 
 
 def asks_tag(t: Row) -> str:
-    kind = asks(t.status, t.kind)
+    kind = asks(t.status, t.kind, bool(open_questions(t)))
     word, meaning = ASKS[kind]
     return f'<span class="asks a-{kind}" data-tip="{html.escape(meaning)}">{word}</span>'
 
@@ -926,15 +1056,105 @@ def row_open(row_id: str, status: str, feature: str, num: str, search: str, path
 def clipped(text: str) -> str:
     """A mark's words, cut off with an ellipsis where its column is too narrow. The clipping sits on
     this inner element, since a box that hides its overflow would hide its own hover words too."""
-    return f'<span class="clip">{html.escape(text)}</span>'
+    return clipped_html(html.escape(text))
+
+
+def clipped_html(markup: str) -> str:
+    """The same, for words already rendered: a question's headline carries code and emphasis."""
+    return f'<span class="clip">{markup}</span>'
+
+
+def open_questions(t: Row) -> list[Question]:
+    """A ticket's questions no `Ruled` line answers."""
+    return [q for q in t.questions if not q.ruled]
+
+
+def group_of(t: Row) -> str:
+    """Which group a row sits in: the needs-me group where the ticket waits on the user, its status
+    otherwise. A row is in one group, so needs me takes a ticket out of its status group."""
+    return "needs" if needs_me(t.status, t.kind, t.priority, bool(open_questions(t))) else t.status
+
+
+def questions_block(t: Row) -> str:
+    """The open questions under a needs-me row: each one's tag and headline with a button that
+    copies it, and one that copies the ticket's own once there are two to copy.
+
+    A done ticket shows none: a question still open when the user rules on the build is filed as a
+    proposed ticket then (the spec's Decisions), so one left on a done ticket is a leftover."""
+    asked = [] if t.status == "done" else open_questions(t)
+    if not asked:
+        return ""
+    lines = "".join(
+        f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span>'
+        f'<span class="qhead" data-tip="{html.escape(question_tip(q))}">{clipped_html(inline_md(q.headline))}</span>'
+        + copy_button("qcopy", "copy", "Click to copy this question under the path of its ticket, to answer in any session.",
+                      copy_text(t.path, [q]), f"{q.tag} of {t.path.name}")
+        + "</span>"
+        for q in asked
+    )
+    if len(asked) < 2:  # one question's own button already copies the ticket's whole list
+        return f'<span class="qs">{lines}</span>'
+    return f'<span class="qs">{lines}' + copy_button(
+        "qall", f"copy all {len(asked)}",
+        "Click to copy every open question on this ticket, under the path of the file they are on.",
+        copy_text(t.path, asked), f"{len(asked)} questions of {t.path.name}",
+    ) + "</span>"
+
+
+def group_copy(rows: Sequence[Row]) -> str:
+    """The needs-me group's own copy button: every open question on the board at once, for pasting
+    into an editor. Empty for a group whose rows ask nothing, which is every other group."""
+    asked = [(t.path, open_questions(t)) for t in rows]
+    asked = [(path, questions) for path, questions in asked if questions]
+    if not asked:
+        return ""
+    count = sum(len(questions) for _, questions in asked)
+    return copy_button(
+        "qgroup", f"copy all {count} question{'s' if count != 1 else ''}",
+        "Click to copy every open question on the board, each under the path of the ticket it is on.",
+        "\n\n".join(copy_text(path, questions) for path, questions in asked),
+        f"{count} question{'s' if count != 1 else ''}",
+    )
+
+
+def copy_text(path: Path, asked: Sequence[Question]) -> str:
+    """What a copy button puts on the clipboard: the questions, each rewritten as one line of the
+    markdown the ticket holds, under the path of the file they are on, so the session taking the
+    answer knows where to record it."""
+    written = (f"- [{q.tag}] **{q.headline}**" + (f" {q.detail}" if q.detail else "") for q in asked)
+    return "\n".join([str(path), *written])
+
+
+TAG_TIP = (
+    "The ticket's own numbering for this question.\n"
+    "A session that takes your answer records it under this tag as a `Ruled <date>:` line, which is "
+    "what clears the question from the board."
+)
+
+
+def question_tip(q: Question) -> str:
+    """A question's own words, since the row shows a headline its column may have to cut short."""
+    return f"{q.headline}\n\n{q.detail}" if q.detail else q.headline
+
+
+COPY_CAP = 220  # how much of what it copies a button shows before the rest is an ellipsis
+
+
+def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str:
+    """A button that copies `text` and says so: what it copies is its hover words, cut off where
+    they run long, and `said` is what the page's own note says once it has. It is a span, as the
+    row's number is, since the page handles the click itself."""
+    shown = text if len(text) <= COPY_CAP else text[:COPY_CAP].rstrip() + "\u2026"
+    return (f'<span class="copier {variant}" data-copy="{html.escape(text)}" data-copied="{html.escape(said)}" '
+            f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
 
 
 def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str = "") -> str:
     """One ticket row, every mark in a fixed column: the feature, the number (a click copies the
     file's path), what the row asks of the user, the name with its review page and GitHub
-    references, the ticket brief under the name, the user's time, the priority, the blockers.
-    Below a width the time, the priority and the blockers move under the name. The ticket's
-    remaining text folds under the row."""
+    references, the ticket brief under the name and the open questions the ticket asks the user
+    under that, the user's time, the priority, the blockers. Below a width the time, the
+    priority and the blockers move under the name. The ticket's remaining text folds under the row."""
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
     return (
         row_open(row_id, t.status, feature, num, search_text(num, t.title, t.brief, t.body_html, *t.gh), t.path)
@@ -942,7 +1162,7 @@ def row(row_id: str, feature: str, num: str, t: Row, chips: str, on_branch: str 
         f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{html.escape(num)}</span>'
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
-        f'{review_link(t.diffview)}{gh_links(t.gh)}{on_branch}</span>{brief}</span>'
+        f'{review_link(t.diffview)}{gh_links(t.gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
         f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{chips}</span></span>'
         f'</summary><div class="body">{t.body_html}</div></details>'
     )
@@ -1006,15 +1226,16 @@ def render_page(
     ranked: dict[str, list[tuple[tuple, str, Row]]] = {state: [] for state, _ in GROUPS}
     for f in features:
         for t in f.tickets:
-            ranked[t.status].append((sort_key(t), ticket_row(f, t), t))
+            ranked[group_of(t)].append((sort_key(t), ticket_row(f, t), t))
     for k in standalone:
-        ranked[k.status].append((sort_key(k), standalone_row(k), k))
+        ranked[group_of(k)].append((sort_key(k), standalone_row(k), k))
+    ranked = {state: sorted(sortable, key=lambda ranks: ranks[0]) for state, sortable in ranked.items()}
     for state, sortable in ranked.items():
-        rows[state].extend(row for _, row, _ in sorted(sortable, key=lambda ranks: ranks[0]))
+        rows[state].extend(row for _, row, _ in sortable)
     grouped = {state: [t for _, _, t in sortable] for state, sortable in ranked.items() if sortable}
     groups = "".join(
         f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
-        f'<summary><h2>{label} <span class="n">{len(rows[state])}</span></h2></summary>'
+        f'<summary><h2>{label} <span class="n">{len(rows[state])}</span>{group_copy(grouped.get(state, []))}</h2></summary>'
         f'<div class="tickets">{"".join(rows[state])}</div></details>'
         for state, label in GROUPS if rows[state]
     )
@@ -1175,7 +1396,8 @@ ${columns}
   [data-theme="night"] { color-scheme: dark; }
 
   /* The callout hues of mwolf.dev: what a row asks wears one each, the priority ramps on the
-     first, and the user's time has the last to itself. The teal is picked again from the
+     first, a question's tag takes the same rose as the answer it waits for, and the user's time
+     has the last to itself. The teal is picked again from the
      prototype's, away from the moss accent, which it read as by day. Each day value clears 4.6:1
      against its own 12% tint, since that is the background the tag's text sits on. */
   :root {
@@ -1256,7 +1478,7 @@ ${columns}
 
   /* ---- a group of rows ---- */
   .grp { margin-bottom: 1.75rem; }
-  .grp > summary { list-style: none; cursor: pointer; padding: .3rem 0 .6rem; }
+  .grp > summary { list-style: none; cursor: pointer; padding: .3rem 0 .6rem; position: relative; }
   .grp > summary::-webkit-details-marker { display: none; }
   .grp.empty { display: none; }
   h2 { font-size: .82rem; font-weight: 400; color: var(--muted); margin: 0; display: flex; align-items: center;
@@ -1292,6 +1514,14 @@ ${columns}
   .titleline > a, .titleline > .src { flex: none; }
   .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ticket[open] .brief { white-space: normal; }
+  /* a needs-me row's open questions, under the name they belong to */
+  .qs { display: grid; gap: .15rem; justify-items: start; padding: .2rem 0 .1rem; min-width: 0; }
+  .q { display: flex; gap: .5rem; align-items: baseline; max-width: 100%; min-width: 0; }
+  .qtag { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--c-rose); }
+  .qhead { color: var(--body); font-size: .88rem; min-width: 0; }
+  .copier { flex: none; font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+    border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
+  .copier:hover { color: var(--accent); border-color: var(--accent); }
   .meta { display: contents; }
   .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
   .chip { font-size: .78rem; }
@@ -1361,7 +1591,8 @@ ${columns}
   /* ---- a mark says in words what it means ---- */
   /* The words appear under the row, at its left edge: the row is the box that is always on screen
      and never hides its overflow, so they cannot be clipped by the mark they belong to or run off
-     a narrow window, wherever in the row that mark sits. */
+     a narrow window, wherever in the row that mark sits. A group's header is the same box for the
+     one mark that sits on it, the button that copies every question in the group. */
   .ticket > summary { position: relative; }
   [data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% - .2rem); left: .5rem;
     width: max-content; max-width: min(28rem, 100%); white-space: pre-line; background: var(--ground); color: var(--body);
@@ -1662,8 +1893,11 @@ ${groups}
   document.getElementById("sidefold").addEventListener("click", () => side.classList.toggle("folded"));
   search.addEventListener("input", applyFilters);
   // a click on a row's summary moves the cursor there, so the graph follows the mouse too;
-  // one on its number copies the row's path instead of folding the row
+  // one on a copy button copies what that button carries, and one on the row's number its path,
+  // instead of folding the row or the group
   rowsEl.addEventListener("click", (e) => {
+    const copier = e.target.closest("[data-copy]");
+    if (copier) { e.preventDefault(); copy(copier.dataset.copy, copier.dataset.copied); return; }
     const t = e.target.closest(".ticket");
     if (!t || !e.target.closest("summary")) return;
     if (e.target.closest(".ticket > summary > .num")) { e.preventDefault(); copyPath(t); }
@@ -1672,17 +1906,19 @@ ${groups}
 
   const toast = document.getElementById("toast");
   let toastTimer = null;
-  function copyPath(t) {
-    const path = t?.dataset.path;
-    if (!path) return;
-    const say = (text) => {
-      toast.textContent = text;
+  function copy(text, said) {
+    if (!text) return;
+    const say = (words) => {
+      toast.textContent = words;
       toast.classList.add("on");
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
     };
     // navigator.clipboard is absent outside a secure context
-    (navigator.clipboard?.writeText(path) ?? Promise.reject()).then(() => say("copied " + path), () => say("could not copy " + path));
+    (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => say("copied " + said), () => say("could not copy " + said));
+  }
+  function copyPath(t) {
+    copy(t?.dataset.path, t?.dataset.path);
   }
 
   const help = document.getElementById("help");

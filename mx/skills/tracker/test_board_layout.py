@@ -28,8 +28,8 @@ HTML marks overlapping each other are outside its reach, and so is text a box cl
 spills, which every mark that truncates does by design. The Property is executable as far as that
 reaches; the rest was read by eye at these widths, in both schemes (02-rows' closing comment).
 
-Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover,
-and the page's own answers about the scheme, the anchor and the graph.
+Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
+copy button's click, and the page's own answers about the scheme, the anchor and the graph.
 """
 
 import json
@@ -76,10 +76,10 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
-# opened a row, whether the graph beside it came back, and what each mark shows on hover. A
-# pseudo-element has no rect of its own, so a tooltip's box is its host's plus the offsets the
-# element resolves; `clipped` is the ancestor that would hide it, which is how two marks came to
-# carry words no reader could see.
+# opened a row, whether the graph beside it came back, and what each mark shows on hover, a copy
+# button's account of what it copies among them. A pseudo-element has no rect of its own, so a
+# tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
+# would hide it, which is how two marks came to carry words no reader could see.
 PROBE = r'''
 import json, shutil, sys
 from pathlib import Path
@@ -111,7 +111,10 @@ TIP = """
 """
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
-    page = browser.new_page(viewport={"width": width, "height": 1000})
+    # the clipboard is what a copy button is for, and a page reaches it only where it is granted
+    context = browser.new_context(viewport={"width": width, "height": 1000},
+                                  permissions=["clipboard-read", "clipboard-write"])
+    page = context.new_page()
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
@@ -134,8 +137,18 @@ with sync_playwright() as pw:
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
     out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
-        page.hover(f"#t-csv-import-02 .{mark}" if mark != "num" else "#t-csv-import-02 .num")
-        out["tips"][mark] = page.evaluate(TIP, f"#t-csv-import-02 .{mark}")
+        where = mark if mark.startswith("#") else f"#t-csv-import-02 .{mark}"
+        page.hover(where)
+        out["tips"][mark] = page.evaluate(TIP, where)
+    page.click("#t-csv-import-02 .qall")
+    page.wait_for_timeout(500)
+    out["copied"] = {
+        "clipboard": page.evaluate("navigator.clipboard.readText()"),
+        "asked": page.evaluate("document.querySelector('#t-csv-import-02 .qall').dataset.copy"),
+        "note": page.inner_text("#toast"),
+        "shown": page.evaluate("document.getElementById('toast').classList.contains('on')"),
+        "still_open": page.evaluate("!!document.getElementById('t-csv-import-02').open"),
+    }
     out["scheme_before_switch"] = page.evaluate("document.documentElement.dataset.theme")
     page.click("#scheme")
     page.wait_for_timeout(2500)
@@ -145,7 +158,11 @@ with sync_playwright() as pw:
 print(json.dumps(out))
 '''
 
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh")
+# a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
+# repeats within the row
+MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "qall",
+         "#t-csv-import-02 .q:first-child .qtag", "#t-csv-import-02 .q:first-child .qhead",
+         "#t-csv-import-02 .q:first-child .qcopy", "#grp-needs .qgroup")
 
 
 def probe(page: Path, width: int) -> dict:
@@ -160,9 +177,10 @@ def probe(page: Path, width: int) -> dict:
 # the row beside the graph panel, the row on its own, and the row reflowed
 @pytest.mark.parametrize("width", [1500, 1100, 920])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
-    """The rendered half of the spec's "Every mark explains itself on hover": that the words the
-    markup carries (test_board.py) reach the reader. A mark whose box hides its overflow hides its
-    own tooltip, and one anchored to the wrong side runs off the edge of the window.
+    """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
+    shows what it copies": that the words the markup carries (test_board.py) reach the reader. A
+    mark whose box hides its overflow hides its own tooltip, and one anchored to the wrong side
+    runs off the edge of the window.
 
     The same run says what the rest of the page did, since it is the only one that drives a browser:
     that the name keeps its words while the links beside it give way, that ?theme= pinned each
@@ -180,6 +198,12 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(demo: Demo, tmp
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
+    # a copy button is a span inside a summary, so the click it takes is the page's to handle
+    copied = seen["copied"]
+    assert copied["clipboard"] == copied["asked"], "the click put something else on the clipboard"
+    assert copied["clipboard"].count("- [D") == 3, "the ticket's three questions, under its path"
+    assert copied["shown"] and "02-map-columns.md" in copied["note"], f"the note reads {copied['note']!r}"
+    assert copied["still_open"], "the click folded the row instead of copying"
     # the name is what a row is read by, so it is never the thing that gives up its width
     for name in seen["names"]:
         assert not (name["cut"] and name["beside"]), (

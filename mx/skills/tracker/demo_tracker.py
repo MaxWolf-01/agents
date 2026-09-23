@@ -8,11 +8,12 @@
 type, every priority and every size, so that each of a row's marks is laid out somewhere.
 
 Two features (a confirmed spec with six slices, a draft spec with three tickets, two of them
-decisions), eight standalone tickets covering every decision type, two builds waiting on a ruling
+decisions), nine standalone tickets covering every decision type, two builds waiting on a ruling
 on their ticket branches with their questions there, one build stopped on two questions of which
-one is ruled, one ticket whose only question is ruled, a needs-human queue, review pages beside the
-tickets, demo scripts and a figure under agent/show, and four sessions on the commits: three with a
-transcript under the transcripts directory this writes, one worker on another host with none.
+one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
+a needs-human queue, review pages beside the tickets, demo scripts and a figure under agent/show,
+and four sessions on the commits: three with a transcript under the transcripts directory this
+writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
 """
@@ -330,6 +331,23 @@ Four date formats across the users' banks; find the library that parses all four
 ## Questions
 
 - [D1] **Which library, and what does it cost in install size?** The candidates differ by a factor of ten in size.
+""")
+    write(repo / "agent/tickets/read-the-bank-formats.md", """---
+status: open
+type: research
+priority: 4
+size: S
+---
+
+# The banks' own formats
+
+## Brief
+
+Collect what each of the four banks documents about its export, so the mapping work starts from paper rather than from guesses.
+
+## What to build
+
+Read the four banks' export documentation and write down the columns each one names.
 """)
     write(repo / "agent/tickets/staging-credentials.md", """---
 status: open
