@@ -1,5 +1,6 @@
 {
   "cleanupPeriodDays": 99999,
+  "syncClaudeAiSkills": false,
   "env": {
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
     "MAX_MCP_OUTPUT_TOKENS": "50000",
@@ -284,6 +285,7 @@
       "Bash(restic-current *)",
       "Bash(asus-power-cap status)",
       "Bash(/home/max/.dotfiles/bin/asus-power-cap status)",
+      "Bash(/home/max/work/helferline/leistung/bin/zeit book *)",
       "Bash(gnome-extensions info *)",
       "Bash(gnome-extensions list)",
       "Bash(gnome-extensions list *)",
@@ -480,7 +482,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "opus",
   "skillOverrides": {
     "loop": "off",
     "security-review": "user-invocable-only",
@@ -492,7 +494,6 @@
     "keybindings-help": "user-invocable-only",
     "init": "user-invocable-only"
   },
-  "syncClaudeAiSkills": false,
   "worktree": {
     "baseRef": "head"
   },
@@ -525,16 +526,11 @@
         "source": "github",
         "repo": "MaxWolf-01/agents"
       }
-    },
-    "obsidian-skills": {
-      "source": {
-        "source": "github",
-        "repo": "kepano/obsidian-skills"
-      }
     }
   },
   "outputStyle": "max",
   "feedbackDrafts": "quiet",
+  "promptCacheTtl": "1h",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "modelSettings": {
@@ -564,7 +560,6 @@
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "autoCompactEnabled": false,
-  "promptCacheTtl": "1h",
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "autoScrollEnabled": true,
