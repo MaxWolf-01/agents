@@ -242,6 +242,9 @@ push_to() { # <host>
 
 claim() {
     locate
+    # A claim that changes nothing is no claim: `tracker set` takes a write to
+    # the status a ticket already has, so the ticket in hand is refused here.
+    [ "$("$tracker" get "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
     run "$tracker" set "$1" status=claimed || exit 1
     run git commit -q -m "claim $1" -- "$tickets/$1.md"
 }
