@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
-# Usage: run-worker.sh <message-file> <ticket-file> <model> <run> [session-id]
+# Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
-#   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
+#   slug          the ticket this worker holds; its status says whether a retry is warranted,
+#                 read through `tracker` beside this script, in the worktree this runs in
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
@@ -12,7 +13,7 @@
 set -u
 
 message=$1
-ticket=$2
+slug=$2
 model=$3
 run_id=$4
 resume_session=${5:-}
@@ -20,6 +21,8 @@ permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
+# The one parser of a ticket file, staged here beside this script.
+tracker=$here/tracker.py
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
     printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
@@ -39,7 +42,7 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 export DISPATCH_WORKLOG="$here/$run_id.log"
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
-printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md and output style are written for a human at a terminal: they tell their
 # reader to ask and how to shape a reply, for a conversation this worker is not in.
@@ -80,7 +83,7 @@ for attempt in $(seq 1 $max_attempts); do
         claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
-    status=$(sed -n 's/^status: *//p' "$ticket" | head -1)
+    status=$("$tracker" get "$slug" status 2>/dev/null)
 
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
