@@ -1,6 +1,6 @@
 ---
 status: open
-type: legwork
+needs-user: true
 priority: 4
 size: XS
 ---

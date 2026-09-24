@@ -1,6 +1,6 @@
 ---
 status: open
-type: grilling
+needs-user: true
 blocked-by: [ticket-file-contract]
 priority: 2
 size: M

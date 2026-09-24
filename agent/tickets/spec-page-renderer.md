@@ -1,8 +1,9 @@
 ---
 status: proposed
+parent: session-page
+blocked-by: [session-renderer]
 priority: 2
 size: M
-blocked-by: [02]
 ---
 
 # A spec renders into its spec page, figures inside and the round's changes marked
@@ -11,7 +12,7 @@ blocked-by: [02]
 
 A spec renders into its own page: its figures shown in place, its provenance marks as tags, and every block the round changed marked where it sits. It replaces diffview for specs.
 
-Slice of `spec.md`, building on its Decisions under The spec page (the spec rendered, a link into the feature's show directory is a figure, it replaces diffview for specs, in this feature as its own slice) and Where it lives (`spec.html` beside `spec.md`, untracked), and on its Floors.
+Slice of `session-page`, building on its Decisions under The spec page (the spec rendered, a link into the feature's show directory is a figure, it replaces diffview for specs, in this feature as its own slice) and Where it lives (`spec.html` beside `spec.md`, untracked), and on its Floors.
 
 ## What to build
 
@@ -19,7 +20,7 @@ A command that takes a feature's `spec.md` and a base commit and writes the spec
 
 ## Acceptance criteria
 
-- [ ] The spec renderer's property from 01 passes, its expected failure lifted.
+- [ ] The spec renderer's property from `session-page-properties-as-checks` passes, its expected failure lifted.
 - [ ] The prototype at `agent/prototypes/session-page/` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment.
 - [ ] A move either page shares with diffview is on diffview's key (spec, Properties).
 - [ ] `render-lint` reports nothing fatal in either scheme at the default width and at 900px.
