@@ -95,3 +95,11 @@ As of board-orients' chain (tickets 01 to 10) plus master:
 - [ ] This ticket's close-out review has run over the whole output.
 
 ## Comments
+
+Rulings of 2026-09-24 on the two sibling builds, relayed in chat:
+
+- `property-coverage` holds every property a ticket states to being cited by some acceptance criterion in the tracker, since the executable-or-reviewed disposition is no longer machine-read: accepted.
+- A `Ruled <date>:` line written as a continuation of a question rather than a bullet of its own is refused by `tracker check`, since read as the question's detail it would leave the question open with nothing saying why: left to the orchestrator, who takes the refusal.
+- `/mx:to-tickets` becomes `mx/skills/tracker/SLICING.md`: accepted.
+- The release that ships this is a major version. Other repos' trackers are converted by the user, on demand; no ticket per repo.
+- Open, drawn at `agent/show/ticket-file-contract/open-points.html`: where a build's questions get their answers, light review and the ticket's context, the tracker skill's size, the README figures.
