@@ -5,7 +5,7 @@
 """The board's layout, measured in a browser. Run: uv run test_board_layout.py
 
 The seam is the rendered page: the demo tracker on disk, rendered by board.py, measured by
-render-lint. The oracle is the no-overlap Property of agent/tickets/board-orients/spec.md: at zoom
+render-lint. The oracle is the no-overlap Property of mx/skills/tracker/corpus/board-orients.md: at zoom
 80% to 200% and window widths from 900px up, nothing on the board overlaps or escapes its box, in
 either scheme.
 

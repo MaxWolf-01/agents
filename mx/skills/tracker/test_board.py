@@ -17,7 +17,7 @@ tickets with an edge; a standalone ticket a branch added is shown, one it merely
 not; markdown at the tracker root that declares no status is not a ticket.
 
 Under "properties" at the end sit the executable Properties of
-agent/tickets/board-orients/spec.md that belong to these seams; that spec is their oracle.
+mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec is their oracle.
 """
 
 import html
@@ -2317,7 +2317,7 @@ def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(tmp_path: 
 
 
 # ---- properties -----------------------------------------------------------
-# The executable Properties of agent/tickets/board-orients/spec.md that live at these seams.
+# The executable Properties of mx/skills/tracker/corpus/board-orients.md that live at these seams.
 
 
 def runs(record: Path) -> list[str]:

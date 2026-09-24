@@ -190,7 +190,7 @@ SIZE_TIP = (
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
     "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
-    "session": ("with you", "A ticket you are in the loop for: a grilling, a decision to talk through, a step only you can take. No worker is handed it."),
+    "session": ("with you", "A ticket you are in the loop for: the work is done with you, and no worker is handed it."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
 }
 ALONE = "alone"  # the pill for a ticket with no parent ticket and no child tickets
@@ -468,7 +468,7 @@ def briefing_state(roots: "Roots", repo: Path) -> str:
 
 # ---- the board briefing ---------------------------------------------------
 # What the session that writes it is given, what it is told when the tracker moves, and what the
-# board says where no session has written one. agent/tickets/board-orients/spec.md is the oracle;
+# board says where no session has written one. mx/skills/tracker/corpus/board-orients.md is the oracle;
 # the session itself and the schedule are briefing.py.
 
 STATE = """The tracker of {project} as the board reads it.
@@ -972,7 +972,7 @@ def git_log(repo: Path) -> str:
 
 
 # ---- what a ticket asks of the user ---------------------------------------
-# The seams agent/tickets/board-orients/spec.md decides. That spec is their oracle, held as the
+# The seams mx/skills/tracker/corpus/board-orients.md decides. That spec is their oracle, held as the
 # properties in test_board.py.
 
 TICKET_BRANCHES = "refs/heads/ticket/"  # where a ticket's own branch is, as dispatch cuts it
@@ -2016,9 +2016,6 @@ ${columns}
     --c-gold: light-dark(#725614, #d9b36f);
     --c-rose: light-dark(#963f37, #fabeb4);
     --c-purple: light-dark(#6546b3, #b8a4ff);
-    --c-orange: light-dark(#894c14, #ffc387);
-    --c-blue: light-dark(#255d8f, #85baeb);
-    --c-slate: light-dark(#4c5b76, #9aaacb);
     --c-time: light-dark(#255a63, #86bcc4);
   }
 
@@ -2180,10 +2177,7 @@ ${columns}
     border: 1px solid color-mix(in srgb, var(--c) 38%, transparent); border-radius: 4px; padding: 0 .4rem; }
   .a-review { --c: var(--c-gold); }
   .a-answer { --c: var(--c-rose); }
-  .a-design { --c: var(--c-purple); }
-  .a-prototype { --c: var(--c-orange); }
-  .a-research { --c: var(--c-blue); }
-  .a-legwork { --c: var(--c-slate); }
+  .a-session { --c: var(--c-purple); }
   .a-build { background: none; border-color: transparent; padding-left: 0; }
   .time { grid-area: time; color: var(--c-time); justify-self: end; font-variant-numeric: tabular-nums; }
   /* the priority is a ramp, not a set of categories: one hue, strongest at p1 */
