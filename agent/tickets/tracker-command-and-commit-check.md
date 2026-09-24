@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 parent: ticket-file-contract
 priority: 1
 size: L
+diff: [a1e5b720e331d2c79e3241fdd243e34815e5b29c..4ff889a9356791b83522db6864b17a413fe4ff0e]
 ---
 
 # The tracker command, and the commit check that runs it
