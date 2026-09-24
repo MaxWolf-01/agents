@@ -92,10 +92,10 @@ tree and whole-tracker switch. A click on a node in the overlay closes it on
 that ticket's row; a click on a node in the window leaves the window where it is
 and moves the board to that row.
 
-One board per tracker, showing what is actionable now. It is one directory:
+One board per tracker, showing what is actionable now. It reads one directory:
 every ticket file is written and committed in the tracker's own checkout,
-claims and review flips included, so a build in flight is on the board without
-any branch or worktree being read.
+claims and review flips included, so a build is on the board from its claim
+onward.
 
 A ticket row links its diffview review page when one has been rendered:
 agent/diffviews/<slug>.html beside the tracker. Those pages are gitignored, so the
@@ -199,11 +199,11 @@ GROUPS = [
 @dataclass
 class Args:
     tickets_root: Annotated[Path | None, tyro.conf.Positional, tyro.conf.arg(metavar="[PATH]")] = None
-    """Tracker root, e.g. agent/tickets, in any checkout of the repo; the board renders the main checkout's copy. Default: the nearest agent/tickets up from the current directory."""
+    """Tracker root, e.g. agent/tickets. Default: the tracker this directory's project plans, which is the repo's own or the one its `mx.tracker` setting names, in the checkout ticket files are committed in."""
     out: Path | None = None
     """Output HTML path. Default: board.html beside the tracker (agent/board.html)."""
     repo: Path | None = None
-    """Repo for the commit log. Default: the main checkout."""
+    """Repo for the commit log and the sessions that worked on a ticket. Default: the repo the tracker is in."""
     open: bool = True
     """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window."""
     watch: bool = True
@@ -717,7 +717,6 @@ def shown(
     status = read.status
     if status == "open" and any(state != "done" for _, state in blocked_by):
         status = "blocked"
-    asked = read.questions
     worked = ticket_sessions(read.path, repo)
     return Ticket(
         slug=read.slug,
@@ -728,13 +727,13 @@ def shown(
         tree=tree_of(read.slug, tickets),
         blocked_by=blocked_by,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
-        body_html=ticket_blocks(read, asked, path=read.path, status=status, worked=worked),
+        body_html=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked),
         diffview=diffviews.link(diffviews.root, f"{read.slug}.html"),
         path=read.path,
         priority=read.meta.get("priority"),
         size=read.meta.get("size"),
         brief=inline_md(read.brief),
-        questions=asked,
+        questions=read.questions,
     )
 
 

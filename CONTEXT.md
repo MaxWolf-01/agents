@@ -107,7 +107,7 @@ The agent that works one ticket in its own worktree, unattended.
 _Avoid_: subagent, implementer
 
 **Worker report**:
-What a worker hands back for its ticket: its closing comment and the questions its build raised, written outside the worktree and imported into the ticket by the orchestrator.
+What a worker hands back for its ticket: its closing comment and the questions its build raised.
 _Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
 
 **Tick**:

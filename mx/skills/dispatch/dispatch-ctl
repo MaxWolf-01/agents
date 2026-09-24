@@ -57,8 +57,9 @@
 #   log       the current run's status line and the tail of its worklog
 #   report    the current run's report, on stdout: the worker's closing comment
 #             and the questions its build raised, which `dispatch fetch` brings
-#             back and `dispatch review` imports into the ticket. Exit 1 where
-#             the run left none, which is a worker that stopped early.
+#             back and `dispatch review` imports into the ticket. Exit 3 where
+#             the run left none, which is a worker that stopped early, and 1
+#             for everything else, so the caller tells the two apart.
 #   cleanup   kills the pane, forgets the run, removes worktree and branch
 #   fuzz      start: cuts fuzz/<base> from <base> into
 #             <worktrees-dir>/<repo>-<base>-fuzz, sets it up as a ticket
@@ -67,7 +68,9 @@
 #             stop: kills that session and removes its worktree and branch.
 #             One per base branch; it holds no state beyond the session and the
 #             worktree, so `stop` is the whole of undoing it.
-# This host needs `git` and `tmux`; `init` fetches `job` when it is missing.
+# This host needs `git` and `tmux`, and `init` wants `curl` and `claude`: it
+# fetches `job` with the first where the host has none, and updates this plugin
+# with the second, saying so when that fails.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
@@ -357,7 +360,10 @@ report() {
     load; names "$1"
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name in the manifest"
-    [ -f "$here/$run_id.report.md" ] || die "$name left no report in run=$run_id; it stopped before it finished"
+    if [ ! -f "$here/$run_id.report.md" ]; then
+        echo "dispatch-ctl: $name left no report in run=$run_id; it stopped before it finished" >&2
+        exit 3
+    fi
     cat "$here/$run_id.report.md"
 }
 

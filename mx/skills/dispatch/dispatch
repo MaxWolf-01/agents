@@ -98,8 +98,8 @@ set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every read and write of a ticket file goes through the one command that parses
-# one. It stays here: a worker writes no ticket file, so a worker host holds no
-# reader of one either.
+# one, which runs here and nowhere else: a worker is handed its ticket's context
+# in its prompt, so no worker host holds a reader of a ticket file.
 tracker=$skill/../tracker/tracker.py
 
 run() { echo "+ $*" >&2; "$@"; }
@@ -358,8 +358,9 @@ ctl() {
             [ "${2:-}" = start ] && stages=1 ;;
     esac
     # The one ticket a worker never gets, read in the tracker: the host reads no
-    # ticket at all, so this is where a ticket the user is in the loop for stops.
-    if [ "$sub" = spawn ]; then
+    # ticket at all, so this is where a ticket the user is in the loop for stops,
+    # for a resume as much as for a spawn.
+    if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
         read=$("$tracker" data "$2") || die "$2 is no ticket any reader can read in $tickets"
         [ "$(printf '%s' "$read" | jq -r '.tickets[0]["needs-user"]')" != true ] ||
             die "$2 needs the user in the loop: it is worked with them, never handed to a worker"
@@ -423,7 +424,7 @@ fetch() {
         # and a staged session that outlived the fetch would run the previous
         # round's file.
         unstage_demo "$1"
-        run git fetch -q "${host//[@.]/-}" "+$branch:$branch"
+        run git fetch -q "${host//[@.]/-}" "+$branch:$branch" || die "fetching $branch from $host failed"
     fi
     fetch_report "$1"
 }
@@ -440,10 +441,16 @@ fetch_report() { # <slug>
     if on_host "$host" bash "$scratch/dispatch-ctl" report "$1" > "$report.part"; then
         mv "$report.part" "$report"
         echo "report: $report"
-    else
-        rm -f "$report.part"
-        echo "dispatch: no report of $1 on $host; it stopped before it finished" >&2
+        return 0
     fi
+    # 3 is `dispatch-ctl report`'s own answer that the run left none; anything
+    # else came from the hop or from dispatch-ctl, and says nothing about the
+    # worker, so it is reported as what it is.
+    rc=$?
+    rm -f "$report.part"
+    [ "$rc" -eq 3 ] && echo "dispatch: $1 left no report on $host; it stopped before it finished" >&2 ||
+        echo "dispatch: could not read $1's report on $host (exit $rc); the line above is what failed" >&2
+    return 0
 }
 
 # What a ticket's demo is called on both sides of the staging. The worktree path
@@ -598,11 +605,21 @@ review() {
     # One section per round: the rounds the ticket carries, then this branch's
     # own while it is unmerged (a proposal waiting for its ruling, or a resumed
     # worker's next round fetched before its merge). Read after the write
-    # above, so the round that just landed is in the list once. A round names
-    # the repo it was built in, and every round of this ticket was built here.
+    # above, so the round that just landed is in the list once.
     rounds=$(rounds_of "$id")
     specs=()
-    while read -r r; do [ -n "$r" ] && specs+=("$repo_root@${r##*@}"); done <<< "$rounds"
+    while read -r r; do
+        [ -n "$r" ] || continue
+        # A range carries the repo it was built in where that is not the
+        # tracker's own; this page renders from the checkout it runs in, so one
+        # built elsewhere is left out rather than drawn against the wrong tree.
+        named=${r%%@*}
+        if [ "$named" != "$r" ] && [ "$named" != "$repo" ]; then
+            echo "dispatch: $id's round $r was built in $named, not here, so this page leaves it out" >&2
+            continue
+        fi
+        specs+=("$repo_root@${r##*@}")
+    done <<< "$rounds"
     printf '%s\n' "$rounds" | grep -qxF "$written" || specs+=("$repo_root@$range")
 
     out=$diffviews/$id

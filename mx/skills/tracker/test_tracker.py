@@ -555,7 +555,7 @@ def test_a_parent_ticket_is_done_once_every_child_ticket_is(tickets: Path, repo:
     children = [ticket(tickets, "map-columns", status="done", parent="one-flow"),
                 ticket(tickets, "saved-views", status="review", parent="one-flow")]
     said = run(repo, "set", "one-flow", "status=done")
-    assert said.code == 1 and "no branch ticket/one-flow here" in said.err, "one child still waits on a ruling"
+    assert said.code == 1 and "no branch ticket/one-flow in" in said.err, "one child still waits on a ruling"
     for child in children:
         child.write_text(child.read_text().replace("status: review", "status: done"))
     assert run(repo, "set", "one-flow", "status=done").code == 0
@@ -600,6 +600,13 @@ def test_a_ruling_goes_under_the_question_it_answers(tickets: Path, repo: Path) 
 # `ticket-file-contract#P7`: a worker writes a report, and the import is the one write that brings
 # what it says into the ticket. The shapes are the ticket file's own, so the report is held to them.
 
+def reported(tmp_path: Path, text: str = "") -> Path:
+    """A report file, as `dispatch fetch` leaves one beside the ticket message it answers."""
+    path = tmp_path / "report.md"
+    path.write_text(text or REPORT)
+    return path
+
+
 REPORT = """## Comments
 
 One preset lands, warm, on `ticket/warm-preset`, unmerged.
@@ -614,12 +621,12 @@ One preset lands, warm, on `ticket/warm-preset`, unmerged.
 
 
 def test_a_report_reaches_the_ticket_as_its_comment_its_questions_and_the_review_status(
-    tickets: Path, repo: Path
+    tickets: Path, repo: Path, tmp_path: Path
 ) -> None:
     """The one write a worker's words make. Everything the report says lands where a reader of the
     ticket looks for it, and the build waits in `review` from there."""
     path = ticket(tickets, "warm-preset", "## Questions\n\n- [D1] **Which socket?** Bayonet or screw.\n\n## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
-    assert run(repo, "import", "warm-preset", given=REPORT).code == 0
+    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
 
     read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
     assert read["status"] == "review"
@@ -632,21 +639,21 @@ def test_a_report_reaches_the_ticket_as_its_comment_its_questions_and_the_review
     assert written.index("2700K, since the bulb box says so") > written.index("## Comments")
 
 
-def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets: Path, repo: Path) -> None:
+def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets: Path, repo: Path, tmp_path: Path) -> None:
     ticket(tickets, "warm-preset", status="claimed")
-    assert run(repo, "import", "warm-preset", given=REPORT).code == 0
+    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
     read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
     assert [q["tag"] for q in read["questions"]] == ["D3"]
     assert [s["heading"] for s in read["sections"]] == ["Brief", "Questions", "Comments"]
 
 
 def test_a_question_the_report_raised_is_ruled_in_the_tracker_with_no_merge_waited_for(
-    tickets: Path, repo: Path
+    tickets: Path, repo: Path, tmp_path: Path
 ) -> None:
     """What the one writer buys: the question is in the tracker's own copy the moment the report is
     imported, so the user's answer is written under it before or after the merge alike."""
     ticket(tickets, "warm-preset", status="claimed")
-    run(repo, "import", "warm-preset", given=REPORT)
+    run(repo, "import", "warm-preset", str(reported(tmp_path)))
     assert run(repo, "rule", "warm-preset", "D3", "2700K").code == 0
     read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]["questions"]
     assert [(q["tag"], q["answer"]) for q in read] == [("D3", "2700K")]
@@ -674,19 +681,19 @@ def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_an
 
 
 def test_a_report_whose_tags_the_ticket_already_holds_is_refused_at_the_lines_they_land_on(
-    tickets: Path, repo: Path
+    tickets: Path, repo: Path, tmp_path: Path
 ) -> None:
     """The tags run as one sequence across the ticket, so a second round that started them again
     would name two things by one id."""
     ticket(tickets, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n", status="claimed")
-    said = run(repo, "import", "warm-preset", given=REPORT)
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
     assert said.code == 1
     assert "tag D3 is already taken" in said.err, said.said
 
 
-def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo: Path) -> None:
+def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo: Path, tmp_path: Path) -> None:
     ticket(tickets, "warm-preset", status="open")
-    said = run(repo, "import", "warm-preset", given=REPORT)
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
     assert said.code == 1
     assert "open \u2192 review" in said.err and "a build starts from a claim" in said.err, said.said
 
@@ -1184,10 +1191,37 @@ def test_the_tracker_of_a_code_repo_is_the_one_its_clone_names(tickets: Path, co
     assert "status: review" in (tickets / "one-flow.md").read_text(), "the write lands in the tracker's own copy"
 
 
-def test_a_tracker_setting_that_names_no_directory_is_refused(repo: Path, tmp_path: Path) -> None:
-    git(repo, "config", "mx.tracker", str(tmp_path / "nowhere"))
-    said = run(repo, "root")
-    assert said.code == 1 and "which is no directory" in said.err, said.said
+@pytest.mark.parametrize("named, said", [
+    ("nowhere", "neither an `agent/tickets` directory nor a repo holding one"),
+    ("agent", "neither an `agent/tickets` directory nor a repo holding one"),
+    ("../elsewhere/agent/tickets", "a tracker is named by an absolute path"),
+])
+def test_a_tracker_setting_that_names_no_tracker_is_refused(repo: Path, named: str, said: str) -> None:
+    """The path the setting takes is the tracker's own `agent/tickets`, or the repo holding it;
+    anything else would have every read answer about a directory of its own and refuse nothing."""
+    (repo / "agent").mkdir(exist_ok=True)
+    git(repo, "config", "mx.tracker", named if named.startswith("..") else str(repo / named))
+    answer = run(repo, "root")
+    assert answer.code == 1 and said in answer.err, answer.said
+
+
+def test_the_setting_takes_the_repo_that_holds_the_tracker_too(repo: Path, tickets: Path, code: Path) -> None:
+    git(code, "config", "mx.tracker", str(repo))
+    assert run(code, "root").out.strip() == str(tickets)
+
+
+def test_the_tracker_is_the_main_checkouts_copy_wherever_the_command_runs(repo: Path, tickets: Path, tmp_path: Path) -> None:
+    """A ticket change goes on no code branch, and a linked worktree has one out: a session working
+    in one still reads and writes the tracker in the checkout the tickets are committed in."""
+    ticket(tickets, "one-flow")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a ticket")
+    worktree = tmp_path / "beside"
+    git(repo, "worktree", "add", "-q", str(worktree), "-b", "one-flow")
+    (worktree / "agent" / "tickets" / "one-flow.md").write_text(
+        (tickets / "one-flow.md").read_text().replace("status: open", "status: claimed"))
+    assert run(worktree, "root").out.strip() == str(tickets)
+    assert run(worktree, "get", "one-flow", "status").out == "open\n", "the main checkout's copy"
 
 
 def test_the_commit_hook_answers_for_the_repo_it_runs_in_whatever_tracker_that_repo_plans_with(

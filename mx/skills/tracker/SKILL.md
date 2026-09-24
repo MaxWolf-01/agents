@@ -5,7 +5,7 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 # Tracker
 
-One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. The tracker sits in the repo it plans, or in a repo of its own that the code repo names with `git config mx.tracker <path>` in its clone: machine-local, like the path it holds, so neither repo commits the other's layout, and the tickets can stay out of a repo that is shared or plan work spanning several.
+One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. The tracker sits in the repo it plans, in its main checkout, or in a repo of its own that the code repo names with `git config mx.tracker <path>` in that clone alone: the path is machine-local, like the setting, so neither repo commits the other's layout, and the tickets can stay out of a repo that is shared. The path is the tracker's own `agent/tickets`, or the repo holding it.
 
 The `tracker` command owns every mechanical operation on those files, read and write, and `tracker --help` is the reference for all of them. Publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. What no command writes is the body, the prose the agent puts in the file: its shape is below, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
 

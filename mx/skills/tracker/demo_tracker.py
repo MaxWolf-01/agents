@@ -9,11 +9,11 @@ priority and every size, tickets the user is in the loop for and tickets no work
 so that each of a row's marks is laid out somewhere.
 
 Two trees (a parent ticket with six child tickets, one with three) and eleven tickets in no tree,
-two builds waiting on a ruling, their branches unmerged and their questions in the tracker's copy
-where `dispatch review` imported them from the worker's report, one build
-stopped on two questions of which one is ruled, one ticket whose only question is ruled, one ticket
-with no question at all, review pages beside the tickets, acceptance criteria a build in review has
-half met, a property cited by the criterion that takes it on, demo scripts and a figure under
+two builds waiting on a ruling with their branches unmerged and their questions in the tracker's
+copy, where `dispatch review` imported them from the worker's report, one build stopped on two
+questions of which one is ruled, one ticket whose only question is ruled, one ticket with no
+question at all, review pages beside the tickets, acceptance criteria a build in review has half
+met, a property cited by the criterion that takes it on, demo scripts and a figure under
 agent/show, and four sessions on the commits: three with a transcript under the claude/ config
 directory this writes, one worker on another host with none.
 

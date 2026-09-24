@@ -851,7 +851,9 @@ def test_a_build_in_review_shows_the_questions_and_the_closing_comment_its_repor
     assert "[D4]" not in "".join(text for _, text, _, _ in copiers(row)), "the tags a closing comment carries are not questions"
 
 
-def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(tmp_path: Path, path_with) -> None:
+def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
     """One writer, one directory: the claim and the review flip are committed in the tracker's own
     checkout, and the worker's words reach it through the import, so the board reads no branch and
     no worktree. A worktree left on a ticket branch holds whatever it holds."""

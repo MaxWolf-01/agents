@@ -17,7 +17,7 @@ it in a repo of its own that the code repo names (`tracked`): the two are one fl
 what `git config mx.tracker` is for.
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
-argued; this file is the four cases the ticket-file move made.
+argued; this file is the cases the ticket-file move made.
 """
 
 import json
@@ -172,6 +172,8 @@ def staged(toy: Path) -> Iterator[Path]:
 
 
 def kill_sessions() -> None:
+    if not shutil.which("tmux"):
+        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     listed = subprocess.run(["tmux", "ls", "-F", "#{session_name}"], capture_output=True, text=True)
     for session in listed.stdout.split():
         if session.startswith("dispatch-lamp-"):
@@ -222,10 +224,6 @@ def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, tracked: Path,
     assert said.returncode != 0
     assert "warm-preset.md:" in said.stderr and "this assumption has no anchor" in said.stderr, said.stderr
     assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
-
-
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
 
 
 def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, tracked: Path, staged: Path) -> None:
@@ -280,3 +278,7 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, trac
     qualified = not (toy / "agent" / "tickets").is_dir()
     assert range_.startswith("lamp@") == qualified, f"{range_} in the tracker's own repo: {not qualified}"
     assert re.fullmatch(r"(lamp@)?[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}", range_), range_
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
