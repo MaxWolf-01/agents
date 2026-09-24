@@ -195,6 +195,34 @@ def test_a_ruling_with_no_date_is_refused_rather_than_leaving_the_question_open(
     assert "a ruling is `Ruled <date>: the answer`" in said.out
 
 
+@pytest.mark.parametrize("shape, said", [
+    ("  Ruled 2026-09-21: per bank.", "lazily continuing the question's own line"),
+    ("\n     Ruled 2026-09-21: per bank.", "indented under it after a blank line"),
+])
+def test_a_ruling_that_is_no_bullet_of_its_own_is_refused_rather_than_read_as_the_detail(
+    tickets: Path, repo: Path, shape: str, said: str
+) -> None:
+    """CommonMark folds a line under a bullet into that bullet, so a ruling written without its own
+    `- ` lands in the question's detail: the writer sees their answer in the file and every reader
+    still shows the question as open. `ticket-file-contract#P1`."""
+    path = ticket(tickets, "one-flow", f"## Questions\n\n- [D1] **Ask?** Its detail.\n{shape}\n")
+    read = run(repo, "check", str(path))
+    assert read.code == 1, said
+    assert f"{path}:{line_of(path, 'Ruled 2026-09-21')}: this ruling is no bullet of its own" in read.out, said
+    assert "a ruling is `- Ruled <date>: the answer`, under its question" in read.out
+
+
+def test_a_ruling_bulleted_under_its_question_answers_it(tickets: Path, repo: Path) -> None:
+    """The shape every ticket in the tracker writes, and what `tracker rule` writes: the refusal
+    above holds only for the ones that are no bullet."""
+    ticket(tickets, "one-flow", "## Questions\n\n- [D1] **Ask?** Its detail.\n  - Ruled 2026-09-21: per bank.\n"
+           "- [D2] **Ruled out is prose?** Two ways out.\n  Ruled out: a third, since the suite is slow.\n")
+    assert run(repo, "check", "agent/tickets/one-flow.md") == Run(0, "", "")
+    read = {q["tag"]: q for q in json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["questions"]}
+    assert (read["D1"]["ruled"], read["D1"]["answer"]) == ("2026-09-21", "per bank.")
+    assert read["D2"]["ruled"] is None and "Ruled out: a third" in read["D2"]["detail"]
+
+
 @pytest.mark.parametrize("written, refused", [
     ("Addressed: D1, D2, D3", "`D1` is no comment id"),
     ("Addressed: C1, oh and C4", "`oh and C4` is no comment id"),

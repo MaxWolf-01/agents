@@ -24,6 +24,12 @@ SAYS = {
         "through; it says nothing here because every file passes. <code>tracker frontier</code> "
         "reads the same files and answers what can be started now."
     ),
+    "a ruling its writer did not bullet": (
+        "A line indented under a bullet continues that bullet, so a ruling written without a "
+        "<code>- </code> of its own lands in the question's detail: the writer sees their answer in "
+        "the file and every reader still shows the question as open. The check refuses it where it "
+        "was written, naming the line."
+    ),
     "property-coverage, over the tracker rather than a feature directory": (
         "A property is stated once, on the ticket it holds for, and a criterion anywhere in the "
         "tree takes it on by citing it. <code>property-coverage</code> asks the one question that "
@@ -66,7 +72,8 @@ SAYS = {
     "review --spec, given a slug rather than a path": (
         "<code>--spec</code> takes a ticket's slug and writes the assembly above into the report "
         "directory as <code>ticket.md</code>, which is the file the reviewers read. A path still "
-        "means the file it names."
+        "means the file it names. Light mode takes it too: its one reviewer judges the diff against "
+        "what the ticket asked for as well, which is the part its brief gains at the end."
     ),
     "the board, before and after": (
         "Two renders of the same tracker: the board from the commit this branch cut from, over the "

@@ -944,7 +944,7 @@ def read(path: Path, text: str) -> Ticket:
     if not any(section.heading.lower() == "brief" for section in written):
         refusals.append(Refusal(path, body_line, "no `## Brief` section; the brief is what a row tells the user, reading cold"))
 
-    questions = read_questions(path, written, refusals)
+    questions = read_questions(path, written, dict(lines), refusals)
     assumptions = read_assumptions(path, lines, refusals)
     resolved = read_addressed(path, lines, refusals)
     properties = read_properties(path, written, refusals)
@@ -1015,10 +1015,13 @@ def brief_of(written: Sequence[Section]) -> str:
     return " ".join(" ".join(section.text.split()) for section in section_named(written, "brief")).strip()
 
 
-def read_questions(path: Path, written: Sequence[Section], refusals: list[Refusal]) -> list[Question]:
+def read_questions(
+    path: Path, written: Sequence[Section], numbered: dict[int, str], refusals: list[Refusal]
+) -> list[Question]:
     """Every question the ticket asks: a top-level bullet, as every reader of one looks for. A
     top-level bullet that is not a question is refused, since a reader takes it for the detail of
-    the question above it."""
+    the question above it. `numbered` is the body's unfenced lines by line, which is what a ruling
+    that is no bullet of its own is found in."""
     found = []
     for section in section_named(written, "questions"):
         asking = False
@@ -1032,15 +1035,23 @@ def read_questions(path: Path, written: Sequence[Section], refusals: list[Refusa
                     refusals.append(Refusal(path, bullet.line, "this bullet is read as part of the question above it; a question is `- [Dn] **headline** detail`"))
                 continue
             asking = True
-            found.append(question(path, bullet, item, refusals))
+            found.append(question(path, bullet, item, numbered, refusals))
     return found
 
 
-def question(path: Path, bullet: Bullet, item: re.Match, refusals: list[Refusal]) -> Question:
+def question(
+    path: Path, bullet: Bullet, item: re.Match, numbered: dict[int, str], refusals: list[Refusal]
+) -> Question:
     ruling = next((RULED.fullmatch(under.head) for under in bullet.under if RULED.fullmatch(under.head)), None)
     for under in bullet.under:
         if SAYS_RULED.match(under.head) and not RULED.fullmatch(under.head):
             refusals.append(Refusal(path, under.line, "this ruling carries no date, so no reader takes the question as answered; a ruling is `Ruled <date>: the answer`"))
+    # A line under the question that is no bullet of its own continues the question (CommonMark), so
+    # its words land in the detail and the question stays open with nothing saying why.
+    opens = {one.line for one in flat([bullet])}
+    for number in range(bullet.line, bullet.last + 1):
+        if number not in opens and RULED.fullmatch(numbered.get(number, "").strip()):
+            refusals.append(Refusal(path, number, "this ruling is no bullet of its own, so every reader takes it for the question's detail and the question stays open; a ruling is `- Ruled <date>: the answer`, under its question"))
     headline = HEADLINE.fullmatch(item.group(2).strip())
     if not headline:
         refusals.append(Refusal(path, bullet.line, f"{item.group(1)} has no bold headline; a question is `- [Dn] **headline** detail`"))

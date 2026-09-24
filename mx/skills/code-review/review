@@ -21,7 +21,9 @@
 #            and whatever discussion the reviewers should not reopen. The spec
 #            and tests axes both read it, so both need it.
 #   --light  one reviewer over the correctness and standards briefs joined,
-#            for work with no spec to check, reporting as the `light` axis.
+#            reporting as the `light` axis. With --spec it takes that brief's
+#            third part too, so one reviewer judges the diff against what was
+#            asked for as well.
 #   --effort every reviewer's effort, `high` by default; `claude --help` lists
 #            the levels.
 #   --model  every reviewer's model, `opus` by default.
@@ -140,7 +142,6 @@ touches '(^|/)CONTEXT(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
-    [ -z "$spec" ] || die "--light has no Spec axis; run the full axes with a spec, or drop --spec"
     axes=light
 elif [ -z "$axes" ]; then
     axes=correctness,standards
@@ -247,6 +248,10 @@ render() { # <axis>
     commits=$(git log --oneline "$base..$head")
     case $axis in
         light) parts="preamble correctness standards light"
+               # The one reviewer judges the diff against what was asked for
+               # too, where the caller named it; with no --spec that part is
+               # left out, and the brief's own words say which of the two it is.
+               [ -z "$spec" ] || parts="$parts asked"
                # Full messages, so the one reviewer gets the author's account
                # of the work as orientation over the diff.
                commits=$(git log "$base..$head") ;;

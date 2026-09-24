@@ -211,6 +211,19 @@ step "the tracker, in the one shape every script reads"
 echo "  (nothing said: every file passes)"
 ( cd "$toy" && run "$tracker" frontier )
 
+step "a ruling its writer did not bullet"
+
+cp "$toy/agent/tickets/tidy-the-help.md" "$work/tidy.keep"
+cat >> "$toy/agent/tickets/tidy-the-help.md" <<'ASKED'
+
+## Questions
+
+- [D1] **Which four come first?** The daily ones, or the ones the manual opens with.
+  Ruled 2026-09-24: the daily ones.
+ASKED
+( cd "$toy" && run "$tracker" check agent/tickets/tidy-the-help.md ) || true
+cp "$work/tidy.keep" "$toy/agent/tickets/tidy-the-help.md"
+
 step "property-coverage, over the tracker rather than a feature directory"
 
 ( cd "$toy" && run "$plugin/skills/to-tickets/property_coverage.py" ) || true
@@ -290,6 +303,10 @@ chmod +x "$reviewers/claude"
 range=$(cd "$toy" && git rev-parse --short=7 main~1)..$(cd "$toy" && git rev-parse --short=7 HEAD)
 printf '\n  the file the reviewers were handed, agent/reviews/%s/ticket.md:\n\n' "$range"
 short < "$toy/agent/reviews/$range/ticket.md" | sed 's/^/    | /'
+printf '\n  and light mode, one reviewer, given the same slug:\n\n'
+( cd "$toy" && PATH=$reviewers:$PATH run "$plugin/skills/code-review/review" main~1 --light --spec warm-preset )
+printf '\n  the part its brief gained, where a specless light review has none:\n\n'
+sed -n '/^## What the work was asked for/,$p' "$toy/agent/reviews/$range/briefs/light.md" | short | sed 's/^/    | /'
 
 step "the board, before and after"
 

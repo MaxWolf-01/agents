@@ -29,7 +29,7 @@ The scripts that read or write ticket files move onto the `tracker` command from
 - [x] `dispatch` runs one ticket end to end on a throwaway repo in the new layout: claim, spawn, the `review` flip read from the ticket branch, the review page, the landing.
 - [x] `ticket-file-contract#P4`: the worker's brief and the review's `--spec` come from the same context assembly.
 - [x] `ticket-file-contract#P5`, reviewed: no script branches on a kind of ticket beyond having child tickets and needing the user.
-- [ ] Every file under `agent/tickets/` passes `tracker`'s check. Every flat ticket does; the seven files under `agent/tickets/figures-and-demos/` cannot, and are what this ticket was told to leave for the parent ticket's cleanup (D2).
+- [x] Every file under `agent/tickets/` passes `tracker`'s check. Every flat ticket does; the seven under `agent/tickets/figures-and-demos/` cannot, and another session has retired them on master, which this branch takes at the merge (D2).
 
 ## Testing seams
 
@@ -47,10 +47,15 @@ own.
 ## Questions
 
 - [D1] **`property-coverage` now asks a question next to the one the line names.** The ticket asks for "every executable property has a check", and the dispositions that said which property is executable (`executable | reviewed | unsliced`) left the machine-read part of a ticket with the old model, so no command can tell one from another. What it checks is that every property a ticket states is cited by some acceptance criterion, anywhere in the tracker: stricter one way (a property disposed *reviewed* is a finding if no criterion cites it) and weaker the other (a citation counts whether or not a check exists). The other reading is to put a disposition back into the criterion's shape, which is what `tracker-command-and-commit-check` deliberately refused (A2).
+  - Ruled 2026-09-24: accepted as built: property-coverage holds every property a ticket states to being cited by some acceptance criterion.
 - [D2] **The seven files under `agent/tickets/figures-and-demos/` are now on no board and pass no check.** They are left as the ticket says, since every one of their tickets shipped, and the parent ticket's cleanup commit retires them. What was not foreseen: the flat reader globs `*.md` at the tracker root, so those tickets are invisible to the board and to `tracker` alike rather than showing as a feature with a pill. They are in git and nothing reads them; the alternative is to retire them now, one commit earlier than the parent ticket's plan (A3).
+  - Ruled 2026-09-24: accepted. figures-and-demos/ is already retired on master, by another session; nothing to do here.
 - [D3] **`mx/README.md` still teaches the three kinds of file**, its Artefacts table naming `agent/tickets/<feature>/spec.md` and `NN-slug.md` with the four decision types, and its flow figure drawing the same. Neither this ticket nor `skills-and-glossary-speak-one-ticket-kind` names it, and it is the file a human reads to learn the workflow, so a reader learns the model this feature replaced. It wants an owner: the prose sibling, this ticket's parent at its cleanup, or `readme-reshoot`, which already exists for the figure.
+  - Ruled 2026-09-24: the prose sibling rewrote mx/README.md; the README's figures wait for readme-reshoot, later. Nothing to do here.
 - [D4] **A `Ruled` line that is not a bullet of its own no longer answers its question.** The board's old reader took `  Ruled 2026-09-21: per bank.` indented under a question as a ruling; the one parser reads a lazily continued line as part of the bullet above it, so that text lands in the question's detail and the question stays open on the board. Every real ticket writes the ruling as a nested bullet and the corpus agrees, so nothing in the tracker moved, but the drift is silent: the writer sees their answer in the file and the board still asks. Either the tracker refuses a `Ruled <date>:` that is not its own bullet, or the rule stays as it is and the prose says so.
+  - Ruled 2026-09-24: tracker check refuses a Ruled line that is not a bullet of its own under its question, naming the file and the line.
 - [D5] **A question a build asks on its ticket branch cannot be ruled with `tracker rule`.** `rule` writes under the question in the tracker's own copy, and until the merge that copy has no `## Questions` at all: the worker's are on the branch. The board reads them from there and shows them, so the user sees the question and the command that answers it refuses. Today the ruling on a build is the accept, amend, redo or reject on its review page, so this may be a question that never needs a `Ruled` line; if it does, either `rule` learns to write the question in as it answers it, or the landing brings the branch's questions into the tracker's copy before the merge.
+  - Ruled 2026-09-24: no copying. A build's questions stay on its ticket branch until the merge: on accept the orchestrator merges and then answers with tracker rule on the merged copy, on amend the answers travel in the guidance and the worker writes the Ruled lines on its own branch. dispatch review stays as it is; the prose sibling's dispatch skill says the order.
 
 ## Comments
 
@@ -100,3 +105,31 @@ The before and after the change owes is the last panel: the same work rendered b
   - Three of this ticket's scripts had no checks at all before it (`dispatch`, `dispatch-ctl`, `run-worker.sh`), so 483 changed lines of them landed on a demo transcript and a reviewer's reading. `test_dispatch.py` is four cases and took twenty minutes; the shape (a toy repo, a stub on the runner seam, the script as a subprocess) was already in the landing demo of `figures-and-demos`, unrun by anything.
   - The board's tests are the largest file in the repo and were written against the old model end to end: about half this ticket's wall clock went into them rather than into the board. A fixture named for the model it tests (`FEAT`, `01-second.md`, `standalone-`) is what made it a rewrite rather than a rename.
   - `tracker check` refuses a ticket with no priority or size, and half the board's fixtures were written without them, which is right and was a hundred small edits. Worth knowing for the next ticket that touches a fixture tracker.
+
+Your rulings of 2026-09-24 are written under their questions. D1, D2 and D3 needed nothing built; D4 and D5 are the round, with the change to light mode beside them, and nothing is merged.
+
+`tracker check` refuses a `Ruled <date>:` line that is no bullet of its own under its question, naming the file and the line (D4). A line merely indented under a bullet continues that bullet, so such a ruling lands in the question's detail: the writer sees their answer in the file and every reader still shows the question as open, which is `ticket-file-contract#P1`. The refusal fires on both shapes, the lazily continued line and the indented one after a blank; a `- Ruled <date>:` bullet and a `Ruled out:` line carrying no date are untouched.
+
+`review --light` takes `--spec`, and its one reviewer judges the diff against what was asked for as well: the light brief gains a fourth part, so a small ticketed diff is no longer reviewed with no view of its ticket. With no `--spec` the brief says there is none and tells the reviewer to invent no requirement.
+
+D5 needed no code: `dispatch review` stays as it is.
+
+**Demo**
+
+```
+$ /home/agent/repos/dispatch/agents-ticket-file-contract-scripts-go-through-tracker-command/agent/show/scripts-go-through-tracker-command/demo
+wrote /home/agent/repos/dispatch/agents-ticket-file-contract-scripts-go-through-tracker-command/agent/show/scripts-go-through-tracker-command/out/index.html
+no display here; open the file above to read it
+```
+
+The same page, with a panel each for the round: "a ruling its writer did not bullet" is the check refusing one, and the `review --spec` panel now runs light mode over the same slug and prints the part its brief gained. The board's before and after is unchanged, at `out/board-before.png` and `out/board-after.png` beside the page.
+
+**Details, if you want them**
+
+- [D9] Assumptions, continuing the block above
+  - A19 `mx/skills/tracker/tracker.py:1042`: the refusal fires on a line that matches a ruling whole, `Ruled <date>:`, and on nothing else. A continuation that merely opens with the word Ruled is prose a writer meant as detail, which is the shape `- [D3] **Ruled out is not a ruling.**` was written in, so refusing every such line would refuse the ticket that explains the rule.
+  - A20 `mx/skills/code-review/briefs/asked.md:1`: what light mode gains with a spec is a part of its own, composed as the other parts are, rather than a paragraph the script writes or a second copy of the Spec axis's brief. The brief a reviewer read is the record of what bound it, so the words stay in `briefs/` where every other reviewer's do.
+  - A21 `mx/skills/code-review/SKILL.md:71`: light mode's own prose is brought along here, since it said the trade was right "exactly where there is no spec" and the script now says otherwise. It is a SKILL.md, which `skills-and-glossary-speak-one-ticket-kind` owns; your ruling came from that ticket's review, so if it made the same edit the orchestrator takes either.
+- [D10] The round
+  - The suite is 354 passing, `make check` clean, `tracker check` clean over every flat ticket, `property-coverage` 14 of 14. Four checks cover the new refusal: the two shapes that are refused, and the two that are not.
+  - Nothing else moved: the first round's findings stand as `ad35c5a` left them, and its assumptions A1 to A18 are as built.

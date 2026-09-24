@@ -271,6 +271,28 @@ def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_revie
     assert not (review_dir(repo) / "briefs").exists(), "nothing was rendered, so nothing was started"
 
 
+def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo):
+    """One reviewer, and the ticket's context in its brief: a small ticketed diff is read against
+    what the ticket asked for rather than on its own terms."""
+    ticketed(repo)
+
+    done = run(repo, "--light", "--spec", "lamp-presets")
+
+    assert done.returncode == 0, done.stderr
+    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "## What the work was asked for" in brief
+    assert str(review_dir(repo) / "ticket.md") in brief
+    assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
+
+
+def test_light_mode_without_a_spec_says_there_is_none_to_judge_against(repo):
+    assert run(repo, "--light").returncode == 0
+    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "## What the work was asked for" not in brief
+    assert "invent no requirement for it" in brief
+    assert not (review_dir(repo) / "ticket.md").exists()
+
+
 def test_a_spec_given_as_a_file_is_read_as_the_file(repo):
     done = run(repo, "--axes", "spec", "--spec", spec(repo))
 
