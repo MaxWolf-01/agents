@@ -2,15 +2,14 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest", "tyro"]
 # ///
-"""Checks for the coverage check over a breakdown. Run: uv run test_property_coverage.py
+"""Checks for the coverage check over a tracker. Run: pytest test_property_coverage.py
 
-Three seams: `check`, a feature directory on disk in and findings out; `main`, the same with the
-exit code and the lines a session reads; and the command a to-tickets session types, run as a
-subprocess. The oracle is the ticket this was cut from and the two skills it enforces: every
-property the spec states is named by some ticket's acceptance criteria; a criterion naming a
-property the spec does not have fails too; a property no slice can hold is disposed of where the
-others are, so absent and unsliceable stop reading alike; ids are permanent, so a gap in them is
-not a finding and a repeat is; a criterion outside the acceptance criteria disposes of nothing.
+Three seams: `check`, a tracker on disk in and findings out; `main`, the same with the exit code and
+the lines a session reads; and the command a session types, run as a subprocess. The oracle is
+`agent/tickets/ticket-file-contract.md` (properties stated once on the ticket they hold for, cited
+`<slug>#P<n>`, read through the ancestry) and `tracker --help`: a property is a `- P<n>` bullet under
+`## Properties`, a criterion is a checkbox under `## Acceptance criteria`, and a citation that names
+no ticket or property is the tracker's refusal, not a finding of this command's.
 """
 
 import subprocess
@@ -30,25 +29,39 @@ PROPERTIES = [
     "P3 Every preset is demonstrated lit, never read.",
     "P10 A tenth property, so that an id runs to two digits.",
 ]
-ALL_FOUR = "\n".join(f"- [ ] Property {id}, reviewed: this slice's half of it." for id in ("P1", "P2", "P3", "P10"))
+ALL_FOUR = "\n".join(f"- [ ] `lamp#{id}`: this slice's half of it." for id in ("P1", "P2", "P3", "P10"))
 
 
-def feature(dir: Path, properties: list[str] | None = None, **tickets: str) -> Path:
-    """A feature directory: a spec stating properties, and one ticket per keyword whose acceptance
-    criteria are the lines passed. `one=...` becomes ticket 01-one.md."""
-    dir.mkdir(parents=True, exist_ok=True)
-    bullets = "\n".join(f"- {p}" for p in properties or PROPERTIES)
-    (dir / "spec.md").write_text(f"---\nstatus: confirmed\n---\n\n# Lamp\n\n## Properties\n\n{bullets}\n\n## Decisions\n\n- P9 is a decision, not a property.\n")
-    for number, (name, criteria) in enumerate(sorted(tickets.items()), start=1):
-        ticket(dir, f"{number:02d}-{name.replace('_', '-')}.md", criteria)
-    return dir
+@pytest.fixture
+def tracker(tmp_path: Path) -> Path:
+    """An empty tracker, with the repo around it a caller runs the command in."""
+    root = tmp_path / "repo" / "agent" / "tickets"
+    root.mkdir(parents=True)
+    return root
 
 
-def ticket(dir: Path, name: str, criteria: str, elsewhere: str = "") -> Path:
-    """One ticket: its acceptance criteria, and whatever else its body says."""
-    path = dir / name
-    path.write_text(f"---\nstatus: proposed\n---\n\n# {name}\n\n## What to build\n\n{elsewhere}\n\n## Acceptance criteria\n\n{criteria}\n\n## Comments\n\n### Closing\n")
+def ticket(root: Path, slug: str, criteria: str = "", properties: list[str] | None = None,
+           parent: str = "", brief: str = "What this ticket is for.") -> Path:
+    """One ticket the tracker's rules accept: the properties it states, and the criteria that cite
+    them or any others'."""
+    front = ["status: proposed"] + ([f"parent: {parent}"] if parent else []) + ["priority: 2", "size: S"]
+    stated = "## Properties\n\n" + "\n".join(f"- {one}" for one in properties) + "\n\n" if properties else ""
+    path = root / f"{slug}.md"
+    path.write_text(
+        "---\n" + "\n".join(front) + "\n---\n\n"
+        f"# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n{brief}\n\n"
+        f"{stated}## Acceptance criteria\n\n{criteria}\n\n## Comments\n"
+    )
     return path
+
+
+def lamp(root: Path, properties: list[str] | None = None, **tickets: str) -> Path:
+    """The tracker the checks read: a `lamp` ticket stating properties, and one child ticket per
+    keyword whose acceptance criteria are the lines passed."""
+    ticket(root, "lamp", properties=properties or PROPERTIES)
+    for slug, criteria in sorted(tickets.items()):
+        ticket(root, slug.replace("_", "-"), criteria, parent="lamp")
+    return root
 
 
 def findings(report) -> list[str]:
@@ -60,263 +73,137 @@ def line_of(path: Path, text: str) -> int:
     return path.read_text().splitlines().index(text) + 1
 
 
-def test_every_property_named_by_a_ticket_passes(tmp_path: Path) -> None:
-    report = check(feature(
-        tmp_path / "lamp",
-        one="- [ ] Property P1, reviewed: the preset file says what it is.\n- [ ] Property P2, reviewed: nothing waits for a name.",
-        two="- [ ] Property P3, executable: the seam is the preset renderer.\n- [ ] Property P10, reviewed: the tenth.",
-    ))
+def test_every_property_cited_by_a_criterion_passes(tracker: Path) -> None:
+    report = check(lamp(tracker, one=ALL_FOUR))
     assert findings(report) == []
-    assert report.disposed == {"P1", "P2", "P3", "P10"}
-    assert report.summary == "4 properties, 4 disposed of, 0 findings"
+    assert report.summary == "4 properties, 4 cited, 0 findings"
 
 
-def test_a_property_no_ticket_names_fails_and_is_named(tmp_path: Path) -> None:
-    dir = feature(
-        tmp_path / "lamp",
-        one="- [ ] Property P1, reviewed: the preset file says what it is.\n- [ ] Property P3, reviewed: the demo lights the lamp.\n- [ ] Property P10, reviewed: the tenth.",
-    )
-    report = check(dir)
-    assert findings(report) == ["P2 reached no ticket: No preset blocks on the user naming it."]
-    assert report.findings[0].at.path.name == "spec.md"
-    assert report.findings[0].at.number == line_of(dir / "spec.md", f"- {PROPERTIES[1]}")
+def test_a_property_no_criterion_cites_is_a_finding_at_the_line_it_is_stated_on(tracker: Path) -> None:
+    lamp(tracker, one=ALL_FOUR.replace("- [ ] `lamp#P2`: this slice's half of it.\n", ""))
+    report = check(tracker)
+    assert findings(report) == [f"lamp#P2 reached no acceptance criterion: {PROPERTIES[1][3:]}"]
+    assert report.findings[0].at.path == tracker / "lamp.md"
+    assert report.findings[0].at.line == line_of(tracker / "lamp.md", f"- {PROPERTIES[1]}")
+    assert report.summary == "4 properties, 3 cited, 1 finding"
 
 
-def test_a_criterion_naming_a_property_the_spec_lacks_fails(tmp_path: Path) -> None:
-    dir = feature(tmp_path / "lamp", one=f"{ALL_FOUR}\n- [ ] Property P9, reviewed: the decision it read as a property.")
-    report = check(dir)
-    assert [f.what.split(" is not")[0] for f in report.findings] == ["P9"]
-    assert report.findings[0].at.path.name == "01-one.md"
-    assert report.findings[0].at.number == line_of(dir / "01-one.md", "- [ ] Property P9, reviewed: the decision it read as a property.")
-    assert report.disposed == {"P1", "P2", "P3", "P10"}  # the claim on P9 credits nothing
-
-
-def test_a_criterion_naming_no_property_fails(tmp_path: Path) -> None:
-    """The form the breakdowns used before properties carried ids: it claims a property without saying which."""
-    report = check(feature(
-        tmp_path / "lamp",
-        one="- [x] Property, reviewed: the preset file says what it is.\n- [ ] Property P2, reviewed: b.\n- [ ] Property P3, reviewed: c.\n- [ ] Property P10, reviewed: d.",
-    ))
-    assert "criterion names no property id" in findings(report)
-    assert "P1 reached no ticket: A lamp reads cold: the preset says what it is." in findings(report)
-
-
-def test_a_disposition_that_is_none_of_the_three_fails(tmp_path: Path) -> None:
-    report = check(feature(tmp_path / "lamp", one=ALL_FOUR.replace("Property P1, reviewed", "Property P1, checked")))
-    assert findings(report) == ["disposition checked is none of reviewed, executable, unsliced"]
-
-
-def test_a_criterion_naming_neither_is_not_a_claim(tmp_path: Path) -> None:
-    """A bullet that merely opens with the word: a domain noun, or a half-written criterion."""
-    report = check(feature(
-        tmp_path / "lamp",
-        one=f"{ALL_FOUR}\n- [ ] Property cards render in a grid.\n- [ ] Property\n- Property.",
+def test_a_property_is_cited_from_any_ticket_of_the_tree(tracker: Path) -> None:
+    """A property is stated once and read through the ancestry, so the slice that takes it on is
+    rarely the ticket that states it."""
+    report = check(lamp(
+        tracker,
+        one="- [ ] `lamp#P1`: the preset file.\n- [ ] `lamp#P3`: the demo.",
+        two="- [ ] `lamp#P2`: the naming.\n- [ ] `lamp#P10`: the tenth.",
     ))
     assert findings(report) == []
 
 
-def test_a_property_no_slice_holds_is_disposed_of_where_the_others_are(tmp_path: Path) -> None:
-    """An unsliced property passes, so absent and unsliceable stop reading alike."""
-    report = check(feature(
-        tmp_path / "lamp",
-        one="- [ ] Property P1, reviewed: a.\n- [ ] Property P2, reviewed: b.\n- [ ] Property P10, reviewed: d.\n- Property P3, unsliced: every slice's demo shows it; no one slice makes it true.",
-    ))
+def test_a_citation_outside_the_acceptance_criteria_disposes_of_nothing(tracker: Path) -> None:
+    """A brief that mentions a property is prose; what takes one on is a criterion."""
+    ticket(tracker, "lamp", properties=["P1 A lamp reads cold."])
+    ticket(tracker, "one", criteria="- [ ] The brightness slider moves.",
+           parent="lamp", brief="Cut from `lamp#P1`, which this is not the check for.")
+    assert findings(check(tracker)) == ["lamp#P1 reached no acceptance criterion: A lamp reads cold."]
+
+
+def test_a_tracker_whose_tickets_state_no_property_passes(tracker: Path) -> None:
+    ticket(tracker, "one", criteria="- [ ] The brightness slider moves.")
+    report = check(tracker)
+    assert report.summary == "0 properties, 0 cited, 0 findings"
     assert findings(report) == []
-    assert report.disposed == {"P1", "P2", "P3", "P10"}
 
 
-def test_a_bolded_criterion_is_a_claim_like_any_other(tmp_path: Path) -> None:
-    report = check(feature(tmp_path / "lamp", one=ALL_FOUR.replace("- [ ] Property P1,", "- [ ] **Property P1**,")))
-    assert findings(report) == []
-    assert report.disposed == {"P1", "P2", "P3", "P10"}
-
-
-def test_a_claim_outside_the_acceptance_criteria_disposes_of_nothing(tmp_path: Path) -> None:
-    """A criterion quoted in the ticket's prose, or in a closing comment, holds no property."""
-    dir = feature(tmp_path / "lamp", one=ALL_FOUR.replace("- [ ] Property P2, reviewed: this slice's half of it.\n", ""))
-    ticket(dir, "01-one.md", ALL_FOUR.replace("- [ ] Property P2, reviewed: this slice's half of it.\n", ""),
-           elsewhere="The slice the format is quoted in:\n\n- [ ] Property P2, reviewed: written where nothing reads it.")
-    report = check(dir)
-    assert findings(report) == ["P2 reached no ticket: No preset blocks on the user naming it."]
-
-
-def test_a_property_two_tickets_hold_is_named_by_both(tmp_path: Path) -> None:
-    """A reviewed property is stamped onto each ticket touching its area, so a repeat is not a finding."""
-    dir = feature(
-        tmp_path / "lamp",
-        one="- [ ] Property P1, reviewed: a.\n- [ ] Property P2, reviewed: b.",
-        two="- [ ] Property P1, reviewed: the same property, this slice's half of it.\n- [ ] Property P3, reviewed: c.\n- [ ] Property P10, reviewed: d.",
-    )
-    report = check(dir)
-    assert findings(report) == []
-    assert report.summary == "4 properties, 4 disposed of, 0 findings"  # the repeat is one property, not two
-
-
-def test_a_spec_whose_properties_carry_no_ids_says_so_once(tmp_path: Path) -> None:
-    """Every criterion of a breakdown cut before the ids would fail too; the list is what to fix first."""
-    report = check(feature(
-        tmp_path / "lamp",
-        ["A lamp reads cold.", "No preset blocks."],
-        one="- [ ] Property, reviewed: the preset file says what it is.",
-    ))
-    assert findings(report) == ["the Properties list carries no ids; number it P1 onward, 2 properties"]
-
-
-def test_one_property_left_unnumbered_is_named_on_its_own_line(tmp_path: Path) -> None:
-    dir = feature(
-        tmp_path / "lamp",
-        ["P1 A lamp reads cold.", "A property added in a later round, unnumbered."],
-        one="- [ ] Property P1, reviewed: a.",
-    )
-    report = check(dir)
-    assert findings(report) == ["property with no id"]
-    assert report.findings[0].at.number == line_of(dir / "spec.md", "- A property added in a later round, unnumbered.")
-
-
-def test_a_sub_bullet_under_a_property_continues_it(tmp_path: Path) -> None:
-    dir = tmp_path / "lamp"
-    feature(dir, ["P1 A lamp reads cold."], one="- [ ] Property P1, reviewed: a.")
-    (dir / "spec.md").write_text((dir / "spec.md").read_text().replace("- P1 A lamp reads cold.\n", "- P1 A lamp reads cold.\n  - which the preset file is what says\n"))
-    report = check(dir)
-    assert findings(report) == []
-    assert [p.id for p in report.properties] == ["P1"]
-
-
-def test_only_the_properties_section_is_read(tmp_path: Path) -> None:
-    """A heading that merely starts with the word carries bullets of its own."""
-    dir = tmp_path / "lamp"
-    feature(dir, ["P1 A lamp reads cold."], one="- [ ] Property P1, reviewed: a.")
-    (dir / "spec.md").write_text((dir / "spec.md").read_text().replace("## Decisions", "## Properties of the rendered page\n\n- P5 An id nobody claims.\n\n## Decisions"))
-    report = check(dir)
-    assert findings(report) == []
-    assert [p.id for p in report.properties] == ["P1"]
-
-
-def test_a_spec_with_no_properties_section_says_so_and_passes(tmp_path: Path) -> None:
-    dir = tmp_path / "lamp"
-    feature(dir, ["P1 A lamp reads cold."], one="- [ ] Property P1, reviewed: a.")
-    (dir / "spec.md").write_text("---\nstatus: confirmed\n---\n\n# Lamp\n\n## Decisions\n\n- Nothing to hold.\n")
-    report = check(dir)
-    assert report.findings == []
-    assert report.summary == f"no ## Properties section in {dir / 'spec.md'}"
-
-
-def test_an_empty_properties_section_is_a_finding(tmp_path: Path) -> None:
-    """The section is there and states nothing: a list someone meant to fill, not a spec without properties."""
-    dir = tmp_path / "lamp"
-    feature(dir, ["P1 A lamp reads cold."], one="- [ ] Property P1, reviewed: a.")
-    (dir / "spec.md").write_text("---\nstatus: confirmed\n---\n\n# Lamp\n\n## Properties\n\n## Decisions\n\n- Nothing to hold.\n")
-    report = check(dir)
-    assert findings(report) == ["the Properties section states none"]
-    assert report.findings[0].at.number == line_of(dir / "spec.md", "## Properties")
-
-
-def test_one_id_on_two_properties_fails(tmp_path: Path) -> None:
-    dir = feature(
-        tmp_path / "lamp",
-        ["P1 A lamp reads cold.", "P1 A second property that took the same id.", "P1 A third, taking it again."],
-        one="- [ ] Property P1, reviewed: a.",
-    )
-    first = line_of(dir / "spec.md", "- P1 A lamp reads cold.")
-    assert findings(check(dir)) == [f"P1 is already the id of the property at line {first}"] * 2  # both point at the original
-
-
-def test_ids_are_permanent_so_a_gap_where_one_was_retired_is_no_finding(tmp_path: Path) -> None:
-    report = check(feature(
-        tmp_path / "lamp",
+def test_ids_are_permanent_so_a_gap_where_one_was_retired_is_no_finding(tracker: Path) -> None:
+    report = check(lamp(
+        tracker,
         ["P1 A lamp reads cold.", "P7 A property whose neighbours were retired."],
-        one="- [ ] Property P1, reviewed: a.\n- [ ] Property P7, reviewed: b.",
+        one="- [ ] `lamp#P1`: a.\n- [ ] `lamp#P7`: b.",
     ))
     assert findings(report) == []
 
 
-def test_a_ticket_with_no_criteria_of_its_own_is_read_without_complaint(tmp_path: Path) -> None:
-    report = check(feature(
-        tmp_path / "lamp",
-        ["P1 A lamp reads cold."],
-        one="- [ ] Property P1, reviewed: a.",
-        two="- [ ] The brightness slider moves.",
-    ))
-    assert findings(report) == []
+def test_a_citation_that_names_no_property_is_the_trackers_refusal_and_not_a_finding(tracker: Path) -> None:
+    """One parser: a dangling citation is refused where the text was written, and this command
+    exits with that refusal rather than reporting a coverage finding over a tracker no reader can
+    read."""
+    lamp(tracker, ["P1 A lamp reads cold."], one="- [ ] `lamp#P4`: a property the ticket does not state.")
+    with pytest.raises(SystemExit) as stopped:
+        check(tracker)
+    assert "`lamp#P4` names no property; lamp states P1" in str(stopped.value)
 
 
-def test_a_property_is_quoted_whole_up_to_the_width_of_a_line(tmp_path: Path) -> None:
-    sixty = "P1 " + "A lamp reads cold, and says so in the preset file." .ljust(60, ".")
-    report = check(feature(tmp_path / "lamp", [sixty], one="- [ ] The brightness slider moves."))
-    assert findings(report) == [f"P1 reached no ticket: {sixty[3:]}"]
+def test_the_findings_come_out_in_the_order_the_properties_are_stated_in(tracker: Path) -> None:
+    """A session reads them top down and fixes them in that order, so two uncovered properties on two
+    tickets come out as the tracker states them."""
+    ticket(tracker, "lamp", properties=["P1 A lamp reads cold.", "P2 No preset blocks on the user."])
+    ticket(tracker, "dimmer", properties=["P1 A dimmer never flickers."], parent="lamp")
+    report = check(tracker)
+    assert [f.at.ref for f in report.findings] == ["dimmer#P1", "lamp#P1", "lamp#P2"]
 
 
-def test_a_property_too_long_to_quote_whole_is_cut_at_a_word(tmp_path: Path) -> None:
-    report = check(feature(
-        tmp_path / "lamp",
+def test_a_property_is_quoted_whole_up_to_the_width_of_a_line(tracker: Path) -> None:
+    sixty = "P1 " + "A lamp reads cold, and says so in the preset file.".ljust(60, ".")
+    report = check(lamp(tracker, [sixty], one="- [ ] The brightness slider moves."))
+    assert findings(report) == [f"lamp#P1 reached no acceptance criterion: {sixty[3:]}"]
+
+
+def test_a_property_too_long_to_quote_whole_is_cut_at_a_word(tracker: Path) -> None:
+    report = check(lamp(
+        tracker,
         ["P1 A lamp reads cold, and every preset it carries says what it is without a conversation."],
         one="- [ ] The brightness slider moves.",
     ))
-    assert findings(report) == ["P1 reached no ticket: A lamp reads cold, and every preset it carries says what it..."]
-
-
-def test_a_property_with_no_word_break_to_cut_at_is_cut_at_the_width(tmp_path: Path) -> None:
-    report = check(feature(
-        tmp_path / "lamp",
-        ["P1 " + "a" * 80],
-        one="- [ ] The brightness slider moves.",
-    ))
-    assert findings(report) == [f"P1 reached no ticket: {'a' * 60}..."]
-
-
-def test_a_clean_breakdown_exits_zero_and_counts_what_it_read(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-    dir = feature(tmp_path / "lamp", one=ALL_FOUR)
-    with pytest.raises(SystemExit) as exit:
-        main(Args(dir))
-    assert exit.value.code == 0
-    out = capsys.readouterr()
-    assert out.out == ""
-    assert out.err.strip() == "4 properties, 4 disposed of, 0 findings"
-
-
-def test_a_breakdown_that_misses_a_property_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-    """The findings a session works down: the spec's in the order it states them, then the tickets' in order."""
-    dir = feature(
-        tmp_path / "lamp",
-        one="- [ ] Property P1, reviewed: a.\n- [ ] Property, reviewed: which one?",
-        two="- [ ] Property P3, reviewed: c.\n- [ ] Property P9, reviewed: no such property.",
-    )
-    spec, one, two = dir / "spec.md", dir / "01-one.md", dir / "02-two.md"
-    with pytest.raises(SystemExit) as exit:
-        main(Args(dir))
-    assert exit.value.code == 1
-    out = capsys.readouterr()
-    assert out.out.splitlines() == [
-        f"{one}:{line_of(one, '- [ ] Property, reviewed: which one?')}: criterion names no property id",
-        f"{spec}:{line_of(spec, f'- {PROPERTIES[1]}')}: P2 reached no ticket: No preset blocks on the user naming it.",
-        f"{spec}:{line_of(spec, f'- {PROPERTIES[3]}')}: P10 reached no ticket: A tenth property, so that an id runs to two digits.",
-        f"{two}:{line_of(two, '- [ ] Property P9, reviewed: no such property.')}: P9 is not a property of {spec}",
+    assert findings(report) == [
+        "lamp#P1 reached no acceptance criterion: A lamp reads cold, and every preset it carries says what it..."
     ]
-    assert out.err.strip() == "4 properties, 2 disposed of, 4 findings"
 
 
-def test_a_directory_that_is_not_a_breakdown_says_which_half_is_missing(tmp_path: Path) -> None:
-    (tmp_path / "chore").mkdir()
-    with pytest.raises(SystemExit) as no_spec:
-        main(Args(tmp_path / "chore"))
-    assert "no spec.md" in str(no_spec.value)
-    with pytest.raises(SystemExit) as no_tickets:
-        main(Args(feature(tmp_path / "lamp")))
-    assert "no NN-<slug>.md tickets" in str(no_tickets.value)
+def test_a_property_with_no_word_break_to_cut_at_is_cut_at_the_width(tracker: Path) -> None:
+    report = check(lamp(tracker, ["P1 " + "x" * 80], one="- [ ] The brightness slider moves."))
+    assert findings(report) == [f"lamp#P1 reached no acceptance criterion: {'x' * 60}..."]
 
 
-def test_the_command_a_session_types_takes_the_directory_as_it_stands(tmp_path: Path) -> None:
-    """`property-coverage <feature dir>`, the invocation the skill publishes, through the wrapper on PATH."""
-    clean = feature(tmp_path / "lamp", one=ALL_FOUR)
-    run = subprocess.run([str(COMMAND), str(clean)], capture_output=True, text=True)
-    assert run.returncode == 0, run.stderr
-    assert run.stderr.strip() == "4 properties, 4 disposed of, 0 findings"
-
-    missing = feature(tmp_path / "torch", one="- [ ] Property P1, reviewed: a.\n- [ ] Property P2, reviewed: b.\n- [ ] Property P3, reviewed: c.")
-    run = subprocess.run([str(COMMAND), str(missing)], capture_output=True, text=True)
-    assert run.returncode == 1
-    assert run.stdout.splitlines() == [f"{missing / 'spec.md'}:{line_of(missing / 'spec.md', f'- {PROPERTIES[3]}')}: P10 reached no ticket: A tenth property, so that an id runs to two digits."]
+# ---- what a session reads --------------------------------------------------
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+def test_a_covered_tracker_exits_zero_and_says_what_it_read(tracker: Path, capsys: pytest.CaptureFixture) -> None:
+    lamp(tracker, one=ALL_FOUR)
+    with pytest.raises(SystemExit) as stopped:
+        main(Args(at=tracker))
+    assert stopped.value.code == 0
+    said = capsys.readouterr()
+    assert said.out == ""
+    assert said.err.strip() == "4 properties, 4 cited, 0 findings"
+
+
+def test_an_uncovered_property_exits_one_with_the_finding_on_stdout(tracker: Path, capsys: pytest.CaptureFixture) -> None:
+    lamp(tracker, ["P1 A lamp reads cold."], one="- [ ] The brightness slider moves.")
+    with pytest.raises(SystemExit) as stopped:
+        main(Args(at=tracker))
+    assert stopped.value.code == 1
+    said = capsys.readouterr()
+    assert said.out.strip() == f"{tracker / 'lamp.md'}:{line_of(tracker / 'lamp.md', '- P1 A lamp reads cold.')}: lamp#P1 reached no acceptance criterion: A lamp reads cold."
+    assert said.err.strip() == "1 properties, 0 cited, 1 finding"
+
+
+def test_a_path_that_is_no_directory_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        check(tmp_path / "nowhere")
+    assert "no directory at" in str(stopped.value)
+
+
+def test_the_command_finds_the_tracker_from_the_directory_it_is_run_in(tracker: Path) -> None:
+    """What a session types: no argument, and the tracker above the working directory."""
+    lamp(tracker, ["P1 A lamp reads cold."], one="- [ ] The brightness slider moves.")
+    said = subprocess.run([str(COMMAND)], cwd=tracker.parent.parent, capture_output=True, text=True)
+    assert said.returncode == 1
+    assert said.stdout.strip().endswith("lamp#P1 reached no acceptance criterion: A lamp reads cold.")
+    assert "1 properties, 0 cited, 1 finding" in said.stderr
+
+
+def test_the_command_exits_with_the_trackers_own_refusal(tracker: Path) -> None:
+    (tracker / "broken.md").write_text("no frontmatter here\n")
+    said = subprocess.run([str(COMMAND), str(tracker)], capture_output=True, text=True)
+    assert said.returncode != 0
+    assert "no frontmatter" in said.stderr

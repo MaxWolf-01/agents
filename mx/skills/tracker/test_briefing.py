@@ -5,7 +5,7 @@
 """The briefing session's schedule. Run: uv run test_briefing.py
 
 The seam the spec names is `on_change`, a pure function of the cache file's state, the change's
-time and the clock. The oracle is the Property of agent/tickets/board-orients/spec.md, in the
+time and the clock. The oracle is the Property of mx/skills/tracker/corpus/board-orients.md, in the
 windows the user ruled on 2026-09-23 (ticket 16): the session is pinged once the tracker has gone
 five minutes without a ticket's status moving, no sooner than ten minutes after the last briefing,
 and never outlives its idle hour or its ping cap. `ping` is a second seam, which the Testing

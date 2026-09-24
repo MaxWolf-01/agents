@@ -2,14 +2,16 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest"]
 # ///
-"""Checks for `review`'s range lock and its reviewers' launch line. Run: uv run test_review.py
+"""Checks for `review`'s range lock, its reviewers' launch line and what `--spec` reads. Run: uv run test_review.py
 
 The seam is the script itself, run in a scratch repo with a stand-in `claude` on PATH that
 records its arguments, works for a set time and writes the report its brief names. The oracles
 are the user's rulings in `agent/tickets/review-launcher.md`: D113, a review that was killed,
 by kill -9 or a crash, never blocks a later one, and a review that is still running, or anything
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
-caller's setup and runs Opus at the effort the caller gives, `high` by default.
+caller's setup and runs Opus at the effort the caller gives, `high` by default; and
+`agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
+every ancestor's, assembled by the one command that assembles a worker's brief.
 """
 
 import json
@@ -232,12 +234,81 @@ def test_every_reviewer_runs_opus_at_high_effort_unless_told_otherwise(repo):
     assert value(launched(repo), "--effort") == "low"
 
 
-def test_a_missing_report_is_rerun_at_the_same_effort(repo):
-    done = run(repo, "--axes", "correctness", "--effort", "low", FAKE_NO_REPORT="1")
+# ticket-file-contract#P4: what --spec reads
+
+
+def ticketed(repo: Path) -> Path:
+    """The repo with a tracker in it: a parent ticket and the child ticket the work is for."""
+    tickets = repo / "agent" / "tickets"
+    for slug, body in (
+        ("lamp", "---\nstatus: open\npriority: 2\nsize: L\n---\n\n# Lamp\n\n## Brief\n\nWhat the whole lamp is for.\n"),
+        ("lamp-presets", "---\nstatus: claimed\nparent: lamp\npriority: 2\nsize: S\n---\n\n# Lamp presets\n\n## Brief\n\nThe preset file.\n"),
+    ):
+        commit(repo, f"agent/tickets/{slug}.md", body)
+    return tickets
+
+
+def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
+    ticketed(repo)
+
+    done = run(repo, "--axes", "spec", "--spec", "lamp-presets")
+
+    assert done.returncode == 0, done.stderr
+    assembled = (review_dir(repo) / "ticket.md").read_text()
+    assert assembled.startswith("## lamp-presets")
+    assert "## parent ticket: lamp" in assembled
+    assert "What the whole lamp is for." in assembled
+    assert str(review_dir(repo) / "ticket.md") in (review_dir(repo) / "briefs" / "spec.md").read_text()
+
+
+def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_reviewer(repo):
+    ticketed(repo)
+
+    done = run(repo, "--axes", "spec", "--spec", "no-such-ticket")
+
+    assert done.returncode == 1
+    assert "neither a file nor a ticket of this tracker" in done.stderr
+    assert not (review_dir(repo) / "briefs").exists(), "nothing was rendered, so nothing was started"
+
+
+def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo):
+    """One reviewer, and the ticket's context in its brief: a small ticketed diff is read against
+    what the ticket asked for rather than on its own terms."""
+    ticketed(repo)
+
+    done = run(repo, "--light", "--spec", "lamp-presets")
+
+    assert done.returncode == 0, done.stderr
+    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "## What the work was asked for" in brief
+    assert str(review_dir(repo) / "ticket.md") in brief
+    assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
+
+
+def test_light_mode_without_a_spec_says_there_is_none_to_judge_against(repo):
+    assert run(repo, "--light").returncode == 0
+    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "## What the work was asked for" not in brief
+    assert "invent no requirement for it" in brief
+    assert not (review_dir(repo) / "ticket.md").exists()
+
+
+def test_a_spec_given_as_a_file_is_read_as_the_file(repo):
+    done = run(repo, "--axes", "spec", "--spec", spec(repo))
+
+    assert done.returncode == 0, done.stderr
+    assert spec(repo) in (review_dir(repo) / "briefs" / "spec.md").read_text()
+    assert not (review_dir(repo) / "ticket.md").exists()
+
+
+def test_a_missing_report_is_rerun_at_the_same_effort_and_on_the_spec_as_it_was_given(repo):
+    ticketed(repo)
+    done = run(repo, "--axes", "spec", "--effort", "low", "--spec", "lamp-presets", FAKE_NO_REPORT="1")
 
     assert done.returncode == 1
     rerun = done.stderr.strip().splitlines()[-1]
-    assert "--axes correctness" in rerun and "--effort low" in rerun
+    assert "--axes spec" in rerun and "--effort low" in rerun
+    assert "--spec lamp-presets" in rerun, f"the re-run reads the assembled file rather than the ticket: {rerun}"
 
 
 if __name__ == "__main__":

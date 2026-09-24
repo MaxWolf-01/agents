@@ -31,7 +31,7 @@ The spec travels to the reviewers as a file, so a fetched issue body or a spec t
 
 A standalone ticket has no spec, so it takes light mode by default, the full axes when its diff is large or touches a contract others depend on: the reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
-No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.
+No spec → run **light** (below): one reviewer, instead of the full spawn. Light mode takes a spec where there is one.
 
 ### 3. What binds the review
 
@@ -68,7 +68,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-For specless work, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where there is no spec for a Spec axis to check and no Testing Decisions to check the tests against. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
+For a small diff, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost. It takes `--spec` like the full axes and the one reviewer judges the diff against it too, so a small ticketed diff is still read against what the ticket asked for; with none, the brief says so and the reviewer judges the diff on its own terms. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 

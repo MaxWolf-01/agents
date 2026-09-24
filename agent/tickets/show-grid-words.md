@@ -2,7 +2,6 @@
 status: open
 priority: 3
 size: S
-blocked-by: [figures-and-demos/06]
 ---
 
 # The grid's words in /mx:show

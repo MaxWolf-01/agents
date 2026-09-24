@@ -1,8 +1,9 @@
 ---
 status: proposed
+parent: session-page
+blocked-by: [session-page-properties-as-checks]
 priority: 2
 size: M
-blocked-by: [01]
 ---
 
 # A session directory renders into its session page
@@ -11,7 +12,7 @@ blocked-by: [01]
 
 A session directory and its transcript render into the session page: the title, brief and resume command, the open questions under them, then the turns newest first with each user message whole behind one click.
 
-Slice of `spec.md`, building on its Decisions under The session page (a container of links, the layout, the keys, only questions ask) and The turn record (fields in a ticket's shape, records written once, the session record, the user's message read from the transcript), and on its Floors.
+Slice of `session-page`, building on its Decisions under The session page (a container of links, the layout, the keys, only questions ask) and The turn record (fields in a ticket's shape, records written once, the session record, the user's message read from the transcript), and on its Floors.
 
 ## What to build
 
@@ -19,7 +20,7 @@ A command that takes a session directory and its transcript and writes the sessi
 
 ## Acceptance criteria
 
-- [ ] The session renderer's two properties from 01 pass, their expected failures lifted.
+- [ ] The session renderer's two properties from `session-page-properties-as-checks` pass, their expected failures lifted.
 - [ ] The prototype at `agent/prototypes/session-page/` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment.
 - [ ] A move either page shares with diffview is on diffview's key (spec, Properties).
 - [ ] `render-lint` reports nothing fatal in either scheme at the default width and at 900px.

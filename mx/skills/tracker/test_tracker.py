@@ -196,6 +196,34 @@ def test_a_ruling_with_no_date_is_refused_rather_than_leaving_the_question_open(
     assert "a ruling is `Ruled <date>: the answer`" in said.out
 
 
+@pytest.mark.parametrize("shape, said", [
+    ("  Ruled 2026-09-21: per bank.", "lazily continuing the question's own line"),
+    ("\n     Ruled 2026-09-21: per bank.", "indented under it after a blank line"),
+])
+def test_a_ruling_that_is_no_bullet_of_its_own_is_refused_rather_than_read_as_the_detail(
+    tickets: Path, repo: Path, shape: str, said: str
+) -> None:
+    """CommonMark folds a line under a bullet into that bullet, so a ruling written without its own
+    `- ` lands in the question's detail: the writer sees their answer in the file and every reader
+    still shows the question as open. `ticket-file-contract#P1`."""
+    path = ticket(tickets, "one-flow", f"## Questions\n\n- [D1] **Ask?** Its detail.\n{shape}\n")
+    read = run(repo, "check", str(path))
+    assert read.code == 1, said
+    assert f"{path}:{line_of(path, 'Ruled 2026-09-21')}: this ruling is no bullet of its own" in read.out, said
+    assert "a ruling is `- Ruled <date>: the answer`, under its question" in read.out
+
+
+def test_a_ruling_bulleted_under_its_question_answers_it(tickets: Path, repo: Path) -> None:
+    """The shape every ticket in the tracker writes, and what `tracker rule` writes: the refusal
+    above holds only for the ones that are no bullet."""
+    ticket(tickets, "one-flow", "## Questions\n\n- [D1] **Ask?** Its detail.\n  - Ruled 2026-09-21: per bank.\n"
+           "- [D2] **Ruled out is prose?** Two ways out.\n  Ruled out: a third, since the suite is slow.\n")
+    assert run(repo, "check", "agent/tickets/one-flow.md") == Run(0, "", "")
+    read = {q["tag"]: q for q in json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["questions"]}
+    assert (read["D1"]["ruled"], read["D1"]["answer"]) == ("2026-09-21", "per bank.")
+    assert read["D2"]["ruled"] is None and "Ruled out: a third" in read["D2"]["detail"]
+
+
 @pytest.mark.parametrize("written, refused", [
     ("Addressed: D1, D2, D3", "`D1` is no comment id"),
     ("Addressed: C1, oh and C4", "`oh and C4` is no comment id"),
@@ -275,11 +303,45 @@ def test_files_from_two_trackers_in_one_run_are_refused(tickets: Path, repo: Pat
     assert said.code == 1 and "one tracker per run" in said.err
 
 
+def test_a_question_is_read_in_every_shape_a_ticket_file_writes_one_in(tickets: Path, repo: Path) -> None:
+    """What the prose allows and the generated check does not draw: a ruling bulleted under its
+    question, a detail running over lines, and a second `## Questions` section, which is how a
+    worker's questions reach a ticket that already had some."""
+    ticket(tickets, "one-flow", """## Questions
+
+- [D1] **Bulleted ruling?** One line.
+  - Ruled 2026-09-21: per bank.
+- [D2] **A detail over two lines?** It starts here
+  and carries on there.
+## Comments
+
+The build, on its branch.
+
+## Questions
+
+- [D3] **Appended by the worker?** Under a second heading of its own.
+""")
+    read = {q["tag"]: q for q in json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["questions"]}
+    assert list(read) == ["D1", "D2", "D3"]
+    assert read["D1"]["ruled"] == "2026-09-21" and read["D1"]["answer"] == "per bank."
+    assert read["D2"]["detail"] == "It starts here and carries on there."
+    assert read["D3"]["headline"] == "Appended by the worker?"
+
+
 def test_an_id_that_names_two_things_is_refused_with_the_line_that_took_it_first(tickets: Path, repo: Path) -> None:
     path = ticket(tickets, "one-flow", "## Questions\n\n- [D1] **One?** Its detail.\n- [D1] **Two?** Its detail.\n")
     said = run(repo, "check", "agent/tickets/one-flow.md")
     assert said.code == 1
     assert f"{path}:{line_of(path, 'Two?')}: tag D1 is already taken, on line {line_of(path, 'One?')}" in said.out, said.out
+
+
+def test_two_properties_sharing_an_id_are_refused_the_way_two_tags_are(tickets: Path, repo: Path) -> None:
+    """An id names one thing for good, and a property is cited by its id from every descendant: two
+    properties under one would make every `<slug>#P<n>` citing it ambiguous."""
+    path = ticket(tickets, "one-flow", "## Properties\n\n- P1 A preset reads cold.\n- P1 A second one, under the same id.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'A second one')}: property P1 is already taken, on line {line_of(path, 'A preset reads cold')}" in said.out, said.out
 
 
 def test_the_check_reads_the_staged_text_and_not_the_worktrees(tickets: Path, repo: Path) -> None:
@@ -660,6 +722,37 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
     assert (row in ready + waiting) is (status != "done"), run(repo, "frontier").out
 
 
+# What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
+# start of a line, a `## ` heading, a `[Dn]` question, a `- A<n>` assumption, an `NN-` file name.
+SECOND_PARSER = re.compile(
+    r"\^(?:status|parent|blocked-by|needs-user|priority|size|diff|gh):"
+    r"|\^##\\?s|\^## |\[D\\d|- A\\d|\[0-9\]\[0-9\]-|\\d\\d-"
+)
+PLUGIN = Path(tr.__file__).parents[2]
+# The parser and what checks it; everything else under mx/ goes through the command.
+OWNS_THE_PARSER = ("skills/tracker/tracker.py", "skills/tracker/test_tracker.py")
+
+
+def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -> None:
+    """`ticket-file-contract#P2`'s other half, at the only seam it has: the source. Every machine-read
+    construct has one parser, so a script that touches a ticket carries no frontmatter, heading,
+    question or assumption pattern of its own, and one that grows one back fails here."""
+    touching = [
+        path for path in sorted(PLUGIN.rglob("*"))
+        if path.is_file() and path.suffix in ("", ".py", ".sh")
+        and not any(str(path).endswith(owned) for owned in OWNS_THE_PARSER)
+        and "agent/tickets" in path.read_text(errors="replace")
+    ]
+    assert touching, f"no script under {PLUGIN} mentions the tracker; the check reads nothing"
+    found = {
+        str(path.relative_to(PLUGIN)): [line for line in path.read_text().splitlines() if SECOND_PARSER.search(line)]
+        for path in touching
+    }
+    assert not any(found.values()), "a second parser of a ticket file: " + json.dumps(
+        {name: lines for name, lines in found.items() if lines}, indent=2
+    )
+
+
 DANGLING = [
     ("parent", lambda slug: {"parent": slug}, ""),
     ("blocked-by", lambda slug: {"blocked-by": f"[{slug}]"}, ""),
@@ -977,6 +1070,22 @@ def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path,
     said = run(worktree, "hook")
     assert said.out.strip() == str(repo / ".git" / "hooks" / "pre-commit"), said.said
     assert (repo / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_the_hook_installs_into_a_bare_repo_named_on_the_command_line(repo: Path, tmp_path: Path) -> None:
+    """The repo dispatch stages on a worker host is bare, and nothing is ever checked out of it, so
+    the installer is given it rather than found from a working directory inside it."""
+    bare = tmp_path / "worker.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    said = run(repo, "hook", str(bare))
+    assert said.code == 0, said.said
+    assert said.out.strip() == str(bare / "hooks" / "pre-commit"), said.said
+    assert os.access(bare / "hooks" / "pre-commit", os.X_OK)
+
+
+def test_the_hook_refuses_a_path_that_is_no_directory(repo: Path, tmp_path: Path) -> None:
+    said = run(repo, "hook", str(tmp_path / "nowhere"))
+    assert said.code == 1 and "is no directory" in said.err
 
 
 def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) -> None:

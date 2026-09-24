@@ -1,6 +1,6 @@
 ---
 status: open
-type: grilling
+needs-user: true
 priority: 4
 size: L
 ---
