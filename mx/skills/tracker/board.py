@@ -5,10 +5,11 @@
 # ///
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
-Run `board` from anywhere inside the repo: it finds the tracker (the nearest
-agent/tickets up from the current directory, so a worktree or a clone inside a
-workspace repo both work), renders, opens the tab, and keeps re-rendering until
-Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
+Run `board` from anywhere inside the repo: it finds the tracker the way the
+`tracker` command does (the nearest agent/tickets up from the current
+directory, or the one this repo's `mx.tracker` setting names), renders, opens
+the tab, and keeps re-rendering until Ctrl-C. --no-watch --no-open is the
+one-shot form: render the page and exit.
 
 Reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
 one command that parses one, `tracker` beside this script, and writes one
@@ -22,10 +23,9 @@ the loop for that nobody has taken up (board.needs_me).
 Its open questions show under its row while the row is folded, each with a
 button that copies it, one that copies the ticket's own, and one on the group
 that copies every question on the board; each button says on hover what it will
-copy. A build in review is read from its own ticket branch
-(board.ticket_branches), where the worker's questions and closing comment are
-until the merge, while the tracker's copy says where the ticket stands and
-carries the `Ruled` lines that answer its questions.
+copy. A build in review carries the worker's questions and closing comment in
+the tracker's own copy, where `dispatch review` imported them from the worker's
+report.
 
 A row reads left to right in fixed columns: the tree the ticket is part of (the
 top-level ticket its ancestry runs to), its own slug, what the row asks of the
@@ -92,17 +92,10 @@ tree and whole-tracker switch. A click on a node in the overlay closes it on
 that ticket's row; a click on a node in the window leaves the window where it is
 and moves the board to that row.
 
-One board per tracker, showing what is actionable now. The tracker is read
-from the repo's main checkout whatever checkout the command runs in; a ticket
-that has a worktree on a branch named after its slug (how dispatch cuts the
-worktree a parent ticket is built in) is read from that worktree instead, with
-every descendant of it and their review pages, so the claims and review flips of
-a tree in flight are on the board. A
-worktree whose branch is already merged is ignored. A
-ticket that an unmerged worktree's branch added or changed since it
-left the main branch is shown as well, tagged with the branch, provided
-the main checkout has no file of that
-slug; a copy a branch merely inherited from the main branch is not read twice.
+One board per tracker, showing what is actionable now. It is one directory:
+every ticket file is written and committed in the tracker's own checkout,
+claims and review flips included, so a build in flight is on the board without
+any branch or worktree being read.
 
 A ticket row links its diffview review page when one has been rendered:
 agent/diffviews/<slug>.html beside the tracker. Those pages are gitignored, so the
@@ -119,8 +112,7 @@ watching board asks once a window however often it re-renders. Without `gh`,
 its auth or the network the references stay bare links and the page says why
 once.
 
-Watching means: every few seconds it looks for a change under the tracker,
-any worktree's copy included, a worktree cut after the start too, and
+Watching means: every few seconds it looks for a change under the tracker and
 re-renders on one. It also re-renders on the three things that move with no
 file under the tracker moving: a briefing the session has rewritten, GitHub's
 answer running past the five minutes it is cached for, and a run of the model
@@ -158,7 +150,7 @@ import time
 from collections import Counter
 from itertools import takewhile
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 from typing import Annotated
@@ -219,13 +211,12 @@ class Args:
 
 
 def main(args: Args) -> None:
-    tickets_root = args.tickets_root or find_tracker(Path.cwd())
-    roots = tracker_roots(tickets_root)
-    assert roots.main.is_dir() or roots.branches, f"no tracker at {roots.main}"
-    repo = (args.repo or roots.main.parent.parent).resolve()
-    out = (args.out or roots.main.parent / "board.html").resolve()
+    tickets_root = (args.tickets_root or find_tracker(Path.cwd())).resolve()
+    assert tickets_root.is_dir(), f"no tracker at {tickets_root}"
+    repo = (args.repo or tickets_root.parent.parent).resolve()
+    out = (args.out or tickets_root.parent / "board.html").resolve()
     try:
-        render(roots, repo, out)
+        render(tickets_root, repo, out)
     except tracker.Refused as refused:
         sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
     if args.open:
@@ -239,23 +230,22 @@ def main(args: Args) -> None:
 
 
 def find_tracker(start: Path) -> Path:
-    """The nearest agent/tickets at or above `start`: the repo's own tracker, or the workspace repo's when `start` is inside a clone it holds."""
-    for d in (start, *start.parents):
-        if (d / "agent" / "tickets").is_dir():
-            return d / "agent" / "tickets"
-    sys.exit(f"board: no agent/tickets at or above {start}")
+    """Where this project's ticket files are, as the one command that writes them answers it: the
+    nearest agent/tickets at or above `start`, or the tracker another repo holds for this one."""
+    try:
+        return tracker.tracker_root(start)
+    except tracker.Refused as refused:
+        sys.exit(f"board: {refused}")
 
 
-def render(roots: "Roots", repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
+def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     """Write the page, and answer with the status every ticket on it is shown under: the watcher
     pings the briefing session on a status that moved, and the render is where the tracker is
     already read."""
     project = repo.name
-    root = roots.main
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
-    ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
-    session_log.cache_clear()  # and commits on them, each carrying the session that made it
-    tickets = load_tickets(roots, serve_diffviews(root.parent / "diffviews"))
+    session_log.cache_clear()  # likewise: the sessions that committed on a ticket while the board watches
+    tickets = load_tickets(root, repo, serve_diffviews(root.parent / "diffviews"))
     log = git_log(repo)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(tickets), github.cache_path(out))
@@ -279,7 +269,7 @@ def statuses(tickets: list["Ticket"]) -> tuple[tuple[str, str], ...]:
     return tuple((t.slug, t.status) for t in tickets)
 
 
-def tracker_statuses(roots: "Roots") -> tuple[tuple[str, str], ...]:
+def tracker_statuses(root: Path, repo: Path) -> tuple[tuple[str, str], ...]:
     """The same, without a render: what the watcher's first pass reads, since the tracker it opens
     on is the baseline every later status is compared against.
 
@@ -288,7 +278,7 @@ def tracker_statuses(roots: "Roots") -> tuple[tuple[str, str], ...]:
     between the two would otherwise sit inside the snapshot and outside the baseline. It costs one
     load of the tracker per watcher start. The review pages are no part of a status, so this reads
     them unserved (briefing_state does the same)."""
-    return statuses(load_tickets(roots, Diffviews(roots.main.parent / "diffviews", None)))
+    return statuses(load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)))
 
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
@@ -339,9 +329,8 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
     spec's Decisions under "The board briefing"). The change is timed from before the render, which
     takes a moment, so a status that moved during one is a status the session has not been told
     about."""
-    roots = tracker_roots(tickets_root)
     cache = briefing.cache_path(out)
-    snapshot = tracker_snapshot(roots, repo)
+    snapshot = tracker_snapshot(tickets_root, repo)
     written = cache.stat().st_mtime_ns if cache.exists() else 0
     quiet = briefing.SILENT  # read with the rest of what this pass reads: a run lands on its own thread
     armed, lapsed = seen.armed, run_out(seen.asked, seen.armed)
@@ -349,18 +338,18 @@ def look(seen: Seen, session: "Briefer", tickets_root: Path, repo: Path, out: Pa
     if snapshot != seen.snapshot:
         if seen.snapshot is not None:
             at = now()
-            current = render(roots, repo, out)
+            current = render(tickets_root, repo, out)
             session.saw(current, seen.statuses, at)
         else:
             # the start is itself a change where no briefing has ever been written, since a tracker
             # quiet since the last one is the board a returning user opens
-            current = tracker_statuses(roots)
+            current = tracker_statuses(tickets_root, repo)
             session.opened(snapshot, current, None if briefing.Briefing.read(cache) else now())
     elif written != seen.briefing or quiet != seen.quiet or lapsed:
-        render(roots, repo, out)  # nothing under the tracker moved, so no status did either
+        render(tickets_root, repo, out)  # nothing under the tracker moved, so no status did either
         if lapsed:
             armed = seen.asked  # only the render that asked again is done with this answer
-    session.tick(roots, snapshot, current, now())
+    session.tick(tickets_root, snapshot, current, now())
     return Seen(snapshot, current, written, github.asked_at(github.cache_path(out)), armed, quiet)
 
 
@@ -419,7 +408,7 @@ class Briefer:
         elif statuses != before:
             self.changed_at = at
 
-    def tick(self, roots: "Roots", snapshot: tuple, statuses: tuple, at: datetime.datetime) -> None:
+    def tick(self, root: Path, snapshot: tuple, statuses: tuple, at: datetime.datetime) -> None:
         """Whatever this pass of the watcher owes the briefing session, against the tracker as that
         pass read it. `changed_at` is when a ticket's status last moved, which is what the ping waits
         out the quiet window from."""
@@ -437,11 +426,11 @@ class Briefer:
             return
         note = None if verb == "fresh" else changed_note(self.told, snapshot, self.repo)
         self.tried = at
-        self.running = threading.Thread(target=self.write, args=(roots, cached, note, snapshot, statuses), daemon=True)
+        self.running = threading.Thread(target=self.write, args=(root, cached, note, snapshot, statuses), daemon=True)
         self.running.start()
 
     def write(
-        self, roots: "Roots", cached: "briefing.Briefing | None", note: str | None, snapshot: tuple,
+        self, root: Path, cached: "briefing.Briefing | None", note: str | None, snapshot: tuple,
         statuses: tuple,
     ) -> None:
         """The run, off the watcher's own thread: a fresh session on the tracker's state, or the one
@@ -454,7 +443,7 @@ class Briefer:
         try:
             said = (
                 briefing.ping(cached, note, self.repo, now()) if note is not None
-                else briefing.first(briefing_state(roots, self.repo), self.repo, now())
+                else briefing.first(briefing_state(root, self.repo), self.repo, now())
             )
             if said:
                 said.write(briefing.cache_path(self.out))
@@ -463,12 +452,11 @@ class Briefer:
             print(f"board: the briefing session: {e}", file=sys.stderr)
 
 
-def briefing_state(roots: "Roots", repo: Path) -> str:
+def briefing_state(root: Path, repo: Path) -> str:
     """The tracker as the board reads it, in the words the briefing session is handed it in."""
     # the session is given the tickets; a review page is the user's to read and its address the
-    # render's to find. A ticket read from its own worktree asks its own server all the same
-    # (`shown`), which the render also asks, and answering twice is what that server is for.
-    return state_of(repo.name, load_tickets(roots, Diffviews(roots.main.parent / "diffviews", None)), git_log(repo))
+    # render's to find, so this reads them unserved
+    return state_of(repo.name, load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)), git_log(repo))
 
 
 # ---- the board briefing ---------------------------------------------------
@@ -613,99 +601,19 @@ def plain(markup: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", markup)).strip()
 
 
-def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
-    """What the board read last, as a value to compare: the tracker's files in every checkout that
-    contributes to it, the review pages and the artefacts beside them, and the commit the log comes
-    from.
+def tracker_snapshot(root: Path, repo: Path) -> tuple:
+    """What the board read last, as a value to compare: the tracker's files, the review pages and
+    the artefacts beside them, and the commit the log comes from.
 
     A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
-    the render that follows is what puts the pages back on an address that answers. So do the
-    ticket branches: a build in review is read from its own, where no file under the tracker moves.
-    So do the show directories, where an opened ticket reads its artefacts from.
+    the render that follows is what puts the pages back on an address that answers. So do the show
+    directories, where an opened ticket reads its artefacts from.
     """
-    dirs = [roots.main, roots.main.parent / "diffviews", roots.main.parent / "show"]
-    dirs += [d for _, o in roots.branches for d in (o, o.parent / "diffviews", o.parent / "show")]
-    return (git(repo, "rev-parse", "HEAD"), git(repo, "for-each-ref", "--format=%(objectname) %(refname)", TICKET_BRANCHES)) + tuple(
+    dirs = [root, root.parent / "diffviews", root.parent / "show"]
+    return (git(repo, "rev-parse", "HEAD"),) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
-
-
-# ---- which checkout's tracker ---------------------------------------------
-
-
-@dataclass
-class Roots:
-    """Where the tracker is read from.
-
-    `main` is the main checkout's tracker and `repo` that checkout's root. `branches` lists every
-    unmerged worktree's tracker root with its branch: the tickets a branch added are read there,
-    and where the branch is named after a ticket -- the branch a parent ticket is built on -- that
-    worktree's copy of the ticket and of every descendant of it overrides the main checkout's.
-    """
-
-    main: Path
-    branches: list[tuple[str, Path]]
-    repo: Path | None = None
-
-
-def worktrees(path: Path) -> list[tuple[Path, str | None]]:
-    """(path, branch) per worktree of the repo containing `path`, the main checkout first; [] outside git."""
-    result = subprocess.run(["git", "-C", str(path), "worktree", "list", "--porcelain"], capture_output=True, text=True)
-    if result.returncode != 0:
-        return []
-    out: list[tuple[Path, str | None]] = []
-    for block in result.stdout.strip().split("\n\n"):
-        lines = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
-        branch = lines.get("branch")
-        out.append((Path(lines["worktree"]), branch.removeprefix("refs/heads/") if branch else None))
-    return out
-
-
-def tracker_roots(tickets_root: Path) -> Roots:
-    """The main checkout's tracker, plus every unmerged worktree's copy of it.
-
-    Ticket state an orchestrator commits on the branch a parent ticket is built on is invisible to
-    the main checkout until that branch merges; the worktree on it is where the tree's current
-    truth lives, so its copies win (`load_tickets`).
-    """
-    here = tickets_root.resolve()
-    wts = worktrees(here)
-    if not wts:
-        return Roots(here, [])
-    toplevel = subprocess.run(["git", "-C", str(here), "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-    rel = here.relative_to(Path(toplevel).resolve())
-    main = wts[0][0].resolve()
-    landed = landed_tips(main)
-    branches = [
-        (branch, path.resolve() / rel)
-        for path, branch in wts[1:]
-        if branch and (path / rel).is_dir() and git(path, "rev-parse", branch) not in landed
-    ]
-    return Roots(main / rel, branches, main)
-
-
-def landed_tips(main: Path) -> set[str]:
-    """Tips of branches merged --no-ff into the main checkout's history: the second parent of each
-    first-parent merge commit. A worktree left behind on such a branch must not outvote the main
-    checkout; a branch merely cut from it and idle is not landed, so ancestry alone is the wrong test."""
-    parents = git(main, "log", "--first-parent", "--merges", "--format=%P", "HEAD")
-    return {line.split()[1] for line in parents.splitlines() if len(line.split()) > 1}
-
-
-def branch_added(root: Path, repo: Path) -> list[Path]:
-    """The *.md files at a worktree's tracker root that its branch added or changed since it left the
-    main checkout's branch (`repo` is that checkout's root), untracked ones included. A file the
-    branch merely inherited is main's to show; one main has since retired must not come back through
-    a stale copy."""
-    toplevel = Path(git(root, "rev-parse", "--show-toplevel")).resolve()
-    rel = root.resolve().relative_to(toplevel)
-    # run from the worktree root: a pathspec is relative to git's cwd, and the names come back root-relative
-    base = git(toplevel, "merge-base", "HEAD", git(repo, "rev-parse", "HEAD"))
-    changed = git(toplevel, "diff", "--name-only", base, "--", str(rel)).splitlines()
-    untracked = git(toplevel, "ls-files", "--others", "--exclude-standard", "--", str(rel)).splitlines()
-    paths = {toplevel / p for p in changed + untracked if Path(p).parent == rel and p.endswith(".md")}
-    return sorted(p for p in paths if p.is_file())
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -759,33 +667,19 @@ class Ticket:
     diffview: str | None
     priority: int  # 1 to 5, how soon it matters to the user
     size: str  # XS | S | M | L | XL, the user's time on it
-    path: Path  # the file read, in whichever checkout holds it
-    source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
+    path: Path  # the ticket file this row was read from
     brief: str = ""  # the ## Brief section, as inline HTML
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
 
 
-def load_tickets(roots: Roots, diffviews: Diffviews) -> list[Ticket]:
+def load_tickets(root: Path, repo: Path | None, diffviews: Diffviews) -> list[Ticket]:
     """Every ticket the board shows, read through the one parser of a ticket file.
 
-    The main checkout's tracker is the tracker; an unmerged worktree contributes two things over
-    it. A worktree on the branch a parent ticket is built on holds that tree's current truth, so
-    its copy of that ticket and of every descendant wins (`tracker_roots`). Any other unmerged
-    worktree contributes the tickets its branch added, tagged with the branch, provided the main
-    checkout has no file of that slug.
+    One directory holds them all: ticket files are written and committed in the tracker's own
+    checkout, claims and review flips included, so nothing of a build in flight is anywhere else.
     """
-    read = {slug: (ticket, None) for slug, ticket in parsed(roots.main).items()}
-    from_main = set(read)
-    for branch, root in roots.branches:
-        theirs = readable(root, branch)
-        if branch in theirs:
-            for slug in [branch, *(one.slug for one in descendants(branch, theirs))]:
-                if slug in theirs:
-                    read[slug] = (theirs[slug], None)
-        for path in branch_added(root, roots.repo):
-            if path.stem not in from_main and path.stem in theirs and path.stem not in read:
-                read[path.stem] = (theirs[path.stem], branch)
-    tickets = [shown(one, source, read, roots, diffviews) for one, source in read.values()]
+    read = parsed(root)
+    tickets = [shown(one, read, repo, diffviews) for one in read.values()]
     ids = [slug_id(one.slug) for one in tickets]
     assert len(ids) == len(set(ids)), f"slugs collide as mermaid ids: {sorted(ids)}"
     return sorted(tickets, key=lambda one: one.slug)
@@ -801,59 +695,30 @@ def parsed(root: Path) -> dict[str, "tracker.Ticket"]:
     return read.tickets
 
 
-def readable(root: Path, branch: str) -> dict[str, "tracker.Ticket"]:
-    """The same for a worktree's copy, whose refusal is that worktree's own to fix: the main
-    checkout is the tracker, and a branch is a source this render can do without. The refusal is
-    printed whole, so the file and the line are here to act on."""
-    try:
-        return parsed(root)
-    except tracker.Refused as refused:
-        print(f"board: {branch} holds a tracker no reader can read, so its rows are the main checkout's:\n{refused}",
-              file=sys.stderr)
-        return {}
-
-
-def descendants(slug: str, tickets: dict[str, "tracker.Ticket"]) -> list["tracker.Ticket"]:
-    """Every ticket whose ancestry runs through `slug`."""
-    found, frontier = [], [slug]
-    while frontier:
-        holding = frontier.pop()
-        children = [one for one in tickets.values() if one.parent == holding and one.slug not in {f.slug for f in found}]
-        found += children
-        frontier += [one.slug for one in children]
-    return found
-
-
-def tree_of(slug: str, tickets: dict[str, tuple["tracker.Ticket", str | None]]) -> str:
+def tree_of(slug: str, tickets: dict[str, "tracker.Ticket"]) -> str:
     """The slug of the top-level ticket this one's ancestry runs to, when that ticket has a
     descendant; "" for a ticket with no parent ticket and no child tickets."""
     root, seen = slug, {slug}
-    while (parent := tickets[root][0].parent) and parent in tickets and parent not in seen:
+    while (parent := tickets[root].parent) and parent in tickets and parent not in seen:
         seen.add(parent)
         root = parent
     if root != slug:
         return root
-    return root if any(one.parent == slug for one, _ in tickets.values()) else ""
+    return root if any(one.parent == slug for one in tickets.values()) else ""
 
 
 def shown(
-    read: "tracker.Ticket", source: str | None,
-    tickets: dict[str, tuple["tracker.Ticket", str | None]], roots: Roots, diffviews: Diffviews,
+    read: "tracker.Ticket", tickets: dict[str, "tracker.Ticket"], repo: Path | None, diffviews: Diffviews,
 ) -> Ticket:
     """One ticket as the board shows it: what its file says, plus the status derived from what it
-    waits on, its body read from its own branch while it is in review, and the review page and
-    sessions beside it."""
+    waits on, and the review page and sessions beside it."""
     assert_safe_name(read.slug)
     blocked_by = [(ref, ref_status(ref, tickets)) for ref in read.blocked_by]
     status = read.status
     if status == "open" and any(state != "done" for _, state in blocked_by):
         status = "blocked"
-    # the pages of a ticket read from a worktree are that worktree's, whether the branch added it or
-    # holds the tree it is part of: `dispatch review` renders them where it runs
-    pages = diffviews if read.path.parent == roots.main else serve_diffviews(read.path.parent.parent / "diffviews")
-    shows = shown_ticket(read, status, roots.repo)
-    asked = questions_of(shows.questions, read.questions)
-    worked = ticket_sessions(read.path, roots.repo)
+    asked = read.questions
+    worked = ticket_sessions(read.path, repo)
     return Ticket(
         slug=read.slug,
         title=read.title or read.slug.replace("-", " "),
@@ -863,10 +728,9 @@ def shown(
         tree=tree_of(read.slug, tickets),
         blocked_by=blocked_by,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
-        body_html=ticket_blocks(shows, asked, path=read.path, status=status, worked=worked),
-        diffview=pages.link(pages.root, f"{read.slug}.html"),
+        body_html=ticket_blocks(read, asked, path=read.path, status=status, worked=worked),
+        diffview=diffviews.link(diffviews.root, f"{read.slug}.html"),
         path=read.path,
-        source=source,
         priority=read.meta.get("priority"),
         size=read.meta.get("size"),
         brief=inline_md(read.brief),
@@ -874,11 +738,11 @@ def shown(
     )
 
 
-def ref_status(ref: str, tickets: dict[str, tuple["tracker.Ticket", str | None]]) -> str:
+def ref_status(ref: str, tickets: dict[str, "tracker.Ticket"]) -> str:
     """The status of a ticket another one waits on. A reference the board cannot see counts as
     done: the tracker refuses a dangling one where it is written, so what is left here is a ticket
-    read from a checkout this render does not hold."""
-    return tickets[ref][0].status if ref in tickets else "done"
+    retired since the edge onto it was written."""
+    return tickets[ref].status if ref in tickets else "done"
 
 
 def assert_safe_name(name: str) -> None:
@@ -910,32 +774,6 @@ def serve_diffviews(root: Path) -> Diffviews:
     return Diffviews(root, address.group().rstrip("/"))
 
 
-def shown_ticket(read: "tracker.Ticket", status: str, repo: Path | None) -> "tracker.Ticket":
-    """The ticket the board shows: the checkout's, or the one on its own branch while a build is in
-    review, since that is where the worker's questions and closing comment are until the merge.
-
-    Three things stay the checkout's, whatever the branch's copy says: where the ticket stands, so
-    that a branch which never flipped its status cannot pull a build out of needs me; the brief,
-    which has one home and it is the row; and a `Ruled` line, which is written in the file the
-    board hands out (`questions_of`).
-
-    No commit hook has read the branch's copy, so what its parser refuses is printed rather than
-    dropped: the branch is a source the render can do without, as a worktree's tracker is.
-    """
-    if status != "review" or (text := branch_text(repo, read.path)) is None:
-        return read
-    on_branch = tracker.read(read.path, text)
-    warn(on_branch.refusals, f"the branch of {read.slug} holds text no reader can read")
-    return on_branch
-
-
-def warn(refusals: Sequence["tracker.Refusal"], what: str) -> None:
-    """What a reader the render can do without could not read, printed whole: the file and the line
-    are what a writer acts on."""
-    if refusals:
-        print(f"board: {what}:\n" + "\n".join(str(one) for one in refusals), file=sys.stderr)
-
-
 def inline_md(text: str) -> str:
     """Markdown as one line of HTML: a brief or a headline carries code and emphasis, never a block."""
     return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip()) if text else ""
@@ -962,7 +800,7 @@ def content_stamp(
     key = repr((
         project,
         [(t.slug, t.title, t.status, t.needs_user, t.parent, t.tree, t.blocked_by, t.gh, t.body_html,
-          t.diffview, t.path, t.source, t.priority, t.size, t.brief, t.questions) for t in tickets],
+          t.diffview, t.path, t.priority, t.size, t.brief, t.questions) for t in tickets],
         log,
         sorted(gh.states.items()),
         gh.missing,
@@ -984,8 +822,6 @@ def git_log(repo: Path) -> str:
 # The seams mx/skills/tracker/corpus/board-orients.md decides. That spec is their oracle, held as the
 # properties in test_board.py.
 
-TICKET_BRANCHES = "refs/heads/ticket/"  # where a ticket's own branch is, as dispatch cuts it
-
 # where a session's transcript is on this machine, as the rest of the repo resolves it
 TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 
@@ -1005,54 +841,6 @@ def needs_me(status: str, needs_user: bool, priority: int, open_question: bool) 
 
 
 Question = tracker.Question  # one `[Dn]` item under a ticket's `## Questions`, read by the one parser
-
-
-def questions_of(asked: Sequence[Question], ruled_in: Sequence[Question]) -> list[Question]:
-    """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
-    questions on its branch while the ruling is written in the tracker's own copy, the file the
-    board hands out on the clipboard, so the two texts are read together."""
-    answered = {q.tag: q for q in ruled_in if q.ruled}
-    return [
-        q if q.ruled or q.tag not in answered
-        else replace(q, ruled=answered[q.tag].ruled, answer=answered[q.tag].answer)
-        for q in asked
-    ]
-
-
-@functools.cache
-def ticket_branches(repo: Path) -> dict[str, list[str]]:
-    """The repo's ticket branches, by the slug each ends in: a worker builds a ticket on
-    `ticket/<slug>`."""
-    result = subprocess.run(
-        ["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", TICKET_BRANCHES],
-        capture_output=True, text=True,
-    )
-    branches: dict[str, list[str]] = {}
-    for ref in result.stdout.split() if result.returncode == 0 else []:
-        branches.setdefault(ref.rsplit("/", 1)[-1], []).append(ref)
-    return branches
-
-
-def branch_text(repo: Path | None, path: Path) -> str | None:
-    """The ticket file as its own branch has it, or None where the board finds no branch of that
-    ticket, a merged and deleted one included. The slug is the ticket's id across the tracker, so
-    the branch ending in it is its own."""
-    if repo is None:
-        return None
-    named = ticket_branches(repo).get(path.stem, [])
-    if len(named) == 1:
-        branch = named[0]
-    else:
-        branch = None
-        if named:  # nothing on the ticket says which of those branches is its own
-            print(f"board: {path} could be any of {named}, so its questions are the checkout's", file=sys.stderr)
-    if branch is None:
-        return None
-    # ./ resolves against git's own cwd, so the file keeps the place it has in this checkout
-    done = subprocess.run(
-        ["git", "-C", str(path.parent), "show", f"{branch}:./{path.name}"], capture_output=True, text=True
-    )
-    return done.stdout if done.returncode == 0 else None
 
 
 @dataclass(frozen=True)
@@ -1669,17 +1457,13 @@ def row(t: Ticket, gh: dict[str, str]) -> str:
     Below a width the time, the priority and the blockers move under the name. The ticket's
     remaining text folds under the row."""
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
-    on_branch = (
-        f'<span class="src" data-tip="Filed on branch {html.escape(t.source)}, not on the main branch.">on {html.escape(t.source)}</span>'
-        if t.source else ""
-    )
     return (
         row_open(t, search_text(t.slug, t.title, t.brief, t.body_html, *t.gh))
         + f'<span class="tree" data-tip="{html.escape(TREE_TIP)}">{clipped(t.tree)}</span>'
         f'<span class="slug" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{clipped(t.slug)}</span>'
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
-        f'{review_link(t.diffview)}{gh_links(t.gh, gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
+        f'{review_link(t.diffview)}{gh_links(t.gh, gh)}</span>{brief}{questions_block(t)}</span>'
         f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{dep_chips(t.blocked_by)}</span></span>'
         f'</summary><div class="body">{t.body_html}</div></details>'
     )
@@ -2047,7 +1831,7 @@ ${columns}
   ::selection { background: var(--mark); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   code, kbd, pre { font-family: var(--font-mono); }
-  .tree, .slug, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .treechip, .search,
+  .tree, .slug, .asks, .pri, .time, .chip, .rp, .gh, .label, .n, .treechip, .search,
     .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
 
   /* ---- the top bar: the project, the tree pills, the filter, the graph mode, the scheme ---- */
@@ -2174,7 +1958,7 @@ ${columns}
   .titleline { display: flex; flex-wrap: wrap; gap: 0 .6rem; align-items: baseline; min-width: 0; }
   .title { color: var(--strong); min-width: 0; }
   .row-done .title, .row-blocked .title, .row-proposed .title { color: var(--muted); }
-  .titleline > a, .titleline > .src { flex: none; }
+  .titleline > a { flex: none; }
   .brief { color: var(--muted); font-size: .88rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ticket[open] .brief { white-space: normal; }
   /* a needs-me row's open questions, under the name they belong to; an opened row reads them in
@@ -2188,7 +1972,7 @@ ${columns}
     border: 1px solid var(--edge); border-radius: 4px; padding: 0 .35rem; cursor: copy; overflow: visible; }
   .copier:hover { color: var(--accent); border-color: var(--accent); }
   .meta { display: contents; }
-  .asks, .pri, .time, .src, .rp, .gh { font-size: .78rem; white-space: nowrap; }
+  .asks, .pri, .time, .rp, .gh { font-size: .78rem; white-space: nowrap; }
   .chip { font-size: .78rem; }
   .asks { grid-area: asks; --c: var(--muted); color: var(--c); justify-self: start; max-width: 100%;
     background: color-mix(in srgb, var(--c) 12%, transparent);
@@ -2220,7 +2004,6 @@ ${columns}
   .gh.pr-merged { color: var(--c-purple); }
   .gh.pr-draft { text-decoration: underline dotted; text-underline-offset: 3px; }
   .gh.pr-closed, .gh.issue-closed { text-decoration: line-through; }
-  .src { color: var(--accent-2); }
 
   /* below this width the time, the priority and the blockers move under the name, and the top
      bar's pills take a line of their own rather than scrolling out of sight */

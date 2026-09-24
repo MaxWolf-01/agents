@@ -47,7 +47,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from board import render, tracker_roots
+from board import render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 
@@ -94,7 +94,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
              for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
     found = {width: lint(pages, width) for width in WIDTHS}
@@ -251,7 +251,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
-    render(tracker_roots(transcribed.root), transcribed.repo, out)  # no briefing: the board's own count
+    render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
@@ -474,7 +474,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     seen = graph_probe(out)
     assert seen["errors"] == [], seen["errors"]
     if not seen["cdn"]:
