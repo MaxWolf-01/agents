@@ -1,9 +1,10 @@
 ---
-status: review
+status: done
 parent: ticket-file-contract
 blocked-by: [tracker-command-and-commit-check]
 priority: 1
 size: L
+diff: [09734b43ee1f2963250d71f4c0bb34352262c2cf..bfa711e3b0d64def184a61858be463ed50bfb1cd]
 ---
 
 # The skills and the glossary speak of one kind of ticket
