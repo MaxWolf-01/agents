@@ -1,5 +1,5 @@
 ---
-status: review
+status: claimed
 parent: ticket-file-contract
 blocked-by: [tracker-command-and-commit-check]
 priority: 1
