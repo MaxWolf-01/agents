@@ -1,5 +1,5 @@
 ---
-status: review
+status: claimed
 priority: 2
 size: S
 ---
