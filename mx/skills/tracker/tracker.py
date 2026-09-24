@@ -876,6 +876,7 @@ ASSUMED = re.compile(r"A(\d+)\s+`([^:`]+)(?::(\d+))?`:\s*(\S.*)", re.DOTALL)
 SAYS_ASSUMED = re.compile(r"^A\d+\b")
 ADDRESSED = re.compile(r"^Addressed:\s*(.*)$")
 SAYS_ADDRESSED = re.compile(r"^\s*Addressed\b")
+COMMENT = re.compile(r"C\d+")  # a comment id, as a review page exports one
 PROPERTY = re.compile(r"P(\d+)\s+(\S.*)", re.DOTALL)
 CRITERION = re.compile(r"\[([ xX])\]\s*(.*)", re.DOTALL)
 CITED = re.compile(r"(?<![\w-])([a-z0-9][a-z0-9-]*)?#P(\d+)\b")
@@ -1082,7 +1083,9 @@ def flat(tree: Iterable[Bullet]) -> Iterable[Bullet]:
 
 
 def read_addressed(path: Path, lines: Sequence[tuple[int, str]], refusals: list[Refusal]) -> list[str]:
-    """The review comments a round's closing comment resolves: `Addressed: C1, C4`, at a line's start."""
+    """The review comments a round's closing comment resolves: `Addressed: C1, C4`, at a line's start.
+    The ids are the review page's, which is the one thing they can be: the page is what shows the
+    user's comments, and marking one resolved is what the line is for."""
     found = []
     for number, line in lines:
         if not SAYS_ADDRESSED.match(line):
@@ -1091,7 +1094,14 @@ def read_addressed(path: Path, lines: Sequence[tuple[int, str]], refusals: list[
         if not listed:
             refusals.append(Refusal(path, number, "this line resolves nothing; a round opens `Addressed: C1, C4`, at the start of a line"))
             continue
-        found += [name for name in (name.strip() for name in listed.group(1).split(",")) if name]
+        named = [name for name in (name.strip() for name in listed.group(1).split(",")) if name]
+        if not named:
+            refusals.append(Refusal(path, number, "this line names no comment; a round that answers review comments opens `Addressed: C1, C4`"))
+        for name in named:
+            if COMMENT.fullmatch(name):
+                found.append(name)
+            else:
+                refusals.append(Refusal(path, number, f"`{name}` is no comment id; `Addressed:` names the review page's comments as the page shows them, `C1`, `C4`, and never a ticket's own `Dn` tag"))
     return found
 
 

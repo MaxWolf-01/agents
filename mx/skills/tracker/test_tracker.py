@@ -194,6 +194,30 @@ def test_a_ruling_with_no_date_is_refused_rather_than_leaving_the_question_open(
     assert "a ruling is `Ruled <date>: the answer`" in said.out
 
 
+@pytest.mark.parametrize("written, refused", [
+    ("Addressed: D1, D2, D3", "`D1` is no comment id"),
+    ("Addressed: C1, oh and C4", "`oh and C4` is no comment id"),
+    ("Addressed:", "this line names no comment"),
+    ("  Addressed: C1", "this line resolves nothing"),
+])
+def test_a_round_that_resolves_no_comment_is_refused_where_it_was_written(
+    tickets: Path, repo: Path, written: str, refused: str
+) -> None:
+    """The ticket's own incident once more: `Addressed:` names the ids a review page exports, and a
+    round that writes the ticket's `Dn` tags there resolves nothing. The page's own reader refuses
+    it at render, which is after the commit and after the worker has gone."""
+    path = ticket(tickets, "one-flow", f"## Comments\n\nA closing round.\n\n{written}\n")
+    said = run(repo, "check", str(path))
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'Addressed')}: {refused}" in said.out, said.out
+
+
+def test_the_comments_a_round_resolves_are_read_as_the_review_page_exports_them(tickets: Path, repo: Path) -> None:
+    ticket(tickets, "one-flow", "## Comments\n\nA closing round.\n\nAddressed: C1, C4\n")
+    assert run(repo, "check", str(tickets / "one-flow.md")) == Run(0, "", "")
+    assert json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["resolved"] == ["C1", "C4"]
+
+
 def test_a_stray_bullet_under_questions_is_refused_rather_than_swallowed(tickets: Path, repo: Path) -> None:
     path = ticket(tickets, "one-flow", "## Questions\n\n- [D1] **Ask?** Its detail.\n- A note, not a question.\n")
     said = run(repo, "check", str(path))

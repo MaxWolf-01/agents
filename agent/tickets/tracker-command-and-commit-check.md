@@ -102,9 +102,9 @@ It builds a throwaway tracker out of the corpus and drives the real command over
   - `tracker hook` writes into the hooks directory shared by every worktree of a repo. On a dispatch worker host that is the whole bare repo, so a worker cannot install a hook without reaching into every other worker's commits (D1). Anything that has a worker install a repo-wide hook wants an isolated clone, or a hook that only fires for the worktree that installed it.
   - The four-axis review took about 25 minutes of wall clock against a 1,100-line diff, which is most of what this ticket spent waiting. The Tests axis's mutation run was worth all of it: it found the eight fixtures that could not tell the fix from the bug, which no amount of reading had.
 
-Addressed: D1, D2, D3
+Answering your rulings of 2026-09-23, which came in chat and resolve no comment on the page.
 
-`tracker drop <slug>` landed on the same branch, in `1c04735`: the reject ruling as one command. It `git rm`s the ticket, drops the `blocking` edges onto it from the tickets that stay, prints each step and leaves the commit to the caller, so the reason for the rejection goes in that message and git history holds the file and the reason together; `--help` says so in a line. It refuses a `done` ticket, which is `retire`'s, and refuses while a ticket that stays names it as its parent or cites one of its properties, the way retiring already refuses a citation. D1 and D3 are as they were, and the rulings on D1 and D2 are written under their questions.
+`tracker drop <slug>` landed on the same branch, in `1c04735`: the reject ruling as one command. It `git rm`s the ticket, drops the `blocked-by` edges onto it from the tickets that stay, prints each step and leaves the commit to the caller, so the reason for the rejection goes in that message and git history holds the file and the reason together; `--help` says so in a line. It refuses a `done` ticket, which is `retire`'s, and refuses while a ticket that stays names it as its parent or cites one of its properties, the way retiring already refuses a citation. D1 and D3 are as they were, and the rulings on D1 and D2 are written under their questions.
 
 **Demo**
 
@@ -125,3 +125,24 @@ The page has a panel for it now, the eighth: a proposal dropped, the edge onto i
 - [D8] The round
   - The suite is 336 passing, `make check` and `render-lint` clean. Seven checks cover `drop`: the four statuses it takes, the edges it sweeps and the one it leaves, the file in history and the removal staged, and each of the three refusals.
   - Nothing else moved: the review's findings from the first round stand as `842be04` left them, and D3 and D5 are as built.
+
+The `Addressed: D1, D2, D3` line my last round opened with is gone, and `tracker check` now refuses an `Addressed:` entry that is no comment id, naming the file and the line.
+
+That line is the ticket's own incident, one layer up: `Addressed:` names the ids a review page exports (`C1`, `C4`), a round that answers chat rulings resolves no comment and writes no such line at all, and I wrote the ticket's own `Dn` tags there. The page's reader refused it at render, which is after the commit and after the worker has gone; the check refuses it at the commit, where the text was written. Run over the ticket as it stood, it printed one line per tag, each at line 105.
+
+**Demo**
+
+```
+$ /home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/mx/bin/tracker check /home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/tickets/tracker-command-and-commit-check.md
+/home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/tickets/tracker-command-and-commit-check.md:105: `D1` is no comment id; `Addressed:` names the review page's comments as the page shows them, `C1`, `C4`, and never a ticket's own `Dn` tag
+/home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/tickets/tracker-command-and-commit-check.md:105: `D2` is no comment id; `Addressed:` names the review page's comments as the page shows them, `C1`, `C4`, and never a ticket's own `Dn` tag
+/home/agent/repos/dispatch/agents-ticket-file-contract-tracker-command-and-commit-check/agent/tickets/tracker-command-and-commit-check.md:105: `D3` is no comment id; `Addressed:` names the review page's comments as the page shows them, `C1`, `C4`, and never a ticket's own `Dn` tag
+1 file refused
+```
+
+The show page is unchanged: this round adds a rule to the check, whose panel already shows a commit refused construct by construct, so there is no new shape to draw.
+
+**Details, if you want them**
+
+- [D9] Assumptions, continuing the block above
+  - A19 `mx/skills/tracker/tracker.py:1104`: an `Addressed:` entry is refused unless it is `C<n>`, and an `Addressed:` line that names nothing is refused too. Five checks cover it, beside the ones for the questions and the assumptions.
