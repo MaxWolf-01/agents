@@ -283,7 +283,7 @@ INTO = {
     "claimed": (("open", "proposed", "review"), "a claim is taken from the frontier, a proposal like an open ticket, and a build the user sent back is claimed again"),
     "review": (("claimed",), "review is where a finished build waits for the user's ruling, and a build starts from a claim"),
     "done": (("review",), "done is the accept and nothing less, written once the user has ruled on the review page"),
-    "open": (("proposed", "review"), "open is a ticket ruled and not yet built: the ruling on a proposal, or the redo ruling that discards a build and keeps the ticket"),
+    "open": (("proposed", "review", "claimed"), "open is a ticket ruled and not yet built: the ruling on a proposal, the redo ruling that discards a build and keeps the ticket, or a claim released when its session is lost"),
     "proposed": ((), "proposed is where an agent files a ticket the user has not ruled on, and nothing moves back to it"),
 }
 

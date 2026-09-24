@@ -36,11 +36,12 @@ import tracker as tr
 CORPUS = Path(__file__).parent / "corpus"
 
 # The transitions /mx:tracker's Ticket state defines: claim takes an open, proposed or review
-# ticket; the worker flips its claim to review; the accept writes done; a ruling before the build
-# and the redo ruling write open.
+# ticket; the worker flips its claim to review; the accept writes done; a ruling before the build,
+# the redo ruling and a claim whose session is lost write open.
 DEFINED = {
     ("proposed", "claimed"), ("open", "claimed"), ("review", "claimed"),
     ("claimed", "review"), ("review", "done"), ("proposed", "open"), ("review", "open"),
+    ("claimed", "open"),
 }
 # the frontmatter's vocabularies as MARKDOWN.md's The ticket file writes them
 STATUSES = ("proposed", "open", "claimed", "review", "done")
