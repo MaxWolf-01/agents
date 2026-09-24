@@ -28,7 +28,10 @@ RETIRED = r"\bspecs?\b|\bfeatures?\b|standalone ticket|decision ticket|build tic
 
 def git(*args: str, at: Path = REPO) -> str:
     done = subprocess.run(["git", "-C", str(at), *args], capture_output=True, text=True)
-    return (done.stdout + done.stderr).rstrip()
+    said = (done.stdout + done.stderr).rstrip()
+    if done.returncode:
+        raise SystemExit(f"git {' '.join(args)} failed with {done.returncode}:\n{said}")
+    return said
 
 
 def ran(*command: str, at: Path, shown: str = "") -> tuple[str, str]:
@@ -63,7 +66,16 @@ def tree(root: Path) -> str:
 def base() -> str:
     """The commit before this ticket's first: the one that removed the spec format's file."""
     removed = git("log", "--format=%H", "-1", "--diff-filter=D", "--", "mx/skills/grilling/SPEC-FORMAT.md")
-    return f"{removed}^" if removed else "HEAD"
+    if not removed:
+        raise SystemExit("no commit here removed mx/skills/grilling/SPEC-FORMAT.md: "
+                         "this demo reads the before state out of that commit's parent")
+    return f"{removed}^"
+
+
+def words(at: str, *paths: str) -> int:
+    """How many words the tracker skill's own two files hold at one commit, or one named file's."""
+    files = paths or ("mx/skills/tracker/SKILL.md", "mx/skills/tracker/MARKDOWN.md")
+    return sum(len(git("show", f"{at}:{path}").split()) for path in files)
 
 
 def counted(at: str) -> tuple[int, int]:
@@ -130,19 +142,20 @@ def steps() -> list[dict]:
              "and a citation that names no property of any ancestor is refused the way a dangling parent is.",
     ))
 
-    stat = git("diff", "--stat", f"{was}..{at}", "--", *PROSE)
+    stat = git("diff", "--stat", f"{was}..{at}", "--", *PROSE).splitlines()
+    shown = stat if len(stat) <= 24 else stat[:23] + ["…", stat[-1]]
     short = git("rev-parse", "--short", was)
     found.append(dict(
         title="The skills, before and after",
         said="Every skill that spoke of a spec, a feature, a standalone ticket or a decision ticket, in one pass "
-             "by one worker: the tracker conventions, grilling, the slicing that was to-tickets, dispatch and its "
-             "worker contract, code-review, orient, research, project-setup, show, testing, prototype, the "
-             "always-loaded workflow block and its copy in the worker prompt, the README and the glossary.",
-        runs=[(f"git diff --stat {short}..{at} -- the prose surface", "\n".join(stat.splitlines()[-24:]))],
-        look="`grilling/SPEC-FORMAT.md` and `to-tickets/SKILL.md` leave; `tracker/SLICING.md` arrives, holding how "
-             "a ticket is cut into child tickets, beside the conventions it belongs to. The tracker skill's own "
-             "two files come to about half what they were while absorbing the spec format's sections, because "
-             "every mechanism they described is now `tracker --help`'s.",
+             "by one worker, so that one vocabulary could not come out of two. The listing is what moved.",
+        runs=[(f"git diff --stat {short}..{at} -- the prose surface", "\n".join(shown))],
+        look=f"`grilling/SPEC-FORMAT.md` and `to-tickets/SKILL.md` leave; `tracker/SLICING.md` arrives, holding "
+             f"how a ticket is cut into child tickets, beside the conventions it belongs to. The tracker skill's "
+             f"own two files are {words(at)} words against {words(was)} before, and they absorbed the spec "
+             f"format's {words(was, 'mx/skills/grilling/SPEC-FORMAT.md')} on the way: "
+             f"{100 * words(at) // (words(was) + words(was, 'mx/skills/grilling/SPEC-FORMAT.md'))}% of the prose "
+             f"they replace, because every mechanism they described is now `tracker --help`'s.",
     ))
 
     then, then_files = counted(was)
@@ -164,10 +177,11 @@ def steps() -> list[dict]:
 
     glossary = git("diff", f"{was}..{at}", "--", "CONTEXT.md")
     entries = [line for line in glossary.splitlines() if line.startswith(("+**", "-**"))]
+    gone = sum(1 for line in entries if line.startswith("-"))
     found.append(dict(
         title="The glossary",
-        said="The words the whole workflow shares. Seven terms leave with the model that needed them, three "
-             "arrive for the tree, and one is renamed.",
+        said=f"The words the whole workflow shares: {gone} entries leave with the model that needed them and "
+             f"{len(entries) - gone} arrive, one of which is a rename.",
         runs=[("git diff CONTEXT.md, the entries that left and arrived", "\n".join(entries))],
         look="`Spec mark` becomes `Call mark`, since the mark sits on a call wherever the call is written. "
              "`Ticket context` is the new one worth a term: an overloaded word given one meaning here.",

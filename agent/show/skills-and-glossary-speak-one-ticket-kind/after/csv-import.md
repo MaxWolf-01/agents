@@ -29,7 +29,7 @@ Statements arrive as CSV, one layout per bank, and every import is re-mapped by 
 
 The seam is `importer.read_statement`, whose oracle is a captured statement and the ledger it should produce.
 
-- P1: executable, over generated statements at that seam.
+- P1: reviewed, against each slice's diff.
 - P2: reviewed.
 
 ## Out of scope
@@ -38,6 +38,6 @@ OFX and QIF, which no bank here exports.
 
 ## Acceptance criteria
 
-- [ ] Every child ticket is done, and this ticket's close-out is ruled.
+- [ ] A statement from each of the four banks imports, and the second import of one changes nothing.
 
 ## Comments

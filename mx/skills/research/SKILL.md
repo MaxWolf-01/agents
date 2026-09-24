@@ -1,6 +1,6 @@
 ---
 name: research
-description: Investigate a question against primary sources and land the findings where it was asked
+description: "Investigate a question against primary sources and land the findings on the ticket that asked it. Use when a decision waits on a fact outside the working directory: a third-party API, a vendor's docs, a standard, a knowledge base, or when another skill fires a background investigation."
 argument-hint: [topic or question]
 ---
 

@@ -16,7 +16,7 @@ Typecheck and run single test files as you go, the full suite once at the end. A
 
 Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 
-**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A call in your context that its mark gives the agent is an assumption too and gets an id naming that mark, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
+**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A call in your context whose call mark gives it to the agent is an assumption too and gets an id naming that mark, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
 
 ```
 - A3 `path/file.py:118`: the call and why
@@ -24,7 +24,7 @@ Your blast radius is this worktree: everything you create, install or modify liv
 
 Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
 
-**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default; the full axes when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default, which gives up the Spec and Tests axes for one reviewer; the full axes when your diff is large or touches a contract others depend on, with `--spec` taking your ticket's context: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
 **Close into the ticket**: tick the acceptance criteria your work meets, put the calls only the user can make in the ticket's `## Questions`, and append a comment under its `## Comments` heading (`/mx:tracker`, The ticket file) in the shape the agent that dispatched you relays to the user unchanged:
 

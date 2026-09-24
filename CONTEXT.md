@@ -19,7 +19,7 @@ The provenance tag on a call: who settled it, or that nobody has yet.
 _Avoid_: spec mark, mark (bare; a row mark is one too), marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates and nobody holds.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates, nobody holds, and the user is not in the loop for.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
@@ -33,7 +33,7 @@ The unit of work on the tracker: one file, or one issue.
 _Avoid_: task, item, story
 
 **Parent ticket**:
-The ticket another ticket is part of. It holds the design its children are slices of, and is done once every one of them is.
+The ticket another ticket is part of. It holds the design its children are slices of, and is done once every one of them is and its own close-out is ruled.
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:

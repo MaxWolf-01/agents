@@ -8,7 +8,7 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 </picture>
 
 <details>
-<summary><b>The whole cycle, from an intent to a shipped feature</b></summary>
+<summary><b>The whole cycle, from an intent to shipped work</b></summary>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
@@ -28,7 +28,7 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 </details>
 
 <details>
-<summary><b>Planning that spans sessions: the spec carries the design, decision tickets carry the open questions</b></summary>
+<summary><b>Planning that spans sessions: the ticket carries the design, child tickets carry the open questions</b></summary>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
@@ -40,14 +40,14 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 <details>
 <summary><b>The board: the tracker as one page</b></summary>
 
-`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, and everything that waits on you in one group at the top, with its open questions under the row and a copy button on each. A row says what it asks of you, how much of your time it wants and how much it matters, every mark explaining itself on hover, and it opens to the ticket's brief, questions, what to build and acceptance criteria. A chip hides a whole tree of tickets, a filter narrows the rows, and the column beside them carries a briefing, where things stand and what to pick up next, written by a model that has read the repo, over a preview of the dependency graph that opens full size. An opened ticket also lists the sessions that committed on it, each with the command that resumes it, read off the `Session:` trailer a session's commits carry where a `prepare-commit-msg` hook writes one; a GitHub reference on a row says whether its pull request is open, merged or waiting on changes. It watches the tracker and the open tab re-renders itself, so it stays current while the work is in flight. Screenshots of a demo tracker, rebuilt by [`docs/figures/board-fixture/build.py`](../docs/figures/board-fixture/build.py).
+`board`, run from anywhere in the repo, renders every ticket as a row in the group of its state, and everything that waits on you in one group at the top, with its open questions under the row and a copy button on each. A row says what it asks of you, how much of your time it wants and how much it matters, every mark explaining itself on hover, and it opens to the ticket's brief, its questions and its acceptance criteria. A chip hides a whole tree of tickets, a filter narrows the rows, and the column beside them carries a briefing, where things stand and what to pick up next, written by a model that has read the repo, over a preview of the dependency graph that opens full size. An opened ticket also lists the sessions that committed on it, each with the command that resumes it, read off the `Session:` trailer a session's commits carry where a `prepare-commit-msg` hook writes one; a GitHub reference on a row says whether its pull request is open, merged or waiting on changes. It watches the tracker and the open tab re-renders itself, so it stays current while the work is in flight. Screenshots of a demo tracker, rebuilt by [`docs/figures/board-fixture/build.py`](../docs/figures/board-fixture/build.py).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/board-overview.png">
   <img alt="The board: the needs-me group at the top, holding a build to rule on, a prototype decision and a slice stopped on a question, each with its open question under the row and a copy button beside it, and each row carrying what it asks of you, your time on it and its priority; the frontier and the claimed work below; beside the rows a briefing written on this tracker, saying where things stand and naming three picks with a reason each and which of them can run as one wave, over a preview of the whole tracker's dependency graph across two features" src="assets/board-overview-light.png">
 </picture>
 
-One feature, the other hidden by its chip; a ticket opened to its brief, its question and its criteria, and the feature's graph beside the rows:
+One tree of tickets, the other hidden by its chip; a ticket opened to its brief, its question and its criteria, and the tree's graph beside the rows:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/board-feature.png">

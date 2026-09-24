@@ -33,7 +33,7 @@ One flow carries every piece of work: an intent arrives in chat; the session gri
    - **A ticket** is filed per `/mx:tracker` and dispatched by the session that wrote it, which can then be cleared: the worker outlives it and any later session integrates the result.
    - **Work bigger than one fresh worker** is cut into **child tickets** first (`/mx:tracker`, SLICING.md), each a vertical slice of the ticket holding the design. The session that grilled it can build one, as that slice's worker, in a worktree of its own and under the worker contract, which is [`worker-prompt.md`](../dispatch/worker-prompt.md): read it as the worker would.
 
-4. **`/mx:dispatch` works the tickets**, a lone ticket and a tree of them alike, by the same scripts and the same host selection: one orchestrator, a fresh worker per ticket in its own worktree, one at a time or in waves, the board as the standing view. Each ticket carries its own context, so a worker's context window is disposable. A worker's whole contract is the prompt dispatch appends to it ([`worker-prompt.md`](../dispatch/worker-prompt.md)): the ticket and its ancestry, `/mx:testing` when it writes tests, `/mx:code-review` at the end. Reach for either on its own too.
+4. **`/mx:dispatch` works the tickets**, a lone ticket and a tree of them alike, by the same scripts and the same host selection: one orchestrator, a fresh worker per ticket in its own worktree, one at a time or in waves, the board as the standing view. A ticket and its ancestry are the whole brief, so a worker's context window is disposable. A worker's whole contract is the prompt dispatch appends to it ([`worker-prompt.md`](../dispatch/worker-prompt.md)): the ticket and its ancestry, `/mx:testing` when it writes tests, `/mx:code-review` at the end. Reach for either on its own too.
 
    **The build never waits for the user to ratify a call.** It starts once the frontier is empty, that is, once you have no question left to put to them; every call they have not ruled on travels into the tickets as an assumption its worker anchors to the line it shaped, and the review page is where they rule on it. A round still carrying an open question waits for that answer instead. A speculative build waits on its own ticket branch for the user's ruling: the branch above carries only what they accepted, a ticket's dependents start only after it is accepted, and the ruling is accept, amend, redo or reject (`/mx:tracker`).
 
@@ -52,7 +52,7 @@ Keep the planning steps (1 to 3) in **one unbroken context window** (no handoff 
 
 ## Codebase health
 
-Not feature work, upkeep.
+Not product work, upkeep.
 
 - **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities**; picking one generates an idea to take into the main flow at `/mx:grill-with-docs`.
 - **`/mx:bloat-audit`**: an over-engineering audit, a ranked list of what to delete, simplify, or replace with stdlib.

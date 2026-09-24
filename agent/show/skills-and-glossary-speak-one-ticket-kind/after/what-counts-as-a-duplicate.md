@@ -1,5 +1,5 @@
 ---
-status: open
+status: proposed
 parent: csv-import
 needs-user: true
 priority: 2
