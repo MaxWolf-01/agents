@@ -23,3 +23,5 @@ Postponed by the user on 2026-09-23 and moved out of board-orients: further edit
 - [ ] The README's board screenshots show the board as it is after those edits.
 - [ ] The PNGs under `mx/assets/` are smaller than they were, with no pixel changed.
 - [ ] Demo: the byte sizes before and after, and the README's board section rendered.
+
+The user added on 2026-09-24: the README's figures that still draw a spec, `NN` tickets and a standalone ticket (one-flow, full-cycle, ticket-state, session-boundary, landing; listed at `agent/show/ticket-file-contract/open-points.html` on the `ticket-file-contract` branch) are redrawn here too, once the workflow has reached a stable point a few sessions on, so the README is brought up to date once rather than after every change.
