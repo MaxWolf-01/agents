@@ -5,7 +5,7 @@
 """Checks for the tracker command. Run: uv run test_tracker.py
 
 One seam: the command line, driven in process, with a fixture tracker in a git repo on disk. The
-oracle is `/mx:tracker` (SKILL.md: the ticket file, ticket state, the frontier, retiring) and the
+oracle is `/mx:tracker` (SKILL.md: The ticket file, State, The tree, Retire) and the
 worker contract (`mx/skills/dispatch/worker-prompt.md`: the questions, the assumptions, `Addressed`),
 transcribed here rather than imported, so a rule the command reads differently fails.
 
@@ -42,7 +42,7 @@ DEFINED = {
     ("proposed", "claimed"), ("open", "claimed"), ("review", "claimed"),
     ("claimed", "review"), ("review", "done"), ("proposed", "open"), ("review", "open"),
 }
-# the frontmatter's vocabularies as the tracker skill's The ticket file writes them
+# the frontmatter's vocabularies: the statuses from `/mx:tracker`'s State, the sizes from The ticket file
 STATUSES = ("proposed", "open", "claimed", "review", "done")
 SIZES = ("XS", "S", "M", "L", "XL")
 PRIORITIES = (1, 2, 3, 4, 5)
@@ -78,7 +78,7 @@ def run(at: Path, *argv: str, given: str = "") -> Run:
 
 def ticket(tickets: Path, slug: str, body: str = "", **meta: object) -> Path:
     """A ticket file the tracker's rules accept, with `meta` on its frontmatter and `body` under its
-    brief. The frontmatter is written the way the tracker skill writes one, not the way the command does."""
+    brief. The frontmatter is written the way `/mx:tracker` writes one, not the way the command does."""
     declared = {"status": "open", "priority": 1, "size": "M", **meta}
     written = "---\n" + "".join(f"{key}: {value}\n" for key, value in declared.items() if value is not None) + "---\n"
     written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\nWhat {slug} is, cold.\n"

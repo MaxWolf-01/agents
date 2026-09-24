@@ -25,6 +25,10 @@ PATH = f"{REPO / 'mx' / 'bin'}:{os.environ['PATH']}"
 # The prose surface this ticket changed, and the words the one-ticket model retires.
 PROSE = ["mx/skills/*.md", "mx/README.md", "claude/CLAUDE.md", "CONTEXT.md", ":(exclude)mx/skills/tracker/corpus/*"]
 RETIRED = r"\bspecs?\b|\bfeatures?\b|standalone ticket|decision ticket|build ticket"
+TRACKER_SKILL = "mx/skills/tracker/SKILL.md"
+TRACKER_SHAPE = "mx/skills/tracker/MARKDOWN.md"
+DESIGN = "mx/skills/grilling/DESIGN.md"
+SPEC_FORMAT = "mx/skills/grilling/SPEC-FORMAT.md"
 
 
 def git(*args: str, at: Path = REPO) -> str:
@@ -74,11 +78,12 @@ def base() -> str:
 
 
 def words(at: str, *paths: str) -> int:
-    """How many words the given files hold at one commit; by default the tracker skill's own prose,
-    which was two files before this pass and is one now."""
-    files = paths or [path for path in ("mx/skills/tracker/SKILL.md", "mx/skills/tracker/MARKDOWN.md")
-                      if git("ls-tree", "--name-only", at, "--", path)]
-    return sum(len(git("show", f"{at}:{path}").split()) for path in files)
+    """How many words the named files hold at one commit, skipping the ones that commit does not
+    have: the tracker skill was two files before this pass and is one now."""
+    here = [path for path in paths if git("ls-tree", "--name-only", at, "--", path)]
+    if not here:
+        raise SystemExit(f"none of {', '.join(paths)} is in {at}")
+    return sum(len(git("show", f"{at}:{path}").split()) for path in here)
 
 
 def counted(at: str) -> tuple[int, int]:
@@ -146,18 +151,23 @@ def steps() -> list[dict]:
     ))
 
     stat = git("diff", "--stat", f"{was}..{at}", "--", *PROSE).splitlines()
-    shown = stat if len(stat) <= 24 else stat[:23] + ["…", stat[-1]]
+    named = ("SPEC-FORMAT", "to-tickets", "MARKDOWN", "tracker/SKILL", "SLICING")
+    keep = [line for line in stat if any(name in line for name in named)]
+    rest = [line for line in stat if line not in keep]
+    shown = stat if len(stat) <= 24 else rest[:22 - len(keep)] + ["…"] + keep + [rest[-1]]
     short = git("rev-parse", "--short", was)
     found.append(dict(
         title="The skills, before and after",
         said="Every skill that spoke of a spec, a feature, a standalone ticket or a decision ticket, in one pass "
              "by one worker, so that one vocabulary could not come out of two. The listing is what moved.",
         runs=[(f"git diff --stat {short}..{at} -- the prose surface", "\n".join(shown))],
-        look=f"`grilling/SPEC-FORMAT.md`, `to-tickets/SKILL.md` and the tracker's `MARKDOWN.md` leave. What a "
-             f"ticket file looks like is the tracker skill itself now, {words(at)} words against the "
-             f"{words(was)} its two files held before; how a grilling writes a design into one is "
-             f"`grilling/DESIGN.md`, and how a ticket is cut into child tickets is `tracker/SLICING.md`, each "
-             f"read when that work is happening rather than on every turn.",
+        look=f"`grilling/SPEC-FORMAT.md`, `to-tickets/SKILL.md` and the tracker's `MARKDOWN.md` leave, and "
+             f"what they said is split by who reads it. What a ticket file looks like is the tracker skill "
+             f"itself, {words(at, TRACKER_SKILL)} words where its two files held "
+             f"{words(was, TRACKER_SKILL, TRACKER_SHAPE)}; how a grilling writes a design into one is "
+             f"`grilling/DESIGN.md`, {words(at, DESIGN)} words where the spec format held "
+             f"{words(was, SPEC_FORMAT)}; and how a ticket is cut into child tickets is `tracker/SLICING.md`. "
+             f"The last two are read in the round that needs them rather than on every turn.",
     ))
 
     then, then_files = counted(was)

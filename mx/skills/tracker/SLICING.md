@@ -35,7 +35,7 @@ Give each its **blocking edges**: the tickets that must be done before it can st
 
 `tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and driving the demo.
 
-Write each body per the ticket file's shape (`/mx:tracker`). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
+Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
 **The breakdown is filed when the check is clean.** `property-coverage` holds every executable property to having a check and names what does not line up, at the line it read; its `--help` is its reference. Fix what it names and run it again.
 

@@ -30,7 +30,7 @@ Look for what the work was ordered by, in this order:
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 
-Work no order was found behind runs **light** (below) with no source at all. With one in hand, the axes are the default for a large diff or one touching a contract others depend on; for a small diff that touches no such contract, light mode's single reviewer is the cheaper trade, and it reads the same source. The reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
+Where no order was found, run **light** (below), which takes none. With one in hand, the axes are the default for a large diff or one touching a contract others depend on; for a small diff that touches no such contract, light mode's single reviewer reads the same source for less, and what it costs is the axes' separation and the Tests axis, the one that runs the suite. The reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
 ### 3. What binds the review
 
@@ -67,7 +67,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-`--light` folds the briefs into one reviewer, which judges the diff against `--spec` as well where one is given, and trades the axes' separation for cost: the right trade when nothing ordered the work, and when a diff is small enough that one reader sees all of it. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
+`--light` folds the correctness and standards briefs into one reviewer, which judges the diff against `--spec` as well where one is given. What it buys is cost; what it costs is the axes' separation and the Tests axis, so nobody runs the suite. The right trade for a diff small enough that one reader sees all of it, and for work nothing ordered. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 

@@ -7,16 +7,20 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. The tracker sits in the repo it plans, or, where the work spans repos or the tickets stay out of a shared one, in a workspace repo holding the clones as untracked directories and the tracker beside them.
 
-The `tracker` command owns every mechanical operation on those files, read and write, and `tracker --help` is the reference for all of them. Publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. What no command writes is the body, the prose the agent puts in the file: its shape is below, how a grilling fills its design sections is `/mx:grilling`'s, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
+The `tracker` command owns every mechanical operation on those files, read and write, and `tracker --help` is the reference for all of them. Publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. What no command writes is the body, the prose the agent puts in the file: its shape is below, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
 
 ## The ticket file
 
-All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s. Three of them are judgments rather than bookkeeping: **priority**, the agent's reading of how soon the ticket matters to the user, never their chore to rank; **size**, the user's own time on it and never the agent's, XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions; and **needs-user**, which says the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
+All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s. Three of them are judgments rather than bookkeeping:
+
+- **priority**: the agent's reading of how soon the ticket matters to the user, never their chore to rank.
+- **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
+- **needs-user**: the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
 
 **The H1 is the ticket's short name**, the few words a board row shows; the sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `CONTEXT.md`, in this order:
 
 - **`## Brief`**, always, right under the H1: the intent and why it matters, as a technical stakeholder writes it, read cold. A proposal's says what it was cut from.
-- **`## User stories`**: what each actor wants and why, numbered.
+- **`## User stories`**: numbered, `As an <actor>, I want <a capability>, so that <a benefit>`.
 - **`## Properties`**: `- P<n> <the property>`, one always or never sentence each. The id is permanent, and every descendant cites it `<slug>#P<n>`.
 - **`## Decisions`**: the calls, each carrying the **call mark** that says who settled it.
 - **`## Testing seams`**: the seams the work is tested at, their oracles, and every property disposed of as executable or reviewed.
@@ -24,9 +28,9 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## Fog`**: in-scope work whose question cannot yet be stated.
 - **`## Acceptance criteria`**, always: `- [ ]` items, what the work has to hold to be done.
 - **`## Questions`**: the calls only the user can make, below.
-- **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands here, its detail in `agent/research/` (`/mx:research`).
+- **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in `agent/research/` (`/mx:research`).
 
-Those in the middle appear when they have content, and [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) is how a session writes them.
+Every section but the three marked always appears when it has content. Read [`/mx:grilling`'s DESIGN.md](../grilling/DESIGN.md) in the round that writes the design sections, User stories through Fog: it is how each one is written.
 
 ### Questions
 
@@ -66,7 +70,7 @@ Two facts carry **provenance**: whether the user wanted the ticket at all is its
 
 A newer artefact never leaves the older one looking live; agents read whatever exists as current truth. A superseded file is **tombstoned** (one line at the very top: `> Historical artifact as of <date>, superseded by <successor>. Not current; kept as the reasoning trail.`) or, with no reader value left, deleted, which git history keeps.
 
-While nothing is built on a ticket's answer, a later decision that overturns it amends it in place, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer it is the reasoning behind that code: leave it, file a ticket that supersedes it, and put a one-line forward pointer on the old one. Either way the **sweep** follows in the same session: grep the retired claim across `agent/tickets/`, `CONTEXT.md` and `decisions/`, since a copy left standing is current truth to every later reader.
+While nothing is built on a ticket's answer, a later decision that overturns it amends it in place, marking the changed claim inline (`(amended <date>, was <old>)`). Once code reads the answer it is the reasoning behind that code: leave it, file a ticket that supersedes it, and put a one-line forward pointer on the old one. Either way the **sweep** follows in the same session: grep the retired claim across `agent/tickets/`, `CONTEXT.md` and `decisions/`, since a copy left standing is current truth to every later reader. A sweep that cannot run now is a ticket with a blocking edge.
 
 ## Retire
 
