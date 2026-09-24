@@ -885,6 +885,26 @@ def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(
     assert questions_on(rows_of(page)["t-map-columns"]) == [("D1", "Per bank or per file name?")]
 
 
+def test_the_board_renders_the_tracker_the_code_repo_names(tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """With the tickets in one repo and the code in another, `board` run in the code repo renders
+    the tracker that repo names, the way every other reader of a ticket file finds it."""
+    plans = tmp_path / "plans" / "agent" / "tickets"
+    plans.mkdir(parents=True)
+    ticket(plans / "map-columns.md", "claimed", priority=1, size="S")
+    git(plans.parent.parent, "init", "-q", "-b", "main")
+    git(plans.parent.parent, "add", "-A")
+    git(plans.parent.parent, "commit", "-q", "-m", "the tracker")
+    code = tmp_path / "lamp"
+    code.mkdir()
+    git(code, "init", "-q", "-b", "main")
+    git(code, "config", "mx.tracker", str(plans))
+    assert board.find_tracker(code) == plans
+
+    out = tmp_path / "board.html"
+    render(board.find_tracker(code), plans.parent.parent, out)
+    assert "t-map-columns" in rows_of(out.read_text())
+
+
 STALE = """
 ## Questions
 
@@ -971,7 +991,7 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
     }
     asked = [line for lines in blocks for line in lines[1:]]
     assert len(asked) == 11 and all(line.startswith("- [D") for line in asked)
-    assert any("Remember the mapping per bank" in line for line in asked), "the questions on a ticket branch are in it too"
+    assert any("Remember the mapping per bank" in line for line in asked), "a build in review asks its own"
     # the file's own markdown, so a question pastes back into the ticket as it was written
     assert "- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" in asked
     assert not any("Whose card does the sandbox go on" in line for line in asked), "a ruled question is answered"
@@ -1353,8 +1373,8 @@ def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(
 
 
 def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The board reads the log again on every render, as it does the ticket branches: a session
-    working while the board watches is on the ticket by the next one."""
+    """The board reads the log again on every render: a session working while the board watches is
+    on the ticket by the next one."""
     root, repo = worked
     out = tmp_path / "board.html"
     render(root, repo, out)
@@ -1789,7 +1809,7 @@ def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing
 ) -> None:
     """A board with no GitHub reference on it has no source to miss, as a tracker with no review
     page rendered has no server to miss. Its own tracker, since the fixture's build ticket names
-    two references from the worktree its tree is read from."""
+    two references of its own."""
     record = gh_answering(path_with, ANSWERED)
     root = tmp_path / "repo" / "agent" / "tickets"
     root.mkdir(parents=True)
@@ -2239,8 +2259,8 @@ NEEDS_ME = {
 
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The same two properties as the checks above, at the seam the spec's Testing Decisions names: a
-    fixture tracker on disk in, groups out. map-columns keeps its questions on its ticket branch,
-    so the board has to read them there."""
+    fixture tracker on disk in, groups out. map-columns carries its questions in the tracker's own
+    copy, where the import left them."""
     out = tmp_path / "board.html"
     render(demo.root, demo.repo, out)
     assert rows_in(out.read_text(), "needs") == NEEDS_ME

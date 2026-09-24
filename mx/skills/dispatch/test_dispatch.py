@@ -45,6 +45,16 @@ printf 'stub: built %s\\n' "$slug" >> "$state/$run_id.log"
 printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
 """
 
+# The same stub with something to show and nothing to review: the commit a worker makes, and no
+# report, which is what a run that stopped short leaves.
+STOPPED_SHORT = RUNNER.replace(
+    "printf 'attempts=1 exit=0 report=no",
+    """printf 'the lamp, half warm\\n' > lamp.txt
+git add lamp.txt
+git commit -q -m "$slug: as far as it got"
+printf 'attempts=1 exit=1 report=no""",
+)
+
 # The same stub finishing: one commit on the ticket branch in the worktree it was started in, and
 # the report beside the worklog, which is what the runner contract has a worker leave behind.
 BUILDING = RUNNER.replace(
@@ -106,12 +116,27 @@ def toy(tmp_path: Path) -> Path:
     return repo
 
 
-def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "GIT_CONFIG_GLOBAL": "/dev/null",
-           "JOB_STATE_DIR": str(toy.parent / "jobs"), "PATH": os.environ["PATH"], **extra}
-    env.pop("DISPATCH_PERMISSION_MODE", None)
+def environment(toy: Path, **extra: str) -> dict[str, str]:
+    """What every command here runs in: a HOME of its own, and a `diffview` that records the
+    arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
+    what dispatch has to get right."""
+    bin_dir = toy.parent / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "diffview").write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
+        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
+    (bin_dir / "diffview").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
-    return subprocess.run([str(DISPATCH), *args], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    env = {**os.environ, "HOME": str(toy.parent / "home"), "GIT_CONFIG_GLOBAL": "/dev/null",
+           "JOB_STATE_DIR": str(toy.parent / "jobs"),
+           "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
+    env.pop("DISPATCH_PERMISSION_MODE", None)
+    return env
+
+
+def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run([str(DISPATCH), *args], cwd=toy, capture_output=True, text=True,
+                          env=environment(toy, **extra), timeout=180)
 
 
 def status_of(tracked: Path, slug: str) -> str:
@@ -181,10 +206,7 @@ def kill_sessions() -> None:
 
 
 def spawn(toy: Path, staged: Path, slug: str, message: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "GIT_CONFIG_GLOBAL": "/dev/null",
-           "JOB_STATE_DIR": str(toy.parent / "jobs")}
-    env.pop("DISPATCH_PERMISSION_MODE", None)
-    (toy.parent / "home").mkdir(exist_ok=True)
+    env = environment(toy)
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
     return subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug, "sonnet"],
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
@@ -269,6 +291,10 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, trac
     assert ruled.returncode == 0, ruled.stderr
     git(tracked, "commit", "-q", "-am", "warm-preset: D2 ruled")
 
+    # the stub makes one commit, so its parent is what the branch was cut from; read from git
+    # rather than from the range under test
+    cut = git(toy, "rev-parse", "ticket/warm-preset~1").strip()
+    tip = git(toy, "rev-parse", "ticket/warm-preset").strip()
     git(toy, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
     landed = run(toy, "review", "warm-preset")
     assert landed.returncode == 0, landed.stderr
@@ -277,7 +303,68 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, trac
     (range_,) = got.stdout.split()
     qualified = not (toy / "agent" / "tickets").is_dir()
     assert range_.startswith("lamp@") == qualified, f"{range_} in the tracker's own repo: {not qualified}"
-    assert re.fullmatch(r"(lamp@)?[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}", range_), range_
+    assert range_.removeprefix("lamp@") == f"{cut}..{tip}", "the range the merge commit's parents give"
+    # whatever the ticket says, the page is rendered from this checkout
+    handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
+    assert [line for line in handed if line.startswith(f"{toy}@{cut}..{tip} ")], handed
+
+
+def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, tracked: Path, staged: Path) -> None:
+    """The other half of the finished signal: a worker that stopped short leaves no report, the
+    fetch says so and exits 0, and the review that follows writes nothing of a worker's into the
+    ticket."""
+    (staged.parent / "run-worker.sh").write_text(STOPPED_SHORT)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    for _ in range(60):
+        if list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.status")):
+            break
+        time.sleep(0.5)
+
+    fetched = run(toy, "fetch", "warm-preset")
+    assert fetched.returncode == 0, fetched.stderr
+    assert "left no report" in fetched.stderr, fetched.stderr
+    reports = toy / ".git" / "dispatch" / "reports" / "main"
+    assert not list(reports.glob("*")), "a run that left none leaves nothing behind, half a file included"
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(tracked, "warm-preset") == "review", "the branch is there to rule on either way"
+    assert "## Questions" not in (tracked / "warm-preset.md").read_text()
+
+
+@pytest.mark.parametrize("wrote, exits, says", [
+    (True, 1, "attempts=1 exit=1 report=yes"),
+    (False, 0, "attempts=1 exit=0 report=no"),
+])
+def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
+    tmp_path: Path, wrote: bool, exits: int, says: str
+) -> None:
+    """The shipped runner, with `claude` stubbed rather than the runner itself: a run that left a
+    report is finished whatever it exited with, one that left none says so on its status line, and
+    the retry loop ends either way."""
+    state = tmp_path / "state"
+    state.mkdir()
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(
+        "#!/bin/sh\n"
+        + ('printf "## Comments\\n\\nit lands.\\n" > "$DISPATCH_REPORT"\n' if wrote else "")
+        + f"exit {exits}\n")
+    (bin_dir / "claude").chmod(0o755)
+
+    done = subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+    )
+    assert done.returncode == 0, done.stderr
+    assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
+    assert (state / "run-1.report.md").exists() is wrote
+    assert "runner: started warm-preset" in (state / "run-1.log").read_text()
 
 
 if __name__ == "__main__":

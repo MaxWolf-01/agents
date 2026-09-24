@@ -647,16 +647,25 @@ def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets
     assert [s["heading"] for s in read["sections"]] == ["Brief", "Questions", "Comments"]
 
 
-def test_a_question_the_report_raised_is_ruled_in_the_tracker_with_no_merge_waited_for(
+def test_a_report_that_raises_no_question_opens_no_section_for_one(
     tickets: Path, repo: Path, tmp_path: Path
 ) -> None:
-    """What the one writer buys: the question is in the tracker's own copy the moment the report is
-    imported, so the user's answer is written under it before or after the merge alike."""
+    """The ordinary landing: nothing for the user to rule on, and a heading with nothing under it
+    would show on the board as a question the ticket asks."""
+    path = ticket(tickets, "warm-preset", "## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path, "## Comments\n\nIt lands, with nothing to rule on.\n")))
+    assert said.code == 0 and "0 questions" in said.out, said.said
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert [s["heading"] for s in read["sections"]] == ["Brief", "Comments"]
+    assert read["status"] == "review" and read["questions"] == []
+    assert "Filed off the kitchen rewire." in path.read_text()
+
+
+def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: Path, tmp_path: Path) -> None:
     ticket(tickets, "warm-preset", status="claimed")
     run(repo, "import", "warm-preset", str(reported(tmp_path)))
-    assert run(repo, "rule", "warm-preset", "D3", "2700K").code == 0
-    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]["questions"]
-    assert [(q["tag"], q["answer"]) for q in read] == [("D3", "2700K")]
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
+    assert said.code == 1 and "already in review" in said.err, said.said
 
 
 @pytest.mark.parametrize("broken, said, refused", [
@@ -665,6 +674,10 @@ def test_a_question_the_report_raised_is_ruled_in_the_tracker_with_no_merge_wait
     ("## Questions\n\n- [D3] **Warm?** Amber.\n", "no closing comment", "no `## Comments` section"),
     ("## Comments\n\n- A1 no anchor in backticks here.\n", "an assumption the review page would drop", "this assumption has no anchor"),
     ("## Comments\n\nlanded, as #P2 asks.\n", "a citation naming no ticket", "`#P2` names no ticket"),
+    ("## Comments\n\nlanded.\n\n## Questions\n\n- [D1] **A?** one.\n- [D1] **B?** two.\n",
+     "two questions under one tag", "tag D1 is already taken"),
+    ("## Comments\n\n- [D1] Assumptions\n  - A1 `x.py:1`: one.\n  - A1 `y.py:2`: two.\n",
+     "two assumptions under one id", "assumption A1 is already taken"),
 ])
 def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_and_line(
     tickets: Path, repo: Path, tmp_path: Path, broken: str, said: str, refused: str
@@ -734,7 +747,8 @@ def test_the_corpus_reads_as_one_tree(corpus: Path) -> None:
 
 # ---- properties ------------------------------------------------------------
 # The executable Properties of agent/tickets/ticket-file-contract.md, at the one seam that ticket
-# names: the command line. P5 is reviewed, not executable, and is not here.
+# names: the command line. P5 is reviewed, not executable, and is not here. P7's flow half is at
+# the dispatch seam (mx/skills/dispatch/test_dispatch.py); its source half is below.
 
 WORDS = st.lists(
     st.sampled_from("retry the clock suite upload mapping bank payee ledger board window column".split()),
@@ -866,6 +880,21 @@ def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -
     assert not any(found.values()), "a second parser of a ticket file: " + json.dumps(
         {name: lines for name, lines in found.items() if lines}, indent=2
     )
+
+
+def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(repo: Path) -> None:
+    """`ticket-file-contract#P7` at the source: a worker is handed its ticket's context in its
+    prompt, so nothing staged on a worker host reads a ticket file, and `dispatch` is the only file
+    of the three that invokes the one command that does."""
+    staged = {name: (PLUGIN / "skills" / "dispatch" / name).read_text()
+              for name in ("dispatch-ctl", "run-worker.sh", "worker-prompt.md")}
+    invokes = re.compile(r"\$\{?tracker\b|tracker\.py")
+    holding = {name: invokes.findall(text) for name, text in staged.items()}
+    assert not any(holding.values()), f"a reader of a ticket file on a worker host: {holding}"
+
+    files = next(line for line in (PLUGIN / "skills" / "dispatch" / "dispatch").read_text().splitlines()
+                 if line.strip().startswith("files=("))
+    assert not invokes.search(files), f"the parser travels to the host again: {files.strip()}"
 
 
 DANGLING = [
@@ -1208,6 +1237,20 @@ def test_a_tracker_setting_that_names_no_tracker_is_refused(repo: Path, named: s
 def test_the_setting_takes_the_repo_that_holds_the_tracker_too(repo: Path, tickets: Path, code: Path) -> None:
     git(code, "config", "mx.tracker", str(repo))
     assert run(code, "root").out.strip() == str(tickets)
+
+
+def test_a_setting_written_with_a_tilde_names_the_same_tracker(
+    repo: Path, tickets: Path, code: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The form a user typing into `.git/config` reaches for, and the empty one `git config
+    mx.tracker ""` leaves behind, which is no setting at all."""
+    monkeypatch.setenv("HOME", str(repo.parent))
+    git(code, "config", "mx.tracker", f"~/{tickets.relative_to(repo.parent)}")
+    assert run(code, "root").out.strip() == str(tickets)
+
+    git(code, "config", "mx.tracker", "")
+    (code / "agent" / "tickets").mkdir(parents=True, exist_ok=True)
+    assert run(code, "root").out.strip() == str(code / "agent" / "tickets"), "its own, as with nothing set"
 
 
 def test_the_tracker_is_the_main_checkouts_copy_wherever_the_command_runs(repo: Path, tickets: Path, tmp_path: Path) -> None:
