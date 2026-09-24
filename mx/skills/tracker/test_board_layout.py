@@ -56,18 +56,19 @@ WINDOWS = (900, 1280, 1920, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
-OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
-FOLDED = "standalone-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
+OPENED = "t-map-columns"  # the demo tracker's build in review: the row carrying every mark
+FOLDED = "t-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
 # A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
 # prose; the hover probe below renders the other branch, the board's own count. No model runs in a
 # check: the fixtures take claude off PATH.
 WRITTEN = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
-SAID = """Two builds wait on your ruling and the frontier is three deep. The import feature is the
-one moving: 01 landed on Monday and 02 has been in review since, with three questions on it.
+SAID = """Two builds wait on your ruling and the frontier is three deep. The csv-import tree is the
+one moving: parse-rows landed on Monday and map-columns has been in review since, with three
+questions on it.
 
 ## next
 
-- **Map columns once per bank**: the whole feature waits behind it, and its demo runs.
+- **Map columns once per bank**: the whole tree waits behind it, and its demo runs.
 - **Speed up the test suite**: four minutes to forty-eight seconds, two questions left.
 - **The flaky upload test**: fifteen minutes, and it stops a build going red for nothing.
 
@@ -310,7 +311,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
-ROW, NODE, NEXT = "t-csv-import-02", "#t-csv-import-04", "#t-csv-import-01"
+ROW, NODE, NEXT = "t-map-columns", "#t-commit-import", "#t-parse-rows"
 WIDE = "(sel) => document.querySelector(sel)?.getBoundingClientRect().width ?? 0"
 OVER = "(sel) => { const b = document.querySelector(sel); return b.scrollWidth - b.clientWidth }"
 OPEN = "document.getElementById('gfull').classList.contains('open')"
@@ -408,7 +409,7 @@ with sync_playwright() as pw:
               "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
               "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
               "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
-    win.click("[data-gmode=feature]")  # the board is on the whole tracker, so this is a change in both
+    win.click("[data-gmode=tree]")  # the board is on the whole tracker, so this is a change in both
     named(win, ".gname", "csv-import")
     window["switched"] = win.inner_text(".gname")
     window["board_name"] = page.inner_text("#gname")
@@ -507,7 +508,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
     assert not preview["node_opened"], "a node clicked in the preview opened the overlay instead of going to its row"
-    assert preview["node_cursor"] == "t-csv-import-01", f"the preview's node left the board on {preview['node_cursor']!r}"
+    assert preview["node_cursor"] == "t-parse-rows", f"the preview's node left the board on {preview['node_cursor']!r}"
 
     win = seen["window"]
     assert win["title"].endswith("dependencies"), win["title"]
@@ -530,7 +531,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     # the board reloads on every tracker change, which is where a window holding the board itself
     # would go quiet: it finds the board again and goes on driving it
     after = seen["after_reload"]
-    assert after["orphan"] == "" and after["cursor"] == "t-csv-import-01", (
+    assert after["orphan"] == "" and after["cursor"] == "t-parse-rows", (
         f"the window lost the board across its re-render: {after}"
     )
     assert "gone" in seen["orphan_says"], f"a window whose board closed says {seen['orphan_says']!r}"

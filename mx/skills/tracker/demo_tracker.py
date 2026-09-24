@@ -4,24 +4,26 @@
 # dependencies = ["tyro"]
 # ///
 """Build the demo tracker the board's checks render: a git repo for a fictional bookkeeping CLI,
-"ledger", whose tickets exercise every element the board shows: every ticket status, every decision
-type, every priority and every size, so that each of a row's marks is laid out somewhere.
+"ledger", whose tickets exercise every element the board shows: every ticket status, every
+priority and every size, tickets the user is in the loop for and tickets no worker is kept from,
+so that each of a row's marks is laid out somewhere.
 
-Two features (a confirmed spec with six slices, a draft spec with three tickets, two of them
-decisions), nine standalone tickets covering every decision type, two builds waiting on a ruling
-on their ticket branches with their questions there, one build stopped on two questions of which
-one is ruled, one ticket whose only question is ruled, one research ticket with no question at all,
-review pages beside the tickets, acceptance criteria a build in review has half met, demo scripts
-and a figure under agent/show, and four sessions on the commits: three with a transcript under the
-claude/ config directory this writes, one worker on another host with none.
+Two trees (a parent ticket with six child tickets, one with three) and eleven tickets in no tree,
+two builds waiting on a ruling on their ticket branches with their questions there, one build
+stopped on two questions of which one is ruled, one ticket whose only question is ruled, one ticket
+with no question at all, review pages beside the tickets, acceptance criteria a build in review has
+half met, a property cited by the criterion that takes it on, demo scripts and a figure under
+agent/show, and four sessions on the commits: three with a transcript under the claude/ config
+directory this writes, one worker on another host with none.
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
     CLAUDE_CONFIG_DIR=/tmp/demo/claude board /tmp/demo/agent/tickets --no-watch --no-open
 """
 
-# Promoted from agent/prototypes/board-orients/demo-tracker/build.sh (retired with the feature, in git history), with its tickets moved to the
-# ticket file the board-orients spec decides: the H1 as the short name, `## Brief`, `## Questions`
-# with `Ruled` lines, priority and size in frontmatter.
+# Promoted from agent/prototypes/board-orients/demo-tracker/build.sh (retired with the feature, in
+# git history), and converted to the one-ticket model `agent/tickets/ticket-file-contract.md`
+# decides: one flat file per ticket, the slug as its id, `parent` for the tree, `needs-user` for a
+# ticket worked with the user.
 
 import json
 import os
@@ -44,9 +46,9 @@ def local_sessions(repo: Path) -> dict[str, dict]:
     and the directory the session ran in.
 
     Two of them ran in the ledger itself, which is the repo this builds, so their resume command is
-    one that can be run. The third ran in a feature worktree dispatch has since removed, which is
-    where every locally dispatched session ends up: its directory is gone and it is resumable all
-    the same.
+    one that can be run. The third ran in a worktree dispatch has since removed, which is where
+    every locally dispatched session ends up: its directory is gone and it is resumable all the
+    same.
     """
     return {
         S1: {"title": "Grilling the CSV import", "ai_title": "Grilling the CSV import", "cwd": str(repo)},
@@ -79,17 +81,17 @@ def build(dest: Path) -> Demo:
     git(repo, "init", "-q", "-b", "master")
 
     csv_import(repo)
-    commit(repo, S1, "2026-09-14T10:12:00+02:00", "csv-import: spec and six slices", "agent/tickets/csv-import")
+    commit(repo, S1, "2026-09-14T10:12:00+02:00", "csv-import: the parent ticket and six slices", "agent/tickets")
     saved_views(repo)
-    commit(repo, S1, "2026-09-15T16:40:00+02:00", "saved-views: draft spec and three tickets", "agent/tickets/saved-views")
-    standalone(repo)
-    commit(repo, S3, "2026-09-16T09:05:00+02:00", "tickets: standalone work filed during triage", "agent/tickets")
+    commit(repo, S1, "2026-09-15T16:40:00+02:00", "saved-views: a parent ticket and three slices", "agent/tickets")
+    loose(repo)
+    commit(repo, S3, "2026-09-16T09:05:00+02:00", "tickets: work filed during triage", "agent/tickets")
 
-    # the orchestrator claims, a worker builds 02 on its ticket branch, the orchestrator flips it
-    set_status(repo / "agent/tickets/csv-import/01-parse-rows.md", "done")
-    for claimed in ("agent/tickets/csv-import/02-map-columns.md", "agent/tickets/csv-import/03-duplicate-rule.md", "agent/tickets/speed-up-tests.md"):
+    # the orchestrator claims, a worker builds map-columns on its ticket branch, the orchestrator flips it
+    set_status(repo / "agent/tickets/parse-rows.md", "done")
+    for claimed in ("agent/tickets/map-columns.md", "agent/tickets/duplicate-rule.md", "agent/tickets/speed-up-tests.md"):
         set_status(repo / claimed, "claimed")
-    commit(repo, S2, "2026-09-17T11:20:00+02:00", "csv-import: 01 landed; claim 02 and 03; claim speed-up-tests", "agent/tickets")
+    commit(repo, S2, "2026-09-17T11:20:00+02:00", "csv-import: parse-rows landed; claim map-columns, duplicate-rule and speed-up-tests", "agent/tickets")
     build_in_review(repo)
     stopped_on_questions(repo)
     review_pages(repo)
@@ -97,27 +99,34 @@ def build(dest: Path) -> Demo:
     return demo
 
 
-# ---- the feature csv-import: a confirmed spec, tickets in every status, local edges ----
+# ---- the tree csv-import: a parent ticket, child tickets in every status ----
 
 
 def csv_import(repo: Path) -> None:
-    write(repo / "agent/tickets/csv-import/spec.md", """---
-status: confirmed
+    write(repo / "agent/tickets/csv-import.md", """---
+status: open
+priority: 1
+size: XL
 ---
 
 # CSV import
 
-## Problem Statement
+## Brief
 
-Transactions reach the ledger by hand today: the user reads a bank's CSV export and types each row.
+Transactions reach the ledger by hand today: the user reads a bank's CSV export and types each row. This is the whole of reading one in instead.
 
 ## Properties
 
-- An import never leaves part of a file in the ledger: all rows land, or none.
-- A row already in the ledger is skipped and named in the report, never written twice.
+- P1 An import never leaves part of a file in the ledger: all rows land, or none.
+- P2 A row already in the ledger is skipped and named in the report, never written twice.
+
+## Acceptance criteria
+
+- [ ] Every child ticket is done, and this ticket's close-out has run over the whole output.
 """)
-    write(repo / "agent/tickets/csv-import/01-parse-rows.md", """---
+    write(repo / "agent/tickets/parse-rows.md", """---
 status: open
+parent: csv-import
 priority: 1
 size: S
 ---
@@ -132,11 +141,12 @@ The importer reads a bank's CSV export into typed rows and names each line it ca
 
 A reader for the four export formats the users' banks produce, returning rows and a list of unreadable lines.
 """)
-    write(repo / "agent/tickets/csv-import/02-map-columns.md", """---
+    write(repo / "agent/tickets/map-columns.md", """---
 status: open
+parent: csv-import
+blocked-by: [parse-rows]
 priority: 1
 size: M
-blocked-by: [01]
 gh: [ledger-org/ledger#57]
 ---
 
@@ -153,13 +163,14 @@ The first import from a bank asks for the mapping and stores it; later imports f
 ## Acceptance criteria
 
 - [ ] The second import from a bank asks nothing and maps the columns the first one did.
-- [ ] Property, reviewed: a mapping that fails halfway writes nothing.
+- [ ] `csv-import#P1`, reviewed: a mapping that fails halfway writes nothing.
 """)
-    write(repo / "agent/tickets/csv-import/03-duplicate-rule.md", """---
+    write(repo / "agent/tickets/duplicate-rule.md", """---
 status: open
+parent: csv-import
+blocked-by: [parse-rows]
 priority: 2
 size: S
-blocked-by: [01]
 ---
 
 # Skip rows already imported
@@ -171,12 +182,17 @@ Importing the same export twice adds nothing the second time; the skipped rows a
 ## What to build
 
 A row matches an existing transaction on date, amount and payee.
+
+## Acceptance criteria
+
+- [ ] `csv-import#P2`: the second import of one file adds nothing and names every row it skipped.
 """)
-    write(repo / "agent/tickets/csv-import/04-commit-import.md", """---
+    write(repo / "agent/tickets/commit-import.md", """---
 status: open
+parent: csv-import
+blocked-by: [map-columns]
 priority: 2
 size: M
-blocked-by: [02]
 ---
 
 # One transaction per import
@@ -189,11 +205,12 @@ An import either lands whole or not at all, so a crash halfway never leaves half
 
 The rows of one import are written in one database transaction.
 """)
-    write(repo / "agent/tickets/csv-import/05-import-report.md", """---
+    write(repo / "agent/tickets/import-report.md", """---
 status: proposed
+parent: csv-import
+blocked-by: [duplicate-rule, commit-import]
 priority: 3
 size: S
-blocked-by: [03, 04]
 ---
 
 # The import report
@@ -204,10 +221,11 @@ After an import, one screen lists the rows added and the rows skipped, with the 
 
 ## What to build
 
-Proposed by the orchestrator from 03's closing comment: the skipped rows have nowhere to be seen.
+Proposed by the orchestrator from duplicate-rule's closing comment: the skipped rows have nowhere to be seen.
 """)
-    write(repo / "agent/tickets/csv-import/06-encoding-sniff.md", """---
+    write(repo / "agent/tickets/encoding-sniff.md", """---
 status: open
+parent: csv-import
 priority: 3
 size: XS
 ---
@@ -224,23 +242,25 @@ Detect the encoding from the file's bytes before parsing.
 """)
 
 
-# ---- the feature saved-views: a draft spec, decision tickets, a cross-feature edge ----
+# ---- the tree saved-views: a parent ticket, tickets the user is in the loop for, an edge out ----
 
 
 def saved_views(repo: Path) -> None:
-    write(repo / "agent/tickets/saved-views/spec.md", """---
-status: draft
+    write(repo / "agent/tickets/saved-views.md", """---
+status: open
+priority: 3
+size: L
 ---
 
 # Saved views
 
-## Problem Statement
+## Brief
 
-A filtered list of transactions has to be rebuilt by hand every time.
+A filtered list of transactions has to be rebuilt by hand every time. This is the whole of keeping one.
 """)
-    write(repo / "agent/tickets/saved-views/01-view-storage.md", """---
+    write(repo / "agent/tickets/view-storage.md", """---
 status: open
-type: research
+parent: saved-views
 priority: 3
 size: S
 ---
@@ -255,11 +275,12 @@ Find out whether a saved view belongs in the ledger file or beside it; the answe
 
 - [D1] **Which store keeps a view across a sync without a migration?** The ledger file travels with the data; a file beside it does not.
 """)
-    write(repo / "agent/tickets/saved-views/02-share-link.md", """---
+    write(repo / "agent/tickets/share-link.md", """---
 status: open
+parent: saved-views
+blocked-by: [view-storage, commit-import]
 priority: 4
 size: M
-blocked-by: [01, csv-import/04]
 ---
 
 # Share a view as a link
@@ -272,9 +293,10 @@ A saved view gets a link another user of the same ledger can open, showing the s
 
 Waits on the storage answer and on imports writing in one transaction.
 """)
-    write(repo / "agent/tickets/saved-views/03-view-list-shape.md", """---
+    write(repo / "agent/tickets/view-list-shape.md", """---
 status: open
-type: prototype
+parent: saved-views
+needs-user: true
 priority: 2
 size: M
 ---
@@ -291,10 +313,10 @@ Three layouts for the list of saved views are drawn side by side; you pick one b
 """)
 
 
-# ---- standalone tickets: each decision type, a question that stops a build, a blocked one ----
+# ---- tickets in no tree: one the user is in the loop for, one stopped on a question, a blocked one ----
 
 
-def standalone(repo: Path) -> None:
+def loose(repo: Path) -> None:
     write(repo / "agent/tickets/flaky-upload-test.md", """---
 status: open
 priority: 1
@@ -313,7 +335,7 @@ Make the test deterministic on slow machines.
 """)
     write(repo / "agent/tickets/retire-legacy-exporter.md", """---
 status: open
-type: grilling
+needs-user: true
 priority: 1
 size: M
 ---
@@ -331,7 +353,6 @@ The old QIF exporter has three users left and blocks the storage rewrite; decide
 """)
     write(repo / "agent/tickets/pick-a-date-library.md", """---
 status: open
-type: research
 priority: 3
 size: S
 ---
@@ -348,7 +369,6 @@ Four date formats across the users' banks; find the library that parses all four
 """)
     write(repo / "agent/tickets/read-the-bank-formats.md", """---
 status: open
-type: research
 priority: 4
 size: S
 ---
@@ -365,7 +385,7 @@ Read the four banks' export documentation and write down the columns each one na
 """)
     write(repo / "agent/tickets/staging-credentials.md", """---
 status: open
-type: legwork
+needs-user: true
 priority: 2
 size: XS
 ---
@@ -404,9 +424,9 @@ A session-scoped template database, copied per test.
 """)
     write(repo / "agent/tickets/export-to-xlsx.md", """---
 status: open
+blocked-by: [commit-import]
 priority: 4
 size: S
-blocked-by: [csv-import/04]
 ---
 
 # Export to Excel
@@ -489,9 +509,9 @@ Bump the interpreter pin and fix the two deprecations.
 
 
 def build_in_review(repo: Path) -> None:
-    git(repo, "checkout", "-q", "-b", "ticket/csv-import/02-map-columns")
+    git(repo, "checkout", "-q", "-b", "ticket/map-columns")
     write(repo / "src/mapping.py", '"""Column mappings, remembered per bank."""\n')
-    ticket = repo / "agent/tickets/csv-import/02-map-columns.md"
+    ticket = repo / "agent/tickets/map-columns.md"
     set_status(ticket, "review")
     ticket.write_text(ticket.read_text().replace("- [ ] The second import", "- [x] The second import"))
     append(ticket, """
@@ -503,29 +523,29 @@ def build_in_review(repo: Path) -> None:
 
 ## Comments
 
-The mapping step is built and remembers a bank's layout; on branch `ticket/csv-import/02-map-columns`, not merged.
+The mapping step is built and remembers a bank's layout; on branch `ticket/map-columns`, not merged.
 
 **Demo**
 
-    agent/show/csv-import/02-map-columns/demo
+    agent/show/map-columns/demo
 
 **Details, if you want them**
 
 - [D4] Assumptions
   - A1 `src/mapping.py:1`: one mapping per bank, keyed by the export's header row.
 """)
-    commit(repo, S4, "2026-09-18T14:02:00+02:00", "csv-import: 02-map-columns, the mapping step", "src", "agent/tickets/csv-import/02-map-columns.md")
+    commit(repo, S4, "2026-09-18T14:02:00+02:00", "map-columns: the mapping step", "src", "agent/tickets/map-columns.md")
     git(repo, "checkout", "-q", "master")
 
     set_status(ticket, "review")
-    write(repo / "agent/show/csv-import/02-map-columns/demo", """#!/usr/bin/env bash
+    write(repo / "agent/show/map-columns/demo", """#!/usr/bin/env bash
 # Imports a sample export twice: the first run asks for the mapping, the second uses it.
 echo "== first import from Sparkasse: asks for the columns"
 echo "date column? Buchungstag   amount column? Betrag   payee column? Empfänger"
 echo "== second import: no questions"
 echo "12 rows read, 12 added"
 """, executable=True)
-    write(repo / "agent/show/csv-import/02-map-columns/mapping.svg", """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 120" font-family="serif" font-size="13">
+    write(repo / "agent/show/map-columns/mapping.svg", """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 120" font-family="serif" font-size="13">
   <rect x="10" y="20" width="140" height="80" fill="none" stroke="#8a7f72"/>
   <text x="22" y="45">Buchungstag</text><text x="22" y="67">Betrag</text><text x="22" y="89">Empfänger</text>
   <rect x="210" y="20" width="140" height="80" fill="none" stroke="#8a7f72"/>
@@ -533,9 +553,9 @@ echo "12 rows read, 12 added"
   <path d="M150 41 H210 M150 63 H210 M150 85 H210" stroke="#426724"/>
 </svg>
 """)
-    commit(repo, S2, "2026-09-18T15:30:00+02:00", "csv-import: 02-map-columns for review", "agent/tickets/csv-import/02-map-columns.md", "agent/show/csv-import")
+    commit(repo, S2, "2026-09-18T15:30:00+02:00", "map-columns for review", "agent/tickets/map-columns.md", "agent/show/map-columns")
 
-    git(repo, "checkout", "-q", "-b", "ticket/master/speed-up-tests")
+    git(repo, "checkout", "-q", "-b", "ticket/speed-up-tests")
     write(repo / "src/conftest.py", '"""One template database per session, copied per test."""\n')
     ticket = repo / "agent/tickets/speed-up-tests.md"
     set_status(ticket, "review")
@@ -547,7 +567,7 @@ echo "12 rows read, 12 added"
 
 ## Comments
 
-The suite runs in 48 seconds, down from four minutes; on branch `ticket/master/speed-up-tests`, not merged.
+The suite runs in 48 seconds, down from four minutes; on branch `ticket/speed-up-tests`, not merged.
 
 **Demo**
 
@@ -595,7 +615,7 @@ def stopped_on_questions(repo: Path) -> None:
 
 def review_pages(repo: Path) -> None:
     """What dispatch renders for a build waiting on a ruling; gitignored, so they are written, not committed."""
-    for page in ("agent/diffviews/csv-import/02-map-columns.html", "agent/diffviews/speed-up-tests.html"):
+    for page in ("agent/diffviews/map-columns.html", "agent/diffviews/speed-up-tests.html"):
         write(repo / page, f"<!doctype html>\n<title>{Path(page).stem}</title>\n<p>the diff, as diffview renders it\n")
 
 

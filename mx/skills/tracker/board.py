@@ -10,15 +10,15 @@ agent/tickets up from the current directory, so a worktree or a clone inside a
 workspace repo both work), renders, opens the tab, and keeps re-rendering until
 Ctrl-C. --no-watch --no-open is the one-shot form: render the page and exit.
 
-Reads every feature directory (spec.md, NN-<slug>.md tickets with
-status/blocked-by/type/priority/size frontmatter, cross-feature refs as
-<feature>/NN) and every standalone ticket (*.md at the tracker root whose
-frontmatter declares a status) and writes one self-contained page beside the
-tracker, agent/board.html. The page is the tickets as rows grouped by state:
-needs me, frontier, claimed, blocked, proposed, done folded.
+Reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
+one command that parses one, `tracker` beside this script, and writes one
+self-contained page beside the tracker, agent/board.html. The page is the
+tickets as rows grouped by state: needs me, frontier, claimed, blocked,
+proposed, done folded.
 
 Needs me holds every ticket whose next step is the user's own time: a build to
-rule on, a ticket stopped on a question, a near design session (board.needs_me).
+rule on, a ticket stopped on a question, a near ticket the user is in the loop
+for (board.needs_me).
 Its open questions show under its row while the row is folded, each with a
 button that copies it, one that copies the ticket's own, and one on the group
 that copies every question on the board; each button says on hover what it will
@@ -27,18 +27,18 @@ copy. A build in review is read from its own ticket branch
 until the merge, while the tracker's copy says where the ticket stands and
 carries the `Ruled` lines that answer its questions.
 
-A row reads left to right in fixed columns: the feature, the number, what the
-row asks of the user (to rule on, your answer, design session, prototype,
-research, legwork, build), the ticket's short name with its review page and the
+A row reads left to right in fixed columns: the tree the ticket is part of (the
+parent ticket its ancestry runs to), its own slug, what the
+row asks of the user (to rule on, your answer, with you, build), the ticket's short name with its review page and the
 pull requests and issues its `gh` list names, each in the look of the state
 GitHub gives it and saying that state on hover, the ticket brief under the name
 with the open questions under that, the user's time on it, the priority as a
 word, and what it waits on. The name is the ticket's H1, the brief its `##
 Brief` section, the questions its `## Questions` section, the priority and the
-size its frontmatter; a ticket silent on one of those shows its row without that
-mark. Rows sort by priority, then by the user's time, within each group. Every
+size its frontmatter, which every ticket declares. Rows sort by priority, then by
+the user's time, within each group. Every
 mark says on hover what it means. Below a width the time, the priority and the
-blockers move under the name. A click on a row's number copies the absolute
+blockers move under the name. A click on a row's slug copies the absolute
 path of the ticket file the row was read from.
 
 An opened row reads as blocks rather than the ticket's whole text: its
@@ -46,8 +46,8 @@ questions, each with the detail the row has no room for, the ruling that
 answered it and, while it is unanswered, a button that copies it, the sessions
 that worked on it, its artefacts, then the ticket's own sections in the order
 the file writes them, with the comments folded away as history. The artefacts
-are read from the ticket's show directory, agent/show/<feature>/<NN-slug>/ or
-agent/show/<slug>/: the file named `demo` on a button that copies its path,
+are read from the ticket's show directory, agent/show/<slug>/: the file named
+`demo` on a button that copies its path,
 every other file as a link. The sessions are read from the `Session:` trailer
 on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
@@ -57,12 +57,13 @@ there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
-a screenshot. Feature pills in the top bar hide and show a feature's rows, each
-counting its done tickets out of all of them, proposed included; a filter box
+a screenshot. One pill per tree in the top bar hides and shows that tree's rows,
+each counting its done tickets out of all of them, proposed included, with one
+more for the tickets in no tree; a filter box
 narrows the rows to a word. An optional source the render did without is said
 once at the top of the page. A graph panel, beside the rows on a wide window and
-above them on a narrow one, shows the dependency graph of the feature of the row
-under the cursor with that ticket marked, or the whole tracker's graph with its cross-feature edges, hidden features left out. A
+above them on a narrow one, shows the dependency graph of the tree of the row
+under the cursor with that ticket marked, or the whole tracker's graph with the edges between trees, hidden trees left out. A
 graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
@@ -85,25 +86,24 @@ whose last run of it answered nothing, stays there and the page says so once.
 That panel is a preview. The `full` button, or ?graph on the address, opens the
 same graph at its own size over the board; `window` opens it in a window of its
 own, to sit beside the board. Both scroll and drag to pan, and both carry the
-feature and whole-tracker switch. A click on a node in the overlay closes it on
+tree and whole-tracker switch. A click on a node in the overlay closes it on
 that ticket's row; a click on a node in the window leaves the window where it is
 and moves the board to that row.
 
 One board per tracker, showing what is actionable now. The tracker is read
-from the repo's main checkout whatever checkout the command runs in; a feature
-that has a worktree on a branch named after it (how dispatch cuts a feature
-worktree) is read from that worktree instead, review pages included, so its
-claims and review flips are on the board while the feature is in flight. A
-worktree whose branch is already merged is ignored. A standalone ticket whose
-slug names such a feature has been absorbed into it and is not shown. A
-standalone ticket that an unmerged worktree's branch added or changed since it
-left the main branch is shown as well, tagged with the branch, provided its
-frontmatter carries a ticket status and the main checkout has no file of that
+from the repo's main checkout whatever checkout the command runs in; a ticket
+that has a worktree on a branch named after its slug (how dispatch cuts the
+worktree a parent ticket is built in) is read from that worktree instead, with
+every descendant of it and their review pages, so the claims and review flips of
+a tree in flight are on the board. A
+worktree whose branch is already merged is ignored. A
+ticket that an unmerged worktree's branch added or changed since it
+left the main branch is shown as well, tagged with the branch, provided
+the main checkout has no file of that
 slug; a copy a branch merely inherited from the main branch is not read twice.
 
 A ticket row links its diffview review page when one has been rendered:
-agent/diffviews mirrors agent/tickets, so <feature>/NN-*.html beside the ticket
-and <slug>.html beside a standalone ticket. Those pages are gitignored, so the
+agent/diffviews/<slug>.html beside the tracker. Those pages are gitignored, so the
 link appears only on the machine that rendered them. Every render asks
 `diffview --serve` for the address the pages answer on, so a click from the
 board opens a page that saves comments. A server exiting is itself a change to
@@ -130,7 +130,7 @@ first is in it.
 
 The page polls a sidecar stamp file (written beside the HTML) every 5s and
 reloads, keeping scroll position, open sections, the cursor and the hidden
-features, only when content actually changed: one open tab stays current
+trees, only when content actually changed: one open tab stays current
 across renders without flicker. The page and its stamp file are gitignored,
 like agent/diffviews.
 
@@ -162,10 +162,10 @@ from typing import Annotated
 
 import markdown
 import tyro
-import yaml
 
 import briefing  # the board briefing: the session that writes it, and the cache it lives in, beside this script
 import github  # the state of the pull requests and issues the tickets name, beside this script
+import tracker  # the one parser of a ticket file, and the rules it refuses one by, beside this script
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
@@ -190,12 +190,10 @@ SIZE_TIP = (
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
     "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
-    "design": ("design session", "A decision to talk through with you; nothing is built on it until it is settled."),
-    "prototype": ("prototype", "A decision you take in front of something built to compare. You judge the render."),
-    "research": ("research", "An agent reads up on this alone. You read what it found when it lands."),
-    "legwork": ("legwork", "Work that unblocks a decision: an agent does it, or hands you a checklist."),
+    "session": ("with you", "A ticket you are in the loop for: a grilling, a decision to talk through, a step only you can take. No worker is handed it."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
 }
+ALONE = "alone"  # the pill for a ticket with no parent ticket and no child tickets
 # what a row is grouped under (board.group_of); a ticket in review has no group of its own,
 # since needs me claims every one of them
 GROUPS = [
@@ -221,7 +219,7 @@ class Args:
 def main(args: Args) -> None:
     tickets_root = args.tickets_root or find_tracker(Path.cwd())
     roots = tracker_roots(tickets_root)
-    assert roots.main.is_dir() or roots.overrides, f"no tracker at {roots.main}"
+    assert roots.main.is_dir() or roots.branches, f"no tracker at {roots.main}"
     repo = (args.repo or roots.main.parent.parent).resolve()
     out = (args.out or roots.main.parent / "board.html").resolve()
     render(roots, repo, out)
@@ -252,20 +250,20 @@ def render(roots: "Roots", repo: Path, out: Path) -> tuple[tuple[str, str], ...]
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     ticket_branches.cache_clear()  # likewise: a worker cuts and pushes branches while the board watches
     session_log.cache_clear()  # and commits on them, each carrying the session that made it
-    features, standalone = loaded(roots, serve_diffviews(root.parent / "diffviews"))
+    tickets = load_tickets(roots, serve_diffviews(root.parent / "diffviews"))
     log = git_log(repo)
     out.parent.mkdir(parents=True, exist_ok=True)
-    gh = github.resolve(gh_shown(features, standalone), github.cache_path(out))
+    gh = github.resolve(gh_shown(tickets), github.cache_path(out))
     said = briefing.Briefing.read(briefing.cache_path(out))
-    stamp = content_stamp(project, features, standalone, log, gh, said)
-    page = render_page(project, features, standalone, log, stamp, out.name + ".stamp.js", gh, said)
+    stamp = content_stamp(project, tickets, log, gh, said)
+    page = render_page(project, tickets, log, stamp, out.name + ".stamp.js", gh, said)
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
-    return statuses(features, standalone)
+    return statuses(tickets)
 
 
-def statuses(features: list["Feature"], standalone: list["Standalone"]) -> tuple[tuple[str, str], ...]:
+def statuses(tickets: list["Ticket"]) -> tuple[tuple[str, str], ...]:
     """Every ticket the board shows with the status its file declares, plus the derived `blocked`,
     as a value to compare: what the briefing session is pinged about (`look`). A ticket filed and a
     ticket retired are a status appearing and a status going, so both are a change; a ticket whose
@@ -273,12 +271,7 @@ def statuses(features: list["Feature"], standalone: list["Standalone"]) -> tuple
 
     The derived status is in, so a ticket unblocked by its blocker landing reads as the change it
     is."""
-    return tuple((ref, t.status) for ref, t in rows_of(features, standalone))
-
-
-def rows_of(features: list["Feature"], standalone: list["Standalone"]) -> list[tuple[str, "Row"]]:
-    """Every ticket the board shows, each with the reference a row is named by."""
-    return [(f"{f.name}/{t.num}", t) for f in features for t in f.tickets] + [(k.slug, k) for k in standalone]
+    return tuple((t.slug, t.status) for t in tickets)
 
 
 def tracker_statuses(roots: "Roots") -> tuple[tuple[str, str], ...]:
@@ -290,7 +283,7 @@ def tracker_statuses(roots: "Roots") -> tuple[tuple[str, str], ...]:
     between the two would otherwise sit inside the snapshot and outside the baseline. It costs one
     load of the tracker per watcher start. The review pages are no part of a status, so this reads
     them unserved (briefing_state does the same)."""
-    return statuses(*loaded(roots, Diffviews(roots.main.parent / "diffviews", None)))
+    return statuses(load_tickets(roots, Diffviews(roots.main.parent / "diffviews", None)))
 
 
 def watch(tickets_root: Path, repo: Path, out: Path) -> None:
@@ -468,17 +461,9 @@ class Briefer:
 def briefing_state(roots: "Roots", repo: Path) -> str:
     """The tracker as the board reads it, in the words the briefing session is handed it in."""
     # the session is given the tickets; a review page is the user's to read and its address the
-    # render's to find. A feature read from its own worktree asks its own server all the same
-    # (load_features), which the render also asks, and answering twice is what that server is for.
-    features, standalone = loaded(roots, Diffviews(roots.main.parent / "diffviews", None))
-    return state_of(repo.name, features, standalone, git_log(repo))
-
-
-def loaded(roots: "Roots", diffviews: "Diffviews") -> tuple[list["Feature"], list["Standalone"]]:
-    """Every ticket the board shows: each feature's, and the standalone ones. A standalone ticket
-    whose slug names an in-flight feature was absorbed into it (grilling) and is not one of them."""
-    features = load_features(roots.main, roots.overrides, diffviews, roots.repo)
-    return features, [k for k in load_standalone(roots, diffviews) if k.slug not in roots.overrides]
+    # render's to find. A ticket read from its own worktree asks its own server all the same
+    # (`shown`), which the render also asks, and answering twice is what that server is for.
+    return state_of(repo.name, load_tickets(roots, Diffviews(roots.main.parent / "diffviews", None)), git_log(repo))
 
 
 # ---- the board briefing ---------------------------------------------------
@@ -488,32 +473,30 @@ def loaded(roots: "Roots", diffviews: "Diffviews") -> tuple[list["Feature"], lis
 
 STATE = """The tracker of {project} as the board reads it.
 
-One line per ticket: reference, status, what it asks of you, priority, your time on it, its name,
-its file. Under it, where the ticket has them: the brief, what it waits on, its open questions.
+One ticket per line, under the parent ticket its tree runs to: slug, status, what it asks of you,
+priority, your time on it, its name, its file. Under it, where the ticket has them: the brief, what
+it waits on, its open questions.
 """
 
 
-def state_of(project: str, features: list["Feature"], standalone: list["Standalone"], log: str) -> str:
+def state_of(project: str, tickets: list["Ticket"], log: str) -> str:
     """The tracker written out for the briefing session: every ticket the board shows, as the board
-    shows it, and the commits behind it.
+    shows it, under the tree it is part of, and the commits behind it.
 
     Nothing here is more than the board itself says. The file each line ends with is what the
     session reads for the rest, and the repo around it is what it is for."""
     said = [STATE.format(project=project)]
-    for f in features:
-        spec = f", spec {f.spec_status}" if f.spec_status else ""
-        said.append(f"## {f.name}{spec}\n" + "".join(state_line(f"{f.name}/{t.num}", t) for t in f.tickets))
-    if standalone:
-        said.append("## standalone\n" + "".join(state_line(k.slug, k) for k in standalone))
+    for tree in trees_of(tickets):
+        inside = [t for t in tickets if (t.tree or ALONE) == tree]
+        said.append(f"## {tree}\n" + "".join(state_line(t) for t in inside))
     return "\n".join(said + [f"## the last commits\n{log.strip()}\n"])
 
 
-def state_line(ref: str, t: "Row") -> str:
+def state_line(t: "Ticket") -> str:
     """One ticket, as the board's own marks read it."""
     marks = [
-        ref, t.status, ASKS[asks_word(t)][0],
-        f"p{t.priority} {PRIORITY[t.priority][0]}" if t.priority else "no priority",
-        SIZES[t.size][0] if t.size else "no size", t.title, str(t.path),
+        t.slug, t.status, ASKS[asks_word(t)][0],
+        f"p{t.priority} {PRIORITY[t.priority][0]}", SIZES[t.size][0], t.title, str(t.path),
     ]
     said = " · ".join(marks) + "\n"
     if t.brief:
@@ -560,59 +543,55 @@ BRIEFING_TIP = (
 )
 
 
-def fallback(features: list["Feature"], standalone: list["Standalone"]) -> str:
+def fallback(tickets: list["Ticket"]) -> str:
     """What the board says where no model has written a briefing: the counts of what waits on the
     user and what is being worked on, and the next few by priority, then by what accepting them
     unlocks, then by the user's own time.
 
     What waits is counted off the rows' own marks, so the sentence and the group under it say the
     same thing: a ticket the board tags as a design session is one here whatever else it carries."""
-    live = [(ref, t) for ref, t in rows_of(features, standalone) if t.status != "done"]
-    mine = [t for _, t in live if group_of(t) == "needs"]
+    live = [t for t in tickets if t.status != "done"]
+    mine = [t for t in live if group_of(t) == "needs"]
     waiting = {
         ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
         ("question wanting a word", "questions wanting a word"): [q for t in mine for q in open_questions(t.questions)],
-        ("design session", "design sessions"): [t for t in mine if asks_word(t) in SITS_FOR.values()],
+        ("ticket wanting a session", "tickets wanting a session"): [t for t in mine if asks_word(t) == "session"],
     }
     counts = [
         f"{counted(len(held))} {one if len(held) == 1 else many}" for (one, many), held in waiting.items() if held
     ]
     several = len(counts) > 1 or any(len(held) > 1 for held in waiting.values())  # what the verb agrees with
     waits = f"{listed(counts).capitalize()} wait{'' if several else 's'} on you." if counts else "Nothing waits on you."
-    running = [t for _, t in live if t.status == "claimed"]
+    running = [t for t in live if t.status == "claimed"]
     worked = (
         f"{counted(len(running)).capitalize()} ticket{'s are' if len(running) != 1 else ' is'} being worked on."
         if running else "Nothing is being worked on."
     )
     lead = f"{waits} {worked}"
-    unlocks = waited_on(features, standalone)
+    unlocks = waited_on(tickets)
     picks = sorted(
-        ((ref, t) for ref, t in live if group_of(t) in ("needs", "open")),
-        key=lambda row: (row[1].priority or len(PRIORITY) + 1, -unlocks[row[0]], *sort_key(row[1])[1:]),
+        (t for t in live if group_of(t) in ("needs", "open")),
+        key=lambda t: (t.priority, -unlocks[t.slug], *sort_key(t)[1:]),
     )
     if not picks:
         return lead + "\n\nNothing is open to take up."
-    return lead + "\n\n## next\n" + "".join(f"- **{t.title}**: {why(t, unlocks[ref])}\n" for ref, t in picks[:3])
+    return lead + "\n\n## next\n" + "".join(f"- **{t.title}**: {why(t, unlocks[t.slug])}\n" for t in picks[:3])
 
 
-def waited_on(features: list["Feature"], standalone: list["Standalone"]) -> Counter:
-    """How many tickets wait on each, keyed by the reference the board writes it as: what accepting
-    one of them unlocks."""
+def waited_on(tickets: list["Ticket"]) -> Counter:
+    """How many tickets wait on each, by slug: what accepting one of them unlocks."""
     counts: Counter = Counter()
-    for f in features:
-        for t in f.tickets:
-            counts.update([f"{f.name}/{num}" for num in t.blocked_by] + [ref for ref, _ in t.ext_by])
-    for k in standalone:
-        counts.update(ref for ref, _ in k.blocked_by)
+    for t in tickets:
+        counts.update(ref for ref, _ in t.blocked_by)
     return counts
 
 
-def why(t: "Row", unlocks: int) -> str:
+def why(t: "Ticket", unlocks: int) -> str:
     """Why the fallback put a ticket where it did, in the terms it ordered by."""
     return " · ".join(
-        [PRIORITY[t.priority][0] if t.priority else "no priority"]
+        [PRIORITY[t.priority][0]]
         + ([f"accepting it unblocks {counted(unlocks)}"] if unlocks else [])
-        + ([f"{SIZES[t.size][0]} of yours"] if t.size else [])
+        + [f"{SIZES[t.size][0]} of yours"]
     )
 
 
@@ -655,19 +634,15 @@ def tracker_snapshot(roots: "Roots", repo: Path) -> tuple:
 class Roots:
     """Where the tracker is read from.
 
-    `main` is the main checkout's tracker and `repo` that checkout's root. `branches` lists
-    every unmerged worktree's tracker root with its branch: the standalone tickets a branch
-    added are read there, and a feature directory in the worktree on the branch of its own
-    name overrides the main checkout's copy.
+    `main` is the main checkout's tracker and `repo` that checkout's root. `branches` lists every
+    unmerged worktree's tracker root with its branch: the tickets a branch added are read there,
+    and where the branch is named after a ticket -- the branch a parent ticket is built on -- that
+    worktree's copy of the ticket and of every descendant of it overrides the main checkout's.
     """
 
     main: Path
     branches: list[tuple[str, Path]]
     repo: Path | None = None
-
-    @property
-    def overrides(self) -> dict[str, Path]:
-        return {branch: tracker / branch for branch, tracker in self.branches if (tracker / branch).is_dir()}
 
 
 def worktrees(path: Path) -> list[tuple[Path, str | None]]:
@@ -684,11 +659,11 @@ def worktrees(path: Path) -> list[tuple[Path, str | None]]:
 
 
 def tracker_roots(tickets_root: Path) -> Roots:
-    """The main checkout's tracker, plus the feature directories a worktree on that feature's branch overrides.
+    """The main checkout's tracker, plus every unmerged worktree's copy of it.
 
-    Ticket state an orchestrator commits on its feature branch is invisible to the main
-    checkout until the feature merges; the worktree on that branch is where the
-    feature's current truth lives, so its copy of the feature directory wins.
+    Ticket state an orchestrator commits on the branch a parent ticket is built on is invisible to
+    the main checkout until that branch merges; the worktree on it is where the tree's current
+    truth lives, so its copies win (`load_tickets`).
     """
     here = tickets_root.resolve()
     wts = worktrees(here)
@@ -714,13 +689,13 @@ def landed_tips(main: Path) -> set[str]:
     return {line.split()[1] for line in parents.splitlines() if len(line.split()) > 1}
 
 
-def branch_added(tracker: Path, repo: Path) -> list[Path]:
+def branch_added(root: Path, repo: Path) -> list[Path]:
     """The *.md files at a worktree's tracker root that its branch added or changed since it left the
     main checkout's branch (`repo` is that checkout's root), untracked ones included. A file the
     branch merely inherited is main's to show; one main has since retired must not come back through
     a stale copy."""
-    toplevel = Path(git(tracker, "rev-parse", "--show-toplevel")).resolve()
-    rel = tracker.resolve().relative_to(toplevel)
+    toplevel = Path(git(root, "rev-parse", "--show-toplevel")).resolve()
+    rel = root.resolve().relative_to(toplevel)
     # run from the worktree root: a pathspec is relative to git's cwd, and the names come back root-relative
     base = git(toplevel, "merge-base", "HEAD", git(repo, "rev-parse", "HEAD"))
     changed = git(toplevel, "diff", "--name-only", base, "--", str(rel)).splitlines()
@@ -761,124 +736,148 @@ class Diffviews:
 
 @dataclass
 class Ticket:
-    num: str
+    """One ticket of the tracker, as a row shows it.
+
+    `tree` is the slug of the top-level ticket its ancestry runs to, when that ticket has any
+    descendant: the pill in the top bar that hides and shows the rows, and the graph the panel
+    draws. A ticket with no parent ticket and no child tickets is in no tree, and its `tree` is "".
+    """
+
+    slug: str  # the ticket's id, and the row's
     title: str  # the H1: the short name a row shows
     status: str  # proposed | open | claimed | review | done, plus derived: blocked
-    kind: str | None  # a decision ticket's type (research | prototype | grilling | legwork); None on a build ticket
-    blocked_by: list[str]
-    ext_by: list[tuple[str, str]]  # cross-feature blockers: (ref "<feature>/NN", status)
+    needs_user: bool  # whether the user is in the loop for it, so no worker takes it
+    parent: str | None
+    tree: str
+    blocked_by: list[tuple[str, str]]  # (slug, status) per ticket it waits on
     gh: list[str]  # the pull requests and issues the ticket names, as owner/repo#number
     body_html: str
     diffview: str | None
-    path: Path  # the file read, in whichever checkout holds the feature
-    priority: int | None = None  # 1 to 5; None on a ticket whose frontmatter is silent
-    size: str | None = None  # XS | S | M | L | XL, the user's time on it
+    priority: int  # 1 to 5, how soon it matters to the user
+    size: str  # XS | S | M | L | XL, the user's time on it
+    path: Path  # the file read, in whichever checkout holds it
+    source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
     brief: str = ""  # the ## Brief section, as inline HTML
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
 
 
-@dataclass
-class Feature:
-    name: str
-    tickets: list[Ticket]
-    spec_status: str | None  # spec.md's status; None when the feature has no spec
+def load_tickets(roots: Roots, diffviews: Diffviews) -> list[Ticket]:
+    """Every ticket the board shows, read through the one parser of a ticket file.
+
+    The main checkout's tracker is the tracker; an unmerged worktree contributes two things over
+    it. A worktree on the branch a parent ticket is built on holds that tree's current truth, so
+    its copy of that ticket and of every descendant wins (`tracker_roots`). Any other unmerged
+    worktree contributes the tickets its branch added, tagged with the branch, provided the main
+    checkout has no file of that slug.
+    """
+    read = {slug: (ticket, None) for slug, ticket in parsed(roots.main).items()}
+    from_main = set(read)
+    for branch, root in roots.branches:
+        theirs = readable(root, branch)
+        if branch in theirs:
+            for slug in [branch, *(one.slug for one in descendants(branch, theirs))]:
+                if slug in theirs:
+                    read[slug] = (theirs[slug], None)
+        for path in branch_added(root, roots.repo):
+            if path.stem not in from_main and path.stem in theirs and path.stem not in read:
+                read[path.stem] = (theirs[path.stem], branch)
+    tickets = [shown(one, source, read, roots, diffviews) for one, source in read.values()]
+    ids = [slug_id(one.slug) for one in tickets]
+    assert len(ids) == len(set(ids)), f"slugs collide as mermaid ids: {sorted(ids)}"
+    return sorted(tickets, key=lambda one: one.slug)
 
 
-@dataclass
-class Standalone:
-    slug: str
-    title: str
-    status: str  # proposed | open | claimed | review | done, plus derived: blocked
-    kind: str | None
-    blocked_by: list[tuple[str, str]]  # (ref "<feature>/NN" or "<slug>", status)
-    gh: list[str]
-    body_html: str
-    diffview: str | None
-    path: Path
-    source: str | None = None  # the branch whose worktree holds the file; None when the main checkout does
-    priority: int | None = None
-    size: str | None = None
-    brief: str = ""
-    questions: list["Question"] = field(default_factory=list)
+def parsed(root: Path) -> dict[str, "tracker.Ticket"]:
+    """One tracker root as the tracker command reads it: every ticket file in it, by slug. A file
+    no reader can read is refused there, with its own file and line."""
+    if not root.is_dir():
+        return {}
+    read = tracker.tracker_of(root)
+    tracker.refuse([refusal for one in read.tickets.values() for refusal in tracker.refusals_of(one, read)])
+    return read.tickets
 
 
-def load_features(root: Path, overrides: dict[str, Path], diffviews: Diffviews, repo: Path | None) -> list[Feature]:
-    features = []
-    # the main checkout may not have the tracker yet: a first feature grilled in its own worktree
-    names = sorted(({p.name for p in root.iterdir() if p.is_dir()} if root.is_dir() else set()) | set(overrides))
-    for name in names:
-        d = overrides.get(name, root / name)
-        # an in-flight feature's review pages are rendered and served from its own worktree
-        dv = serve_diffviews(d.parent.parent / "diffviews") if name in overrides else diffviews
-        tickets = load_tickets(d, dv, dv.root / name, root, overrides, repo)
-        spec_status = spec_state(d / "spec.md")
-        # a directory with neither tickets nor a spec is not a feature (a stray scratch dir, say)
-        if not tickets and spec_status is None:
-            continue
-        assert_safe_name(name)
-        features.append(Feature(name, tickets, spec_status))
-    ids = [slug_id(f.name) for f in features]
-    assert len(ids) == len(set(ids)), f"feature names collide as mermaid ids: {sorted(ids)}"
-    return features
+def readable(root: Path, branch: str) -> dict[str, "tracker.Ticket"]:
+    """The same for a worktree's copy, whose refusal is that worktree's own to fix: the main
+    checkout is the tracker, and a branch is a source this render can do without. The refusal is
+    printed whole, so the file and the line are here to act on."""
+    try:
+        return parsed(root)
+    except tracker.Refused as refused:
+        print(f"board: {branch} holds a tracker no reader can read, so its rows are the main checkout's:\n{refused}",
+              file=sys.stderr)
+        return {}
+
+
+def descendants(slug: str, tickets: dict[str, "tracker.Ticket"]) -> list["tracker.Ticket"]:
+    """Every ticket whose ancestry runs through `slug`."""
+    found, frontier = [], [slug]
+    while frontier:
+        holding = frontier.pop()
+        children = [one for one in tickets.values() if one.parent == holding and one.slug not in {f.slug for f in found}]
+        found += children
+        frontier += [one.slug for one in children]
+    return found
+
+
+def tree_of(slug: str, tickets: dict[str, tuple["tracker.Ticket", str | None]]) -> str:
+    """The slug of the top-level ticket this one's ancestry runs to, when that ticket has a
+    descendant; "" for a ticket with no parent ticket and no child tickets."""
+    root, seen = slug, {slug}
+    while (parent := tickets[root][0].parent) and parent in tickets and parent not in seen:
+        seen.add(parent)
+        root = parent
+    if root != slug:
+        return root
+    return root if any(one.parent == slug for one, _ in tickets.values()) else ""
+
+
+def shown(
+    read: "tracker.Ticket", source: str | None,
+    tickets: dict[str, tuple["tracker.Ticket", str | None]], roots: Roots, diffviews: Diffviews,
+) -> Ticket:
+    """One ticket as the board shows it: what its file says, plus the status derived from what it
+    waits on, its body read from its own branch while it is in review, and the review page and
+    sessions beside it."""
+    assert_safe_name(read.slug)
+    blocked_by = [(ref, ref_status(ref, tickets)) for ref in read.blocked_by]
+    status = read.status
+    if status == "open" and any(state != "done" for _, state in blocked_by):
+        status = "blocked"
+    pages = serve_diffviews(read.path.parent.parent / "diffviews") if source else diffviews
+    written = ticket_body(read, status, roots.repo)
+    asked = questions_of(written, read.questions)
+    worked = ticket_sessions(read.path, roots.repo)
+    return Ticket(
+        slug=read.slug,
+        title=read.title or read.slug.replace("-", " "),
+        status=status,
+        needs_user=read.needs_user,
+        parent=read.parent,
+        tree=tree_of(read.slug, tickets),
+        blocked_by=blocked_by,
+        gh=[str(ref) for ref in read.meta.get("gh") or []],
+        body_html=ticket_blocks(written, asked, path=read.path, status=status, worked=worked),
+        diffview=pages.link(pages.root, f"{read.slug}.html"),
+        path=read.path,
+        source=source,
+        priority=read.meta.get("priority"),
+        size=read.meta.get("size"),
+        brief=inline_md(read.brief),
+        questions=asked,
+    )
+
+
+def ref_status(ref: str, tickets: dict[str, tuple["tracker.Ticket", str | None]]) -> str:
+    """The status of a ticket another one waits on. A reference the board cannot see counts as
+    done: the tracker refuses a dangling one where it is written, so what is left here is a ticket
+    read from a checkout this render does not hold."""
+    return tickets[ref][0].status if ref in tickets else "done"
 
 
 def assert_safe_name(name: str) -> None:
-    # names ride into HTML attributes and mermaid click strings unescaped
+    # slugs ride into HTML attributes and mermaid click strings unescaped
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
-
-
-def load_standalone(roots: Roots, diffviews: Diffviews) -> list[Standalone]:
-    root = roots.main
-    standalone = [
-        read_standalone(p, roots, diffviews, None)
-        for p in (sorted(root.glob("*.md")) if root.is_dir() else [])
-        if is_ticket(p)
-    ]
-    have = {k.slug for k in standalone}
-    for branch, tracker in roots.branches:
-        dv = serve_diffviews(tracker.parent / "diffviews")
-        for path in branch_added(tracker, roots.repo):
-            if path.stem in have or not is_ticket(path):
-                continue
-            standalone.append(read_standalone(path, roots, dv, branch))
-            have.add(path.stem)
-    return standalone
-
-
-def is_ticket(path: Path) -> bool:
-    """Whether a markdown file at the tracker root is a ticket: a README, a note, a leftover queue
-    file live there too, and what a ticket declares is a status (`/mx:tracker`). A status that is
-    not one of the five is a typo in a ticket, which `declared_status` names rather than hides."""
-    return "status" in split_frontmatter(path.read_text())[0]
-
-
-def read_standalone(path: Path, roots: Roots, diffviews: Diffviews, source: str | None) -> Standalone:
-    assert_safe_name(path.stem)
-    meta, name, brief, body = read_ticket(path.read_text())
-    blocked_by = [(normalize_ref(str(n)), ref_status(roots.main, roots.overrides, str(n)))
-                  for n in meta.get("blocked-by") or []]
-    status = declared_status(meta, path)
-    if status == "open" and any(s != "done" for _, s in blocked_by):
-        status = "blocked"
-    written = ticket_body(body, status, roots.repo, None, path)
-    asked = questions_of(written, body)
-    worked = ticket_sessions(path, roots.repo)
-    return Standalone(
-        slug=path.stem,
-        title=name or path.stem.replace("-", " "),
-        status=status,
-        kind=ticket_kind(meta),
-        blocked_by=blocked_by,
-        gh=gh_refs(meta, path),
-        body_html=ticket_blocks(written, None, asked, path=path, status=status, worked=worked),
-        diffview=diffviews.link(diffviews.root, f"{path.stem}.html"),
-        path=path,
-        source=source,
-        priority=ticket_priority(meta, path),
-        size=ticket_size(meta, path),
-        brief=brief,
-        questions=asked,
-    )
 
 
 @functools.cache
@@ -905,187 +904,46 @@ def serve_diffviews(root: Path) -> Diffviews:
     return Diffviews(root, address.group().rstrip("/"))
 
 
-def spec_state(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    meta, _ = split_frontmatter(path.read_text())
-    return str(meta.get("status", "status missing"))
-
-
-def load_tickets(feature_dir: Path, diffviews: Diffviews, dv_dir: Path, root: Path, overrides: dict[str, Path], repo: Path | None) -> list[Ticket]:
-    tickets = []
-    for path in sorted(feature_dir.glob("[0-9][0-9]-*.md")):
-        meta, name, brief, body = read_ticket(path.read_text())
-        status = declared_status(meta, path)
-        blockers = meta.get("blocked-by") or []
-        written = ticket_body(body, status, repo, feature_dir.name, path)
-        asked = questions_of(written, body)
-        worked = ticket_sessions(path, repo)
-        tickets.append(
-            Ticket(
-                num=path.name[:2],
-                title=name or path.stem[3:].replace("-", " "),
-                status=status,
-                kind=ticket_kind(meta),
-                blocked_by=[normalize_num(n) for n in blockers if is_local_ref(n)],
-                ext_by=[(normalize_ref(str(n)), ref_status(root, overrides, str(n)))
-                        for n in blockers if not is_local_ref(n)],
-                gh=gh_refs(meta, path),
-                body_html=ticket_blocks(written, feature_dir.name, asked, path=path, status=status, worked=worked),
-                diffview=diffviews.link(dv_dir, f"{path.name[:2]}-*.html"),
-                path=path,
-                priority=ticket_priority(meta, path),
-                size=ticket_size(meta, path),
-                brief=brief,
-                questions=asked,
-            )
-        )
-    # a local blocker whose file is gone counts as done, as in ref_status
-    present = {t.num for t in tickets}
-    for t in tickets:
-        t.blocked_by = [b for b in t.blocked_by if b in present]
-    done = {t.num for t in tickets if t.status == "done"}
-    for t in tickets:
-        if t.status == "open" and (
-            any(b not in done for b in t.blocked_by) or any(s != "done" for _, s in t.ext_by)
-        ):
-            t.status = "blocked"
-    return tickets
-
-
-def declared_status(meta: dict, path: Path) -> str:
-    status = str(meta.get("status", "open"))
-    assert status in TICKET_STATUSES, f"{path}: status {status!r}; a ticket declares one of {sorted(TICKET_STATUSES)}"
-    return status
-
-
-def ticket_kind(meta: dict) -> str | None:
-    kind = meta.get("type")
-    return str(kind) if kind else None
-
-
-def ticket_priority(meta: dict, path: Path) -> int | None:
-    priority = meta.get("priority")
-    if priority is None:
-        return None
-    assert priority in PRIORITY, f"{path}: priority {priority!r}; a ticket declares one of {sorted(PRIORITY)}"
-    return int(priority)
-
-
-def ticket_size(meta: dict, path: Path) -> str | None:
-    size = meta.get("size")
-    if size is None:
-        return None
-    assert str(size) in SIZES, f"{path}: size {size!r}; a ticket declares one of {list(SIZES)}"
-    return str(size)
-
-
-def read_ticket(text: str) -> tuple[dict, str | None, str, str]:
-    """A ticket file as the board reads it: its frontmatter, its H1 (the short name a row shows, or
-    None where it has none), its brief as inline HTML, and the body left under those."""
-    meta, body = split_frontmatter(text)
-    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-    body = body[heading.end():] if heading else body
-    brief, body = take_brief(body)
-    return meta, heading.group(1).strip() if heading else None, brief, body
-
-
-def take_brief(body: str) -> tuple[str, str]:
-    """(the ## Brief section as inline HTML, the body without it): what the row shows under the name,
-    and the text that is left to fold under the row. One home per fact, on the row as on the page."""
+def take_brief(body: str) -> str:
+    """The body without its `## Brief` section: what folds under the row. The brief itself is on
+    the row, read without opening anything, and a ticket says a thing once."""
     match = re.search(r"^##\s+Brief\s*$(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
-    if not match:
-        return "", body
-    return inline_md(" ".join(match.group(1).split())), body[: match.start()] + body[match.end() :]
+    return body if not match else body[: match.start()] + body[match.end() :]
 
 
-def ticket_body(body: str, status: str, repo: Path | None, feature: str | None, path: Path) -> str:
-    """The ticket's text below its brief, read from its own branch while a build is in review: that
-    is where the worker's questions and closing comment are until the merge.
+def ticket_body(read: "tracker.Ticket", status: str, repo: Path | None) -> str:
+    """The ticket's text below its brief and its H1, read from its own branch while a build is in
+    review: that is where the worker's questions and closing comment are until the merge.
 
     Three things stay the checkout's, whatever the branch's copy says: where the ticket stands, so
     that a branch which never flipped its status cannot pull a build out of needs me; the brief,
-    which has one home and it is the row (02-rows); and a `Ruled` line, which is written in the file
-    the board hands out (`questions_of`).
+    which has one home and it is the row; and a `Ruled` line, which is written in the file the
+    board hands out (`questions_of`).
     """
-    if status != "review":
-        return body
-    text = branch_text(repo, feature, path)
-    return body if text is None else read_ticket(text)[3]
+    body = read.body
+    if status == "review" and (text := branch_text(repo, read.path)) is not None:
+        body = tracker.read(read.path, text).body
+    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+    return take_brief(body[heading.end():] if heading else body)
 
 
 def inline_md(text: str) -> str:
     """Markdown as one line of HTML: a brief or a headline carries code and emphasis, never a block."""
-    return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip())
-
-
-def gh_refs(meta: dict, path: Path) -> list[str]:
-    refs = [str(r) for r in meta.get("gh") or []]
-    for ref in refs:
-        assert github.GH_REF.fullmatch(ref), f"{path}: gh reference {ref!r}; a reference is owner/repo#number"
-    return refs
-
-
-def is_local_ref(n: object) -> bool:
-    # a bare ticket number within the feature; "<feature>/NN" and "<slug>" are external
-    return isinstance(n, int) or str(n).isdigit()
-
-
-def normalize_ref(ref: str) -> str:
-    """An external blocking reference as the board writes it everywhere it keys on one: a standalone
-    ticket's slug, or `<feature>/NN` with the number two digits, which a ticket file may write
-    either way."""
-    if "/" not in ref:
-        return ref
-    feature, num = ref.rsplit("/", 1)
-    return f"{feature}/{normalize_num(num)}"
-
-
-def ref_status(root: Path, overrides: dict[str, Path], ref: str) -> str:
-    # External blocker: "<feature>/NN" or a standalone ticket's "<slug>", resolved in the
-    # checkout that holds the feature (an in-flight feature lives in its worktree). A
-    # missing file counts as done: done work is deleted, feature dirs retired only after
-    # shipping (tracker conventions).
-    if "/" in ref:
-        feature, num = ref.rsplit("/", 1)
-        matches = sorted(overrides.get(feature, root / feature).glob(f"{normalize_num(num)}-*.md"))
-    else:
-        matches = [p for p in [root / f"{ref}.md"] if p.exists()]
-    if not matches:
-        return "done"
-    meta, _ = split_frontmatter(matches[0].read_text())
-    return str(meta.get("status", "open"))
+    return re.sub(r"^<p>|</p>$", "", markdown.markdown(text).strip()) if text else ""
 
 
 def ref_anchor(ref: str) -> str:
-    if "/" in ref:
-        feature, num = ref.rsplit("/", 1)
-        return f"#t-{feature}-{normalize_num(num)}"
-    return f"#standalone-{ref}"
+    return f"#t-{ref}"
 
 
-def render_body(md: str, feature: str | None) -> str:
-    out = markdown.markdown(md, extensions=["fenced_code", "tables"])
-    if feature is None:  # a standalone ticket has no feature for a bare NN- reference to name
-        return out
-    # cross-ticket links (47-event-union-v2.md) become in-page anchors
-    return re.sub(r'href="(?:[\w./-]*/)?(\d\d)-[\w-]*\.md"', rf'href="#t-{feature}-\1"', out)
-
-
-def split_frontmatter(text: str) -> tuple[dict, str]:
-    match = re.match(r"\A---\n(.*?)\n---\n(.*)", text, re.DOTALL)
-    if not match:
-        return {}, text
-    return yaml.safe_load(match.group(1)) or {}, match.group(2)
-
-
-def normalize_num(n: object) -> str:
-    # YAML reads `01` as int 1; ticket ids are two-digit strings.
-    return f"{int(n):02d}" if isinstance(n, int) else str(n).zfill(2)
+def render_body(md: str) -> str:
+    out = markdown.markdown(md, extensions=["fenced_code", "tables"], tab_length=3)
+    # a link to another ticket file becomes that row's anchor, wherever the writer wrote it from
+    return re.sub(r'href="(?:[\w./-]*/)?([a-z0-9][\w-]*)\.md"', r'href="#t-\1"', out)
 
 
 def content_stamp(
-    project: str, features: list[Feature], standalone: list[Standalone], log: str,
+    project: str, tickets: list[Ticket], log: str,
     gh: github.Answer = github.NOTHING, said: "briefing.Briefing | None" = None,
 ) -> str:
     # everything the page shows except the render timestamp: an unchanged board
@@ -1094,17 +952,13 @@ def content_stamp(
     # file under the tracker moving with them.
     key = repr((
         project,
-        [(f.name, f.spec_status,
-          [(t.num, t.title, t.status, t.kind, t.blocked_by, t.ext_by, t.gh, t.body_html, t.diffview, t.path,
-            t.priority, t.size, t.brief, t.questions) for t in f.tickets])
-         for f in features],
-        [(k.slug, k.title, k.status, k.kind, k.blocked_by, k.gh, k.body_html, k.diffview, k.path, k.source,
-          k.priority, k.size, k.brief, k.questions) for k in standalone],
+        [(t.slug, t.title, t.status, t.needs_user, t.parent, t.tree, t.blocked_by, t.gh, t.body_html,
+          t.diffview, t.path, t.source, t.priority, t.size, t.brief, t.questions) for t in tickets],
         log,
         sorted(gh.states.items()),
         gh.missing,
         said and (said.text, said.written),
-        absences(features, standalone, gh, said),
+        absences(tickets, gh, said),
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
@@ -1129,86 +983,43 @@ TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by the dotfiles' git hook
 
 
-SITS_FOR = {"grilling": "design", "prototype": "prototype"}  # the decision types the user gives a session to
-
-
-def needs_me(status: str, kind: str | None, priority: int | None, open_question: bool) -> bool:
+def needs_me(status: str, needs_user: bool, priority: int | None, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
-    review, has an open question, or is an unclaimed design or prototype decision at p1 or p2."""
+    review, has an open question, or is an unclaimed ticket at p1 or p2 the user is in the loop
+    for."""
     if status == "done":
         return False
     if status == "review" or open_question:
         return True
-    # a decision type the user sits for, on a ticket nobody has taken up yet
-    return kind in SITS_FOR and priority in (1, 2) and status in ("open", "proposed")
+    # a ticket worked with the user, that nobody has taken up yet
+    return bool(needs_user) and priority in (1, 2) and status in ("open", "proposed")
 
 
-@dataclass(frozen=True)
-class Question:
-    """One `[Dn]` item under a ticket's `## Questions`: a call only the user can make."""
-
-    tag: str  # D1, D2, ... the ticket's running sequence
-    headline: str  # the bold sentence the board shows under the row
-    detail: str  # the rest of the item, its own whitespace collapsed
-    ruled: str | None  # the date on the `Ruled <date>:` line under it; None while the question is open
-    answer: str  # what that line says the user ruled, in their own words; empty while it is open
+Question = tracker.Question  # one `[Dn]` item under a ticket's `## Questions`, read by the one parser
 
 
-FENCED = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
-QUESTIONS_SECTION = re.compile(r"^##\s+Questions\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
-ASKED = re.compile(r"^- \[(D\d+)\](.*)$", re.MULTILINE)
-HEADLINE = re.compile(r"\s*\*\*(.+?)\*\*\s*(.*)", re.DOTALL)
-# the date the spec's line carries, so that a rationale line opening "Ruled out:" is not a ruling
-RULED = re.compile(r"^\s*-?\s*Ruled\s+(\d{4}-\d\d-\d\d)\s*:", re.MULTILINE)
-
-
-def questions_of(asked: str, ruled_in: str) -> list[Question]:
+def questions_of(written: str, ruled_in: Sequence[Question]) -> list[Question]:
     """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
     questions on its branch while the ruling is written in the tracker's own copy, the file the
     board hands out on the clipboard, so the two texts are read together."""
-    answered = {q.tag: q for q in read_questions(ruled_in) if q.ruled}
+    answered = {q.tag: q for q in ruled_in if q.ruled}
     found = []
-    for q in read_questions(asked):
+    for q in tracker.read_questions(Path("-"), tracker.sections(*numbered(written)), []):
         ruling = answered.get(q.tag)
         found.append(q if q.ruled or ruling is None else replace(q, ruled=ruling.ruled, answer=ruling.answer))
     return found
 
 
-def unfenced(text: str) -> str:
-    """A ticket's markdown with its fenced code blanked, every offset kept: a heading or a question
-    inside a fence is a shape the ticket quotes, not one of its own."""
-    return FENCED.sub(lambda fence: re.sub(r"[^\n]", " ", fence.group()), text)
-
-
-def read_questions(text: str) -> list[Question]:
-    """The questions a ticket file holds, ruled ones included, in file order. The `[Dn]` tags a
-    closing comment carries elsewhere in the file are not questions: only `## Questions` is read,
-    every such section of it, since a worker appends its own to a ticket that may have one."""
-    asked = "\n".join(section.group(1) for section in QUESTIONS_SECTION.finditer(unfenced(text)))
-    if not asked:
-        return []
-    found = []
-    for item in ASKED.finditer(asked):
-        rest = asked[item.end():]
-        # the item runs to the next one, the lines under it continuing it
-        body = item.group(2) + rest[: next((m.start() for m in ASKED.finditer(rest)), len(rest))]
-        ruled = RULED.search(body)
-        written = body[: ruled.start()] if ruled else body
-        headline = HEADLINE.fullmatch(written)
-        found.append(Question(
-            tag=item.group(1),
-            headline=" ".join((headline.group(1) if headline else written).split()),
-            detail=" ".join((headline.group(2) if headline else "").split()),
-            ruled=ruled.group(1) if ruled else None,
-            answer=" ".join(body[ruled.end():].split()) if ruled else "",
-        ))
-    return found
+def numbered(text: str) -> tuple[list[tuple[int, str]], dict[int, str]]:
+    """A body as the tracker's section reader takes it: its unfenced lines numbered, and its own."""
+    lines = [(n, line) for n, line in enumerate(tracker.unfenced(text).splitlines(), start=1)]
+    return lines, {n: line for n, line in enumerate(text.splitlines(), start=1)}
 
 
 @functools.cache
 def ticket_branches(repo: Path) -> dict[str, list[str]]:
     """The repo's ticket branches, by the slug each ends in: a worker builds a ticket on
-    `ticket/<feature>/<NN-slug>`, or `ticket/<integration branch>/<slug>` for a standalone one."""
+    `ticket/<slug>`."""
     result = subprocess.run(
         ["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", TICKET_BRANCHES],
         capture_output=True, text=True,
@@ -1219,24 +1030,18 @@ def ticket_branches(repo: Path) -> dict[str, list[str]]:
     return branches
 
 
-def branch_text(repo: Path | None, feature: str | None, path: Path) -> str | None:
+def branch_text(repo: Path | None, path: Path) -> str | None:
     """The ticket file as its own branch has it, or None where the board finds no branch of that
-    ticket, a merged and deleted one included.
-
-    A feature ticket takes the branch its feature names and no other, since another feature holding
-    a ticket of the same number would otherwise answer for it. A standalone ticket's integration
-    branch is not knowable from the file, so the sole branch ending in its slug is its own.
-    """
+    ticket, a merged and deleted one included. The slug is the ticket's id across the tracker, so
+    the branch ending in it is its own."""
     if repo is None:
         return None
     named = ticket_branches(repo).get(path.stem, [])
-    if feature is not None:
-        branch = next((b for b in named if b == f"ticket/{feature}/{path.stem}"), None)
-    elif len(named) == 1:
+    if len(named) == 1:
         branch = named[0]
     else:
         branch = None
-        if named:  # a standalone ticket, and nothing on it says which of those branches is its own
+        if named:  # nothing on the ticket says which of those branches is its own
             print(f"board: {path} could be any of {named}, so its questions are the checkout's", file=sys.stderr)
     if branch is None:
         return None
@@ -1401,7 +1206,7 @@ def absence_note(source: str, words: str) -> str:
 
 
 def ticket_blocks(
-    body: str, feature: str | None, asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
+    body: str, asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
 ) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
@@ -1420,19 +1225,20 @@ def ticket_blocks(
         elif word == "comments":
             history.append(text)
         else:
-            blocks.append(block(heading, prose(heading, text, feature)))
-    front = [asked_block(asked, prose(None, "".join(said), feature), path, status),
-             sessions_block(worked), artefacts_block(show_dir(path, feature))]
-    return "".join(filter(None, front + blocks)) + history_block("".join(history), feature)
+            blocks.append(block(heading, prose(heading, text)))
+    front = [asked_block(asked, prose(None, "".join(said)), path, status),
+             sessions_block(worked), artefacts_block(show_dir(path))]
+    return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
 SECTION = re.compile(r"^##\s+(.+?)\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
+ASKED = re.compile(r"^- \[D\d+\]", re.MULTILINE)  # where a `## Questions` section stops being prose
 
 
 def sections(body: str) -> list[tuple[str | None, str]]:
     """A ticket's `##` sections in file order, whatever stands above the first of them first and
     under no heading: a proposed ticket's line of provenance is written there."""
-    found = list(SECTION.finditer(unfenced(body)))
+    found = list(SECTION.finditer(tracker.unfenced(body)))
     written = [(None, body[: found[0].start()] if found else body)]
     written += [(section.group(1), body[section.start(2): section.end(2)]) for section in found]
     return [(heading, text) for heading, text in written if text.strip()]
@@ -1449,10 +1255,10 @@ TICKED = re.compile(r"<li>\s*(<p>)?\s*\[([ xX])\]\s*")
 MET = {False: ("", "Not met yet."), True: (" met", "Met: whoever built it ticked the box.")}
 
 
-def prose(heading: str | None, text: str, feature: str | None) -> str:
+def prose(heading: str | None, text: str) -> str:
     """A section's own words, rendered. The acceptance criteria become the checklist they are
     written as, so a criterion reads as met or not rather than as a line opening with a bracket."""
-    written = render_body(text, feature)
+    written = render_body(text)
     if heading and heading.lower() == "acceptance criteria":
         return TICKED.sub(ticked, written)
     return written
@@ -1542,20 +1348,19 @@ def artefacts(show: Path) -> tuple[Path | None, list[Path]]:
     return (demo if demo.is_file() else None), sorted(figures)
 
 
-def show_dir(path: Path, feature: str | None) -> Path:
-    """Where a ticket's artefacts are (/mx:show): `agent/show/<feature>/<NN-slug>/`, or
-    `agent/show/<slug>/` for a standalone ticket, beside the tracker the ticket was read from."""
-    show = (path.parent.parent if feature else path.parent).parent / "show"
-    return show / feature / path.stem if feature else show / path.stem
+def show_dir(path: Path) -> Path:
+    """Where a ticket's artefacts are (/mx:show): `agent/show/<slug>/`, beside the tracker the
+    ticket was read from."""
+    return path.parent.parent / "show" / path.stem
 
 
-def history_block(comments: str, feature: str | None) -> str:
+def history_block(comments: str) -> str:
     """The ticket's comments, folded: the conversation on it and a build's closing comment are what
     happened, not what the ticket is, so they open only when the reader asks for them."""
     if not comments.strip():
         return ""
     return ('<details class="history"><summary><span class="label">comments</span></summary>'
-            f'{render_body(comments, feature)}</details>')
+            f'{render_body(comments)}</details>')
 
 
 # ---- graphs ---------------------------------------------------------------
@@ -1565,183 +1370,129 @@ def slug_id(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]", "_", name)
 
 
-def visible(tickets: list[Ticket]) -> tuple[set[str], set[str]]:
-    """(include, ghost): the live tickets plus the done ones a live ticket waits on, and those done ones."""
-    by_num = {t.num: t for t in tickets}
-    live = {t.num for t in tickets if t.status != "done"}
-    ghost = {b for t in tickets if t.num in live for b in t.blocked_by if by_num[b].status == "done"}
-    return live | ghost, ghost
-
-
 def node_label(text: str) -> str:
     # a double quote ends mermaid's label string, and the #quot; entity renders literally in an SVG text label
     return text.replace('"', "”")
 
 
-def node_id(ns: str, feature: str, num: str) -> str:
+def node_id(ns: str, slug: str) -> str:
     # ns makes node ids unique per diagram instance: mermaid+elk contaminate across
     # diagrams on one page when two share a node id (DOM lookups hit the first SVG).
-    return f"T_{ns}_{slug_id(feature)}_{num}"
+    return f"T_{ns}_{slug_id(slug)}"
 
 
-def standalone_id(ns: str, slug: str) -> str:
-    return f"K_{ns}_{slug_id(slug)}"
+def drawn(shown: list[Ticket], all_of_them: dict[str, Ticket]) -> tuple[set[str], set[str]]:
+    """(drawn, ghost): the live tickets of `shown` plus every done ticket one of them waits on, and
+    those done ones, which are drawn as the context they are."""
+    live = {t.slug for t in shown if t.status != "done"}
+    ghost = {
+        ref for slug in live for ref, _ in all_of_them[slug].blocked_by
+        if ref in all_of_them and all_of_them[ref].status == "done"
+    }
+    return live | ghost, ghost
 
 
-def node_defs(ns: str, feature: str, tickets: list[Ticket], nums: set[str], ghost: set[str]) -> list[str]:
+def node_defs(ns: str, tickets: list[Ticket], drawing: set[str], ghost: set[str]) -> list[str]:
     lines = []
     for t in tickets:
-        if t.num in nums:
-            cls = "ghost" if t.num in ghost else t.status
-            lines.append(f'  {node_id(ns, feature, t.num)}["{STATUS_SYMBOL[t.status]} {node_label(f"{t.num} {t.title}")}"]:::{cls}')
-    lines.extend(f'  click {node_id(ns, feature, t.num)} "#t-{feature}-{t.num}"' for t in tickets if t.num in nums)
+        if t.slug in drawing:
+            cls = "ghost" if t.slug in ghost else t.status
+            lines.append(f'  {node_id(ns, t.slug)}["{STATUS_SYMBOL[t.status]} {node_label(t.title)}"]:::{cls}')
+    lines.extend(f'  click {node_id(ns, t.slug)} "#t-{t.slug}"' for t in tickets if t.slug in drawing)
     return lines
 
 
-def feature_graph(feature: Feature) -> str | None:
-    """One feature's dependency graph, edges only: live tickets and the done blockers they wait on,
-    minus every ticket with no edge. None when nothing in the feature waits on anything."""
-    include, ghost = visible(feature.tickets)
-    edges = [(b, t.num) for t in feature.tickets if t.num in include for b in t.blocked_by if b in include]
-    nums = {n for e in edges for n in e}
-    if not nums:
+def tree_graph(tickets: list[Ticket], tree: str) -> str | None:
+    """One tree's dependency graph, edges only: the live tickets of the tree and the done blockers
+    they wait on, minus every ticket with no edge. None when nothing in the tree waits on
+    anything."""
+    by_slug = {t.slug: t for t in tickets}
+    inside = [t for t in tickets if t.tree == tree]
+    include, ghost = drawn(inside, by_slug)
+    edges = [(ref, t.slug) for t in inside if t.slug in include
+             for ref, _ in t.blocked_by if ref in include]
+    slugs = {slug for edge in edges for slug in edge}
+    if not slugs:
         return None
     ns = "f"
-    lines = ["flowchart LR", *node_defs(ns, feature.name, feature.tickets, nums, ghost & nums)]
-    lines.extend(f"  {node_id(ns, feature.name, a)} --> {node_id(ns, feature.name, b)}" for a, b in edges)
+    lines = ["flowchart LR", *node_defs(ns, tickets, slugs, ghost & slugs)]
+    lines.extend(f"  {node_id(ns, a)} --> {node_id(ns, b)}" for a, b in edges)
     return "\n".join(lines)
 
 
-def board_graph(features: list[Feature], standalone: list[Standalone]) -> dict | None:
-    """The whole tracker's dependency graph, as the parts the page composes for whichever features
-    are shown: per feature, and for the standalone tickets as one more, its nodes with their lines;
-    every edge with the two features it joins. Edges only, as in feature_graph; a cross-feature or
-    standalone edge is drawn where both ends are on the board, and a done ticket another feature's
-    live ticket waits on is its dashed context there too. None when nothing waits on anything."""
+def board_graph(tickets: list[Ticket]) -> dict | None:
+    """The whole tracker's dependency graph, as the parts the page composes for whichever trees are
+    shown: per tree, its nodes with their lines; every edge with the two trees it joins. Edges only,
+    as in `tree_graph`; an edge is drawn where both ends are on the board, and a done ticket a live
+    one waits on is its dashed context there too. None when nothing waits on anything."""
     ns = "b"
-    include = {f.name: visible(f.tickets)[0] for f in features}
-    ghost = {f.name: visible(f.tickets)[1] for f in features}
-    shown = [k for k in standalone if k.status != "done"]
-    shown_slugs = {k.slug for k in shown}
-    ghost_slugs: set[str] = set()
-    by_feature = {f.name: {t.num: t for t in f.tickets} for f in features}
-    by_slug = {k.slug: k for k in standalone}
-    waits = [ref for f in features for t in f.tickets if t.status != "done" for ref, _ in t.ext_by]
-    waits += [ref for k in shown for ref, _ in k.blocked_by]
-    for ref in waits:
-        if "/" in ref:
-            src_feat, src_num = ref.rsplit("/", 1)
-            src_num = normalize_num(src_num)
-            if (src := by_feature.get(src_feat, {}).get(src_num)) and src.status == "done":
-                include[src_feat].add(src_num)
-                ghost[src_feat].add(src_num)
-        elif ref not in shown_slugs and (k := by_slug.get(ref)) and k.status == "done":
-            shown.append(k)  # `waits` holds one entry per waiting ticket, so the guard is the set
-            shown_slugs.add(ref)
-            ghost_slugs.add(ref)
-
-    def node(ref: str) -> tuple[str, str] | None:
-        """(feature, node id) of a blocker that is on the board."""
-        if "/" in ref:
-            src_feat, src_num = ref.rsplit("/", 1)
-            src_num = normalize_num(src_num)
-            return (src_feat, node_id(ns, src_feat, src_num)) if src_num in include.get(src_feat, set()) else None
-        return ("standalone", standalone_id(ns, ref)) if ref in shown_slugs else None
-
-    edges: list[tuple[str, str, str, str]] = []  # (feature, node) --> (feature, node)
-    for f in features:
-        for t in f.tickets:
-            if t.num not in include[f.name]:
-                continue
-            to = (f.name, node_id(ns, f.name, t.num))
-            edges += [(f.name, node_id(ns, f.name, b), *to) for b in t.blocked_by if b in include[f.name]]
-            edges += [(*src, *to) for ref, _ in t.ext_by if (src := node(ref))]
-    for k in shown:
-        edges += [(*src, "standalone", standalone_id(ns, k.slug)) for ref, _ in k.blocked_by if (src := node(ref))]
+    by_slug = {t.slug: t for t in tickets}
+    include, ghost = drawn(tickets, by_slug)
+    # the tree a node sits under is named as the pill names it, since the page composes this graph
+    # by hiding the trees whose pills are off
+    edges = [
+        (by_slug[ref].tree or ALONE, node_id(ns, ref), t.tree or ALONE, node_id(ns, t.slug))
+        for t in tickets if t.slug in include
+        for ref, _ in t.blocked_by if ref in include
+    ]
     if not edges:
         return None
     connected = {n for _, a, _, b in edges for n in (a, b)}
-    parts: dict = {"features": [], "edges": [{"a": fa, "from": a, "b": fb, "to": b, "line": f"  {a} --> {b}"} for fa, a, fb, b in edges]}
-    for f in features:
+    parts: dict = {"trees": [], "edges": [{"a": ta, "from": a, "b": tb, "to": b, "line": f"  {a} --> {b}"}
+                                          for ta, a, tb, b in edges]}
+    for tree in sorted({t.tree for t in tickets}):
         nodes = [
-            {"id": node_id(ns, f.name, t.num), "lines": node_defs(ns, f.name, f.tickets, {t.num}, ghost[f.name] & {t.num})}
-            for t in f.tickets if node_id(ns, f.name, t.num) in connected
+            {"id": node_id(ns, t.slug), "lines": node_defs(ns, [t], {t.slug}, ghost & {t.slug})}
+            for t in tickets if t.tree == tree and node_id(ns, t.slug) in connected
         ]
         if nodes:
-            parts["features"].append({"name": f.name, "nodes": nodes})
-    nodes = [
-        {"id": standalone_id(ns, k.slug), "lines": [
-            f'  {standalone_id(ns, k.slug)}["{STATUS_SYMBOL[k.status]} {node_label(k.title)}"]'
-            f':::{"ghost" if k.slug in ghost_slugs else k.status}',
-            f'  click {standalone_id(ns, k.slug)} "#standalone-{k.slug}"',
-        ]}
-        for k in shown if standalone_id(ns, k.slug) in connected
-    ]
-    if nodes:
-        parts["features"].append({"name": "standalone", "nodes": nodes})
+            parts["trees"].append({"name": tree or ALONE, "nodes": nodes})
     return parts
 
 
 # ---- page -----------------------------------------------------------------
 
-type Row = Ticket | Standalone
-
-
-WORKED_ALONE = {"research": "research", "legwork": "legwork"}  # the ones an agent takes away and comes back from
-
-
-def asks(status: str, kind: str | None, open_question: bool) -> str:
+def asks(status: str, needs_user: bool, open_question: bool) -> str:
     """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
-    for a ruling, a ticket stopped on a question of its own asks for the answer, and a decision
-    ticket asks for the session its type names.
+    for a ruling, a ticket stopped on a question of its own asks for the answer, and a ticket the
+    user is in the loop for asks for the session that is the work.
 
-    A grilling or a prototype decision asks for its session whether or not its question is written
-    down yet, since sitting down together is the work. Research and legwork an agent does alone, so
-    a question open on one is what stops it, and the row says so."""
+    That session is asked for whether or not a question of the ticket's is written down yet, since
+    sitting down together is the work."""
     if status == "review":
         return "review"
-    if kind in SITS_FOR:
-        return SITS_FOR[kind]
+    if needs_user:
+        return "session"
     if open_question and status != "done":
         return "answer"
-    return WORKED_ALONE.get(kind or "", "build")
+    return "build"
 
 
-def asks_word(t: Row) -> str:
+def asks_word(t: Ticket) -> str:
     """Which of ASKS a row asks of the user, from the row itself."""
-    return asks(t.status, t.kind, bool(open_questions(t.questions)))
+    return asks(t.status, t.needs_user, bool(open_questions(t.questions)))
 
 
-def asks_tag(t: Row) -> str:
+def asks_tag(t: Ticket) -> str:
     kind = asks_word(t)
     word, meaning = ASKS[kind]
     return f'<span class="asks a-{kind}" data-tip="{html.escape(meaning)}">{word}</span>'
 
 
-def time_tag(t: Row) -> str:
-    if not t.size:
-        return ""  # a ticket whose file says no size shows none; its column stays, empty
+def time_tag(t: Ticket) -> str:
     return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZES[t.size][0]}</span>'
 
 
-def priority_tag(t: Row) -> str:
-    if not t.priority:
-        return ""
+def priority_tag(t: Ticket) -> str:
     return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRIORITY_TIP)}">p{t.priority} {PRIORITY[t.priority][0]}</span>'
 
 
-def sort_key(t: Row) -> tuple:
-    """A row's place within its group: the priority first, then the user's time, then the name. A
-    ticket whose frontmatter says neither sorts after the ones that do."""
-    return (t.priority or len(PRIORITY) + 1, SIZE_RANK.get(t.size or "", len(SIZE_RANK)), t.title.lower())
+def sort_key(t: Ticket) -> tuple:
+    """A row's place within its group: the priority first, then the user's time, then the name."""
+    return (t.priority, SIZE_RANK[t.size], t.title.lower())
 
 
-def dep_chips(feature: str, by_num: dict[str, Ticket], t: Ticket) -> str:
-    local = "".join(blocker_chip(b, by_num[b].status, f"#t-{feature}-{b}") for b in t.blocked_by)
-    return local + ext_chips(t.ext_by)
-
-
-def ext_chips(refs: list[tuple[str, str]]) -> str:
+def dep_chips(refs: list[tuple[str, str]]) -> str:
     return "".join(blocker_chip(ref, status, ref_anchor(ref)) for ref, status in refs)
 
 
@@ -1780,12 +1531,12 @@ def search_text(*parts: str) -> str:
     return html.escape(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", " ", p) for p in parts)).strip().lower(), quote=True)
 
 
-def row_open(row_id: str, status: str, feature: str, num: str, search: str, path: Path) -> str:
+def row_open(t: Ticket, search: str) -> str:
     """The element every row is: what the page's script matches a row on, and the file a click on
-    its number copies."""
+    its slug copies."""
     return (
-        f'<details class="ticket row-{status}" id="{row_id}" data-feature="{html.escape(feature)}" '
-        f'data-num="{html.escape(num)}" data-search="{search}" data-path="{html.escape(str(path))}"><summary>'
+        f'<details class="ticket row-{t.status}" id="t-{t.slug}" data-tree="{html.escape(t.tree or ALONE)}" '
+        f'data-slug="{html.escape(t.slug)}" data-search="{search}" data-path="{html.escape(str(t.path))}"><summary>'
     )
 
 
@@ -1805,10 +1556,10 @@ def open_questions(asked: Sequence[Question]) -> list[Question]:
     return [q for q in asked if not q.ruled]
 
 
-def group_of(t: Row) -> str:
+def group_of(t: Ticket) -> str:
     """Which group a row sits in: the needs-me group where the ticket waits on the user, its status
     otherwise. A row is in one group, so needs me takes a ticket out of its status group."""
-    return "needs" if needs_me(t.status, t.kind, t.priority, bool(open_questions(t.questions))) else t.status
+    return "needs" if needs_me(t.status, t.needs_user, t.priority, bool(open_questions(t.questions))) else t.status
 
 
 def shown_questions(status: str, asked: Sequence[Question]) -> list[Question]:
@@ -1820,7 +1571,7 @@ def shown_questions(status: str, asked: Sequence[Question]) -> list[Question]:
     return [] if status == "done" else open_questions(asked)
 
 
-def questions_block(t: Row) -> str:
+def questions_block(t: Ticket) -> str:
     """The open questions under a folded needs-me row: each one's tag and headline with a button
     that copies it, and one that copies the ticket's own once there are two to copy.
 
@@ -1845,7 +1596,7 @@ def questions_block(t: Row) -> str:
     ) + "</span>"
 
 
-def group_copy(rows: Sequence[Row]) -> str:
+def group_copy(rows: Sequence[Ticket]) -> str:
     """The needs-me group's own copy button: every open question on the board at once, for pasting
     into an editor. Empty for a group whose rows ask nothing, which is every other group."""
     asked = [(t.path, shown_questions(t.status, t.questions)) for t in rows]
@@ -1895,68 +1646,65 @@ def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str
             f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
 
 
-def row(row_id: str, feature: str, num: str, t: Row, chips: str, gh: dict[str, str], on_branch: str = "") -> str:
-    """One ticket row, every mark in a fixed column: the feature, the number (a click copies the
-    file's path), what the row asks of the user, the name with its review page and GitHub
-    references, the ticket brief under the name and, while the row is folded, the open questions
-    the ticket asks the user under that, the user's time, the priority, the blockers. Below a width
-    the time, the priority and the blockers move under the name. The ticket's remaining text folds
-    under the row."""
+TREE_TIP = "The parent ticket this one is part of. Its pill in the top bar hides and shows the tree's rows."
+
+
+def row(t: Ticket, gh: dict[str, str]) -> str:
+    """One ticket row, every mark in a fixed column: the tree the ticket is part of, its slug (a
+    click copies the file's path), what the row asks of the user, the name with its review page and
+    GitHub references, the ticket brief under the name and, while the row is folded, the open
+    questions the ticket asks the user under that, the user's time, the priority, the blockers.
+    Below a width the time, the priority and the blockers move under the name. The ticket's
+    remaining text folds under the row."""
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
+    on_branch = (
+        f'<span class="src" data-tip="Filed on branch {html.escape(t.source)}, not on the main branch.">on {html.escape(t.source)}</span>'
+        if t.source else ""
+    )
     return (
-        row_open(row_id, t.status, feature, num, search_text(num, t.title, t.brief, t.body_html, *t.gh), t.path)
-        + f'<span class="ftag" data-tip="The feature this ticket belongs to. Its pill in the top bar hides and shows these rows.">{clipped(feature)}</span>'
-        f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{html.escape(num)}</span>'
+        row_open(t, search_text(t.slug, t.title, t.brief, t.body_html, *t.gh))
+        + f'<span class="ftag" data-tip="{html.escape(TREE_TIP)}">{clipped(t.tree)}</span>'
+        f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{clipped(t.slug)}</span>'
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{review_link(t.diffview)}{gh_links(t.gh, gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
-        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{chips}</span></span>'
+        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{dep_chips(t.blocked_by)}</span></span>'
         f'</summary><div class="body">{t.body_html}</div></details>'
     )
 
 
-def ticket_row(f: Feature, t: Ticket, gh: dict[str, str]) -> str:
-    by_num = {x.num: x for x in f.tickets}
-    return row(f"t-{f.name}-{t.num}", f.name, t.num, t, dep_chips(f.name, by_num, t), gh)
+def tree_chip(tree: str, tickets: list[Ticket]) -> str:
+    """A tree's pill in the top bar: its counts, and the click that hides and shows its rows.
 
-
-def standalone_row(k: Standalone, gh: dict[str, str]) -> str:
-    on_branch = (
-        f'<span class="src" data-tip="Filed on branch {html.escape(k.source)}, not on the main branch.">on {html.escape(k.source)}</span>'
-        if k.source else ""
-    )
-    return row(f"standalone-{k.slug}", "standalone", "--", k, ext_chips(k.blocked_by), gh, on_branch)
-
-
-def feature_chip(f: Feature) -> str:
-    """A feature's pill in the top bar: its counts, and the click that hides and shows its rows.
-
-    The done count is out of every ticket the feature has, proposed ones included, so a breakdown
-    just cut off a spec reads 0/4."""
-    counts = Counter(t.status for t in f.tickets)
-    bits = [f"spec {f.spec_status}"] if f.spec_status else []
-    bits += [f"{counts['done']}/{len(f.tickets)} done"] if f.tickets else ["no tickets yet"]
+    The done count is out of every ticket in the tree, proposed ones included, so a breakdown just
+    cut off a parent ticket reads 0/4."""
+    inside = [t for t in tickets if (t.tree or ALONE) == tree]
+    counts = Counter(t.status for t in inside)
+    bits = [f"{counts['done']}/{len(inside)} done"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    # the dot says the feature holds work of the user's own; the counts above already say how much
-    dot = '<i class="dot"></i>' if any(group_of(t) == "needs" for t in f.tickets) else ""
+    # the dot says the tree holds work of the user's own; the counts above already say how much
+    dot = '<i class="dot"></i>' if any(group_of(t) == "needs" for t in inside) else ""
     return (
-        f'<button class="featchip" data-feature="{html.escape(f.name)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(f.name)} '
-        f'<span class="dim">{counts["done"]}/{len(f.tickets)}</span></button>'
+        f'<button class="treechip" data-tree="{html.escape(tree)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(tree)} '
+        f'<span class="dim">{counts["done"]}/{len(inside)}</span></button>'
     )
+
+
+def trees_of(tickets: list[Ticket]) -> list[str]:
+    """Every tree the board shows, the lone tickets' pill last: what the top bar holds a pill for."""
+    named = sorted({t.tree for t in tickets if t.tree})
+    return named + ([ALONE] if any(not t.tree for t in tickets) else [])
 
 
 def render_page(
-    project: str, features: list[Feature], standalone: list[Standalone],
+    project: str, tickets: list[Ticket],
     log: str, stamp: str, stamp_src: str, gh: github.Answer = github.NOTHING,
     said: "briefing.Briefing | None" = None,
 ) -> str:
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
-    ranked: dict[str, list[tuple[tuple, str, Row]]] = {state: [] for state, _ in GROUPS}
-    for f in features:
-        for t in f.tickets:
-            ranked[group_of(t)].append((sort_key(t), ticket_row(f, t, gh.states), t))
-    for k in standalone:
-        ranked[group_of(k)].append((sort_key(k), standalone_row(k, gh.states), k))
+    ranked: dict[str, list[tuple[tuple, str, Ticket]]] = {state: [] for state, _ in GROUPS}
+    for t in tickets:
+        ranked[group_of(t)].append((sort_key(t), row(t, gh.states), t))
     ranked = {state: sorted(sortable, key=lambda ranks: ranks[0]) for state, sortable in ranked.items()}
     for state, sortable in ranked.items():
         rows[state].extend(row for _, row, _ in sortable)
@@ -1968,18 +1716,17 @@ def render_page(
         for state, label in GROUPS if rows[state]
     )
 
-    chips = "".join(feature_chip(f) for f in features)
-    if standalone:
-        chips += f'<button class="featchip" data-feature="standalone" title="tickets without a spec">standalone <span class="dim">{len(standalone)}</span></button>'
+    trees = trees_of(tickets)
+    chips = "".join(tree_chip(tree, tickets) for tree in trees)
 
     graphs = ""
-    for f in features:
-        src = feature_graph(f)
-        inner = f'<pre class="mermaid" data-key="g:{f.name}">{src}</pre>' if src else f'<div class="gnote">nothing in {html.escape(f.name)} waits on anything</div>'
-        graphs += f'<div class="g" data-feature="{html.escape(f.name)}" hidden>{inner}</div>'
-    board = board_graph(features, standalone)
-    graphs += '<div class="g" data-feature="*" hidden>' + (
-        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden feature</div>'
+    for tree in trees:
+        src = tree_graph(tickets, "" if tree == ALONE else tree)
+        inner = f'<pre class="mermaid" data-key="g:{tree}">{src}</pre>' if src else f'<div class="gnote">nothing in {html.escape(tree)} waits on anything</div>'
+        graphs += f'<div class="g" data-tree="{html.escape(tree)}" hidden>{inner}</div>'
+    board = board_graph(tickets)
+    graphs += '<div class="g" data-tree="*" hidden>' + (
+        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden tree</div>'
         f'<script type="application/json" class="parts">{json.dumps(board).replace("</", "<\\/")}</script>'
         if board else '<div class="gnote">nothing waits on anything</div>'
     ) + "</div>"
@@ -1988,25 +1735,26 @@ def render_page(
         f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
         for line in log.strip().splitlines()
     )
-    footmeta = f"{len(features)} feature{'s' if len(features) != 1 else ''} · {len(standalone)} standalone · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
+    named = [tree for tree in trees if tree != ALONE]
+    footmeta = f"{len(tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
         overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS,
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
-        columns=row_columns(features, standalone, grouped),
-        absences="".join(absences(features, standalone, gh, said)),
-        briefing=briefing_block(said, features, standalone),
+        columns=row_columns(tickets, grouped),
+        absences="".join(absences(tickets, gh, said)),
+        briefing=briefing_block(said, tickets),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
 
-def briefing_block(said: "briefing.Briefing | None", features: list[Feature], standalone: list[Standalone]) -> str:
+def briefing_block(said: "briefing.Briefing | None", tickets: list[Ticket]) -> str:
     """The head of the side column: where things stand and what to take up next, as the briefing
     session wrote it and when, or the board's own count where no session has written one."""
     when, text, tip = (
         # the row shows the day and the hour; the words behind it carry the year, which is what a
         # briefing nobody has replaced in months is read by
         (f"written {said.written:%d %b %H:%M}", said.text, f"Written {said.written:%Y-%m-%d %H:%M}.\n{BRIEFING_TIP}")
-        if said else ("the board's own", fallback(features, standalone), FALLBACK_TIP)
+        if said else ("the board's own", fallback(tickets), FALLBACK_TIP)
     )
     return (
         f'<div class="bhead"><span class="label">briefing</span>'
@@ -2015,40 +1763,40 @@ def briefing_block(said: "briefing.Briefing | None", features: list[Feature], st
     )
 
 
-# How many characters of a tracker's own names a column shows before the rest is cut with an
-# ellipsis (a feature name) or wraps to a second line (a blocker reference): the width the column
-# had when it was fixed, so a long name costs the row no more than it used to.
+# How many characters of a tracker's own slugs a column shows before the rest is cut with an
+# ellipsis (a tree, a row's own slug) or wraps to a second line (a blocker reference), so a long
+# slug costs the row no more than the width those columns were fixed at.
 NAME_CAP = 14
 REF_CAP = 14
 
 
-def row_columns(features: list[Feature], standalone: list[Standalone], grouped: dict[str, list[Row]]) -> str:
+def row_columns(tickets: list[Ticket], grouped: dict[str, list[Ticket]]) -> str:
     """The width of each of a row's fixed columns, as the CSS tokens the row's grid reads.
 
     A column is as wide as the widest mark that can land in it and no wider, so the name and the
     brief take every pixel the row has spare. The widths come from the marks themselves: the closed
     vocabularies for what a row asks, the user's time and the priority, and the tracker's own names
-    and references for the feature tag and the blockers. Their marks are all set in the one
+    and references for the tree, the slug and the blockers. Their marks are all set in the one
     monospace, so a column's width is a count of characters (`--mark-char`), capped where a
     tracker's own names could run away.
 
-    The feature, the number and what the row asks are measured over the whole board, so those
-    columns run straight down every row of it. The time, the priority and the blockers are measured
+    The tree, the slug and what the row asks are measured over the whole board, so those columns
+    run straight down every row of it. The time, the priority and the blockers are measured
     over each group, since a group of quick unblocked tickets has no use for the width an XL one
     needs: a column still runs down the group the eye is reading, and the rest is the brief's."""
     page = {
-        "ftag": min(max([len(f.name) for f in features] + [len("standalone")]), NAME_CAP),
-        "num": len("--"),  # a standalone ticket has no number
+        "ftag": min(max([len(t.tree) for t in tickets], default=0), NAME_CAP),
+        "num": min(max([len(t.slug) for t in tickets], default=0), NAME_CAP),
         "asks": max(len(word) for word, _ in ASKS.values()),
         "time": max(len(word) for word, _ in SIZES.values()),
         "pri": max(len(f"p{level} {word}") for level, (word, _) in PRIORITY.items()),
-        "chips": min(max([len(ref) for ref in blocker_refs(features, standalone)], default=2), REF_CAP),
+        "chips": min(max([len(ref) for ref in blocker_refs(tickets)], default=2), REF_CAP),
     }
     css = column_tokens(":root", page)
     for state, rows in grouped.items():
         own = {
-            "time": max([len(SIZES[r.size][0]) for r in rows if r.size], default=0),
-            "pri": max([len(f"p{r.priority} {PRIORITY[r.priority][0]}") for r in rows if r.priority], default=0),
+            "time": max([len(SIZES[r.size][0]) for r in rows], default=0),
+            "pri": max([len(f"p{r.priority} {PRIORITY[r.priority][0]}") for r in rows], default=0),
             "chips": min(max([len(ref) for r in rows for ref in blockers_of(r)], default=0), REF_CAP),
         }
         css += column_tokens(f"#grp-{state}", {mark: n for mark, n in own.items() if n < page[mark]})
@@ -2067,26 +1815,23 @@ def column_tokens(selector: str, widths: dict[str, int]) -> str:
     ) + "  }\n"
 
 
-def blockers_of(t: Row) -> list[str]:
+def blockers_of(t: Ticket) -> list[str]:
     """The blockers one row shows, as the reader sees them written."""
-    if isinstance(t, Standalone):
-        return [ref for ref, _ in t.blocked_by]
-    return t.blocked_by + [ref for ref, _ in t.ext_by]
+    return [ref for ref, _ in t.blocked_by]
 
 
-def blocker_refs(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+def blocker_refs(tickets: list[Ticket]) -> list[str]:
     """Every blocker the board shows."""
-    return [ref for rows in ([t for f in features for t in f.tickets], standalone) for t in rows for ref in blockers_of(t)]
+    return [ref for t in tickets for ref in blockers_of(t)]
 
 
-def gh_shown(features: list[Feature], standalone: list[Standalone]) -> list[str]:
+def gh_shown(tickets: list[Ticket]) -> list[str]:
     """Every pull request and issue the board links, the whole of one render's question for GitHub."""
-    return [ref for rows in ([t for f in features for t in f.tickets], standalone) for t in rows for ref in t.gh]
+    return [ref for t in tickets for ref in t.gh]
 
 
 def absences(
-    features: list[Feature], standalone: list[Standalone], gh: github.Answer,
-    standing: "briefing.Briefing | None" = None,
+    tickets: list[Ticket], gh: github.Answer, standing: "briefing.Briefing | None" = None,
 ) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
     missing). A review page linked as a file is one nothing answered for; a tracker with no page
@@ -2099,7 +1844,7 @@ def absences(
     The model says its own absence in its own words too: a machine with no claude and a login that
     has lapsed are the same empty column and two different things to fix (briefing.missing)."""
     said = []
-    pages = [t.diffview for f in features for t in f.tickets] + [k.diffview for k in standalone]
+    pages = [t.diffview for t in tickets]
     if any(page and page.startswith("file://") for page in pages):
         said.append(absence_note(
             "review-page-server",
@@ -2118,22 +1863,22 @@ def absences(
 
 
 # The full size graph, as the overlay over the board and the window of its own both wear it: one
-# head with the feature/whole-tracker switch and whatever that view adds, over one box holding
+# head with the tree/whole-tracker switch and whatever that view adds, over one box holding
 # either a note or the drawing. Two views of one thing, so one markup and one script for both.
 GRAPH_VIEW = Template(
     '<div class="gfhead"><span class="label">dependencies</span><span class="gname"></span>'
-    '<span class="seg"><button class="btn" data-gmode="feature" title="${feature_says}">feature</button>'
+    '<span class="seg"><button class="btn" data-gmode="tree" title="${tree_says}">tree</button>'
     '<button class="btn" data-gmode="all" title="${all_says}">all</button></span>${extra}</div>'
     '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>'
 )
 OVERLAY = GRAPH_VIEW.substitute(
-    feature_says="the graph of the row's feature (a)", all_says="the whole tracker's graph (a)",
+    tree_says="the graph of the row's parent ticket (a)", all_says="the whole tracker's graph (a)",
     extra='<button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>'
           '<button class="btn" id="gclose" title="back to the board (Esc)">close</button>',
 )
 # the window has no keys of its own, so its switch says what it does without naming one
 GRAPH_WINDOW = GRAPH_VIEW.substitute(
-    feature_says="the graph of the row the board is on", all_says="the whole tracker's graph",
+    tree_says="the graph of the row the board is on", all_says="the whole tracker's graph",
     extra='<span class="gorphan">the board this followed is gone</span>',
 )
 
@@ -2287,20 +2032,20 @@ ${columns}
   ::selection { background: var(--mark); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   code, kbd, pre { font-family: var(--font-mono); }
-  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .featchip, .search,
+  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .treechip, .search,
     .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
 
-  /* ---- the top bar: the project, the feature pills, the filter, the graph mode, the scheme ---- */
+  /* ---- the top bar: the project, the tree pills, the filter, the graph mode, the scheme ---- */
   .top { position: sticky; top: 0; z-index: 10; display: flex; gap: 1rem; align-items: center; min-height: 52px;
     padding: .4rem 1.25rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
   .top .name { font-weight: 600; color: var(--strong); white-space: nowrap; }
   .top .name span { color: var(--muted); font-weight: 400; }
   .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
-  .featchip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
+  .treechip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
     font-size: .8rem; color: var(--muted); cursor: pointer; white-space: nowrap; display: inline-flex; gap: .4em;
     align-items: center; transition: color 150ms, border-color 150ms; }
-  .featchip:hover { color: var(--accent); border-color: var(--accent); }
-  .featchip.off { opacity: .5; text-decoration: line-through; }
+  .treechip:hover { color: var(--accent); border-color: var(--accent); }
+  .treechip.off { opacity: .5; text-decoration: line-through; }
   .dim { color: var(--muted); }
   .dot { display: inline-block; width: .45em; height: .45em; border-radius: 50%; background: var(--accent-2); }
   .search { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); color: var(--body);
@@ -2406,7 +2151,7 @@ ${columns}
   .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); min-width: 0; }
   /* a box that hides its overflow hides its own tooltip with it, so the ellipsis sits one level in */
   .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .num { grid-area: num; font-size: .8rem; color: var(--muted); text-align: right; cursor: copy; white-space: nowrap; }
+  .num { grid-area: num; font-size: .78rem; color: var(--muted); cursor: copy; min-width: 0; }
   .num:hover { color: var(--accent); }
   .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
   /* the name is what a row is read by, so it keeps its words: the links wrap under it rather than
@@ -2446,7 +2191,7 @@ ${columns}
     background: color-mix(in srgb, var(--c-pink) 16%, transparent); }
   .pri.p3 { background: color-mix(in srgb, var(--c-pink) 8%, transparent); }
   .pri.p4, .pri.p5 { color: var(--muted); background: none; padding-left: 0; }
-  /* the blockers' column is as fixed as the rest, so a long cross-feature reference wraps within
+  /* the blockers' column is as fixed as the rest, so a long reference wraps within
      it rather than widening it and pulling the time and the priority out of line */
   .chips { grid-area: chips; display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
   .chip { color: var(--body); overflow-wrap: anywhere; }
@@ -2563,7 +2308,7 @@ ${columns}
   <span class="name">board <span>${project}</span></span>
   <nav class="featnav" id="featnav">${chips}</nav>
   <input class="search" id="search" type="search" placeholder="filter  /" autocomplete="off">
-  <span class="seg" id="modes"><button class="btn" data-gmode="feature" title="the graph of the row's feature (a)">feature</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
+  <span class="seg" id="modes"><button class="btn" data-gmode="tree" title="the graph of the row's parent ticket (a)">tree</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
   <button class="btn" id="helpbtn" title="keys (?)">?</button>
   <button class="btn scheme" id="scheme" title="the other colour scheme">
     <svg class="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -2586,7 +2331,7 @@ ${groups}
     <button class="btn" id="gwinopen" title="the graph at full size, in a window of its own beside the board (w)">window</button>
     <button class="btn" id="sidefold" title="fold the graph (b)">fold</button></div>
   <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
-    <div class="g" data-feature=""><div class="gnote">open a row or move onto one (j / k)</div></div>
+    <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
   </div>
 </aside>
@@ -2603,12 +2348,12 @@ ${groups}
 <tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
 <tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
-<tr><td><kbd>a</kbd></td><td>graph: the row's feature / the whole tracker</td></tr>
+<tr><td><kbd>a</kbd></td><td>graph: the row's parent ticket / the whole tracker</td></tr>
 <tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
 <tr><td><kbd>f</kbd></td><td>the graph at full size over the board; a click on a node goes to its row</td></tr>
 <tr><td><kbd>w</kbd></td><td>the graph at full size in a window of its own, beside the board</td></tr>
 <tr><td><kbd>t</kbd></td><td>the other colour scheme</td></tr>
-<tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth feature; all on</td></tr>
+<tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth parent ticket; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
 </table></div></div>
@@ -2629,8 +2374,8 @@ ${groups}
       try { ({ saved = null, cache = {} } = JSON.parse(window.name.slice(6))); } catch {}
     }
     const off = new Set(JSON.parse(localStorage.getItem("board-off:" + document.title) ?? "[]"));
-    for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
-    for (const t of document.querySelectorAll(".ticket")) t.classList.toggle("off", off.has(t.dataset.feature));
+    for (const b of document.querySelectorAll(".treechip")) b.classList.toggle("off", off.has(b.dataset.tree));
+    for (const t of document.querySelectorAll(".ticket")) t.classList.toggle("off", off.has(t.dataset.tree));
     // re-inject cached SVGs: an unchanged graph paints instantly instead of re-running mermaid.
     // Keyed by the scheme too, since mermaid bakes the palette into the SVG.
     for (const el of document.querySelectorAll(".mermaid")) {
@@ -2708,7 +2453,7 @@ ${viewjs}
     for (const el of document.querySelectorAll(".g:not([hidden]) .mermaid")) {
       if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
       el.dataset.src = el.textContent;
-      if (!el.dataset.src.trim()) continue;  // the composed graph with every feature hidden: its note shows instead
+      if (!el.dataset.src.trim()) continue;  // the composed graph with every tree hidden: its note shows instead
       const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
       el.innerHTML = svg;
       nodeHover(el);
@@ -2729,11 +2474,11 @@ ${viewjs}
   }
   for (const el of document.querySelectorAll(".mermaid")) if (el.querySelector("svg")) nodeHover(el);
 
-  // ---- state: hidden features, the cursor row, the graph mode ----
+  // ---- state: hidden trees, the cursor row, the graph mode ----
   const { saved, off, cache } = window.boardState;
   const rowsEl = document.getElementById("rows"), side = document.getElementById("side");
   const search = document.getElementById("search");
-  let mode = saved?.mode ?? "feature";
+  let mode = saved?.mode ?? "tree";
   let cur = saved?.cur ? document.getElementById(saved.cur) : null;
   const inField = (e) => e.target.closest("input, textarea, [contenteditable]");
   const visible = (el) => el.checkVisibility();  // false inside a closed group too, where offsetParent still holds
@@ -2743,7 +2488,7 @@ ${viewjs}
   function applyFilters() {
     const q = search.value.trim().toLowerCase();
     for (const t of rowsEl.querySelectorAll(".ticket")) {
-      t.classList.toggle("off", off.has(t.dataset.feature));
+      t.classList.toggle("off", off.has(t.dataset.tree));
       t.classList.toggle("miss", !!q && !t.dataset.search.includes(q));
     }
     for (const g of rowsEl.querySelectorAll("details.grp[data-state]")) {
@@ -2751,17 +2496,17 @@ ${viewjs}
       g.querySelector(".n").textContent = n;
       g.classList.toggle("empty", n === 0);
     }
-    for (const b of document.querySelectorAll(".featchip")) b.classList.toggle("off", off.has(b.dataset.feature));
+    for (const b of document.querySelectorAll(".treechip")) b.classList.toggle("off", off.has(b.dataset.tree));
     localStorage.setItem("board-off:" + document.title, JSON.stringify([...off]));
-    if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden feature takes its row, and its graph, with it
+    if (cur && (cur.classList.contains("off") || cur.classList.contains("miss"))) setCur(null);  // a hidden tree takes its row, and its graph, with it
     showGraph();
   }
 
-  // The whole tracker's graph is composed here from its parts, so a hidden feature drops out of it
+  // The whole tracker's graph is composed here from its parts, so a hidden tree drops out of it
   // with its edges, and a node left without an edge goes with them. One composition per set of
-  // hidden features is rendered and kept.
+  // hidden trees is rendered and kept.
   function composeAll() {
-    const g = side.querySelector('.g[data-feature="*"]'), pre = g.querySelector(".mermaid");
+    const g = side.querySelector('.g[data-tree="*"]'), pre = g.querySelector(".mermaid");
     if (!pre) return;
     const key = "g:*:" + [...off].sort().join(",");
     if (pre.dataset.key === key) return;
@@ -2770,7 +2515,7 @@ ${viewjs}
     const edges = parts.edges.filter((e) => on(e.a) && on(e.b));
     const keep = new Set(edges.flatMap((e) => [e.from, e.to]));
     const lines = ["flowchart LR"];
-    for (const f of parts.features) {
+    for (const f of parts.trees) {
       const nodes = f.nodes.filter((n) => keep.has(n.id));
       if (!on(f.name) || !nodes.length) continue;
       lines.push('  subgraph S_b_' + f.name.replace(/[^a-zA-Z0-9]/g, "_") + '["' + f.name + '"]');
@@ -2787,29 +2532,28 @@ ${viewjs}
     if (hit && hit.src === pre.textContent) { pre.dataset.src = hit.src; pre.innerHTML = hit.svg; nodeHover(pre); }
   }
 
-  // The graph panel shows one pre-rendered graph at a time: the cursor row's feature, or the
-  // whole tracker. Switching shows another element and marks another node; nothing re-renders,
-  // so moving between rows of one feature never flickers.
+  // The graph panel shows one pre-rendered graph at a time: the cursor row's tree, or the whole
+  // tracker. Switching shows another element and marks another node; nothing re-renders, so moving
+  // between rows of one tree never flickers.
   function showGraph() {
-    const feature = cur?.dataset.feature ?? "";
-    const key = mode === "all" ? "*" : (feature === "standalone" ? "*" : feature);
-    for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.feature !== key;
+    const tree = cur?.dataset.tree ?? "";
+    const key = mode === "all" ? "*" : tree;
+    for (const g of side.querySelectorAll(".g")) g.hidden = g.dataset.tree !== key;
     if (key === "*") composeAll();
     const gname = document.getElementById("gname");
-    // the column is narrow enough to cut a feature name short, so the whole one is on hover
-    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (feature || "");
+    // the column is narrow enough to cut a parent ticket's slug short, so the whole one is on hover
+    gname.title = gname.textContent = mode === "all" ? "whole tracker" : (tree || "");
     for (const b of document.querySelectorAll("[data-gmode]")) b.classList.toggle("on", b.dataset.gmode === mode);
     renderGraphs();
   }
   function setMode(m) { mode = m; showGraph(); }
 
   // the cursor row's node in the graph on show, which carries the namespace that graph was built
-  // with: f for one feature's own, b for the whole tracker composed from its parts
+  // with: f for one tree's own, b for the whole tracker composed from its parts
   function curNode() {
-    if (!cur?.dataset.num) return "";
-    const composed = side.querySelector(".g:not([hidden])")?.dataset.feature === "*";
-    return cur.id.startsWith("standalone-") ? "K_b_" + cur.id.slice(11).replace(/[^a-zA-Z0-9]/g, "_")
-      : "T_" + (composed ? "b" : "f") + "_" + cur.dataset.feature.replace(/[^a-zA-Z0-9]/g, "_") + "_" + cur.dataset.num;
+    if (!cur?.dataset.slug) return "";
+    const composed = side.querySelector(".g:not([hidden])")?.dataset.tree === "*";
+    return "T_" + (composed ? "b" : "f") + "_" + cur.dataset.slug.replace(/[^a-zA-Z0-9]/g, "_");
   }
   function markNode() { markCur(side, curNode()); }
 
@@ -2986,8 +2730,8 @@ ${viewjs}
   }
 
   document.getElementById("featnav").addEventListener("click", (e) => {
-    const b = e.target.closest(".featchip"); if (!b) return;
-    off.has(b.dataset.feature) ? off.delete(b.dataset.feature) : off.add(b.dataset.feature);
+    const b = e.target.closest(".treechip"); if (!b) return;
+    off.has(b.dataset.tree) ? off.delete(b.dataset.tree) : off.add(b.dataset.tree);
     applyFilters();
   });
   for (const b of document.querySelectorAll("[data-gmode]")) b.addEventListener("click", () => setMode(b.dataset.gmode));
@@ -3076,7 +2820,7 @@ ${viewjs}
       case "z": { const g = cur?.closest("details.grp") ?? groups()[0]; if (g) g.open = !g.open; break; }
       case "d": { const href = cur?.querySelector("a.rp")?.href; if (href) window.open(href, "_blank"); break; }
       case "y": copyPath(cur); break;
-      case "a": setMode(mode === "all" ? "feature" : "all"); break;
+      case "a": setMode(mode === "all" ? "tree" : "all"); break;
       case "b": side.classList.toggle("folded"); break;
       case "f": openFull(!full.classList.contains("open")); break;
       case "w": openWindow(); break;
@@ -3084,8 +2828,8 @@ ${viewjs}
       case "0": off.clear(); applyFilters(); break;
       default:
         if (/^[1-9]$$/.test(e.key)) {  // the doubled dollar is the page template's escape
-          const chip = document.querySelectorAll(".featchip")[e.key - 1];
-          if (chip) { off.has(chip.dataset.feature) ? off.delete(chip.dataset.feature) : off.add(chip.dataset.feature); applyFilters(); }
+          const chip = document.querySelectorAll(".treechip")[e.key - 1];
+          if (chip) { off.has(chip.dataset.tree) ? off.delete(chip.dataset.tree) : off.add(chip.dataset.tree); applyFilters(); }
         }
     }
   });
