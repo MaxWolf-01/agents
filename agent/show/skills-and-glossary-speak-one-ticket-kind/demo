@@ -74,8 +74,10 @@ def base() -> str:
 
 
 def words(at: str, *paths: str) -> int:
-    """How many words the tracker skill's own two files hold at one commit, or one named file's."""
-    files = paths or ("mx/skills/tracker/SKILL.md", "mx/skills/tracker/MARKDOWN.md")
+    """How many words the given files hold at one commit; by default the tracker skill's own prose,
+    which was two files before this pass and is one now."""
+    files = paths or [path for path in ("mx/skills/tracker/SKILL.md", "mx/skills/tracker/MARKDOWN.md")
+                      if git("ls-tree", "--name-only", at, "--", path)]
     return sum(len(git("show", f"{at}:{path}").split()) for path in files)
 
 
@@ -151,12 +153,11 @@ def steps() -> list[dict]:
         said="Every skill that spoke of a spec, a feature, a standalone ticket or a decision ticket, in one pass "
              "by one worker, so that one vocabulary could not come out of two. The listing is what moved.",
         runs=[(f"git diff --stat {short}..{at} -- the prose surface", "\n".join(shown))],
-        look=f"`grilling/SPEC-FORMAT.md` and `to-tickets/SKILL.md` leave; `tracker/SLICING.md` arrives, holding "
-             f"how a ticket is cut into child tickets, beside the conventions it belongs to. The tracker skill's "
-             f"own two files are {words(at)} words against {words(was)} before, and they absorbed the spec "
-             f"format's {words(was, 'mx/skills/grilling/SPEC-FORMAT.md')} on the way: "
-             f"{100 * words(at) // (words(was) + words(was, 'mx/skills/grilling/SPEC-FORMAT.md'))}% of the prose "
-             f"they replace, because every mechanism they described is now `tracker --help`'s.",
+        look=f"`grilling/SPEC-FORMAT.md`, `to-tickets/SKILL.md` and the tracker's `MARKDOWN.md` leave. What a "
+             f"ticket file looks like is the tracker skill itself now, {words(at)} words against the "
+             f"{words(was)} its two files held before; how a grilling writes a design into one is "
+             f"`grilling/DESIGN.md`, and how a ticket is cut into child tickets is `tracker/SLICING.md`, each "
+             f"read when that work is happening rather than on every turn.",
     ))
 
     then, then_files = counted(was)
