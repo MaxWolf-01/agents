@@ -11,7 +11,7 @@ The tells themselves are [`CATALOGUE.md`](CATALOGUE.md) beside this file, every 
 
 The artifact's reader has no access to the conversation that produced it. Every sentence must stand on the artifact alone. **Conversation residue** is text that only means something relative to the session that wrote it:
 
-- **Decisions-against**: "never X", "we don't use Y", where the reader never had X on the table. Home: the commit message, the spec's out-of-scope section, or an ADR.
+- **Decisions-against**: "never X", "we don't use Y", where the reader never had X on the table. Home: the commit message, the ticket's Out of scope section, or an ADR.
 - **Change narration**: "now uses Z", "no longer does W". The artifact states what *is*; history lives in the commit message and the changelog.
 - **Reviewer reassurance**: "correctly handles", "as requested", "this ensures". Addressed to the person who asked for the change, noise to everyone after. Delete.
 

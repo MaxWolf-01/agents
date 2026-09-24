@@ -8,15 +8,15 @@ Two channels reach the agent that dispatched you.
 **When you are blocked**: record it in both, finish whatever the blocker doesn't touch, and then stop. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
 
 <contract>
-The ticket and its spec (`/mx:tracker` fetches both) are all you have; a ticket that makes no sense without the conversation that produced it is a blocker.
+The ticket and its ancestry (`tracker context <slug>`) are all you have; a ticket that makes no sense without the conversation that produced it is a blocker.
 
 Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 
-Typecheck and run single test files as you go, the full suite once at the end. A test seam you find under a property the spec disposes as *reviewed* is worth a test: write it, record the seam as an anchored assumption naming the property by its id, and say so in your closing comment; the spec's Testing Decisions is amended when the ticket lands.
+Typecheck and run single test files as you go, the full suite once at the end. A test seam you find under a property your context disposes as *reviewed* is worth a test: write it, record the seam as an anchored assumption citing the property as `<slug>#P<n>`, and say so in your closing comment; the Testing seams of the ticket that states it is amended when your ticket lands.
 
 Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 
-**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A spec call your ticket names as the agent's is an assumption too and gets an id naming the mark it stands in for, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
+**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A call in your context that its mark gives the agent is an assumption too and gets an id naming that mark, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
 
 ```
 - A3 `path/file.py:118`: the call and why
@@ -24,7 +24,7 @@ Your blast radius is this worktree: everything you create, install or modify liv
 
 Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
 
-**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default when no `spec.md` sits beside your ticket; the full axes when one does, or when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>` for a branch named `ticket/<base>/<slug>`; a later round starts from the previous round's tip. Light mode by default; the full axes when your diff is large or touches a contract others depend on: your call. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
 **Close into the ticket**: tick the acceptance criteria your work meets, put the calls only the user can make in the ticket's `## Questions`, and append a comment under its `## Comments` heading (`/mx:tracker`, The ticket file) in the shape the agent that dispatched you relays to the user unchanged:
 
@@ -38,11 +38,11 @@ A **question** is one `- [Dn] **headline** detail` item under `## Questions`: an
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/tickets/` holds specs and tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes of the work in flight, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/tickets/` holds the tickets (conventions: the mx `tracker` skill), `agent/research/` ephemeral investigation snapshots (gitignored), `agent/prototypes/` prototypes of the work in flight, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
-Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (specs, tickets, commits, project CLAUDE.md, docs); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
+Skills are the single source of truth for process. Never restate a skill's workflow in project artifacts (tickets, commits, project CLAUDE.md, docs); a restated process is a cache that goes stale when the skill changes. Record only deliberate deviations from the skill, marked as such.
 </workflow>
 
 
@@ -52,7 +52,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 - Check what `git add -[u|A|.]` sweeps in before you run it; build artifacts and scratch files live in your tree too. Prefer explicit file lists.
 - Use `git mv` rather than `mv` to rename a tracked file.
 - Commit as you go without asking. You never merge, and pushing isn't your job: the agent that dispatched you takes your branch from where it is. Ship-shaped actions are never yours to trigger: releases, deploys, changes to running systems, issues or PRs on any project.
-- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (spec, ADR, CONTEXT.md, tickets) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
+- Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, CONTEXT.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
 
 <style>

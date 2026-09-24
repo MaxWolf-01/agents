@@ -11,7 +11,7 @@ Read `CONTEXT.md` if the project has one, so test names carry the domain's words
 
 ## The seam
 
-A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. The spec's Testing Decisions names the seams for the work in hand; where nothing names one, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
+A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. The ticket's Testing seams names them for the work in hand (`/mx:tracker`); where nothing names one, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
 
 Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable, by calling it directly or driving the framework's test client, but every test of it pays that setup and a mutation tool cannot reach it at all. Put the logic in a plain function the entry point calls, and test that.
 
@@ -19,9 +19,9 @@ Mock what the module does not own: the network, the clock, randomness, an extern
 
 ## The oracle
 
-Every expected value comes from outside the implementation: a spec sentence, a worked example, a known-good literal, an independent simpler computation, or a property that must hold whatever the input. An expectation recomputed the way the code computes it agrees with the code by construction, including when both are wrong.
+Every expected value comes from outside the implementation: a sentence of the ticket, a worked example, a known-good literal, an independent simpler computation, or a property that must hold whatever the input. An expectation recomputed the way the code computes it agrees with the code by construction, including when both are wrong.
 
-Properties are the cheapest oracle to state: a spec Property already says what must always or never hold, so it becomes a check over generated inputs at its seam rather than a sentence somebody re-reads.
+Properties are the cheapest oracle to state: a ticket's Property already says what must always or never hold, so it becomes a check over generated inputs at its seam rather than a sentence somebody re-reads.
 
 An invariant the code already asserts is a property with its oracle written; a generator over its inputs turns it into a test, and a property test is that same invariant run over many inputs before production runs it over one.
 
@@ -41,6 +41,6 @@ Extend it: its fixtures, its helpers, its naming, its seams. A second parallel s
 
 ## What the suite fails to hold
 
-`make harden` measures it, once per feature, when its frontier empties (`/mx:dispatch`): the mutants of the feature's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden` is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
+`make harden` measures it, once per ticket tree, when its frontier empties (`/mx:dispatch`): the mutants of that tree's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden` is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
 
 `make fuzz` runs the same property tests coverage-guided under HypoFuzz until stopped, or, in a project without it, loops them at a large example budget; what either finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.

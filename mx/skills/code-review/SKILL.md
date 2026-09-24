@@ -20,18 +20,17 @@ Whatever the user said is the fixed point: a commit SHA, branch name, tag, `main
 
 ### 2. Identify the spec source
 
-Look for the originating spec, in this order:
+Look for what the work was ordered by, in this order:
 
 1. A path, URL, or text the user passed as an argument.
-2. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
-3. A spec file: a feature's `agent/tickets/<feature>/spec.md`, or `docs/`, `specs/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is, unless the work is plainly loose in-session work that never had one.
+2. The ticket the branch builds: `tracker context <slug>` is its body with every ancestor's, which is the whole order for this work, and a branch named `ticket/<base>/<slug>` names its slug.
+3. Issue/PR references in the commit messages (`#123`, `Closes #45`), fetched via `gh`.
+4. A specification the repo keeps outside the tracker: `docs/`, `specs/` matching the branch name.
+5. If nothing is found, ask the user where it is, unless the work is plainly loose in-session work that never had one.
 
-The spec travels to the reviewers as a file, so a fetched issue body or a spec the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
+It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 
-A standalone ticket has no spec, so it takes light mode by default, the full axes when its diff is large or touches a contract others depend on: the reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
-
-No spec → run **light** (below): one reviewer, no Spec axis, instead of the full spawn.
+Nothing found → run **light** (below): one reviewer, no Spec axis, instead of the full spawn. With a source in hand, the axes are the default for a large diff or one touching a contract others depend on, and light mode for the rest: the reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
 ### 3. What binds the review
 
@@ -68,7 +67,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-For specless work, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where there is no spec for a Spec axis to check and no Testing Decisions to check the tests against. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
+For work no order was found behind, for a small diff, or when the user asks for it: `--light` folds the axes into one reviewer and trades their separation for cost, which is the right trade exactly where the Spec axis has nothing to check against and no Testing seams section binds the tests. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 
