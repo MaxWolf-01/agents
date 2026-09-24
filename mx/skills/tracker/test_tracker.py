@@ -978,6 +978,22 @@ def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path,
     assert (repo / ".git" / "hooks" / "pre-commit").exists()
 
 
+def test_the_hook_installs_into_a_bare_repo_named_on_the_command_line(repo: Path, tmp_path: Path) -> None:
+    """The repo dispatch stages on a worker host is bare, and nothing is ever checked out of it, so
+    the installer is given it rather than found from a working directory inside it."""
+    bare = tmp_path / "worker.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    said = run(repo, "hook", str(bare))
+    assert said.code == 0, said.said
+    assert said.out.strip() == str(bare / "hooks" / "pre-commit"), said.said
+    assert os.access(bare / "hooks" / "pre-commit", os.X_OK)
+
+
+def test_the_hook_refuses_a_path_that_is_no_directory(repo: Path, tmp_path: Path) -> None:
+    said = run(repo, "hook", str(tmp_path / "nowhere"))
+    assert said.code == 1 and "is no directory" in said.err
+
+
 def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) -> None:
     """`--help` is the reference for the interface, so it is run as a caller runs it."""
     said = subprocess.run([str(Path(tr.__file__).parents[2] / "bin" / "tracker"), "--help"],

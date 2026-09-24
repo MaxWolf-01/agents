@@ -3,39 +3,36 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro"]
 # ///
-"""Check that a breakdown disposes of every property its spec states.
+"""Check that every property a ticket states reaches an acceptance criterion.
 
-A spec numbers its properties, P1 onward (`/mx:grilling`, SPEC-FORMAT), and a
-ticket disposes of one under its `## Acceptance criteria`, naming that id:
+A ticket numbers its properties, P1 onward, and a criterion anywhere in the
+tracker takes one on by citing it, `<slug>#P<n>`:
 
-    - [ ] Property P3, reviewed: what this slice has to hold
-    - [ ] Property P4, executable: the seam its check enters at
-    - Property P7, unsliced: why no single slice can hold it
+    - [ ] `one-flow#P3`: the seam its check enters at
 
-It reads one feature directory: the spec beside the `NN-<slug>.md` tickets sliced
-from it. One line per finding, and exit 1 when there is any:
+The tracker is read through `tracker data`, so a property, a criterion and a
+citation mean here exactly what they mean at a commit. A citation that names no
+ticket or no property is refused there, and this command exits with that
+refusal; what it adds is the other direction: a property no criterion cites was
+stated and never taken on by any slice.
 
-- a property no ticket names, so the slices were cut and it reached none of them
-- a criterion naming an id the spec does not have
-- a criterion naming no id, so it claims some property without saying which
-- a criterion naming a disposition that is none of the three
-- a spec property with no id, or one id on two properties
-
-What it answers is whether a ticket claimed the property, never whether the
-claim covers the whole of it: holding one against the other stays the Spec
+One line per finding, and exit 1 when there is any. What it answers is whether
+a criterion claimed the property, never whether the claim covers the whole of
+it, nor which of them is executable and which is reviewed: both stay the Spec
 reviewer's read (`/mx:code-review`).
 
-A spec with no `## Properties` section says so and exits 0.
+A tracker whose tickets state no property says so and exits 0.
 
 Examples:
 
-    property-coverage agent/tickets/one-flow
-    property-coverage agent/tickets/one-flow || echo "the breakdown is not done"
+    property-coverage
+    property-coverage ~/repos/workspace || echo "a property reached no criterion"
 """
 
 from __future__ import annotations
 
-import re
+import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,58 +40,26 @@ from typing import Annotated
 
 import tyro
 
-DISPOSITIONS = ("reviewed", "executable", "unsliced")
-HEADING = re.compile(r"^##\s+(?P<title>.*?)\s*$")
-BULLET = re.compile(r"^-\s+(?P<body>\S.*)$")  # top level: an indented bullet continues the one above it
-ID = re.compile(r"^\*{0,2}(?P<id>P\d+)\*{0,2}[.:)]?\s+(?P<text>\S.*)$")
-# A claim is "Property" followed by an id or by the comma before its disposition: prose that
-# merely opens with the domain word ("Property cards render in a grid") is not one.
-CLAIM = re.compile(r"^(?:\[[ xX]\]\s*)?\*{0,2}Property\b(?=[ ]*(?:P\d+|,))[ ]*(?P<rest>.*)$")
-CLAIM_REST = re.compile(r"^(?P<id>P\d+)?\*{0,2}\s*,?\s*(?P<disposition>[a-z]+)?")
-
-
-@dataclass(frozen=True)
-class Line:
-    """A line of a tracker file, addressed the way an editor jumps to it."""
-
-    path: Path
-    number: int
-
-    def __str__(self) -> str:
-        return f"{self.path}:{self.number}"
-
-
-@dataclass(frozen=True)
-class Section:
-    """One `## ` section of a tracker file: where its heading sits, and its bullets. No such heading, no `at`."""
-
-    at: Line | None
-    bullets: list[tuple[Line, str]]
+TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
 
 
 @dataclass(frozen=True)
 class Property:
-    id: str
+    """One property a ticket states, addressed the way an editor jumps to it."""
+
+    ref: str  # <slug>#P<n>, as a criterion cites it
     text: str
-    at: Line
-
-
-@dataclass(frozen=True)
-class Claim:
-    """A criterion disposing of one property: its id, and how the ticket holds it."""
-
-    id: str | None
-    disposition: str | None
-    at: Line
+    path: Path
+    line: int
 
 
 @dataclass(frozen=True)
 class Finding:
-    at: Line
+    at: Property
     what: str
 
     def __str__(self) -> str:
-        return f"{self.at}: {self.what}"
+        return f"{self.at.path}:{self.at.line}: {self.what}"
 
 
 @dataclass(frozen=True)
@@ -102,24 +67,23 @@ class Report:
     """What one run read, and what it found wrong. `summary` is the line the run ends on."""
 
     properties: list[Property]
-    claims: list[Claim]
+    cited: set[str]
     findings: list[Finding]
-    summary: str
 
     @property
-    def disposed(self) -> set[str]:
-        stated = {p.id for p in self.properties}
-        return {c.id for c in self.claims if c.id in stated}
+    def summary(self) -> str:
+        plural = "" if len(self.findings) == 1 else "s"
+        return f"{len(self.properties)} properties, {len(self.cited)} cited, {len(self.findings)} finding{plural}"
 
 
 @dataclass
 class Args:
-    feature: Annotated[Path, tyro.conf.Positional]
-    """The feature directory: a spec.md and the NN-<slug>.md tickets sliced from it."""
+    at: Annotated[Path, tyro.conf.Positional] = Path(".")
+    """A directory inside the tracker to read; the working directory's tracker by default."""
 
 
 def main(args: Args) -> None:
-    report = check(args.feature)
+    report = check(args.at)
     for finding in report.findings:
         print(finding)
     sys.stdout.flush()
@@ -127,94 +91,31 @@ def main(args: Args) -> None:
     sys.exit(1 if report.findings else 0)
 
 
-def check(feature: Path) -> Report:
-    """Read the breakdown and hold it against its spec."""
-    spec = feature / "spec.md"
-    if not spec.is_file():
-        sys.exit(f"property-coverage: no spec.md in {feature}")
-    tickets = sorted(feature.glob("[0-9][0-9]-*.md"))
-    if not tickets:
-        sys.exit(f"property-coverage: no NN-<slug>.md tickets in {feature}")
-
-    stated = section(spec, "Properties")
-    if stated.at is None:
-        return counted([], [], [], f"no ## Properties section in {spec}")
-    properties, spec_findings = read_properties(stated.at, stated.bullets)
-    if not properties:  # nothing to hold the tickets against, and the finding says what to fix first
-        return counted([], [], spec_findings)
-    claims, ticket_findings = read_claims(tickets)
-    return counted(properties, claims, spec_findings + ticket_findings + coverage(properties, claims, spec))
+def check(at: Path) -> Report:
+    """Hold every property the tracker states against the criteria that cite it."""
+    tickets = read_tracker(at)
+    properties = [
+        Property(ref=f"{ticket['slug']}#{stated['id']}", text=stated["text"],
+                 path=Path(ticket["path"]), line=stated["line"])
+        for ticket in tickets for stated in ticket["properties"]
+    ]
+    cited = {ref for ticket in tickets for criterion in ticket["criteria"] for ref in criterion["cites"]}
+    findings = [
+        Finding(one, f"{one.ref} reached no acceptance criterion: {summarise(one.text)}")
+        for one in properties if one.ref not in cited
+    ]
+    return Report(properties, cited & {one.ref for one in properties}, findings)
 
 
-def counted(properties: list[Property], claims: list[Claim], findings: list[Finding], summary: str = "") -> Report:
-    """The report, with the counts line written for it unless the run ends on something else."""
-    read = Report(properties, claims, findings, summary)
-    plural = "" if len(findings) == 1 else "s"
-    return read if summary else Report(properties, claims, findings, f"{len(properties)} properties, {len(read.disposed)} disposed of, {len(findings)} finding{plural}")
-
-
-def read_properties(at: Line, bullets: list[tuple[Line, str]]) -> tuple[list[Property], list[Finding]]:
-    """The spec's `## Properties` bullets, each with the id the tickets cite it by; `at` is the heading's own line."""
-    properties: list[Property] = []
-    unnumbered: list[Line] = []
-    for line, body in bullets:
-        if match := ID.match(body):
-            properties.append(Property(match["id"], match["text"], line))
-        else:
-            unnumbered.append(line)
-    if not bullets:
-        return [], [Finding(at, "the Properties section states none")]
-    if not properties:
-        return [], [Finding(unnumbered[0], f"the Properties list carries no ids; number it P1 onward, {len(unnumbered)} properties")]
-
-    findings = [Finding(line, "property with no id") for line in unnumbered]
-    seen: dict[str, Property] = {}
-    for prop in properties:
-        if first := seen.get(prop.id):
-            findings.append(Finding(prop.at, f"{prop.id} is already the id of the property at line {first.at.number}"))
-        seen.setdefault(prop.id, prop)
-    return properties, findings
-
-
-def section(file: Path, heading: str) -> Section:
-    """The top-level bullets under one `## ` heading, each with the line it sits on."""
-    at: Line | None = None
-    bullets: list[tuple[Line, str]] = []
-    inside = False
-    for number, text in enumerate(file.read_text().splitlines(), start=1):
-        if match := HEADING.match(text):
-            inside = match["title"] == heading
-            at = at or (Line(file, number) if inside else None)
-        elif inside and (bullet := BULLET.match(text)):
-            bullets.append((Line(file, number), bullet["body"]))
-    return Section(at, bullets)
-
-
-def read_claims(tickets: list[Path]) -> tuple[list[Claim], list[Finding]]:
-    """Every `Property <id>, <disposition>:` criterion across the tickets, with what is wrong with one."""
-    claims: list[Claim] = []
-    findings: list[Finding] = []
-    for ticket in tickets:
-        for at, body in section(ticket, "Acceptance criteria").bullets:
-            if not (claim := CLAIM.match(body)):
-                continue
-            parts = CLAIM_REST.match(claim["rest"])  # every group optional, so a claim that names neither still parses
-            id, disposition = parts["id"], parts["disposition"]
-            claims.append(Claim(id, disposition, at))
-            if not id:
-                findings.append(Finding(at, "criterion names no property id"))
-            if disposition not in DISPOSITIONS:
-                findings.append(Finding(at, f"disposition {disposition or '(none)'} is none of {', '.join(DISPOSITIONS)}"))
-    return claims, findings
-
-
-def coverage(properties: list[Property], claims: list[Claim], spec: Path) -> list[Finding]:
-    """A property no ticket disposed of, and a claim on an id the spec does not have."""
-    stated = {p.id for p in properties}
-    named = {c.id for c in claims if c.id}
-    findings = [Finding(p.at, f"{p.id} reached no ticket: {summarise(p.text)}") for p in properties if p.id not in named]
-    findings += [Finding(c.at, f"{c.id} is not a property of {spec}") for c in claims if c.id and c.id not in stated]
-    return findings
+def read_tracker(at: Path) -> list[dict]:
+    """The tracker as `tracker data` hands it over, run in `at`. A refusal there is a refusal here:
+    a tracker no reader can read is not one to report coverage over."""
+    if not at.is_dir():
+        sys.exit(f"property-coverage: no directory at {at}")
+    done = subprocess.run([str(TRACKER), "data"], cwd=at, capture_output=True, text=True)
+    if done.returncode != 0:
+        sys.exit(done.stderr.strip() or f"property-coverage: tracker data failed in {at}")
+    return json.loads(done.stdout)["tickets"]
 
 
 def summarise(text: str, width: int = 60) -> str:

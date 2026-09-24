@@ -611,11 +611,17 @@ exec tracker check
 
 
 @app.command(name="hook")
-def hook() -> int:
+def hook(repo: Annotated[Path, tyro.conf.Positional] = Path(".")) -> int:
     """Install the pre-commit hook that runs `tracker check` over the staged ticket files. Prints
-    the path it wrote. Leaves a pre-commit hook this did not write standing, and says so."""
-    top = toplevel(Path.cwd())
-    into = Path(git(top, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
+    the path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
+
+    Args:
+        repo: the repository to install into, a bare one included, since a worker host's is bare;
+            the working directory's by default.
+    """
+    if not repo.is_dir():
+        raise Refused([f"{repo} is no directory"])
+    into = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
     if into.exists() and into.read_text() != HOOK:
         raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
     into.parent.mkdir(parents=True, exist_ok=True)
