@@ -24,6 +24,7 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 - P4 Wherever a worker or a reviewer is given a ticket's context, it is the ticket's body plus every ancestor's body, assembled by one function. The correctness and standards reviewers are given none on purpose: they judge the diff against the code alone.
 - P5 No skill, script or glossary entry distinguishes tickets by kind beyond whether a ticket has child tickets and whether it needs the user in the loop.
 - P6 Retiring never loses anything irrecoverably: a tracked file leaves by `git rm`, so history keeps it; an untracked file is moved out of the repo to `~/logs`, unless it is a render whose generating source is tracked, which alone may be deleted. Deleting anything else takes the user saying so.
+- P7 A worker never writes a ticket file; everything a worker produces reaches the ticket through the session that orchestrates it. (you, r7)
 
 ## Decisions
 
@@ -31,7 +32,9 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 
 - One kind of file: the ticket, flat at `agent/tickets/<slug>.md`, with an optional `parent: <slug>`. The hierarchy goes as deep and as wide as the work needs. (you, r1)
 - The slug is the ticket's id; `parent` and `blocked-by` name slugs, one reference form. A slug is descriptive enough to recognise the ticket from it alone, in the spirit of `/mx:session-name`'s names; agents say the slug to the user rather than a number. No short hash beside it until practice asks for one. A rename is a string replace of the unique slug across the tracker, read over as a diff; a script for it only once renames recur. (you, r2)
-- A ticket file is committed on its parent ticket's branch; a top-level ticket's on the integration branch. (you, r2)
+- A ticket file is committed in the tracker's own checkout, on the branch that checkout has out, and never on a code branch; ticket commits need no branch or merge of their own. The tracker is the code repo's own `agent/tickets/` by default, or a tracker in another repo that the code repo names with `git config mx.tracker <path>` in its clone. (you, r7; amended 2026-09-24, was: committed on its parent ticket's branch, a top-level ticket's on the integration branch)
+- Only the orchestrator and the sessions working with the user write ticket files, always through `tracker`. A worker never touches one: it is handed its ticket's context, and writes code on its branch and a report (its closing comment, questions and assumptions) to a file the runner names outside its worktree; that file existing is the finished signal, and `dispatch review` brings it into the ticket. (you, r7)
+- Where the code repo is not the tracker's, a ticket's `diff:` ranges name the repo they are in, as `<repo>@<sha>..<sha>`, written by dispatch at the landing, which is also what a board filter by repo reads; no ticket declares a repo up front. (my call, r7)
 - No `draft | confirmed` state. The marks stay on each call as the record of who decided it; making them searchable waits until it is needed. (you, r1)
 - The glossary loses **Feature**, **Spec**, **Standalone ticket** and **Gate**, and gains **Parent ticket** (with child ticket): the ticket another ticket is part of. A child ticket reads the parent ticket's body as its context, cuts its branch from the parent ticket's, and the parent ticket is done once every child ticket is done and its own close-out is ruled. (you, r2; the term "parent ticket" over bare "parent", since a graph has parents too)
 
