@@ -284,6 +284,7 @@
       "Bash(restic-current *)",
       "Bash(asus-power-cap status)",
       "Bash(/home/max/.dotfiles/bin/asus-power-cap status)",
+      "Bash(/home/max/work/helferline/leistung/bin/zeit book *)",
       "Bash(gnome-extensions info *)",
       "Bash(gnome-extensions list)",
       "Bash(gnome-extensions list *)",
