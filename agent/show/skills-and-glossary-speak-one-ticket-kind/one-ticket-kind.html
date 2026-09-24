@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The tracker's files, before and after</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #6ea444);
+  --wash-ink: color-mix(in srgb, var(--muted) 8%, transparent);
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+[data-theme="day"] { color-scheme: light; }
+[data-theme="night"] { color-scheme: dark; }
+body { margin: 0; background: var(--ground); color: var(--body); font: 400 19px/1.62 var(--font-body); -webkit-font-smoothing: antialiased; }
+.page { max-width: 72rem; margin: 0 auto; padding: 0 2rem 3rem; }
+.top { display: flex; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--edge); }
+.scheme { margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.85rem; }
+.scheme:hover { color: var(--accent); }
+.v-meta { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }
+h1 { font-weight: 600; font-size: 2rem; line-height: 1.14; letter-spacing: -0.022em; color: var(--strong); margin: 2.5rem 0 0; }
+.lead { font-size: 1.1em; line-height: 1.55; color: var(--muted); max-width: 40rem; margin: 1rem 0 2rem; }
+svg { display: block; width: 100%; height: auto; }
+.zone { fill: var(--wash-ink); stroke: var(--edge); stroke-width: 1; }
+.node { fill: var(--ground-2); stroke: var(--edge); stroke-width: 1; }
+.node-lead { fill: var(--ground-2); stroke: var(--body); stroke-width: 1.4; }
+.spine { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.zone-label { font: 500 13px var(--font-mono); fill: var(--muted); letter-spacing: 0.04em; }
+.name { font: 500 15px var(--font-mono); fill: var(--strong); }
+.role { font: 400 15px var(--font-body); fill: var(--muted); }
+.key { font: 500 15px var(--font-mono); fill: var(--accent); }
+.note { font: 400 14px var(--font-body); fill: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <span class="v-meta">agents / skills-and-glossary-speak-one-ticket-kind</span>
+    <button class="scheme" id="scheme" aria-label="switch scheme">day / night</button>
+  </div>
+  <h1>The tracker's files, before and after</h1>
+  <p class="lead">Three kinds of file, each with its own layout, states and rules, become one: a ticket, flat, with a
+  <span style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">parent:</span> line where it is part of another.</p>
+
+  <svg viewBox="0 0 1160 612" xmlns="http://www.w3.org/2000/svg" role="img"
+       aria-label="Before: a feature directory holding a spec.md, a build ticket and a decision ticket, with a standalone ticket outside it. After: one ticket file, with child tickets that carry a parent line, one of them needing the user, and a grandchild.">
+    <!-- zones -->
+    <rect class="zone" x="24" y="56" width="524" height="532" rx="8"/>
+    <rect class="zone" x="612" y="56" width="524" height="532" rx="8"/>
+
+    <!-- before: the directory and its files -->
+    <rect class="node-lead" x="56" y="88" width="460" height="64" rx="6"/>
+    <path class="spine" d="M 88,152 V 404"/>
+    <path class="spine" d="M 88,208 H 120"/>
+    <path class="spine" d="M 88,304 H 120"/>
+    <path class="spine" d="M 88,404 H 120"/>
+    <rect class="node" x="120" y="172" width="396" height="72" rx="6"/>
+    <rect class="node" x="120" y="268" width="396" height="72" rx="6"/>
+    <rect class="node" x="120" y="368" width="396" height="72" rx="6"/>
+    <rect class="node" x="120" y="480" width="396" height="72" rx="6" stroke-dasharray="4 4"/>
+
+    <!-- after: the ticket and its children -->
+    <rect class="node-lead" x="644" y="88" width="460" height="64" rx="6"/>
+    <path class="spine" d="M 676,152 V 404"/>
+    <path class="spine" d="M 676,208 H 708"/>
+    <path class="spine" d="M 676,304 H 708"/>
+    <path class="spine" d="M 676,404 H 708"/>
+    <path class="spine" d="M 740,340 V 404"/>
+    <path class="spine" d="M 740,404 H 772"/>
+    <rect class="node" x="708" y="172" width="396" height="72" rx="6"/>
+    <rect class="node" x="708" y="268" width="396" height="72" rx="6"/>
+    <rect class="node" x="772" y="368" width="332" height="72" rx="6"/>
+
+    <!-- labels -->
+    <text class="zone-label" x="24" y="44">BEFORE &#183; THREE KINDS OF FILE</text>
+    <text class="zone-label" x="612" y="44">AFTER &#183; ONE KIND, AND A PARENT LINE</text>
+
+    <text class="name" x="80" y="118">agent/tickets/&lt;feature&gt;/</text>
+    <text class="role" x="80" y="140">one directory per feature, retired whole</text>
+
+    <text class="name" x="144" y="202">spec.md</text>
+    <text class="role" x="144" y="226">the design; status: draft or confirmed</text>
+    <text class="name" x="144" y="298">NN-slug.md</text>
+    <text class="role" x="144" y="322">a build ticket: one slice of that spec</text>
+    <text class="name" x="144" y="398">NN-slug.md</text>
+    <text class="role" x="144" y="422">a decision ticket, one of four types</text>
+    <text class="name" x="144" y="510">&lt;slug&gt;.md</text>
+    <text class="role" x="144" y="534">a standalone ticket: no spec, its own rules</text>
+
+    <text class="name" x="668" y="118">agent/tickets/&lt;slug&gt;.md</text>
+    <text class="role" x="668" y="140">the design lives in it, whatever its size</text>
+
+    <text class="name" x="732" y="202">&lt;slug&gt;.md</text>
+    <text class="role" x="732" y="226"><tspan class="key">parent:</tspan> one slice of the ticket above</text>
+    <text class="name" x="732" y="298">&lt;slug&gt;.md</text>
+    <text class="role" x="732" y="322"><tspan class="key">parent:</tspan>, and <tspan class="key">needs-user:</tspan> the user answers it</text>
+    <text class="name" x="796" y="398">&lt;slug&gt;.md</text>
+    <text class="role" x="796" y="422"><tspan class="key">parent:</tspan> as deep as the work needs</text>
+
+    <text class="note" x="644" y="510">Every one of them is read with its ancestors' bodies, and cites their</text>
+    <text class="note" x="644" y="532">properties as &lt;slug&gt;#P&lt;n&gt;: one assembly, for the worker and the reviewer.</text>
+    <text class="note" x="120" y="466">and, elsewhere in the tracker, a third kind:</text>
+  </svg>
+</div>
+<script>
+const root = document.documentElement
+const asked = new URLSearchParams(location.search).get("theme")
+const set = (night) => root.dataset.theme = night ? "night" : "day"
+document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches)
+</script>
+</body>
+</html>

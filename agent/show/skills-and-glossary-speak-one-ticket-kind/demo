@@ -1,0 +1,303 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.11"
+# ///
+"""Take one intent through the old skills and the new ones, and write the walkthrough as a page.
+
+The two sets of ticket files beside this script are what an agent writes for the same intent under
+each model: `before/` is role-played from the skills as they stood, `after/` from the skills as they
+are. Everything else on the page is a real run: the checks are `mx/bin/tracker` over throwaway
+trackers built here, and the counts come from git."""
+
+import html
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = Path(subprocess.run(["git", "-C", str(HERE), "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, check=True).stdout.strip())
+OUT = HERE / "out"
+TRACKER = REPO / "mx" / "bin" / "tracker"
+PATH = f"{REPO / 'mx' / 'bin'}:{os.environ['PATH']}"
+# The prose surface this ticket changed, and the words the one-ticket model retires.
+PROSE = ["mx/skills/*.md", "mx/README.md", "claude/CLAUDE.md", "CONTEXT.md", ":(exclude)mx/skills/tracker/corpus/*"]
+RETIRED = r"\bspecs?\b|\bfeatures?\b|standalone ticket|decision ticket|build ticket"
+
+
+def git(*args: str, at: Path = REPO) -> str:
+    done = subprocess.run(["git", "-C", str(at), *args], capture_output=True, text=True)
+    return (done.stdout + done.stderr).rstrip()
+
+
+def ran(*command: str, at: Path, shown: str = "") -> tuple[str, str]:
+    """One run, as the page shows it: what was typed, and what came back."""
+    done = subprocess.run(command, cwd=at, capture_output=True, text=True, env={**os.environ, "PATH": PATH})
+    said = (done.stdout + done.stderr).rstrip().replace(f"{at}/", "").replace(str(TRACKER), "tracker")
+    return shown or " ".join(command).replace(str(TRACKER), "tracker"), said or f"(exit {done.returncode}, nothing printed)"
+
+
+def tracker_of(name: str, source: Path) -> Path:
+    """A throwaway tracker holding one of the two sets of files, committed so the check has a repo."""
+    work = OUT / name
+    tickets = work / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    for path in sorted(source.rglob("*.md")):
+        target = tickets / path.relative_to(source)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, target)
+    git("init", "-q", "-b", "main", ".", at=work)
+    git("config", "user.email", "demo@example.com", at=work)
+    git("config", "user.name", "the demo", at=work)
+    git("add", "agent/tickets", at=work)
+    git("commit", "-q", "-m", "what the agent wrote", at=work)
+    return work
+
+
+def tree(root: Path) -> str:
+    files = sorted(p.relative_to(root.parent) for p in root.rglob("*.md"))
+    return "\n".join(str(f) for f in files)
+
+
+def base() -> str:
+    """The commit before this ticket's first: the one that removed the spec format's file."""
+    removed = git("log", "--format=%H", "-1", "--diff-filter=D", "--", "mx/skills/grilling/SPEC-FORMAT.md")
+    return f"{removed}^" if removed else "HEAD"
+
+
+def counted(at: str) -> tuple[int, int]:
+    """How many lines under the prose surface carry a retired word, at one commit, and in how many files."""
+    lines = git("grep", "-I", "-c", "-i", "-E", RETIRED, at, "--", *PROSE).splitlines()
+    hits = [line.rsplit(":", 1) for line in lines if ":" in line]
+    return sum(int(n) for _, n in hits), len(hits)
+
+
+def steps() -> list[dict]:
+    before, after = tracker_of("before", HERE / "before"), tracker_of("after", HERE / "after")
+    at, was = "HEAD", base()
+    found = []
+
+    found.append(dict(
+        title="One intent, written two ways",
+        said="A CSV importer that remembers each bank's column mapping, grilled to the same design either way. "
+             "What differs is how many kinds of file the design has to be spread across: a spec, the tickets "
+             "sliced from it and a standalone ticket filed before it existed, against one ticket with the design "
+             "in it and two child tickets naming it as their parent.",
+        pair=[("what the old skills had an agent write", tree(before / "agent" / "tickets")),
+              ("what the new ones have it write", tree(after / "agent" / "tickets"))],
+        look="Same work, four files against three, and the new ones are flat: the directory, the numbering and "
+             "the spec filename were three more things to agree on between whoever wrote a file and whoever read it.",
+    ))
+
+    found.append(dict(
+        title="The design, and where it now lives",
+        said="The spec's sections are the ticket's sections. Properties are stated once, on the ticket they hold "
+             "for, and a child ticket cites them rather than restating them; a decision keeps the mark that says "
+             "who settled it, with no draft or confirmed state over the file.",
+        pair=[("before: csv-import/spec.md", "\n".join(
+                  line for line in (HERE / "before" / "csv-import" / "spec.md").read_text().splitlines()
+                  if line.startswith(("#", "---", "status")) or line.startswith("- P"))),
+              ("after: csv-import.md", "\n".join(
+                  line for line in (HERE / "after" / "csv-import.md").read_text().splitlines()
+                  if line.startswith(("#", "---", "status", "priority", "size")) or line.startswith("- P")))],
+        look="`status: draft | confirmed` is gone, and the ticket carries the priority and the size every ticket "
+             "carries. `## Testing Decisions` is `## Testing seams`, and the properties it disposes of are the "
+             "ones every descendant reads through its ancestry.",
+    ))
+
+    found.append(dict(
+        title="The check reads one and refuses the other",
+        said="The same command every script now reads tickets through, run over both sets. Nothing in the old "
+             "shape is guessed at: each construct the model drops is refused at the line it sits on, with what "
+             "replaced it.",
+        runs=[ran(str(TRACKER), "check", *sorted(str(p.relative_to(before)) for p in (before / "agent/tickets/csv-import").glob("*.md")), at=before),
+              ran(str(TRACKER), "check", "agent/tickets/remember-the-mapping.md", at=before),
+              ran(str(TRACKER), "check", *sorted(str(p.relative_to(after)) for p in (after / "agent/tickets").glob("*.md")), at=after)],
+        look="The standalone ticket in the middle is accepted as it stands: it was already one file with one "
+             "layout, which is what every ticket is now. The other two needed the numbering, the type and the "
+             "draft status taken out, and the stamped properties turned into citations.",
+    ))
+
+    found.append(dict(
+        title="What a worker and a reviewer are handed",
+        said="A ticket's context is its own body and every ancestor's, assembled by one command. It is the "
+             "worker's brief and the reviewer's spec axis, so the two can never differ; before, each skill told "
+             "its reader in prose to fetch the ticket and the spec beside it.",
+        runs=[(lambda shown, said: (shown, "\n".join(said.splitlines()[:16]) + "\n…"))(
+            *ran(str(TRACKER), "context", "parse-a-statement", at=after))],
+        look="The child ticket first, its parent under it. `csv-import#P1` in the criteria above resolves here, "
+             "and a citation that names no property of any ancestor is refused the way a dangling parent is.",
+    ))
+
+    stat = git("diff", "--stat", f"{was}..{at}", "--", *PROSE)
+    short = git("rev-parse", "--short", was)
+    found.append(dict(
+        title="The skills, before and after",
+        said="Every skill that spoke of a spec, a feature, a standalone ticket or a decision ticket, in one pass "
+             "by one worker: the tracker conventions, grilling, the slicing that was to-tickets, dispatch and its "
+             "worker contract, code-review, orient, research, project-setup, show, testing, prototype, the "
+             "always-loaded workflow block and its copy in the worker prompt, the README and the glossary.",
+        runs=[(f"git diff --stat {short}..{at} -- the prose surface", "\n".join(stat.splitlines()[-24:]))],
+        look="`grilling/SPEC-FORMAT.md` and `to-tickets/SKILL.md` leave; `tracker/SLICING.md` arrives, holding how "
+             "a ticket is cut into child tickets, beside the conventions it belongs to. The tracker skill's own "
+             "two files come to about half what they were while absorbing the spec format's sections, because "
+             "every mechanism they described is now `tracker --help`'s.",
+    ))
+
+    then, then_files = counted(was)
+    now, now_files = counted(at)
+    survivors = git("grep", "-I", "-n", "-i", "-E", RETIRED, at, "--", "mx/skills/code-review", "mx/skills/review-pr")
+    found.append(dict(
+        title="What the words are, afterwards",
+        said=f"A grep of the same surface for spec, feature, standalone and decision ticket: {then} lines across "
+             f"{then_files} files before, {now} across {now_files} now. What is left is the word in another sense, "
+             "each one read and kept on purpose.",
+        runs=[(f"git grep -c -i -E '{RETIRED}' <before|after> -- the prose surface",
+               f"before  {then} lines in {then_files} files\nafter   {now} lines in {now_files} files"),
+              ("git grep -n -i -E '…' HEAD -- mx/skills/code-review mx/skills/review-pr",
+               "\n".join(line.replace(f"{at}:", "") for line in survivors.splitlines()[:8]) + "\n…")],
+        look="The survivors are the review's Spec axis, which judges a diff against whatever ordered the work, a "
+             "ticket, a PR body or a repo's own specification; a feature in the product sense; and the glossary's "
+             "avoid-lists, which name the retired words on purpose so nobody reaches for them again.",
+    ))
+
+    glossary = git("diff", f"{was}..{at}", "--", "CONTEXT.md")
+    entries = [line for line in glossary.splitlines() if line.startswith(("+**", "-**"))]
+    found.append(dict(
+        title="The glossary",
+        said="The words the whole workflow shares. Seven terms leave with the model that needed them, three "
+             "arrive for the tree, and one is renamed.",
+        runs=[("git diff CONTEXT.md, the entries that left and arrived", "\n".join(entries))],
+        look="`Spec mark` becomes `Call mark`, since the mark sits on a call wherever the call is written. "
+             "`Ticket context` is the new one worth a term: an overloaded word given one meaning here.",
+    ))
+    return found
+
+
+PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One kind of ticket, in the skills that write them</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {{
+  color-scheme: light dark;
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #6ea444);
+  --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+  --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --size-body: 19px; --leading-body: 1.62; --measure: 38rem; --page: 64rem; --radius: 6px;
+}}
+[data-theme="day"] {{ color-scheme: light; }}
+[data-theme="night"] {{ color-scheme: dark; }}
+body {{ margin: 0; background: var(--ground); color: var(--body); font: 400 var(--size-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }}
+::selection {{ background: var(--mark); }}
+:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 3px; }}
+code {{ font-family: var(--font-mono); font-size: 0.85em; background: var(--ground-2); padding: 0.1em 0.35em; border-radius: 3px; }}
+p {{ margin: 0; }}
+a {{ color: var(--accent); }}
+.page {{ max-width: var(--page); margin: 0 auto; padding: 0 2rem; }}
+.top {{ display: flex; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--edge); }}
+.scheme {{ margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.85rem; }}
+.scheme:hover {{ color: var(--accent); }}
+.v-title {{ font-weight: 600; font-size: clamp(1.8rem, 3.2vw, 2.4rem); line-height: 1.14; letter-spacing: -0.022em; color: var(--strong); margin: 0; }}
+.v-h2 {{ font-weight: 600; font-size: 1.3em; line-height: 1.3; letter-spacing: -0.012em; color: var(--strong); margin: 0; }}
+.v-lead {{ font-size: 1.1em; line-height: 1.55; color: var(--muted); max-width: var(--measure); margin-top: 1.25rem; }}
+.v-meta {{ font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }}
+.hero {{ padding: 3rem 0 1rem; }}
+.hero .v-meta {{ margin-top: 0.75rem; }}
+section.s {{ padding: 3rem 0 1rem; }}
+section.s + section.s {{ border-top: 1px solid var(--edge); }}
+section.s > .v-meta {{ display: block; margin-bottom: 0.3rem; }}
+.s p.said {{ margin-top: 0.9rem; max-width: var(--measure); }}
+pre {{ margin: 1.25rem 0 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.55; background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); padding: 0.9rem 1rem; overflow-x: auto; color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }}
+pre b {{ font-weight: 500; color: var(--accent); }}
+.look {{ margin-top: 1.25rem; padding: 0.7rem 1rem; background: var(--wash-ink); border-left: 2px solid var(--accent); max-width: 54rem; font-size: 0.95em; }}
+.look .v-meta {{ color: var(--accent); margin-right: 0.5rem; display: inline; }}
+.pair {{ display: grid; gap: 1.25rem; margin-top: 1.25rem; }}
+@media (min-width: 54rem) {{ .pair {{ grid-template-columns: 1fr 1fr; }} }}
+.pair > div {{ min-width: 0; }}
+.pair > div > .v-meta {{ display: block; }}
+.pair pre {{ margin-top: 0.4rem; }}
+footer {{ padding: 4rem 0 3rem; }}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <span class="v-meta">agents / skills-and-glossary-speak-one-ticket-kind</span>
+    <button class="scheme" id="scheme" aria-label="switch scheme">day / night</button>
+  </div>
+  <header class="hero">
+    <h1 class="v-title">One kind of ticket, in the skills that write them</h1>
+    <p class="v-meta">{stamp} · every run on this page was made by <code>demo</code>, against throwaway trackers and this repo's history</p>
+    <p class="v-lead">The tracker had three kinds of file and every stage of the workflow branched on which one it
+    held. The command that reads them stopped branching first; this is the prose catching up, shown as the before
+    and after of what an agent writes. The model itself is drawn beside this page, in
+    <a href="../one-ticket-kind.html">one-ticket-kind.html</a>.</p>
+  </header>
+  <main>
+{sections}
+  </main>
+  <footer class="v-meta">The throwaway trackers this ran against are under <code>{out}</code>.</footer>
+</div>
+<script>
+const root = document.documentElement
+const asked = new URLSearchParams(location.search).get("theme")
+const set = (night) => root.dataset.theme = night ? "night" : "day"
+document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches)
+</script>
+</body>
+</html>
+"""
+
+
+def render(found: list[dict]) -> str:
+    written = []
+    for n, step in enumerate(found, start=1):
+        parts = ['    <section class="s">', f'      <span class="v-meta">{n}</span>',
+                 f'      <h2 class="v-h2">{step["title"]}</h2>', f'      <p class="said">{step["said"]}</p>']
+        for shown, said in step.get("runs", []):
+            parts.append(f'      <pre><b>$ {html.escape(shown)}</b>\n{html.escape(said)}</pre>')
+        if pair := step.get("pair"):
+            parts.append('      <div class="pair">')
+            for label, said in pair:
+                parts.append(f'        <div><span class="v-meta">{html.escape(label)}</span><pre>{html.escape(said)}</pre></div>')
+            parts.append("      </div>")
+        parts.append(f'      <p class="look"><span class="v-meta">look</span>{step["look"]}</p>')
+        parts.append("    </section>")
+        written.append("\n".join(parts))
+    return "\n".join(written)
+
+
+def main() -> None:
+    if not TRACKER.exists():
+        raise SystemExit(f"no tracker at {TRACKER}: run this from a checkout of the mx repo")
+    shutil.rmtree(OUT, ignore_errors=True)
+    OUT.mkdir(parents=True)
+    stamp = git("log", "-1", "--format=%cs")
+    page = OUT / "one-ticket-kind-in-the-skills.html"
+    page.write_text(PAGE.format(stamp=stamp, sections=render(steps()), out=OUT))
+    print(f"wrote {page}")
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        subprocess.Popen(["xdg-open", str(page)], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        print("no display here; open the file above to read it")
+
+
+if __name__ == "__main__":
+    main()
