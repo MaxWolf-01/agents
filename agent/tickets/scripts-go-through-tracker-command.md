@@ -1,9 +1,10 @@
 ---
-status: review
+status: done
 parent: ticket-file-contract
 blocked-by: [tracker-command-and-commit-check]
 priority: 1
 size: L
+diff: [09734b43ee1f2963250d71f4c0bb34352262c2cf..caf7f1eca4a50e16ec73533b0d617d03413c025a]
 ---
 
 # Every script goes through the tracker command, and the live tracker is converted
