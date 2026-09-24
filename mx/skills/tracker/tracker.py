@@ -1133,13 +1133,9 @@ def read_criteria(path: Path, written: Sequence[Section], refusals: list[Refusal
 
 
 def cited(text: str) -> list[tuple[str, int]]:
-    """The `<slug>#P<n>` citations one line of prose carries. A bare `#P<n>` continues the slug
-    cited before it on the same line, which is how a ticket names two properties of one ticket."""
-    found, slug = [], None
-    for citation in CITED.finditer(text):
-        slug = citation.group(1) or slug
-        found.append((f"{slug}#P{int(citation.group(2))}" if slug else f"#P{int(citation.group(2))}", citation.start()))
-    return found
+    """The `<slug>#P<n>` citations one line of prose carries; a bare `#P<n>` comes back bare, for the
+    reader to refuse."""
+    return [(f"{citation.group(1) or ''}#P{int(citation.group(2))}", citation.start()) for citation in CITED.finditer(text)]
 
 
 def read_citations(path: Path, lines: Sequence[tuple[int, str]], refusals: list[Refusal]) -> list[tuple[str, int]]:

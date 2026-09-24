@@ -42,7 +42,7 @@ The pre-commit hook is a few lines that run `tracker`'s check over the staged fi
 
 ## Acceptance criteria
 
-- [x] `ticket-file-contract#P1`, `#P2` and `#P3` hold as checks over generated ticket files at `tracker`'s command line, beside the tracker skill's other tests (this repo has no `tests/properties/`).
+- [x] `ticket-file-contract#P1`, `ticket-file-contract#P2` and `ticket-file-contract#P3` hold as checks over generated ticket files at `tracker`'s command line, beside the tracker skill's other tests (this repo has no `tests/properties/`).
 - [x] `ticket-file-contract#P4`: a ticket's context is its body with its ancestors' bodies, in one order you choose and record, and a missing ancestor is refused like any dangling reference.
 - [x] `ticket-file-contract#P6`: retiring deletes nothing that git history or `~/logs` does not keep, beyond renders whose generating source is tracked; a run over a fixture tracker shows each file's route.
 - [x] Every status transition the tracker skill defines is accepted, and each one it forbids is refused with the rule named.
@@ -57,6 +57,7 @@ The pre-commit hook is a few lines that run `tracker`'s check over the staged fi
 - [D2] **A reference that names no ticket is refused, where the tracker conventions count a missing one as done.** The parent ticket's P3 refuses any dangling `parent`, `blocked-by` or `<slug>#P<n>`; MARKDOWN.md's Ticket state says "A reference whose file no longer exists counts as `done`, a deleted proposal included". Both cannot hold. As built P3 wins: `retire` drops the edges onto what it retires and refuses while a ticket that stays cites a property of one leaving, so nothing is left dangling (A4). The cost is that rejecting a proposal now means dropping the edges onto it in the same commit, which the hook will say. The other reading keeps MARKDOWN.md's rule and takes `blocked-by` out of P3's reach.
   - Ruled 2026-09-23: P3 stands, as built. The gap it leaves, a rejected ticket every other one still names, is `tracker drop`.
 - [D3] **A ticket the user is in the loop for is done by your ruling alone.** `done` otherwise needs the ticket's branch merged, or every child ticket done. A grilling or a piece of legwork produces conversation and rounds on somebody else's branch, so under those two rules it could never reach `done` and could never be retired. As built, a ticket carrying `needs-user: true` takes your ruling as the landing (A5). The alternative is that it gets a branch like any other build, which would make every grilling carry an empty one.
+  - Ruled 2026-09-24: yes: a needs-user ticket is done by the user's ruling alone
 
 ## Comments
 
@@ -147,3 +148,5 @@ The show page is unchanged: this round adds a rule to the check, whose panel alr
 
 - [D9] Assumptions, continuing the block above
   - A19 `mx/skills/tracker/tracker.py:1104`: an `Addressed:` entry is refused unless it is `C<n>`, and an `Addressed:` line that names nothing is refused too. Five checks cover it, beside the ones for the questions and the assumptions.
+
+Accepted 2026-09-24. A7 ruled the same day: a property has one citation form, `<slug>#P<n>`; a bare `#P<n>` no longer borrows the slug before it and is refused. The orchestrator made that change after the merge, with the check fixture turning commit signing off, since a check that moves HOME takes the signing key with it.

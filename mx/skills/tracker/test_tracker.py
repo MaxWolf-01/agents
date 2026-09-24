@@ -104,6 +104,7 @@ def repo(tmp_path: Path) -> Path:
     git(tmp_path, "init", "-q", "-b", "main", ".")
     git(tmp_path, "config", "user.email", "checks@example.com")
     git(tmp_path, "config", "user.name", "checks")
+    git(tmp_path, "config", "commit.gpgsign", "false")  # a check that moves HOME takes the signing key with it
     (tmp_path / "agent" / "tickets").mkdir(parents=True)
     (tmp_path / "README.md").write_text("the repo\n")
     git(tmp_path, "add", "README.md")
@@ -889,12 +890,22 @@ def test_a_citation_the_writer_wrapped_cites_what_it_cited_unwrapped(tickets: Pa
     """The bullet is the unit a citation is read off, so the column an editor wrapped at cannot
     change which properties a criterion names."""
     ticket(tickets, "one-flow", "## Properties\n\n- P1 One.\n- P2 Two.\n- P3 Three.\n")
-    for written in ("- [ ] `one-flow#P1`, `#P2` and `#P3` hold.\n",
-                    "- [ ] `one-flow#P1`, `#P2` and\n  `#P3` hold.\n"):
+    for written in ("- [ ] `one-flow#P1`, `one-flow#P2` and `one-flow#P3` hold.\n",
+                    "- [ ] `one-flow#P1`, `one-flow#P2` and\n  `one-flow#P3` hold.\n"):
         path = ticket(tickets, "map-columns", f"## Acceptance criteria\n\n{written}")
         assert run(repo, "check", str(path)) == Run(0, "", ""), written
         read = json.loads(run(repo, "data", "map-columns").out)["tickets"][0]
         assert read["criteria"][0]["cites"] == ["one-flow#P1", "one-flow#P2", "one-flow#P3"], written
+
+
+def test_a_citation_without_its_slug_is_refused_even_after_one_with_it(tickets: Path, repo: Path) -> None:
+    """A property has one citation form, `<slug>#P<n>`: a bare `#P2` does not borrow the slug cited
+    before it on the line."""
+    ticket(tickets, "one-flow", "## Properties\n\n- P1 One.\n- P2 Two.\n")
+    path = ticket(tickets, "map-columns", "## Acceptance criteria\n\n- [ ] `one-flow#P1` and `#P2` hold.\n")
+    said = run(repo, "check", str(path))
+    assert said.code == 1
+    assert f"{path}:{line_of(path, '#P2')}: `#P2` names no ticket" in said.out, said.out
 
 
 def test_a_question_no_reader_looks_for_is_refused_rather_than_dropped(tickets: Path, repo: Path) -> None:
