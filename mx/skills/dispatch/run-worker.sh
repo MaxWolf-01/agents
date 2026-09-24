@@ -2,9 +2,8 @@
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
 # Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
-#   slug          the ticket this worker holds; its status says whether a retry is warranted,
-#                 read through `tracker` beside this script, in the worktree this runs in
-#   run           id of this run, unique; names <run>.{status,log} beside this script
+#   slug          the ticket this worker holds, for the worklog's opening line
+#   run           id of this run, unique; names <run>.{status,log,report.md} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
 # Env:
@@ -21,11 +20,9 @@ permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
-# The one parser of a ticket file, staged here beside this script.
-tracker=$here/tracker.py
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
-    printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -40,6 +37,10 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
+# What the worker has to say about the ticket: its closing comment and the questions its build
+# raised, written outside the worktree because a worker writes no ticket file. The orchestrator
+# imports it into the ticket, and this file existing is what says the worker finished.
+export DISPATCH_REPORT="$here/$run_id.report.md"
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
@@ -83,23 +84,21 @@ for attempt in $(seq 1 $max_attempts); do
         claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
-    # stderr left alone: "no uv", "tracker.py was not staged" and "no such ticket"
-    # are three failures, and the pane's scrollback is where they are read apart.
-    status=$("$tracker" get "$slug" status)
-
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
-    [ "$status" = review ] && break
+    # The report is the worker's finished signal, so a crash after it is a crash with the work done.
+    [ -f "$DISPATCH_REPORT" ] && break
     [ "$attempt" -eq "$max_attempts" ] && break
 
     backoff=$((attempt * 30))
-    echo "run-worker: attempt $attempt exited $rc (ticket: ${status:-?}); retrying in ${backoff}s"
+    echo "run-worker: attempt $attempt exited $rc (no report yet); retrying in ${backoff}s"
     sleep "$backoff"
     # A TERM that lands here ends the sleep, and must end the run too.
     [ -n "$stopped" ] && break
 done
 
 [ -n "$stopped" ] && rc=stopped
-# Last act: the orchestrator's wait returns on this file.
-printf 'attempts=%s exit=%s status=%s session=%s\n' \
-    "$attempt" "$rc" "${status:-?}" "$session" > "$here/$run_id.status"
+# Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
+# a report to import.
+printf 'attempts=%s exit=%s report=%s session=%s\n' \
+    "$attempt" "$rc" "$([ -f "$DISPATCH_REPORT" ] && echo yes || echo no)" "$session" > "$here/$run_id.status"
