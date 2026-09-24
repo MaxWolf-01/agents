@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest", "tyro"]
 # ///
-"""Checks for the coverage check over a tracker. Run: uv run test_property_coverage.py
+"""Checks for the coverage check over a tracker. Run: pytest test_property_coverage.py
 
 Three seams: `check`, a tracker on disk in and findings out; `main`, the same with the exit code and
 the lines a session reads; and the command a session types, run as a subprocess. The oracle is
@@ -131,6 +131,15 @@ def test_a_citation_that_names_no_property_is_the_trackers_refusal_and_not_a_fin
     with pytest.raises(SystemExit) as stopped:
         check(tracker)
     assert "`lamp#P4` names no property; lamp states P1" in str(stopped.value)
+
+
+def test_the_findings_come_out_in_the_order_the_properties_are_stated_in(tracker: Path) -> None:
+    """A session reads them top down and fixes them in that order, so two uncovered properties on two
+    tickets come out as the tracker states them."""
+    ticket(tracker, "lamp", properties=["P1 A lamp reads cold.", "P2 No preset blocks on the user."])
+    ticket(tracker, "dimmer", properties=["P1 A dimmer never flickers."], parent="lamp")
+    report = check(tracker)
+    assert [f.at.ref for f in report.findings] == ["dimmer#P1", "lamp#P1", "lamp#P2"]
 
 
 def test_a_property_is_quoted_whole_up_to_the_width_of_a_line(tracker: Path) -> None:

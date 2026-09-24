@@ -279,12 +279,14 @@ def test_a_spec_given_as_a_file_is_read_as_the_file(repo):
     assert not (review_dir(repo) / "ticket.md").exists()
 
 
-def test_a_missing_report_is_rerun_at_the_same_effort(repo):
-    done = run(repo, "--axes", "correctness", "--effort", "low", FAKE_NO_REPORT="1")
+def test_a_missing_report_is_rerun_at_the_same_effort_and_on_the_spec_as_it_was_given(repo):
+    ticketed(repo)
+    done = run(repo, "--axes", "spec", "--effort", "low", "--spec", "lamp-presets", FAKE_NO_REPORT="1")
 
     assert done.returncode == 1
     rerun = done.stderr.strip().splitlines()[-1]
-    assert "--axes correctness" in rerun and "--effort low" in rerun
+    assert "--axes spec" in rerun and "--effort low" in rerun
+    assert "--spec lamp-presets" in rerun, f"the re-run reads the assembled file rather than the ticket: {rerun}"
 
 
 if __name__ == "__main__":

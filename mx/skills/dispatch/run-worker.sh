@@ -83,7 +83,9 @@ for attempt in $(seq 1 $max_attempts); do
         claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
-    status=$("$tracker" get "$slug" status 2>/dev/null)
+    # stderr left alone: "no uv", "tracker.py was not staged" and "no such ticket"
+    # are three failures, and the pane's scrollback is where they are read apart.
+    status=$("$tracker" get "$slug" status)
 
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break

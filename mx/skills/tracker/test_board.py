@@ -13,8 +13,8 @@ unclaimed; a proposed ticket is not open whatever blocks it; a build in review w
 user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
 is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
-tickets with an edge; a standalone ticket a branch added is shown, one it merely inherited is
-not; markdown at the tracker root that declares no status is not a ticket.
+tickets with an edge; a ticket a branch added is shown, one it merely inherited is not; a ticket
+the tracker's own parser refuses is refused here, with its file and its line.
 
 Under "properties" at the end sit the executable Properties of
 mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec is their oracle.
@@ -43,7 +43,6 @@ from board import (
     ALONE,
     STATUS_SYMBOL,
     Seen,
-    TICKET_STATUSES,
     Diffviews,
     Roots,
     board_graph,
@@ -67,7 +66,7 @@ from briefing import CADENCE, QUIET, Briefing, cache_path
 from demo_tracker import S1, S2, S3, S4, Demo, build as build_demo
 from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
 
-TREE = "feat-a"  # a hyphen, so a slugged id and the raw slug can be told apart
+TREE = "lamp-ui"  # a hyphen, so a slugged id and the raw slug can be told apart
 STUB_ADDRESS = "http://127.0.0.1:54321"
 
 
@@ -99,7 +98,7 @@ def ticket(
 
 @pytest.fixture
 def tracker(tmp_path: Path) -> Path:
-    """A flat tracker: one tree of seven tickets under `feat-a`, and three tickets in no tree."""
+    """A flat tracker: one tree of seven tickets under `lamp-ui`, and three tickets in no tree."""
     root = tmp_path / "repo" / "agent" / "tickets"
     root.mkdir(parents=True)
     ticket(root / f"{TREE}.md", "open", priority=1, size="L", name="Feat")
@@ -161,6 +160,16 @@ def test_a_ticket_waiting_on_a_proposal_is_blocked_until_the_ruling_lands_as_don
     assert load(tracker)["uses-fast-suite"].status == "blocked"
     ticket(tracker / "faster-suite.md", "done", parent=TREE)
     assert load(tracker)["uses-fast-suite"].status == "open"
+
+
+def test_a_blocker_the_board_cannot_see_counts_as_done(tracker: Path) -> None:
+    """The tracker refuses a dangling edge where it is written, so an edge the board cannot resolve
+    names a ticket in a checkout this render does not hold: the work it waits on has landed."""
+    read = load(tracker)
+    assert read["needs-chore"].status == "blocked"
+    assert read["needs-chore"].blocked_by == [("small-chore", "open")]
+    del read["small-chore"]
+    assert board.ref_status("small-chore", {slug: (t, None) for slug, t in read.items()}) == "done"
 
 
 def test_a_ticket_of_one_tree_waits_on_a_ticket_of_no_tree(tracker: Path) -> None:
@@ -237,7 +246,7 @@ def test_a_proposed_ticket_is_a_node_in_its_own_class_once_something_waits_on_it
 def test_the_whole_tracker_graph_is_parts_per_tree_with_edges_naming_both_ends(tracker: Path) -> None:
     read = list(load(tracker).values())
     parts = board_graph(read)
-    assert [f["name"] for f in parts["trees"]] == [ALONE, TREE]
+    assert [f["name"] for f in parts["trees"]] == [TREE, ALONE], "the order the pills take"
     ids = {f["name"]: [n["id"] for n in f["nodes"]] for f in parts["trees"]}
     assert ids[TREE] == ["T_b_after_first", "T_b_built", "T_b_faster_suite", "T_b_first",
                          "T_b_needs_chore", "T_b_second", "T_b_uses_fast_suite"]
@@ -295,6 +304,16 @@ def test_a_tree_chip_carries_the_counts_as_its_tooltip(tracker: Path) -> None:
         f'<i class="dot"></i>{TREE} <span class="dim">1/8</span></button>' in page
     )
     assert f'{ALONE} <span class="dim">0/3</span>' in page
+
+
+def test_the_lone_tickets_pill_comes_last_and_carries_a_graph_of_its_own(tracker: Path) -> None:
+    """The pills are what the `1`…`9` keys index into, so their order is the one `trees_of` gives;
+    and the tickets in no tree wait on each other like any others, so that pill has a graph."""
+    page = page_of(tracker)
+    assert re.findall(r'class="treechip" data-tree="([\w-]+)"', page) == [TREE, ALONE]
+    graph = re.search(rf'<div class="g" data-tree="{ALONE}" hidden>(.*?)</div>', page, re.S).group(1)
+    assert "T_f_quoted" in graph, f"the lone tickets have no graph of their own: {graph}"
+    assert "T_f_second" not in graph, f"another tree's rows are drawn in it: {graph}"
 
 
 def test_a_tree_chip_dots_when_any_of_its_tickets_waits_on_the_user(tmp_path: Path) -> None:
@@ -365,6 +384,22 @@ def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(trac
         assert view.count('<div class="gsvg">') == 1
     assert board.OVERLAY in page, "the overlay wears markup of its own"
     assert json.dumps(board.GRAPH_WINDOW).replace("</", "<\\/") in page, "the window is built from markup of its own"
+
+
+def test_a_row_read_from_a_worktree_links_that_worktrees_review_page(repo: Path, tracker: Path) -> None:
+    """`dispatch review` renders a page in the worktree it runs in, which is the worktree the tree's
+    parent ticket is built in, so that is where the row's link has to point while the tree is in
+    flight; a row the main checkout holds links the main checkout's."""
+    wt = repo.parent / "wt"
+    (wt / "agent" / "diffviews").mkdir(parents=True)
+    (wt / "agent" / "diffviews" / "second.html").write_text("<html>")
+    (tracker.parent / "diffviews").mkdir(parents=True)
+    (tracker.parent / "diffviews" / "second.html").write_text("<html>")
+    (tracker.parent / "diffviews" / "quoted.html").write_text("<html>")
+    roots = tracker_roots(tracker)
+    read = {t.slug: t for t in load_tickets(roots, Diffviews(tracker.parent / "diffviews", None))}
+    assert read["second"].diffview == f"file://{wt / 'agent' / 'diffviews' / 'second.html'}"
+    assert read["quoted"].diffview == f"file://{tracker.parent / 'diffviews' / 'quoted.html'}"
 
 
 def test_a_row_links_its_review_page(tracker: Path) -> None:
@@ -504,12 +539,25 @@ def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path
     assert tracker_snapshot(roots, repo) != before
 
 
+def test_a_worktree_holds_every_descendant_of_the_ticket_its_branch_names(repo: Path, tracker: Path) -> None:
+    """A tree goes as deep as the work needs, and the branch a parent ticket is built on holds all
+    of it: a grandchild's claim is on the board while the tree is in flight."""
+    branch_root = repo.parent / "wt" / "agent" / "tickets"
+    ticket(branch_root / "under-second.md", "open", parent="second")
+    git(repo.parent / "wt", "add", "-A")
+    git(repo.parent / "wt", "commit", "-q", "-m", "a grandchild")
+    ticket(branch_root / "under-second.md", "claimed", parent="second")
+    read = {t.slug: t for t in load_tickets(tracker_roots(tracker), Diffviews(tracker.parent / "diffviews", None))}
+    assert read["under-second"].status == "claimed", "the grandchild's copy is the worktree's"
+    assert read["under-second"].tree == TREE
+
+
 def test_a_worktree_on_a_landed_branch_is_ignored(repo: Path, tracker: Path) -> None:
     wt = repo.parent / "wt"
     ticket(wt / "agent" / "tickets" / "second.md", "done", parent=TREE)
     git(wt, "commit", "-q", "-am", "second landed")
     assert tracker_roots(tracker).branches == [(TREE, wt / "agent" / "tickets")]
-    git(repo, "merge", "-q", "--no-ff", "-m", "feat-a: landed", TREE)
+    git(repo, "merge", "-q", "--no-ff", "-m", f"{TREE}: landed", TREE)
     assert tracker_roots(tracker).branches == []
 
 
@@ -565,7 +613,7 @@ SIZE_WORDS = {"XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"),
               "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions")}
 PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
 ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build"}
-MARKS = {"ftag", "num", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag", "qhead", "copier"}
+MARKS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag", "qhead", "copier"}
 # What a row holds that is not a mark: the boxes the marks sit in, and the prose a reader reads
 # rather than decodes, the ticket's own name among it (its hover words are the name in full, for a
 # row too narrow to show it). Everything else on a row explains itself, which is what makes the
@@ -709,7 +757,7 @@ def columns_for(page: str, selector: str) -> dict[str, str]:
 def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_path: Path) -> None:
     """The name and the brief take what the row has spare, so a column is measured from the marks:
     the closed vocabularies for what a row asks, the time and the priority, the tracker's own names
-    and references for the feature tag and the blockers, and each group's own three, since a group
+    and references for the tree, the slug and the blockers, and each group's own three, since a group
     of quick unblocked tickets has no use for the width an XL one needs."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)
@@ -719,8 +767,8 @@ def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_pat
     ticket(root / "waits-on-the-haul.md", "open", priority=3, size="M", blocked_by=["long-haul"])
     page = render_page("demo", list(load(root).values()), log="", stamp="s", stamp_src="s.js")
     assert columns_for(page, ":root") == {
-        "ftag": str(len("ledger")),  # the one tree's slug
-        "num": str(len("waits-on-the-h")),  # the longest slug, capped at the column's width
+        "tree": str(len("ledger")),  # the one tree's slug
+        "slug": str(len("waits-on-the-h")),  # the longest slug, capped at the column's width
         "asks": str(len("your answer")),  # the widest of the spec's four words
         "time": str(len("several sessions")),
         "pri": str(len("p5 someday")),
@@ -770,6 +818,23 @@ def test_the_stamp_the_open_tab_polls_moves_when_a_ticket_is_reprioritised(track
     before = content_stamp("demo", list(load(tracker).values()), "")
     ticket(tracker / "second.md", "open", parent=TREE, priority=1, size="XS", brief="Why it matters, cold.")
     assert content_stamp("demo", list(load(tracker).values()), "") != before
+
+
+def test_the_stamp_the_open_tab_polls_moves_on_every_mark_a_row_shows(tracker: Path) -> None:
+    """An edit that moves what a row says and not its status: the open tab reloads on it or it never
+    arrives. One example per field the stamp carries that the status does not."""
+    edits = {
+        "needs-user": lambda: ticket(tracker / "second.md", "open", parent=TREE, needs_user=True),
+        "parent": lambda: ticket(tracker / "second.md", "open"),
+        "title": lambda: ticket(tracker / "second.md", "open", parent=TREE, name="Another name"),
+        "blocked-by": lambda: ticket(tracker / "second.md", "open", parent=TREE, blocked_by=["small-chore"]),
+    }
+    was = (tracker / "second.md").read_text()
+    for field, edit in edits.items():
+        before = content_stamp("demo", list(load(tracker).values()), "")
+        edit()
+        assert content_stamp("demo", list(load(tracker).values()), "") != before, f"{field} moved and the stamp did not"
+        (tracker / "second.md").write_text(was)
 
 
 def test_the_stamp_the_open_tab_polls_moves_when_the_session_rewrites_the_briefing(tracker: Path) -> None:
@@ -836,8 +901,8 @@ def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: P
     assert "never the agent's" in tips["time"] and "priority" not in tips["time"]
     assert "an agent's reading" in tips["pri"] and "Your time" not in tips["pri"]
     assert "review page" in tips["rp"] and "GitHub" in tips["gh"]
-    assert str(demo.root / "map-columns.md") in tips["num"], "a copy button shows what it copies"
-    assert "parent ticket" in tips["ftag"]
+    assert str(demo.root / "map-columns.md") in tips["slug"], "a copy button shows what it copies"
+    assert "top-level ticket" in tips["tree"]
     # a blocker says which ticket it waits on and whether that one is done (spec, The board)
     assert 'data-tip="Waits on parse-rows, done.">parse-rows</a>' in page
     assert 'data-tip="Waits on map-columns, not done yet.">map-columns</a>' in page
@@ -1000,40 +1065,6 @@ def test_the_board_reads_the_ticket_branches_again_on_every_render(built: tuple[
     assert tracker_snapshot(tracker_roots(root), repo) != after
 
 
-def test_a_question_is_read_in_the_shapes_a_ticket_file_is_written_in() -> None:
-    """What the spec's prose allows and the generated check above does not draw: an item with no
-    bold headline, a detail running over lines, a rationale that opens with the word Ruled and
-    names no date, and a second `## Questions` section, which is how a worker's questions reach a
-    ticket that already had some."""
-    read = {q.tag: q for q in board.questions_of("""## Questions
-
-- [D1] **Bulleted ruling?** One line.
-  - Ruled 2026-09-21: per bank.
-- [D2] **A ruling is a bullet of its own?** A line merely indented under the question continues it.
-  Ruled 2026-09-22 is part of this detail.
-- [D3] No bold headline, just the question?
-- [D4] **A detail over two lines?** It starts here
-  and carries on there.
-- [D5] **Ruled out is not a ruling.** Two ways out.
-  - Ruled out: a third, since the suite is already slow.
-
-## Comments
-
-The build, on its branch.
-
-## Questions
-
-- [D6] **Appended by the worker?** Under a second heading of its own.
-""", [])}
-    assert list(read) == ["D1", "D2", "D3", "D4", "D5", "D6"]
-    assert read["D1"].ruled == "2026-09-21"
-    assert read["D2"].ruled is None and "Ruled 2026-09-22 is part of this detail" in read["D2"].detail
-    assert read["D3"].headline == "No bold headline, just the question?" and read["D3"].detail == ""
-    assert read["D4"].detail == "It starts here and carries on there."
-    assert read["D5"].ruled is None, "a line that opens with the word Ruled and names no date rules nothing"
-    assert read["D6"].headline == "Appended by the worker?"
-
-
 def test_a_near_design_session_is_in_needs_me_with_no_question_written_down(tmp_path: Path) -> None:
     """The needs-me clauses the demo tracker has no row for: a ticket the user is in the loop for
     and would sit for soon is there before anyone has written its question, one nobody can sit for
@@ -1086,7 +1117,7 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, 
         else:
             assert text.splitlines()[0].rsplit("/", 1)[-1] in said, f"the {which} button's note says {said!r}"
     # the copy button the row already had says the same of itself (02-rows)
-    assert str(transcribed.root / "flaky-upload-test.md") in tips_on(rows_of(page)["t-flaky-upload-test"])["num"]
+    assert str(transcribed.root / "flaky-upload-test.md") in tips_on(rows_of(page)["t-flaky-upload-test"])["slug"]
 
 
 def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tickets_path(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1327,6 +1358,21 @@ def test_an_opened_ticket_leaves_none_of_the_file_behind(tmp_path: Path) -> None
     assert quoted and "## Questions" in quoted.group(), "the fenced sample is quoted, not read as a section of its own"
 
 
+def test_a_nested_list_renders_nested_at_the_indent_its_writers_use(tmp_path: Path) -> None:
+    """The board's half of the parent ticket's incident: a writer indents a question's options three
+    spaces, as GitHub and CommonMark take them, and the board rendered them as flat items."""
+    root = tmp_path / "agent" / "tickets"
+    root.mkdir(parents=True)
+    (root / "pick-a-store.md").write_text(
+        "---\nstatus: open\npriority: 2\nsize: S\n---\n\n# Where a view lives\n\n"
+        "## Brief\n\nIn the ledger file or beside it.\n\n"
+        "## What to build\n\n- The two stores:\n   - the ledger file, which travels with the data\n"
+        "   - a file beside it, which does not\n"
+    )
+    body = body_of(rows_of(page_of(root))["t-pick-a-store"])
+    assert re.search(r"<li>The two stores:\s*<ul>", body), f"the three-space nesting rendered flat: {body}"
+
+
 def test_a_ticket_that_says_less_gets_fewer_blocks(tmp_path: Path) -> None:
     """The board invents no block: a ticket with no artefacts and no comments opens as what it does
     say, a question with no detail shows none, and a checkbox outside the acceptance criteria is
@@ -1530,22 +1576,22 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
 
 
 FILED = "b4c5d6e7-1111-4111-8111-111111111111"  # filed both tickets, before either moved
-GRILLED = "b4c5d6e7-2222-4222-8222-222222222222"  # grilled them into the feature, which moved them
-LATER = "b4c5d6e7-3333-4333-8333-333333333333"  # worked on one after it left the feature again
+GRILLED = "b4c5d6e7-2222-4222-8222-222222222222"  # the grilling that renamed them both
+LATER = "b4c5d6e7-3333-4333-8333-333333333333"  # worked on one after its second name
 
 
 @pytest.fixture
 def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
-    """(the tracker, its repo) of two tickets that moved: one standalone ticket grilled into a
-    feature, and one grilled in that later left it again under a name of its own.
+    """(the tracker, its repo) of two tickets that moved: one renamed as a grilling sharpened what
+    it was for, and one renamed twice.
 
     Beside the three sessions named above, AWAY edits one under its first path, so a carried session
-    the board cannot resume has somewhere to show; and the move out of the feature is the user's own
-    `git mv`, under no session at all.
+    the board cannot resume has somewhere to show; and the second rename is the user's own `git mv`,
+    under no session at all.
     """
     repo = tmp_path / "the ledger"
     root = repo / "agent" / "tickets"
-    (root / "csv-import").mkdir(parents=True)
+    root.mkdir(parents=True)
     demo_git(repo, "init", "-q", "-b", "master")
     ticket(root / "split-rows.md", "open")
     ticket(root / "name-columns.md", "open")
@@ -1553,21 +1599,21 @@ def moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     append(root / "split-rows.md", "\nOne row per transaction.\n")
     demo_commit(repo, AWAY, "2026-09-15T11:00:00+02:00", "split-rows: one row per transaction", "agent/tickets")
 
-    demo_git(repo, "mv", "agent/tickets/split-rows.md", "agent/tickets/csv-import/02-split-rows.md")
-    demo_git(repo, "mv", "agent/tickets/name-columns.md", "agent/tickets/csv-import/01-name-columns.md")
-    demo_commit(repo, GRILLED, "2026-09-16T09:00:00+02:00", "csv-import: grilled, two slices", "agent/tickets")
-    append(root / "csv-import" / "01-name-columns.md", "\nThe header row names the bank.\n")
+    demo_git(repo, "mv", "agent/tickets/split-rows.md", "agent/tickets/row-splitting.md")
+    demo_git(repo, "mv", "agent/tickets/name-columns.md", "agent/tickets/header-naming.md")
+    demo_commit(repo, GRILLED, "2026-09-16T09:00:00+02:00", "the two tickets renamed for what they do", "agent/tickets")
+    append(root / "header-naming.md", "\nThe header row names the bank.\n")
     # written during the grilling and cherry-picked over after the move, so the walk reaches it
     # after the commit whose date it has to widen the span back from
-    demo_commit(repo, GRILLED, "2026-09-15T16:00:00+02:00", "csv-import: 01, the header row", "agent/tickets")
+    demo_commit(repo, GRILLED, "2026-09-15T16:00:00+02:00", "header-naming: the header row", "agent/tickets")
 
-    demo_git(repo, "mv", "agent/tickets/csv-import/01-name-columns.md", "agent/tickets/header-row.md")
-    demo_git(repo, "commit", "-q", "-m", "header-row: out of csv-import")  # moved by hand, no session
+    demo_git(repo, "mv", "agent/tickets/header-naming.md", "agent/tickets/header-row.md")
+    demo_git(repo, "commit", "-q", "-m", "header-row: named again")  # moved by hand, no session
     append(root / "header-row.md", "\nAsked once per bank.\n")
     demo_commit(repo, LATER, "2026-09-19T08:00:00+02:00", "header-row: asked once per bank", "agent/tickets")
 
     written = tmp_path / "claude" / "projects"
-    for sid, title in ((FILED, "Filing the csv tickets"), (GRILLED, "Grilling csv-import"), (LATER, "The header row")):
+    for sid, title in ((FILED, "Filing the csv tickets"), (GRILLED, "Grilling the csv import"), (LATER, "The header row")):
         write_transcript(written, sid, str(repo), title)
     monkeypatch.setattr(board, "TRANSCRIPTS", written)
     return root, repo
@@ -1577,7 +1623,7 @@ def test_a_ticket_that_moved_lists_the_sessions_from_under_its_old_path(moved: t
     """A moved ticket is one ticket: git records the move, so the session that filed it is listed on
     it wherever it now sits, and a chain of two moves carries both earlier paths."""
     root, repo = moved
-    once = ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)
+    once = ticket_sessions(root / "row-splitting.md", repo)
     assert [(s.id, s.first, s.last) for s in once] == [
         (FILED, "2026-09-14", "2026-09-14"), (GRILLED, "2026-09-16", "2026-09-16"),
     ], "the session that filed it as agent/tickets/split-rows.md worked on this ticket"
@@ -1586,16 +1632,16 @@ def test_a_ticket_that_moved_lists_the_sessions_from_under_its_old_path(moved: t
         (FILED, "2026-09-14", "2026-09-14"),
         (GRILLED, "2026-09-15", "2026-09-16"),
         (LATER, "2026-09-19", "2026-09-19"),
-    ], "standalone, then the feature's 01, then standalone again, the move itself under no session"
+    ], "under each of its three names, the second rename itself under no session"
 
 
 def test_a_session_the_board_cannot_resume_is_left_off_a_moved_ticket_too(moved: tuple[Path, Path]) -> None:
     """The Property that a listed session has a transcript on this machine, over a carried session:
     AWAY worked on the ticket under its first path and has no transcript here."""
     root, repo = moved
-    under = board.session_log(repo)["agent/tickets/csv-import/02-split-rows.md"]
+    under = board.session_log(repo)["agent/tickets/row-splitting.md"]
     assert AWAY in under, "it committed on the ticket while it was agent/tickets/split-rows.md"
-    assert AWAY not in {s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)}
+    assert AWAY not in {s.id for s in ticket_sessions(root / "row-splitting.md", repo)}
 
 
 def test_a_move_on_one_branch_leaves_the_sessions_on_the_path_another_branch_still_has(
@@ -1605,11 +1651,11 @@ def test_a_move_on_one_branch_leaves_the_sessions_on_the_path_another_branch_sti
     ticket a worker moves on its own branch keeps its sessions where the main checkout still has
     it, until the merge."""
     root, repo = moved
-    demo_git(repo, "checkout", "-q", "-b", "ticket/master/split-rows")
-    demo_git(repo, "mv", "agent/tickets/csv-import/02-split-rows.md", "agent/tickets/split-rows.md")
-    demo_commit(repo, LATER, "2026-09-21T10:00:00+02:00", "split-rows: out of csv-import", "agent/tickets")
+    demo_git(repo, "checkout", "-q", "-b", "ticket/row-splitting")
+    demo_git(repo, "mv", "agent/tickets/row-splitting.md", "agent/tickets/split-rows.md")
+    demo_commit(repo, LATER, "2026-09-21T10:00:00+02:00", "row-splitting: named again on its branch", "agent/tickets")
     demo_git(repo, "checkout", "-q", "master")
-    assert [s.id for s in ticket_sessions(root / "csv-import" / "02-split-rows.md", repo)] == [FILED, GRILLED], (
+    assert [s.id for s in ticket_sessions(root / "row-splitting.md", repo)] == [FILED, GRILLED], (
         "the path master still holds the ticket at, whose board the move has not reached"
     )
     assert [s.id for s in ticket_sessions(root / "split-rows.md", repo)] == [FILED, GRILLED, LATER]
@@ -1725,9 +1771,9 @@ STATED = {
 @pytest.fixture
 def referenced(tracker: Path) -> Path:
     """The tracker with a ticket naming a reference in every state the board tells apart, beside
-    the two its build ticket already names. It is a standalone ticket, which the main checkout is
-    read for: a feature with a worktree is read from there (tracker_roots), and the repo fixture
-    commits the tracker before this rewrites it."""
+    the two its build ticket already names. It is a ticket in no tree, which the main checkout is
+    read for: a tree with a worktree on its parent ticket's branch is read from there
+    (tracker_roots), and the repo fixture commits the tracker before this rewrites it."""
     ticket(tracker / "small-chore.md", "open", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
     return tracker
 
@@ -1909,11 +1955,11 @@ def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing
 ) -> None:
     """A board with no GitHub reference on it has no source to miss, as a tracker with no review
     page rendered has no server to miss. Its own tracker, since the fixture's build ticket names
-    two references from the worktree its feature is read from."""
+    two references from the worktree its tree is read from."""
     record = gh_answering(path_with, ANSWERED)
     root = tmp_path / "repo" / "agent" / "tickets"
-    (root / "solo").mkdir(parents=True)
-    ticket(root / "solo" / "01-only.md", "open")
+    root.mkdir(parents=True)
+    ticket(root / "only.md", "open")
     repo = root.parent.parent
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
@@ -2069,8 +2115,8 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     prose rewritten is a render and no more, and a status that goes back to what the session was
     last told leaves nothing to tell.
 
-    Both halves of the tracker are moved, since `statuses` reads the features and the standalone
-    tickets in two comprehensions and a board is mostly features."""
+    A ticket of the tree and one in no tree are both moved, since the two reach the board by
+    different roots: the worktree's copy and the main checkout's."""
     out = tmp_path / "board.html"
     when = datetime.now().astimezone()  # a briefing already written, so the opening pass arms nothing
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
@@ -2102,10 +2148,10 @@ def test_a_status_that_goes_back_to_what_the_session_was_told_leaves_nothing_to_
     rule is that a pass where no status moved leaves the quiet window where it was, so prose
     rewritten every minute cannot hold a pending change open for ever."""
     at = datetime.now().astimezone()
-    told = (("feat-a/02", "open"), ("small-chore", "open"))
+    told = (("second", "open"), ("small-chore", "open"))
     session = board.Briefer(Path("."), Path("board.html"), told=(), told_statuses=told)
 
-    session.saw(claimed := (("feat-a/02", "claimed"), ("small-chore", "open")), told, at)
+    session.saw(claimed := (("second", "claimed"), ("small-chore", "open")), told, at)
     assert session.changed_at == at, "a status that moved never started the quiet window"
     session.saw(claimed, claimed, at + timedelta(minutes=3))
     assert session.changed_at == at, "a pass that moved no status started the quiet window again"
@@ -2228,7 +2274,7 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     assert written and (written.text, written.session, written.pings) == (said["result"], "abc-123", 0)
     told = watcher.told
 
-    watcher.saw(statuses + (("feat-a/09", "open"),), statuses, at + timedelta(minutes=1))
+    watcher.saw(statuses + (("a-new-one", "open"),), statuses, at + timedelta(minutes=1))
     watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + timedelta(minutes=1))
     assert len(runs(claude)) == 1, "a change inside the quiet window waits it out"
     watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + QUIET + timedelta(minutes=1))
@@ -2343,7 +2389,7 @@ def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_
     a blocked or done ticket is not the user's to sit for either.
     """
     space = itertools.product(
-        sorted(TICKET_STATUSES | {"blocked"}), [False, True], [1, 2, 3, 4, 5], [False, True],
+        sorted(set(tracker_module.STATUSES) | {"blocked"}), [False, True], [1, 2, 3, 4, 5], [False, True],
     )
     for status, needs_user, priority, open_question in space:
         waits = status != "done" and (
@@ -2352,40 +2398,6 @@ def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_
             or (needs_user and priority in (1, 2) and status in ("open", "proposed"))
         )
         assert needs_me(status, needs_user, priority, open_question) is waits, (status, needs_user, priority, open_question)
-
-
-PHRASE = st.lists(st.sampled_from("retry the clock suite upload mapping bank payee ledger".split()), min_size=2, max_size=6).map(" ".join)
-HEADLINE = st.builds(lambda words, end: words + end, PHRASE, st.sampled_from("?.:"))
-DETAIL = st.builds(lambda words, path: f"{words}, in {path}." if path else f"{words}.", PHRASE, st.sampled_from(["", "`src/mapping.py`", "`~/.config/ledger/mappings.toml`"]))
-QUESTION = st.tuples(HEADLINE, DETAIL, st.one_of(st.none(), st.sampled_from(["2026-09-21", "2026-09-22"])))
-# the first tag, since a ticket's Dn sequence runs on across its comment too and its questions need not open it
-QUESTIONS = st.tuples(st.integers(min_value=1, max_value=4), st.lists(QUESTION, min_size=1, max_size=6))
-
-
-def ticket_asking(first: int, items: list[tuple[str, str, str | None]]) -> str:
-    """A ticket file whose `## Questions` holds `items`, some of them ruled, and whose closing
-    comment carries tags of the same running sequence that are not questions."""
-    asked = "\n".join(
-        f"- [D{n}] **{headline}** {detail}" + (f"\n  - Ruled {ruled}: the answer, relayed." if ruled else "")
-        for n, (headline, detail, ruled) in enumerate(items, start=first)
-    )
-    after = first + len(items)
-    return (
-        "---\nstatus: review\npriority: 1\nsize: S\n---\n\n# A ticket\n\n## Brief\n\nWhat it is, cold.\n\n"
-        f"## Questions\n\n{asked}\n\n"
-        "## Comments\n\nBuilt on its branch, not merged.\n\n"
-        f"**Details, if you want them**\n\n- [D{after}] Assumptions\n  - A1 `src/mapping.py:1`: one mapping per bank.\n"
-    )
-
-
-@given(asked=QUESTIONS)
-def test_a_question_a_ruled_line_answers_is_never_open(asked: tuple[int, list[tuple[str, str, str | None]]]) -> None:
-    first, items = asked
-    read = board.questions_of(ticket_asking(first, items), [])
-    assert [q.tag for q in read] == [f"D{n}" for n in range(first, first + len(items))]
-    assert [q.headline for q in read] == [headline for headline, _, _ in items]
-    assert [q.ruled is None for q in read] == [ruled is None for _, _, ruled in items]
-    assert all(detail in q.detail and "Ruled" not in q.detail for q, (_, detail, _) in zip(read, items))
 
 
 # what the demo tracker's tickets ask of the user: the two builds in review, every ticket with a
@@ -2398,7 +2410,7 @@ NEEDS_ME = {
 
 
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The same two properties as the checks above, at the seam the spec's Testing seams names: a
+    """The same two properties as the checks above, at the seam the spec's Testing Decisions names: a
     fixture tracker on disk in, groups out. map-columns keeps its questions on its ticket branch,
     so the board has to read them there."""
     out = tmp_path / "board.html"

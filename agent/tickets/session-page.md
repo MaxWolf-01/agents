@@ -12,7 +12,7 @@ A session whose answers need more than a line gets one session page, re-rendered
 
 Grilled from the session-page rounds; round 3 is drawn at `agent/show/session-page/round-3/pages.html`. The build starts once `board-orients` has merged.
 
-## Problem Statement
+## Problem statement
 
 Every answer an agent gives lands in the terminal, and the terminal renders prose, code and diffs as text and nothing else. A figure, a before/after pair side by side or a rendered page cannot show there, so the agent describes what it would have shown, or builds an artifact that opens in a tab of its own and leaves its link in the chat, where it scrolls away with the next turn. A returning user cannot find what a session produced, and with a dozen sessions open cannot tell which pane holds which work.
 

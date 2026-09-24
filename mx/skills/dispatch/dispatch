@@ -15,10 +15,10 @@
 #        dispatch push
 #        dispatch review <slug>
 #   <slug> is the ticket's id: agent/tickets/<slug>.md.
-#   claim    flips <slug> to claimed and commits that on this branch, through
-#            `tracker`, which is what refuses a transition the tracker does not
-#            define: a claim is taken from an open, proposed or review ticket,
-#            never from one already claimed or done.
+#   claim    flips <slug> to claimed and commits that on this branch. Refuses a
+#            ticket already claimed, which is one in somebody's hands; every
+#            other transition is `tracker set`'s to allow or refuse, and its
+#            refusal names the rule.
 #   prompt   writes stdin as <slug>'s message, here; the spawn that follows
 #            sends it with the ticket's context under it (`tracker context`:
 #            the ticket's body and every ancestor's, the one assembly a
@@ -74,7 +74,8 @@
 #            as <repo>-<slug>, and the show directory's `demo` typed unrun at
 #            the prompt of a detached tmux session named job-<repo>-<slug>-demo,
 #            through `job`'s staged mode. The user starts it, so a demo meant to
-#            be watched is watched from its first line. The worktree is a plain checkout with no install step run in
+#            be watched is watched from its first line. The worktree is a plain
+#            checkout with no install step run in
 #            it, so the demo has what the user's machine already has and nothing
 #            more. Anything that stops a staging says so and leaves the rest of
 #            the landing standing: no demo on the branch, one committed
@@ -499,7 +500,11 @@ range_of() {
 # writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
 notes_of() { # a ticket file on stdin
-    "$tracker" data - | jq '{
+    # The tracker's own status, taken before the pipe: a refusal prints to stderr
+    # and writes nothing, and jq over an empty input exits 0, so a pipeline would
+    # answer that a ticket no reader can read has no notes.
+    read=$("$tracker" data -) || return 1
+    printf '%s\n' "$read" | jq '{
         notes: [ .tickets[0].assumptions[]
                  | {id, path, text} + (if .line == null then {} else {line} end) ],
         resolved: .tickets[0].resolved,

@@ -28,7 +28,13 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 plugin=$repo/mx
 out=$here/out
-base=$(git -C "$repo" merge-base HEAD ticket-file-contract 2>/dev/null || git -C "$repo" rev-parse HEAD~6)
+# The commit this branch cut from, which is what the before board is rendered by.
+# Named rather than guessed at, so a fresh checkout that has no such branch says
+# so instead of drawing an arbitrary commit and calling it the before.
+base=$(git -C "$repo" merge-base HEAD ticket-file-contract 2>/dev/null) || {
+    echo "demo: no branch ticket-file-contract here, so there is no commit to draw the before board from" >&2
+    exit 1
+}
 
 work=$(mktemp -d -t scripts-demo.XXXX)
 export HOME=$work/home

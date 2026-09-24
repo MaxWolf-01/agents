@@ -31,4 +31,17 @@ The scripts that read or write ticket files move onto the `tracker` command from
 - [ ] `ticket-file-contract#P5`, reviewed: no script branches on a kind of ticket beyond having child tickets and needing the user.
 - [ ] Every file under `agent/tickets/` passes `tracker`'s check.
 
+## Testing seams
+
+The parent ticket names one seam, `tracker`'s command line, for its own properties. Each script this
+ticket moves is checked at the command line it already had one for (my call, from the review):
+`board.py`'s loader, graph and page functions (`test_board.py`); `review`'s own command line, in a
+scratch repo (`test_review.py`); `property-coverage`'s (`test_property_coverage.py`); and
+`dispatch`'s, over a toy repo whose worker is a stub on the `DISPATCH_RUNNER` seam
+(`test_dispatch.py`, new here, four cases; the rest of those scripts' coverage is
+`dispatch-scripts-under-test`'s). `ticket-file-contract#P2`'s other half, that no script parses a
+ticket file itself, has one seam and it is the source: `test_tracker.py` reads every file under `mx/`
+that mentions the tracker and refuses a frontmatter, heading, question or assumption pattern of its
+own.
+
 ## Comments

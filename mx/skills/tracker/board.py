@@ -17,8 +17,8 @@ tickets as rows grouped by state: needs me, frontier, claimed, blocked,
 proposed, done folded.
 
 Needs me holds every ticket whose next step is the user's own time: a build to
-rule on, a ticket stopped on a question, a near ticket the user is in the loop
-for (board.needs_me).
+rule on, a ticket stopped on a question, and a ticket at p1 or p2 the user is in
+the loop for that nobody has taken up (board.needs_me).
 Its open questions show under its row while the row is folded, each with a
 button that copies it, one that copies the ticket's own, and one on the group
 that copies every question on the board; each button says on hover what it will
@@ -28,8 +28,9 @@ until the merge, while the tracker's copy says where the ticket stands and
 carries the `Ruled` lines that answer its questions.
 
 A row reads left to right in fixed columns: the tree the ticket is part of (the
-parent ticket its ancestry runs to), its own slug, what the
-row asks of the user (to rule on, your answer, with you, build), the ticket's short name with its review page and the
+top-level ticket its ancestry runs to), its own slug, what the row asks of the
+user (to rule on, your answer, with you, build), the ticket's short name with
+its review page and the
 pull requests and issues its `gh` list names, each in the look of the state
 GitHub gives it and saying that state on hover, the ticket brief under the name
 with the open questions under that, the user's time on it, the priority as a
@@ -51,9 +52,9 @@ are read from the ticket's show directory, agent/show/<slug>/: the file named
 every other file as a link. The sessions are read from the `Session:` trailer
 on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
-one with no transcript on this machine, a worker on another host, is left out, and each of the rest
-carries a button that copies the command resuming it. The brief is not repeated
-there: it is on the row.
+one with no transcript on this machine, a worker on another host, is left out,
+and each of the rest carries a button that copies the command resuming it. The
+brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
@@ -63,7 +64,8 @@ more for the tickets in no tree; a filter box
 narrows the rows to a word. An optional source the render did without is said
 once at the top of the page. A graph panel, beside the rows on a wide window and
 above them on a narrow one, shows the dependency graph of the tree of the row
-under the cursor with that ticket marked, or the whole tracker's graph with the edges between trees, hidden trees left out. A
+under the cursor with that ticket marked, or the whole tracker's graph with the
+edges between trees, hidden trees left out. A
 graph draws only tickets that wait on something or are waited on: a ticket with
 no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
 keeps its status whatever blocks it and is drawn dashed.
@@ -154,6 +156,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from itertools import takewhile
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -168,7 +171,6 @@ import github  # the state of the pull requests and issues the tickets name, bes
 import tracker  # the one parser of a ticket file, and the rules it refuses one by, beside this script
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
-TICKET_STATUSES = {"proposed", "open", "claimed", "review", "done"}  # what a file may declare; blocked is derived
 
 # What a row's marks stand for: the word the row shows, and what that word means. Each tip is
 # built from the map beside it, so the row and its own explanation cannot drift apart.
@@ -190,7 +192,7 @@ SIZE_TIP = (
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
     "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
-    "session": ("with you", "A ticket you are in the loop for: the work is done with you, and no worker is handed it."),
+    "session": ("with you", "A ticket you are in the loop for: it is worked with you, and dispatch keeps it from a worker."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
 }
 ALONE = "alone"  # the pill for a ticket with no parent ticket and no child tickets
@@ -222,7 +224,10 @@ def main(args: Args) -> None:
     assert roots.main.is_dir() or roots.branches, f"no tracker at {roots.main}"
     repo = (args.repo or roots.main.parent.parent).resolve()
     out = (args.out or roots.main.parent / "board.html").resolve()
-    render(roots, repo, out)
+    try:
+        render(roots, repo, out)
+    except tracker.Refused as refused:
+        sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
     if args.open:
         browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
         subprocess.Popen([browser, str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -485,11 +490,10 @@ def state_of(project: str, tickets: list["Ticket"], log: str) -> str:
 
     Nothing here is more than the board itself says. The file each line ends with is what the
     session reads for the rest, and the repo around it is what it is for."""
-    said = [STATE.format(project=project)]
+    written = [STATE.format(project=project)]
     for tree in trees_of(tickets):
-        inside = [t for t in tickets if (t.tree or ALONE) == tree]
-        said.append(f"## {tree}\n" + "".join(state_line(t) for t in inside))
-    return "\n".join(said + [f"## the last commits\n{log.strip()}\n"])
+        written.append(f"## {tree}\n" + "".join(state_line(t) for t in in_tree(tickets, tree)))
+    return "\n".join(written + [f"## the last commits\n{log.strip()}\n"])
 
 
 def state_line(t: "Ticket") -> str:
@@ -844,9 +848,11 @@ def shown(
     status = read.status
     if status == "open" and any(state != "done" for _, state in blocked_by):
         status = "blocked"
-    pages = serve_diffviews(read.path.parent.parent / "diffviews") if source else diffviews
-    written = ticket_body(read, status, roots.repo)
-    asked = questions_of(written, read.questions)
+    # the pages of a ticket read from a worktree are that worktree's, whether the branch added it or
+    # holds the tree it is part of: `dispatch review` renders them where it runs
+    pages = diffviews if read.path.parent == roots.main else serve_diffviews(read.path.parent.parent / "diffviews")
+    shows = shown_ticket(read, status, roots.repo)
+    asked = questions_of(shows.questions, read.questions)
     worked = ticket_sessions(read.path, roots.repo)
     return Ticket(
         slug=read.slug,
@@ -857,7 +863,7 @@ def shown(
         tree=tree_of(read.slug, tickets),
         blocked_by=blocked_by,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
-        body_html=ticket_blocks(written, asked, path=read.path, status=status, worked=worked),
+        body_html=ticket_blocks(shows, asked, path=read.path, status=status, worked=worked),
         diffview=pages.link(pages.root, f"{read.slug}.html"),
         path=read.path,
         source=source,
@@ -904,27 +910,30 @@ def serve_diffviews(root: Path) -> Diffviews:
     return Diffviews(root, address.group().rstrip("/"))
 
 
-def take_brief(body: str) -> str:
-    """The body without its `## Brief` section: what folds under the row. The brief itself is on
-    the row, read without opening anything, and a ticket says a thing once."""
-    match = re.search(r"^##\s+Brief\s*$(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
-    return body if not match else body[: match.start()] + body[match.end() :]
-
-
-def ticket_body(read: "tracker.Ticket", status: str, repo: Path | None) -> str:
-    """The ticket's text below its brief and its H1, read from its own branch while a build is in
-    review: that is where the worker's questions and closing comment are until the merge.
+def shown_ticket(read: "tracker.Ticket", status: str, repo: Path | None) -> "tracker.Ticket":
+    """The ticket the board shows: the checkout's, or the one on its own branch while a build is in
+    review, since that is where the worker's questions and closing comment are until the merge.
 
     Three things stay the checkout's, whatever the branch's copy says: where the ticket stands, so
     that a branch which never flipped its status cannot pull a build out of needs me; the brief,
     which has one home and it is the row; and a `Ruled` line, which is written in the file the
     board hands out (`questions_of`).
+
+    No commit hook has read the branch's copy, so what its parser refuses is printed rather than
+    dropped: the branch is a source the render can do without, as a worktree's tracker is.
     """
-    body = read.body
-    if status == "review" and (text := branch_text(repo, read.path)) is not None:
-        body = tracker.read(read.path, text).body
-    heading = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-    return take_brief(body[heading.end():] if heading else body)
+    if status != "review" or (text := branch_text(repo, read.path)) is None:
+        return read
+    on_branch = tracker.read(read.path, text)
+    warn(on_branch.refusals, f"the branch of {read.slug} holds text no reader can read")
+    return on_branch
+
+
+def warn(refusals: Sequence["tracker.Refusal"], what: str) -> None:
+    """What a reader the render can do without could not read, printed whole: the file and the line
+    are what a writer acts on."""
+    if refusals:
+        print(f"board: {what}:\n" + "\n".join(str(one) for one in refusals), file=sys.stderr)
 
 
 def inline_md(text: str) -> str:
@@ -983,7 +992,7 @@ TRANSCRIPTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by the dotfiles' git hook
 
 
-def needs_me(status: str, needs_user: bool, priority: int | None, open_question: bool) -> bool:
+def needs_me(status: str, needs_user: bool, priority: int, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
     review, has an open question, or is an unclaimed ticket at p1 or p2 the user is in the loop
     for."""
@@ -998,22 +1007,16 @@ def needs_me(status: str, needs_user: bool, priority: int | None, open_question:
 Question = tracker.Question  # one `[Dn]` item under a ticket's `## Questions`, read by the one parser
 
 
-def questions_of(written: str, ruled_in: Sequence[Question]) -> list[Question]:
+def questions_of(asked: Sequence[Question], ruled_in: Sequence[Question]) -> list[Question]:
     """A ticket's questions, and which of them a `Ruled` line answers. A build in review asks its
     questions on its branch while the ruling is written in the tracker's own copy, the file the
     board hands out on the clipboard, so the two texts are read together."""
     answered = {q.tag: q for q in ruled_in if q.ruled}
-    found = []
-    for q in tracker.read_questions(Path("-"), tracker.sections(*numbered(written)), []):
-        ruling = answered.get(q.tag)
-        found.append(q if q.ruled or ruling is None else replace(q, ruled=ruling.ruled, answer=ruling.answer))
-    return found
-
-
-def numbered(text: str) -> tuple[list[tuple[int, str]], dict[int, str]]:
-    """A body as the tracker's section reader takes it: its unfenced lines numbered, and its own."""
-    lines = [(n, line) for n, line in enumerate(tracker.unfenced(text).splitlines(), start=1)]
-    return lines, {n: line for n, line in enumerate(text.splitlines(), start=1)}
+    return [
+        q if q.ruled or q.tag not in answered
+        else replace(q, ruled=answered[q.tag].ruled, answer=answered[q.tag].answer)
+        for q in asked
+    ]
 
 
 @functools.cache
@@ -1206,7 +1209,7 @@ def absence_note(source: str, words: str) -> str:
 
 
 def ticket_blocks(
-    body: str, asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
+    read: "tracker.Ticket", asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
 ) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
@@ -1217,11 +1220,10 @@ def ticket_blocks(
     since what is folded away is read last.
     """
     blocks, history, said = [], [], []
-    for heading, text in sections(body):
+    for heading, text in shown_sections(read, asked):
         word = heading.lower() if heading else ""
         if word == "questions":  # its items are the block above; whatever else it says is the ticket's
-            item = ASKED.search(text)
-            said.append(text[: item.start()] if item else text)
+            said.append(text)
         elif word == "comments":
             history.append(text)
         else:
@@ -1231,16 +1233,26 @@ def ticket_blocks(
     return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
-SECTION = re.compile(r"^##\s+(.+?)\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL)
-ASKED = re.compile(r"^- \[D\d+\]", re.MULTILINE)  # where a `## Questions` section stops being prose
+def shown_sections(read: "tracker.Ticket", asked: Sequence[Question]) -> list[tuple[str | None, str]]:
+    """What an opened ticket reads as, out of the sections the one parser found: whatever stands
+    above the first heading, under no heading of its own, since a proposed ticket's line of
+    provenance is written there; then each section's own words.
 
-
-def sections(body: str) -> list[tuple[str | None, str]]:
-    """A ticket's `##` sections in file order, whatever stands above the first of them first and
-    under no heading: a proposed ticket's line of provenance is written there."""
-    found = list(SECTION.finditer(tracker.unfenced(body)))
-    written = [(None, body[: found[0].start()] if found else body)]
-    written += [(section.group(1), body[section.start(2): section.end(2)]) for section in found]
+    Two of them are left out, because a ticket says a thing once and the row already says these: the
+    H1, which is the row's name, and the brief. A `## Questions` section keeps only what it says
+    besides its items, which are the block the questions get to themselves."""
+    lines = read.body.splitlines()
+    opens = next((n for n, line in enumerate(lines) if line.startswith("## ")), len(lines))
+    above = [line for line in lines[:opens] if line.strip() != f"# {read.title}"]
+    written = [(None, "\n".join(above))]
+    for one in read.sections:
+        if one.heading.lower() == "brief":
+            continue
+        text = one.text
+        if one.heading.lower() == "questions":
+            tags = tuple(f"- [{q.tag}]" for q in asked)
+            text = "\n".join(takewhile(lambda line: not line.startswith(tags), text.splitlines()))
+        written.append((one.heading, text))
     return [(heading, text) for heading, text in written if text.strip()]
 
 
@@ -1440,13 +1452,13 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
     connected = {n for _, a, _, b in edges for n in (a, b)}
     parts: dict = {"trees": [], "edges": [{"a": ta, "from": a, "b": tb, "to": b, "line": f"  {a} --> {b}"}
                                           for ta, a, tb, b in edges]}
-    for tree in sorted({t.tree for t in tickets}):
+    for tree in trees_of(tickets):
         nodes = [
             {"id": node_id(ns, t.slug), "lines": node_defs(ns, [t], {t.slug}, ghost & {t.slug})}
-            for t in tickets if t.tree == tree and node_id(ns, t.slug) in connected
+            for t in in_tree(tickets, tree) if node_id(ns, t.slug) in connected
         ]
         if nodes:
-            parts["trees"].append({"name": tree or ALONE, "nodes": nodes})
+            parts["trees"].append({"name": tree, "nodes": nodes})
     return parts
 
 
@@ -1646,7 +1658,7 @@ def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str
             f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
 
 
-TREE_TIP = "The parent ticket this one is part of. Its pill in the top bar hides and shows the tree's rows."
+TREE_TIP = "The top-level ticket this one's work is part of. Its pill in the top bar hides and shows the tree's rows."
 
 
 def row(t: Ticket, gh: dict[str, str]) -> str:
@@ -1663,8 +1675,8 @@ def row(t: Ticket, gh: dict[str, str]) -> str:
     )
     return (
         row_open(t, search_text(t.slug, t.title, t.brief, t.body_html, *t.gh))
-        + f'<span class="ftag" data-tip="{html.escape(TREE_TIP)}">{clipped(t.tree)}</span>'
-        f'<span class="num" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{clipped(t.slug)}</span>'
+        + f'<span class="tree" data-tip="{html.escape(TREE_TIP)}">{clipped(t.tree)}</span>'
+        f'<span class="slug" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{clipped(t.slug)}</span>'
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{review_link(t.diffview)}{gh_links(t.gh, gh)}{on_branch}</span>{brief}{questions_block(t)}</span>'
@@ -1678,7 +1690,7 @@ def tree_chip(tree: str, tickets: list[Ticket]) -> str:
 
     The done count is out of every ticket in the tree, proposed ones included, so a breakdown just
     cut off a parent ticket reads 0/4."""
-    inside = [t for t in tickets if (t.tree or ALONE) == tree]
+    inside = in_tree(tickets, tree)
     counts = Counter(t.status for t in inside)
     bits = [f"{counts['done']}/{len(inside)} done"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
@@ -1691,9 +1703,15 @@ def tree_chip(tree: str, tickets: list[Ticket]) -> str:
 
 
 def trees_of(tickets: list[Ticket]) -> list[str]:
-    """Every tree the board shows, the lone tickets' pill last: what the top bar holds a pill for."""
+    """Every tree the board shows, in the one order the pills, the graphs and the briefing state all
+    take: the named trees, then the lone tickets' pill."""
     named = sorted({t.tree for t in tickets if t.tree})
     return named + ([ALONE] if any(not t.tree for t in tickets) else [])
+
+
+def in_tree(tickets: list[Ticket], tree: str) -> list[Ticket]:
+    """The tickets one of `trees_of`'s trees holds."""
+    return [t for t in tickets if (t.tree or ALONE) == tree]
 
 
 def render_page(
@@ -1785,8 +1803,8 @@ def row_columns(tickets: list[Ticket], grouped: dict[str, list[Ticket]]) -> str:
     over each group, since a group of quick unblocked tickets has no use for the width an XL one
     needs: a column still runs down the group the eye is reading, and the rest is the brief's."""
     page = {
-        "ftag": min(max([len(t.tree) for t in tickets], default=0), NAME_CAP),
-        "num": min(max([len(t.slug) for t in tickets], default=0), NAME_CAP),
+        "tree": min(max([len(t.tree) for t in tickets], default=0), NAME_CAP),
+        "slug": min(max([len(t.slug) for t in tickets], default=0), NAME_CAP),
         "asks": max(len(word) for word, _ in ASKS.values()),
         "time": max(len(word) for word, _ in SIZES.values()),
         "pri": max(len(f"p{level} {word}") for level, (word, _) in PRIORITY.items()),
@@ -1872,7 +1890,7 @@ GRAPH_VIEW = Template(
     '<div class="gfbody"><div class="gnote" hidden></div><div class="gsvg"></div></div>'
 )
 OVERLAY = GRAPH_VIEW.substitute(
-    tree_says="the graph of the row's parent ticket (a)", all_says="the whole tracker's graph (a)",
+    tree_says="the graph of the row's top-level ticket (a)", all_says="the whole tracker's graph (a)",
     extra='<button class="btn" id="gwinfull" title="the same graph in a window of its own, beside the board (w)">window</button>'
           '<button class="btn" id="gclose" title="back to the board (Esc)">close</button>',
 )
@@ -2029,7 +2047,7 @@ ${columns}
   ::selection { background: var(--mark); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   code, kbd, pre { font-family: var(--font-mono); }
-  .ftag, .num, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .treechip, .search,
+  .tree, .slug, .asks, .pri, .time, .src, .chip, .rp, .gh, .label, .n, .treechip, .search,
     .btn, .gname, .log, .footmeta, kbd { font-family: var(--font-mono); }
 
   /* ---- the top bar: the project, the tree pills, the filter, the graph mode, the scheme ---- */
@@ -2037,7 +2055,7 @@ ${columns}
     padding: .4rem 1.25rem; background: var(--ground); border-bottom: 1px solid var(--edge); }
   .top .name { font-weight: 600; color: var(--strong); white-space: nowrap; }
   .top .name span { color: var(--muted); font-weight: 400; }
-  .featnav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .treenav { display: flex; gap: .4rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
   .treechip { padding: .1rem .7rem; border: 1px solid var(--edge); border-radius: 999px; background: var(--ground-2);
     font-size: .8rem; color: var(--muted); cursor: pointer; white-space: nowrap; display: inline-flex; gap: .4em;
     align-items: center; transition: color 150ms, border-color 150ms; }
@@ -2140,16 +2158,16 @@ ${columns}
   .ticket.off, .ticket.miss { display: none; }
   .ticket > summary { display: grid; column-gap: .9rem; row-gap: .2rem; align-items: baseline; padding: .55rem .5rem;
     cursor: pointer; list-style: none; border-radius: var(--radius); transition: background-color 150ms;
-    grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr) var(--col-time) var(--col-pri) var(--col-chips);
-    grid-template-areas: "ftag num asks main time pri chips"; }
+    grid-template-columns: var(--col-tree) var(--col-slug) var(--col-asks) minmax(0, 1fr) var(--col-time) var(--col-pri) var(--col-chips);
+    grid-template-areas: "tree slug asks main time pri chips"; }
   .ticket > summary::-webkit-details-marker { display: none; }
   .ticket > summary:hover { background: var(--wash-ink); }
   .ticket.kcur > summary, .ticket.flash > summary { background: var(--wash); }
-  .ftag { grid-area: ftag; font-size: .78rem; color: var(--muted); min-width: 0; }
+  .tree { grid-area: tree; font-size: .78rem; color: var(--muted); min-width: 0; }
   /* a box that hides its overflow hides its own tooltip with it, so the ellipsis sits one level in */
   .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .num { grid-area: num; font-size: .78rem; color: var(--muted); cursor: copy; min-width: 0; }
-  .num:hover { color: var(--accent); }
+  .slug { grid-area: slug; font-size: .78rem; color: var(--muted); cursor: copy; min-width: 0; }
+  .slug:hover { color: var(--accent); }
   .main { grid-area: main; display: grid; gap: .1rem; min-width: 0; }
   /* the name is what a row is read by, so it keeps its words: the links wrap under it rather than
      taking the width off it */
@@ -2208,18 +2226,18 @@ ${columns}
      bar's pills take a line of their own rather than scrolling out of sight */
   @media (max-width: 1000px) {
     .top { flex-wrap: wrap; padding: .4rem .75rem; }
-    .featnav { flex-basis: 100%; order: 1; }
+    .treenav { flex-basis: 100%; order: 1; }
     main { padding: 1rem .75rem 5rem; }
     .absences { padding: .6rem .75rem 0; }
-    .ticket > summary { grid-template-columns: var(--col-ftag) var(--col-num) var(--col-asks) minmax(0, 1fr);
-      grid-template-areas: "ftag num asks main" ".    .   .    meta"; }
+    .ticket > summary { grid-template-columns: var(--col-tree) var(--col-slug) var(--col-asks) minmax(0, 1fr);
+      grid-template-areas: "tree slug asks main" ".    .    .    meta"; }
     .meta { grid-area: meta; display: flex; gap: .9rem; align-items: baseline; flex-wrap: wrap; }
     .time, .pri, .chips { grid-area: auto; justify-self: auto; }
   }
   /* narrower still: the name takes the row's width, with its marks over it and under it */
   @media (max-width: 620px) {
-    .ticket > summary { grid-template-columns: minmax(0, var(--col-ftag)) var(--col-num) minmax(0, 1fr);
-      grid-template-areas: "ftag num asks" "main main main" "meta meta meta"; }
+    .ticket > summary { grid-template-columns: minmax(0, var(--col-tree)) var(--col-slug) minmax(0, 1fr);
+      grid-template-areas: "tree slug asks" "main main main" "meta meta meta"; }
     .search { flex: 1; width: auto; }
   }
 
@@ -2300,9 +2318,9 @@ ${columns}
 <body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
 <div class="top">
   <span class="name">board <span>${project}</span></span>
-  <nav class="featnav" id="featnav">${chips}</nav>
+  <nav class="treenav" id="treenav">${chips}</nav>
   <input class="search" id="search" type="search" placeholder="filter  /" autocomplete="off">
-  <span class="seg" id="modes"><button class="btn" data-gmode="tree" title="the graph of the row's parent ticket (a)">tree</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
+  <span class="seg" id="modes"><button class="btn" data-gmode="tree" title="the graph of the row's top-level ticket (a)">tree</button><button class="btn" data-gmode="all" title="the whole tracker's graph (a)">all</button></span>
   <button class="btn" id="helpbtn" title="keys (?)">?</button>
   <button class="btn scheme" id="scheme" title="the other colour scheme">
     <svg class="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -2342,12 +2360,12 @@ ${groups}
 <tr><td><kbd>z</kbd></td><td>fold / unfold the row's group</td></tr>
 <tr><td><kbd>d</kbd></td><td>open the row's review page</td></tr>
 <tr><td><kbd>y</kbd></td><td>copy the path of the row's file; a click on its number does too</td></tr>
-<tr><td><kbd>a</kbd></td><td>graph: the row's parent ticket / the whole tracker</td></tr>
+<tr><td><kbd>a</kbd></td><td>graph: the row's top-level ticket / the whole tracker</td></tr>
 <tr><td><kbd>b</kbd></td><td>fold / unfold the graph</td></tr>
 <tr><td><kbd>f</kbd></td><td>the graph at full size over the board; a click on a node goes to its row</td></tr>
 <tr><td><kbd>w</kbd></td><td>the graph at full size in a window of its own, beside the board</td></tr>
 <tr><td><kbd>t</kbd></td><td>the other colour scheme</td></tr>
-<tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth parent ticket; all on</td></tr>
+<tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>hide / show the nth tree; all on</td></tr>
 <tr><td><kbd>/</kbd></td><td>filter rows; <kbd>Esc</kbd> clears</td></tr>
 <tr><td><kbd>?</kbd></td><td>this help</td></tr>
 </table></div></div>
@@ -2723,7 +2741,7 @@ ${viewjs}
     gs[Math.min(Math.max(i + delta, 0), gs.length - 1)].scrollIntoView({ block: "start" });
   }
 
-  document.getElementById("featnav").addEventListener("click", (e) => {
+  document.getElementById("treenav").addEventListener("click", (e) => {
     const b = e.target.closest(".treechip"); if (!b) return;
     off.has(b.dataset.tree) ? off.delete(b.dataset.tree) : off.add(b.dataset.tree);
     applyFilters();
@@ -2739,7 +2757,7 @@ ${viewjs}
     if (copier) { e.preventDefault(); copy(copier.dataset.copy, copier.dataset.copied); return; }
     const t = e.target.closest(".ticket");
     if (!t || !e.target.closest("summary")) return;
-    if (e.target.closest(".ticket > summary > .num")) { e.preventDefault(); copyPath(t); }
+    if (e.target.closest(".ticket > summary > .slug")) { e.preventDefault(); copyPath(t); }
     setCur(t, false);
   });
 

@@ -62,6 +62,9 @@
 #             stop: kills that session and removes its worktree and branch.
 #             One per base branch; it holds no state beyond the session and the
 #             worktree, so `stop` is the whole of undoing it.
+# This host needs `uv` (the ticket parser is a uv script), `jq` and `tmux`;
+# `init` checks for the first two and fetches `job` when it is missing.
+#
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
@@ -162,6 +165,13 @@ init() {
     repo=$1 base=$2
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
+    # The parser every ticket read on this host goes through is a uv script, and
+    # what reads its answer is jq: neither is fetchable from here, so a host
+    # without them is said out loud, before the first thing that needs one.
+    for tool in uv jq; do
+        command -v "$tool" >/dev/null ||
+            die "no \`$tool\` on this host; the ticket parser is a uv script and its answer is read with jq"
+    done
     # config is rewritten on every init; the manifest never is: it is the only
     # record of the runs in flight, and an orchestrator taking over needs it.
     printf 'repo=%s\nbase=%s\ngit=%s\nworktrees=%s\n' "$repo" "$base" "$git_dir" "$worktrees" > "$here/config"
@@ -232,8 +242,9 @@ spawn() {
     # Read through the one parser, off the branch rather than a worktree: the
     # ticket is refused here if no reader can read it, which is the same
     # refusal the commit hook makes.
-    needs_user=$(git -C "$git_dir" show "$base:$ticket" | "$tracker" data - | jq -r '.tickets[0]["needs-user"]') ||
+    read=$(git -C "$git_dir" show "$base:$ticket" | "$tracker" data -) ||
         die "$ticket on $base is not a ticket any reader can read"
+    needs_user=$(printf '%s\n' "$read" | jq -r '.tickets[0]["needs-user"]')
     [ "$needs_user" != true ] ||
         die "$slug needs the user in the loop: it is worked with them, never handed to a worker"
     current_run "$name"

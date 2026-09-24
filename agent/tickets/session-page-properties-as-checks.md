@@ -11,11 +11,11 @@ size: S
 
 The session page's executable properties as checks at their three seams, before the code behind them exists, so each later slice lands against a check it did not write.
 
-Slice of `session-page`, building on its Testing Decisions (three seams, which properties are executable) and on the turn record and session record shapes in its Decisions. The build starts once `board-orients` has merged (spec, Around it).
+Slice of `session-page`, building on its Testing seams (three seams, which properties are executable) and on the turn record and session record shapes in its Decisions. The build starts once `board-orients` has merged (spec, Around it).
 
 ## What to build
 
-The checks for every Property the spec marks executable, written against the three seams before the code behind them exists, so each slice lands against a check it did not write. The seams, as the spec's Testing Decisions name them:
+The checks for every Property the spec marks executable, written against the three seams before the code behind them exists, so each slice lands against a check it did not write. The seams, as `session-page`'s Testing seams name them:
 
 - **The session renderer**: a session directory (`session.md`, `turns/NN.md`) and a transcript in, the session page out.
 - **The spec renderer**: a spec, the figures it links and a base commit in, the spec page out.

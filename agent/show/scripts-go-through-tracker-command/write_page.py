@@ -89,30 +89,60 @@ LOOK = [
      "chip on the pill; it is a ticket now, with a row, a brief, a priority and a size of its own."),
 ]
 
+# The house tokens, copied from mx/skills/house-style/tokens.css: the colours, the muted/strong
+# split and the roles are what make it the house, so they stay as that file has them.
 STYLE = """
-  :root { color-scheme: light dark;
-    --ground: light-dark(#f4ece1, #14120f); --ground-2: light-dark(#ece1d2, #1d1a16);
-    --ink: light-dark(#2f2a24, #e8e0d4); --muted: light-dark(#6d6256, #9a8f80);
-    --edge: light-dark(#d8cab5, #332e27); --accent: light-dark(#426724, #9bbf6a); }
+  :root {
+    color-scheme: light dark;
+    --ground: light-dark(#f4e4cd, #1a1714);
+    --ground-2: light-dark(#eddabe, #201c18);
+    --edge: light-dark(#cfbca3, #4a433b);
+    --muted: light-dark(#5e5650, #b0a89e);
+    --body: light-dark(#37261d, #ede3d2);
+    --strong: light-dark(#22140b, #faf2dc);
+    --accent: light-dark(#426724, #6ea444);
+    --radius: 6px;
+  }
+  [data-theme="day"] { color-scheme: light; }
+  [data-theme="night"] { color-scheme: dark; }
+
   * { box-sizing: border-box; }
   body { margin: 0 auto; max-width: 62rem; padding: 2.5rem 1.5rem 5rem;
-    background: var(--ground); color: var(--ink);
-    font: 16px/1.6 ui-serif, Georgia, "Liberation Serif", "DejaVu Serif", "Times New Roman", serif; }
-  h1 { font-size: 1.6rem; margin: 0 0 .4rem; font-weight: 600; }
-  h2 { font-size: 1.1rem; margin: 2.6rem 0 .5rem; font-weight: 600; }
+    background: var(--ground); color: var(--body);
+    font: 19px/1.62 Georgia, "Liberation Serif", "DejaVu Serif", ui-serif, serif; }
+  h1, h2 { color: var(--strong); font-weight: 600; }
+  h1 { font-size: 1.6rem; margin: 0 0 .4rem; }
+  h2 { font-size: 1.1rem; margin: 2.6rem 0 .5rem; }
   p.sub { color: var(--muted); margin: 0 0 2rem; }
   p { margin: 0 0 .9rem; }
-  code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .82rem; }
-  code { background: var(--ground-2); padding: .05rem .25rem; border-radius: .2rem; }
-  pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: .4rem;
-    padding: .8rem 1rem; overflow-x: auto; line-height: 1.45; margin: 0; }
+  code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .78rem; }
+  code { background: var(--ground-2); padding: .05rem .25rem; border-radius: var(--radius); }
+  pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius);
+    padding: .8rem 1rem; overflow-x: auto; line-height: 1.5; margin: 0; }
   .panel { margin: 0 0 1.4rem; }
   figure { margin: 1.2rem 0 0; }
-  figure img { width: 100%; height: auto; border: 1px solid var(--edge); border-radius: .4rem; }
+  figure img { width: 100%; height: auto; border: 1px solid var(--edge); border-radius: var(--radius); }
   figcaption { color: var(--muted); font-size: .9rem; margin-top: .4rem; }
   ol.look { padding-left: 1.2rem; }
   ol.look li { margin-bottom: .5rem; }
   .boards { display: grid; gap: 1.8rem; }
+  .scheme { position: fixed; top: 1rem; right: 1rem; border: 1px solid var(--edge);
+    border-radius: 999px; background: var(--ground-2); color: var(--muted); cursor: pointer;
+    font: inherit; font-size: .8rem; padding: .1rem .7rem; }
+  .scheme:hover { color: var(--accent); border-color: var(--accent); }
+"""
+
+# The scheme is the system's; `?theme=day|night` pins one, which is what a screenshot needs, and the
+# button pins one by hand (`/mx:house-style`).
+TOGGLE = """
+  const root = document.documentElement;
+  const asked = new URLSearchParams(location.search).get("theme");
+  if (asked === "day" || asked === "night") root.dataset.theme = asked;
+  document.querySelector(".scheme").addEventListener("click", () => {
+    const now = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day");
+    root.dataset.theme = now === "day" ? "night" : "day";
+    document.querySelector(".scheme").textContent = root.dataset.theme;
+  });
 """
 
 
@@ -132,7 +162,7 @@ def steps(transcript: str) -> list[tuple[str, str]]:
 
 
 def panel(heading: str, said: str) -> str:
-    words = SAYS.get(heading, "")
+    words = SAYS[heading]
     return (f'<section class="panel"><h2>{html.escape(heading)}</h2>'
             + (f"<p>{words}</p>" if words else "")
             + (f"<pre>{html.escape(said)}</pre>" if said.strip() else "")
@@ -157,7 +187,13 @@ def boards(out: Path) -> str:
 
 def main() -> None:
     out, transcript = Path(sys.argv[1]), Path(sys.argv[2])
-    body = "".join(panel(heading, said) for heading, said in steps(transcript.read_text()))
+    written = steps(transcript.read_text())
+    ran = [heading for heading, _ in written]
+    assert set(ran) == set(SAYS), (
+        "the steps and the words about them have drifted apart: "
+        f"{sorted(set(ran) - set(SAYS))} ran with nothing to say, {sorted(set(SAYS) - set(ran))} said of no step"
+    )
+    body = "".join(panel(heading, said) for heading, said in written)
     page = (
         "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -168,6 +204,8 @@ def main() -> None:
         "one: the board, dispatch, property-coverage and the code review's brief. Every command "
         "below was run; the output under it is what it printed.</p>"
         f"{body}{boards(out)}"
+        '<button class="scheme" title="day or night; ?theme=day|night on the address pins one">scheme</button>'
+        f"<script>{TOGGLE}</script>"
         "</body></html>\n"
     )
     (out / "index.html").write_text(page)

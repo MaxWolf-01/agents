@@ -84,7 +84,7 @@ def build(dest: Path) -> Demo:
     commit(repo, S1, "2026-09-14T10:12:00+02:00", "csv-import: the parent ticket and six slices", "agent/tickets")
     saved_views(repo)
     commit(repo, S1, "2026-09-15T16:40:00+02:00", "saved-views: a parent ticket and three slices", "agent/tickets")
-    loose(repo)
+    alone(repo)
     commit(repo, S3, "2026-09-16T09:05:00+02:00", "tickets: work filed during triage", "agent/tickets")
 
     # the orchestrator claims, a worker builds map-columns on its ticket branch, the orchestrator flips it
@@ -316,7 +316,7 @@ Three layouts for the list of saved views are drawn side by side; you pick one b
 # ---- tickets in no tree: one the user is in the loop for, one stopped on a question, a blocked one ----
 
 
-def loose(repo: Path) -> None:
+def alone(repo: Path) -> None:
     write(repo / "agent/tickets/flaky-upload-test.md", """---
 status: open
 priority: 1

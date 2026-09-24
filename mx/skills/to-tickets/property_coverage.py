@@ -21,8 +21,6 @@ a criterion claimed the property, never whether the claim covers the whole of
 it, nor which of them is executable and which is reviewed: both stay the Spec
 reviewer's read (`/mx:code-review`).
 
-A tracker whose tickets state no property says so and exits 0.
-
 Examples:
 
     property-coverage
@@ -99,12 +97,14 @@ def check(at: Path) -> Report:
                  path=Path(ticket["path"]), line=stated["line"])
         for ticket in tickets for stated in ticket["properties"]
     ]
+    # every citation names a property, the tracker refusing one that does not, so what a criterion
+    # cites is a property of this tracker's and needs no narrowing
     cited = {ref for ticket in tickets for criterion in ticket["criteria"] for ref in criterion["cites"]}
     findings = [
         Finding(one, f"{one.ref} reached no acceptance criterion: {summarise(one.text)}")
         for one in properties if one.ref not in cited
     ]
-    return Report(properties, cited & {one.ref for one in properties}, findings)
+    return Report(properties, cited, findings)
 
 
 def read_tracker(at: Path) -> list[dict]:

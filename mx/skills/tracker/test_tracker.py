@@ -274,11 +274,45 @@ def test_files_from_two_trackers_in_one_run_are_refused(tickets: Path, repo: Pat
     assert said.code == 1 and "one tracker per run" in said.err
 
 
+def test_a_question_is_read_in_every_shape_a_ticket_file_writes_one_in(tickets: Path, repo: Path) -> None:
+    """What the prose allows and the generated check does not draw: a ruling bulleted under its
+    question, a detail running over lines, and a second `## Questions` section, which is how a
+    worker's questions reach a ticket that already had some."""
+    ticket(tickets, "one-flow", """## Questions
+
+- [D1] **Bulleted ruling?** One line.
+  - Ruled 2026-09-21: per bank.
+- [D2] **A detail over two lines?** It starts here
+  and carries on there.
+## Comments
+
+The build, on its branch.
+
+## Questions
+
+- [D3] **Appended by the worker?** Under a second heading of its own.
+""")
+    read = {q["tag"]: q for q in json.loads(run(repo, "data", "one-flow").out)["tickets"][0]["questions"]}
+    assert list(read) == ["D1", "D2", "D3"]
+    assert read["D1"]["ruled"] == "2026-09-21" and read["D1"]["answer"] == "per bank."
+    assert read["D2"]["detail"] == "It starts here and carries on there."
+    assert read["D3"]["headline"] == "Appended by the worker?"
+
+
 def test_an_id_that_names_two_things_is_refused_with_the_line_that_took_it_first(tickets: Path, repo: Path) -> None:
     path = ticket(tickets, "one-flow", "## Questions\n\n- [D1] **One?** Its detail.\n- [D1] **Two?** Its detail.\n")
     said = run(repo, "check", "agent/tickets/one-flow.md")
     assert said.code == 1
     assert f"{path}:{line_of(path, 'Two?')}: tag D1 is already taken, on line {line_of(path, 'One?')}" in said.out, said.out
+
+
+def test_two_properties_sharing_an_id_are_refused_the_way_two_tags_are(tickets: Path, repo: Path) -> None:
+    """An id names one thing for good, and a property is cited by its id from every descendant: two
+    properties under one would make every `<slug>#P<n>` citing it ambiguous."""
+    path = ticket(tickets, "one-flow", "## Properties\n\n- P1 A preset reads cold.\n- P1 A second one, under the same id.\n")
+    said = run(repo, "check", "agent/tickets/one-flow.md")
+    assert said.code == 1
+    assert f"{path}:{line_of(path, 'A second one')}: property P1 is already taken, on line {line_of(path, 'A preset reads cold')}" in said.out, said.out
 
 
 def test_the_check_reads_the_staged_text_and_not_the_worktrees(tickets: Path, repo: Path) -> None:
@@ -657,6 +691,37 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
     row = f"one-flow                                    {status:<10}p{priority}  {size}"
     ready, _, waiting = run(repo, "frontier").out.partition("waiting\n")
     assert (row in ready + waiting) is (status != "done"), run(repo, "frontier").out
+
+
+# What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
+# start of a line, a `## ` heading, a `[Dn]` question, a `- A<n>` assumption, an `NN-` file name.
+SECOND_PARSER = re.compile(
+    r"\^(?:status|parent|blocked-by|needs-user|priority|size|diff|gh):"
+    r"|\^##\\?s|\^## |\[D\\d|- A\\d|\[0-9\]\[0-9\]-|\\d\\d-"
+)
+PLUGIN = Path(tr.__file__).parents[2]
+# The parser and what checks it; everything else under mx/ goes through the command.
+OWNS_THE_PARSER = ("skills/tracker/tracker.py", "skills/tracker/test_tracker.py")
+
+
+def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -> None:
+    """`ticket-file-contract#P2`'s other half, at the only seam it has: the source. Every machine-read
+    construct has one parser, so a script that touches a ticket carries no frontmatter, heading,
+    question or assumption pattern of its own, and one that grows one back fails here."""
+    touching = [
+        path for path in sorted(PLUGIN.rglob("*"))
+        if path.is_file() and path.suffix in ("", ".py", ".sh")
+        and not any(str(path).endswith(owned) for owned in OWNS_THE_PARSER)
+        and "agent/tickets" in path.read_text(errors="replace")
+    ]
+    assert touching, f"no script under {PLUGIN} mentions the tracker; the check reads nothing"
+    found = {
+        str(path.relative_to(PLUGIN)): [line for line in path.read_text().splitlines() if SECOND_PARSER.search(line)]
+        for path in touching
+    }
+    assert not any(found.values()), "a second parser of a ticket file: " + json.dumps(
+        {name: lines for name, lines in found.items() if lines}, indent=2
+    )
 
 
 DANGLING = [

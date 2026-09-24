@@ -215,7 +215,7 @@ print(json.dumps(out))
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
          f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",
@@ -361,6 +361,12 @@ with sync_playwright() as pw:
             "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
             "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
             "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
+    # narrowed first, so the drag has something to move whatever the fixture's
+    # labels are as wide as: the check is that a drag pans, not that this
+    # tracker's graph happens to overflow the window this probe opens in
+    page.set_viewport_size({"width": 700, "height": 950})
+    page.wait_for_function("document.querySelector('#gfull .gfbody').scrollWidth > document.querySelector('#gfull .gfbody').clientWidth")
+    over["overflow"] = page.evaluate(OVER, "#gfull .gfbody")
     box = page.evaluate("() => { const b = document.querySelector('#gfull .gfbody').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height} }")
     page.mouse.move(box["x"] + box["w"] * 0.8, box["y"] + box["h"] * 0.5)
     page.mouse.down()
