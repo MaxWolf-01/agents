@@ -106,6 +106,10 @@ _Avoid_: dispatcher, coordinator, parent
 The agent that works one ticket in its own worktree, unattended.
 _Avoid_: subagent, implementer
 
+**Worker report**:
+What a worker hands back for its ticket: its closing comment and the questions its build raised, written outside the worktree and imported into the ticket by the orchestrator.
+_Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
+
 **Tick**:
 One pass of the orchestrator's loop.
 _Avoid_: iteration, cycle
@@ -120,7 +124,7 @@ _Avoid_: merged, finished, complete
 
 **Debrief**:
 What the orchestrator tells the user when a ticket's tree is finished: what the workers and the harden report found, and what it proposes to do about it.
-_Avoid_: synthesis, report, summary, PR description
+_Avoid_: synthesis, summary, PR description, report (a worker's is one)
 
 ### Testing
 

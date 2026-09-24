@@ -5,7 +5,7 @@ description: "Tracker conventions: the ticket tree, how a ticket is filed, fetch
 
 # Tracker
 
-One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. The tracker sits in the repo it plans, or, where the work spans repos or the tickets stay out of a shared one, in a workspace repo holding the clones as untracked directories and the tracker beside them.
+One kind of file: a **ticket**, `agent/tickets/<slug>.md`, flat, the slug its id. `parent: <slug>` makes it the **child ticket** of another, and the tree goes as deep and as wide as the work needs. The tracker sits in the repo it plans, or in a repo of its own that the code repo names with `git config mx.tracker <path>` in its clone: machine-local, like the path it holds, so neither repo commits the other's layout, and the tickets can stay out of a repo that is shared or plan work spanning several.
 
 The `tracker` command owns every mechanical operation on those files, read and write, and `tracker --help` is the reference for all of them. Publishing to the issue tracker is `tracker new`, fetching a ticket is `tracker context`. Its check runs over the staged tickets from a pre-commit hook (`/mx:project-setup` wires it into a repo), so a file no reader could read is refused where it was written. What no command writes is the body, the prose the agent puts in the file: its shape is below, and [SLICING.md](SLICING.md) is how one ticket is cut into child tickets.
 
@@ -44,11 +44,13 @@ One `- [Dn] **headline** detail` item each, the tag continued from the highest t
   - Ruled 2026-09-21: keep it in the fast suite.
 ```
 
-A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. Both live in the tracker's own copy of the ticket, whatever branch the question was written on: a question a worker raised on its ticket branch is brought over when its build is announced, which is what puts it in front of the user, and `tracker rule` then writes the answer under it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none.
+A question is open, and shows in the board's needs-me group, until a `Ruled <date>:` line sits under it. A question a worker raised reaches the tracker's copy with its report, which is what puts it in front of the user, and `tracker rule` writes the answer under it, before the build's merge as after it. Every question belongs to a ticket: one with no ticket to hang on is filed as a proposed ticket, and the ruling on that proposal is the answer. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none.
 
 ## The tree
 
-A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Properties are read through the same ancestry and cited `<slug>#P<n>` from any descendant. A child ticket's file is committed on its parent ticket's branch, a top-level ticket's on the integration branch. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
+A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Properties are read through the same ancestry and cited `<slug>#P<n>` from any descendant. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
+
+Every ticket file is written and committed in the tracker's own checkout, on the branch that checkout has out and never on a code branch, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file, and what it has to say reaches its ticket when the orchestrator imports its report.
 
 A parent ticket is done when every child ticket is done and its own close-out is ruled: the full suite, the review one level up, harden, the debrief (`/mx:dispatch`).
 

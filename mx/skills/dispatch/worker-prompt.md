@@ -2,13 +2,13 @@ You are running without a human in the loop: dispatched by another agent, in a w
 
 Two channels reach the agent that dispatched you.
 
-- **The ticket**: durable, and read when your branch is merged. Your closing comment, your assumptions, and the friction you hit go there.
+- **`$DISPATCH_REPORT`**: the file you write your closing comment, your questions and your assumptions to, in the shape the contract below gives it. It is durable and outside your worktree, and the agent that dispatched you is the one that writes any of it into the ticket. Writing it is what says you finished.
 - **`$DISPATCH_WORKLOG`**: a scratch line log, when that variable is set. One line per chunk of work, never per edit, plus one line on the way out saying how you stopped. This is what gets read when you exit without finishing, and it is the difference between a stop that can be diagnosed and one that can't.
 
-**When you are blocked**: record it in both, finish whatever the blocker doesn't touch, and then stop. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
+**When you are blocked**: record it in the worklog, finish whatever the blocker doesn't touch, and then stop. Report what is left where it is worth reviewing, the blocker in its first line; where it is not, leave the report unwritten, since its absence is what says the run stopped short. You cannot ask, and working around a blocker puts unreviewed work somewhere nobody chose. Stopping is cheap: the agent that dispatched you can resume this exact conversation once the blocker is cleared.
 
 <contract>
-The ticket and its ancestry (`tracker context <slug>`) are all you have; a ticket that makes no sense without the conversation that produced it is a blocker.
+The ticket and its ancestry are all you have, in the message that opened this conversation; a ticket that makes no sense without the conversation that produced it is a blocker. You never open a ticket file: the session that orchestrates you is the only writer of one, and what you have to say reaches the ticket through your report.
 
 Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 
@@ -26,13 +26,17 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 
 **Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>`, `<base>` being the branch your prompt says your ticket branch was cut from; a later round starts from the previous round's tip. Light mode by default, one reviewer over the diff, which runs no suite; the full axes when your diff is large or touches a contract others depend on: your call. Either way `--spec` takes your ticket's context. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
-**Close into the ticket**: tick the acceptance criteria your work meets, put the calls only the user can make in the ticket's `## Questions`, and append a comment under its `## Comments` heading (`/mx:tracker`, The ticket file) in the shape the agent that dispatched you relays to the user unchanged:
+**Close into the report**: `$DISPATCH_REPORT` is two sections in the shapes a ticket gives them (`/mx:tracker`, The ticket file) and nothing else, since a ticket takes nothing else in and the import refuses what it cannot.
 
-- One line saying what landed and what is not merged.
+Under `## Comments` goes your closing comment, which the agent that dispatched you relays to the user unchanged:
+
+- One line saying what landed, what is not merged, and which of the ticket's acceptance criteria your work meets.
 - **Demo**: what `/mx:show` gives the shape of what you changed, in this ticket's show directory. A change to something already there owes both the demo file and a before-and-after figure; a new thing owes the demo alone. Run the demo yourself, and paste the command with the file's absolute path and that run's output under this line, with the figure's path beside it. A change of no shape the table gives a demo says so here in one line: the diff is the demo. Opening what it produces is the user's: they run the same file on their own machine, where the agent that dispatched you has staged it, and this host has nothing to open on.
 - **Details, if you want them**, each entry tagged `[Dn]`: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
-A **question** is one `- [Dn] **headline** detail` item under `## Questions`: an assumption worth the user's ruling, a declined finding, a question your build raised. The board shows it under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest already in the ticket, so `[D7]` names one thing for good. Nothing else goes in the comment, and the last act your prompt names, the `status: review` flip, comes after it.
+Under `## Questions` go the calls only the user can make, one `- [Dn] **headline** detail` item each: an assumption worth the user's ruling, a declined finding, a question your build raised. The board shows each under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest the ticket already carries, so `[D7]` names one thing for good.
+
+Writing the report is the last thing you do.
 </contract>
 
 <workflow>
