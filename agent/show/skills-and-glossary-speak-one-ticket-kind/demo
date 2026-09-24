@@ -11,6 +11,7 @@ trackers built here, and the counts come from git."""
 
 import html
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -279,11 +280,16 @@ set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").match
 """
 
 
+def marked(prose: str) -> str:
+    """Backticks the way the page reads them, as the code spans its stylesheet already has."""
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", prose)
+
+
 def render(found: list[dict]) -> str:
     written = []
     for n, step in enumerate(found, start=1):
         parts = ['    <section class="s">', f'      <span class="v-meta">{n}</span>',
-                 f'      <h2 class="v-h2">{step["title"]}</h2>', f'      <p class="said">{step["said"]}</p>']
+                 f'      <h2 class="v-h2">{step["title"]}</h2>', f'      <p class="said">{marked(step["said"])}</p>']
         for shown, said in step.get("runs", []):
             parts.append(f'      <pre><b>$ {html.escape(shown)}</b>\n{html.escape(said)}</pre>')
         if pair := step.get("pair"):
@@ -291,7 +297,7 @@ def render(found: list[dict]) -> str:
             for label, said in pair:
                 parts.append(f'        <div><span class="v-meta">{html.escape(label)}</span><pre>{html.escape(said)}</pre></div>')
             parts.append("      </div>")
-        parts.append(f'      <p class="look"><span class="v-meta">look</span>{step["look"]}</p>')
+        parts.append(f'      <p class="look"><span class="v-meta">look</span>{marked(step["look"])}</p>')
         parts.append("    </section>")
         written.append("\n".join(parts))
     return "\n".join(written)
