@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# The three correctness fixes of close-out-review-fixes, driven over a toy
+# project: a code repo, `lamp`, and its `agent/` a git repo of its own inside it.
+#
+#   1. A resumed round's finished signal. Round two starts with round one's
+#      report still committed on the ticket branch. Before this ticket that read
+#      as finished, and the orchestrator imported round one a second time.
+#      resume-before.svg and resume-after.svg beside this file draw the two.
+#   2. A worker's `tracker` write. On a local host a worker's worktrees are
+#      linked worktrees of the user's own repos, and `tracker` is on its PATH.
+#   3. `done` from a parent ticket's worktree, in a project whose `agent/` is
+#      not a repo of its own yet.
+#
+# No arguments. Everything it makes is inside a temp dir, its own HOME included,
+# removed at the end; the transcript lands at out/transcript.txt beside this file.
+#
+# What stands in for what, so the transcript is read for what it does show:
+#   - `claude`, by a stub: round one commits what a worker commits, round two
+#     exits having written nothing. The runner around it is the shipped
+#     `run-worker.sh`, and `dispatch`, `dispatch-ctl` and `tracker` are their
+#     own.
+#   - `diffview`, by a stub: the review page is diffview's, and none of the
+#     three fixes is in it.
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(git -C "$here" rev-parse --show-toplevel)
+plugin=$repo/mx
+out=$here/out
+
+work=$(mktemp -d -t close-out-demo.XXXX)
+export HOME=$work/home
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+export JOB_STATE_DIR=$work/jobs
+unset DISPATCH_PERMISSION_MODE   # the dispatching session's, and not this run's to pass on
+mkdir -p "$HOME" "$work/bin" "$out"
+export PATH=$work/bin:$PATH
+
+toy_sessions="dispatch-lamp-warm-preset job-lamp-warm-preset-demo"
+kill_toy() { for s in $toy_sessions; do tmux kill-session -t "=$s" 2> /dev/null || true; done; }
+kill_toy
+trap 'kill_toy; rm -rf "$work"' EXIT
+
+step() { printf '\n== %s\n\n' "$*"; }
+note() { printf '  %s\n' "$*"; }
+# The paths a run of this carries are the machine's and say nothing: the plugin
+# it ran from and the temp dir it built in are cut out of everything printed.
+short() { sed -e "s|$repo/||g" -e "s|$work/||g" -e "s|$work|the work dir|g" -e "s|$HOME|~|g"; }
+run() { printf '$ %s\n' "$*" | short; "$@" 2>&1 | short | sed 's/^/  /'; }
+# A command whose refusal is the point: its exit code is printed rather than
+# ending the run.
+refused() {
+    printf '$ %s\n' "$*" | short
+    set +e
+    "$@" 2>&1 | short | sed 's/^/  /'
+    code=${PIPESTATUS[0]}
+    set -e
+    printf '  exit %s\n' "$code"
+}
+
+# ---- the stand-ins ---------------------------------------------------------
+
+cat > "$work/bin/diffview" <<'STUB'
+#!/usr/bin/env bash
+echo "(diffview stub) $*"
+STUB
+chmod +x "$work/bin/diffview"
+
+skills=$work/skills
+mkdir -p "$skills/dispatch" "$skills/tracker" "$work/stubs"
+cp "$plugin"/skills/dispatch/{dispatch,dispatch-ctl,run-worker.sh,worker-prompt.md} "$skills/dispatch/"
+cp "$plugin"/skills/tracker/{tracker.py,board.py,briefing.py,github.py} "$skills/tracker/"
+dispatch="bash $skills/dispatch/dispatch"
+tracker=$plugin/skills/tracker/tracker.py
+state=$HOME/.local/state/dispatch/lamp-main
+
+# The worker itself, under the shipped runner. `-p` is what the runner starts a
+# worker with; every other invocation is `dispatch-ctl init` reaching for the
+# plugin, which it carries on without.
+cat > "$work/stubs/reporting" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+case " $* " in *" -p "*) ;; *) exit 1 ;; esac
+git() { command git -c user.email=stub@toy -c user.name=stub -c commit.gpgsign=false "$@"; }
+mkdir -p src agent/show/warm-preset
+printf 'warm: 2700K, 40%%\n' > src/presets.txt
+git add -A
+git commit -q -m "warm-preset: the warm preset"
+printf '#!/usr/bin/env bash\necho "the warm preset: 2700K, 40%%"\n' > agent/show/warm-preset/demo
+chmod +x agent/show/warm-preset/demo
+cat > agent/show/warm-preset/report.md <<'REPORT'
+## Comments
+
+The warm preset lands, unmerged. It meets the ticket's one acceptance criterion:
+the preset file says its colour temperature and its brightness.
+
+**Demo**
+
+    agent/show/warm-preset/demo
+
+## Questions
+
+- [D1] **2700K, or the 2200K the lamp calls candle?** Warmer reads cosier and dimmer.
+REPORT
+git -C agent add -A
+git -C agent commit -q -m "warm-preset: the demo and the report"
+STUB
+cat > "$work/stubs/silent" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+case " $* " in *" -p "*) ;; *) exit 1 ;; esac
+STUB
+chmod +x "$work/stubs"/*
+worker_is() { cp "$work/stubs/$1" "$work/bin/claude"; }
+worker_is reporting
+
+# ---- the project: a code repo, and its agent repo inside it ----------------
+
+lamp=$work/lamp
+agent=$lamp/agent
+mkdir -p "$agent/tickets" "$lamp/src"
+for at in "$lamp" "$agent"; do
+    git init -q -b main "$at"
+    git -C "$at" config user.email toy@toy
+    git -C "$at" config user.name toy
+    git -C "$at" config commit.gpgsign false
+done
+printf '/agent/\n' > "$lamp/.gitignore"
+printf 'diffviews/\nboard.html*\nshow/**/out/\n' > "$agent/.gitignore"
+
+cat > "$agent/tickets/lamp-ui.md" <<'TICKET'
+---
+status: open
+priority: 1
+size: L
+---
+
+# Lamp UI
+
+## Brief
+
+The lamp is driven by three switches and a dial today. This is the whole of giving it presets.
+
+## Acceptance criteria
+
+- [ ] Every child ticket is done, and this ticket's close-out has run over the whole output.
+TICKET
+
+cat > "$agent/tickets/warm-preset.md" <<'TICKET'
+---
+status: open
+parent: lamp-ui
+priority: 1
+size: S
+---
+
+# The warm preset
+
+## Brief
+
+One preset, warm, so the evening setting is one word rather than three switches and a dial.
+
+## Acceptance criteria
+
+- [ ] The preset file says its colour temperature and its brightness.
+TICKET
+
+printf 'the lamp\n' > "$lamp/src/lamp.txt"
+git -C "$lamp" add -A
+git -C "$lamp" commit -q -m "the lamp"
+git -C "$agent" add -A
+git -C "$agent" commit -q -m "lamp-ui: a parent ticket and one slice"
+
+# ---- 1. a resumed round's finished signal ----------------------------------
+
+resumed_round() {
+
+step "1. round one: the worker reports, and the orchestrator imports it"
+
+note "The ordinary path, so round two has something to start from. The stub worker"
+note "commits code in the code repo and its demo and report in the agent repo."
+( cd "$lamp" && run $dispatch claim warm-preset )
+( cd "$lamp" && echo "Work the ticket warm-preset. Keep it to one preset." | $dispatch prompt warm-preset )
+( cd "$lamp" && run $dispatch ctl --host local --setup-cmd true spawn warm-preset sonnet )
+( cd "$lamp" && run $dispatch wait warm-preset --deadline 120 )
+note ""
+note "report=yes on that line is the runner saying this run wrote the report."
+( cd "$lamp" && run $dispatch fetch warm-preset )
+( cd "$lamp" && run $dispatch review warm-preset )
+printf '\n  the ticket, as the import left it:\n\n'
+short < "$agent/tickets/warm-preset.md" | sed 's/^/    | /'
+
+step "2. round two: resumed, and it writes nothing"
+
+note "The user sent the build back, so the worker is resumed on the same two"
+note "branches. Round one's report is still committed on the agent branch, since"
+note "each round replaces that file rather than adding to it:"
+run git -C "$agent" show --stat --oneline ticket/warm-preset
+note ""
+note "This round's worker stops before it has anything to say. Before this ticket"
+note "the runner asked whether a report was there at all, found round one's, and"
+note "wrote report=yes; it now asks whether the file changed under this run."
+worker_is silent
+( cd "$lamp" && run $dispatch ctl --host local resume warm-preset sonnet )
+( cd "$lamp" && run $dispatch wait warm-preset --deadline 120 )
+note ""
+note "report=no, and `dispatch ctl log` is where that run's own words are."
+
+step "3. the round that left nothing imports nothing"
+
+note "The resume took the ticket back to claimed, which is the state a report is"
+note "imported in. What stops the second import is the report's blob: the one on"
+note "the branch is the one already brought in."
+# The ticket under its frontmatter: the status still moves, since a round with
+# nothing to import is a round waiting for its ruling like any other.
+body() { awk 'n>=2; /^---$/{n++}' "$agent/tickets/warm-preset.md"; }
+before=$(body)
+( cd "$lamp" && run $dispatch fetch warm-preset )
+( cd "$lamp" && run $dispatch review warm-preset )
+( cd "$lamp" && run "$tracker" get warm-preset status )
+note ""
+if [ "$before" = "$(body)" ]; then
+    note "The ticket says what it said: one closing comment, one question, and the"
+    note "status back at review for the ruling. Before this ticket the import ran a"
+    note "second time and was refused on \`[D1]\`, with a message naming the tag"
+    note "rather than the stale report."
+else
+    note "THE TICKET CHANGED, which this demo exists to show it does not:"
+    diff <(printf '%s\n' "$before") <(body) | short | sed 's/^/    /'
+fi
+}
+
+# ---- 2. a worker's write, refused ------------------------------------------
+
+workers_write() {
+
+step "4. a worker's \`tracker\` write, from the worktree it holds"
+
+note "A worker holds both repos on a branch named after its ticket. On a local"
+note "host those are linked worktrees of the user's own repos, and every read"
+note "resolves the agent repo's main checkout, which is where ticket files are"
+note "written. So an unrefused write would land there, on no branch of the round."
+worker=$work/lamp-warm-preset
+run git -C "$agent" branch --show-current
+run git -C "$worker" branch --show-current
+run git -C "$worker/agent" branch --show-current
+note ""
+note "Reading is still the worker's, and answers with the main checkout's copy:"
+( cd "$worker" && run "$tracker" root )
+( cd "$worker" && run "$tracker" get warm-preset status )
+note ""
+note "Writing is not, from either repo's worktree:"
+( cd "$worker" && refused "$tracker" set warm-preset status=done )
+( cd "$worker/agent" && refused "$tracker" new another-preset --priority 2 --size S )
+note ""
+note "The commit hook refuses a ticket file staged on such a branch, and"
+note "\`dispatch review\` refuses a branch that wrote one; this is the seam"
+note "between them, where the write is on no branch at all."
+}
+
+# ---- 3. one repo, read from a worktree of it -------------------------------
+
+one_repo() {
+
+step "5. \`done\` from a parent ticket's worktree, before the agent repo is split out"
+
+note "A project whose \`agent/\` its code repo still tracks has one repo. The"
+note "orchestrator of a tree works in a worktree of it, on the branch the child"
+note "tickets merge into, and that is where their merges are."
+flat=$work/flat
+mkdir -p "$flat/agent/tickets"
+git init -q -b main "$flat"
+git -C "$flat" config user.email toy@toy
+git -C "$flat" config user.name toy
+git -C "$flat" config commit.gpgsign false
+cp "$agent/tickets/lamp-ui.md" "$flat/agent/tickets/"
+sed 's/^status: open/status: review/' "$agent/tickets/warm-preset.md" > "$flat/agent/tickets/warm-preset.md"
+printf 'the lamp\n' > "$flat/lamp.txt"
+git -C "$flat" add -A
+git -C "$flat" commit -q -m "the lamp, and the tickets in it"
+
+built=$work/flat-lamp-ui
+git -C "$flat" worktree add -q "$built" -b lamp-ui
+git -C "$built" checkout -q -b ticket/warm-preset
+printf 'warm: 2700K, 40%%\n' > "$built/presets.txt"
+git -C "$built" add -A
+git -C "$built" commit -q -m "warm-preset: the warm preset"
+git -C "$built" checkout -q lamp-ui
+git -C "$built" merge -q --no-ff -m "warm-preset: accepted" ticket/warm-preset
+
+run git -C "$flat" branch --show-current
+run git -C "$built" branch --show-current
+note ""
+note "The ticket branch has merged into the branch that worktree holds. Before"
+note "this ticket the two paths were compared as two repos, so the merge was"
+note "looked for in the main checkout, on main, and \`done\` was refused."
+( cd "$built" && run "$tracker" set warm-preset status=done )
+( cd "$built" && run "$tracker" get warm-preset status )
+}
+
+main() {
+    resumed_round
+    workers_write
+    one_repo
+    step "the figures"
+    printf '  %s\n  %s\n' "$here/resume-before.svg" "$here/resume-after.svg"
+}
+
+main 2>&1 | tee "$out/transcript.txt"
+echo
+echo "wrote $out/transcript.txt"
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
+    (xdg-open "$here/resume-before.svg" > /dev/null 2>&1 &)
+    (xdg-open "$here/resume-after.svg" > /dev/null 2>&1 &)
+else
+    echo "no display here; the two figures above are what to open"
+fi
