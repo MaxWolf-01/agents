@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# One ticket end to end with the tickets in one repo and the code in another:
-# the claim, the spawn, the worker's report, the import, a question ruled before
-# the merge, and the landing. The case this is for is a session whose code goes
-# to `dotfiles` and whose tickets have to stay out of it; here the two repos are
-# `plans` (the tracker) and `lamp` (the code).
+# One ticket end to end over the two repos a project is: a code repo, `lamp`,
+# and its `agent/` a git repo of its own inside it that the code repo ignores.
+# The claim, the spawn, the worker's committed report, the import, a question
+# ruled before the merge, and the landing with a range per repo.
 #
 # No arguments. Everything it makes is inside a temp dir, its own HOME included,
 # removed at the end; what it produces lands under out/ beside this file, and
@@ -11,10 +10,11 @@
 #
 # What stands in for what, so the transcript is read for what it does show:
 #   - `claude`, by a stub runner on dispatch-ctl's DISPATCH_RUNNER seam: it
-#     commits what a worker commits and writes the report a worker writes, so
-#     what runs here is `dispatch`, `dispatch-ctl` and `tracker` themselves.
+#     commits what a worker commits in each repo, so what runs here is
+#     `dispatch`, `dispatch-ctl` and `tracker` themselves.
 #   - `diffview`, by a stub: the review page is diffview's, and what this shows
-#     is the notes file dispatch projects out of the ticket for it.
+#     is the ranges dispatch hands it and the notes it projects out of the
+#     ticket for it.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -59,8 +59,9 @@ dispatch="bash $skills/dispatch/dispatch"
 tracker=$plugin/skills/tracker/tracker.py
 
 # The worker, as the seam dispatch-ctl leaves for one: argv and the
-# log-then-status contract are the real runner's, and the report it leaves is
-# written where the runner names it, which is what `dispatch fetch` brings back.
+# log-then-status contract are the real runner's, and what it commits is what a
+# worker commits -- code on the code repo's ticket branch, its demo and its
+# report on the agent repo's, which is the worktree at `agent` inside this one.
 cat > "$skills/dispatch/run-worker.sh" <<'STUB'
 #!/usr/bin/env bash
 set -eu
@@ -75,17 +76,16 @@ say "building $slug"
 cp "$message" "$state/$run_id.brief"
 mkdir -p src "agent/show/$slug"
 printf 'warm: 2700K, 40%%\n' > src/presets.txt
-printf '#!/usr/bin/env bash\necho "the warm preset: 2700K, 40%%"\n' > "agent/show/$slug/demo"
-chmod +x "agent/show/$slug/demo"
 git add -A
 git commit -q -m "$slug: the warm preset"
 
-cat > "$state/$run_id.report.md" <<'REPORT'
+printf '#!/usr/bin/env bash\necho "the warm preset: 2700K, 40%%"\n' > "agent/show/$slug/demo"
+chmod +x "agent/show/$slug/demo"
+cat > "agent/show/$slug/report.md" <<'REPORT'
 ## Comments
 
-The warm preset lands, on `ticket/warm-preset`, unmerged. It meets the ticket's
-one acceptance criterion: the preset file says its colour temperature and its
-brightness.
+The warm preset lands, unmerged. It meets the ticket's one acceptance
+criterion: the preset file says its colour temperature and its brightness.
 
 **Demo**
 
@@ -101,27 +101,27 @@ brightness.
 
 - [D1] **2700K, or the 2200K the lamp calls candle?** Warmer reads cosier and dimmer.
 REPORT
-say "wrote the report"
+git -C agent add -A
+git -C agent commit -q -m "$slug: the demo and the report"
+say "committed the report on the agent repo's ticket branch"
 printf 'attempts=1 exit=0 report=yes session=stub-%s\n' "$run_id" > "$state/$run_id.status"
 STUB
 
-# ---- two repos: the tickets in one, the code in the other ------------------
+# ---- the project: a code repo, and its agent repo inside it ----------------
 
-toy() { # <path>
-    git init -q -b main "$1"
-    git -C "$1" config user.email toy@toy
-    git -C "$1" config user.name toy
-    git -C "$1" config commit.gpgsign false
-    printf 'agent/show/**/out/\nagent/diffviews/\nagent/board.html*\n' > "$1/.gitignore"
-}
-
-plans=$work/plans
 lamp=$work/lamp
-mkdir -p "$plans/agent/tickets" "$lamp/src"
-toy "$plans"
-toy "$lamp"
+agent=$lamp/agent
+mkdir -p "$agent/tickets" "$lamp/src"
+for at in "$lamp" "$agent"; do
+    git init -q -b main "$at"
+    git -C "$at" config user.email toy@toy
+    git -C "$at" config user.name toy
+    git -C "$at" config commit.gpgsign false
+done
+printf '/agent/\n' > "$lamp/.gitignore"
+printf 'diffviews/\nboard.html*\nshow/**/out/\n' > "$agent/.gitignore"
 
-cat > "$plans/agent/tickets/lamp-ui.md" <<'TICKET'
+cat > "$agent/tickets/lamp-ui.md" <<'TICKET'
 ---
 status: open
 priority: 1
@@ -143,7 +143,7 @@ The lamp is driven by three switches and a dial today. This is the whole of givi
 - [ ] Every child ticket is done, and this ticket's close-out has run over the whole output.
 TICKET
 
-cat > "$plans/agent/tickets/warm-preset.md" <<'TICKET'
+cat > "$agent/tickets/warm-preset.md" <<'TICKET'
 ---
 status: open
 parent: lamp-ui
@@ -162,24 +162,25 @@ One preset, warm, so the evening setting is one word rather than three switches 
 - [ ] `lamp-ui#P1`: the preset file says its colour temperature and its brightness.
 TICKET
 
-git -C "$plans" add -A
-git -C "$plans" commit -q -m "lamp-ui: a parent ticket and one slice"
 printf 'the lamp\n' > "$lamp/src/lamp.txt"
 git -C "$lamp" add -A
 git -C "$lamp" commit -q -m "the lamp"
+git -C "$agent" add -A
+git -C "$agent" commit -q -m "lamp-ui: a parent ticket and one slice"
 
 main() {
 
-step "two repos, and the one setting that joins them"
+step "one project, two repos"
 
-run git -C "$lamp" config mx.tracker "$plans/agent/tickets"
-( cd "$lamp" && run "$tracker" root )
+run git -C "$lamp" status --short
+echo "  (nothing: the code repo ignores agent/, which is a repo of its own)"
+( cd "$lamp/src" && run "$tracker" root )
 ( cd "$lamp" && run "$tracker" frontier )
 
 step "the claim, committed where the ticket files are"
 
 ( cd "$lamp" && run $dispatch claim warm-preset )
-run git -C "$plans" log --oneline -1
+run git -C "$agent" log --oneline -1
 run git -C "$lamp" log --oneline -1
 
 step "the spawn, and the brief the worker is given"
@@ -191,50 +192,52 @@ state=$HOME/.local/state/dispatch/lamp-main
 printf '\n  the brief it was sent, the message then the ticket context under it:\n\n'
 short < "$(ls "$state"/*.brief)" | sed 's/^/    | /'
 
-step "what the worker left behind"
+step "what the worker committed, and where"
 
-printf '  the report, beside the worklog and outside the worktree:\n\n'
-short < "$(ls "$state"/*.report.md)" | sed 's/^/    | /'
-printf '\n'
 run git -C "$lamp" diff --name-only main ticket/warm-preset
+run git -C "$agent" diff --name-only main ticket/warm-preset
+printf '\n  the report, on the agent repo'"'"'s ticket branch:\n\n'
+git -C "$agent" show ticket/warm-preset:show/warm-preset/report.md | short | sed 's/^/    | /'
 
 step "fetch and review: the report becomes the ticket"
 
 ( cd "$lamp" && run $dispatch fetch warm-preset )
 ( cd "$lamp" && run $dispatch review warm-preset )
-printf '\n  the ticket, in the tracker, as the import left it:\n\n'
-short < "$plans/agent/tickets/warm-preset.md" | sed 's/^/    | /'
+printf '\n  the ticket, as the import left it:\n\n'
+short < "$agent/tickets/warm-preset.md" | sed 's/^/    | /'
 printf '\n  the notes dispatch projected out of it for the review page:\n\n'
-short < "$plans/agent/diffviews/warm-preset.notes.json" | sed 's/^/    /'
-# shot here, with the build still in flight: what the board reads is the
-# tracker's own directory, while the worker's worktree and branch are in the
-# other repo entirely.
+short < "$agent/diffviews/warm-preset.notes.json" | sed 's/^/    /'
+# shot here, with the build still in flight: what the board reads is the agent
+# repo's tickets directory, and no branch or worktree of either repo.
 shoot
 
 step "the ruling, before the merge"
 
 ( cd "$lamp" && run "$tracker" rule warm-preset D1 "2700K" )
-run git -C "$plans" commit -q -am "warm-preset: D1 ruled"
+run git -C "$agent" commit -q -am "warm-preset: D1 ruled"
 printf '\n  the question, answered in the file every reader reads:\n\n'
-sed -n '/^## Questions/,$p' "$plans/agent/tickets/warm-preset.md" | sed 's/^/    | /'
+sed -n '/^## Questions/,$p' "$agent/tickets/warm-preset.md" | sed 's/^/    | /'
 
-step "the landing: a range that names the repo it is in"
+step "the landing: one range per repo"
 
-run git -C "$lamp" merge -q --no-ff -m "warm-preset: accepted" ticket/warm-preset
+for at in "$lamp" "$agent"; do
+    run git -C "$at" merge -q --no-ff -m "warm-preset: accepted" ticket/warm-preset
+done
 ( cd "$lamp" && run $dispatch review warm-preset )
 ( cd "$lamp" && run "$tracker" get warm-preset status )
 ( cd "$lamp" && run "$tracker" get warm-preset diff )
 ( cd "$lamp" && run $dispatch ctl --host local cleanup warm-preset )
 run git -C "$lamp" log --oneline
+run git -C "$agent" log --oneline
 }
 
-# The board of the tracker with the build still in flight, shot from the page
+# The board of the agent repo with the build still in flight, shot from the page
 # `dispatch review` rendered beside the tracker.
 shoot() {
-    [ -f "$plans/agent/board.html" ] || { echo "  no board rendered" >&2; return 0; }
+    [ -f "$agent/board.html" ] || { echo "  no board rendered" >&2; return 0; }
     chromium --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1500,760 \
         --virtual-time-budget=8000 "--screenshot=$out/board.png" \
-        "file://$plans/agent/board.html?theme=day" > /dev/null 2>&1
+        "file://$agent/board.html?theme=day" > /dev/null 2>&1
     [ -s "$out/board.png" ] || echo "  the board left no screenshot" >&2
 }
 

@@ -17,59 +17,58 @@ from pathlib import Path
 # What each step of the transcript shows, in the transcript's own order. The key is the step's
 # heading as `demo` prints it; the words are what the reader is looking at and where to look.
 SAYS = {
-    "two repos, and the one setting that joins them": (
-        "<code>plans</code> holds the tickets and <code>lamp</code> holds the code, and nothing in "
-        "either repo says so: the join is <code>git config mx.tracker</code> in the code repo's "
-        "clone, machine-local like the path it holds. From there every read and write of a ticket "
-        "in <code>lamp</code> lands in <code>plans</code>, which is what <code>tracker root</code> "
-        "answers and what <code>tracker frontier</code> has read."
+    "one project, two repos": (
+        "A project is a code repo with its <code>agent/</code> a git repo of its own inside it, "
+        "which the code repo ignores: the tickets, the show directories, the prototypes and the "
+        "research are committed there. Nothing configures it — <code>tracker root</code> answers "
+        "with that repo's <code>tickets</code> from anywhere in either — and <code>git status</code> "
+        "in the code repo says nothing about it."
     ),
     "the claim, committed where the ticket files are": (
-        "The claim is a ticket write, so it is committed in the tracker's checkout. The two logs "
-        "under it are the point: <code>plans</code> has the claim, <code>lamp</code> has only its "
-        "own first commit, and no branch or merge was needed for the ticket change."
+        "The claim is a ticket write, so it is committed in the agent repo. The two logs under it "
+        "are the point: the agent repo has the claim, the code repo has only its own first commit, "
+        "and no branch or merge was needed for the ticket change."
     ),
     "the spawn, and the brief the worker is given": (
-        "The spawn reads no ticket on the worker host at all: <code>dispatch</code> reads the "
-        "tracker here, where a ticket the user is in the loop for is kept back, and sends the "
-        "ticket's context in the prompt. The brief at the end of the panel is the whole of what "
-        "the worker has: the orchestrator's own message, then the ticket's body and its parent's."
+        "The spawn cuts <code>ticket/warm-preset</code> in both repos and checks the agent one out "
+        "inside the code worktree, where every checkout of the project keeps it. It reads no ticket "
+        "on the host at all: <code>dispatch</code> reads the tracker here, where a ticket the user "
+        "is in the loop for is kept back, and sends the ticket's context in the prompt. The brief "
+        "at the end of the panel is the whole of what the worker has."
     ),
-    "what the worker left behind": (
-        "Two things. The report, written to the file the runner named it, beside the worklog and "
-        "outside the worktree: the closing comment under <code>## Comments</code>, the question "
-        "its build raised under <code>## Questions</code>, in the shapes the ticket gives both. "
-        "And the branch, which carries the code and the demo file and nothing of the tracker: the "
-        "worker never opened a ticket file."
+    "what the worker committed, and where": (
+        "Code on the code repo's ticket branch; the demo and the report on the agent repo's, under "
+        "the ticket's show directory. Neither branch carries a ticket file: a worker never opens "
+        "one, the commit check refuses one staged on a ticket branch, and <code>dispatch review</code> "
+        "refuses a branch that wrote one anyway."
     ),
     "fetch and review: the report becomes the ticket": (
-        "<code>dispatch fetch</code> brings the branch and the report back together. "
-        "<code>dispatch review</code> imports the report through <code>tracker</code>, which is "
-        "one checked write: the comment lands under <code>## Comments</code>, the question under "
-        "<code>## Questions</code>, and the status goes to <code>review</code>. The notes under "
-        "it are the review page's, projected out of the ticket's own copy rather than read off "
-        "the branch, and the assumption anchored in the comment is what they are made of."
+        "<code>dispatch fetch</code> brings both branches back, the report among the files on the "
+        "agent one. <code>dispatch review</code> reads it there and imports it through "
+        "<code>tracker</code>, which is one checked write: the comment lands under "
+        "<code>## Comments</code>, the question under <code>## Questions</code>, and the status "
+        "goes to <code>review</code>. The notes under it are the review page's, projected out of "
+        "the ticket's own copy, and the assumption anchored in the comment is what they are made of."
     ),
     "the ruling, before the merge": (
-        "The question is in the tracker's copy the moment the report is imported, so "
-        "<code>tracker rule</code> answers it here, with the build still unmerged. The rule that "
-        "a build's questions waited for the merge is gone with the second copy that made it."
+        "The question is in the ticket the moment the report is imported, so <code>tracker rule</code> "
+        "answers it here, with both branches still unmerged."
     ),
-    "the landing: a range that names the repo it is in": (
-        "The accept merges the branch in <code>lamp</code> and the second "
-        "<code>dispatch review</code> writes <code>done</code> and the range into the ticket in "
-        "<code>plans</code>. The range carries the repo it is in, <code>lamp@&lt;sha&gt;..&lt;sha&gt;"
-        "</code>, since nothing else on the ticket says which repo to render it from; in a tracker "
-        "that plans its own repo it stays a bare range. The log at the end is <code>lamp</code>'s "
-        "whole history: the code, and no ticket commit anywhere in it."
+    "the landing: one range per repo": (
+        "The accept merges the ticket branch in each repo, and the second <code>dispatch review</code> "
+        "writes <code>done</code> and the round's two ranges into the ticket: "
+        "<code>code@&lt;sha&gt;..&lt;sha&gt;</code> and <code>agent@&lt;sha&gt;..&lt;sha&gt;</code>, "
+        "since one round is one diff per repo and the review page renders both. The two logs at the "
+        "end are the whole of what the project holds: the code, the ticket's own history, and no "
+        "ticket commit on any ticket branch."
     ),
 }
 
 BOARD = (
-    "The board of <code>plans</code>, rendered by the <code>dispatch review</code> above with the "
-    "build still in flight. It reads one directory, the tracker's own: the worker's worktree and "
-    "its branch are in the other repo, and nothing here goes looking for them. The row is in "
-    "<b>needs me</b> because the ticket says <code>review</code> and carries an open question, "
+    "The board of the agent repo, rendered by the <code>dispatch review</code> above with the build "
+    "still in flight. It reads one directory, that repo's <code>tickets</code>: the worker's "
+    "worktrees and both its branches are elsewhere, and nothing here goes looking for them. The row "
+    "is in <b>needs me</b> because the ticket says <code>review</code> and carries an open question, "
     "both of which the import put there."
 )
 
@@ -159,8 +158,9 @@ def figures(figure_dir: Path) -> str:
         ("before", "Before: two copies of one ticket file. The worker writes its questions, its "
                    "closing comment and the <code>review</code> flip on its own branch, and they "
                    "reach the tracker's copy only at the merge."),
-        ("after", "After: one copy, written by one party. The worker writes a report outside its "
-                  "worktree, and <code>dispatch review</code> imports it into the ticket."),
+        ("after", "After: one copy, written by one party. The worker commits a report in the agent "
+                  "repo with its demo and its figures, and <code>dispatch review</code> imports it "
+                  "into the ticket."),
     ):
         source = figure_dir / f"{name}.svg"
         if not source.exists():
@@ -194,9 +194,9 @@ def main() -> None:
         f"<style>{STYLE}</style></head><body>"
         "<h1>The worker reports, the orchestrator writes the ticket</h1>"
         '<p class="sub">A worker writes code and a report; the orchestrator alone writes ticket '
-        "files, in the tracker's own checkout. Below: what changed, then one ticket driven end to "
-        "end with the tickets in one repo and the code in another. Every command was run; the "
-        "output under it is what it printed.</p>"
+        "files, in the agent repo a project holds at <code>agent/</code>. Below: what changed, then "
+        "one ticket driven end to end over the two repos that project is. Every command was run; "
+        "the output under it is what it printed.</p>"
         f"{figures(figure_dir)}"
         f"{body}{board(out)}"
         '<button class="scheme" title="day or night; ?theme=day|night on the address pins one">scheme</button>'
