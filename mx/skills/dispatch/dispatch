@@ -631,8 +631,13 @@ review() {
 
     # The status follows the branches: waiting for the ruling while either is unmerged, done once
     # both are, when the ranges are final too. `tracker` writes both, and refuses a landing the
-    # tracker's transitions do not allow.
-    if is_merged code "$code_tip" && is_merged agent "$agent_tip"; then
+    # tracker's transitions do not allow. A round whose branches carry no commit at all built
+    # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
+    # stopped before its first commit.
+    if [ ${#written[@]} -eq 0 ]; then
+        echo "dispatch: neither branch of $id carries a commit, so this round built nothing to review" >&2
+        return 0
+    elif is_merged code "$code_tip" && is_merged agent "$agent_tip"; then
         fields=()
         for round in "${written[@]}"; do
             rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")

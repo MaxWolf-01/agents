@@ -160,6 +160,21 @@ def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
                           env=environment(toy, **extra), timeout=180)
 
 
+def waited(toy: Path) -> Path:
+    """The status line the runner's last act writes, once it is there: a check that carried on
+    without it would read a worker that timed out or died as one that finished."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    for _ in range(60):
+        if list(state.glob("*.status")):
+            break
+        time.sleep(0.5)
+    left = list(state.glob("*.status"))
+    assert left, "no status line 30s after the spawn: " + subprocess.run(
+        ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
+        capture_output=True, text=True).stdout
+    return left[0]
+
+
 def status_of(toy: Path, slug: str) -> str:
     return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
 
@@ -274,16 +289,7 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     (staged.parent / "run-worker.sh").write_text(BUILDING)
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
-    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
-    for _ in range(60):
-        if list(state.glob("*.status")):
-            break
-        time.sleep(0.5)
-    left = list(state.glob("*.status"))
-    assert left, "no status line 30s after the spawn: " + subprocess.run(
-        ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
-        capture_output=True, text=True).stdout
-    assert "report=yes" in left[0].read_text(), "the runner reads the report it committed"
+    assert "report=yes" in waited(toy).read_text(), "the runner reads the report it committed"
     assert git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split() == ["lamp.txt"]
     assert sorted(git(agent, "diff", "--name-only", "main", "ticket/warm-preset").split()) == [
         "show/warm-preset/demo", "show/warm-preset/report.md"], \
@@ -299,6 +305,12 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
     assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
+
+    # the demo waiting for the user: the two branches checked out as the project keeps them
+    demo = toy.parent / "lamp-warm-preset"
+    assert (demo / "agent" / "show" / "warm-preset" / "demo").is_file(), \
+        "the agent repo is checked out inside the code worktree, where the demo's path leads"
+    assert "job-lamp-warm-preset-demo" in said.stdout + said.stderr, said.stderr
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
@@ -324,6 +336,14 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert [line for line in handed
             if line.startswith(f"{toy}@{cut['code']}..{tip['code']} {agent}@{cut['agent']}..{tip['agent']} ")], handed
 
+    # the cleanup the accept runs: both worktrees and both branches go, the agent one first
+    cleaned = subprocess.run([str(staged), "ctl", "--host", "local", "cleanup", "warm-preset"],
+                             cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    for at in (toy, agent):
+        assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
+
 
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
     """The other half of the finished signal: a worker that stopped short leaves no report, the
@@ -332,10 +352,7 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
     (staged.parent / "run-worker.sh").write_text(STOPPED_SHORT)
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
-    for _ in range(60):
-        if list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.status")):
-            break
-        time.sleep(0.5)
+    waited(toy)
 
     fetched = run(toy, "fetch", "warm-preset")
     assert fetched.returncode == 0, fetched.stderr
@@ -355,10 +372,7 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
         "git -C agent add -A"))
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
-    for _ in range(60):
-        if list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.status")):
-            break
-        time.sleep(0.5)
+    waited(toy)
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
     said = run(toy, "review", "warm-preset")
@@ -430,6 +444,60 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     )
     assert "no agent repo at" in (state / "run-1.log").read_text()
     assert "report=no" in (state / "run-1.status").read_text()
+
+
+def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: Path) -> None:
+    """The state every project is in before the split, and the message that says what to run."""
+    plain = toy.parent / "unsplit"
+    (plain / "agent" / "tickets").mkdir(parents=True)
+    git(toy.parent, "init", "-q", "-b", "main", str(plain))
+    (plain / "agent" / "tickets" / "one-flow.md").write_text(
+        "---\nstatus: open\npriority: 1\nsize: S\n---\n\n# One flow\n\n## Brief\n\nWhat it is.\n")
+    git(plain, "add", "-A")
+    git(plain, "commit", "-q", "-m", "a project with its agent directory tracked")
+
+    said = run(plain, "claim", "one-flow")
+    assert said.returncode != 0
+    assert "not two repos yet" in said.stderr and "project-setup" in said.stderr, said.stderr
+
+
+def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> None:
+    """A worker that died before its first commit: both branches are the base, so there is no range,
+    nothing to render and nothing to rule on, and the ticket keeps the claim it had."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER)  # starts, logs, leaves both repos untouched
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "built nothing to review" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+
+
+def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
+    """The version skew a host is left in when an older plugin staged it: its config carries no
+    agent repo, and every command on that host says which one it is."""
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    config = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main" / "config"
+    config.write_text("".join(line for line in config.read_text().splitlines(keepends=True)
+                              if not line.startswith("agent")))
+
+    said = subprocess.run(["bash", str(config.parent / "dispatch-ctl"), "log", "warm-preset"],
+                          capture_output=True, text=True, env=environment(toy))
+    assert said.returncode != 0
+    assert "predates the agent repo" in said.stderr, said.stderr
+
+
+def test_the_report_the_scripts_read_is_the_one_the_contract_names() -> None:
+    """Three files carry the report's path: the prompt a worker reads, the runner that takes it for
+    the finished signal, and the import. They agree here or nowhere."""
+    prompt = (SKILL / "worker-prompt.md").read_text()
+    assert "agent/show/<slug>/report.md" in prompt
+    assert 'HEAD:show/$slug/report.md' in (SKILL / "run-worker.sh").read_text()
+    assert "reported=show/$id/report.md" in (SKILL / "dispatch").read_text()
 
 
 if __name__ == "__main__":

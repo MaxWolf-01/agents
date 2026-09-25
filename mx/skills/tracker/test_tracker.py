@@ -1274,6 +1274,20 @@ def test_a_ticket_branch_is_refused_the_ticket_file_it_staged(split: Path) -> No
     assert run(worktree / "agent", "check") == Run(0, "", ""), "what a worker does commit there"
 
 
+def test_the_commit_hook_answers_for_the_repo_the_commit_is_made_in(split: Path) -> None:
+    """A commit is made of one repo's staged files: the hook in the code repo answers for nothing
+    under `agent/`, which is the agent repo's to check, and the agent repo's own refuses there."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", status="nonsense")
+    git(split / "agent", "add", "-A")
+    (split / "src.txt").write_text("the lamp, rewired\n")
+    git(split, "add", "-A")
+
+    assert run(split, "check") == Run(0, "", ""), "the code repo's commit carries no ticket file"
+    said = run(split / "agent", "check")
+    assert said.code == 1 and "is no ticket status" in said.out, said.said
+
+
 def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
     """A round lands in two repos, and `done` is the accept of the whole of it."""
     tickets = split / "agent" / "tickets"
@@ -1335,9 +1349,10 @@ def test_a_range_names_which_of_the_two_repos_it_is_in(tickets: Path, repo: Path
     ticket(tickets, "one-flow")
     assert run(repo, "set", "one-flow", "diff+=code@4f2a91c..8b3ce07", "diff+=agent@aaaaaaa..bbbbbbb").code == 0
     assert run(repo, "get", "one-flow", "diff").out.split() == ["code@4f2a91c..8b3ce07", "agent@aaaaaaa..bbbbbbb"]
-    for refused in ("lamp@4f2a91c..8b3ce07", "code@ticket/one-flow"):
+    for refused, says in (("lamp@4f2a91c..8b3ce07", "one per repo"),
+                          ("code@ticket/one-flow", "never as a branch name")):
         said = run(repo, "set", "one-flow", f"diff+={refused}")
-        assert said.code == 1 and "one per repo" in said.said, said.said
+        assert said.code == 1 and says in said.said, said.said
 
 
 def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path, tmp_path: Path) -> None:

@@ -86,7 +86,7 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
         tracker = tracker_of(roots.pop())
     else:
         try:
-            tracker = staged(find_tracker(Path.cwd()))
+            tracker = staged(staged_tracker(Path.cwd()))
         except Refused:
             return 0
         files = staged_paths(tracker.root)
@@ -1386,6 +1386,23 @@ class Refused(Exception):
 
     def __init__(self, said: Sequence[Refusal | str]) -> None:
         super().__init__("\n".join(str(line) for line in said))
+
+
+def staged_tracker(start: Path) -> Path:
+    """The tracker a commit made at `start` is of, which is the one in the repo being committed in:
+    the agent repo's `tickets`, or the `agent/tickets` a project whose agent directory is not a repo
+    of its own yet keeps. A repo with neither holds no ticket file to refuse.
+
+    The repo's own rather than the project's, since a commit is made of one repo's staged files: the
+    hook in a code repo answers for nothing under `agent/`, which is another repo's to check."""
+    top = toplevel(start)
+    here_ = [top / TICKETS, top / TICKETS.name] if top.name == TICKETS.parent.name else [top / TICKETS]
+    for candidate in here_:
+        # the directory has to be this repo's: the agent directory of a project that has been split
+        # is another repo's, and its index is not what this commit is made of
+        if candidate.is_dir() and toplevel(candidate) == top:
+            return candidate
+    raise Refused([f"no tracker of {top}'s own"])
 
 
 def find_tracker(start: Path) -> Path:

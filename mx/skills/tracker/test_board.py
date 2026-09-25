@@ -887,42 +887,49 @@ def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(
 
 def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """A project is a code repo with its `agent/` a repo of its own inside it: `board` run anywhere
-    in the code repo renders that tracker, and the page is named for the code repo, not for the
-    directory the tickets sit in."""
+    in the code repo renders that tracker, names the page after the code repo, and reads its commit
+    log from there, while the tickets and the sessions that wrote them come from the agent repo."""
     code = tmp_path / "lamp"
     tickets = code / "agent" / "tickets"
     tickets.mkdir(parents=True)
+    (code / "src").mkdir()
     ticket(tickets / "map-columns.md", "claimed", priority=1, size="S")
     for at in (code, code / "agent"):
         git(at.parent, "init", "-q", "-b", "main", str(at))
-        git(at, "add", "-A")
-        git(at, "commit", "-q", "-m", "the project")
+    (code / ".gitignore").write_text("/agent/\n")
+    (code / "src" / "importer.py").write_text("the importer\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the importer reads a bank export")
+    git(code / "agent", "add", "-A")
+    git(code / "agent", "commit", "-q", "-m", "map-columns: filed")
+
     assert board.find_tracker(code / "src") == tickets, "found from anywhere in the code repo"
     assert board.find_tracker(code / "agent") == tickets, "and from inside the agent repo"
 
     out = tmp_path / "board.html"
-    render(tickets, tickets.parent, out)
+    board.main(board.Args(tickets_root=tickets, out=out, open=False, watch=False))
     page = out.read_text()
     assert "t-map-columns" in rows_of(page)
     assert "<title>board — lamp</title>" in page, "the project's name is the code repo's"
+    assert "the importer reads a bank export" in page, "and its log is the code repo's"
+    assert "map-columns: filed" not in page, "not the agent repo's, which is the tickets' own history"
 
 
-@pytest.mark.parametrize("split", [True, False])
-def test_the_log_and_the_sessions_come_from_the_repo_the_tracker_is_in(
-    tmp_path: Path, path_with: Callable[..., Path], split: bool
+def test_a_project_whose_agent_directory_is_not_a_repo_yet_still_renders(
+    tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
-    """The agent repo where the project has one, and the repo holding the directory where it does
-    not yet: a project on its way to the split renders rather than dying on a missing checkout."""
+    """The state a project is in before the split: one repo holding both. The board reads it rather
+    than dying on a checkout that is not there."""
     code = tmp_path / "lamp"
     tickets = code / "agent" / "tickets"
     tickets.mkdir(parents=True)
     ticket(tickets / "map-columns.md", "open", priority=1, size="S")
-    for at in ((code, code / "agent") if split else (code,)):
-        git(at.parent, "init", "-q", "-b", "main", str(at))
-        git(at, "add", "-A")
-        git(at, "commit", "-q", "-m", "the project")
-    assert board.main(board.Args(tickets_root=tickets, out=tmp_path / "board.html", open=False, watch=False)) is None
-    assert "t-map-columns" in rows_of((tmp_path / "board.html").read_text())
+    git(code.parent, "init", "-q", "-b", "main", str(code))
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the project, tracker and all")
+    board.main(board.Args(tickets_root=tickets, out=tmp_path / "board.html", open=False, watch=False))
+    page = (tmp_path / "board.html").read_text()
+    assert "t-map-columns" in rows_of(page) and "the project, tracker and all" in page
 
 
 STALE = """
