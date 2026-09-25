@@ -9,7 +9,7 @@
 # skill) is the orchestrator's side and the one that calls this. History --
 # commits, merges, pushes, fetches -- stays with the orchestrator.
 #
-# Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir]
+# Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]
 #        dispatch-ctl spawn <slug> <model> [session-id]
 #        dispatch-ctl wait <slug> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <slug>
@@ -25,10 +25,12 @@
 #             scripts: writes `config`, creates the two bare repos when missing,
 #             fetches `job` into ~/.local/bin when the host has none, updates
 #             the mx plugin and prints its version. git-dir defaults to
-#             ~/repos/dispatch/<repo>.git, the agent repo's to
-#             ~/repos/dispatch/<repo>-agent.git, and worktrees-dir to
-#             ~/repos/dispatch; a local orchestrator passes its own worktree
-#             and the directory beside it.
+#             ~/repos/dispatch/<repo>.git, agent-dir to
+#             ~/repos/dispatch/<repo>-agent.git and worktrees-dir to
+#             ~/repos/dispatch; a local orchestrator passes its own checkouts
+#             and the directory beside them. agent-base is the branch the agent
+#             repo's ticket branches cut from, which is the one its main
+#             checkout has out and rarely the code repo's <base>.
 #   spawn     cuts ticket/<slug> from <base> in both repos when absent, the
 #             code one into <worktrees-dir>/<repo>-<slug> and the agent one into
 #             that worktree's `agent/`, where the project keeps it; sets the
@@ -91,8 +93,8 @@
 #                             same, with `exit=stopped`.
 #
 # State, all plain text in this directory:
-#   config                       repo, base branch, the two git dirs, worktrees
-#                                dir (init)
+#   config                       repo, the two git dirs with a base branch
+#                                each, worktrees dir (init)
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch ctl
 #                                --setup-cmd`)
@@ -120,9 +122,10 @@ cfg() { sed -n "s/^$1=//p" "$here/config" | head -1; }
 
 load() {
     [ -f "$here/config" ] || die "no config in $here; run: dispatch-ctl init <repo> <base>"
-    repo=$(cfg repo) base=$(cfg base) git_dir=$(cfg git) agent_dir=$(cfg agent) worktrees=$(cfg worktrees)
+    repo=$(cfg repo) base=$(cfg base) git_dir=$(cfg git) agent_dir=$(cfg agent) agent_base=$(cfg agentbase) worktrees=$(cfg worktrees)
     [ -n "$base" ] || die "$here/config predates the base branch; the orchestrator's next spawn stages this host again and rewrites it"
-    [ -n "$agent_dir" ] || die "$here/config predates the agent repo; the orchestrator's next spawn stages this host again and rewrites it"
+    [ -n "$agent_dir" ] && [ -n "$agent_base" ] ||
+        die "$here/config predates the agent repo; the orchestrator's next spawn stages this host again and rewrites it"
 }
 
 # Everything hangs off the ticket, derived in one place: the bare repo and the
@@ -174,9 +177,11 @@ init() {
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
     worktrees=${4:-$HOME/repos/dispatch}
     agent_dir=${5:-$HOME/repos/dispatch/$repo-agent.git}
+    agent_base=${6:-$base}
     # config is rewritten on every init; the manifest never is: it is the only
     # record of the runs in flight, and an orchestrator taking over needs it.
-    printf 'repo=%s\nbase=%s\ngit=%s\nagent=%s\nworktrees=%s\n' "$repo" "$base" "$git_dir" "$agent_dir" "$worktrees" > "$here/config"
+    printf 'repo=%s\nbase=%s\ngit=%s\nagent=%s\nagentbase=%s\nworktrees=%s\n' \
+        "$repo" "$base" "$git_dir" "$agent_dir" "$agent_base" "$worktrees" > "$here/config"
     # The parent holds every branch's scratch dir: prompts, worklogs, status
     # lines. No other user on the host has business reading them.
     chmod 700 "$(dirname "$here")"
@@ -201,14 +206,14 @@ init() {
     { run claude plugin marketplace update MaxWolf-01 && run claude plugin update mx@MaxWolf-01; } >&2 ||
         echo "init: plugin update failed; workers run the installed version" >&2
     version=$(claude plugin list 2>/dev/null | grep -A1 'mx@MaxWolf-01' | sed -n 's/.*Version: //p')
-    echo "initialised $here  mx=${version:-?}  base=$base  git=$git_dir  agent=$agent_dir  worktrees=$worktrees"
+    echo "initialised $here  mx=${version:-?}  base=$base  git=$git_dir  agent=$agent_dir@$agent_base  worktrees=$worktrees"
 }
 
 checkout() {
     run git -C "$git_dir" worktree add "$worktree" -b "$branch" "$base" || exit 1
     # Inside the code worktree, where every checkout of the project keeps it, so
     # the paths a worker reads and writes are the ones its ticket names.
-    run git -C "$agent_dir" worktree add "$agent_worktree" -b "$branch" "$base" || exit 1
+    run git -C "$agent_dir" worktree add "$agent_worktree" -b "$branch" "$agent_base" || exit 1
     # The setup command is what makes a worktree reproducible on any host: the
     # project's own, as its docs give it, or its `make install`. A project with
     # neither gets a ticket, not an environment improvised here.

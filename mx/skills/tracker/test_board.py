@@ -907,6 +907,24 @@ def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path
     assert "<title>board — lamp</title>" in page, "the project's name is the code repo's"
 
 
+@pytest.mark.parametrize("split", [True, False])
+def test_the_log_and_the_sessions_come_from_the_repo_the_tracker_is_in(
+    tmp_path: Path, path_with: Callable[..., Path], split: bool
+) -> None:
+    """The agent repo where the project has one, and the repo holding the directory where it does
+    not yet: a project on its way to the split renders rather than dying on a missing checkout."""
+    code = tmp_path / "lamp"
+    tickets = code / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    ticket(tickets / "map-columns.md", "open", priority=1, size="S")
+    for at in ((code, code / "agent") if split else (code,)):
+        git(at.parent, "init", "-q", "-b", "main", str(at))
+        git(at, "add", "-A")
+        git(at, "commit", "-q", "-m", "the project")
+    assert board.main(board.Args(tickets_root=tickets, out=tmp_path / "board.html", open=False, watch=False)) is None
+    assert "t-map-columns" in rows_of((tmp_path / "board.html").read_text())
+
+
 STALE = """
 ## Questions
 

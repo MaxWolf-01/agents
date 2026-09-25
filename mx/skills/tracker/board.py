@@ -213,9 +213,12 @@ class Args:
 def main(args: Args) -> None:
     tickets_root = (args.tickets_root or find_tracker(Path.cwd())).resolve()
     assert tickets_root.is_dir(), f"no tracker at {tickets_root}"
-    # A ticket file's own history is the agent repo's, and so are the sessions that wrote it; the
-    # project's name is the code repo's, which is the directory that repo sits in.
-    repo = (args.repo or tickets_root.parent).resolve()
+    # A ticket file's own history is the agent repo's, and so are the sessions that wrote it, so
+    # the repo read for both is the one the tracker is in, whichever that is: a project whose
+    # `agent/` is not yet a repo of its own is read in the repo that holds it. What the page is
+    # named after, what its commit log shows and what the briefing session explores is the project
+    # itself, which is the repo that holds the agent one (`project`, below).
+    repo = (args.repo or toplevel(tickets_root) or project(tickets_root)).resolve()
     out = (args.out or tickets_root.parent / "board.html").resolve()
     try:
         render(tickets_root, repo, out)
@@ -231,9 +234,15 @@ def main(args: Args) -> None:
             pass
 
 
+def project(tickets_root: Path) -> Path:
+    """The code repo's root: the directory the agent repo sits in, which is the project the tracker
+    plans and the repo its commit log and its briefing session read."""
+    return tracker.project_root(tickets_root)
+
+
 def find_tracker(start: Path) -> Path:
     """Where this project's ticket files are, as the one command that writes them answers it: the
-    nearest agent/tickets at or above `start`, or the tracker another repo holds for this one."""
+    `agent/tickets` of the agent repo the project holds, in that repo's main checkout."""
     try:
         return tracker.tracker_root(start)
     except tracker.Refused as refused:
@@ -244,16 +253,16 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     """Write the page, and answer with the status every ticket on it is shown under: the watcher
     pings the briefing session on a status that moved, and the render is where the tracker is
     already read."""
-    project = root.parent.parent.name
+    code = project(root)
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     session_log.cache_clear()  # likewise: the sessions that committed on a ticket while the board watches
     tickets = load_tickets(root, repo, serve_diffviews(root.parent / "diffviews"))
-    log = git_log(repo)
+    log = git_log(code)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(tickets), github.cache_path(out))
     said = briefing.Briefing.read(briefing.cache_path(out))
-    stamp = content_stamp(project, tickets, log, gh, said)
-    page = render_page(project, tickets, log, stamp, out.name + ".stamp.js", gh, said)
+    stamp = content_stamp(code.name, tickets, log, gh, said)
+    page = render_page(code.name, tickets, log, stamp, out.name + ".stamp.js", gh, said)
     out.write_text(page)
     Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
     print(out)
@@ -444,8 +453,8 @@ class Briefer:
         retry is for."""
         try:
             said = (
-                briefing.ping(cached, note, self.repo, now()) if note is not None
-                else briefing.first(briefing_state(root, self.repo), self.repo, now())
+                briefing.ping(cached, note, project(root), now()) if note is not None
+                else briefing.first(briefing_state(root, self.repo), project(root), now())
             )
             if said:
                 said.write(briefing.cache_path(self.out))
@@ -455,10 +464,13 @@ class Briefer:
 
 
 def briefing_state(root: Path, repo: Path) -> str:
-    """The tracker as the board reads it, in the words the briefing session is handed it in."""
+    """The tracker as the board reads it, in the words the briefing session is handed it in: the
+    tickets from the agent repo, the commits and the name from the project it plans, which is the
+    repo that session reads for what the tickets cannot say."""
     # the session is given the tickets; a review page is the user's to read and its address the
     # render's to find, so this reads them unserved
-    return state_of(repo.name, load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)), git_log(repo))
+    code = project(root)
+    return state_of(code.name, load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)), git_log(code))
 
 
 # ---- the board briefing ---------------------------------------------------

@@ -32,7 +32,7 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 ## Where it goes
 
-An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
+An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. That directory is the agent repo's, so `git -C agent` is what commits it. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
 
 ## A figure
 

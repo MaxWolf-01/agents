@@ -608,7 +608,7 @@ def test_a_ruling_goes_under_the_question_it_answers(tickets: Path, repo: Path) 
 # what it says into the ticket. The shapes are the ticket file's own, so the report is held to them.
 
 def reported(tmp_path: Path, text: str = "") -> Path:
-    """A report file, as `dispatch fetch` leaves one beside the ticket message it answers."""
+    """A report file, as a worker leaves one in its show directory."""
     path = tmp_path / "report.md"
     path.write_text(text or REPORT)
     return path
@@ -666,6 +666,23 @@ def test_a_report_that_raises_no_question_opens_no_section_for_one(
     assert [s["heading"] for s in read["sections"]] == ["Brief", "Comments"]
     assert read["status"] == "review" and read["questions"] == []
     assert "Filed off the kitchen rewire." in path.read_text()
+
+
+def test_a_report_read_from_stdin_is_named_by_what_it_came_from(tickets: Path, repo: Path) -> None:
+    """How dispatch hands one over: the report is a file on a branch, so it arrives on stdin and a
+    refusal names the object rather than the pipe."""
+    ticket(tickets, "warm-preset", status="claimed")
+    said = run(repo, "import", "warm-preset", "-", "--called", "ticket/warm-preset:show/warm-preset/report.md",
+               given=REPORT)
+    assert said.code == 0, said.said
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert [q["tag"] for q in read["questions"]] == ["D3"] and read["status"] == "review"
+
+    ticket(tickets, "cool-preset", status="claimed")
+    broken = run(repo, "import", "cool-preset", "-", "--called", "ticket/cool-preset:show/cool-preset/report.md",
+                 given="## Comments\n\n- A1 no anchor in backticks here.\n")
+    assert broken.code == 1
+    assert "ticket/cool-preset:show/cool-preset/report.md:3:" in broken.err, broken.said
 
 
 def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: Path, tmp_path: Path) -> None:
@@ -1278,6 +1295,8 @@ def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
 
     said = run(split, "set", "one-flow", "status=done")
     assert said.code == 1 and "is not merged into main" in said.err, said.said
+    inside = run(split / "agent" / "tickets", "set", "one-flow", "status=done")
+    assert inside.code == 1 and "is not merged into main" in inside.err, "the code repo is read from either"
     git(split, "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
     said = run(split, "set", "one-flow", "status=done")
     assert said.code == 1 and "is not merged into main" in said.err, "the agent branch is half of it"
@@ -1297,8 +1316,12 @@ def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> N
     git(split / "agent", "add", "-A")
     git(split / "agent", "commit", "-q", "-m", "one-flow, with what it owns")
 
+    (split / "agent" / "show" / "one-flow" / "notes.md").write_text("what it turned on\n")  # untracked
     said = run(split, "retire", "one-flow")
     assert said.code == 0, said.said
+    kept = Path.home() / "logs" / "agent" / split.name / "show" / "one-flow" / "notes.md"
+    assert kept.is_file(), f"an untracked file leaves to {kept}, under the project's own name"
+    kept.unlink()
     for gone in ("tickets/one-flow.md", "show/one-flow/demo", "research/one-flow.md"):
         assert not (split / "agent" / gone).exists(), f"{gone} stayed"
     assert "one-flow, with what it owns" in git(split / "agent", "log", "-1", "--format=%s"), "staged, not committed"

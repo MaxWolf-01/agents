@@ -172,8 +172,9 @@ main() {
 
 step "one project, two repos"
 
+printf '  what the code repo makes of the agent repo inside it:\n'
 run git -C "$lamp" status --short
-echo "  (nothing: the code repo ignores agent/, which is a repo of its own)"
+run git -C "$lamp" check-ignore -v agent
 ( cd "$lamp/src" && run "$tracker" root )
 ( cd "$lamp" && run "$tracker" frontier )
 

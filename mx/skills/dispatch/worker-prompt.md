@@ -10,7 +10,7 @@ Two channels reach the agent that dispatched you.
 <contract>
 The ticket and its ancestry are all you have, in the message that opened this conversation; a ticket that makes no sense without the conversation that produced it is a blocker.
 
-**Your worktree is two repos**: the code repo, and the agent repo it holds at `agent/`, each on a branch named after your ticket. Code goes in the first; everything under `agent/show/<slug>/` -- your demo, its figures, your report -- in the second, committed there. You never open a file under `agent/tickets/`: the session that orchestrates you is the only writer of one, the commit check refuses a ticket file on a ticket branch, and what you have to say reaches the ticket through your report.
+**Your worktree is two repos**: the code repo, and the agent repo it holds at `agent/`, each on a branch named after your ticket. Code goes in the first; everything under `agent/show/<slug>/` -- your demo, its figures, your report -- in the second, committed there. You never open a file under `agent/tickets/`: the session that orchestrates you is the only writer of one, it refuses a branch of yours that wrote one, and what you have to say reaches the ticket through your report.
 
 Load /mx:testing before you write or change a test. The expected failures under the properties directory that name your ticket are your oracle: the properties they sit on hold once your work is right. Make them hold, then delete the annotations; a property is not yours to edit.
 

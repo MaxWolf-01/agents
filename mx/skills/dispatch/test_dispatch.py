@@ -176,6 +176,21 @@ def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys
     assert "already claimed" in again.stderr, again.stderr
 
 
+def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy: Path) -> None:
+    """The tree flow: the orchestrator holds the branch its child tickets merge into, in a worktree
+    of the code repo that has no `agent/` in it at all, and the agent repo keeps the branch it has
+    out. Every ticket change still goes to the agent repo's main checkout."""
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    assert not (worktree / "agent").exists(), "the code repo ignores it and holds none of it"
+
+    claimed = run(worktree, "claim", "warm-preset")
+    assert claimed.returncode == 0, claimed.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert "claim warm-preset" in git(toy / "agent", "log", "-1", "--format=%s")
+    assert git(toy / "agent", "branch", "--show-current").strip() == "main", "on the branch it had out"
+
+
 @pytest.fixture
 def staged(toy: Path) -> Iterator[Path]:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host.
@@ -201,7 +216,7 @@ def kill_sessions() -> None:
         pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     listed = subprocess.run(["tmux", "ls", "-F", "#{session_name}"], capture_output=True, text=True)
     for session in listed.stdout.split():
-        if session.startswith("dispatch-lamp-"):
+        if session.startswith(("dispatch-lamp-", "job-lamp-")):  # the worker's, and a staged demo's
             subprocess.run(["tmux", "kill-session", "-t", f"={session}"], capture_output=True)
 
 

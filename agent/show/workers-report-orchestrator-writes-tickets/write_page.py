@@ -20,8 +20,8 @@ SAYS = {
     "one project, two repos": (
         "A project is a code repo with its <code>agent/</code> a git repo of its own inside it, "
         "which the code repo ignores: the tickets, the show directories, the prototypes and the "
-        "research are committed there. Nothing configures it — <code>tracker root</code> answers "
-        "with that repo's <code>tickets</code> from anywhere in either — and <code>git status</code> "
+        "research are committed there. Nothing configures it: <code>tracker root</code> answers "
+        "with that repo's <code>tickets</code> from anywhere in either, and <code>git status</code> "
         "in the code repo says nothing about it."
     ),
     "the claim, committed where the ticket files are": (
@@ -174,7 +174,7 @@ def board(out: Path) -> str:
     if not (out / "board.png").exists():
         return "<p>The board did not render; the transcript above says what happened.</p>"
     return (f'<section class="panel"><h2>the board, with the build in flight</h2><p>{BOARD}</p>'
-            '<figure><img src="board.png" alt="the board of the plans repo, the warm-preset row in needs me">'
+            '<figure><img src="board.png" alt="the board of the toy project, the warm-preset row in needs me">'
             "</figure></section>")
 
 

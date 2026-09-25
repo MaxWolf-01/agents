@@ -70,8 +70,10 @@ app = SubcommandApp()
 @app.command(name="check")
 def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
     """Refuse every ticket file that says something no reader can read, one `file:line: message` per
-    finding. With no paths, the staged ticket files, which is what the commit hook runs; a commit in
-    a repo with no tracker has nothing to check and is refused nothing.
+    finding, and every ticket file staged on a `ticket/<slug>` branch whatever it says, since a
+    ticket file is written in the agent repo's main checkout and on no ticket branch. With no paths,
+    the staged ticket files, which is what the commit hook runs; a commit in a repo with no tracker
+    has nothing to check and is refused nothing.
 
     Args:
         paths: the ticket files to check; they are read as the tracker their directory holds.
@@ -386,8 +388,7 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not landed here, or None once it has: its own branch merged into
     the branch this runs on, which is the branch ticket branches merge into; for a parent ticket,
     every child ticket done; for a ticket the user is in the loop for, the ruling itself."""
-    repos = [built_in(tracker), toplevel(tracker.root)]  # the code repo's checkout, and the agent repo's
-    branches = [(top, ticket_branch(top, ticket.slug)) for top in dict.fromkeys(repos)]
+    branches = [(top, ticket_branch(top, ticket.slug)) for top in repos_of(tracker)]
     if all(branch is None for _, branch in branches):
         children = tracker.children(ticket.slug)
         if ticket.needs_user or (children and all(child.status == "done" for child in children)):
@@ -412,12 +413,17 @@ def ticket_branch_out(root: Path) -> str | None:
     return said if said.startswith("ticket/") else None
 
 
-def built_in(tracker: Tracker) -> Path:
-    """The checkout a ticket's work is built in: the one this command runs in, which is where
-    dispatch runs and so where the ticket branch and its merge are; the tracker's own where that is
-    no checkout. The two are one repo unless the tracker is another repo's."""
-    done = tried(Path.cwd(), "rev-parse", "--show-toplevel")
-    return Path(done.stdout.strip()) if done.returncode == 0 else toplevel(tracker.root)
+def repos_of(tracker: Tracker) -> list[Path]:
+    """The checkouts a round lands in: the code repo's and the agent repo's, one each. The code
+    repo's is the checkout this command runs in where that is the code repo, since dispatch runs in
+    the worktree a parent ticket is built in and the merge is there; its main checkout otherwise.
+    One repo where the project's `agent/` is not one of its own yet."""
+    agent = toplevel(tracker.root)
+    here_ = tried(Path.cwd(), "rev-parse", "--show-toplevel")
+    code = Path(here_.stdout.strip()) if here_.returncode == 0 else None
+    if code is None or code == agent:
+        code = project_root(tracker.root)
+    return [code] if code == agent else [code, agent]
 
 
 def ticket_branch(top: Path, slug: str) -> str | None:
@@ -483,7 +489,7 @@ def rule(
 def import_report(
     slug: Annotated[str, tyro.conf.Positional],
     report: Annotated[str, tyro.conf.Positional],
-    named: str = "",
+    called: str = "",
 ) -> int:
     """Bring a worker's report into its ticket: the closing comment under `## Comments`, the
     questions it raised under `## Questions`, and the `review` status the finished build waits in.
@@ -496,12 +502,12 @@ def import_report(
         slug: the ticket the report is of.
         report: the report file, or `-` for one on stdin, which is how dispatch hands over the one
             its worker committed on the agent repo's ticket branch.
-        named: what a refusal calls a report read from stdin, so it names the object it came from.
+        called: what a refusal calls a report read from stdin, so it names the object it came from.
     """
     tracker = here()
     ticket = tracker.ticket(slug)
     alone = report == "-"
-    path = Path(named or "<stdin>") if alone else Path(report)
+    path = Path(called or "<stdin>") if alone else Path(report)
     read_back = read_report(path, sys.stdin.read() if alone else path.read_text())
     refuse(read_back.refusals)
     if ticket.status == "review":
@@ -574,7 +580,7 @@ def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
         raise Refused(["a ticket that stays cites a property of one retiring, and every reader refuses a citation that names no ticket:", *citing])
 
     known = {top / name for name in git(top, "ls-files").splitlines()}
-    leaving = sorted(owned(retiring, tracker, top))
+    leaving = sorted(owned(retiring, tracker))
     tracked = [path for path in leaving if path in known]
     refuse_uncommitted(tracked + [one.path for one in unblocking(retiring, tracker)], top)
     if tracked:
@@ -583,7 +589,7 @@ def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
         if renders(path, known):
             run(top, "rm", str(path.relative_to(top)))
         else:
-            kept = Path.home() / LOGS / "agent" / top.name / path.relative_to(top)
+            kept = Path.home() / LOGS / "agent" / project_root(tracker.root).name / path.relative_to(top)
             kept.parent.mkdir(parents=True, exist_ok=True)
             run(top, "mv", str(path.relative_to(top)), str(kept))
     for directory in sorted({path.parent for path in leaving if path.parent != tracker.root}, reverse=True):
@@ -649,13 +655,13 @@ def cites_into(retiring: Sequence[Ticket], tracker: Tracker) -> list[str]:
             for ref, line in ticket.cites if ref.partition("#")[0] in leaving]
 
 
-def owned(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> set[Path]:
+def owned(retiring: Sequence[Ticket], tracker: Tracker) -> set[Path]:
     """Every file the retired tickets take with them: their own, their show directories, and the
     prototypes and research notes they link that no surviving ticket links too. A ticket writes
     those links from the code repo's root, which is the directory the agent repo sits in."""
     retired = {one.slug for one in retiring}
     leaving = {one.path for one in retiring}
-    beside = tracker.root.parent.parent  # the code repo's root, the path a link is written from
+    beside = project_root(tracker.root)  # the path a ticket writes its links from
     for one in retiring:
         leaving |= under(tracker.root.parent / "show" / one.slug)
     kept = "\n".join(one.body for one in tracker.tickets.values() if one.slug not in retired)
@@ -722,8 +728,9 @@ def hook(repo: Annotated[Path, tyro.conf.Positional] = Path(".")) -> int:
     the path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
 
     Args:
-        repo: the repository to install into, a bare one included, since a worker host's is bare;
-            the working directory's by default.
+        repo: the repository to install into, a bare one included; the working directory's by
+            default. It is the agent repo that wants one, since that is where ticket files are
+            written.
     """
     if not repo.is_dir():
         raise Refused([f"{repo} is no directory"])
@@ -1392,21 +1399,36 @@ def find_tracker(start: Path) -> Path:
 
 def tracker_root(start: Path) -> Path:
     """Where the project at `start` writes its ticket files: the `agent/tickets` of the agent repo
-    its code repo holds, in that repo's main checkout. Nothing names it; it is found."""
-    return main_worktree(find_tracker(start))
+    its code repo holds, in that repo's main checkout, which is where every ticket file is
+    committed. Every tool finds it, and nothing names it.
+
+    Found from the repo the working directory is in rather than by walking up from it, since a
+    worktree of the code repo has no `agent/` in it at all: the code repo's main checkout holds the
+    agent repo, and the agent repo's main checkout is that directory."""
+    main = main_checkout(start)
+    if main is not None:
+        if (main / TICKETS).is_dir():  # the code repo, in any of its worktrees
+            return main / TICKETS
+        if main.name == TICKETS.parent.name and (main / TICKETS.name).is_dir():  # inside the agent repo
+            return main / TICKETS.name
+    return find_tracker(start)
 
 
-def main_worktree(root: Path) -> Path:
-    """The repo's main checkout's copy of `root`, since that is the checkout a tracker is committed
-    in: a linked worktree holds a ticket branch, and a ticket file is written on no ticket branch.
-    The directory as found where the repo has no copy of it in its main checkout, and outside git."""
-    listed = tried(root, "worktree", "list", "--porcelain")
-    top = tried(root, "rev-parse", "--show-toplevel")
-    if listed.returncode != 0 or top.returncode != 0:
-        return root
-    main = Path(listed.stdout.split("\n", 1)[0].removeprefix("worktree ").strip())
-    theirs = main / root.resolve().relative_to(Path(top.stdout.strip()).resolve())
-    return theirs if theirs.is_dir() else root
+def main_checkout(start: Path) -> Path | None:
+    """The main worktree of the repo `start` is in, which is the checkout a ticket file is written
+    in; None outside git. A linked worktree holds a ticket branch, and a ticket file is written on
+    no ticket branch."""
+    listed = tried(start, "worktree", "list", "--porcelain")
+    if listed.returncode != 0:
+        return None
+    return Path(listed.stdout.split("\n", 1)[0].removeprefix("worktree ").strip())
+
+
+def project_root(root: Path) -> Path:
+    """The code repo's root, from the tracker's: the directory the agent repo sits in. It is what a
+    ticket's links are written from, what names the project, and what holds its code, whether or not
+    `agent/` is a repo of its own yet."""
+    return root.parent.parent
 
 
 def tracker_of(root: Path, texts: dict[Path, str] | None = None) -> Tracker:
