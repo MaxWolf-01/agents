@@ -71,7 +71,7 @@ Filed on the user's request on 2026-09-23, at priority 1. Grilled from the archi
 
 ## Testing seams
 
-`tracker`'s command line is the one seam for P1 to P4 and P6, executable there as checks over generated ticket files and fixture trackers, built by `tracker-command-and-commit-check`. P7 is executable at three: the plugin's source (nothing a worker host holds writes a ticket file), the commit check (a ticket file staged on a `ticket/<slug>` branch is refused) and `dispatch`'s command line (a round whose agent branch wrote a ticket file is refused), built by `workers-report-orchestrator-writes-tickets`. P5 and P8 are reviewed: by each child ticket's review and by this ticket's close-out. (my call, r3; amended 2026-09-25 for P7 and P8)
+`tracker`'s command line is the one seam for P1 to P4 and P6, executable there as checks over generated ticket files and fixture trackers, built by `tracker-command-and-commit-check`. P7 is executable at four: the plugin's source (nothing dispatch stages on a worker host reads a ticket file), `tracker`'s command line (a write typed from a `ticket/<slug>` branch is refused, which is what a worker holds either repo on), the commit check (a ticket file staged on such a branch is refused) and `dispatch`'s command line (a round whose agent branch wrote a ticket file is refused), built by `workers-report-orchestrator-writes-tickets` and `close-out-review-fixes` (amended 2026-09-25: the source seam's wording was wider than what it checks, since a worker host holds the whole plugin, `tracker` included; the refusal is what holds the rest). P5 and P8 are reviewed: by each child ticket's review and by this ticket's close-out. (my call, r3; amended 2026-09-25 for P7 and P8)
 
 ## The incident
 
