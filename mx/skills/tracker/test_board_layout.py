@@ -5,7 +5,7 @@
 """The board's layout, measured in a browser. Run: uv run test_board_layout.py
 
 The seam is the rendered page: the demo tracker on disk, rendered by board.py, measured by
-render-lint. The oracle is the no-overlap Property of agent/tickets/board-orients/spec.md: at zoom
+render-lint. The oracle is the no-overlap Property of mx/skills/tracker/corpus/board-orients.md: at zoom
 80% to 200% and window widths from 900px up, nothing on the board overlaps or escapes its box, in
 either scheme.
 
@@ -47,7 +47,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from board import render, tracker_roots
+from board import render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 
@@ -56,18 +56,19 @@ WINDOWS = (900, 1280, 1920, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
 WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
 SCHEMES = ("day", "night")
-OPENED = "t-csv-import-02"  # the demo tracker's build in review: the row carrying every mark
-FOLDED = "standalone-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
+OPENED = "t-map-columns"  # the demo tracker's build in review: the row carrying every mark
+FOLDED = "t-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
 # A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
 # prose; the hover probe below renders the other branch, the board's own count. No model runs in a
 # check: the fixtures take claude off PATH.
 WRITTEN = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
-SAID = """Two builds wait on your ruling and the frontier is three deep. The import feature is the
-one moving: 01 landed on Monday and 02 has been in review since, with three questions on it.
+SAID = """Two builds wait on your ruling and the frontier is three deep. The csv-import tree is the
+one moving: parse-rows landed on Monday and map-columns has been in review since, with three
+questions on it.
 
 ## next
 
-- **Map columns once per bank**: the whole feature waits behind it, and its demo runs.
+- **Map columns once per bank**: the whole tree waits behind it, and its demo runs.
 - **Speed up the test suite**: four minutes to forty-eight seconds, two questions left.
 - **The flaky upload test**: fifteen minutes, and it stops a build going red for nothing.
 
@@ -93,7 +94,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
              for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
     found = {width: lint(pages, width) for width in WIDTHS}
@@ -214,7 +215,7 @@ print(json.dumps(out))
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("ftag", "num", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
          f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",
@@ -250,7 +251,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
-    render(tracker_roots(transcribed.root), transcribed.repo, out)  # no briefing: the board's own count
+    render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
@@ -310,7 +311,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
-ROW, NODE, NEXT = "t-csv-import-02", "#t-csv-import-04", "#t-csv-import-01"
+ROW, NODE, NEXT = "t-map-columns", "#t-commit-import", "#t-parse-rows"
 WIDE = "(sel) => document.querySelector(sel)?.getBoundingClientRect().width ?? 0"
 OVER = "(sel) => { const b = document.querySelector(sel); return b.scrollWidth - b.clientWidth }"
 OPEN = "document.getElementById('gfull').classList.contains('open')"
@@ -360,6 +361,12 @@ with sync_playwright() as pw:
             "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
             "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
             "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
+    # narrowed first, so the drag has something to move whatever the fixture's
+    # labels are as wide as: the check is that a drag pans, not that this
+    # tracker's graph happens to overflow the window this probe opens in
+    page.set_viewport_size({"width": 700, "height": 950})
+    page.wait_for_function("document.querySelector('#gfull .gfbody').scrollWidth > document.querySelector('#gfull .gfbody').clientWidth")
+    over["overflow"] = page.evaluate(OVER, "#gfull .gfbody")
     box = page.evaluate("() => { const b = document.querySelector('#gfull .gfbody').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height} }")
     page.mouse.move(box["x"] + box["w"] * 0.8, box["y"] + box["h"] * 0.5)
     page.mouse.down()
@@ -408,7 +415,7 @@ with sync_playwright() as pw:
               "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
               "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
               "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
-    win.click("[data-gmode=feature]")  # the board is on the whole tracker, so this is a change in both
+    win.click("[data-gmode=tree]")  # the board is on the whole tracker, so this is a change in both
     named(win, ".gname", "csv-import")
     window["switched"] = win.inner_text(".gname")
     window["board_name"] = page.inner_text("#gname")
@@ -467,7 +474,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     seen = graph_probe(out)
     assert seen["errors"] == [], seen["errors"]
     if not seen["cdn"]:
@@ -507,7 +514,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
     assert not preview["node_opened"], "a node clicked in the preview opened the overlay instead of going to its row"
-    assert preview["node_cursor"] == "t-csv-import-01", f"the preview's node left the board on {preview['node_cursor']!r}"
+    assert preview["node_cursor"] == "t-parse-rows", f"the preview's node left the board on {preview['node_cursor']!r}"
 
     win = seen["window"]
     assert win["title"].endswith("dependencies"), win["title"]
@@ -530,7 +537,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     # the board reloads on every tracker change, which is where a window holding the board itself
     # would go quiet: it finds the board again and goes on driving it
     after = seen["after_reload"]
-    assert after["orphan"] == "" and after["cursor"] == "t-csv-import-01", (
+    assert after["orphan"] == "" and after["cursor"] == "t-parse-rows", (
         f"the window lost the board across its re-render: {after}"
     )
     assert "gone" in seen["orphan_says"], f"a window whose board closed says {seen['orphan_says']!r}"

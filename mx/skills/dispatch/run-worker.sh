@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
-# Usage: run-worker.sh <message-file> <ticket-file> <model> <run> [session-id]
+# Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
-#   ticket-file   ticket path within this worktree; its `status:` says whether a retry is warranted
+#   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md,
+#                 committed in the agent repo this pane's worktree holds at `agent`
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
@@ -12,7 +13,7 @@
 set -u
 
 message=$1
-ticket=$2
+slug=$2
 model=$3
 run_id=$4
 resume_session=${5:-}
@@ -22,7 +23,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
 if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
-    printf 'attempts=0 exit=1 status=? session=- error=%s\n' \
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
@@ -37,9 +38,24 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
+# What the worker has to say about the ticket: its closing comment and the questions its build
+# raised, committed with its demo and its figures in the agent repo, which is a repo of its own at
+# `agent` inside this worktree. The orchestrator fetches that branch and imports the report into
+# the ticket; this round's report being committed is what says the worker finished.
+#
+# This round's, not any: a resumed round starts with the round before it already committed there,
+# so what the run is measured against is the blob that was there when it started. A crash before
+# the worker writes anything then reads as the unfinished run it is.
+was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)
+reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
-printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$ticket" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+# Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
+# would end in `report=no` with nothing saying why.
+git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
+    printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
+        "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md and output style are written for a human at a terminal: they tell their
 # reader to ask and how to shape a reply, for a conversation this worker is not in.
@@ -80,21 +96,21 @@ for attempt in $(seq 1 $max_attempts); do
         claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
-    status=$(sed -n 's/^status: *//p' "$ticket" | head -1)
-
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
-    [ "$status" = review ] && break
+    # The report is the worker's finished signal, so a crash after it is a crash with the work done.
+    reported && break
     [ "$attempt" -eq "$max_attempts" ] && break
 
     backoff=$((attempt * 30))
-    echo "run-worker: attempt $attempt exited $rc (ticket: ${status:-?}); retrying in ${backoff}s"
+    echo "run-worker: attempt $attempt exited $rc (no report yet); retrying in ${backoff}s"
     sleep "$backoff"
     # A TERM that lands here ends the sleep, and must end the run too.
     [ -n "$stopped" ] && break
 done
 
 [ -n "$stopped" ] && rc=stopped
-# Last act: the orchestrator's wait returns on this file.
-printf 'attempts=%s exit=%s status=%s session=%s\n' \
-    "$attempt" "$rc" "${status:-?}" "$session" > "$here/$run_id.status"
+# Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
+# a report to import.
+printf 'attempts=%s exit=%s report=%s session=%s\n' \
+    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" > "$here/$run_id.status"

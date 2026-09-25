@@ -1,0 +1,375 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.11"
+# ///
+"""Drive the tracker command over a throwaway tracker and write the walkthrough as a page.
+
+Everything on the page is a real run: the fixture tracker is built here, every command is the one
+`mx/bin/tracker` ships, and the output is what it printed."""
+
+import html
+import json
+import os
+import shutil
+import subprocess
+import textwrap
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = Path(subprocess.run(["git", "-C", str(HERE), "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, check=True).stdout.strip())
+OUT = HERE / "out"
+WORK = OUT / "tracker"
+TICKETS = WORK / "agent" / "tickets"
+TRACKER = REPO / "mx" / "bin" / "tracker"
+CORPUS = REPO / "mx" / "skills" / "tracker" / "corpus"
+PATH = f"{REPO / 'mx' / 'bin'}:{os.environ['PATH']}"
+SUBCOMMANDS = ("check", "get", "data", "context", "frontier", "new", "set", "rule", "drop", "retire", "hook")
+
+
+def git(*args: str, at: Path = WORK) -> None:
+    subprocess.run(["git", "-C", str(at), *args], check=True, capture_output=True)
+
+
+def ran(*command: str, at: Path = WORK, shown: str = "", home: Path | None = None, refused: bool = False) -> tuple[str, str]:
+    """One run, as the page shows it: what was typed, and what came back. `home` moves the user's
+    home for the run, so a demo that retires files leaves them under out/ rather than in ~/logs;
+    `refused` marks a panel whose point is the non-zero exit."""
+    elsewhere = {"HOME": str(home), "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", str(Path.home() / ".cache/uv"))}
+    done = subprocess.run(command, cwd=at, capture_output=True, text=True,
+                          env={**os.environ, "PATH": PATH, **(elsewhere if home else {})})
+    said = (done.stdout + done.stderr).rstrip().replace(f"{WORK}/", "").replace(str(TRACKER), "tracker").replace(f"{REPO}/", "")
+    if done.returncode and not refused:
+        raise SystemExit(f"{' '.join(command)} failed with {done.returncode}:\n{said}")
+    return shown or " ".join(command).replace(str(TRACKER), "tracker"), said
+
+
+def build() -> None:
+    """A tracker of real ticket files: the board-orients feature as the one-ticket model holds it."""
+    shutil.rmtree(OUT, ignore_errors=True)
+    TICKETS.mkdir(parents=True)
+    for path in CORPUS.glob("*.md"):
+        if path.name != "README.md":
+            shutil.copy(path, TICKETS / path.name)
+    (WORK / "agent" / "show" / "board-orients").mkdir(parents=True)
+    (WORK / "agent" / "show" / "board-orients" / "index.html").write_text("<p>the explainer</p>\n")
+    (WORK / "agent" / "show" / "board-orients" / "index.png").write_text("a render nobody tracks\n")
+    (WORK / "agent" / "research").mkdir()
+    (WORK / "agent" / "research" / "03-board-reading.md").write_text("what the reading found\n")
+    (TICKETS / "board-orients.md").write_text(
+        (TICKETS / "board-orients.md").read_text().replace(
+            "## Brief\n", "## Brief\n\nIts reading is in agent/research/03-board-reading.md.\n", 1))
+    (TICKETS / "saved-views.md").write_text(
+        "---\nstatus: open\nblocked-by: [board-orients]\npriority: 2\nsize: M\n---\n\n"
+        "# Saved views over the ledger\n\n## Brief\n\nWhat saved-views is, cold.\n")
+    git("init", "-q", "-b", "main", ".")
+    git("config", "user.email", "demo@example.com")
+    git("config", "user.name", "the demo")
+    git("add", "agent/tickets", "agent/show/board-orients/index.html")
+    git("commit", "-q", "-m", "the tracker as board-orients left it")
+
+
+def steps() -> list[dict]:
+    """Every panel of the page: what it shows, the runs behind it, and what to look at."""
+    found = []
+
+    shown, said = ran(str(TRACKER), "--help")
+    every = [said] + [ran(str(TRACKER), name, "--help")[1] for name in SUBCOMMANDS]
+    (OUT / "tracker-help.txt").write_text("\n\n".join(every) + "\n")
+    found.append(dict(
+        title="The command",
+        said="One command owns every mechanical operation on a ticket file, read and write. Its "
+             "<code>--help</code> is the reference for what each subcommand takes and what it refuses; the "
+             "tracker skill keeps the flow and the judgment, and the two never say the same thing.",
+        runs=[(shown, said.split("╭─ options")[0].rstrip() + "\n…")],
+        look="Five subcommands read (check, get, data, context, frontier), five write (new, set, "
+             "rule, drop, retire), one installs the commit hook. The rest of this run, and each "
+             "subcommand's own <code>--help</code>, is beside this page in "
+             "<code>out/tracker-help.txt</code>.",
+    ))
+
+    ticket = TICKETS / "board-orients-workflow.md"
+    old = subprocess.run(
+        ["bash", "-c", f'source <(sed -n "/^notes_of()/,/^}}/p" {REPO}/mx/skills/dispatch/dispatch); notes_of'],
+        input=ticket.read_text(), capture_output=True, text=True)
+    cut = json.loads(old.stdout)["notes"] if old.returncode == 0 else []
+    whole = json.loads(subprocess.run([str(TRACKER), "data", str(ticket)], capture_output=True, text=True,
+                                      cwd=WORK, check=True).stdout)["tickets"][0]["assumptions"]
+    found.append(dict(
+        title="The incident it was built for",
+        said="A worker wrapped its assumption bullets at about a hundred columns, as Markdown renders "
+             "that way fine. The review page's reader took one line per bullet, so every note on that "
+             "page ended mid-sentence, and nothing refused it: a continuation line is not a bullet. "
+             "Both readings of the same file, below.",
+        pair=[("the review page's reader, one line per bullet",
+               "\n\n".join(f"A{note['id']}: {note['text']}" for note in cut[5:8]) or "jq is not here to run it with"),
+              ("tracker data, the bullet read whole",
+               "\n\n".join(f"A{note['id']}: {note['text']}" for note in whole[5:8]))],
+        look="A6 on the left stops at “the ticket's and”, which is the note the parent ticket quotes. "
+             "On the right it is the sentence the worker wrote. Same file, same three bullets.",
+    ))
+
+    bad = TICKETS / "map-columns.md"
+    bad.write_text(textwrap.dedent("""\
+        ---
+        status: open
+        type: grilling
+        parent: board-orients
+        blocked-by: [03]
+        priority: 1
+        size: M
+        ---
+
+        # Map columns once per bank
+
+        ## Brief
+
+        What the ticket is, cold.
+
+        ## Acceptance criteria
+
+        - [ ] Property P3, reviewed: the mapping is remembered per bank.
+        - [ ] `board-orients#P40` holds.
+
+        ## Comments
+
+        - [D1] Assumptions
+          - A1 one mapping per bank.
+        """))
+    git("add", "agent/tickets/map-columns.md")
+    found.append(dict(
+        title="The check, and the commit it blocks",
+        said="A ticket written to the shape the old model had is refused construct by construct, each "
+             "with the file, the line and what replaced it. The pre-commit hook runs the same check over "
+             "the staged files, so this is what a commit gets rather than a reader tripping later.",
+        runs=[ran(str(TRACKER), "hook"),
+              ran("git", "commit", "-m", "map columns once per bank", refused=True,
+                  shown="git commit -m 'map columns once per bank'")],
+        look="Five refusals, one commit refused. `type` and `NN` name what replaced them; "
+             "`board-orients#P40` names a property the parent ticket does not state; the assumption has "
+             "no anchor, which is the incident above caught at the commit.",
+    ))
+    git("rm", "-q", "-f", "agent/tickets/map-columns.md")
+
+    filed = [ran(str(TRACKER), "new", "map-columns", "--parent", "board-orients", "--priority", "2", "--size", "M")]
+    filed.append(ran("cat", "agent/tickets/map-columns.md"))
+    found.append(dict(
+        title="Filing, and the body left to the agent",
+        said="Filing writes the frontmatter and the skeleton and prints the path. The body stays prose "
+             "the agent writes into the file; the check is what holds it to the format.",
+        runs=filed,
+        look="A ticket an agent files on its own reading is proposed until the user rules on it.",
+    ))
+
+    git("add", "agent/tickets")
+    git("commit", "-q", "-m", "file map-columns")
+    moved = [ran(str(TRACKER), "set", "map-columns", "status=claimed"),
+             ran(str(TRACKER), "set", "map-columns", "status=review"),
+             ran(str(TRACKER), "set", "map-columns", "status=done", refused=True),
+             ran(str(TRACKER), "set", "board-orients-workflow", "status=open", refused=True)]
+    found.append(dict(
+        title="Status, along the transitions the tracker defines",
+        said="A status change the tracker's rules forbid is refused with the rule that forbids it. "
+             "<code>done</code> follows the user's accept and the merge of what the ticket built, which is "
+             "why the third line stops: nothing has been built here.",
+        runs=moved,
+        look="A ticket that is already done does not move back to open, and the last line is the rule "
+             "that says so.",
+    ))
+
+    ran(str(TRACKER), "set", "map-columns", "status=review")
+    (TICKETS / "saved-views.md").write_text(
+        (TICKETS / "saved-views.md").read_text().replace("blocked-by: [board-orients]", "blocked-by: [map-columns]"))
+    found.append(dict(
+        title="The frontier, and what holds the rest back",
+        said="What can be started right now: unclaimed, unblocked, open or proposed, and not the user's "
+             "own to sit for. Everything else not done says what it waits on.",
+        runs=[ran(str(TRACKER), "frontier")],
+        look="saved-views waits on map-columns, which is in review, so neither is on the frontier: a "
+             "blocker in review unblocks nothing, since a dependent never builds on a guess.",
+    ))
+
+    run = ran(str(TRACKER), "context", "map-columns")
+    found.append(dict(
+        title="A ticket's context, assembled once",
+        said="What a worker is briefed with and what a reviewer is given as the spec: the ticket's body, "
+             "then every ancestor's, nearest first. One assembly, so the two can never differ.",
+        runs=[(run[0], "\n".join(run[1].splitlines()[:18]) + "\n…")],
+        look="The ticket first, its parent ticket under it. A parent that names no ticket is refused, "
+             "as any dangling reference is.",
+    ))
+
+    git("add", "agent/tickets")
+    git("commit", "-q", "-m", "map-columns for review", "--no-verify")
+    git("branch", "ticket/map-columns")
+    ran(str(TRACKER), "set", "map-columns", "status=done")
+    git("add", "agent/tickets")
+    git("commit", "-q", "-m", "map-columns landed", "--no-verify")
+    (TICKETS / "pick-a-date-library.md").write_text(
+        "---\nstatus: proposed\npriority: 3\nsize: S\n---\n\n"
+        "# Pick a date library\n\n## Brief\n\nWhat pick-a-date-library is, cold.\n")
+    (TICKETS / "saved-views.md").write_text(
+        (TICKETS / "saved-views.md").read_text().replace(
+            "blocked-by: [map-columns]", "blocked-by: [map-columns, pick-a-date-library]"))
+    git("add", "agent/tickets")
+    git("commit", "-q", "-m", "a proposal, and the ticket that waits on it", "--no-verify")
+    found.append(dict(
+        title="Dropping a ticket nothing shipped",
+        said="Your reject ruling deletes the ticket, and every ticket that named it would then be "
+             "refused at commit, since a reference that names no ticket is refused by every reader. "
+             "<code>drop</code> is that ruling as one command: the file leaves by "
+             "<code>git rm</code>, so history keeps it and the reason the commit gives, and the "
+             "edges onto it leave with it. A ticket a surviving one names as its parent, or cites "
+             "a property of, is refused instead: those have to go first.",
+        runs=[ran(str(TRACKER), "drop", "pick-a-date-library"),
+              ran(str(TRACKER), "get", "saved-views", "blocked-by"),
+              ran(str(TRACKER), "drop", "board-orients", refused=True)],
+        look="saved-views keeps the edge it still has and loses the one onto a ticket that is gone. "
+             "board-orients is refused because it shipped: taking shipped work out is retiring, "
+             "which is the next panel, and it carries the show directory and the notes with it.",
+    ))
+    git("commit", "-q", "-m", "reject pick-a-date-library: hyphen-dt covers it", "--no-verify")
+
+    found.append(dict(
+        title="Retiring, and where each file goes",
+        said="Nothing leaves irrecoverably. A tracked file leaves by <code>git rm</code>, so history keeps "
+             "it; an untracked one is moved out of the repo to <code>~/logs</code>; a render whose "
+             "generating source is tracked is the one thing deleted. Every step is printed as it runs and "
+             "the commit stays with the caller.",
+        runs=[ran(str(TRACKER), "retire", "board-orients", home=OUT / "home",
+                  shown=f"HOME={OUT.name}/home tracker retire board-orients"),
+              ran("git", "status", "--short")],
+        look="board-orients takes its five child tickets and its show directory with it. The tracked "
+             "files leave by git rm, which is why git status has them; index.png is a render beside the "
+             "tracked page that draws it, so it is deleted; the research note has no source to redraw it "
+             "and is moved to ~/logs, which this run points into out/ so the demo keeps to itself. "
+             "saved-views stays, and loses its edge onto work that has shipped.",
+    ))
+    return found
+
+
+PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tracker: one command owns the ticket files</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {{
+  color-scheme: light dark;
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #6ea444);
+  --accent-2: light-dark(#674806, #cdb78a);
+  --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+  --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --size-body: 19px; --leading-body: 1.62; --measure: 38rem; --page: 64rem; --radius: 6px;
+}}
+[data-theme="day"] {{ color-scheme: light; }}
+[data-theme="night"] {{ color-scheme: dark; }}
+body {{ margin: 0; background: var(--ground); color: var(--body); font: 400 var(--size-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }}
+::selection {{ background: var(--mark); }}
+:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 3px; }}
+code {{ font-family: var(--font-mono); font-size: 0.85em; background: var(--ground-2); padding: 0.1em 0.35em; border-radius: 3px; }}
+p {{ margin: 0; }}
+.page {{ max-width: var(--page); margin: 0 auto; padding: 0 2rem; }}
+.top {{ display: flex; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--edge); }}
+.scheme {{ margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.85rem; }}
+.scheme:hover {{ color: var(--accent); }}
+.v-title {{ font-weight: 600; font-size: clamp(1.8rem, 3.2vw, 2.4rem); line-height: 1.14; letter-spacing: -0.022em; color: var(--strong); margin: 0; }}
+.v-h2 {{ font-weight: 600; font-size: 1.3em; line-height: 1.3; letter-spacing: -0.012em; color: var(--strong); margin: 0; }}
+.v-lead {{ font-size: 1.1em; line-height: 1.55; color: var(--muted); max-width: var(--measure); margin-top: 1.25rem; }}
+.v-meta {{ font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }}
+.hero {{ padding: 3rem 0 1rem; }}
+.hero .v-meta {{ margin-top: 0.75rem; }}
+section.s {{ padding: 3rem 0 1rem; }}
+section.s + section.s {{ border-top: 1px solid var(--edge); }}
+section.s > .v-meta {{ display: block; margin-bottom: 0.3rem; }}
+.s p.said {{ margin-top: 0.9rem; max-width: var(--measure); }}
+pre {{ margin: 1.25rem 0 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.55; background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); padding: 0.9rem 1rem; overflow-x: auto; color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }}
+pre b {{ font-weight: 500; color: var(--accent); }}
+.look {{ margin-top: 1.25rem; padding: 0.7rem 1rem; background: var(--wash-ink); border-left: 2px solid var(--accent); max-width: 54rem; font-size: 0.95em; }}
+.look .v-meta {{ color: var(--accent); margin-right: 0.5rem; display: inline; }}
+.pair {{ display: grid; gap: 1.25rem; margin-top: 1.25rem; }}
+@media (min-width: 54rem) {{ .pair {{ grid-template-columns: 1fr 1fr; }} }}
+.pair > div {{ min-width: 0; }}
+.pair > div > .v-meta {{ display: block; }}
+.pair pre {{ margin-top: 0.4rem; }}
+footer {{ padding: 4rem 0 3rem; }}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <span class="v-meta">agents / tracker-command-and-commit-check</span>
+    <button class="scheme" id="scheme" aria-label="switch scheme">day / night</button>
+  </div>
+  <header class="hero">
+    <h1 class="v-title">tracker: one command owns the ticket files</h1>
+    <p class="v-meta">{stamp} · every run on this page was made by <code>demo</code> against a throwaway tracker</p>
+    <p class="v-lead">The tracker's reads and writes had no single owner: status alone was parsed four
+    ways by four scripts, the transition rules and the retire recipe were prose an agent followed by
+    hand, and a writer's drift from a reader's expectation dropped text in silence. This is that
+    owner, driven.</p>
+  </header>
+  <main>
+{sections}
+  </main>
+  <footer class="v-meta">The fixture tracker this ran against is at <code>{work}</code>.</footer>
+</div>
+<script>
+const root = document.documentElement
+const asked = new URLSearchParams(location.search).get("theme")
+const set = (night) => root.dataset.theme = night ? "night" : "day"
+document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+set(asked ? asked === "night" : matchMedia("(prefers-color-scheme: dark)").matches)
+</script>
+</body>
+</html>
+"""
+
+
+def render(found: list[dict]) -> str:
+    written = []
+    for n, step in enumerate(found, start=1):
+        parts = [f'    <section class="s">', f'      <span class="v-meta">{n}</span>',
+                 f'      <h2 class="v-h2">{step["title"]}</h2>', f'      <p class="said">{step["said"]}</p>']
+        for shown, said in step.get("runs", []):
+            parts.append(f'      <pre><b>$ {html.escape(shown)}</b>\n{html.escape(said)}</pre>')
+        if pair := step.get("pair"):
+            parts.append('      <div class="pair">')
+            for label, said in pair:
+                parts.append(f'        <div><span class="v-meta">{html.escape(label)}</span><pre>{html.escape(said)}</pre></div>')
+            parts.append("      </div>")
+        parts.append(f'      <p class="look"><span class="v-meta">look</span>{step["look"]}</p>')
+        parts.append("    </section>")
+        written.append("\n".join(parts))
+    return "\n".join(written)
+
+
+def main() -> None:
+    if not TRACKER.exists():
+        raise SystemExit(f"no tracker at {TRACKER}: run this from a checkout of the mx repo")
+    build()
+    stamp = subprocess.run(["git", "-C", str(REPO), "log", "-1", "--format=%cs"], capture_output=True, text=True).stdout.strip()
+    page = OUT / "tracker-command.html"
+    page.write_text(PAGE.format(stamp=stamp, sections=render(steps()), work=WORK))
+    print(f"wrote {page}")
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        subprocess.Popen(["xdg-open", str(page)], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        print("no display here; open the file above to read it")
+
+
+if __name__ == "__main__":
+    main()

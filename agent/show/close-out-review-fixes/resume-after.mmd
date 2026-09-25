@@ -1,0 +1,20 @@
+---
+title: A resumed round's finished signal, after this ticket
+---
+sequenceDiagram
+    autonumber
+    participant O as the orchestrator
+    participant R as the runner
+    participant W as the worker
+    participant B as report.md<br/>on the ticket branch
+    participant T as the ticket file
+    Note over B: round one's report is committed here
+    O->>R: resume
+    R->>B: the blob this run starts on
+    R->>W: continue
+    W--xR: exits nonzero, having written nothing
+    R->>B: has that blob changed?
+    B-->>R: no
+    R-->>O: report=no
+    Note over O: this round left nothing to review
+    O-->>T: nothing imported, and the ticket says what it said

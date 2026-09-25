@@ -1,8 +1,9 @@
 ---
 status: proposed
+parent: session-page
+blocked-by: [session-stop-hook]
 priority: 2
 size: S
-blocked-by: [04]
 ---
 
 # The skills and the output style put a session's answers on its page
@@ -11,7 +12,7 @@ blocked-by: [04]
 
 What an agent reads so that the pages get used: `/mx:show` becomes the one home for how a session delivers an answer, grilling delivers its rounds on the page, and the chat reply becomes one line and a link.
 
-Slice of `spec.md`, building on its Decisions under The session page (only questions ask, the chat reply), Producing the pages (no HTML from the agent, every artifact by a subagent or fork, review inside `/mx:show`), and The spec page (it replaces diffview for specs).
+Slice of `session-page`, building on its Decisions under The session page (only questions ask, the chat reply), Producing the pages (no HTML from the agent, every artifact by a subagent or fork, review inside `/mx:show`), and The spec page (it replaces diffview for specs).
 
 ## What to build
 

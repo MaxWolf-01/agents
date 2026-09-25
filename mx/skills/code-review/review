@@ -5,7 +5,7 @@
 # point, where the spec is, light or full, and what to do with the findings.
 #
 # Usage: review <fixed-point> [--axes correctness,standards,spec,tests]
-#               [--spec <path>] [--light] [--effort <level>] [--model <model>]
+#               [--spec <slug|path>] [--light] [--effort <level>] [--model <model>]
 #   <fixed-point>  the commit, branch or tag the diff is measured from. What
 #                  the reviewers get is the three-dot diff with both ends
 #                  pinned to SHAs, so it holds still while they read and
@@ -15,12 +15,15 @@
 #            correctness and standards, plus spec when --spec names one, plus
 #            tests when the diff touches test files too. An axis is a file in
 #            briefs/, and a repo with no spec runs two of the four.
-#   --spec   what the work was asked for, as a file: the ticket, the spec, an
-#            issue body fetched to one, and whatever discussion the reviewers
-#            should not reopen. The spec and tests axes both read it, so both
-#            need it.
+#   --spec   what the work was asked for: a ticket's slug, whose body and
+#            every ancestor's `tracker context` assembles into the report
+#            directory, or any file (an issue body fetched to one, a brief),
+#            and whatever discussion the reviewers should not reopen. The spec
+#            and tests axes both read it, so both need it.
 #   --light  one reviewer over the correctness and standards briefs joined,
-#            for work with no spec to check, reporting as the `light` axis.
+#            reporting as the `light` axis. With --spec it takes that brief's
+#            third part too, so one reviewer judges the diff against what was
+#            asked for as well.
 #   --effort every reviewer's effort, `high` by default; `claude --help` lists
 #            the levels.
 #   --model  every reviewer's model, `opus` by default.
@@ -49,6 +52,8 @@ set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/briefs
+# Every read of a ticket file goes through the one command that parses one.
+tracker=$skill/../tracker/tracker.py
 # Reading history is every reviewer's, by the subcommand and never by the tool,
 # which is the bar `/mx:permissions-review` holds an allowlist to.
 # Both forms of anything anyone types bare, since a trailing glob wants an
@@ -89,21 +94,28 @@ axes= spec= light= model=opus effort=high
 while [ $# -gt 0 ]; do
     case $1 in
         --axes)   axes=${2:-};   [ -n "$axes" ]   || die "--axes takes a comma-separated list of axes"; shift 2 ;;
-        --spec)   spec=${2:-};   [ -n "$spec" ]   || die "--spec takes a path"; shift 2 ;;
+        --spec)   spec=${2:-};   [ -n "$spec" ]   || die "--spec takes a ticket's slug or a path"; shift 2 ;;
         --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
         --model)  model=${2:-};  [ -n "$model" ]  || die "--model takes a model alias or id"; shift 2 ;;
         --light) light=1; shift ;;
         *) die "unknown argument: $1" ;;
     esac
 done
-# Before the cd below, so a relative path means what the caller typed.
+# Before the cd below, so a relative path means what the caller typed. What is
+# no file is read as a ticket's slug, once the repo it belongs to is known.
+slug=
 if [ -n "$spec" ]; then
-    [ -f "$spec" ] || die "no spec file at $spec"
-    spec=$(realpath "$spec")
+    if [ -f "$spec" ]; then spec=$(realpath "$spec"); else slug=$spec; fi
 fi
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
 cd "$root" || die "cannot enter $root"
+# Read here, before any reviewer starts: a slug that names no ticket is the
+# caller's typo, and the reviewers are the expensive part.
+if [ -n "$slug" ]; then
+    context=$("$tracker" context "$slug") ||
+        die "--spec takes a file or a ticket's slug; $slug is neither a file nor a ticket of this tracker"
+fi
 git rev-parse --verify -q "$fixed" >/dev/null || die "$fixed does not resolve in $root"
 base=$(git merge-base "$fixed" HEAD) || die "$fixed and HEAD have no merge-base"
 # Both ends pinned here, once: the reviewers read minutes later, and a session
@@ -130,7 +142,6 @@ touches '(^|/)CONTEXT(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
-    [ -z "$spec" ] || die "--light has no Spec axis; run the full axes with a spec, or drop --spec"
     axes=light
 elif [ -z "$axes" ]; then
     axes=correctness,standards
@@ -141,7 +152,7 @@ axis_list=${axes//,/ }
 for axis in $axis_list; do
     [ -f "$templates/$axis.md" ] || die "no axis named $axis: briefs/$axis.md is not there"
     case $axis in
-        spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against the spec: pass --spec <path>" ;;
+        spec|tests) [ -n "$spec" ] || die "the $axis axis judges the work against what was asked for: pass --spec <slug|path>" ;;
     esac
 done
 
@@ -167,6 +178,13 @@ esac
 
 dir=$root/agent/reviews/$range
 mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
+# The ticket and its ancestry as one file, assembled the one way a worker's
+# brief is: the reviewer reads what the work was asked for and the work the
+# ticket is part of, and nothing else of the tracker.
+if [ -n "$slug" ]; then
+    spec=$dir/ticket.md
+    printf '%s\n' "$context" > "$spec" || die "cannot write $spec"
+fi
 
 # One review of a range at a time. This script holds the range's lock on fd 9,
 # and every reviewer it starts inherits it, down to the test runs of the Tests
@@ -230,6 +248,10 @@ render() { # <axis>
     commits=$(git log --oneline "$base..$head")
     case $axis in
         light) parts="preamble correctness standards light"
+               # The one reviewer judges the diff against what was asked for
+               # too, where the caller named it; with no --spec that part is
+               # left out, and the brief's own words say which of the two it is.
+               [ -z "$spec" ] || parts="$parts asked"
                # Full messages, so the one reviewer gets the author's account
                # of the work as orientation over the diff.
                commits=$(git log "$base..$head") ;;
@@ -315,5 +337,5 @@ if [ ${#missing[@]} -gt 0 ]; then
     done
     # The merge-base rather than the caller's fixed point, and before HEAD
     # moves: a re-run after a commit lands its report under another range.
-    die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec $spec} --model $model --effort $effort"
+    die "re-run what is missing, before HEAD moves: review $base --axes $(IFS=,; echo "${missing[*]}")${spec:+ --spec ${slug:-$spec}} --model $model --effort $effort"
 fi

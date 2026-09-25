@@ -25,7 +25,7 @@ Focus area, if given: $ARGUMENTS. Otherwise cover the whole session.
 ## Guidelines
 
 - Bullet points, not paragraphs
-- Reference the ticket or spec if the work has one
+- Reference the ticket if the work has one
 - Flag the architectural and strategic calls you made without user input
 
 **After the recap:** ask the open questions if any are worth asking. The user scans the recap and answers in the same pass, so err toward asking.

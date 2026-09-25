@@ -7,7 +7,7 @@
     {
       "name": "mx",
       "source": "./mx",
-      "description": "Multi-session agent workflow. File-based specs and tickets, domain glossary and ADRs, research artefacts, session continuity."
+      "description": "Multi-session agent workflow. File-based tickets, domain glossary and ADRs, research artefacts, session continuity."
     }
   ]
 }

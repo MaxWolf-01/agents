@@ -6,59 +6,48 @@ The words the mx plugin uses for a piece of work on its way from idea to shipped
 
 ### Planning
 
-**Feature**:
-The unit the tracker holds one spec for: one directory, its spec, its tickets, whatever the size. Not the product sense; a big design splits into sibling features, never nested ones.
-_Avoid_: effort, map, project, epic
-
-**Spec**:
-The work order for one feature: as much design as one gate can confirm.
-_Avoid_: map, plan, PRD, design doc
-
 **Round**:
 One turn of grilling: the design as it stands with the frontier's questions, then the user's answers.
 _Avoid_: iteration, pass
 
 **Call**:
-One design decision as the spec states it, carrying a spec mark that says who settled it.
+One design decision as the ticket states it, carrying a call mark that says who settled it.
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
-**Spec mark**:
-The provenance tag on a call in a draft spec: who settled it, or that nobody has yet.
-_Avoid_: mark (bare; a row mark is one too), marker, annotation, tag, label
+**Call mark**:
+The provenance tag on a call: who settled it, or that nobody has yet.
+_Avoid_: spec mark, mark (bare; a row mark is one too), marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates and nobody holds.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates, nobody holds, and the user is not in the loop for.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
 In-scope work whose question cannot yet be stated.
 _Avoid_: Further Notes, Not yet specified, unknowns, TBD
 
-**Gate**:
-The point where a spec is confirmed and reads cold from then on.
-_Avoid_: sign-off, approval, freeze
-
 ### Tracker
+
+**Agent repo**:
+The repo of everything that plans a project, held inside the repo it plans and ignored by it: its tickets, show directories, prototypes and research.
+_In code_: `agent/`
+_Avoid_: tracker repo (the tracker is one directory in it), meta repo, planning repo
 
 **Ticket**:
 The unit of work on the tracker: one file, or one issue.
 _Avoid_: task, item, story
 
-**Build ticket**:
-A ticket whose deliverable is a landed change: one vertical slice.
-_Avoid_: implementation ticket, work item
+**Parent ticket**:
+The ticket another ticket is part of. It holds the design its children are slices of, and is done once every one of them is and its own close-out is ruled.
+_Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
-**Decision ticket**:
-A ticket whose deliverable is an answer, typed research, prototype, grilling or legwork.
-_Avoid_: question, open item, brief
+**Child ticket**:
+A ticket that is part of another: one slice of it, built, reviewed and ruled on its own.
+_Avoid_: subtask, sub-ticket, step
 
-**Standalone ticket**:
-A ticket with no spec: work that needs no design round, or a decision filed for later.
-_Avoid_: small task, loose ticket, note
-
-**Legwork**:
-The decision-ticket type for manual work that unblocks a decision without deciding anything itself.
-_Avoid_: task, chore, prep
+**Ticket context**:
+A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
+_Avoid_: brief (a ticket's brief is one section of it), spec, background
 
 **Proposed**:
 The status of a ticket an agent filed that the user has not yet ruled on: built like an open one while the ruling waits.
@@ -74,7 +63,7 @@ _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Ticket question**:
 A decision only the user can make, asked as part of the ticket it concerns.
-_Avoid_: ask, call (a call is a spec's decision), needs-human entry, queue item
+_Avoid_: ask, call (a call is a design decision), needs-human entry, queue item
 
 **Needs-me group**:
 The board's one group for every ticket whose next step is the user's own time.
@@ -97,15 +86,15 @@ How much of the user's time a ticket will take, never the agent's.
 _Avoid_: effort, estimate, points
 
 **Board**:
-The rendered view of the whole tracker: every feature, its dependency graph, the frontier, the review pages.
+The rendered view of the whole tracker: every ticket, the dependency graphs, the frontier, the review pages.
 _Avoid_: dashboard
 
 **Row mark**:
 One tag on a board row, carrying a single fact about the ticket for scanning.
-_Avoid_: mark (bare; a spec mark is one too), badge, pill, label
+_Avoid_: mark (bare; a call mark is one too), badge, pill, label
 
 **Retire**:
-Take a shipped feature's or ticket's record out of the live tracker; history keeps it.
+Take a shipped ticket's record out of the live tracker; history keeps it.
 _Avoid_: archive, clean up
 
 **Tombstone**:
@@ -115,12 +104,16 @@ _Avoid_: deprecation notice, banner
 ### Dispatch
 
 **Orchestrator**:
-The one agent that works a feature's tickets through workers: the sole claim-writer, and the one that marks a ticket done on the user's accept.
+The one agent that works a ticket's child tickets through workers: the sole claim-writer, and the one that marks a ticket done on the user's accept.
 _Avoid_: dispatcher, coordinator, parent
 
 **Worker**:
 The agent that works one ticket in its own worktree, unattended.
 _Avoid_: subagent, implementer
+
+**Worker report**:
+What a worker hands back for its ticket: its closing comment and the questions its build raised.
+_Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
 
 **Tick**:
 One pass of the orchestrator's loop.
@@ -131,22 +124,22 @@ The tickets one tick hands to workers together.
 _Avoid_: batch, round
 
 **Land**:
-A ticket's work is on the feature branch and verified there.
+A ticket's work is on the branch it merges into, and verified there.
 _Avoid_: merged, finished, complete
 
 **Debrief**:
-What the orchestrator tells the user when a feature is finished: what the workers and the harden report found, and what it proposes to do about it.
-_Avoid_: synthesis, report, summary, PR description
+What the orchestrator tells the user when a ticket's tree is finished: what the workers and the harden report found, and what it proposes to do about it.
+_Avoid_: synthesis, summary, PR description, report (a worker's is one)
 
 ### Testing
 
 **Oracle**:
-What a test compares the code's behaviour against, chosen so that it is not the code itself: a property from the spec, a worked example, a reference implementation, a round trip, a model.
+What a test compares the code's behaviour against, chosen so that it is not the code itself: a property the ticket states, a worked example, a reference implementation, a round trip, a model.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
 **Expected failure**:
 The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
-_Avoid_: mark (a spec mark or a row mark), xfail, skip
+_Avoid_: mark (a call mark or a row mark), xfail, skip
 
 ### Sessions
 

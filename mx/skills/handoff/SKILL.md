@@ -16,9 +16,9 @@ Before writing the file, tell the user in a few lines: the purpose, the scope, a
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 
-Do not duplicate content already captured in other artifacts (specs, tickets, ADRs, research, commits, diffs). Reference them by path or URL instead.
+Do not duplicate content already captured in other artifacts (tickets, ADRs, research, commits, diffs). Reference them by path or URL instead.
 
-End with a **Sources** section: the spec/tickets, ADRs, research artefacts, key code files, and external docs the next agent needs, each with a one-line why. Bias toward marking them MUST READ: you have context that shaped your thinking; the next agent doesn't. When in doubt, MUST READ.
+End with a **Sources** section: the tickets, ADRs, research artefacts, key code files, and external docs the next agent needs, each with a one-line why. Bias toward marking them MUST READ: you have context that shaped your thinking; the next agent doesn't. When in doubt, MUST READ.
 
 Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
 

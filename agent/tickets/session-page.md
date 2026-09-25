@@ -1,10 +1,18 @@
 ---
-status: confirmed
+status: open
+priority: 2
+size: XL
 ---
 
 # Session page: a session's answers on one page, the chat reply a link to it
 
-## Problem Statement
+## Brief
+
+A session whose answers need more than a line gets one session page, re-rendered as each turn ends: its title, brief and resume command, the questions waiting on the user, then the turns newest first with their artefacts linked. The chat reply becomes one line and the page's link. A spec gets a spec page of its own, the design rendered with its figures inside it, which replaces diffview as the place a spec is read.
+
+Grilled from the session-page rounds; round 3 is drawn at `agent/show/session-page/round-3/pages.html`. The build starts once `board-orients` has merged.
+
+## Problem statement
 
 Every answer an agent gives lands in the terminal, and the terminal renders prose, code and diffs as text and nothing else. A figure, a before/after pair side by side or a rendered page cannot show there, so the agent describes what it would have shown, or builds an artifact that opens in a tab of its own and leaves its link in the chat, where it scrolls away with the next turn. A returning user cannot find what a session produced, and with a dozen sessions open cannot tell which pane holds which work.
 
@@ -20,9 +28,9 @@ A feature's spec gets a **spec page**: the spec rendered in the house style with
 
 Neither page is written by hand. The agent writes plain text files, a turn record shaped like a ticket and the spec as it is today; a renderer turns them into the pages as the turn ends, and every artifact is built by a subagent or a fork.
 
-How the pages fit together, and one turn in order: [pages.html](../../show/session-page/round-3/pages.html).
+How the pages fit together, and one turn in order: [pages.html](../show/session-page/round-3/pages.html).
 
-## User Stories
+## User stories
 
 1. As the user, I want a turn's artifacts linked from the turn and opening in a new tab, so that each artifact gets the whole window and the session page stays a list I can scan.
 2. As the user in the terminal, I want the reply to be one line and the page's link, so that I read the answer once, on the page, after the turn has ended.
@@ -46,14 +54,20 @@ How the pages fit together, and one turn in order: [pages.html](../../show/sessi
 
 ## Properties
 
-- The top of the session page holds open questions and nothing else; a question a later turn answers or supersedes leaves it.
-- A turn's record is the only source of its section, and the session page is regenerated from the records and the transcript alone.
-- A session that never needed a page writes nothing under `agent/sessions/`.
-- A move either page shares with diffview is on diffview's key.
-- The chat reply of a session that has a page is one line and the page's link.
-- The main session writes no HTML.
-- The spec page shows every figure the spec links, and marks exactly what changed since the previous round's commit.
-- A turn record that does not parse is sent back and never rendered.
+- P1 The top of the session page holds open questions and nothing else; a question a later turn answers or supersedes leaves it.
+- P2 A turn's record is the only source of its section, and the session page is regenerated from the records and the transcript alone.
+- P3 A session that never needed a page writes nothing under `agent/sessions/`.
+- P4 A move either page shares with diffview is on diffview's key.
+- P5 The chat reply of a session that has a page is one line and the page's link.
+- P6 The main session writes no HTML.
+- P7 The spec page shows every figure the spec links, and marks exactly what changed since the previous round's commit.
+- P8 A turn record that does not parse is sent back and never rendered.
+
+## Acceptance criteria
+
+- [ ] Every child ticket is done, and this ticket's close-out has run over the whole output.
+- [ ] `session-page#P1`, `session-page#P2`, `session-page#P3`, `session-page#P7` and `session-page#P8` hold as checks at the three seams the Testing seams name.
+- [ ] `session-page#P4`, `session-page#P5` and `session-page#P6`, reviewed: the keys, the shape of the chat reply, and that the main session writes no HTML.
 
 ## Decisions
 
@@ -86,7 +100,7 @@ How the pages fit together, and one turn in order: [pages.html](../../show/sessi
 - **The main session waits for a turn's artifacts** before it writes the record, so every link in the record points at a page that exists.
 - **The Stop hook** validates the turn record and sends back one that does not parse, sends the agent back when it answered in the chat and wrote no record (in a session that has a page, a reply longer than three lines with no record written this turn), and renders both pages. Rendering is a pure function over the files and runs in milliseconds, so no process runs between turns. How an open tab learns to reload (a served page as diffview's are, or polling) is an interchangeable part behind that seam; left undecided, the page is right on a manual reload.
 - **Review.** An artifact's prose is reviewed inside `/mx:show` as it is built, so its rules have one home and every artifact gets them. `chat_review.py`'s hook on the chat reply goes, since the reply is one line. The turn record's own prose gets a light review as the turn ends: Opus 5.5 at medium effort, against the catalogue's rules for chat, seeing what the reader of the page has seen (the session's earlier turn records and the user's messages, no tool calls), and handing at most three findings back to the agent, which revises the record before the page renders.
-- **The reviewer's harness**, from the chat-review audit of 2026-09-22, whose data travels with [Ablate the prose reviewer](../reviewer-ablation.md): its own system prompt instead of Claude Code's persona, which otherwise answers the text instead of reviewing it; the record fenced in tags; the answer bound to a JSON schema; a finding dropped when its quote is not a substring of the record; and the turn record's shape given to it, with the structure that shape requires exempt by name. On a page a revision costs only the review's seconds, since a revised record re-renders and is not reprinted.
+- **The reviewer's harness**, from the chat-review audit of 2026-09-22, whose data travels with [Ablate the prose reviewer](reviewer-ablation.md): its own system prompt instead of Claude Code's persona, which otherwise answers the text instead of reviewing it; the record fenced in tags; the answer bound to a JSON schema; a finding dropped when its quote is not a substring of the record; and the turn record's shape given to it, with the structure that shape requires exempt by name. On a page a revision costs only the review's seconds, since a revised record re-renders and is not reprinted.
 - **Created lazily** by the first turn whose answer needs more than a line; a `qq` never gets a page.
 - **Where it lives.** `agent/sessions/<session-id>/`, ignored through the global git ignore list in dotfiles (`nix/home/common.nix`, beside `agent/handoffs`). Keyed by the session id, which the hook receives. The session page is `index.html` in that directory; the spec page is `spec.html` beside its `spec.md`, untracked like the board, since both regenerate from their sources.
 
@@ -103,14 +117,14 @@ How the pages fit together, and one turn in order: [pages.html](../../show/sessi
 - **Reverses a call of `figures-and-demos`**, which put "rendering the grilling round as a page" out of scope as duplicating diffview. The diff shows the code that finally ships; a round, a debugging session or a planning session decides in front of visuals.
 - **Claude Docs is not the page.** The claude.ai living-docs connector does this as a hosted product; it would send repo content to claude.ai, tie the pages to one harness, and show no local file.
 
-## Testing Decisions
+## Testing seams
 
-Three seams. The session renderer: a session directory and a transcript in, the page out; the oracle is the worked example in `agent/prototypes/session-page/sample/` and the Properties. The spec renderer: a spec, its figures and a base commit in, the page out; the oracle is a spec with one figure and one changed section. The Stop hook at its input: the hook's JSON and the session directory in, its decision out (render, send back with a reason); `chat_review.py`'s tests are the prior art, and the reviewer is stubbed there as they stub it. The first, second, third, seventh and eighth Properties are executable at those seams; the key, reply-shape and no-HTML Properties are reviewed.
+Three seams. The session renderer: a session directory and a transcript in, the page out; the oracle is the worked example in `agent/prototypes/session-page/sample/` and the Properties. The spec renderer: a spec, its figures and a base commit in, the page out; the oracle is a spec with one figure and one changed section. The Stop hook at its input: the hook's JSON and the session directory in, its decision out (render, send back with a reason); `chat_review.py`'s tests are the prior art, and the reviewer is stubbed there as they stub it. P1, P2, P3, P7 and P8 are executable at those seams; P4, P5 and P6 are reviewed.
 
-## Out of Scope
+## Out of scope
 
-- The grid's words: [The grid's words in /mx:show](../show-grid-words.md), their own change once `figures-and-demos` merges.
-- Tuning the prose reviewer (model, effort, prompt, context) against labelled data: [Ablate the prose reviewer](../reviewer-ablation.md).
+- The grid's words: [The grid's words in /mx:show](show-grid-words.md), their own change once `figures-and-demos` merges.
+- Tuning the prose reviewer (model, effort, prompt, context) against labelled data: [Ablate the prose reviewer](reviewer-ablation.md).
 - Replying on the page.
 - An agent review of a spec before its gate: not decided; its own decision ticket if it is wanted.
 

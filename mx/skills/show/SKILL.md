@@ -1,6 +1,6 @@
 ---
 name: show
-description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does. A figure, a demo, a diagram, a driven run, an explainer page. Use when writing a spec's Decisions or an ADR, when closing or landing a piece of work, when an explanation is ballooning in prose, when someone has to see or learn how something works, or when another skill needs an artifact."
+description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does. A figure, a demo, a diagram, a driven run, an explainer page. Use when writing a ticket's Decisions or an ADR, when closing or landing a piece of work, when an explanation is ballooning in prose, when someone has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show
@@ -32,7 +32,7 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 ## Where it goes
 
-An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<feature>/` for a feature, `agent/show/<slug>/` for a standalone ticket, `agent/show/<branch>/` for loose work. One that serves no feature, ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
+An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. That directory is the agent repo's, so `git -C agent` is what commits it. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
 
 ## A figure
 
@@ -47,7 +47,7 @@ Either way the render is regenerated from the source whenever the decision moves
 
 A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A demo walks its reader through what it shows, tutorial style: where to look, what each thing on screen is, and what changed marked as changed. A wall of commands and their output is the material a demo is made from, not the demo, and the running thing with a paragraph beside it is not one either: "open the board and click two rows" leaves the reader to find the change. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
 
-One executable file named `demo`, taking no arguments, in the show directory of the work it demonstrates, a feature's slice taking a directory of its own: `agent/show/<feature>/NN-<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: what it reads sits beside it in the same directory.
+One executable file named `demo`, taking no arguments, in the show directory of the ticket it demonstrates: `agent/show/<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: what it reads sits beside it in the same directory.
 
 Running it is the whole demo. It writes what it produces, a transcript, a sample file, a screenshot, into `out/` beside itself, untracked because the next run regenerates it, and it opens what it produced when a display is there, so a worker on a headless host runs it for the files and the session on the user's machine runs it for the opening. It lets go of what it opened rather than waiting on it: a staged demo runs under `job`, and a handler that is a terminal or an editor would keep the run going until its window closed. It runs from a fresh checkout of its branch on any host where the project is installed, carrying nothing from the session that wrote it, and it says so when it fails rather than printing an empty result. The fixed name is what makes every demo findable and runnable without reading anything first: `fd -t x '^demo$' agent/show`.
 
