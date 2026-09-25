@@ -37,18 +37,18 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 ## Style
 
-- `13` `both` **Em dash overuse.** Avoid em dashes entirely. Use periods or commas only (no parentheses, no en dashes, no hyphen-as-dash substitutes). If a thought needs separation, end the sentence or use a comma.
+- `13` `both` **Em dash overuse.** Avoid em dashes entirely, and en dashes or hyphens standing in for one. If a thought needs separation, end the sentence or use a comma; a short gloss or aside goes in parentheses.
 
 - `14` `both` **Colon overuse.** Colons are fine before a list or example. Not as mid-sentence connectors. "If you're coming from traditional automation: instead of registering event handlers, you describe conditions" adds nothing with the colon. Rewrite to let the point stand on its own without comparison framing. "Describing when the scheduler should fire works best as plain English." Same meaning, no crutch punctuation.
 
 - `15` `both` **Boldface overuse.** Don't bold every proper noun or acronym.
 
-- `16` `both` **Inline-header lists.** The tell is a bold label and colon that restates the line: "**Performance:** Performance improved...". Convert those to prose. A table carrying what three sentences carry is the same tell.
-  A bold lead-in is the permitted form: a few bold words at the start of a paragraph or bullet that name what it is about, end in a period, and are followed by genuinely new detail ("**Schema in TypeScript.** Tables live in one file."). It is a signpost for skimming, not an opener (34), a coined label (35) or meta-commentary (36); do not report it under those rules either.
+- `16` `both` **Inline-header lists.** The tell is a bold label and colon that restates the line: "**Performance:** Performance improved...". Convert those to prose.
+  Two forms are permitted. A list whose items each open with a short bold label naming a distinct fact ("**Branch:** `feature/x`, nothing pushed", "**Tests:** 604 pass") scans faster than the same facts as prose. And a bold lead-in: a few bold words at the start of a paragraph or bullet that name what it is about, end in a period, and are followed by genuinely new detail ("**Schema in TypeScript.** Tables live in one file."). Both are signposts for skimming, not an opener (34), a coined label (35) or meta-commentary (36); do not report them under those rules either.
 
 - `17` `both` **Title case headings.** Use sentence case.
 
-- `18` `both` **Decorative emojis.** Remove from headings and bullets.
+- `18` `both` **Decorative emojis.** Remove from headings and bullets. A marker a documented format assigns a meaning (a question, the recommended option, the reasoning under it) is not decoration.
 
 - `19` `both` **Curly quotes.** Replace with straight quotes.
 
@@ -64,7 +64,7 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `46` `both` **Negative listing.** Listing what something is not before revealing what it is: "Not a X... Not a Y... A Z.", "It wasn't X. It wasn't Y. It was Z." State Z. The reader doesn't need the runway.
 
-- `47` `both` **Binary contrasts.** "Not because X. Because Y.", "[X] isn't the problem. [Y] is.", "The answer isn't X. It's Y.", "It feels like X. It's actually Y.", "stops being X and starts being Y". They create false drama. State Y directly and drop the negation.
+- `47` `both` **Binary contrasts.** "Not because X. Because Y.", "[X] isn't the problem. [Y] is.", "The answer isn't X. It's Y.", "It feels like X. It's actually Y.", "stops being X and starts being Y". They create false drama. State Y directly and drop the negation. Not a hit when the contrast is the content: a recommendation set against the reader's proposal, or a fact corrected against a belief the reader stated.
   Before: "Here's the thing: building products is hard. Not because the technology is complex. Because people are complex. Let that sink in." After: "Building products is hard. Technology is manageable. People aren't."
 
 ## Communication artifacts
@@ -73,9 +73,9 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `22` `both` **Sycophantic tone.** "Great question! You're absolutely right!" Respond directly.
 
-- `34` `both` **Throat-clearing and closers.** An opener that announces instead of starting ("Here's the thing:", "Here's why X", "The uncomfortable truth is", "It turns out", "The real X is", "Let me be clear", "Let me explain", "I'm going to be honest", "Can we talk about", "Look,", a paragraph opening with "So"), or a closing sentence that offers further work instead of stopping. Start with the answer, stop when the content stops. Rules 20 and 22 carry the phrases themselves.
+- `34` `both` **Throat-clearing and closers.** An opener that announces instead of starting ("Here's the thing:", "Here's why X", "The uncomfortable truth is", "It turns out", "The real X is", "Let me be clear", "Let me explain", "I'm going to be honest", "Can we talk about", "Look,", a paragraph opening with "So"), or a closing sentence that offers further work instead of stopping. Start with the answer, stop when the content stops. Where a message lists the calls the reader must make, an ask or offer written outside that list is the same tell ("Say go and I'll clear the eight cards"): it goes in the list, where the reader can answer it by its tag. Rules 20 and 22 carry the phrases themselves.
 
-- `36` `both` **Meta-commentary about the text itself.** Sentences about how it is structured or how it follows a style: "To keep this brief", "In short, as requested", "Here's a quick summary of what I did", "Hint:", "Plot twist:", "Spoiler:", "The rest of this essay explains...", "Let me walk you through...", "In this section, we'll...", "As we'll see...", "You already know this, but", "But that's another post". Delete; the reader sees the structure.
+- `36` `both` **Meta-commentary about the text itself.** Sentences about how it is structured or how it follows a style: "To keep this brief", "In short, as requested", "Here's a quick summary of what I did", "Hint:", "Plot twist:", "Spoiler:", "The rest of this essay explains...", "Let me walk you through...", "In this section, we'll...", "As we'll see...", "You already know this, but", "But that's another post". Delete; the reader sees the structure. A heading that sorts content for the reader ("I need from you", "Details") is that structure, not commentary on it; so is a line saying what landed and what is not merged.
 
 - `51` `artifact` **Unfilled placeholders.** "[Your Name]", "2025-XX-XX", "PASTE_URL_HERE": template blanks that shipped. Sweep for brackets and XX before delivering.
 
@@ -94,7 +94,7 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 ## Jargon
 
-- `26` `both` **Abstract metaphor nouns.** Substrate, wedge, vector, locus, vantage, nexus, primitive (as noun), harness (as metaphor), surface (as in "API surface"), bedrock, scaffolding (as metaphor), modality, paradigm, gold-plating, ratchet (as metaphor), evacuate (for moving code), endgame, north star, flywheel. These read as technical but usually have a plainer concrete word. "Substrate" becomes "base". "Wedge in" becomes "add". "Vector" becomes "way" or "method". "Gold-plating" becomes "more than the job needs". "Ratchet" becomes the mechanism's real name or "a limit that only tightens". "Evacuate" becomes "move out". "Endgame" becomes "the last phase". Pick the concrete word.
+- `26` `both` **Abstract metaphor nouns.** Substrate, wedge, vector, locus, vantage, nexus, primitive (as noun), harness (as metaphor), surface (as in "API surface"), bedrock, scaffolding (as metaphor), modality, paradigm, gold-plating, ratchet (as metaphor), evacuate (for moving code), endgame, north star, flywheel. These read as technical but usually have a plainer concrete word. "Substrate" becomes "base". "Wedge in" becomes "add". "Vector" becomes "way" or "method". "Gold-plating" becomes "more than the job needs". "Ratchet" becomes the mechanism's real name or "a limit that only tightens". "Evacuate" becomes "move out". "Endgame" becomes "the last phase". Pick the concrete word. A term of art in its literal sense (a test harness, an attack surface) or a term the project's glossary defines is not a hit.
 
 - `35` `both` **Coined labels.** A catchy or proprietary-sounding name invented for an idea ("the clarity engine", "the trust ladder") and then used as if the reader knew it. Say the thing plainly. A genuinely new concept the text keeps returning to earns one term, defined where it first appears and used unchanged everywhere after, and a term the project has defined (a glossary entry, a spec's own name for a thing) is that case already.
 
@@ -124,4 +124,3 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `43` `both` **False agency.** Human verbs given to inanimate things, which is how a sentence avoids naming the actor. "A complaint becomes a fix" becomes "the team fixed it that week". "The decision emerges" becomes "the lead decides". "The culture shifts" becomes "people change what they do". "The data tells us" becomes "we read the data and concluded". Name the actor and put them at the front.
 
-- `44` `artifact` **Narrator-from-a-distance.** "Nobody designed this.", "This happens because...", "People tend to...". Put the reader in the room: "You don't sit down one day and decide to..." beats "Nobody designed this."

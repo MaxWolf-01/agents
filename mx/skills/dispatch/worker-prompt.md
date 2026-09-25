@@ -30,7 +30,7 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 
 **Close into the report**: `agent/show/<slug>/report.md` is two sections in the shapes a ticket gives them (`/mx:tracker`, The ticket file) and nothing else, since a ticket takes nothing else in and the import refuses what it cannot.
 
-Under `## Comments` goes your closing comment, which the agent that dispatched you relays to the user unchanged:
+Under `## Comments` goes your closing comment, which the agent that dispatched you announces to the user:
 
 - One line saying what landed, what is not merged, and which of the ticket's acceptance criteria your work meets.
 - **Results only this host can produce**, where your work made any (a training run's metrics, a benchmark on this machine): committed as data with the work and named here by path. What the user is shown of your work is built after you, from your branch and these.
@@ -62,7 +62,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 </git>
 
 <style>
-**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. `/mx:writing-for-humans` is its standard; the reviewer applies it. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the closing comment your report carries. Organize files top-down (newspaper style).
+**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. A comment earns its line by explaining non-obvious behavior, warning of a trap, or unpacking hard code, in plain words. `/mx:writing-for-humans` is its standard, and a review applies it where one runs. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the closing comment your report carries. Organize files top-down (newspaper style).
 </style>
 
 <tools>
