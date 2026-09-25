@@ -27,5 +27,5 @@ The test drives the parser from memory, so nothing in it depends on how fast the
 
 ## Comments
 
-**Built on `ticket/flaky-upload-test`, not merged.** The demo is `agent/show/flaky-upload-test/demo`:
-it runs the report test a hundred times under a loaded disk and the run is clean.
+**Built on `ticket/flaky-upload-test`, not merged.** `agent/show/flaky-upload-test/rerun-under-load`
+runs the report test a hundred times under a loaded disk, and the run is clean.

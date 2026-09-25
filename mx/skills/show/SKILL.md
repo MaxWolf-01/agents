@@ -66,7 +66,7 @@ Either way the render is regenerated from the source whenever the decision moves
 
 ## A runnable artifact
 
-What runs in a show directory (a walkthrough that drives the tool, a script that renders a sample) is an executable file taking no arguments, with a shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. It writes what it produces into `out/` beside itself, untracked because the next run regenerates it; it opens what it produced when a display is there and lets go of it rather than waiting on it; it runs from a fresh checkout on any host where the project is installed, and says so when it fails rather than printing an empty result.
+What runs in a show directory (a walkthrough that drives the tool, a script that renders a sample) is an executable file taking no arguments, with a shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. It writes what it produces into `out/` beside itself, untracked because the next run regenerates it; it opens what it produced when a display is there and lets go of it rather than waiting on it; it runs from a fresh checkout on any host where the project is installed, and says so when it fails rather than printing an empty result. The board lists it with the rest of the directory and, seeing the executable bit, puts the command that runs it from the code repo's root on a button, so the reader starts it when they want it.
 
 ## Register
 

@@ -987,7 +987,7 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
 
     kept = {  # tracked: git history holds it after the git rm
         show / "one-flow" / "flow.mmd": "flowchart\n",
-        show / "map-columns" / "demo": "#!/bin/sh\necho the demo\n",
+        show / "map-columns" / "walkthrough": "#!/bin/sh\necho the two imports\n",
         repo / "agent" / "prototypes" / "one-flow" / "board.py": "the prototype\n",
     }
     deleted = {  # untracked renders, each beside the tracked source that redraws it
@@ -1379,7 +1379,7 @@ def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> N
     tickets = split / "agent" / "tickets"
     ticket(tickets, "one-flow", "Its detail is in `agent/research/one-flow.md`.", status="done")
     (split / "agent" / "show" / "one-flow").mkdir(parents=True)
-    (split / "agent" / "show" / "one-flow" / "demo").write_text("#!/bin/sh\necho one\n")
+    (split / "agent" / "show" / "one-flow" / "walkthrough").write_text("#!/bin/sh\necho one\n")
     (split / "agent" / "research").mkdir()
     (split / "agent" / "research" / "one-flow.md").write_text("what it found\n")
     git(split / "agent", "add", "-A")
@@ -1391,11 +1391,11 @@ def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> N
     kept = Path.home() / "logs" / "agent" / split.name / "show" / "one-flow" / "notes.md"
     assert kept.is_file(), f"an untracked file leaves to {kept}, under the project's own name"
     kept.unlink()
-    for gone in ("tickets/one-flow.md", "show/one-flow/demo", "research/one-flow.md"):
+    for gone in ("tickets/one-flow.md", "show/one-flow/walkthrough", "research/one-flow.md"):
         assert not (split / "agent" / gone).exists(), f"{gone} stayed"
     assert "one-flow, with what it owns" in git(split / "agent", "log", "-1", "--format=%s"), "staged, not committed"
     assert sorted(git(split / "agent", "diff", "--cached", "--name-only").split()) == [
-        "research/one-flow.md", "show/one-flow/demo", "tickets/one-flow.md"], "every removal is staged"
+        "research/one-flow.md", "show/one-flow/walkthrough", "tickets/one-flow.md"], "every removal is staged"
 
 
 def test_a_range_names_which_of_the_two_repos_it_is_in(tickets: Path, repo: Path) -> None:

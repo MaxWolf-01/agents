@@ -13,9 +13,12 @@ two builds waiting on a ruling with their branches unmerged and their questions 
 copy, where `dispatch review` imported them from the worker's report, one build stopped on two
 questions of which one is ruled, one ticket whose only question is ruled, one ticket with no
 question at all, review pages beside the tickets, acceptance criteria a build in review has half
-met, a property cited by the criterion that takes it on, demo scripts and a figure under
+met, a property cited by the criterion that takes it on, files that run and a figure under
 agent/show, and four sessions on the commits: three with a transcript under the claude/ config
 directory this writes, one worker on another host with none.
+
+A demo tracker, not a show: the word is the sample repo the checks render, and nothing here is an
+artefact of the workflow, which a landing hands the user as a show (`/mx:show`).
 
     demo_tracker.py /tmp/demo        # build it, print the tracker root
     CLAUDE_CONFIG_DIR=/tmp/demo/claude board /tmp/demo/agent/tickets --no-watch --no-open
@@ -530,16 +533,12 @@ def build_in_review(repo: Path) -> None:
 
 The mapping step is built and remembers a bank's layout, on `ticket/map-columns`, not merged.
 
-**Demo**
-
-    agent/show/map-columns/demo
-
 **Details, if you want them**
 
 - [D4] Assumptions
   - A1 `src/mapping.py:1`: one mapping per bank, keyed by the export's header row.
 """)
-    write(repo / "agent/show/map-columns/demo", """#!/usr/bin/env bash
+    write(repo / "agent/show/map-columns/walkthrough", """#!/usr/bin/env bash
 # Imports a sample export twice: the first run asks for the mapping, the second uses it.
 echo "== first import from Sparkasse: asks for the columns"
 echo "date column? Buchungstag   amount column? Betrag   payee column? Empfänger"
@@ -573,15 +572,11 @@ echo "12 rows read, 12 added"
 
 The suite runs in 48 seconds, down from four minutes, on `ticket/speed-up-tests`, not merged.
 
-**Demo**
-
-    agent/show/speed-up-tests/demo
-
 **Details, if you want them**
 
 - [D3] Friction: the CI cache key did not include the migrations directory.
 """)
-    write(repo / "agent/show/speed-up-tests/demo", """#!/usr/bin/env bash
+    write(repo / "agent/show/speed-up-tests/timings", """#!/usr/bin/env bash
 # Runs the suite twice and prints the wall time of each run.
 echo "== before: 4 min 02 s"
 echo "== after: 48 s"

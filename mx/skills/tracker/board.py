@@ -47,9 +47,9 @@ questions, each with the detail the row has no room for, the ruling that
 answered it and, while it is unanswered, a button that copies it, the sessions
 that worked on it, its artefacts, then the ticket's own sections in the order
 the file writes them, with the comments folded away as history. The artefacts
-are read from the ticket's show directory, agent/show/<slug>/: the file named
-`demo` on a button that copies its path,
-every other file as a link. The sessions are read from the `Session:` trailer
+are read from the ticket's show directory, agent/show/<slug>/: every file in it
+as a link, and each one that runs on a button that copies the command that runs
+it from the code repo's root. The sessions are read from the `Session:` trailer
 on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
 one with no transcript on this machine, a worker on another host, is left out,
@@ -143,6 +143,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import threading
@@ -179,10 +180,10 @@ SIZES = {  # the user's own time on a ticket
 }
 SIZE_RANK = {size: rank for rank, size in enumerate(SIZES)}
 SIZE_TIP = (
-    "Your time on this ticket, never the agent's: reading the diff or the design, trying the demo, deciding.\n"
+    "Your time on this ticket, never the agent's: reading the diff or the design, looking at its show, deciding.\n"
 ) + "\n".join(f"{size} {means}" for size, (_, means) in SIZES.items())
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
-    "review": ("to rule on", "A worker has finished this. Read its review page and try its demo, then accept, amend, redo or reject it."),
+    "review": ("to rule on", "A worker has finished this. Read its review page and its artefacts, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
     "session": ("with you", "A ticket you are in the loop for: it is worked with you, and dispatch keeps it from a worker."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
@@ -627,11 +628,12 @@ def tracker_snapshot(root: Path, repo: Path) -> tuple:
 
     A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
     the render that follows is what puts the pages back on an address that answers. So do the show
-    directories, where an opened ticket reads its artefacts from.
+    directories, where an opened ticket reads its artefacts from; each file's mode is read with its
+    time and size, since an artefact made executable gains a button and `chmod` moves neither.
     """
     dirs = [root, root.parent / "diffviews", root.parent / "show"]
     return (git(repo, "rev-parse", "HEAD"), git(project(root), "rev-parse", "HEAD")) + tuple(
-        (str(f), st.st_mtime_ns, st.st_size)
+        (str(f), st.st_mtime_ns, st.st_size, st.st_mode)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
 
@@ -1036,7 +1038,7 @@ def ticket_blocks(
         else:
             blocks.append(block(heading, prose(heading, text)))
     front = [asked_block(asked, prose(None, "".join(said)), path, status),
-             sessions_block(worked), artefacts_block(show_dir(path))]
+             sessions_block(worked), artefacts_block(show_dir(path), project(path.parent))]
     return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
@@ -1136,35 +1138,37 @@ def worked_on(session: Session) -> str:
     return session.first if session.first == session.last else f"{session.first} → {session.last}"
 
 
-def artefacts_block(show: Path) -> str:
-    """What the ticket produced to look at: its demo on a button that copies the path, since a demo
-    is a command to run, and every other file in its show directory as a link."""
-    demo, figures = artefacts(show)
-    if demo is None and not figures:
+RUN_TIP = "Click to copy the command that runs this file, to paste at the code repo's root."
+
+
+def artefacts_block(show: Path, code: Path) -> str:
+    """What the ticket produced to look at: every file in its show directory as a link, and each
+    one that runs on a button that copies the command running it from the code repo's root."""
+    files = artefacts(show)
+    if not files:
         return ""
     items = "".join(
-        f'<li><a href="file://{html.escape(str(figure))}" target="_blank">'
-        f'{html.escape(str(figure.relative_to(show)))}</a></li>'
-        for figure in figures
+        f'<li><a href="file://{html.escape(str(file))}" target="_blank">'
+        f'{html.escape(str(file.relative_to(show)))}</a>'
+        + (copy_button("runcopy", "copy command", RUN_TIP, shlex.quote(str(file.relative_to(code))),
+                       f"the command that runs {file.name}") if runs(file) else "")
+        + "</li>"
+        for file in files
     )
-    if demo is not None:
-        items = (
-            f'<li><code>{html.escape(str(demo))}</code>'
-            + copy_button("democopy", "copy path", "Click to copy the path of this ticket's demo, to run it in a shell.",
-                          str(demo), "the demo's path")
-            + "</li>"
-        ) + items
     return block("artefacts", f'<ul class="artefacts">{items}</ul>')
 
 
-def artefacts(show: Path) -> tuple[Path | None, list[Path]]:
-    """A ticket's show directory: the file named `demo`, and every other file under it, out/ aside,
-    which is where a demo writes what it regenerates rather than what it was kept for."""
+def artefacts(show: Path) -> list[Path]:
+    """Every file in a ticket's show directory, out/ aside, which is where a run writes what it
+    regenerates rather than what the directory was kept for."""
     if not show.is_dir():
-        return None, []
-    demo = show / "demo"
-    figures = (p for p in show.rglob("*") if p.is_file() and p != demo and "out" not in p.relative_to(show).parts)
-    return (demo if demo.is_file() else None), sorted(figures)
+        return []
+    return sorted(p for p in show.rglob("*") if p.is_file() and "out" not in p.relative_to(show).parts)
+
+
+def runs(file: Path) -> bool:
+    """Whether an artefact is one that runs, which is what its executable bit says (/mx:show)."""
+    return bool(file.stat().st_mode & stat.S_IXUSR)
 
 
 def show_dir(path: Path) -> Path:
@@ -1325,7 +1329,7 @@ def review_link(address: str | None) -> str:
     if not address:
         return ""
     return (f'<a class="rp" href="{html.escape(address)}" target="_blank" onclick="event.stopPropagation()" '
-            f'data-tip="This build&#39;s review page: the diff, with the demo to try and a place to write on it (d).">review page</a>')
+            f'data-tip="This build&#39;s review page: the diff, with a place to write on it (d).">review page</a>')
 
 
 def gh_links(refs: Sequence[str], gh: dict[str, str]) -> str:
@@ -2072,7 +2076,9 @@ ${columns}
   .asked > li > .copier { margin-left: auto; }
   /* a question the user has answered is history: its words stay, the colours that call for one go */
   .asked .ruled > .tag, .asked .ruled .head { color: var(--muted); }
-  .artefacts code { overflow-wrap: anywhere; font-size: .82rem; color: var(--muted); }
+  .artefacts a { overflow-wrap: anywhere; font-size: .82rem; }
+  /* the button that copies the command sits at the end of its line, clear of the name */
+  .artefacts > li > .copier { margin-left: auto; }
   /* a session is its name and the days it worked, the command that resumes it on the button */
   .sessions .stitle { color: var(--strong); }
   .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }

@@ -1003,7 +1003,7 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, 
     render(transcribed.root, transcribed.repo, out)
     page = out.read_text()
     found = copiers(page)
-    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "democopy", "resume"}
+    assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "runcopy", "resume"}
     for which, text, said, tip in found:
         what, _, shown = tip.partition("\n\n")
         assert len(what.split()) >= 4 and "copy" in what, f"the {which} button says {what!r} of the click"
@@ -1014,8 +1014,8 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, 
         else:
             assert shown == text, f"the {which} button shows {shown!r} and copies {text!r}"
         # the note the page shows once a click has landed names what it landed, in the terms that
-        # button's own text is in: the file for the three that copy a path, a count for the board's
-        # worth of questions, the session for the one that copies a command
+        # button's own text is in: the file for the ones that copy a path or a command on it, a
+        # count for the board's worth of questions, the session for the one that copies a resume
         if which == "qgroup":
             assert said == f"{sum(line.startswith('- [D') for line in text.splitlines())} questions"
         elif which == "resume":
@@ -1054,10 +1054,13 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
 QUESTION_PARTS = ("tag", "head", "detail", "ruling")
 
 
-def put(path: Path, text: str) -> None:
-    """A file under a directory that may not exist yet: an artefact beside a ticket."""
+def put(path: Path, text: str, runs: bool = False) -> None:
+    """A file under a directory that may not exist yet: an artefact beside a ticket, executable
+    where it is one that runs."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+    if runs:
+        path.chmod(path.stat().st_mode | 0o111)
 
 
 def artefacts_markup(row: str) -> str:
@@ -1066,13 +1069,15 @@ def artefacts_markup(row: str) -> str:
     return listed.group() if listed else ""
 
 
-def artefacts_in(row: str) -> list[tuple[str, str]]:
-    """What an opened ticket lists as its artefacts, in order: ("demo", the path its button copies)
-    for the demo, and (the words of the link, where it points) for a figure."""
+def artefacts_in(row: str) -> list[tuple[str, str, str]]:
+    """What an opened ticket lists as its artefacts, in order: the words of each link, where it
+    points, and the command its button copies, empty for a file that does not run."""
     found = []
     for item in re.findall(r"<li>(.*?)</li>", artefacts_markup(row), re.S):
         link = re.search(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', item)
-        found.append((link.group(2), link.group(1)) if link else ("demo", re.search(r'data-copy="([^"]+)"', item).group(1)))
+        copies = re.search(r'data-copy="([^"]+)"', item)
+        found.append((html.unescape(link.group(2)), link.group(1),
+                      html.unescape(copies.group(1)) if copies else ""))
     return found
 
 
@@ -1145,7 +1150,7 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
     # this is the tripwire for a run with no browser, not the check
     assert ".ticket[open] .qs { display: none; }" in page, "nothing in the page hides an opened row's question list"
     three = rows["t-map-columns"]
-    assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "democopy"]
+    assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "runcopy"]
     assert [which for which, _, _, _ in copiers(summary_of(three))] == ["qcopy", "qcopy", "qcopy", "qall"]
     assert [text for _, text, _, _ in copiers(body_of(three))[:3]] == [
         text for _, text, _, _ in copiers(summary_of(three))[:3]
@@ -1171,42 +1176,69 @@ def test_a_blocked_rows_questions_carry_the_same_buttons_in_both_places(tmp_path
 
 
 def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The demo on a button that copies its path, since a demo is a command to run, and the figures
-    beside it as links. Nothing in the ticket declares either: the directory is read."""
+    """Every file in it as a link, and the one that runs on a button that copies the command
+    running it from the repo root. Nothing in the ticket declares either: the directory is read."""
     out = tmp_path / "board.html"
     render(demo.root, demo.repo, out)
     rows = rows_of(out.read_text())
     show = demo.repo / "agent" / "show" / "map-columns"
     assert artefacts_in(rows["t-map-columns"]) == [
-        ("demo", str(show / "demo")), ("mapping.svg", f"file://{show / 'mapping.svg'}"),
+        ("mapping.svg", f"file://{show / 'mapping.svg'}", ""),
+        ("walkthrough", f"file://{show / 'walkthrough'}", "agent/show/map-columns/walkthrough"),
     ]
-    assert [which for which, _, _, _ in copiers(artefacts_markup(rows["t-map-columns"]))] == ["democopy"], (
-        "the demo is the one artefact on a button"
+    assert [which for which, _, _, _ in copiers(artefacts_markup(rows["t-map-columns"]))] == ["runcopy"], (
+        "the file that runs is the one artefact on a button"
     )
     # every show directory is its ticket's slug's own, beside the tracker the ticket was read from
     alone = demo.repo / "agent" / "show" / "speed-up-tests"
-    assert artefacts_in(rows["t-speed-up-tests"]) == [("demo", str(alone / "demo"))]
+    assert artefacts_in(rows["t-speed-up-tests"]) == [
+        ("timings", f"file://{alone / 'timings'}", "agent/show/speed-up-tests/timings"),
+    ]
     assert "artefacts" not in labels_of(rows["t-flaky-upload-test"]), "nothing has been built on it yet"
 
 
 def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
-    """A figure under it keeps the path that names it, what the demo regenerates under out/ is not
-    an artefact, and a ticket with figures and no demo has the block all the same."""
+    """Every file under it keeps the path that names it, a file that runs carries the command and
+    one that does not carries none, and what a run regenerates under out/ is no artefact. Nothing
+    names a show directory's files, so a name with a space in it is one a paste has to survive."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)
     ticket(root / "map-columns.md", "review")
     ticket(root / "view-list.md", "open")
     show = tmp_path / "agent" / "show"
-    put(show / "map-columns" / "demo", "#!/bin/sh\necho two imports\n")
+    put(show / "map-columns" / "walkthrough", "#!/bin/sh\necho two imports\n", runs=True)
+    put(show / "map-columns" / "render sample", "#!/bin/sh\necho a sample\n", runs=True)
     put(show / "map-columns" / "shots" / "mapping.svg", "<svg/>")
     put(show / "map-columns" / "out" / "frame-01.png", "generated")
     put(show / "view-list" / "layouts.svg", "<svg/>")
     rows = rows_of(page_of(root))
     assert artefacts_in(rows["t-map-columns"]) == [
-        ("demo", str(show / "map-columns" / "demo")),
-        ("shots/mapping.svg", f"file://{show / 'map-columns' / 'shots' / 'mapping.svg'}"),
+        ("render sample", f"file://{show / 'map-columns' / 'render sample'}", "'agent/show/map-columns/render sample'"),
+        ("shots/mapping.svg", f"file://{show / 'map-columns' / 'shots' / 'mapping.svg'}", ""),
+        ("walkthrough", f"file://{show / 'map-columns' / 'walkthrough'}", "agent/show/map-columns/walkthrough"),
     ]
-    assert artefacts_in(rows["t-view-list"]) == [("layouts.svg", f"file://{show / 'view-list' / 'layouts.svg'}")]
+    assert artefacts_in(rows["t-view-list"]) == [
+        ("layouts.svg", f"file://{show / 'view-list' / 'layouts.svg'}", ""),
+    ]
+
+
+def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
+    """Where a tree's show lives (/mx:show): the parent ticket's own directory. A parent is read
+    like any other ticket, so its children's show directories are theirs and none of its own."""
+    root = tmp_path / "agent" / "tickets"
+    root.mkdir(parents=True)
+    ticket(root / "csv-import.md", "open")
+    ticket(root / "map-columns.md", "review", parent="csv-import")
+    show = tmp_path / "agent" / "show"
+    put(show / "csv-import" / "index.html", "<html>the tree</html>")
+    put(show / "map-columns" / "mapping.svg", "<svg/>")
+    rows = rows_of(page_of(root))
+    assert artefacts_in(rows["t-csv-import"]) == [
+        ("index.html", f"file://{show / 'csv-import' / 'index.html'}", ""),
+    ]
+    assert artefacts_in(rows["t-map-columns"]) == [
+        ("mapping.svg", f"file://{show / 'map-columns' / 'mapping.svg'}", ""),
+    ]
 
 
 def test_the_comments_fold_under_an_opened_ticket_as_history(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -1300,14 +1332,18 @@ def test_a_ticket_that_says_less_gets_fewer_blocks(tmp_path: Path) -> None:
     assert "[x] 3 rows skipped" in body_of(row), "the ticket's own words, as it wrote them"
 
 
-def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, tracker: Path) -> None:
-    """A session writing a demo moves no file under the tracker, and the artefacts are what an
-    opened ticket would otherwise never show."""
+def test_the_watcher_notices_an_artefact_landing_in_a_show_directory(repo: Path, tracker: Path) -> None:
+    """A session writing a show moves no file under the tracker, and the artefacts are what an
+    opened ticket would otherwise never show. A file made executable is a button appearing on the
+    page, and `chmod` moves neither its size nor the time it was written."""
     before = tracker_snapshot(tracker, repo)
-    demo = tracker.parent / "show" / "built" / "demo"
-    demo.parent.mkdir(parents=True)
-    demo.write_text("#!/bin/sh\necho the import, twice\n")
-    assert tracker_snapshot(tracker, repo) != before
+    walkthrough = tracker.parent / "show" / "built" / "walkthrough"
+    walkthrough.parent.mkdir(parents=True)
+    walkthrough.write_text("#!/bin/sh\necho the import, twice\n")
+    written = tracker_snapshot(tracker, repo)
+    assert written != before
+    walkthrough.chmod(walkthrough.stat().st_mode | 0o111)
+    assert tracker_snapshot(tracker, repo) != written
 
 
 # ---- the sessions behind a ticket ------------------------------------------
