@@ -4,17 +4,14 @@
 # ///
 """Checks for what `dispatch` and `dispatch-ctl` read and write on a ticket. Run: pytest test_dispatch.py
 
-One seam: the two scripts' command lines, run as subprocesses over a toy repo whose worker is a stub
-on the `DISPATCH_RUNNER` seam dispatch-ctl documents, so what runs is dispatch and dispatch-ctl
-themselves. The oracles are `agent/tickets/ticket-file-contract.md` (P4, that a worker's brief is the
-ticket's body with every ancestor's, assembled by the one function; P7, that a worker writes no
-ticket file and reports instead; `needs-user` as the one field that keeps a ticket from a worker)
-and `/mx:tracker`'s Ticket state (a claim is taken from the frontier, and a claimed ticket is in
-somebody's hands).
-
-Every check that touches a ticket runs twice, once with the tracker in the code repo and once with
-it in a repo of its own that the code repo names (`tracked`): the two are one flow, and the split is
-what `git config mx.tracker` is for.
+One seam: the two scripts' command lines, run as subprocesses over a toy project whose worker is a
+stub on the `DISPATCH_RUNNER` seam dispatch-ctl documents, so what runs is dispatch and dispatch-ctl
+themselves. The toy is a project in the layout every project has: a code repo, and its `agent/` a
+git repo of its own inside it that the code repo ignores. The oracles are
+`agent/tickets/ticket-file-contract.md` (P4, that a worker's brief is the ticket's body with every
+ancestor's, assembled by the one function; P7, that a worker writes no ticket file and reports
+instead; `needs-user` as the one field that keeps a ticket from a worker) and `/mx:tracker`'s Ticket
+state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands).
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
 argued; this file is the cases the ticket-file move made.
@@ -45,27 +42,38 @@ printf 'stub: built %s\\n' "$slug" >> "$state/$run_id.log"
 printf 'attempts=1 exit=0 report=no session=stub\\n' > "$state/$run_id.status"
 """
 
-# The same stub with something to show and nothing to review: the commit a worker makes, and no
-# report, which is what a run that stopped short leaves.
+# The same stub with something to show and nothing to review: the commits a worker makes in the two
+# repos it holds, and no report, which is what a run that stopped short leaves.
 STOPPED_SHORT = RUNNER.replace(
     "printf 'attempts=1 exit=0 report=no",
-    """printf 'the lamp, half warm\\n' > lamp.txt
+    """git() { command git -c user.email=stub@toy -c user.name=stub -c commit.gpgsign=false "$@"; }
+printf 'the lamp, half warm\\n' > lamp.txt
 git add lamp.txt
 git commit -q -m "$slug: as far as it got"
 printf 'attempts=1 exit=1 report=no""",
 )
 
-# The same stub finishing: one commit on the ticket branch in the worktree it was started in, and
-# the report beside the worklog, which is what the runner contract has a worker leave behind.
+# The same stub finishing: its code on the code repo's ticket branch, and its demo and its report on
+# the agent repo's, which is the worktree at `agent` inside the one it was started in. The report
+# being committed there is what says the worker finished.
 BUILDING = RUNNER.replace(
     "printf 'attempts=1 exit=0 report=no",
-    """printf 'the lamp, warm\\n' > lamp.txt
+    """git() { command git -c user.email=stub@toy -c user.name=stub -c commit.gpgsign=false "$@"; }
+printf 'the lamp, warm\\n' > lamp.txt
 git add lamp.txt
-git commit -q -m "the warm preset"
-cat > "$state/$run_id.report.md" <<'REPORT'
+git commit -q -m "$slug: the warm preset"
+mkdir -p "agent/show/$slug"
+printf '#!/usr/bin/env bash\\necho "the warm preset"\\n' > "agent/show/$slug/demo"
+chmod +x "agent/show/$slug/demo"
+cat > "agent/show/$slug/report.md" <<'REPORT'
 ## Comments
 
-The warm preset lands, unmerged, with one question under it.
+The warm preset lands, unmerged, with one question under it. It meets the ticket's one acceptance
+criterion.
+
+**Demo**
+
+    agent/show/warm-preset/demo
 
 - [D1] **Assumptions**
   - A1 `lamp.txt:1`: 2700K, since the bulb box says so.
@@ -74,9 +82,10 @@ The warm preset lands, unmerged, with one question under it.
 
 - [D2] **Warm at what temperature?** 2700K reads amber; 3000K is closer to the old bulb.
 REPORT
+git -C agent add -A
+git -C agent commit -q -m "$slug: the demo and the report"
 printf 'attempts=1 exit=0 report=yes""",
 )
-
 
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
@@ -101,19 +110,31 @@ def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_
 
 @pytest.fixture
 def toy(tmp_path: Path) -> Path:
-    """A repo on `main` with a tree of two tickets, and a home of its own for dispatch's state."""
+    """A project on `main`: a code repo, its `agent/` a repo of its own inside it that the code repo
+    ignores, and a tree of two tickets in it. Answers the code repo's root."""
     repo = tmp_path / "lamp"
     (repo / "agent" / "tickets").mkdir(parents=True)
-    git(tmp_path, "init", "-q", "-b", "main", str(repo))
-    for key, value in (("user.email", "toy@toy"), ("user.name", "toy"), ("commit.gpgsign", "false")):
-        git(repo, "config", key, value)
+    for at in (repo, repo / "agent"):
+        git(tmp_path, "init", "-q", "-b", "main", str(at))
+        for key, value in (("user.email", "toy@toy"), ("user.name", "toy"), ("commit.gpgsign", "false")):
+            git(at, "config", key, value)
+    (repo / ".gitignore").write_text("/agent/\n")
+    (repo / "lamp.txt").write_text("the lamp\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the lamp")
+
     root = repo / "agent" / "tickets"
     ticket(root, "lamp-ui", brief="The whole of giving the lamp presets.")
     ticket(root, "warm-preset", parent="lamp-ui", brief="One preset, warm.")
     ticket(root, "name-the-presets", needs_user=True, brief="Naming them is a conversation.")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "the tracker")
+    git(repo / "agent", "add", "-A")
+    git(repo / "agent", "commit", "-q", "-m", "the tracker")
     return repo
+
+
+def tracked(toy: Path) -> Path:
+    """Where this project's ticket files are: the agent repo's, in its main checkout."""
+    return toy / "agent" / "tickets"
 
 
 def environment(toy: Path, **extra: str) -> dict[str, str]:
@@ -139,37 +160,16 @@ def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
                           env=environment(toy, **extra), timeout=180)
 
 
-def status_of(tracked: Path, slug: str) -> str:
-    return (tracked / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
+def status_of(toy: Path, slug: str) -> str:
+    return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
 
 
-@pytest.fixture(params=["one repo", "two repos"])
-def tracked(toy: Path, request: pytest.FixtureRequest) -> Path:
-    """The tracker the toy plans with, and where every ticket change is committed: its own
-    `agent/tickets`, or one in a repo of its own that the code repo names with `git config
-    mx.tracker`, which is what lets the code live in a repo the tickets stay out of."""
-    if request.param == "one repo":
-        return toy / "agent" / "tickets"
-    plans = toy.parent / "plans"
-    (plans / "agent").mkdir(parents=True)
-    git(toy.parent, "init", "-q", "-b", "main", str(plans))
-    for key, value in (("user.email", "toy@toy"), ("user.name", "toy"), ("commit.gpgsign", "false")):
-        git(plans, "config", key, value)
-    shutil.move(str(toy / "agent" / "tickets"), str(plans / "agent" / "tickets"))
-    git(toy, "commit", "-q", "-am", "the tracker moves out")
-    git(plans, "add", "-A")
-    git(plans, "commit", "-q", "-m", "the tracker")
-    git(toy, "config", "mx.tracker", str(plans / "agent" / "tickets"))
-    return plans / "agent" / "tickets"
-
-
-def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(
-    toy: Path, tracked: Path
-) -> None:
+def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
     first = run(toy, "claim", "warm-preset")
     assert first.returncode == 0, first.stderr
-    assert status_of(tracked, "warm-preset") == "claimed"
-    assert "claim warm-preset" in git(tracked, "log", "-1", "--format=%s"), "committed in the tracker's checkout"
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert "claim warm-preset" in git(toy / "agent", "log", "-1", "--format=%s"), "committed in the agent repo"
+    assert "claim" not in git(toy, "log", "-1", "--format=%s"), "and on no branch of the code repo"
 
     again = run(toy, "claim", "warm-preset")
     assert again.returncode != 0
@@ -212,7 +212,7 @@ def spawn(toy: Path, staged: Path, slug: str, message: str) -> subprocess.Comple
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 
-def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, tracked: Path, staged: Path) -> None:
+def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P4`'s worker half: the brief is the ticket's body and every ancestor's,
     which is what `tracker context` assembles for the review's `--spec` too."""
     run(toy, "claim", "warm-preset")
@@ -226,7 +226,7 @@ def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_
     assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
 
 
-def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, tracked: Path, staged: Path) -> None:
+def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, staged: Path) -> None:
     run(toy, "claim", "name-the-presets")
     said = spawn(toy, staged, "name-the-presets", "Work it.\n")
     assert said.returncode != 0
@@ -234,27 +234,28 @@ def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: P
     assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
 
 
-def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, tracked: Path, staged: Path) -> None:
+def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) -> None:
     """The guard the commit hook makes where a ticket file is written, made again where a worker is
     handed one: the host reads no ticket at all, so this is the reader that stands between a broken
     ticket and a worker."""
     run(toy, "claim", "warm-preset")
-    broken = tracked / "warm-preset.md"
+    broken = tracked(toy) / "warm-preset.md"
     broken.write_text(broken.read_text() + "\n## Comments\n\n- A1 no anchor in backticks here.\n")
-    git(tracked, "commit", "-q", "-am", "a bullet no reader can read")
+    git(toy / "agent", "commit", "-q", "-am", "a bullet no reader can read")
     said = spawn(toy, staged, "warm-preset", "Work it.\n")
     assert said.returncode != 0
     assert "warm-preset.md:" in said.stderr and "this assumption has no anchor" in said.stderr, said.stderr
     assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
 
 
-def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, tracked: Path, staged: Path) -> None:
+def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, staged: Path) -> None:
     """One ticket end to end, the tracker in either repo: claim, spawn, the report, the import, a
     question ruled before the merge, and the landing with the range the ticket keeps.
 
     `ticket-file-contract#P7`: nothing the worker did touched a ticket file, and every word it wrote
     for the user is in the tracker's own copy by the time the build waits for a ruling."""
     tracker = SKILL.parent / "tracker" / "tracker.py"
+    agent = toy / "agent"
     (staged.parent / "run-worker.sh").write_text(BUILDING)
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
@@ -267,49 +268,49 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, trac
     assert left, "no status line 30s after the spawn: " + subprocess.run(
         ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
         capture_output=True, text=True).stdout
-    assert "report=yes" in left[0].read_text(), "the runner says it left one"
-    assert git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split() == ["lamp.txt"], \
-        "the ticket branch carries the code and nothing of the tracker"
+    assert "report=yes" in left[0].read_text(), "the runner reads the report it committed"
+    assert git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split() == ["lamp.txt"]
+    assert sorted(git(agent, "diff", "--name-only", "main", "ticket/warm-preset").split()) == [
+        "show/warm-preset/demo", "show/warm-preset/report.md"], \
+        "the agent branch carries the report and the demo, and no ticket file"
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
-    fetched = toy / ".git" / "dispatch" / "reports" / "main" / "warm-preset.md"
-    assert fetched.is_file(), "the report comes back with the branch"
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
 
-    written = (tracked / "warm-preset.md").read_text()
-    assert status_of(tracked, "warm-preset") == "review"
+    written = (tracked(toy) / "warm-preset.md").read_text()
+    assert status_of(toy, "warm-preset") == "review"
     assert "The warm preset lands, unmerged" in written and "**Warm at what temperature?**" in written
-    assert "warm-preset for review" in git(tracked, "log", "-1", "--format=%s")
-    assert not fetched.exists() and fetched.with_suffix(".md.imported").is_file(), "one round, one import"
-    notes = json.loads((tracked.parent / "diffviews" / "warm-preset.notes.json").read_text())
+    assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
+    notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
     assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
                            capture_output=True, text=True)
     assert ruled.returncode == 0, ruled.stderr
-    git(tracked, "commit", "-q", "-am", "warm-preset: D2 ruled")
+    git(agent, "commit", "-q", "-am", "warm-preset: D2 ruled")
 
-    # the stub makes one commit, so its parent is what the branch was cut from; read from git
-    # rather than from the range under test
-    cut = git(toy, "rev-parse", "ticket/warm-preset~1").strip()
-    tip = git(toy, "rev-parse", "ticket/warm-preset").strip()
-    git(toy, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
+    # the stub makes one commit in each repo, so its parent is what that branch was cut from; read
+    # from git rather than from the ranges under test
+    cut, tip = {}, {}
+    for at, top in (("code", toy), ("agent", agent)):
+        cut[at] = git(top, "rev-parse", "ticket/warm-preset~1").strip()
+        tip[at] = git(top, "rev-parse", "ticket/warm-preset").strip()
+        git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
     landed = run(toy, "review", "warm-preset")
     assert landed.returncode == 0, landed.stderr
-    assert status_of(tracked, "warm-preset") == "done"
+    assert status_of(toy, "warm-preset") == "done"
     got = subprocess.run([str(tracker), "get", "warm-preset", "diff"], cwd=toy, capture_output=True, text=True)
-    (range_,) = got.stdout.split()
-    qualified = not (toy / "agent" / "tickets").is_dir()
-    assert range_.startswith("lamp@") == qualified, f"{range_} in the tracker's own repo: {not qualified}"
-    assert range_.removeprefix("lamp@") == f"{cut}..{tip}", "the range the merge commit's parents give"
-    # whatever the ticket says, the page is rendered from this checkout
+    assert got.stdout.split() == [f"code@{cut['code']}..{tip['code']}", f"agent@{cut['agent']}..{tip['agent']}"], got.stdout
+
+    # one page, both repos' ranges on it, each rendered from the repo it names
     handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
-    assert [line for line in handed if line.startswith(f"{toy}@{cut}..{tip} ")], handed
+    assert [line for line in handed
+            if line.startswith(f"{toy}@{cut['code']}..{tip['code']} {agent}@{cut['agent']}..{tip['agent']} ")], handed
 
 
-def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, tracked: Path, staged: Path) -> None:
+def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
     """The other half of the finished signal: a worker that stopped short leaves no report, the
     fetch says so and exits 0, and the review that follows writes nothing of a worker's into the
     ticket."""
@@ -323,14 +324,32 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
 
     fetched = run(toy, "fetch", "warm-preset")
     assert fetched.returncode == 0, fetched.stderr
-    assert "left no report" in fetched.stderr, fetched.stderr
-    reports = toy / ".git" / "dispatch" / "reports" / "main"
-    assert not list(reports.glob("*")), "a run that left none leaves nothing behind, half a file included"
-
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    assert status_of(tracked, "warm-preset") == "review", "the branch is there to rule on either way"
-    assert "## Questions" not in (tracked / "warm-preset.md").read_text()
+    assert "left nothing to review" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "review", "the branches are there to rule on either way"
+    assert "## Questions" not in (tracked(toy) / "warm-preset.md").read_text()
+
+
+def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
+    """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
+    ticket file wrote a second copy of one, and nothing of that round is imported."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
+        "git -C agent add -A",
+        'printf "\\nWhat it built, written where no worker writes.\\n" >> "agent/tickets/$slug.md"\n'
+        "git -C agent add -A"))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    for _ in range(60):
+        if list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.status")):
+            break
+        time.sleep(0.5)
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "writes a ticket file" in said.stderr and "tickets/warm-preset.md" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed", "nothing of that round is in the ticket"
 
 
 @pytest.mark.parametrize("wrote, exits, says", [
@@ -340,31 +359,62 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     tmp_path: Path, wrote: bool, exits: int, says: str
 ) -> None:
-    """The shipped runner, with `claude` stubbed rather than the runner itself: a run that left a
-    report is finished whatever it exited with, one that left none says so on its status line, and
-    the retry loop ends either way."""
+    """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
+    committed its report in the agent repo is finished whatever it exited with, one that committed
+    none says so on its status line, and the retry loop ends either way."""
     state = tmp_path / "state"
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
     (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
+    worktree = tmp_path / "lamp-warm-preset"
+    (worktree / "agent").mkdir(parents=True)
+    git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
+    (worktree / "agent" / "README.md").write_text("the agent repo\n")
+    git(worktree / "agent", "add", "-A")
+    git(worktree / "agent", "commit", "-q", "-m", "the agent repo")
+
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "claude").write_text(
-        "#!/bin/sh\n"
-        + ('printf "## Comments\\n\\nit lands.\\n" > "$DISPATCH_REPORT"\n' if wrote else "")
-        + f"exit {exits}\n")
+    committing = (
+        'mkdir -p agent/show/warm-preset\n'
+        'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
+        'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
+        'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
+    )
+    (bin_dir / "claude").write_text("#!/bin/sh\n" + (committing if wrote else "") + f"exit {exits}\n")
     (bin_dir / "claude").chmod(0o755)
 
     done = subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        cwd=worktree, capture_output=True, text=True, timeout=120,
         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
     )
     assert done.returncode == 0, done.stderr
     assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
-    assert (state / "run-1.report.md").exists() is wrote
     assert "runner: started warm-preset" in (state / "run-1.log").read_text()
+
+
+def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
+    """Without that repo the worker has nowhere to commit a report, so every attempt would end in
+    `report=no` with nothing saying why."""
+    state = tmp_path / "state"
+    state.mkdir()
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+    )
+    assert "no agent repo at" in (state / "run-1.log").read_text()
+    assert "report=no" in (state / "run-1.status").read_text()
 
 
 if __name__ == "__main__":

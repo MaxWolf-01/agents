@@ -6,11 +6,11 @@
 """Every mechanical operation on a tracker's ticket files, read and write.
 
 A ticket is `agent/tickets/<slug>.md`, flat, with an optional `parent: <slug>`; the slug is its id.
-The tracker is the nearest `agent/tickets` above the working directory, read in the checkout ticket
-files are committed in, which is the repo's main one; a code repo whose tickets live in another repo
-names that one with `git config mx.tracker`. The ticket's body stays prose an agent writes in the file, and
-`check` is what holds it to the format: it runs over the staged files from the commit hook, and
-every read below refuses the same way, naming the file and the line.
+A repo's `agent/` is a git repo of its own, holding the tickets, the show directories, the
+prototypes and the research of the repo it sits in; the tracker is its `tickets`, read in its main
+checkout, which is where every ticket file is written. The ticket's body stays prose an agent
+writes in the file, and `check` is what holds it to the format: it runs over the staged files from
+the commit hook, and every read below refuses the same way, naming the file and the line.
 
 Examples:
 
@@ -56,10 +56,9 @@ LIST_FIELDS = ("blocked-by", "diff", "gh")
 
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
-RANGE = re.compile(r"(?:[\w.-]+@)?[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}")
+RANGE = re.compile(r"(?:(?:code|agent)@)?[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}")
 
 TICKETS = Path("agent") / "tickets"
-TRACKER_CONFIG = "mx.tracker"  # what a code repo names its tracker with, where that tracker is another repo's
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
 
 
@@ -89,6 +88,8 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
         except Refused:
             return 0
         files = staged_paths(tracker.root)
+        if files and (built := ticket_branch_out(tracker.root)):
+            raise Refused([f"{file}:1: {built} is a ticket branch, and a ticket file is written in the tracker's own checkout, never on one" for file in files])
     found = [refusal for path in files for refusal in refusals_of(tracker.at_path(path), tracker)]
     for refusal in found:
         print(refusal)
@@ -99,9 +100,9 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
 
 @app.command(name="root")
 def root() -> int:
-    """Print the tracker this working directory plans: the repo's own `agent/tickets`, in its main
-    checkout, or what `git config mx.tracker` names in this clone, where the tickets live in another
-    repo than the code. Every ticket file is written and committed there."""
+    """Print the tracker this working directory plans: the `agent/tickets` of the agent repo its
+    code repo holds, in that repo's main checkout. Every ticket file is written and committed
+    there, and a ticket branch of either repo carries none."""
     print(tracker_root(Path.cwd()))
     return 0
 
@@ -316,7 +317,7 @@ def set_fields(
     """
     tracker = here()
     ticket = tracker.ticket(slug)
-    changes, said = {}, []
+    changes, said, grown = {}, [], {}
     for assignment in assignments:
         key, appended, value = assignment.partition("+=")
         if not appended:
@@ -327,7 +328,11 @@ def set_fields(
             raise Refused([f"`{key}` holds one value, not a list; `{key}=...` sets it"])
         if key == "status":
             refuse_transition(ticket, value, tracker)
-        changes[key] = listed(ticket, key, value) if appended else value
+        if appended:
+            # what this write has appended so far, so two appends to one field keep both: a round
+            # lands in two repos and writes a range for each
+            grown.setdefault(key, [str(one) for one in ticket.meta.get(key) or []]).append(value)
+        changes[key] = rendered(grown[key]) if appended else value
         said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
     was = ticket.path.read_text()
     written = written_with(was, changes)
@@ -365,10 +370,6 @@ def moved(refusal: Refusal, at: dict[int, int]) -> Refusal:
                    what=NAMED_LINE.sub(lambda found: str(shifted(int(found.group()))), refusal.what))
 
 
-def listed(ticket: Ticket, key: str, value: str) -> str:
-    return rendered([str(one) for one in ticket.meta.get(key) or []] + [value])
-
-
 def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
     if want == ticket.status:
         return
@@ -385,19 +386,30 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not landed here, or None once it has: its own branch merged into
     the branch this runs on, which is the branch ticket branches merge into; for a parent ticket,
     every child ticket done; for a ticket the user is in the loop for, the ruling itself."""
-    top = built_in(tracker)
-    onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
-    branch = ticket_branch(top, ticket.slug)
-    if branch is None:
+    repos = [built_in(tracker), toplevel(tracker.root)]  # the code repo's checkout, and the agent repo's
+    branches = [(top, ticket_branch(top, ticket.slug)) for top in dict.fromkeys(repos)]
+    if all(branch is None for _, branch in branches):
         children = tracker.children(ticket.slug)
         if ticket.needs_user or (children and all(child.status == "done" for child in children)):
             return None
-        return f"no branch ticket/{ticket.slug} in {top}; done is written where the work was built, and follows the user's accept and its merge"
-    if onto == branch:
-        return f"{branch} is the branch this runs on; done is written where the ticket branch merges into, never on the branch itself"
-    tip = git(top, "rev-parse", branch).strip()
-    return None if tried(top, "merge-base", "--is-ancestor", tip, "HEAD").returncode == 0 else (
-        f"{branch} is not merged into {onto}; done follows the user's accept and its merge")
+        return f"no branch ticket/{ticket.slug} in {' or '.join(str(top) for top, _ in branches)}; done is written where the work was built, and follows the user's accept and its merge"
+    for top, branch in branches:
+        if branch is None:
+            continue
+        onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        if onto == branch:
+            return f"{branch} is the branch {top} has out; done is written where the ticket branch merges into, never on the branch itself"
+        tip = git(top, "rev-parse", branch).strip()
+        if tried(top, "merge-base", "--is-ancestor", tip, "HEAD").returncode != 0:
+            return f"{branch} is not merged into {onto} in {top}; done follows the user's accept and its merge"
+    return None
+
+
+def ticket_branch_out(root: Path) -> str | None:
+    """The `ticket/<slug>` branch the tracker's own checkout has out, where it has one: what a
+    worker's copy of the agent repo is on, and what nothing writes a ticket file on."""
+    said = tried(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    return said if said.startswith("ticket/") else None
 
 
 def built_in(tracker: Tracker) -> Path:
@@ -470,7 +482,8 @@ def rule(
 @app.command(name="import")
 def import_report(
     slug: Annotated[str, tyro.conf.Positional],
-    report: Annotated[Path, tyro.conf.Positional],
+    report: Annotated[str, tyro.conf.Positional],
+    named: str = "",
 ) -> int:
     """Bring a worker's report into its ticket: the closing comment under `## Comments`, the
     questions it raised under `## Questions`, and the `review` status the finished build waits in.
@@ -481,11 +494,15 @@ def import_report(
 
     Args:
         slug: the ticket the report is of.
-        report: the file the worker wrote, which dispatch fetched from its host.
+        report: the report file, or `-` for one on stdin, which is how dispatch hands over the one
+            its worker committed on the agent repo's ticket branch.
+        named: what a refusal calls a report read from stdin, so it names the object it came from.
     """
     tracker = here()
     ticket = tracker.ticket(slug)
-    read_back = read_report(report, report.read_text())
+    alone = report == "-"
+    path = Path(named or "<stdin>") if alone else Path(report)
+    read_back = read_report(path, sys.stdin.read() if alone else path.read_text())
     refuse(read_back.refusals)
     if ticket.status == "review":
         raise Refused([f"{slug} is already in review; a report is imported once, and a second would say everything it says twice"])
@@ -495,7 +512,7 @@ def import_report(
     written = written_with(with_report(was, ticket, read_back), {"status": "review"})
     after = read(ticket.path, written)
     if broken := caused(ticket, after, tracker, was, written):
-        raise Refused([f"{report}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken])
+        raise Refused([f"{path}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken])
     ticket.path.write_text(written)
     asked = len(read_back.asked)
     said = f"{asked} question{'s' if asked != 1 else ''}"
@@ -634,16 +651,18 @@ def cites_into(retiring: Sequence[Ticket], tracker: Tracker) -> list[str]:
 
 def owned(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> set[Path]:
     """Every file the retired tickets take with them: their own, their show directories, and the
-    prototypes and research notes they link that no surviving ticket links too."""
+    prototypes and research notes they link that no surviving ticket links too. A ticket writes
+    those links from the code repo's root, which is the directory the agent repo sits in."""
     retired = {one.slug for one in retiring}
     leaving = {one.path for one in retiring}
+    beside = tracker.root.parent.parent  # the code repo's root, the path a link is written from
     for one in retiring:
-        leaving |= under(top / "agent" / "show" / one.slug)
+        leaving |= under(tracker.root.parent / "show" / one.slug)
     kept = "\n".join(one.body for one in tracker.tickets.values() if one.slug not in retired)
     for one in retiring:
         for link in LINKED.findall(one.body):
             if link not in kept:
-                leaving |= under(top / link) | ({top / link} if (top / link).is_file() else set())
+                leaving |= under(beside / link) | ({beside / link} if (beside / link).is_file() else set())
     return leaving
 
 
@@ -786,7 +805,7 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
 
     for ref in meta.get("diff") if isinstance(meta.get("diff"), list) else []:
         if not RANGE.fullmatch(str(ref)):
-            refuse("diff", f"`diff: {ref}` is no commit range; a range is `<sha>..<sha>`, or `<repo>@<sha>..<sha>` where the code is not in the tracker's repo, and never a branch name, since a ticket branch is deleted once it lands")
+            refuse("diff", f"`diff: {ref}` is no commit range; a round lands as `code@<sha>..<sha>` and `agent@<sha>..<sha>`, one per repo, and never as a branch name, since a ticket branch is deleted once it lands")
     for ref in meta.get("gh") if isinstance(meta.get("gh"), list) else []:
         if not GH_REF.fullmatch(str(ref)):
             refuse("gh", f"`gh: {ref}` is no reference; a reference is `owner/repo#number`")
@@ -1372,28 +1391,15 @@ def find_tracker(start: Path) -> Path:
 
 
 def tracker_root(start: Path) -> Path:
-    """The tracker the project at `start` is planned in: what `git config mx.tracker` names in its
-    clone, where the tracker is another repo's, and the main checkout's `find_tracker` otherwise.
-    The setting is the clone's alone, like the path it holds, so neither repo commits the other's
-    layout, and it takes the tracker's own `agent/tickets` or the repo holding one."""
-    named = tried(start, "config", "--local", "--get", TRACKER_CONFIG)
-    if named.returncode != 0 or not named.stdout.strip():
-        return main_worktree(find_tracker(start))
-    said = named.stdout.strip()
-    root = Path(said).expanduser()
-    if not root.is_absolute():
-        raise Refused([f"`git config {TRACKER_CONFIG}` is `{said}`; a tracker is named by an absolute path, since the sessions that read it run in other directories"])
-    if (root / TICKETS).is_dir():  # the repo holding the tracker, which is how the setting reads
-        return root / TICKETS
-    if not root.is_dir() or root.name != TICKETS.name or root.parent.name != TICKETS.parent.name:
-        raise Refused([f"`git config {TRACKER_CONFIG}` names {root}, which is neither an `{TICKETS}` directory nor a repo holding one"])
-    return root
+    """Where the project at `start` writes its ticket files: the `agent/tickets` of the agent repo
+    its code repo holds, in that repo's main checkout. Nothing names it; it is found."""
+    return main_worktree(find_tracker(start))
 
 
 def main_worktree(root: Path) -> Path:
     """The repo's main checkout's copy of `root`, since that is the checkout a tracker is committed
-    in: a linked worktree holds a code branch, and a ticket change goes on no code branch. The
-    directory as found where the repo has no copy of it in its main checkout, and outside git."""
+    in: a linked worktree holds a ticket branch, and a ticket file is written on no ticket branch.
+    The directory as found where the repo has no copy of it in its main checkout, and outside git."""
     listed = tried(root, "worktree", "list", "--porcelain")
     top = tried(root, "rev-parse", "--show-toplevel")
     if listed.returncode != 0 or top.returncode != 0:

@@ -119,15 +119,22 @@ def tickets(repo: Path) -> Path:
 
 
 @pytest.fixture
-def code(repo: Path) -> Path:
-    """A repo of its own beside the tracker's: the split case, the code in one repo and the tickets
-    in another, joined by the setting the code repo carries. Beside rather than under, since a
-    tracker above it would be its own."""
-    code = repo.parent / f"{repo.name}-code"
-    code.mkdir()
-    git(repo.parent, "init", "-q", "-b", "main", str(code))
-    for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
-        git(code, "config", key, value)
+def split(tmp_path: Path) -> Path:
+    """The layout a project has: a code repo, and its `agent/` a git repo of its own inside it that
+    the code repo ignores. Answers the code repo's root, one commit deep in each."""
+    code = tmp_path / "lamp"
+    (code / "agent" / "tickets").mkdir(parents=True)
+    for at in (code, code / "agent"):
+        git(tmp_path, "init", "-q", "-b", "main", str(at))
+        for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
+            git(at, "config", key, value)
+    (code / ".gitignore").write_text("/agent/\n")
+    (code / "src.txt").write_text("the lamp\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the lamp")
+    (code / "agent" / "README.md").write_text("what this repo is planned with\n")
+    git(code / "agent", "add", "-A")
+    git(code / "agent", "commit", "-q", "-m", "the agent repo")
     return code
 
 
@@ -280,7 +287,7 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
     ({"needs-user": "maybe"}, "`needs-user` is true or false"),
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
-    ({"diff": "[main..feature]"}, "a range is `<sha>..<sha>`"),
+    ({"diff": "[main..feature]"}, "a round lands as `code@<sha>..<sha>`"),
 ])
 def test_a_frontmatter_field_no_reader_can_read_is_refused(tickets: Path, repo: Path, written: dict, refused: str) -> None:
     path = ticket(tickets, "one-flow", **written)
@@ -1206,106 +1213,108 @@ def test_the_tracker_is_found_from_wherever_the_command_is_typed(tickets: Path, 
     assert run(deeper, "get", "one-flow", "status").out == "claimed\n"
 
 
-def test_the_tracker_of_a_code_repo_is_the_one_its_clone_names(tickets: Path, code: Path) -> None:
-    """The tickets in one repo and the code in another: the code repo names its tracker with
-    `git config mx.tracker`, machine-local like the path it holds."""
-    ticket(tickets, "one-flow", status="claimed")
-    (code / "agent" / "tickets").mkdir(parents=True)
-    assert run(code, "root").out.strip() == str(code / "agent" / "tickets"), "its own, with nothing set"
-
-    git(code, "config", "mx.tracker", str(tickets))
-    assert run(code, "root").out.strip() == str(tickets)
-    assert run(code, "get", "one-flow", "status").out == "claimed\n"
-    assert run(code, "set", "one-flow", "status=review").code == 0
-    assert "status: review" in (tickets / "one-flow.md").read_text(), "the write lands in the tracker's own copy"
-
-
-@pytest.mark.parametrize("named, said", [
-    ("nowhere", "neither an `agent/tickets` directory nor a repo holding one"),
-    ("agent", "neither an `agent/tickets` directory nor a repo holding one"),
-    ("../elsewhere/agent/tickets", "a tracker is named by an absolute path"),
-])
-def test_a_tracker_setting_that_names_no_tracker_is_refused(repo: Path, named: str, said: str) -> None:
-    """The path the setting takes is the tracker's own `agent/tickets`, or the repo holding it;
-    anything else would have every read answer about a directory of its own and refuse nothing."""
-    (repo / "agent").mkdir(exist_ok=True)
-    git(repo, "config", "mx.tracker", named if named.startswith("..") else str(repo / named))
-    answer = run(repo, "root")
-    assert answer.code == 1 and said in answer.err, answer.said
-
-
-def test_the_setting_takes_the_repo_that_holds_the_tracker_too(repo: Path, tickets: Path, code: Path) -> None:
-    git(code, "config", "mx.tracker", str(repo))
-    assert run(code, "root").out.strip() == str(tickets)
-
-
-def test_a_setting_written_with_a_tilde_names_the_same_tracker(
-    repo: Path, tickets: Path, code: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The form a user typing into `.git/config` reaches for, and the empty one `git config
-    mx.tracker ""` leaves behind, which is no setting at all."""
-    monkeypatch.setenv("HOME", str(repo.parent))
-    git(code, "config", "mx.tracker", f"~/{tickets.relative_to(repo.parent)}")
-    assert run(code, "root").out.strip() == str(tickets)
-
-    git(code, "config", "mx.tracker", "")
-    (code / "agent" / "tickets").mkdir(parents=True, exist_ok=True)
-    assert run(code, "root").out.strip() == str(code / "agent" / "tickets"), "its own, as with nothing set"
-
-
-def test_the_tracker_is_the_main_checkouts_copy_wherever_the_command_runs(repo: Path, tickets: Path, tmp_path: Path) -> None:
-    """A ticket change goes on no code branch, and a linked worktree has one out: a session working
-    in one still reads and writes the tracker in the checkout the tickets are committed in."""
+def test_the_tracker_is_the_agent_repos_main_checkout_wherever_the_command_runs(split: Path) -> None:
+    """A worker holds both repos on `ticket/<slug>` branches, the agent repo's worktree inside the
+    code repo's, and writes a ticket file on neither: every read and write is the main checkout's
+    copy, which is the one a ticket change is committed in."""
+    tickets = split / "agent" / "tickets"
     ticket(tickets, "one-flow")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "a ticket")
-    worktree = tmp_path / "beside"
-    git(repo, "worktree", "add", "-q", str(worktree), "-b", "one-flow")
-    (worktree / "agent" / "tickets" / "one-flow.md").write_text(
-        (tickets / "one-flow.md").read_text().replace("status: open", "status: claimed"))
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    worktree = split.parent / "lamp-one-flow"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", "ticket/one-flow")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", "ticket/one-flow")
+    theirs = worktree / "agent" / "tickets" / "one-flow.md"
+    theirs.write_text(theirs.read_text().replace("status: open", "status: claimed"))
+
     assert run(worktree, "root").out.strip() == str(tickets)
     assert run(worktree, "get", "one-flow", "status").out == "open\n", "the main checkout's copy"
+    (worktree / "agent" / "show").mkdir(parents=True)
+    assert run(worktree / "agent" / "show", "root").out.strip() == str(tickets), "from inside the agent repo too"
 
 
-def test_the_commit_hook_answers_for_the_repo_it_runs_in_whatever_tracker_that_repo_plans_with(
-    repo: Path, tickets: Path, code: Path
-) -> None:
-    """A commit is made of one repo's staged files, so the check with no paths reads that repo's own
-    tracker; the setting says where ticket *files* are written, which is nothing this commit does."""
-    git(code, "config", "mx.tracker", str(tickets))
-    ticket(tickets, "one-flow", status="nonsense")  # staged in the tracker's repo, not in this one
-    git(repo, "add", "agent/tickets")
-    assert run(code, "check") == Run(0, "", ""), "a commit in a repo with no tracker is refused nothing"
-    assert run(repo, "check").code == 1, "the tracker's own repo is where that commit is refused"
-
-
-def test_done_reads_the_ticket_branch_in_the_checkout_the_work_was_built_in(
-    tickets: Path, code: Path
-) -> None:
-    """With the tracker in another repo, the ticket branch and the merge that landed it are in the
-    code repo, which is the checkout dispatch runs this in."""
-    ticket(tickets, "one-flow", status="review")
-    git(code, "config", "mx.tracker", str(tickets))
-    (code / "lamp.py").write_text("lit\n")
-    git(code, "add", "-A")
-    git(code, "commit", "-q", "-m", "the code")
-    git(code, "checkout", "-q", "-b", "ticket/one-flow")
-    (code / "lamp.py").write_text("lit, warmly\n")
-    git(code, "commit", "-q", "-am", "the build")
-    git(code, "checkout", "-q", "main")
-
-    said = run(code, "set", "one-flow", "status=done")
-    assert said.code == 1 and "is not merged into main" in said.err, said.said
-    git(code, "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
-    assert run(code, "set", "one-flow", "status=done").code == 0
-
-
-def test_a_range_names_the_repo_it_is_in_where_that_is_not_the_trackers(tickets: Path, repo: Path) -> None:
-    """A tracker planning another repo's code: the range says which repo to render it from."""
+def test_a_ticket_branch_is_refused_the_ticket_file_it_staged(split: Path) -> None:
+    """`ticket-file-contract#P7` where the commit hook runs it: a worker's copy of the agent repo is
+    on a ticket branch, and a ticket file written there would be a second copy of one."""
+    tickets = split / "agent" / "tickets"
     ticket(tickets, "one-flow")
-    assert run(repo, "set", "one-flow", "diff+=dotfiles@4f2a91c..8b3ce07").code == 0
-    said = run(repo, "set", "one-flow", "diff+=dotfiles@ticket/one-flow")
-    assert said.code == 1 and "never a branch name" in said.said, said.said
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    worktree = split.parent / "lamp-one-flow"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", "ticket/one-flow")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", "ticket/one-flow")
+
+    theirs = worktree / "agent" / "tickets" / "one-flow.md"
+    theirs.write_text(theirs.read_text().replace("status: open", "status: review"))
+    git(worktree / "agent", "add", "agent/tickets/one-flow.md".removeprefix("agent/"))
+    said = run(worktree / "agent", "check")
+    assert said.code == 1 and "is a ticket branch" in said.err, said.said
+
+    (worktree / "agent" / "show").mkdir(parents=True, exist_ok=True)
+    (worktree / "agent" / "show" / "report.md").write_text("## Comments\n\nit lands.\n")
+    git(worktree / "agent", "reset", "-q")
+    git(worktree / "agent", "add", "show")
+    assert run(worktree / "agent", "check") == Run(0, "", ""), "what a worker does commit there"
+
+
+def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
+    """A round lands in two repos, and `done` is the accept of the whole of it."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", status="review")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    (split / "src.txt").write_text("lit\n")
+    git(split, "commit", "-q", "-am", "the code")
+    for at in (split, split / "agent"):
+        git(at, "checkout", "-q", "-b", "ticket/one-flow")
+    (split / "src.txt").write_text("lit, warmly\n")
+    git(split, "commit", "-q", "-am", "the build")
+    (split / "agent" / "show" / "one-flow").mkdir(parents=True, exist_ok=True)
+    (split / "agent" / "show" / "one-flow" / "report.md").write_text("## Comments\n\nit lands.\n")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "the report")
+    for at in (split, split / "agent"):
+        git(at, "checkout", "-q", "main")
+
+    said = run(split, "set", "one-flow", "status=done")
+    assert said.code == 1 and "is not merged into main" in said.err, said.said
+    git(split, "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
+    said = run(split, "set", "one-flow", "status=done")
+    assert said.code == 1 and "is not merged into main" in said.err, "the agent branch is half of it"
+    git(split / "agent", "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
+    assert run(split, "set", "one-flow", "status=done").code == 0
+
+
+def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> None:
+    """A ticket writes its links from the code repo's root, `agent/research/...`, and the agent repo
+    is rooted one directory down: what it owns is found either way."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", "Its detail is in `agent/research/one-flow.md`.", status="done")
+    (split / "agent" / "show" / "one-flow").mkdir(parents=True)
+    (split / "agent" / "show" / "one-flow" / "demo").write_text("#!/bin/sh\necho one\n")
+    (split / "agent" / "research").mkdir()
+    (split / "agent" / "research" / "one-flow.md").write_text("what it found\n")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "one-flow, with what it owns")
+
+    said = run(split, "retire", "one-flow")
+    assert said.code == 0, said.said
+    for gone in ("tickets/one-flow.md", "show/one-flow/demo", "research/one-flow.md"):
+        assert not (split / "agent" / gone).exists(), f"{gone} stayed"
+    assert "one-flow, with what it owns" in git(split / "agent", "log", "-1", "--format=%s"), "staged, not committed"
+    assert sorted(git(split / "agent", "diff", "--cached", "--name-only").split()) == [
+        "research/one-flow.md", "show/one-flow/demo", "tickets/one-flow.md"], "every removal is staged"
+
+
+def test_a_range_names_which_of_the_two_repos_it_is_in(tickets: Path, repo: Path) -> None:
+    """A round lands in the code repo and in the agent repo, so the ticket carries one range each,
+    written together: two appends in one write keep both."""
+    ticket(tickets, "one-flow")
+    assert run(repo, "set", "one-flow", "diff+=code@4f2a91c..8b3ce07", "diff+=agent@aaaaaaa..bbbbbbb").code == 0
+    assert run(repo, "get", "one-flow", "diff").out.split() == ["code@4f2a91c..8b3ce07", "agent@aaaaaaa..bbbbbbb"]
+    for refused in ("lamp@4f2a91c..8b3ce07", "code@ticket/one-flow"):
+        said = run(repo, "set", "one-flow", f"diff+={refused}")
+        assert said.code == 1 and "one per repo" in said.said, said.said
 
 
 def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path, tmp_path: Path) -> None:

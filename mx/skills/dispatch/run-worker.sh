@@ -2,8 +2,9 @@
 # Run one dispatch worker in this pane, retrying transient failures, then leave a status line.
 # Usage: run-worker.sh <message-file> <slug> <model> <run> [session-id]
 #   message-file  the ticket message, or resume guidance; sent on the first attempt only
-#   slug          the ticket this worker holds, for the worklog's opening line
-#   run           id of this run, unique; names <run>.{status,log,report.md} beside this script
+#   slug          the ticket this worker holds: its report is agent/show/<slug>/report.md,
+#                 committed in the agent repo this pane's worktree holds at `agent`
+#   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
 # TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
 # Env:
@@ -38,12 +39,18 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
 # What the worker has to say about the ticket: its closing comment and the questions its build
-# raised, written outside the worktree because a worker writes no ticket file. The orchestrator
-# imports it into the ticket, and this file existing is what says the worker finished.
-export DISPATCH_REPORT="$here/$run_id.report.md"
+# raised, committed with its demo and its figures in the agent repo, which is a repo of its own at
+# `agent` inside this worktree. The orchestrator fetches that branch and imports the report into
+# the ticket; the report being committed is what says the worker finished.
+reported() { git -C agent cat-file -e "HEAD:show/$slug/report.md" 2> /dev/null; }
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+# Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
+# would end in `report=no` with nothing saying why.
+git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
+    printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
+        "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
 
 # The user CLAUDE.md and output style are written for a human at a terminal: they tell their
 # reader to ask and how to shape a reply, for a conversation this worker is not in.
@@ -87,7 +94,7 @@ for attempt in $(seq 1 $max_attempts); do
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.
-    [ -f "$DISPATCH_REPORT" ] && break
+    reported && break
     [ "$attempt" -eq "$max_attempts" ] && break
 
     backoff=$((attempt * 30))
@@ -101,4 +108,4 @@ done
 # Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
 # a report to import.
 printf 'attempts=%s exit=%s report=%s session=%s\n' \
-    "$attempt" "$rc" "$([ -f "$DISPATCH_REPORT" ] && echo yes || echo no)" "$session" > "$here/$run_id.status"
+    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" > "$here/$run_id.status"
