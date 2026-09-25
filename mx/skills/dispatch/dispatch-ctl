@@ -46,9 +46,7 @@
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
 #             --deadline after SECS of waiting (exit 5). Both leave the worker
-#             running: a quiet worker may be wedged or may be taking its time
-#             over something hard, and telling those apart is the
-#             orchestrator's to judge from the pane.
+#             running.
 #   stop      ends the current run without losing it: the runner writes its
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
@@ -77,9 +75,10 @@
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
 #                             (default ~/.claude), passed through to the runner
-#   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
-#                             A replacement lives in this directory too. The
-#                             contract it owes: argv is <prompt> <slug> <model>
+#   DISPATCH_RUNNER           pane script: a file name in this directory, where
+#                             `dispatch ctl` copies the orchestrator's as
+#                             `runner`, or an absolute path (default
+#                             run-worker.sh). The contract it owes: argv is <prompt> <slug> <model>
 #                             <run> [session-id]; it puts worker-prompt.md from
 #                             this directory into the worker's system prompt,
 #                             which is where a worker's whole contract lives;
@@ -98,7 +97,9 @@
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch ctl
 #                                --setup-cmd`)
-#   stamp                        which version of these scripts is staged here,
+#   runner                       the orchestrator's DISPATCH_RUNNER, as the
+#                                last spawn or resume given one copied it
+#   stamp                       which version of these scripts is staged here,
 #                                written by the orchestrator (`dispatch ctl`)
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
 #   <run>.status|.log            written by the runner
@@ -111,7 +112,8 @@ set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
-runner=${DISPATCH_RUNNER:-$here/run-worker.sh}
+runner=${DISPATCH_RUNNER:-run-worker.sh}
+case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
@@ -240,6 +242,9 @@ spawn() {
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
+    # Typed into a pane, a missing runner fails where nobody reads it, and the
+    # wait for its worklog below would only say that nothing started.
+    [ -f "$runner" ] || die "no runner at $runner; \`dispatch ctl\` copies DISPATCH_RUNNER here on a spawn or resume"
     current_run "$name"
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
