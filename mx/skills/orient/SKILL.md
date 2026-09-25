@@ -19,7 +19,7 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Prototype         | `agent/prototypes/<slug>/`           | committed; retired with the work it served (`/mx:tracker`)             | throwaway code that answered a design question + `ANSWER.md` (question, verdicts)                                                                                      |
 | Show              | `agent/show/<slug>/`, `<branch>/`    | committed with the round or the landing that made it; retired in the commit that retires the ticket or branch it served (`/mx:tracker`) | an explanation carried by an artefact: diagram, comparison, demo, explainer page                                                                                                               |
 
-Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a gotcha, a vendor quirk, knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
+Everything under `agent/` is a git repo of its own, the **agent repo**, inside the repo it plans and ignored by it: the tickets, the show directories, the prototypes and the research are committed there, and a worker holds a branch of it beside its code branch. Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a gotcha, a vendor quirk, knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
 
 ## The main flow: intent → ship
 

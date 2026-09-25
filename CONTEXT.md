@@ -110,6 +110,11 @@ _Avoid_: subagent, implementer
 What a worker hands back for its ticket: its closing comment and the questions its build raised.
 _Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
 
+**Agent repo**:
+The repo of everything that plans a project, held inside the repo it plans and ignored by it: its tickets, show directories, prototypes and research.
+_In code_: `agent/`
+_Avoid_: tracker repo (the tracker is one directory in it), meta repo, planning repo
+
 **Tick**:
 One pass of the orchestrator's loop.
 _Avoid_: iteration, cycle
