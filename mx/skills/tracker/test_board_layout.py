@@ -11,10 +11,11 @@ either scheme.
 
 Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page out in W/Z CSS
 pixels, which is what render-lint's --width takes: the Property states a range of layout widths,
-that quotient over the corners of its matrix. What is measured inside the range is both edges of
+that quotient over the corners of its grid. What is measured inside the range is both edges of
 every band the board's own `@media` rules cut it into, read off the rendered page, so a new
 breakpoint brings its two widths here with no edit. What that gives up is a collision that exists
-only mid-band, which takes a box whose size does not track the window's.
+only mid-band, which takes a box whose size does not track the window's: `.body` at 46rem, `main`
+and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board has.
 
 A page that ignores `?theme=` would be measured twice in the same scheme, so the scheme switch the
 house style prescribes is the check's precondition rather than a second check.
@@ -26,13 +27,14 @@ the address opens.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
 Property covers is never laid out.
 
-Beside the matrix, one width per band edge over a board with a defect put back into it: a matrix
-that finds nothing says nothing until it has been shown finding something.
+Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
+means nothing until the same widths have been shown reporting a defect.
 
-What render-lint measures is text against its own box, and SVG text against other SVG text: two
-HTML marks overlapping each other are outside its reach, and so is text a box clips rather than
-spills, which every mark that truncates does by design. The Property is executable as far as that
-reaches; the rest was read by eye at these widths, in both schemes (02-rows' closing comment).
+What render-lint measures is text against its own box, and text drawn over other text, HTML over
+HTML included; what it does not reach is text a box clips rather than spills, which every mark
+that truncates does by design, and an overlap the browser paints an opaque box over, which is
+what a card drawn over the page is. The Property is executable as far as that reaches; the rest
+was read by eye at these widths, in both schemes (02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
@@ -96,10 +98,12 @@ def lint(pages: list[str], width: int) -> list[dict]:
 
 def band_edges(page: Path) -> list[int]:
     """Both edges of every layout band the page's own `@media` rules cut the Property's range of
-    layout widths into."""
+    layout widths into. Only a rule's prelude is read, so a width a ticket's prose or a container
+    query names brings no band with it."""
     edges = {NARROWEST, WIDEST}
-    for side, px in re.findall(r"\((min|max)-width:\s*(\d+)px\)", page.read_text()):
-        edges |= {int(px), int(px) - 1} if side == "min" else {int(px), int(px) + 1}
+    for prelude in re.findall(r"@media[^{]*", page.read_text()):
+        for side, px in re.findall(r"\((min|max)-width:\s*(\d+)px\)", prelude):
+            edges |= {int(px), int(px) - 1} if side == "min" else {int(px), int(px) + 1}
     return sorted(w for w in edges if NARROWEST <= w <= WIDEST)
 
 
@@ -114,7 +118,7 @@ def measured(pages: list[str], widths: list[int]) -> dict[int, list[dict]]:
 def named(found: dict[int, list[dict]]) -> str:
     """What was found, by the width, the address and the element each was measured on."""
     return "\n".join(
-        f"{width}px {re.sub(r'^.*/', '', f['file'])}: {f['kind']} on {f['el'] or '(the page)'} {f['text']!r}"
+        f"{width}px {Path(f['file']).name}: {f['kind']} on {f['el'] or '(the page)'} {f['text']!r}"
         for width, fs in sorted(found.items()) for f in fs
     )
 
@@ -139,8 +143,9 @@ DEFECT = "<style>.brief { display: block !important; width: 60px !important; ove
 
 
 def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """What says the matrix above can still see one. A width where the defect goes unreported is a
-    width the Property is not checked at, whatever the clean run says."""
+    """A width where the defect goes unreported is a width the Property is not checked at, whatever
+    the clean run above says. The oracle is the defect itself, named by the element it was measured
+    on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -150,7 +155,9 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
     broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
     widths = band_edges(out)
     found = measured([f"{broken}?theme=day"], widths)
-    assert sorted(found) == widths, f"the defect went unseen at {sorted(set(widths) - set(found))}px"
+    seen = [width for width, fs in found.items()
+            if any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in fs)]
+    assert sorted(seen) == widths, f"the defect went unseen at {sorted(set(widths) - set(seen))}px"
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor

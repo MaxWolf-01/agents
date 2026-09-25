@@ -46,13 +46,14 @@ TWO_LABELS = """
 </div>
 """
 
-def settles(start: int, end: int) -> str:
+
+def settles(top_at_first: int, top_at_rest: int) -> str:
     """A page laying itself out for a second after the requests stop, the way a graph engine does:
-    the label finds its place only once the churn ends."""
+    the late label finds its place only once the churn ends."""
     return """
     <div style="position:relative;height:60px">
       <span style="position:absolute;left:20px;top:10px">Row label one</span>
-      <span id="late" style="position:absolute;left:20px;top:STARTpx">Row label two</span>
+      <span id="late" style="position:absolute;left:20px;top:FIRSTpx">Row label two</span>
     </div>
     <div id="growing"></div>
     <script>
@@ -61,10 +62,10 @@ def settles(start: int, end: int) -> str:
         document.getElementById("growing").append(document.createElement("hr"))
         if (++n < 10) return
         clearInterval(tick)
-        document.getElementById("late").style.top = "ENDpx"
+        document.getElementById("late").style.top = "RESTpx"
       }, 100)
     </script>
-    """.replace("START", str(start)).replace("END", str(end))
+    """.replace("FIRST", str(top_at_first)).replace("REST", str(top_at_rest))
 
 
 # A page that never comes to rest, so there is no moment at which measuring it means anything.
@@ -102,7 +103,7 @@ TWO_SCREENS = """
 """
 
 
-def lint(tmp_path: Path, body: str, crops: Path | None = None, at: str = "", *flags: str) -> tuple[int, list[dict]]:
+def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "") -> tuple[int, list[dict]]:
     """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
@@ -382,13 +383,13 @@ def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
 def test_a_page_still_moving_when_the_network_goes_quiet_is_measured_once_it_stops(tmp_path):
     """The board's own failure, as one page: the labels are stacked when the requests stop and
     apart a moment later, so a run that measures at network idle reads a collision nobody sees."""
-    code, findings = lint(tmp_path, settles(start=10, end=34))
+    code, findings = lint(tmp_path, settles(top_at_first=10, top_at_rest=34))
     assert findings == []
     assert code == 0
 
 
 def test_a_page_that_settles_into_a_collision_still_reports_it(tmp_path):
-    code, findings = lint(tmp_path, settles(start=34, end=12))
+    code, findings = lint(tmp_path, settles(top_at_first=34, top_at_rest=12))
     assert kinds(findings) == ["overlap"]
     assert code == 1
 
@@ -396,7 +397,7 @@ def test_a_page_that_settles_into_a_collision_still_reports_it(tmp_path):
 def test_a_page_that_never_stops_moving_is_unmeasurable(tmp_path):
     """Distinct from a finding and from the run itself failing: nothing on the page was measured,
     so a clean result would be a lie and an overlap would be an accident of timing."""
-    code, findings = lint(tmp_path, RESTLESS, None, "", "--patience", "1.5")
+    code, findings = lint(tmp_path, RESTLESS, "--patience", "1.5")
     assert kinds(findings) == ["unmeasurable"]
     assert findings[0]["text"] == "still moving after 1.5s"
     assert code == 2
@@ -405,13 +406,13 @@ def test_a_page_that_never_stops_moving_is_unmeasurable(tmp_path):
 def test_what_an_address_scrolls_under_fixed_chrome_is_no_finding(tmp_path):
     """A page is read at the top, where its chrome belongs; the fragment in an address decides
     what the reader scrolls to, not what the page puts under its own bar."""
-    code, findings = lint(tmp_path, FIXED_CHROME.format(above='<div style="height:300px"></div>'), None, "?a#note")
+    code, findings = lint(tmp_path, FIXED_CHROME.format(above='<div style="height:300px"></div>'), at="#note")
     assert findings == []
     assert code == 0
 
 
-def test_the_same_chrome_over_the_top_of_the_page_still_is(tmp_path):
-    code, findings = lint(tmp_path, FIXED_CHROME.format(above=""), None, "?a#note")
+def test_the_same_chrome_over_the_top_of_the_page_still_collides(tmp_path):
+    code, findings = lint(tmp_path, FIXED_CHROME.format(above=""), at="#note")
     assert kinds(findings) == ["overlap"]
     assert set(findings[0]["text"].split(" | ")) == {"The fixed chrome", "A note the chrome would cover"}
     assert code == 1
