@@ -30,6 +30,9 @@ import pytest
 
 SKILL = Path(__file__).parent
 DISPATCH = SKILL / "dispatch"
+# Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
+# fresh cache puts a full dependency install in front of every tracker and board a check runs.
+UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
 
 # A worker as dispatch-ctl leaves the seam for one: argv and the log-then-status contract are the
 # real runner's, and it keeps the brief it was sent so the check can read what a spawn carried.
@@ -155,7 +158,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
         'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
     (bin_dir / "diffview").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "GIT_CONFIG_GLOBAL": "/dev/null",
+    env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
            "JOB_STATE_DIR": str(toy.parent / "jobs"),
            "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
