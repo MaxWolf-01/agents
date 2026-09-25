@@ -141,7 +141,7 @@ An in-harness subagent is for read-only work that ends in a file you read: resea
 
 Models in use (Anthropic's effort and prompting docs, 2026-09):
 - Opus 5.5, the default. Thinking is always on and effort is its dial. `low` for mechanical or trivial work, and anything with no multi-step reasoning in it; `medium`, its own default, for most work (it matched Opus 5 at `high` on coding); `high` for long builds; `xhigh` only when the problem is exceptionally hard or the user asks for more thinking; never `max`. Lowering effort cuts thinking more reliably than a prompt asking for less.
-- Fable 5.1, for large, complex tasks that need multi-step reasoning and planning. Default `high`.
+- Fable 5.1, for large, complex tasks that need multi-step reasoning and planning: planning, debugging, finding vulnerabilities, architecture improvements. Default `high`. Turning a settled plan into code rarely needs it; Opus 5.5 is plenty there.
 - Sonnet and Haiku: rare, low-stakes lookups.
 </subagents>
 
