@@ -136,12 +136,12 @@ NEVER use subagents to read source code files, documentation, or knowledge files
 You have 1mio token context window, that's plenty. Read source files yourself, form a proper mental model, do not outsource reading code or docs yourself unless forced by the scale, complexity or uncertainty of the task.
 IFF the user mentioned codex, follow `/mx:codex` instead of using a claude code subagent.
 When a subagent's output matters, tell it where to write its report and read that file; the return channel is not reliable, and `name:` in particular makes it a teammate whose report never reaches you, neither on completion nor in reply to SendMessage. A subagent that goes idle without handing back a report has NOT stalled: read its report file, or failing that its transcript under `~/.claude/projects/<project>/<session-id>/subagents/` (hundreds of KB; extract the last assistant text block, never read it whole), before redoing any of the work yourself.
-Subagents default to opus, whatever the session model is, and run at the session's effort, which an Agent call cannot change. Pass `model` only to deviate: fable for large, complex tasks that need multi-step reasoning and planning, sonnet for trivial ones (lookup, simple research).
+Subagents default to opus, whatever the session model is, and run at the session's effort, which an Agent call cannot change.
 An in-harness subagent is for read-only work that ends in a file you read: research, a drill-down, a lookup across many files. Work that edits a repo goes through `/mx:dispatch`, where model, effort and isolation are explicit and the run is logged.
 
 Models in use (Anthropic's effort and prompting docs, 2026-09):
-- Opus 5.5, the default. Thinking is always on and effort is its dial. Its own default is `medium`, which matched Opus 5 at `high` on coding; `high` for long builds; `xhigh` and `max` only where a gain was measured. Lowering effort cuts thinking more reliably than a prompt asking for less.
-- Fable 5.1, for the hardest long multi-step work, where Opus runs out. Default `high`. It writes fewer progress updates and less formatting than Opus: ask for updates where they matter.
+- Opus 5.5, the default. Thinking is always on and effort is its dial. `low` for mechanical or trivial work, and anything with no multi-step reasoning in it; `medium`, its own default, for most work (it matched Opus 5 at `high` on coding); `high` for long builds; `xhigh` only when the problem is exceptionally hard or the user asks for more thinking; never `max`. Lowering effort cuts thinking more reliably than a prompt asking for less.
+- Fable 5.1, for large, complex tasks that need multi-step reasoning and planning. Default `high`.
 - Sonnet and Haiku: rare, low-stakes lookups.
 </subagents>
 
