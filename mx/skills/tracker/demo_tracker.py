@@ -17,6 +17,9 @@ met, a property cited by the criterion that takes it on, files that run and a fi
 agent/show, and four sessions on the commits: three with a transcript under the claude/ config
 directory this writes, one worker on another host with none.
 
+A demo tracker, not a show: the word is the sample repo the checks render, and nothing here is an
+artefact of the workflow, which a landing hands the user as a show (`/mx:show`).
+
     demo_tracker.py /tmp/demo        # build it, print the tracker root
     CLAUDE_CONFIG_DIR=/tmp/demo/claude board /tmp/demo/agent/tickets --no-watch --no-open
 """

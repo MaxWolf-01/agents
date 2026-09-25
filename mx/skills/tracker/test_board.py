@@ -1076,7 +1076,8 @@ def artefacts_in(row: str) -> list[tuple[str, str, str]]:
     for item in re.findall(r"<li>(.*?)</li>", artefacts_markup(row), re.S):
         link = re.search(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', item)
         copies = re.search(r'data-copy="([^"]+)"', item)
-        found.append((link.group(2), link.group(1), copies.group(1) if copies else ""))
+        found.append((html.unescape(link.group(2)), link.group(1),
+                      html.unescape(copies.group(1)) if copies else ""))
     return found
 
 
@@ -1198,18 +1199,21 @@ def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_pa
 
 def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
     """Every file under it keeps the path that names it, a file that runs carries the command and
-    one that does not carries none, and what a run regenerates under out/ is no artefact."""
+    one that does not carries none, and what a run regenerates under out/ is no artefact. Nothing
+    names a show directory's files, so a name with a space in it is one a paste has to survive."""
     root = tmp_path / "agent" / "tickets"
     root.mkdir(parents=True)
     ticket(root / "map-columns.md", "review")
     ticket(root / "view-list.md", "open")
     show = tmp_path / "agent" / "show"
     put(show / "map-columns" / "walkthrough", "#!/bin/sh\necho two imports\n", runs=True)
+    put(show / "map-columns" / "render sample", "#!/bin/sh\necho a sample\n", runs=True)
     put(show / "map-columns" / "shots" / "mapping.svg", "<svg/>")
     put(show / "map-columns" / "out" / "frame-01.png", "generated")
     put(show / "view-list" / "layouts.svg", "<svg/>")
     rows = rows_of(page_of(root))
     assert artefacts_in(rows["t-map-columns"]) == [
+        ("render sample", f"file://{show / 'map-columns' / 'render sample'}", "'agent/show/map-columns/render sample'"),
         ("shots/mapping.svg", f"file://{show / 'map-columns' / 'shots' / 'mapping.svg'}", ""),
         ("walkthrough", f"file://{show / 'map-columns' / 'walkthrough'}", "agent/show/map-columns/walkthrough"),
     ]

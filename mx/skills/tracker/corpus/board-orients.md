@@ -47,7 +47,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 15. As the user, I want the sessions that worked on a ticket listed with their titles, so that I recognise the one I want.
 16. As the user, I want a button that copies the command resuming one of those sessions, so that I can close tmux panes freely.
 17. As the user, I want only sessions I can resume listed, not workers on other hosts, so that every listed session works.
-18. As the user, I want a ticket's show directory listed on the ticket, so that I never hunt through `agent/show/`.
+18. As the user, I want a ticket's show directory listed on the ticket, so that I never hunt through `agent/show/` (amended 2026-09-25, was a ticket's demo path and figures on the ticket).
 19. As the user, I want a GitHub link to say whether its pull request is open, merged or waiting on changes, so that I do not open each one.
 20. As the user, I want an opened ticket to read as its brief, its questions, what to build, and its acceptance criteria, with the history folded away, so that it is not a wall of text.
 21. As the user reviewing a build, I want the ticket as its branch has it, closing comment included, so that I read the worker's account before the merge.
@@ -84,7 +84,7 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
 
 ### The ticket file
 
-- **Frontmatter gains `priority` and `size`.** Priority 1 to 5, named now, next, soon, later, someday; the agent sets it from what the user has said and changes it when the user says so, and it is never the user's chore. Size is the user's time on the ticket, not the agent's: reading, reading its show, deciding, learning; XS under 15 min, S about 20 min, M about an hour, L half a day, XL several sessions. All ticket metadata lives in frontmatter.
+- **Frontmatter gains `priority` and `size`.** Priority 1 to 5, named now, next, soon, later, someday; the agent sets it from what the user has said and changes it when the user says so, and it is never the user's chore. Size is the user's time on the ticket, not the agent's: reading, looking at its show (amended 2026-09-25, was trying the demo), deciding, learning; XS under 15 min, S about 20 min, M about an hour, L half a day, XL several sessions. All ticket metadata lives in frontmatter.
 - **The H1 is the short name**, a few words the board shows in a row; the sentence a title used to carry moves into the brief. Rejected: a `name:` field beside a long H1, which puts two titles on one ticket. Existing long titles render truncated until edited; nothing migrates them.
 - **`## Brief` sits right under the H1**: two or three sentences written cold for the user, what it is and why it matters. Prose, not frontmatter, because YAML handles backticks and colons badly. Whoever files the ticket writes it: `/mx:to-tickets` for a slice, the filing session for a standalone ticket, the orchestrator for a proposal.
 - **`## Questions` holds the calls only the user can make**, the queue moved into the ticket it belongs to. One item each, tagged with the ticket's running `Dn` sequence, a bold headline and its detail:
@@ -94,14 +94,14 @@ The prototype that settled the shape: `agent/prototypes/board-orients/` (board v
       - [D2] **Keep the test in the fast suite?** It takes four seconds either way.
         - Ruled 2026-09-21: keep it in the fast suite.
 
-  A question is open until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none (you, 2026-09-23). A worker's closing comment keeps its Assumptions, findings and friction, and its calls go into `## Questions` instead of an "I need from you" list, so the board reads one place.
+  A question is open until a `Ruled <date>:` line sits under it; the session that relays the user's answer writes that line. A question the ruling on a build leaves open is filed as a proposed ticket then, so a done ticket carries none (you, 2026-09-23). A worker's closing comment keeps its Assumptions, findings and friction (amended 2026-09-25, was its Demo, Assumptions, findings and friction), and its calls go into `## Questions` instead of an "I need from you" list, so the board reads one place.
 - **`needs-human.md` retires**. A question with no ticket to hang on is filed as a proposed ticket, and ruling on the proposal is the answer. The existing queue files are migrated once: each entry moves to its ticket's questions or becomes a proposed ticket.
 
 ### What the board reads
 
 - **Sessions come from `Session: <id>` commit trailers**, added by a `prepare-commit-msg` hook from `$CLAUDE_CODE_SESSION_ID`, which every Claude Code shell carries. The hook lives in the dotfiles' global git hooks, beside the existing pre-push hook, so it covers every repo on the machine. The board reads `git log --all` for the ticket file, and takes each session's title (the `/rename` name, else Claude Code's own) and working directory from its transcript on this machine; a session with no transcript here, a worker on another host, is left out, because the user does not resume those.
 - **A build in review is read from its ticket branch**, `ticket/<feature>/<NN-slug>` or `ticket/<integration branch>/<slug>`, where its questions and closing comment are until the merge.
-- **Artefacts come from the ticket's show directory**: every file in it as a link, and each one its executable bit says runs on a copy button showing the command that runs it from the code repo's root. No frontmatter declares them (amended 2026-09-25).
+- **Artefacts come from the ticket's show directory**: every file in it as a link, and each one its executable bit says runs on a copy button showing the command that runs it from the code repo's root. No frontmatter declares them (amended 2026-09-25, was the file named `demo` on a copy button showing its path, figures as links).
 - **GitHub state**: the board resolves every `gh` reference in one GraphQL query per render, cached beside the board with a short lifetime, so the watcher's cadence makes one request rather than one per reference; no network or no `gh` auth leaves the links bare and says so once.
 - **Review pages** are linked once per row, on the address diffview serves them on.
 

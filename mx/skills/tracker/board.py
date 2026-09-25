@@ -49,8 +49,8 @@ that worked on it, its artefacts, then the ticket's own sections in the order
 the file writes them, with the comments folded away as history. The artefacts
 are read from the ticket's show directory, agent/show/<slug>/: every file in it
 as a link, and each one that runs on a button that copies the command that runs
-it from the repo root. The sessions are read from the `Session:` trailer on
-every commit that changed the ticket file, or an earlier path of it, on
+it from the code repo's root. The sessions are read from the `Session:` trailer
+on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
 one with no transcript on this machine, a worker on another host, is left out,
 and each of the rest carries a button that copies the command resuming it. The
@@ -180,7 +180,7 @@ SIZES = {  # the user's own time on a ticket
 }
 SIZE_RANK = {size: rank for rank, size in enumerate(SIZES)}
 SIZE_TIP = (
-    "Your time on this ticket, never the agent's: reading the diff or the design, reading its show, deciding.\n"
+    "Your time on this ticket, never the agent's: reading the diff or the design, looking at its show, deciding.\n"
 ) + "\n".join(f"{size} {means}" for size, (_, means) in SIZES.items())
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
     "review": ("to rule on", "A worker has finished this. Read its review page and its artefacts, then accept, amend, redo or reject it."),
@@ -1038,7 +1038,7 @@ def ticket_blocks(
         else:
             blocks.append(block(heading, prose(heading, text)))
     front = [asked_block(asked, prose(None, "".join(said)), path, status),
-             sessions_block(worked), artefacts_block(show_dir(path), tracker.project_root(path.parent))]
+             sessions_block(worked), artefacts_block(show_dir(path), project(path.parent))]
     return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
@@ -1138,7 +1138,7 @@ def worked_on(session: Session) -> str:
     return session.first if session.first == session.last else f"{session.first} → {session.last}"
 
 
-RUN_TIP = "Click to copy the command that runs this file, to paste at the repo root."
+RUN_TIP = "Click to copy the command that runs this file, to paste at the code repo's root."
 
 
 def artefacts_block(show: Path, code: Path) -> str:
@@ -1150,7 +1150,7 @@ def artefacts_block(show: Path, code: Path) -> str:
     items = "".join(
         f'<li><a href="file://{html.escape(str(file))}" target="_blank">'
         f'{html.escape(str(file.relative_to(show)))}</a>'
-        + (copy_button("runcopy", "copy command", RUN_TIP, str(file.relative_to(code)),
+        + (copy_button("runcopy", "copy command", RUN_TIP, shlex.quote(str(file.relative_to(code))),
                        f"the command that runs {file.name}") if runs(file) else "")
         + "</li>"
         for file in files
