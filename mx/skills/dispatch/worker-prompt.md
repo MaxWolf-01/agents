@@ -53,7 +53,7 @@ Skills are the single source of truth for process. Never restate a skill's workf
 
 
 <git>
-You work alone in your own checkout or worktree; nobody else commits into it. Commit freely, and stay on the branch your tree is already on; never switch it.
+You work alone in your own checkout or worktree; nobody else commits into it. Commit freely, and stay on the branch your tree is already on; never switch it. Scratch files outside it go in a directory of your own from `mktemp -d`: other workers share this host's `/tmp`.
 
 - Check what `git add -[u|A|.]` sweeps in before you run it; build artifacts and scratch files live in your tree too. Prefer explicit file lists. `agent/` is a repo of its own: `git -C agent` is how you commit there, and the code repo ignores it.
 - Use `git mv` rather than `mv` to rename a tracked file.

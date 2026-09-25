@@ -38,3 +38,5 @@ Not in it: mechanical checks for punctuation such as em dashes or curly quotes, 
 - [ ] Max has labelled a sample by hand, and the report says how far the judges' labels agree with his.
 - [ ] The closing comment recommends the turn review's model, effort and context from the numbers, and says what the recommendation would change in `session-page`'s reviewer.
 - [ ] Demo: the command run on a small matrix, the report opened.
+
+**2026-09-25** A second case for the same matrix, from `ticket-file-contract`: `/mx:code-review`'s axes run on Opus at high effort (`review`'s default), and a four-axis round took 23 to 31 minutes against diffs of 1,100 to 2,400 lines, the Tests axis the long pole since it runs the suite and hand mutations. Those rounds caught the feature's worst bugs; whether medium effort catches the same is what an ablation over their diffs would show.
