@@ -39,7 +39,7 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
 # What the worker has to say about the ticket: its closing comment and the questions its build
-# raised, committed with its demo and its figures in the agent repo, which is a repo of its own at
+# raised, committed in the agent repo, which is a repo of its own at
 # `agent` inside this worktree. The orchestrator fetches that branch and imports the report into
 # the ticket; this round's report being committed is what says the worker finished.
 #

@@ -53,7 +53,7 @@ git commit -q -m "$slug: as far as it got"
 printf 'attempts=1 exit=1 report=no""",
 )
 
-# The same stub finishing: its code on the code repo's ticket branch, and its demo and its report on
+# The same stub finishing: its code on the code repo's ticket branch, and its report on
 # the agent repo's, which is the worktree at `agent` inside the one it was started in. The report
 # being committed there is what says the worker finished.
 BUILDING = RUNNER.replace(
@@ -63,17 +63,11 @@ printf 'the lamp, warm\\n' > lamp.txt
 git add lamp.txt
 git commit -q -m "$slug: the warm preset"
 mkdir -p "agent/show/$slug"
-printf '#!/usr/bin/env bash\\necho "the warm preset"\\n' > "agent/show/$slug/demo"
-chmod +x "agent/show/$slug/demo"
 cat > "agent/show/$slug/report.md" <<'REPORT'
 ## Comments
 
 The warm preset lands, unmerged, with one question under it. It meets the ticket's one acceptance
 criterion.
-
-**Demo**
-
-    agent/show/warm-preset/demo
 
 - [D1] **Assumptions**
   - A1 `lamp.txt:1`: 2700K, since the bulb box says so.
@@ -83,7 +77,7 @@ criterion.
 - [D2] **Warm at what temperature?** 2700K reads amber; 3000K is closer to the old bulb.
 REPORT
 git -C agent add -A
-git -C agent commit -q -m "$slug: the demo and the report"
+git -C agent commit -q -m "$slug: the report"
 printf 'attempts=1 exit=0 report=yes""",
 )
 
@@ -231,7 +225,7 @@ def kill_sessions() -> None:
         pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     listed = subprocess.run(["tmux", "ls", "-F", "#{session_name}"], capture_output=True, text=True)
     for session in listed.stdout.split():
-        if session.startswith(("dispatch-lamp-", "job-lamp-")):  # the worker's, and a staged demo's
+        if session.startswith("dispatch-lamp-"):  # the worker's
             subprocess.run(["tmux", "kill-session", "-t", f"={session}"], capture_output=True)
 
 
@@ -291,9 +285,8 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
     assert "report=yes" in waited(toy).read_text(), "the runner reads the report it committed"
     assert git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split() == ["lamp.txt"]
-    assert sorted(git(agent, "diff", "--name-only", "main", "ticket/warm-preset").split()) == [
-        "show/warm-preset/demo", "show/warm-preset/report.md"], \
-        "the agent branch carries the report and the demo, and no ticket file"
+    assert git(agent, "diff", "--name-only", "main", "ticket/warm-preset").split() == [
+        "show/warm-preset/report.md"], "the agent branch carries the report, and no ticket file"
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
     said = run(toy, "review", "warm-preset")
@@ -305,12 +298,6 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
     assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
-
-    # the demo waiting for the user: the two branches checked out as the project keeps them
-    demo = toy.parent / "lamp-warm-preset"
-    assert (demo / "agent" / "show" / "warm-preset" / "demo").is_file(), \
-        "the agent repo is checked out inside the code worktree, where the demo's path leads"
-    assert "job-lamp-warm-preset-demo" in said.stdout + said.stderr, said.stderr
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,

@@ -13,13 +13,13 @@ Understand the current state of the code before slicing. Ticket titles and bodie
 <vertical-slice-rules>
 
 - Each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests): vertical, NOT a horizontal slice of one layer
-- A completed slice is demoable or verifiable on its own
+- A completed slice is drivable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window
 - Any prefactoring should be done first
 
 </vertical-slice-rules>
 
-Give each its **blocking edges**: the tickets that must be done before it can start. Prefer orderings that make the work **drivable early**: human QA is gated on demo cost, and every slice that lands before a drivable surface exists accumulates unreviewed taste debt.
+Give each its **blocking edges**: the tickets that must be done before it can start. Prefer orderings that make the work **drivable early**: human QA is gated on what it costs to drive the work, and every slice that lands before a drivable surface exists accumulates unreviewed taste debt.
 
 **The properties stay where they are.** They hold for the ticket being cut and every descendant reads them through its ancestry, so no slice restates them and no criterion stamps one. That ticket's Testing seams already disposed of each: every property marked **executable** shares one child ticket that builds them all as checks in the project's properties directory (`tests/properties/`), blocked by nothing and blocking every slice at their seams, briefed with the ancestry and the seams' interfaces, since the implementation it must not copy does not exist yet when its worktree is cut. Where a seam is a function or a module API that does not exist yet, that ticket lands its interface as a stub so the suite collects, and a property that cannot hold yet lands as an expected failure (`/mx:testing`) naming the slice that lifts it; that ticket's body assigns each property its one lifting slice beside its seam. It is an ordinary child ticket in the cross-cutting position below. A property marked **reviewed** is checked by each slice's review, which reads the ancestry with the diff. A property no single slice can make hold is a slicing signal: merge the slices, or split the property at the seam.
 
@@ -33,7 +33,7 @@ Give each its **blocking edges**: the tickets that must be done before it can st
 
 ## 3. File them
 
-`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and driving the demo.
+`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
 Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
 
@@ -43,4 +43,4 @@ Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). Th
 
 Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: slug, blocked by, what it delivers, with the granularity and the edges you are least sure of named, so the user knows where to look. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
-`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each is then ruled on from what it built, on its review page and its demo.
+`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each is then ruled on from what it built, on its review page and its show.
