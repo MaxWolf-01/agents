@@ -23,7 +23,7 @@ A board nobody has clicked has no graph and no open body, so without the anchors
 Property covers is never laid out.
 
 Fourteen widths, two schemes, folded, open and the full size graph is fourteen browser runs of six
-pages, one check per width: the matrix the Property states, rather than a sample of it.
+pages, a minute of the suite: the matrix the Property states, rather than a sample of it.
 
 What render-lint measures is text against its own box, and SVG text against other SVG text: two
 HTML marks overlapping each other are outside its reach, and so is text a box clips rather than
@@ -88,8 +88,7 @@ def lint(pages: list[str], width: int) -> list[dict]:
 
 
 @pytest.mark.xfail(strict=False, reason="passes or fails by machine, not by code: agent/tickets/layout-check-flaky.md fixes it or retires the check")
-@pytest.mark.parametrize("width", WIDTHS)
-def test_nothing_on_the_board_overlaps_or_escapes_its_box_in_either_scheme(width: int, transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -98,7 +97,8 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_in_either_scheme(width
     render(transcribed.root, transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
              for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
-    assert lint(pages, width) == []
+    found = {width: lint(pages, width) for width in WIDTHS}
+    assert {width: f for width, f in found.items() if f} == {}
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
