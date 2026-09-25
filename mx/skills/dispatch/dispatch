@@ -86,12 +86,11 @@
 #            there are any. The record is the ticket, which holds every round's
 #            imported report, and this round's report on the agent branch: a
 #            commit is covered when it falls inside a range written there as
-#            ``review range `a1b2c3d..e4f5a6b` `` (the SHA range a review ran
-#            over; a range written any other way covers nothing), when it is
-#            a review fix (a `Workflow-stage: review` line) whose hash is written
-#            there, or when a rebase carried a covered commit's changed lines
-#            onto it unchanged, one commit per covered one. A merge needs a review when its resolution
-#            differs from both parents.
+#            ``review range `a1b2c3d..e4f5a6b` ``, exactly (the SHA range a
+#            review ran over), or when it is a review fix (a `Workflow-stage:
+#            review` line) whose hash is written there. A rebase rewrites the
+#            commits it replays, so a rebased branch is reviewed again. A merge
+#            needs a review when its resolution differs from both parents.
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
@@ -500,10 +499,10 @@ notes_of() { # <slug>
 # hash only as a review fix: a worker describing its own commits, as a range or by hash, clears
 # none of them. Hex strings that name no commit resolve to nothing and cover nothing.
 unreviewed_of() { # <tip>, the record on stdin
-    local tip=$1 text covered patches c r files p
+    local tip=$1 text covered c r files
     text=$(cat)
     covered=$(
-        grep -ioE 'review range `?[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b' <<<"$text" | grep -oE '[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}' | while IFS= read -r r; do
+        grep -oE '\breview range `[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}`' <<<"$text" | grep -oE '[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}' | while IFS= read -r r; do
             git -C "$repo_root" rev-list "${r%%..*}..${r##*.}" 2>/dev/null
         done
         # A range's ends are not hashes a finding names: its start lies outside it.
@@ -512,29 +511,13 @@ unreviewed_of() { # <tip>, the record on stdin
             git -C "$repo_root" log -1 --format=%B "$c" | grep -qx 'Workflow-stage: review' && echo "$c"
         done
     )
-    # A rebase rewrites every SHA the record names, so a covered commit no longer on the branch lends
-    # its changed lines' id, context-free so an edit beside a reviewed hunk leaves it the same and
-    # whitespace-exact so a re-indenting resolution does not. Each lent id pairs with the subject a
-    # rebase keeps and covers one commit: a new commit repeating a reviewed line (an import, a log
-    # call) matches neither the pair nor a spent one.
-    patch_id() { git -C "$repo_root" diff-tree -p -U0 --no-commit-id "$1" | git patch-id --verbatim | cut -d' ' -f1; }
-    patches=$(for c in $covered; do
-        git -C "$repo_root" merge-base --is-ancestor "$c" "$tip" ||
-            printf '%s %s\n' "$(patch_id "$c")" "$(git -C "$repo_root" log -1 --format=%s "$c")"
-    done)
     for c in $(git -C "$repo_root" rev-list --reverse "$(git -C "$repo_root" merge-base "$base" "$tip")..$tip"); do
         if git -C "$repo_root" rev-parse -q --verify "$c^2" >/dev/null; then
             # Only the files with a hunk neither parent had: a hand resolution.
             files=$(git -C "$repo_root" diff-tree --cc -p --no-commit-id "$c" | sed -n 's/^diff --cc //p')
             [ -n "$files" ] || continue
         fi
-        grep -qxF "$c" <<<"$covered" && continue
-        p="$(patch_id "$c") $(git -C "$repo_root" log -1 --format=%s "$c")"
-        if grep -qxF "$p" <<<"$patches"; then
-            patches=$(awk -v k="$p" '!spent && $0 == k { spent = 1; next } { print }' <<<"$patches")
-            continue
-        fi
-        git -C "$repo_root" log -1 --format='%h %s' "$c"
+        grep -qxF "$c" <<<"$covered" || git -C "$repo_root" log -1 --format='%h %s' "$c"
     done
 }
 
@@ -606,6 +589,7 @@ review() {
     imported=$state/imported/$id
     if [ -z "$blob" ]; then
         echo "dispatch: no $reported on $branch; the run left nothing to review" >&2
+        [ "$status" = claimed ] && [ ${#written[@]} -gt 0 ] && return 0
     elif [ "$status" = claimed ] && [ "$blob" != "$(cat "$imported" 2>/dev/null)" ]; then
         git -C "$agent_top" show "$agent_tip:$reported" |
             run "$tracker" import "$id" - --called "$branch:$reported" || exit 1

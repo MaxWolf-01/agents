@@ -59,11 +59,11 @@ Read the reports per axis and give every finding one of three dispositions:
 
 Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.
 
-Where a ticket holds the work, its closing comment carries a **finding index** under the review range: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
+Where a ticket holds the work, its closing comment carries a **finding index** under the review range, written exactly as ``review range `<merge-base>..<head>` `` (the range the reports' directory is named by), which is the record `dispatch review` checks the build's commits against: one line per finding, fixed → the commit, filed → the ticket, declined → the assumption id. The agent that merges the branch reads that index, never the reports.
 
 A review's reader is the agent that owns the branch, never the user. It fixes, files or declines each finding, and what it cannot dispose of alone (a declined finding worth a ruling, a question the review raised) it escalates through its own closing comment, under the worker contract. Findings the review fixed, per-axis summaries and verification lists stay in the reports, which die with the worktree.
 
-A clean diff gets one line: the range, and that the axes came back empty.
+A clean diff gets one line: ``review range `<merge-base>..<head>` ``, and that the axes came back empty.
 
 ## Light mode
 
