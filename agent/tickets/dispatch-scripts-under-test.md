@@ -37,4 +37,6 @@ A fourth case the list above does not reach: `job` absent from PATH entirely, wh
 
 **2026-09-22** Ruled by the user on review-launcher's D5: rung 2 covers `mx/skills/code-review/review` too, whose text functions `touches`, `bullets` and `render` are text in and text out like the ones above and have no test; that ticket checked the script through `--help` alone. The script exists once review-launcher merges.
 
+**2026-09-24** The landing demo is promoted before its feature retired: `mx/skills/dispatch/landing_e2e.sh`, run by `test_landing.py` under `make test`, so the staging code has a driver the suite runs, its 13 checks intact. The fourth case above, `job` absent from PATH, is still unreached.
+
 **2026-09-25** From `workers-report-orchestrator-writes-tickets` (its D9): the remote-host arm of `dispatch` doubled when `agent/` became a repo of its own, two bare repos, two remotes, two pushes with a partial-failure exit status, two fetches, and none of it is checked; the local-host checks in `test_dispatch.py` do not reach it. The strongest case yet for the `ssh localhost` rung.

@@ -18,7 +18,7 @@ One check, run by `make check`, over four readings:
 
 - Every directory under `agent/show/` has a ticket, a feature directory or a branch of that name; one with none is named and the check fails.
 - Every ticket in `review` or `done` under a feature has `agent/show/<feature>/<NN-slug>/demo` at mode `100755`, unless its closing comment's Demo line says the diff is the demo.
-- No render is tracked beside its source: `git ls-files 'agent/show/**/*.png' 'docs/figures/*.png'` is empty. The Property it reads is [figures-and-demos' own](figures-and-demos/spec.md), which scopes it to a render beside its source and says a document in the tree tracks the copy it reads.
+- No render is tracked beside its source: `git ls-files 'agent/show/**/*.png' 'docs/figures/*.png'` is empty. The Property it reads is figures-and-demos' own (its spec, retired with that feature, is in git history), which scopes it to a render beside its source and says a document in the tree tracks the copy it reads.
 - Every `demo` found by `fd -t x '^demo$' agent/show` runs with no arguments and exits 0, behind the `command -v` guards the demos already carry, in a fresh worktree.
 
 All four pass on the branch as it stands.

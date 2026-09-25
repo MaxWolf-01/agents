@@ -31,3 +31,5 @@ To decide, the options sketched by the agent, frame unconfirmed:
 4. **Research artefacts until then.** Retire means delete, or move to a directory that survives and is backed up: `~/logs` is in the restic backups for twelve months, the XDG cache is not, which is the argument for `~/logs` if anything is kept at all. The figures-and-demos spec carries the interim rule; this ticket decides whether committing them makes it moot.
 
 Out of this ticket, as the user said: how the design scales with larger models and one orchestrator for everything, and a global optmem memory. Both are for after the workflow has shipped.
+
+An implementation the user sketched on 2026-09-25, after `ticket-file-contract` made `agent/` its own repo at `<code repo>/agent/` (so a ticket's code repo is the one containing `agent/`): one agent repo linked into several code repos, with an optional `repo:` field in a ticket's frontmatter that, when present, names the ticket's code repo and takes priority over that rule.

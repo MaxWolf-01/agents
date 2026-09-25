@@ -5,26 +5,23 @@
 # the demo typed unrun in a tmux session of its own, the user's Enter runs it,
 # and the ruling takes session and worktree away.
 #
-# No arguments. Everything it makes is inside a temp dir, its own HOME included,
-# removed at the end; the transcript and the staged pane land under out/ beside
-# this file, failures included.
+# No arguments; `test_landing.py` runs it in the suite. Everything it makes is
+# inside a temp dir, its own HOME included, removed at the end, and nothing it
+# stages opens a window: the transcript is its output, failures included.
 #
 # What stands in for what, so the transcript is read for what it does show:
 #   - `claude`, by a stub runner on dispatch-ctl's DISPATCH_RUNNER seam: it
 #     makes the commits a worker makes, so what runs below is `dispatch` and
-#     `dispatch-ctl` themselves. The precedent is the host-per-spawn demo, in
-#     git history since that feature retired: `git log --diff-filter=D --
-#     agent/show/host-per-spawn` finds the commit that removed it.
+#     `dispatch-ctl` themselves.
 #   - `diffview`, `uv` and the board, by stubs on PATH: the review page is
 #     `diffview`'s and nothing below renders or reads one.
-#   - `job stage`, by a shim, where the `job` on the host predates the mode. It is the mode's whole body: the session created, the
-#     line `job run` would type typed, and the Enter withheld. The run below
-#     announces which of the two it used.
+#   - `job stage`, by a shim, where the `job` on the host predates the mode.
+#     It is the mode's whole body: the session created, the line `job run`
+#     would type typed, and the Enter withheld. The run below announces which
+#     of the two it used.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-plugin=$(git -C "$here" rev-parse --show-toplevel)/mx
-out=$here/out
 
 work=$(mktemp -d -t landing-demo.XXXX)
 export HOME=$work/home
@@ -60,7 +57,7 @@ step "the plugin's dispatch, with stubs for the harness, the page and the board"
 
 skills=$work/skills
 mkdir -p "$skills/dispatch" "$skills/tracker"
-cp "$plugin"/skills/dispatch/{dispatch,dispatch-ctl,worker-prompt.md} "$skills/dispatch/"
+cp "$here"/{dispatch,dispatch-ctl,worker-prompt.md} "$skills/dispatch/"
 dispatch="bash $skills/dispatch/dispatch"
 
 # The worker, as the seam dispatch-ctl leaves for one: argv and the
@@ -79,7 +76,8 @@ mkdir -p src agent/show/lamp-ui/01-warm-preset
 printf 'warm: 2700K, 40%%\n' > src/presets.txt
 
 # The demo file: one executable, no arguments, writing what it produces into
-# out/ beside itself and opening it where there is a display.
+# out/ beside itself. A real demo opens it where there is a display; this one
+# does not, since the pane it runs in has the tmux server's display.
 cat > agent/show/lamp-ui/01-warm-preset/demo <<'DEMO'
 #!/usr/bin/env bash
 # The warm preset as the lamp now reads it.
@@ -88,12 +86,6 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 mkdir -p "$here/out"
 { echo "$ ./src/lamp --preset warm"; sed 's/^/  /' "$(git -C "$here" rev-parse --show-toplevel)/src/presets.txt"; } |
     tee "$here/out/warm.txt"
-if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
-    # Let go of, so the run ends with the work: the handler for a text file can
-    # be a terminal, and waiting on it would keep the job running until the
-    # window closes.
-    (xdg-open "$here/out/warm.txt" > /dev/null 2>&1 &)
-fi
 echo "wrote $here/out/warm.txt"
 DEMO
 chmod +x agent/show/lamp-ui/01-warm-preset/demo
@@ -210,7 +202,6 @@ session=job-$demo_job
 pane=$(tmux capture-pane -p -J -t "=$session:")
 printf '\n  the pane of %s, as the user finds it:\n\n' "$session"
 printf '%s\n' "$pane" | sed 's/^/    | /'
-printf '%s\n' "$pane" > "$out/staged-pane.txt"
 
 check "the ticket branch is checked out beside the feature worktree" \
     bash -c 'test "$(git -C "$1" rev-parse --abbrev-ref HEAD)" = ticket/lamp-ui/01-warm-preset' _ "$wt"
@@ -264,11 +255,4 @@ printf '\n  the landed demo is still in the tree, findable without reading anyth
 printf '\n'
 }
 
-mkdir -p "$out"
-main 2>&1 | tee "$out/transcript.txt"
-
-if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open > /dev/null; then
-    xdg-open "$out/transcript.txt"
-else
-    printf 'no display here, so nothing is opened: %s\n' "$out/transcript.txt"
-fi
+main 2>&1
