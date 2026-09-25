@@ -62,7 +62,7 @@ For each ticket in the wave:
 
 1. `dispatch claim <slug>`.
 2. Write the ticket message (Worker contract) and hand it over: `dispatch prompt <slug> < <file>`.
-3. `dispatch ctl --host <host> spawn <slug> <model>` with the host's permission mode in the environment, then arm the watcher: `dispatch wait <slug> --deadline <secs>` as a background task, the deadline being the longest you are willing to go without checking on it. A host's first spawn needs `claude` authenticated there with the `mx` plugin installed, and `--setup-cmd` when the project's install is not `make install`. The worker's model is explicit: Opus by default, Sonnet by your judgment for a small or trivial ticket, never Fable unless the user names it explicitly for this run, and never simply inherited from the orchestrator's own model; the judgment calls (wave planning, merges, verification) stay with you.
+3. `dispatch ctl --host <host> spawn <slug> <model>` with the host's permission mode in the environment, then arm the watcher: `dispatch wait <slug> --deadline <secs>` as a background task, the deadline being the longest you are willing to go without checking on it. A host's first spawn needs `claude` authenticated there with the `mx` plugin installed, and `--setup-cmd` when spawn's default install does not fit the project. A worker on another harness (codex, a container) is a replacement runner, `DISPATCH_RUNNER` (help below). The worker's model is explicit: Opus by default, Sonnet by your judgment for a small or trivial ticket, never Fable unless the user names it explicitly for this run, and never simply inherited from the orchestrator's own model; the judgment calls (wave planning, merges, verification) stay with you.
 
 ### 5. Stop or sleep
 

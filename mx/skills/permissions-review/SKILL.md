@@ -37,7 +37,7 @@ uv run <skill-dir>/scripts/test_scan_unapproved.py
 uv run <skill-dir>/scripts/scan_unapproved.py --days <N>
 ```
 
-The tests cover the shell parsing the scanner depends on. They take a second; a failure means the numbers below are fiction.
+The tests cover the shell parsing the scanner depends on. They take a second; a failure means the scanner's numbers are fiction.
 
 ```text
 !`uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_unapproved.py --help`

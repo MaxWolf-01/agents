@@ -409,16 +409,17 @@ ctl() {
     fi
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
-    # A replacement runner travels with the command that starts a worker on it, as the message does,
-    # and under a name of the scratch dir's own: under its own it could land on a file already there,
-    # `manifest` or `dispatch-ctl`, and scp would overwrite that without a word. dispatch-ctl reads
-    # the name beside itself, since a remote scratch dir is relative to a home this side cannot see.
+    # A replacement runner travels with the command that starts a worker on it, as the message does.
+    # It is renamed after the ticket: under its own name it could replace a file the scratch dir
+    # holds, the manifest say, which scp does silently, and one shared name would let two tickets'
+    # runners replace each other. The name, not a path, goes to dispatch-ctl, which looks it up
+    # beside itself: a remote scratch dir is relative to a home this side cannot see.
     if [ -n "$carries" ] && [ -n "${DISPATCH_RUNNER:-}" ]; then
         runner_dir=$(mktemp -d)
         trap 'rm -rf "$runner_dir"' EXIT
-        cp "$DISPATCH_RUNNER" "$runner_dir/runner"
-        copy_to "$host" "$scratch" "$runner_dir/runner" || die "copying the runner to $host failed"
-        env+=("DISPATCH_RUNNER=runner")
+        cp "$DISPATCH_RUNNER" "$runner_dir/runner-$2"
+        copy_to "$host" "$scratch" "$runner_dir/runner-$2" || die "copying the runner to $host failed"
+        env+=("DISPATCH_RUNNER=runner-$2")
     fi
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.

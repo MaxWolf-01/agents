@@ -75,11 +75,14 @@
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
 #                             (default ~/.claude), passed through to the runner
-#   DISPATCH_RUNNER           pane script: a file name in this directory, where
-#                             `dispatch ctl` copies the orchestrator's as
-#                             `runner`, or an absolute path (default
-#                             run-worker.sh). The contract it owes: argv is <prompt> <slug> <model>
-#                             <run> [session-id]; it puts worker-prompt.md from
+#   DISPATCH_RUNNER           pane script, the one place a harness is named: a
+#                             file in this directory (default run-worker.sh,
+#                             which runs Claude Code), where `dispatch ctl`
+#                             copies the orchestrator's as runner-<slug>. A
+#                             resume without it runs the runner the run was
+#                             spawned on. The contract it owes: argv is
+#                             <prompt> <slug> <model> <run> [session-id]; it
+#                             puts worker-prompt.md from
 #                             this directory into the worker's system prompt,
 #                             which is where a worker's whole contract lives;
 #                             it stops retrying once the worker has committed
@@ -97,9 +100,9 @@
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch ctl
 #                                --setup-cmd`)
-#   runner                       the orchestrator's DISPATCH_RUNNER, as the
-#                                last spawn or resume given one copied it
-#   stamp                       which version of these scripts is staged here,
+#   runner-<slug>                the orchestrator's DISPATCH_RUNNER for that
+#                                ticket, when it gave one
+#   stamp                        which version of these scripts is staged here,
 #                                written by the orchestrator (`dispatch ctl`)
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
 #   <run>.status|.log            written by the runner
@@ -359,6 +362,8 @@ resume() {
     fi
     session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$run_id.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
+    # The session id is the harness's own, and means nothing to another one.
+    [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
     spawn "$1" "$2" "$session"
 }
 
