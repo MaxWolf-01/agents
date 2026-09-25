@@ -885,24 +885,26 @@ def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(
     assert questions_on(rows_of(page)["t-map-columns"]) == [("D1", "Per bank or per file name?")]
 
 
-def test_the_board_renders_the_tracker_the_code_repo_names(tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """With the tickets in one repo and the code in another, `board` run in the code repo renders
-    the tracker that repo names, the way every other reader of a ticket file finds it."""
-    plans = tmp_path / "plans" / "agent" / "tickets"
-    plans.mkdir(parents=True)
-    ticket(plans / "map-columns.md", "claimed", priority=1, size="S")
-    git(plans.parent.parent, "init", "-q", "-b", "main")
-    git(plans.parent.parent, "add", "-A")
-    git(plans.parent.parent, "commit", "-q", "-m", "the tracker")
+def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """A project is a code repo with its `agent/` a repo of its own inside it: `board` run anywhere
+    in the code repo renders that tracker, and the page is named for the code repo, not for the
+    directory the tickets sit in."""
     code = tmp_path / "lamp"
-    code.mkdir()
-    git(code, "init", "-q", "-b", "main")
-    git(code, "config", "mx.tracker", str(plans))
-    assert board.find_tracker(code) == plans
+    tickets = code / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    ticket(tickets / "map-columns.md", "claimed", priority=1, size="S")
+    for at in (code, code / "agent"):
+        git(at.parent, "init", "-q", "-b", "main", str(at))
+        git(at, "add", "-A")
+        git(at, "commit", "-q", "-m", "the project")
+    assert board.find_tracker(code / "src") == tickets, "found from anywhere in the code repo"
+    assert board.find_tracker(code / "agent") == tickets, "and from inside the agent repo"
 
     out = tmp_path / "board.html"
-    render(board.find_tracker(code), plans.parent.parent, out)
-    assert "t-map-columns" in rows_of(out.read_text())
+    render(tickets, tickets.parent, out)
+    page = out.read_text()
+    assert "t-map-columns" in rows_of(page)
+    assert "<title>board — lamp</title>" in page, "the project's name is the code repo's"
 
 
 STALE = """

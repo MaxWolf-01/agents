@@ -6,9 +6,9 @@
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
 Run `board` from anywhere inside the repo: it finds the tracker the way the
-`tracker` command does (the nearest agent/tickets up from the current
-directory, or the one this repo's `mx.tracker` setting names), renders, opens
-the tab, and keeps re-rendering until Ctrl-C. --no-watch --no-open is the
+`tracker` command does (the `tickets` of the agent repo the project holds at
+`agent/`, in that repo's main checkout), renders, opens the tab, and keeps
+re-rendering until Ctrl-C. --no-watch --no-open is the
 one-shot form: render the page and exit.
 
 Reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
@@ -199,11 +199,11 @@ GROUPS = [
 @dataclass
 class Args:
     tickets_root: Annotated[Path | None, tyro.conf.Positional, tyro.conf.arg(metavar="[PATH]")] = None
-    """Tracker root, e.g. agent/tickets. Default: the tracker this directory's project plans, which is the repo's own or the one its `mx.tracker` setting names, in the checkout ticket files are committed in."""
+    """Tracker root, e.g. agent/tickets. Default: the tracker this directory's project plans, the `agent/tickets` of the agent repo it holds, in the main checkout ticket files are committed in."""
     out: Path | None = None
     """Output HTML path. Default: board.html beside the tracker (agent/board.html)."""
     repo: Path | None = None
-    """Repo for the commit log and the sessions that worked on a ticket. Default: the repo the tracker is in."""
+    """Repo for the commit log and the sessions that worked on a ticket. Default: the agent repo the tracker is in, which is where a ticket file's commits are."""
     open: bool = True
     """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window."""
     watch: bool = True
@@ -213,7 +213,9 @@ class Args:
 def main(args: Args) -> None:
     tickets_root = (args.tickets_root or find_tracker(Path.cwd())).resolve()
     assert tickets_root.is_dir(), f"no tracker at {tickets_root}"
-    repo = (args.repo or tickets_root.parent.parent).resolve()
+    # A ticket file's own history is the agent repo's, and so are the sessions that wrote it; the
+    # project's name is the code repo's, which is the directory that repo sits in.
+    repo = (args.repo or tickets_root.parent).resolve()
     out = (args.out or tickets_root.parent / "board.html").resolve()
     try:
         render(tickets_root, repo, out)
@@ -242,7 +244,7 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     """Write the page, and answer with the status every ticket on it is shown under: the watcher
     pings the briefing session on a status that moved, and the render is where the tracker is
     already read."""
-    project = repo.name
+    project = root.parent.parent.name
     serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
     session_log.cache_clear()  # likewise: the sessions that committed on a ticket while the board watches
     tickets = load_tickets(root, repo, serve_diffviews(root.parent / "diffviews"))
