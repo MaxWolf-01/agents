@@ -692,7 +692,7 @@ def under(path: Path) -> set[Path]:
 
 def renders(path: Path, known: set[Path]) -> bool:
     """Whether an untracked file is a render its tracked source regenerates: the SVG beside its
-    `.mmd`, the PNG beside the page that draws it, what a tracked `demo` wrote into `out/`."""
+    `.mmd`, the PNG beside the page that draws it, what a tracked runnable artifact wrote into `out/`."""
     if path.parent.name == "out":
         return any(source.parent == path.parent.parent for source in known)
     return any(source.parent == path.parent and source.stem == path.stem for source in known)

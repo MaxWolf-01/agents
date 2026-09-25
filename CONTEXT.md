@@ -58,7 +58,7 @@ The status of a ticket whose work is finished and waits for the user's ruling.
 _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:
-The user's answer on what a ticket built, made on its review page and demo: accept, amend, redo or reject.
+The user's answer on what a ticket built, made on its review page and show: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Ticket question**:
@@ -140,6 +140,12 @@ _Avoid_: expected value, ground truth, reference (an oracle may be one)
 **Expected failure**:
 The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
 _Avoid_: mark (a call mark or a row mark), xfail, skip
+
+### Showing
+
+**Show**:
+An explanation carried by an artefact the reader looks at, built for their understanding of a thing rather than as proof of it.
+_Avoid_: demo (the user's word for a show of the built thing's own output), explainer, walkthrough
 
 ### Sessions
 

@@ -1,55 +1,73 @@
 ---
 name: show
-description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does. A figure, a demo, a diagram, a driven run, an explainer page. Use when writing a ticket's Decisions or an ADR, when closing or landing a piece of work, when an explanation is ballooning in prose, when someone has to see or learn how something works, or when another skill needs an artifact."
+description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when an explanation is ballooning in prose, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show
 
-A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Look up the shape of the thing in the table, build what the row names, look at it yourself, put it in front of the reader.
+A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, build what the table names for the thing's shape, look at it yourself, put it in front of the reader.
+
+## The grid
+
+What a reader can be shown sits on two axes. The **level** is what they look at: the **concept** (how it fits and why, drawn), the **code** (what is written: code, config, a prompt, a skill's prose) or the **output** (what it produces: a printout, a record, a render, what an agent answers). The **form** is the thing as it is, or how it changed.
+
+| | as it is | how it changed |
+| --- | --- | --- |
+| concept | concept figure | concept diff |
+| code | code listing | code diff |
+| output | output | output diff |
+| prose | abstract prose, narrated example | |
+
+The line that matters is **narrated against real**. An example written from the head is a narrated example; one made by running the thing is output. A narrated example is often the better choice, a role-played exchange above all, and it says it is one.
+
+The reader's question picks the level: how does it fit, what did you write, what will I see. Whether something moved picks the form: a thing that existed and changed gets the diff form, a new thing the as-is form, and a decision nothing has built yet the concept level alone. Cells combine whenever each adds what the others do not; a clean output diff, the same scenario on the old and the new, is usually the one that shows most.
+
+A **demo**, in the user's words, is a show made of the built thing's own output, walked through: the rendered page, the running tool, an annotated tutorial of either.
 
 ## The table
 
-| Shape | Figure | Demo |
+What each level looks like for a thing of a given shape. The code level is the same for every shape, the diff on the review page, so a show quotes code only for an interface (what an agent or the user types) or the snippet a concept needs.
+
+| Shape | Concept | Output |
 | --- | --- | --- |
-| A schema, a record, an API: a new entity or relation, a row, a document, a payload | ER diagram for the entities and their relations, and a sample instance of the record they hold beside it: a CSV row, a JSON line | the serialized instance the change now writes; for an API, a request and its response |
-| An exchange or a flow: three or more parties, an ordering that matters, a long or interactive run | sequence diagram | the flow driven: a recording, a walkthrough the demo starts, or a tmux pane to attach to |
-| A state with named transitions | state chart | none |
-| A new or moved module boundary | dependency diagram | none |
-| A prompt, a skill, a process change | the before and after of what an agent writes: a session driven each way, or one role-played as a stand-in where the change is not built yet | none |
-| A script, a hook, a CLI | example invocations, or the interface with sample outputs | the real invocation and the output it produced, `--help` for a CLI |
-| A page or a UI | before it exists, a prototype of it (`/mx:prototype`); once it does, renders of the old and the new state from the two branches, toggled or side by side, each with numbered where-to-look notes | the page opened, a screenshot per state, or a recording |
-| A config or a keybinding | none | the setting or the keystroke, and what it does |
+| A schema, a record, an API: a new entity or relation, a row, a document, a payload | ER diagram for the entities and their relations | a record the code writes, a CSV row or a JSON line; for an API, a request and its response |
+| An exchange or a flow: three or more parties, an ordering that matters, a long or interactive run | sequence diagram | the flow run: a recording, or a tmux pane to attach to |
+| A state with named transitions | state chart | |
+| A new or moved module boundary | dependency diagram | |
+| A prompt, a skill, a process change | sequence or dependency diagram, when the workflow moved | a role-played exchange: what the agent answered before, what it answers now, marked as role-play |
+| A script, a hook, a CLI | the modules it reads and writes, when that moved | what an agent or the user types, and what it produced |
+| A page or a UI | | the page rendered: screenshots, the page itself, or both; before the page exists, a prototype's render (`/mx:prototype`) |
+| A config or a keybinding | | the setting or the keystroke, and what it does |
 
-A **figure** explains through a drawing: a decision before anything exists, and a comparison the built thing cannot show on its own, above all a before and after. A **demo** is the built thing itself, running.
-
-Which a delivered change owes follows from what it is. A change to something that was already there gets **both**: the before-and-after figure, and the demo of the new state. A new thing with no before gets the demo alone. A decision, and a change whose effect cannot be run, gets the figure alone. A change of no shape the table names gets neither, and the landing that carries it says so in one line: the diff is the demo.
-
-Shape decides, never size: a one-column change gets no figure, a two-table schema gets its ER diagram. A thing of several shapes gets every row it hits. A cell reading none means nothing is owed there: no slot is ever padded to have something in it. Every document takes this table, an ADR included, and most ADRs hit no row.
-
-The page row is the one whose figure can be another skill's artefact: `/mx:prototype` owns how a prototype is built and where it lives, and the decision links it the way it links a figure.
+Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it; a change of no shape the table names gets no show, and the review page's diff is the whole of it. Every document takes this table, an ADR included, and most ADRs hit no row.
 
 The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
 
+## A landing's show
+
+Work that lands for the user's ruling comes with its review page and, when it holds something the diff does not make visible, one show. It is for the user's understanding of what was built; the tests and the review are what prove it works. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
+
+- **One per landing.** Every ticket that reached review together shares one show: a wave, or a tree of child tickets built while the user was away, whose show goes to the parent ticket's directory.
+- **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
+- **The few things the user would notice**, never everything the change touched: a tour of every command is what a test suite does. Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
+- **Output only another host can produce**, a training run's metrics on the GPU host, is drawn from the data that host's work committed, never rerun (`/mx:ml`).
+
 ## Where it goes
 
-An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. That directory is the agent repo's, so `git -C agent` is what commits it. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
+An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work, or a slug of its own where that names it better. That directory is the agent repo's, so `git -C agent` is what commits it. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
 
 ## A figure
 
-Two file shapes, chosen by how the picture is made.
+A concept figure or a concept diff is drawn, in one of two file shapes chosen by how the picture is made.
 
 - **A diagram whose layout mermaid solves**: one source file named for what it shows with its SVG beside it, `<name>.mmd` and `<name>.svg`, both committed. The SVG is what gets opened, since it scales with zoom where a raster does not. A mermaid render carries the renderer's own colour scheme, so the both-schemes rule under Produce and present does not reach it.
 - **A picture whose coordinates you place yourself**: one self-contained HTML file ([`SVG-FIGURES.md`](SVG-FIGURES.md)), which draws itself in either scheme from that one source. A figure heading for a document wants this shape, since the document needs both schemes and a renderer of its own reads the file.
 
 Either way the render is regenerated from the source whenever the decision moves, and a PNG for embedding is rendered on demand and stays untracked beside its source, which is why a figure a document in the tree embeds is promoted with the script that renders it rather than copied (Promotion, below). A page (`index.html`) holds more than one thing at once, several figures, or a diagram and the sample instance beside it, and there every image sits at `width:100%; height:auto` so it scales too.
 
-## A demo
+## A runnable artifact
 
-A demo is built to be read by someone with the product sense and none of the weeds: a founder who is technical but did not build this and wants to understand what it does, told accurately, not sold. So a demo explains as it shows. What it drives is annotated beside what happened, the commands it ran stay in view but under what they mean, a figure or a rendered page carries it where the shape allows one, and the raw transcript goes to `out/` as evidence rather than standing as the demo. A demo walks its reader through what it shows, tutorial style: where to look, what each thing on screen is, and what changed marked as changed. A wall of commands and their output is the material a demo is made from, not the demo, and the running thing with a paragraph beside it is not one either: "open the board and click two rows" leaves the reader to find the change. A run that only prints pass or fail is a test, and a test is yours to run without showing anyone.
-
-One executable file named `demo`, taking no arguments, in the show directory of the ticket it demonstrates: `agent/show/<slug>/demo`. A shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. The name fixes the entry point, not the contents: what it reads sits beside it in the same directory.
-
-Running it is the whole demo. It writes what it produces, a transcript, a sample file, a screenshot, into `out/` beside itself, untracked because the next run regenerates it, and it opens what it produced when a display is there, so a worker on a headless host runs it for the files and the session on the user's machine runs it for the opening. It lets go of what it opened rather than waiting on it: a staged demo runs under `job`, and a handler that is a terminal or an editor would keep the run going until its window closed. It runs from a fresh checkout of its branch on any host where the project is installed, carrying nothing from the session that wrote it, and it says so when it fails rather than printing an empty result. The fixed name is what makes every demo findable and runnable without reading anything first: `fd -t x '^demo$' agent/show`.
+What runs in a show directory (a walkthrough that drives the tool, a script that renders a sample) is an executable file taking no arguments, with a shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. It writes what it produces into `out/` beside itself, untracked because the next run regenerates it; it opens what it produced when a display is there and lets go of it rather than waiting on it; it runs from a fresh checkout on any host where the project is installed, and says so when it fails rather than printing an empty result. The board copies the command that runs it.
 
 ## Register
 
@@ -70,7 +88,7 @@ How a row's medium gets made. An open set, not a menu; combining media is normal
 
 - Facts in an artifact come from primary sources (the config, the code, the live system), never only from prose docs about them. Docs drift, and the artifact inherits the drift; a figure states things with more authority than the README it was cribbed from.
 - Anything opened in a browser wears the house style (`/mx:house-style`: tokens, type, parts, and the scheme toggle) unless the artifact has a reason to look otherwise, and ships both color schemes; the reader's system setting is the default, not a constraint. Look at both before presenting.
-- Look at your own render before presenting: Read the PNG, run the demo, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
+- Look at your own render before presenting: Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
 - Present it opened (`claude-browser` where it exists, else `xdg-open`), with one line on what it shows and the absolute path.
 
 ## A heavy artifact goes to a fresh agent
@@ -79,4 +97,4 @@ An artifact with a build loop (a manim video, a multi-section explainer, anythin
 
 ## Promotion
 
-A figure, or a demo's output, that a README or a PR description needs moves to where that document's assets live, a `docs/` or `assets/` directory the document already reads from: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, an HTML page linked through `sftpgo-share upload`, a demo's output pasted into a PR as a code block or screenshots, a demo that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.
+A figure, or an output, that a README or a PR description needs moves to where that document's assets live, a `docs/` or `assets/` directory the document already reads from: the render, its source, and the script that regenerates it travel together, and every reference is repointed in the same commit. No show directory outlives the work it belongs to, whatever still reads it, so a copy left behind in one is a stale figure waiting to be read as current. What the destination takes varies: a PNG the README embeds, an HTML page linked through `sftpgo-share upload`, an output pasted into a PR as a code block or screenshots, a script that asserts moved under `make check`. The move is your own call and visible in the diff, so no ruling gates it.

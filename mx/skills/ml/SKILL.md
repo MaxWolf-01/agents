@@ -1,18 +1,23 @@
 ---
 name: ml
-description: "Conventions for ML projects: experiment structure, tracking, tensor code, hyperparameter tuning. Use when setting up an ML project, writing or running training experiments, or keeping a run's result as a figure or table."
+description: "Conventions for ML projects: experiment structure, tracking, tensor code, hyperparameter tuning. Use when setting up an ML project, writing or running training experiments, or keeping a run's result as data and the figure or table drawn from it."
 ---
 
 # ML projects
 
-**Every result worth keeping (a figure in a paper or blog post, a table, a run you'll want to rerun or show someone) is one make target with its flags frozen inside.** Reproduction is: hardware + clone + `make install` + `make figure-2a`. The target is the record of which invocation produced the artifact:
+**Every result worth keeping (a figure in a paper or blog post, a table, a run you'll want to rerun or show someone) is data, and two make targets with their flags frozen inside: one runs the experiment and writes the data, the other draws the figure or table from it.** Reproduction is: hardware + clone + `make install` + `make results-2a figure-2a`; redrawing is `make figure-2a` alone, on any host, in seconds. The targets are the record of which invocation produced the artifact:
 
 ```make
+results-2a:
+	uv run python -u experiments/train_baseline.py --seed 42 --n-steps 500 --out results/2a
+
 figure-2a:
-	uv run python -u experiments/train_baseline.py --seed 42 --n-steps 500 --out figures/2a
+	uv run python experiments/plot.py results/2a --out figures/2a
 ```
 
-When an exploratory run graduates into a keeper, freeze its invocation as a target. Exploration itself calls the scripts directly, `uv run python -u experiments/<x>.py --seed 1 ...` (`-u` so tmux scrollback streams progress), and stays out of the Makefile: the tracker already records every run's config, so an unfrozen invocation is never lost; the Makefile holds the runs worth reproducing, by someone else or by you in three months.
+The data is committed when it is small (metrics as JSONL, logs), and kept where the project keeps large files when it is not, with `figure-2a` fetching it from there.
+
+When an exploratory run graduates into a keeper, freeze its invocation as the pair of targets. Exploration itself calls the scripts directly, `uv run python -u experiments/<x>.py --seed 1 ...` (`-u` so tmux scrollback streams progress), and stays out of the Makefile: the tracker already records every run's config, so an unfrozen invocation is never lost; the Makefile holds the runs worth reproducing, by someone else or by you in three months.
 
 ## Experiments
 
