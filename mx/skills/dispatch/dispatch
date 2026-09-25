@@ -151,9 +151,11 @@ scratch_dir() { # <host>
 # keepalive collapses a dead connection in ~30s, so a suspended laptop's
 # `wait` fails fast and retries instead of hanging on a connection that will
 # never speak again.
+# ssh joins its arguments with spaces into one line for the remote shell, which
+# drops an empty one and splits one with a space; each is quoted for that shell.
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$@"; fi
+    if [ "$h" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(printf '%q ' "$@")"; fi
 }
 
 # Through a side directory and a rename, never written in place: a worker
