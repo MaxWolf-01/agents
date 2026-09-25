@@ -68,7 +68,7 @@ questions on it.
 
 ## next
 
-- **Map columns once per bank**: the whole tree waits behind it, and its demo runs.
+- **Map columns once per bank**: the whole tree waits behind it, and its walkthrough runs.
 - **Speed up the test suite**: four minutes to forty-eight seconds, two questions left.
 - **The flaky upload test**: fifteen minutes, and it stops a build going red for nothing.
 
@@ -215,7 +215,7 @@ print(json.dumps(out))
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "democopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
          f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",

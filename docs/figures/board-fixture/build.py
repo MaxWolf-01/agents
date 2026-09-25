@@ -75,8 +75,8 @@ def build_repo() -> tuple[str, str]:
     write(C5)
     commits = commit("commit-the-import: entries, after a dry run that says what will be skipped")
     write(C6)
-    write({"agent/show/flaky-upload-test/demo": DEMO})  # what the row in review offers the reader
-    (REPO / "agent/show/flaky-upload-test/demo").chmod(0o755)
+    write({"agent/show/flaky-upload-test/rerun-under-load": RERUN})  # what the row in review offers the reader
+    (REPO / "agent/show/flaky-upload-test/rerun-under-load").chmod(0o755)
     fix = commit("csv-import: the dry run's already-settled branch had no test")
     verify()
     for rel, rng in [
@@ -176,7 +176,7 @@ def shoot(board: Path, review: Path | None) -> None:
 
 
 # The one ticket the fixture leaves in review, so the row that says "to rule on" has something to run.
-DEMO = """#!/usr/bin/env bash
+RERUN = """#!/usr/bin/env bash
 # The report test, a hundred times over, against a disk kept busy: the flake it used to show is
 # gone because nothing in the test opens a file any more.
 set -euo pipefail
