@@ -279,8 +279,8 @@ def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) 
 
 
 def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, staged: Path) -> None:
-    """One ticket end to end, the tracker in either repo: claim, spawn, the report, the import, a
-    question ruled before the merge, and the landing with the range the ticket keeps.
+    """One ticket end to end: claim, spawn, the report, the import, a question ruled before the
+    merge, and the landing with the range the ticket keeps.
 
     `ticket-file-contract#P7`: nothing the worker did touched a ticket file, and every word it wrote
     for the user is in the tracker's own copy by the time the build waits for a ruling."""
@@ -363,6 +363,47 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
     assert "## Questions" not in (tracked(toy) / "warm-preset.md").read_text()
 
 
+def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowhere(
+    toy: Path, staged: Path
+) -> None:
+    """Every round after the first starts with the round before it still committed on the agent
+    branch. What is imported is the report a round wrote, so a resume that left none brings nothing
+    in: the first round's closing comment would otherwise land under `## Comments` twice, and its
+    question's tag be refused as taken."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work the ticket warm-preset.\n").returncode == 0
+    assert "report=yes" in waited(toy).read_text()
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    assert run(toy, "review", "warm-preset").returncode == 0
+    once = (tracked(toy) / "warm-preset.md").read_text()
+    assert once.count("The warm preset lands, unmerged") == 1
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    before = set(state.glob("*.status"))
+
+    # the round the user sent back, resumed on a worker that stops before writing one of its own.
+    # Staged beside the runner it replaces, since that directory is where a run writes its log and
+    # its status line, and a resume stages nothing of its own.
+    quiet = state / "quiet-runner.sh"
+    quiet.write_text(RUNNER)
+    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
+                             cwd=toy, capture_output=True, text=True, timeout=180,
+                             env=environment(toy, DISPATCH_RUNNER=str(quiet)))
+    assert resumed.returncode == 0, resumed.stderr
+    assert status_of(toy, "warm-preset") == "claimed", "a resumed build holds its ticket again"
+    for _ in range(60):
+        if fresh := set(state.glob("*.status")) - before:
+            break
+        time.sleep(0.5)
+    assert fresh, "no status line 30s after the resume"
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "left none of its own to import" in said.stderr, said.stderr
+    assert (tracked(toy) / "warm-preset.md").read_text() == once, "nothing of the first round said twice"
+
+
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
     ticket file wrote a second copy of one, and nothing of that round is imported."""
@@ -381,16 +422,21 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
     assert status_of(toy, "warm-preset") == "claimed", "nothing of that round is in the ticket"
 
 
-@pytest.mark.parametrize("wrote, exits, says", [
-    (True, 1, "attempts=1 exit=1 report=yes"),
-    (False, 0, "attempts=1 exit=0 report=no"),
+@pytest.mark.parametrize("already, wrote, exits, says", [
+    (False, True, 1, "attempts=1 exit=1 report=yes"),
+    (False, False, 0, "attempts=1 exit=0 report=no"),
+    (True, False, 0, "attempts=1 exit=0 report=no"),
+    (True, True, 0, "attempts=1 exit=0 report=yes"),
 ])
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
-    tmp_path: Path, wrote: bool, exits: int, says: str
+    tmp_path: Path, already: bool, wrote: bool, exits: int, says: str
 ) -> None:
     """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
     committed its report in the agent repo is finished whatever it exited with, one that committed
-    none says so on its status line, and the retry loop ends either way."""
+    none says so on its status line, and the retry loop ends either way.
+
+    A resumed round starts with the round before it still committed there, so what the status line
+    reads is whether this run wrote that file, never whether the file is there."""
     state = tmp_path / "state"
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
@@ -402,6 +448,12 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     (worktree / "agent" / "README.md").write_text("the agent repo\n")
     git(worktree / "agent", "add", "-A")
     git(worktree / "agent", "commit", "-q", "-m", "the agent repo")
+    if already:
+        (worktree / "agent" / "show" / "warm-preset").mkdir(parents=True)
+        (worktree / "agent" / "show" / "warm-preset" / "report.md").write_text(
+            "## Comments\n\nthe round before, which the user sent back.\n")
+        git(worktree / "agent", "add", "-A")
+        git(worktree / "agent", "commit", "-q", "-m", "the round before's report")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -491,13 +543,10 @@ def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) ->
     assert "predates the agent repo" in said.stderr, said.stderr
 
 
-def test_the_report_the_scripts_read_is_the_one_the_contract_names() -> None:
-    """Three files carry the report's path: the prompt a worker reads, the runner that takes it for
-    the finished signal, and the import. They agree here or nowhere."""
-    prompt = (SKILL / "worker-prompt.md").read_text()
-    assert "agent/show/<slug>/report.md" in prompt
-    assert 'HEAD:show/$slug/report.md' in (SKILL / "run-worker.sh").read_text()
-    assert "reported=show/$id/report.md" in (SKILL / "dispatch").read_text()
+def test_the_report_the_contract_names_is_the_one_the_scripts_read() -> None:
+    """The worker reads the path out of prose, which no check of the runner or the import can
+    exercise; the two scripts are held to it by the runs above."""
+    assert "agent/show/<slug>/report.md" in (SKILL / "worker-prompt.md").read_text()
 
 
 if __name__ == "__main__":

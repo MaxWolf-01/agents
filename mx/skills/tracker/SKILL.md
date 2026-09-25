@@ -50,7 +50,7 @@ A question is open, and shows in the board's needs-me group, until a `Ruled <dat
 
 A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Properties are read through the same ancestry and cited `<slug>#P<n>` from any descendant. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
 
-Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file: `dispatch review` refuses a ticket branch that wrote one, and where the worker shares a checkout with whoever installed the commit hook, that hook refuses it at the commit. What a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`.
+Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file: every write this command makes is refused from a `ticket/<slug>` branch, which is what a worker holds either repo on, `dispatch review` refuses a ticket branch that wrote one, and the commit hook refuses one staged there. What a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`.
 
 A parent ticket is done when every child ticket is done and its own close-out is ruled: the full suite, the review one level up, harden, the debrief (`/mx:dispatch`).
 
@@ -78,7 +78,7 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 Retiring is for work that has **shipped**, and `tracker retire` is what runs it. What a README, a PR or the build still needs is promoted out of `agent/show/` in that same commit (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
-Loose work has no ticket to retire: its show directory and the prototypes it made are `git rm`'d on the branch itself, so the merge that lands the work carries the removal.
+Loose work has no ticket to retire: its show directory and the prototypes it made are the agent repo's, committed in that repo's own checkout on the branch it has out, as a ticket's files are, and `git -C agent rm`'d there once the code branch they served has merged.
 
 ## Board
 

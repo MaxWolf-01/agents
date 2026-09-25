@@ -69,8 +69,9 @@
 #            get it; the exit status is nonzero when any did not.
 #   review   once a ticket's branches are fetched, before or after their merge
 #            alike: imports the report the agent branch carries at
-#            agent/show/<slug>/report.md into the ticket; refuses either branch
-#            that wrote a ticket file, whatever else it left; projects the
+#            agent/show/<slug>/report.md into the ticket, once per report;
+#            refuses an agent branch that wrote a ticket file, whatever else it
+#            left; projects the
 #            ticket's assumptions into the review page's notes; renders
 #            agent/diffviews/<slug>.html in the agent repo, over both ranges,
 #            since a round is one diff per repo; serves it; re-renders the
@@ -201,7 +202,10 @@ record_run() { # <name> <host>
 
 # A cleaned-up run has nothing left on its host, so what stays on file is the
 # runs still there, which is what the commands that fan out over hosts follow.
+# The report it imported goes with it: the next build of that slug is a build of
+# its own, and its first report is one this has never seen.
 forget_run() { # <name>
+    rm -f "$state/imported/$1"
     [ -f "$runs" ] || return 0
     ( flock 9
       awk -F'\t' -v f="$base" -v n="$1" '!($1 == f && $2 == n)' "$runs" > "$runs.tmp"
@@ -567,15 +571,15 @@ range_of() { # code|agent <tip>
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: the assumptions the tracker read become the page's notes, and the
 # comment ids the ticket's `Addressed:` lines name become its resolved list.
-# The ticket is read through `tracker data -`, so a bullet no reader can read is
-# refused with its line rather than dropped from the page, and however the
-# writer wrapped one it is read whole. The user's own comments live in
+# The ticket is read through `tracker data`, so a bullet no reader can read is
+# refused with its file and line rather than dropped from the page, and however
+# the writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
-notes_of() { # a ticket file on stdin
-    # The tracker's own status, taken before the pipe: a refusal prints to stderr
-    # and writes nothing, and jq over an empty input exits 0, so a pipeline would
-    # answer that a ticket no reader can read has no notes.
-    read=$("$tracker" data -) || return 1
+notes_of() { # <slug>
+    # Its own status, taken before the pipe: a refusal prints to stderr and writes
+    # nothing, and jq over an empty input exits 0, so a pipeline would answer that
+    # a ticket no reader can read has no notes.
+    read=$("$tracker" data "$1") || return 1
     printf '%s\n' "$read" | jq '{
         notes: [ .tickets[0].assumptions[]
                  | {id, path, text} + (if .line == null then {} else {line} end) ],
@@ -614,18 +618,27 @@ review() {
 
     # The worker's words, in one write: its closing comment, the questions its build raised, the
     # assumptions the notes below are made of, and the flip to `review` with them. The report is a
-    # file on the agent branch, where the worker committed it beside its demo. The status is what
-    # makes the second run of this, after the merge, a no-op: a round is imported into the build
-    # that is claimed, once.
+    # file on the agent branch, where the worker committed it beside its demo. What is imported is
+    # the report this round wrote, which is the one whose blob differs from the last imported: a
+    # resumed round starts with the round before it still committed there, and bringing that in
+    # again would say everything it says twice.
     reported=show/$id/report.md
     status=$("$tracker" get "$id" status)
-    if ! git -C "$agent_top" cat-file -e "$agent_tip:$reported" 2>/dev/null; then
+    blob=$(git -C "$agent_top" rev-parse -q --verify "$agent_tip:$reported")
+    imported=$state/imported/$id
+    if [ -z "$blob" ]; then
         echo "dispatch: no $reported on $branch; the run left nothing to review" >&2
-    elif [ "$status" = claimed ]; then
+    elif [ "$status" = claimed ] && [ "$blob" != "$(cat "$imported" 2>/dev/null)" ]; then
         git -C "$agent_top" show "$agent_tip:$reported" |
             run "$tracker" import "$id" - --called "$branch:$reported" || exit 1
+        mkdir -p "$(dirname "$imported")" && printf '%s\n' "$blob" > "$imported"
         commit_ticket "$id" "$id for review"
-    else
+    elif [ "$status" = claimed ]; then
+        echo "dispatch: the report on $branch is the one $id already carries, so this round left none of its own to import" >&2
+    elif [ "$status" = open ] || [ "$status" = proposed ]; then
+        # `review` and `done` are the ticket saying the report has landed, which is what the second
+        # run of this after the merge finds; a ticket ruled back to open is a report with nowhere
+        # to go.
         echo "dispatch: $id is $status, so the report on $branch was not imported; a report lands once, on the build that is claimed" >&2
     fi
 
@@ -673,7 +686,7 @@ review() {
     mkdir -p "$(dirname "$out")"
     # The tracker's own copy, which the import above has brought the worker's
     # closing comment and its assumptions into.
-    notes_of < "$ticket" > "$out.notes.json" || exit 1
+    notes_of "$id" > "$out.notes.json" || exit 1
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve "$diffviews"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open

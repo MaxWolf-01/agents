@@ -435,7 +435,7 @@ class Briefer:
         verb = briefing.on_change(cached, self.changed_at, at)
         if verb == "wait":
             return
-        note = None if verb == "fresh" else changed_note(self.told, snapshot, self.repo)
+        note = None if verb == "fresh" else changed_note(self.told, snapshot, project(root))
         self.tried = at
         self.running = threading.Thread(target=self.write, args=(root, cached, note, snapshot, statuses), daemon=True)
         self.running.start()
@@ -514,26 +514,28 @@ def state_line(t: "Ticket") -> str:
     return said
 
 
-def changed_note(before: tuple, after: tuple, repo: Path) -> str:
+def changed_note(before: tuple, after: tuple, code: Path) -> str:
     """What moved between two of the watcher's snapshots, in the words the briefing session is told
-    it in: the ticket files, the review pages and the artefacts, and the commits behind them."""
-    was = {path: rest for path, *rest in before[2:]}
-    since = {path: rest for path, *rest in after[2:]}
+    it in: the ticket files, the review pages and the artefacts, and the commits behind them. Both
+    are written for the project, which is the repo that session explores."""
+    heads = 2  # what a snapshot leads with, before its files: the agent repo's head and the project's
+    was = {path: rest for path, *rest in before[heads:]}
+    since = {path: rest for path, *rest in after[heads:]}
     said = [
-        f"{word}: {', '.join(shorten(p, repo) for p in sorted(paths))}"
+        f"{word}: {', '.join(shorten(p, code) for p in sorted(paths))}"
         for word, paths in (
             ("new", since.keys() - was.keys()), ("gone", was.keys() - since.keys()),
             ("changed", {p for p in since.keys() & was.keys() if since[p] != was[p]}),
         ) if paths
     ]
-    if before[:2] != after[:2]:
-        said.append(f"the repo has moved on: {git_log(repo).strip().splitlines()[0]} is its last commit")
+    if before[1] != after[1]:
+        said.append(f"the repo has moved on: {git_log(code).strip().splitlines()[0]} is its last commit")
     return "\n".join(said) or "something under the tracker was touched without changing"
 
 
-def shorten(path: str, repo: Path) -> str:
-    """A path as the repo writes it, since that is what the session reads it by."""
-    return str(Path(path).relative_to(repo)) if Path(path).is_relative_to(repo) else path
+def shorten(path: str, code: Path) -> str:
+    """A path as the project writes it, since that is what the session reads it by."""
+    return str(Path(path).relative_to(code)) if Path(path).is_relative_to(code) else path
 
 
 COUNTED = "no one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
@@ -616,15 +618,19 @@ def plain(markup: str) -> str:
 
 
 def tracker_snapshot(root: Path, repo: Path) -> tuple:
-    """What the board read last, as a value to compare: the tracker's files, the review pages and
-    the artefacts beside them, and the commit the log comes from.
+    """What the board read last, as a value to compare: the head of each of the project's two repos,
+    then the tracker's files, the review pages and the artefacts beside them.
+
+    Both heads, since the page is read off both: the sessions that worked a ticket are commits of
+    the repo the tracker is in, and the commit list is the project's, which moves on a merge that
+    touches no ticket at all.
 
     A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
     the render that follows is what puts the pages back on an address that answers. So do the show
     directories, where an opened ticket reads its artefacts from.
     """
     dirs = [root, root.parent / "diffviews", root.parent / "show"]
-    return (git(repo, "rev-parse", "HEAD"),) + tuple(
+    return (git(repo, "rev-parse", "HEAD"), git(project(root), "rev-parse", "HEAD")) + tuple(
         (str(f), st.st_mtime_ns, st.st_size)
         for d in dirs if d.is_dir() for f in sorted(d.rglob("*")) if f.is_file() for st in [f.stat()]
     )
