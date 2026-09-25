@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: review
 parent: ticket-file-contract
 blocked-by: [scripts-go-through-tracker-command, skills-and-glossary-speak-one-ticket-kind]
 priority: 1
