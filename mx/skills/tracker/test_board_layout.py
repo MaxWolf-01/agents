@@ -108,9 +108,11 @@ def band_edges(page: Path) -> list[int]:
 
 
 def measured(pages: list[str], widths: list[int]) -> dict[int, list[dict]]:
-    """Each width in a browser of its own, on a pool a third of the machine's cores wide: a browser
-    lays the whole page out in a window as tall as the page, and an unbounded pool crashes a tab."""
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 3) // 3)) as pool:
+    """Each width in a browser of its own, on a pool a third of the machine's cores wide, shared out
+    when the suite itself is running in parallel: a browser lays the whole page out in a window as
+    tall as the page, and an unbounded pool crashes a tab."""
+    share = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", 1))
+    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 3) // 3 // share)) as pool:
         found = list(pool.map(lambda width: lint(pages, width), widths))
     return {width: f for width, f in zip(widths, found, strict=True) if f}
 
@@ -482,9 +484,27 @@ with sync_playwright() as pw:
     page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
     window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
     window["still_open"] = not win.is_closed()
-    page.keyboard.press("j")  # the window follows the board's cursor without redrawing
-    win.wait_for_selector(".gfbody g.node.cur")
+    # The window follows the board's cursor without redrawing: the cursor moves to another row of
+    # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
+    # a different graph, and a standalone ticket's tree has none at all, which leaves the window
+    # showing its note and no mark for this to wait on.
+    drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
+    steps, slug = page.evaluate("""
+      () => {
+        const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
+        const at = shown.findIndex((r) => r.classList.contains("kcur"))
+        const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
+        return [next - at, shown[next]?.dataset.slug]
+      }
+    """)
+    assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
+    for _ in range(steps):
+        page.keyboard.press("j")
+    page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
+    node = "T_f_" + slug.replace("-", "_")
+    win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
     window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
+    window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
     window["html"] = win.evaluate("document.documentElement.outerHTML")
     out["window"] = window
 
@@ -586,6 +606,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     assert win["marked"] == 1 and win["follows_cursor"] == 1, (
         "the window does not mark the row the board's cursor is on, or stopped following it"
     )
+    assert win["same_drawing"], "the window redrew the graph to follow a cursor move inside it"
     assert win["overflow"] > 0, "the window's graph fits its box, so nothing there is scrolled or panned"
     assert win["switched"] == "csv-import" and win["board_name"] == "csv-import", (
         f"the switch in the window left it on {win['switched']!r} and the board on {win['board_name']!r}"
