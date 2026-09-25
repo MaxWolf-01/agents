@@ -81,6 +81,19 @@ git -C agent commit -q -m "$slug: the report"
 printf 'attempts=1 exit=0 report=yes""",
 )
 
+# ssh as the real one behaves: every argument after the host joined with spaces into one line for
+# the remote shell, run in the remote user's home. scp copies into that home the same way.
+FAKE_SSH = """#!/usr/bin/env bash
+while [[ ${1:-} == -* ]]; do case $1 in -o|-p|-i|-l) shift 2 ;; *) shift ;; esac; done
+shift
+cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec bash -c "$*"
+"""
+FAKE_SCP = """#!/usr/bin/env bash
+files=(); for a; do [[ $a == -* ]] || files+=("$a"); done
+dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
+cp "${files[@]:0:${#files[@]}-1}" "$dest"
+"""
+
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
@@ -229,10 +242,11 @@ def kill_sessions() -> None:
             subprocess.run(["tmux", "kill-session", "-t", f"={session}"], capture_output=True)
 
 
-def spawn(toy: Path, staged: Path, slug: str, message: str) -> subprocess.CompletedProcess:
-    env = environment(toy)
+def spawn(toy: Path, staged: Path, slug: str, message: str, host: str = "local",
+          env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    env = env or environment(toy)
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
-    return subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug, "sonnet"],
+    return subprocess.run([str(staged), "ctl", "--host", host, "--setup-cmd", "true", "spawn", slug, "sonnet"],
                           cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 
@@ -536,24 +550,6 @@ def test_the_report_the_contract_names_is_the_one_the_scripts_read() -> None:
     assert "agent/show/<slug>/report.md" in (SKILL / "worker-prompt.md").read_text()
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
-# ssh as the real one behaves: every argument after the host joined with spaces into one line for
-# the remote shell, run in the remote user's home. scp copies into that home the same way.
-FAKE_SSH = """#!/usr/bin/env bash
-while [[ ${1:-} == -* ]]; do case $1 in -o|-p|-i|-l) shift 2 ;; *) shift ;; esac; done
-shift
-cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec bash -c "$*"
-"""
-FAKE_SCP = """#!/usr/bin/env bash
-files=(); for a; do [[ $a == -* ]] || files+=("$a"); done
-dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
-cp "${files[@]:0:${#files[@]}-1}" "$dest"
-"""
-
-
 def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Path) -> None:
     """The first spawn on a remote host passes `dispatch-ctl init` empty arguments for the host's
     own defaults; each has to arrive as the argument it was, or the agent repo's branch lands in
@@ -570,10 +566,8 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     env = environment(toy, REMOTE_HOME=str(remote))
     env["PATH"] = f"{fakes}:{env['PATH']}"
     run(toy, "claim", "warm-preset")
-    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
 
-    said = subprocess.run([str(staged), "ctl", "--host", "agent@far", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
-                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
 
     assert said.returncode == 0, said.stdout + said.stderr
     config = dict(line.split("=", 1) for line in
@@ -584,3 +578,7 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     worktree = remote / "repos" / "dispatch" / "lamp-warm-preset"
     assert git(worktree, "branch", "--show-current").strip() == "ticket/warm-preset"
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

@@ -223,8 +223,8 @@ stage() { # <host> [setup-command]
     scratch=$(scratch_dir "$h")
     files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
-    # The setup command travels as a file named `setup`, so its quoting never
-    # has to survive an ssh hop.
+    # The setup command travels as a file named `setup`, which stays on the host
+    # for every later spawn until another --setup-cmd replaces it.
     if [ -n "$cmd" ]; then
         staged=$(mktemp -d)
         # EXIT as well as RETURN: `die` exits the shell, and the paths that die
