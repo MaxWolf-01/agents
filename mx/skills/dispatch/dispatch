@@ -16,6 +16,7 @@
 #        dispatch fetch <slug>
 #        dispatch push
 #        dispatch review <slug>
+#        dispatch unreviewed <slug>
 #   <slug> is the ticket's id, and names its file in the tracker (`tracker root`).
 #   claim    flips <slug> to claimed and commits that in the agent repo's main
 #            checkout, where every ticket file is written. Refuses a ticket
@@ -76,7 +77,20 @@
 #            branch is unmerged, `done` with the round's two ranges in the
 #            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
 #            once both have merged. One commit either way, and none when the
-#            ticket already says so.
+#            ticket already says so. While the code branch is unmerged it first
+#            runs `unreviewed`, and refuses when that lists anything, before it
+#            imports or flips a thing.
+#   unreviewed
+#            prints the commits of an unmerged code-repo ticket branch that no
+#            review covers, one `<sha> <subject>` line each, and exits 1 when
+#            there are any. The record is the ticket, which holds every round's
+#            imported report, and this round's report on the agent branch: a
+#            commit is covered when it falls inside a range written there
+#            (`a1b2c3d..e4f5a6b`, the SHA range a review ran over), when it is
+#            a review fix (a `Workflow-stage: review` line) whose hash is written
+#            there, or when a rebase carried a covered commit's changed lines
+#            onto it unchanged. A merge needs a review when its resolution
+#            differs from both parents.
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
@@ -482,6 +496,57 @@ notes_of() { # <slug>
 
 # The commit ranges a ticket's rounds have landed as, one per line; nothing
 # before the first of them lands.
+# One `<sha> <subject>` line per commit on the code branch up to <tip> that the record on stdin
+# does not cover (`dispatch --help`, unreviewed). A named hash covers only a review fix, so a
+# worker naming its amend commit as the answer to a comment does not clear it. Hex strings that
+# name no commit resolve to nothing and cover nothing.
+unreviewed_of() { # <tip>, the record on stdin
+    local tip=$1 text covered patches c r files p
+    text=$(cat)
+    covered=$(
+        grep -oE '\b[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b' <<<"$text" | while IFS= read -r r; do
+            git -C "$repo_root" rev-list "${r%%..*}..${r##*.}" 2>/dev/null
+        done
+        # A range's ends are not hashes a finding names: its start lies outside it.
+        sed -E 's/\b[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b//g' <<<"$text" | grep -oE '\b[0-9a-f]{7,40}\b' | while IFS= read -r r; do
+            c=$(git -C "$repo_root" rev-parse -q --verify "$r^{commit}" 2>/dev/null) || continue
+            git -C "$repo_root" log -1 --format=%B "$c" | grep -qx 'Workflow-stage: review' && echo "$c"
+        done
+    )
+    # Changed lines only, no context: a change beside a reviewed hunk leaves a rebase clean and the
+    # change the same. Only commits a rebase took off the branch lend their ids, or a new commit
+    # repeating a reviewed line (an import, a log call) would pass as covered.
+    patch_id() { git -C "$repo_root" diff-tree -p -U0 --no-commit-id "$1" | git patch-id --stable | cut -d' ' -f1; }
+    patches=$(for c in $covered; do git -C "$repo_root" merge-base --is-ancestor "$c" "$tip" || patch_id "$c"; done)
+    for c in $(git -C "$repo_root" rev-list --reverse "$(git -C "$repo_root" merge-base "$base" "$tip")..$tip"); do
+        if git -C "$repo_root" rev-parse -q --verify "$c^2" >/dev/null; then
+            # Only the files with a hunk neither parent had: a hand resolution.
+            files=$(git -C "$repo_root" diff-tree --cc -p --no-commit-id "$c" | sed -n 's/^diff --cc //p')
+            [ -n "$files" ] || continue
+        fi
+        grep -qxF "$c" <<<"$covered" && continue
+        p=$(patch_id "$c")
+        [ -n "$p" ] && grep -qxF "$p" <<<"$patches" && continue
+        git -C "$repo_root" log -1 --format='%h %s' "$c"
+    done
+}
+
+record_of() { # <slug> <agent-tip>: the ticket, then the round's report
+    cat "$tickets/$1.md"
+    git -C "$agent_top" show "$2:show/$1/report.md" 2>/dev/null
+}
+
+unreviewed() {
+    locate
+    id=$1
+    code_tip=$(git -C "$repo_root" rev-parse --verify -q "ticket/$id") || die "no branch ticket/$id in $repo_root; fetch it from the worker host first"
+    agent_tip=$(git -C "$agent_top" rev-parse --verify -q "ticket/$id") || agent_tip=$agent_base
+    list=$(record_of "$id" "$agent_tip" | unreviewed_of "$code_tip") || exit 1
+    [ -z "$list" ] && return 0
+    echo "$list"
+    return 1
+}
+
 rounds_of() { "$tracker" get "$1" diff 2>/dev/null; } # <slug>
 
 review() {
@@ -508,6 +573,16 @@ review() {
     wrote=$(git -C "$agent_top" diff --name-only \
         "$(git -C "$agent_top" merge-base "$agent_base" "$agent_tip")" "$agent_tip" -- tickets | tr '\n' ' ')
     [ -z "$wrote" ] || die "$branch writes a ticket file, which is nobody's to write on a ticket branch: $wrote"
+
+    # A build reaches the user only once a review has read every commit of it, the ones an amend
+    # round added included; refused before anything of the round is imported or flipped.
+    if [ -n "$code_range" ] && ! is_merged code "$code_tip"; then
+        list=$(record_of "$id" "$agent_tip" | unreviewed_of "$code_tip") || exit 1
+        if [ -n "$list" ]; then
+            echo "$list" >&2
+            die "$branch has commits no review covers (above); resume its worker to review them and name the range in its report"
+        fi
+    fi
 
     # The worker's words, in one write: its closing comment, the questions its build raised, the
     # assumptions the notes below are made of, and the flip to `review` with them. The report is a
@@ -594,6 +669,7 @@ case $cmd in
     wait)    shift; wait_ "$@" ;;
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
+    unreviewed) shift; unreviewed "$@" ;;
     -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
     *) die "unknown command: $cmd" ;;
 esac

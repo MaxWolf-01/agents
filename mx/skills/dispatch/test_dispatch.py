@@ -62,6 +62,7 @@ printf 'attempts=1 exit=1 report=no""",
 BUILDING = RUNNER.replace(
     "printf 'attempts=1 exit=0 report=no",
     """git() { command git -c user.email=stub@toy -c user.name=stub -c commit.gpgsign=false "$@"; }
+cut=$(git rev-parse --short HEAD)
 printf 'the lamp, warm\\n' > lamp.txt
 git add lamp.txt
 git commit -q -m "$slug: the warm preset"
@@ -74,6 +75,9 @@ criterion.
 
 - [D1] **Assumptions**
   - A1 `lamp.txt:1`: 2700K, since the bulb box says so.
+REPORT
+printf -- '- [D3] Finding index, review range `%s..%s`, light: no findings\\n' "$cut" "$(git rev-parse --short HEAD)" >> "agent/show/$slug/report.md"
+cat >> "agent/show/$slug/report.md" <<'REPORT'
 
 ## Questions
 
@@ -349,10 +353,10 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
         assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
 
 
-def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
-    """The other half of the finished signal: a worker that stopped short leaves no report, the
-    fetch says so and exits 0, and the review that follows writes nothing of a worker's into the
-    ticket."""
+def test_a_run_that_left_no_report_reaches_no_review(toy: Path, staged: Path) -> None:
+    """The other half of the finished signal: a worker that stopped short leaves no report and so no
+    record of a review, the fetch exits 0, and the review that follows refuses the code it left
+    before writing anything of a worker's into the ticket."""
     (staged.parent / "run-worker.sh").write_text(STOPPED_SHORT)
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
@@ -361,9 +365,9 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
     fetched = run(toy, "fetch", "warm-preset")
     assert fetched.returncode == 0, fetched.stderr
     said = run(toy, "review", "warm-preset")
-    assert said.returncode == 0, said.stderr
-    assert "left nothing to review" in said.stderr, said.stderr
-    assert status_of(toy, "warm-preset") == "review", "the branches are there to rule on either way"
+    assert said.returncode != 0
+    assert "as far as it got" in said.stderr and "no review covers" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
     assert "## Questions" not in (tracked(toy) / "warm-preset.md").read_text()
 
 
@@ -581,6 +585,178 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     worktree = remote / "repos" / "dispatch" / "lamp-warm-preset"
     assert git(worktree, "branch", "--show-current").strip() == "ticket/warm-preset"
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
+
+
+# The amend-round gate (`dispatch --help`, unreviewed), at its own seam over the toy's two repos:
+# a code branch built commit by commit, and the record a worker keeps in its report on the agent
+# branch. The oracle is the rule --help states; each case is one clause of it.
+
+REVIEW_FIX = "\n\nWorkflow-stage: review\n\nCo-Authored-By: t <t@t>"  # the stage line in a paragraph of its own
+
+
+def branched(toy: Path) -> Path:
+    """The toy with ticket/warm-preset cut in both repos and checked out in the code one."""
+    git(toy, "checkout", "-q", "-b", "ticket/warm-preset")
+    git(toy / "agent", "branch", "ticket/warm-preset")
+    return toy
+
+
+def code(toy: Path, message: str, text: str, path: str = "lamp.txt") -> str:
+    (toy / path).write_text(text)
+    git(toy, "add", path)
+    git(toy, "commit", "-q", "-m", message)
+    return git(toy, "rev-parse", "--short", "HEAD").strip()
+
+
+def record(toy: Path, line: str) -> None:
+    """One line more in this round's report, on the agent branch the worker commits it to."""
+    agent = toy / "agent"
+    git(agent, "checkout", "-q", "ticket/warm-preset")
+    report = agent / "show" / "warm-preset" / "report.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text((report.read_text() if report.exists() else "## Comments\n\n") + line + "\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the report")
+    git(agent, "checkout", "-q", "main")
+
+
+def unreviewed(toy: Path) -> tuple[int, set[str]]:
+    git(toy, "checkout", "-q", "main")
+    said = run(toy, "unreviewed", "warm-preset")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    return said.returncode, {line.split()[0] for line in said.stdout.splitlines()}
+
+
+def test_the_commit_an_amend_round_added_is_the_one_listed(toy: Path) -> None:
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the warm preset", "warm\n")
+    record(toy, f"- [D1] Findings, review range `{cut}..{build}`")
+    fix = code(toy, "fix a finding" + REVIEW_FIX, "warm, fixed\n")
+    record(toy, f"  - Fixed in `{fix}`")
+    amend = code(toy, "the user's ruling: 2700K", "warm, 2700K\n")
+    assert unreviewed(toy) == (1, {amend})
+
+
+def test_naming_the_amend_commit_in_an_answer_does_not_clear_it(toy: Path) -> None:
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the warm preset", "warm\n")
+    record(toy, f"- [D1] Findings, review range `{cut}..{build}`")
+    amend = code(toy, "move the preset", "warm, moved\n")
+    record(toy, f"Addressed: C1\n- C1: moved in `{amend}`")
+    assert unreviewed(toy) == (1, {amend})
+
+
+def test_an_earlier_rounds_record_in_the_ticket_counts(toy: Path) -> None:
+    """Every round's report is imported into the ticket, so the ticket is where a range reviewed two
+    rounds ago is written by now."""
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the warm preset", "warm\n")
+    file = tracked(toy) / "warm-preset.md"
+    file.write_text(file.read_text() + f"\n## Comments\n\n- [D1] Findings, review range `{cut}..{build}`\n")
+    assert unreviewed(toy) == (0, set())
+
+
+def test_a_range_covers_only_what_lies_inside_it(toy: Path) -> None:
+    branched(toy)
+    first = code(toy, "first", "1\n")
+    second = code(toy, "second", "2\n", "b.txt")
+    third = code(toy, "third", "3\n", "c.txt")
+    record(toy, f"reviewed `{first}...{second}`")
+    assert unreviewed(toy) == (1, {first, third})
+
+
+def test_hex_that_names_no_commit_covers_nothing(toy: Path) -> None:
+    branched(toy)
+    build = code(toy, "the warm preset", "warm\n")
+    record(toy, "colour `deadbeefcafe`, range `abcdef0..1234567`")
+    assert unreviewed(toy) == (1, {build})
+
+
+def test_a_new_commit_repeating_a_reviewed_line_needs_a_review(toy: Path) -> None:
+    """Both commits add the one line `    log()` and nothing else, so without context their changed
+    lines are the same: only where they land tells them apart."""
+    code(toy, "two functions", "def f():\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "log in f", "def f():\n    log()\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
+    record(toy, f"reviewed `{cut}..{build}`")
+    again = code(toy, "log in g", "def f():\n    log()\n    pass\n\n\ndef g():\n    log()\n    pass\n", "calls.py")
+    assert unreviewed(toy) == (1, {again})
+
+
+def shared_file(toy: Path, lines: int) -> list[str]:
+    """A file on main both sides of a rebase or merge will edit, before the branch is cut."""
+    body = [f"l{i} = {i}" for i in range(1, lines + 1)]
+    code(toy, "the shared file", "\n".join(body) + "\n", "shared.py")
+    return body
+
+
+def test_a_clean_rebase_beside_a_reviewed_hunk_keeps_the_review(toy: Path) -> None:
+    body = shared_file(toy, 6)
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the branch's edit", "\n".join(["l1 = 10", *body[1:]]) + "\n", "shared.py")
+    record(toy, f"reviewed `{cut}..{build}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main edits a line nearby", "\n".join([*body[:3], "l4 = 40", *body[4:]]) + "\n", "shared.py")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    git(toy, "rebase", "-q", "main")
+    assert unreviewed(toy) == (0, set())
+
+
+def test_a_conflicted_rebase_lists_the_resolved_commit_only(toy: Path) -> None:
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    code(toy, "the warm preset", "warm\n")
+    later = code(toy, "another file", "b\n", "b.txt")
+    record(toy, f"reviewed `{cut}..{later}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main writes the same line", "cold\n")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    subprocess.run(["git", "-C", str(toy), "rebase", "-q", "main"], capture_output=True)
+    (toy / "lamp.txt").write_text("lukewarm\n")
+    git(toy, "add", "lamp.txt")
+    subprocess.run(["git", "-C", str(toy), "-c", "core.editor=true", "rebase", "--continue"],
+                   check=True, capture_output=True)
+    resolved = git(toy, "log", "-1", "--format=%h", "--grep=^the warm preset$").strip()
+    assert unreviewed(toy) == (1, {resolved})
+
+
+def test_a_clean_merge_of_the_same_file_needs_no_review(toy: Path) -> None:
+    body = shared_file(toy, 9)
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the branch's edit", "\n".join(["l1 = 10", *body[1:]]) + "\n", "shared.py")
+    record(toy, f"reviewed `{cut}..{build}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main edits the far end", "\n".join([*body[:8], "l9 = 90"]) + "\n", "shared.py")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    git(toy, "merge", "-q", "--no-edit", "main")
+    assert unreviewed(toy) == (0, set())
+
+
+def test_a_merge_resolution_needs_a_review(toy: Path) -> None:
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the warm preset", "warm\n")
+    record(toy, f"reviewed `{cut}..{build}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main writes the same line", "cold\n")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    subprocess.run(["git", "-C", str(toy), "merge", "-q", "main"], capture_output=True)
+    (toy / "lamp.txt").write_text("lukewarm\n")
+    git(toy, "add", "lamp.txt")
+    git(toy, "commit", "-q", "--no-edit")
+    merge = git(toy, "rev-parse", "--short", "HEAD").strip()
+    assert unreviewed(toy) == (1, {merge})
+
+
+def test_review_refuses_an_unreviewed_round_before_importing_it(toy: Path) -> None:
+    branched(toy)
+    code(toy, "the warm preset", "warm\n")
+    record(toy, "The warm preset lands, and nobody read it.")
+    git(toy, "checkout", "-q", "main")
+    run(toy, "claim", "warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "no review covers" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert "nobody read it" not in (tracked(toy) / "warm-preset.md").read_text()
 
 
 if __name__ == "__main__":
