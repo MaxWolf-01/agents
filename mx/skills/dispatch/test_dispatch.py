@@ -661,7 +661,7 @@ def test_a_range_covers_only_what_lies_inside_it(toy: Path) -> None:
     first = code(toy, "first", "1\n")
     second = code(toy, "second", "2\n", "b.txt")
     third = code(toy, "third", "3\n", "c.txt")
-    record(toy, f"reviewed `{first}...{second}`")
+    record(toy, f"review range `{first}...{second}`")
     assert unreviewed(toy) == (1, {first, third})
 
 
@@ -678,7 +678,7 @@ def test_a_new_commit_repeating_a_reviewed_line_needs_a_review(toy: Path) -> Non
     code(toy, "two functions", "def f():\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     build = code(toy, "log in f", "def f():\n    log()\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
-    record(toy, f"reviewed `{cut}..{build}`")
+    record(toy, f"review range `{cut}..{build}`")
     again = code(toy, "log in g", "def f():\n    log()\n    pass\n\n\ndef g():\n    log()\n    pass\n", "calls.py")
     assert unreviewed(toy) == (1, {again})
 
@@ -694,7 +694,7 @@ def test_a_clean_rebase_beside_a_reviewed_hunk_keeps_the_review(toy: Path) -> No
     body = shared_file(toy, 6)
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     build = code(toy, "the branch's edit", "\n".join(["l1 = 10", *body[1:]]) + "\n", "shared.py")
-    record(toy, f"reviewed `{cut}..{build}`")
+    record(toy, f"review range `{cut}..{build}`")
     git(toy, "checkout", "-q", "main")
     code(toy, "main edits a line nearby", "\n".join([*body[:3], "l4 = 40", *body[4:]]) + "\n", "shared.py")
     git(toy, "checkout", "-q", "ticket/warm-preset")
@@ -706,7 +706,7 @@ def test_a_conflicted_rebase_lists_the_resolved_commit_only(toy: Path) -> None:
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     code(toy, "the warm preset", "warm\n")
     later = code(toy, "another file", "b\n", "b.txt")
-    record(toy, f"reviewed `{cut}..{later}`")
+    record(toy, f"review range `{cut}..{later}`")
     git(toy, "checkout", "-q", "main")
     code(toy, "main writes the same line", "cold\n")
     git(toy, "checkout", "-q", "ticket/warm-preset")
@@ -723,7 +723,7 @@ def test_a_clean_merge_of_the_same_file_needs_no_review(toy: Path) -> None:
     body = shared_file(toy, 9)
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     build = code(toy, "the branch's edit", "\n".join(["l1 = 10", *body[1:]]) + "\n", "shared.py")
-    record(toy, f"reviewed `{cut}..{build}`")
+    record(toy, f"review range `{cut}..{build}`")
     git(toy, "checkout", "-q", "main")
     code(toy, "main edits the far end", "\n".join([*body[:8], "l9 = 90"]) + "\n", "shared.py")
     git(toy, "checkout", "-q", "ticket/warm-preset")
@@ -734,7 +734,7 @@ def test_a_clean_merge_of_the_same_file_needs_no_review(toy: Path) -> None:
 def test_a_merge_resolution_needs_a_review(toy: Path) -> None:
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     build = code(toy, "the warm preset", "warm\n")
-    record(toy, f"reviewed `{cut}..{build}`")
+    record(toy, f"review range `{cut}..{build}`")
     git(toy, "checkout", "-q", "main")
     code(toy, "main writes the same line", "cold\n")
     git(toy, "checkout", "-q", "ticket/warm-preset")
@@ -758,6 +758,71 @@ def test_review_refuses_an_unreviewed_round_before_importing_it(toy: Path) -> No
     assert status_of(toy, "warm-preset") == "claimed"
     assert "nobody read it" not in (tracked(toy) / "warm-preset.md").read_text()
 
+
+
+def test_a_range_written_any_other_way_covers_nothing(toy: Path) -> None:
+    """A worker describing its own commits as a range has not said a review read them."""
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "the warm preset", "warm\n")
+    record(toy, f"Landed `{cut}..{build}`, unmerged, meets AC1.")
+    assert unreviewed(toy) == (1, {build})
+
+
+def test_a_rebase_then_a_repeated_line_leaves_the_repeat_listed(toy: Path) -> None:
+    """A lent id covers one commit: the rebased copy of the reviewed one, not a later commit that
+    adds the same line in the same file."""
+    code(toy, "two functions", "def f():\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "log in f", "def f():\n    log()\n    pass\n\n\ndef g():\n    pass\n", "calls.py")
+    record(toy, f"review range `{cut}..{build}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main moves on", "b\n", "b.txt")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    git(toy, "rebase", "-q", "main")
+    again = code(toy, "log in f", "def f():\n    log()\n    pass\n\n\ndef g():\n    log()\n    pass\n", "calls.py")
+    assert unreviewed(toy) == (1, {again})
+
+
+def test_a_resolution_that_only_reindents_is_listed(toy: Path) -> None:
+    code(toy, "a block", "if on:\n    a()\nb()\n", "calls.py")
+    cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
+    build = code(toy, "call c", "if on:\n    a()\nb()\nc()\n", "calls.py")
+    record(toy, f"review range `{cut}..{build}`")
+    git(toy, "checkout", "-q", "main")
+    code(toy, "main ends the file differently", "if on:\n    a()\nb()\nd()\n", "calls.py")
+    git(toy, "checkout", "-q", "ticket/warm-preset")
+    subprocess.run(["git", "-C", str(toy), "rebase", "-q", "main"], capture_output=True)
+    (toy / "calls.py").write_text("if on:\n    a()\nb()\nd()\n    c()\n")
+    git(toy, "add", "calls.py")
+    subprocess.run(["git", "-C", str(toy), "-c", "core.editor=true", "rebase", "--continue"],
+                   check=True, capture_output=True)
+    resolved = git(toy, "rev-parse", "--short", "HEAD").strip()
+    assert unreviewed(toy) == (1, {resolved})
+
+
+def test_unreviewed_without_the_agent_branch_says_to_fetch(toy: Path) -> None:
+    git(toy, "checkout", "-q", "-b", "ticket/warm-preset")
+    code(toy, "the warm preset", "warm\n")
+    git(toy, "checkout", "-q", "main")
+    said = run(toy, "unreviewed", "warm-preset")
+    assert said.returncode != 0
+    assert "fetch it from the worker host" in said.stderr, said.stderr
+
+
+def test_a_round_with_no_code_and_no_report_says_it_left_nothing_to_review(toy: Path) -> None:
+    branched(toy)
+    agent = toy / "agent"
+    git(agent, "checkout", "-q", "ticket/warm-preset")
+    (agent / "show" / "warm-preset").mkdir(parents=True)
+    (agent / "show" / "warm-preset" / "sketch.md").write_text("a sketch, no report\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "a sketch")
+    git(agent, "checkout", "-q", "main")
+    git(toy, "checkout", "-q", "main")
+    run(toy, "claim", "warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "left nothing to review" in said.stderr, said.stderr
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

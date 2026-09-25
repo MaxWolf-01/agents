@@ -48,7 +48,7 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `17` `both` **Title case headings.** Use sentence case.
 
-- `18` `both` **Decorative emojis.** Remove from headings and bullets. A marker a documented format assigns a meaning (a question, the recommended option, the reasoning under it) is not decoration.
+- `18` `both` **Decorative emojis.** Remove from headings and bullets. A marker a documented format assigns a meaning (`/mx:grilling`'s ❓, ➡️ and 💡: a question, the recommended option, the reasoning under it) is not decoration.
 
 - `19` `both` **Curly quotes.** Replace with straight quotes.
 

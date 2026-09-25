@@ -85,11 +85,12 @@
 #            review covers, one `<sha> <subject>` line each, and exits 1 when
 #            there are any. The record is the ticket, which holds every round's
 #            imported report, and this round's report on the agent branch: a
-#            commit is covered when it falls inside a range written there
-#            (`a1b2c3d..e4f5a6b`, the SHA range a review ran over), when it is
+#            commit is covered when it falls inside a range written there as
+#            ``review range `a1b2c3d..e4f5a6b` `` (the SHA range a review ran
+#            over; a range written any other way covers nothing), when it is
 #            a review fix (a `Workflow-stage: review` line) whose hash is written
 #            there, or when a rebase carried a covered commit's changed lines
-#            onto it unchanged. A merge needs a review when its resolution
+#            onto it unchanged, one commit per covered one. A merge needs a review when its resolution
 #            differs from both parents.
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
@@ -494,17 +495,15 @@ notes_of() { # <slug>
     }'
 }
 
-# The commit ranges a ticket's rounds have landed as, one per line; nothing
-# before the first of them lands.
 # One `<sha> <subject>` line per commit on the code branch up to <tip> that the record on stdin
-# does not cover (`dispatch --help`, unreviewed). A named hash covers only a review fix, so a
-# worker naming its amend commit as the answer to a comment does not clear it. Hex strings that
-# name no commit resolve to nothing and cover nothing.
+# does not cover (`dispatch --help`, unreviewed). A range counts only as a review range, and a named
+# hash only as a review fix: a worker describing its own commits, as a range or by hash, clears
+# none of them. Hex strings that name no commit resolve to nothing and cover nothing.
 unreviewed_of() { # <tip>, the record on stdin
     local tip=$1 text covered patches c r files p
     text=$(cat)
     covered=$(
-        grep -oE '\b[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b' <<<"$text" | while IFS= read -r r; do
+        grep -ioE 'review range `?[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b' <<<"$text" | grep -oE '[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}' | while IFS= read -r r; do
             git -C "$repo_root" rev-list "${r%%..*}..${r##*.}" 2>/dev/null
         done
         # A range's ends are not hashes a finding names: its start lies outside it.
@@ -513,11 +512,16 @@ unreviewed_of() { # <tip>, the record on stdin
             git -C "$repo_root" log -1 --format=%B "$c" | grep -qx 'Workflow-stage: review' && echo "$c"
         done
     )
-    # Changed lines only, no context: a change beside a reviewed hunk leaves a rebase clean and the
-    # change the same. Only commits a rebase took off the branch lend their ids, or a new commit
-    # repeating a reviewed line (an import, a log call) would pass as covered.
-    patch_id() { git -C "$repo_root" diff-tree -p -U0 --no-commit-id "$1" | git patch-id --stable | cut -d' ' -f1; }
-    patches=$(for c in $covered; do git -C "$repo_root" merge-base --is-ancestor "$c" "$tip" || patch_id "$c"; done)
+    # A rebase rewrites every SHA the record names, so a covered commit no longer on the branch lends
+    # its changed lines' id, context-free so an edit beside a reviewed hunk leaves it the same and
+    # whitespace-exact so a re-indenting resolution does not. Each lent id pairs with the subject a
+    # rebase keeps and covers one commit: a new commit repeating a reviewed line (an import, a log
+    # call) matches neither the pair nor a spent one.
+    patch_id() { git -C "$repo_root" diff-tree -p -U0 --no-commit-id "$1" | git patch-id --verbatim | cut -d' ' -f1; }
+    patches=$(for c in $covered; do
+        git -C "$repo_root" merge-base --is-ancestor "$c" "$tip" ||
+            printf '%s %s\n' "$(patch_id "$c")" "$(git -C "$repo_root" log -1 --format=%s "$c")"
+    done)
     for c in $(git -C "$repo_root" rev-list --reverse "$(git -C "$repo_root" merge-base "$base" "$tip")..$tip"); do
         if git -C "$repo_root" rev-parse -q --verify "$c^2" >/dev/null; then
             # Only the files with a hunk neither parent had: a hand resolution.
@@ -525,8 +529,11 @@ unreviewed_of() { # <tip>, the record on stdin
             [ -n "$files" ] || continue
         fi
         grep -qxF "$c" <<<"$covered" && continue
-        p=$(patch_id "$c")
-        [ -n "$p" ] && grep -qxF "$p" <<<"$patches" && continue
+        p="$(patch_id "$c") $(git -C "$repo_root" log -1 --format=%s "$c")"
+        if grep -qxF "$p" <<<"$patches"; then
+            patches=$(awk -v k="$p" '!spent && $0 == k { spent = 1; next } { print }' <<<"$patches")
+            continue
+        fi
         git -C "$repo_root" log -1 --format='%h %s' "$c"
     done
 }
@@ -539,14 +546,17 @@ record_of() { # <slug> <agent-tip>: the ticket, then the round's report
 unreviewed() {
     locate
     id=$1
+    [ -f "$tickets/$id.md" ] || die "no ticket at $tickets/$id.md"
     code_tip=$(git -C "$repo_root" rev-parse --verify -q "ticket/$id") || die "no branch ticket/$id in $repo_root; fetch it from the worker host first"
-    agent_tip=$(git -C "$agent_top" rev-parse --verify -q "ticket/$id") || agent_tip=$agent_base
+    agent_tip=$(git -C "$agent_top" rev-parse --verify -q "ticket/$id") || die "no branch ticket/$id in $agent_top; fetch it from the worker host first"
     list=$(record_of "$id" "$agent_tip" | unreviewed_of "$code_tip") || exit 1
     [ -z "$list" ] && return 0
     echo "$list"
     return 1
 }
 
+# The commit ranges a ticket's rounds have landed as, one per line; nothing
+# before the first of them lands.
 rounds_of() { "$tracker" get "$1" diff 2>/dev/null; } # <slug>
 
 review() {
