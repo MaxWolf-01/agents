@@ -1,9 +1,10 @@
 ---
-status: review
+status: done
 parent: ticket-file-contract
 blocked-by: [scripts-go-through-tracker-command, skills-and-glossary-speak-one-ticket-kind]
 priority: 1
 size: L
+diff: [c47f795..90fff59]
 ---
 
 # Workers report, the orchestrator writes the tickets
