@@ -1,13 +1,7 @@
+/agent/
 TODO
-agent/research
-agent/reviews
 scratch/
 .claude/settings.local.json
 __pycache__/
 
-agent/show/**/*.png
 docs/figures/*.png
-agent/show/**/out/
-agent/board.html*
-agent/diffviews/
-agent/show/context-format/*.json
