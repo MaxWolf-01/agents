@@ -89,7 +89,7 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
             return 0
         files = staged_paths(tracker.root)
         if files and (built := ticket_branch_out(tracker.root)):
-            raise Refused([f"{file}:1: {built} is a ticket branch, and a ticket file is written in the tracker's own checkout, never on one" for file in files])
+            raise Refused([f"{file}:1: {built} is a ticket branch, and a ticket file is written in the agent repo's main checkout, never on one" for file in files])
     found = [refusal for path in files for refusal in refusals_of(tracker.at_path(path), tracker)]
     for refusal in found:
         print(refusal)
@@ -406,7 +406,7 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
 
 
 def ticket_branch_out(root: Path) -> str | None:
-    """The `ticket/<slug>` branch the tracker's own checkout has out, where it has one: what a
+    """The `ticket/<slug>` branch this checkout of the tracker has out, where it has one: what a
     worker's copy of the agent repo is on, and what nothing writes a ticket file on."""
     said = tried(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     return said if said.startswith("ticket/") else None

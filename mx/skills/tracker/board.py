@@ -93,7 +93,7 @@ that ticket's row; a click on a node in the window leaves the window where it is
 and moves the board to that row.
 
 One board per tracker, showing what is actionable now. It reads one directory:
-every ticket file is written and committed in the tracker's own checkout,
+every ticket file is written and committed in the agent repo's main checkout,
 claims and review flips included, so a build is on the board from its claim
 onward.
 
