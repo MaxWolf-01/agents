@@ -34,12 +34,12 @@ What each level looks like for a thing of a given shape. The code level is the s
 | An exchange or a flow: three or more parties, an ordering that matters, a long or interactive run | sequence diagram | the flow run: a recording, or a tmux pane to attach to |
 | A state with named transitions | state chart | |
 | A new or moved module boundary | dependency diagram | |
-| A prompt, a skill, a process change | sequence or dependency diagram, when the workflow moved | a role-played exchange: what the agent answered before, what it answers now, marked as role-play |
+| A prompt, a skill, a process change | sequence or dependency diagram, when the workflow moved | a role-played exchange: what the agent answered before, what it answers now, marked as role-play; a real session is output nobody reads, and most often the diff is all such a change needs |
 | A script, a hook, a CLI | the modules it reads and writes, when that moved | what an agent or the user types, and what it produced |
 | A page or a UI | | the page rendered: screenshots, the page itself, or both; before the page exists, a prototype's render (`/mx:prototype`) |
 | A config or a keybinding | | the setting or the keystroke, and what it does |
 
-Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it; a change of no shape the table names gets no show, and the review page's diff is the whole of it. Every document takes this table, an ADR included, and most ADRs hit no row.
+Shape decides, never size: a one-column change gets no ER diagram, a two-table schema gets one. A thing of several shapes gets every row it hits. An empty cell means nothing is owed there, and no cell is padded to have something in it. At a landing the table says what a show would hold, and the diff decides whether one is owed: where the review page's diff already shows all there is to see, it is the whole of it. Every document takes this table, an ADR included, and most ADRs hit no row.
 
 The rows are examples, not the boundary. Media craft below is the open set, and an artifact nothing here names is the right answer whenever it shows the thing better. An explanation built for learning is one more case, and a page in the distill.pub tradition, with figures the reader pokes at, is what it wants.
 
@@ -47,14 +47,14 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 Work that lands for the user's ruling comes with its review page and, when it holds something the diff does not make visible, one show. It is for the user's understanding of what was built; the tests and the review are what prove it works. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
-- **One per landing.** Every ticket that reached review together shares one show: a wave, or a tree of child tickets built while the user was away, whose show goes to the parent ticket's directory.
+- **One per landing.** A tree's show covers every child ticket in review the user has not ruled on yet, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
-- **The few things the user would notice**, never everything the change touched: a tour of every command is what a test suite does. Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
+- **The few things the user would notice.** Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
 - **Output only another host can produce**, a training run's metrics on the GPU host, is drawn from the data that host's work committed, never rerun (`/mx:ml`).
 
 ## Where it goes
 
-An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work, or a slug of its own where that names it better. That directory is the agent repo's, so `git -C agent` is what commits it. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
+An artifact goes to the show directory of the work it serves, committed with that work: `agent/show/<slug>/` for a ticket, `agent/show/<branch>/` for loose work. That directory is the agent repo's, so `git -C agent` is what commits it, and a landing's show is committed in its main checkout, as a ticket file is. One that serves no ticket or branch goes to `~/Downloads/show/<slug>/` instead: the user wants it throwaway, there is no repo to keep it in, or the repo is the wrong home for it.
 
 ## A figure
 
@@ -67,7 +67,7 @@ Either way the render is regenerated from the source whenever the decision moves
 
 ## A runnable artifact
 
-What runs in a show directory (a walkthrough that drives the tool, a script that renders a sample) is an executable file taking no arguments, with a shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. It writes what it produces into `out/` beside itself, untracked because the next run regenerates it; it opens what it produced when a display is there and lets go of it rather than waiting on it; it runs from a fresh checkout on any host where the project is installed, and says so when it fails rather than printing an empty result. The board copies the command that runs it.
+What runs in a show directory (a walkthrough that drives the tool, a script that renders a sample) is an executable file taking no arguments, with a shebang and whatever language it needs; a one-off script is not a CLI, so `/mx:tyro-cli` does not bind it. It writes what it produces into `out/` beside itself, untracked because the next run regenerates it; it opens what it produced when a display is there and lets go of it rather than waiting on it; it runs from a fresh checkout on any host where the project is installed, and says so when it fails rather than printing an empty result.
 
 ## Register
 

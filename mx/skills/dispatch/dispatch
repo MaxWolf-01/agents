@@ -35,8 +35,7 @@
 #            a spawn (or `fuzz start`) is where you name it: the run is
 #            recorded here, so wait, fetch, log, stop, resume and cleanup find
 #            a ticket's host from the slug; `cleanup` forgets the run it just
-#            removed and ends that ticket's staged demo here, session and
-#            worktree; `resume` claims a review ticket again, as `claim` would.
+#            removed; `resume` claims a review ticket again, as `claim` would.
 #            `probe` with no --host polls every host this branch still has a run
 #            on, each line behind its host; one that cannot answer says so in
 #            place of its workers.
@@ -59,9 +58,7 @@
 #            the host stayed unreachable for two minutes.
 #   fetch    brings both ticket/<slug> branches from the host into the two
 #            repos here, replacing an earlier fetch of them (ticket branches get
-#            rebased) and ending the staged demo of the round before, whose
-#            worktrees would otherwise hold the branches the fetch writes. The
-#            worker's report is a file on the agent branch, so it arrives with
+#            rebased). The worker's report is a file on the agent branch, so it arrives with
 #            it.
 #   push     this branch, from both repos, to every host still holding a run of
 #            it, so a worker resumed to rebase finds the tips it is rebasing
@@ -80,20 +77,6 @@
 #            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
 #            once both have merged. One commit either way, and none when the
 #            ticket already says so.
-#            While a branch is unmerged it also stages the ticket's demo for the
-#            user to run: the ticket's branches checked out beside this worktree
-#            as <repo>-<slug> and its `agent/`, and the show directory's `demo`
-#            typed unrun at the prompt of a detached tmux session named
-#            job-<repo>-<slug>-demo, through `job`'s staged mode. The user
-#            starts it, so a demo meant to be watched is watched from its first
-#            line. The worktrees are plain checkouts with no install step run in
-#            them, so the demo has what the user's machine already has and
-#            nothing more. Anything that stops a staging says so and leaves the
-#            rest of the landing standing: no demo on the branch, one committed
-#            unexecutable, a `job` without the mode or no `job` at all. A ticket
-#            whose closing comment says the diff is the demo has none to stage,
-#            and reads the same here as one that lost its demo; the closing
-#            comment is what tells the two apart.
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
@@ -139,7 +122,7 @@ locate() {
     # ticket file is written there and on no branch of its own.
     agent_base=$(git -C "$agent_top" branch --show-current)
     [ -n "$agent_base" ] || die "$agent_top is on a detached HEAD; ticket files are written on the branch it has out"
-    diffviews=$agent_top/diffviews show=agent/show
+    diffviews=$agent_top/diffviews
     gitdir=$(realpath "$(git rev-parse --git-common-dir)")
     # The bare repo on a host, its ticket worktrees and its scratch dirs all
     # carry the repo's name, and nothing records it: the common git dir is
@@ -415,7 +398,7 @@ ctl() {
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
-    [ -n "$forgets" ] && { unstage_demo "$2"; forget_run "$name"; }
+    [ -n "$forgets" ] && forget_run "$name"
     [ "$sub" = resume ] && reclaim "$2"
     return 0
 }
@@ -439,108 +422,16 @@ fetch() {
     locate; ticket_host "$1"
     branch=ticket/$1
     if [ "$host" = local ]; then
-        # The worker's own worktrees are the ones a staging here reused, and the
-        # worker is the one that moves them: nothing to unstage.
         for top in "$repo_root" "$agent_top"; do
             git -C "$top" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $top"
         done
         echo "local host: $branch is already here, in both repos"
     else
-        # A fetch is the next round of this ticket arriving, so the round before
-        # it stops waiting: git refuses to fetch into a branch a worktree holds,
-        # and a staged session that outlived the fetch would run the previous
-        # round's file.
-        unstage_demo "$1"
         for top in "$repo_root" "$agent_top"; do
             run git -C "$top" fetch -q "${host//[@.]/-}" "+$branch:$branch" ||
                 die "fetching $branch from $host into $top failed"
         done
     fi
-}
-
-# What a ticket's demo is called on both sides of the staging. The worktree path
-# is dispatch-ctl's `names` derivation and has to stay it: on a local host those
-# are the worker's own worktrees, which is what makes the staging reuse them
-# rather than check the branches out twice.
-demo_names() { # <slug>
-    demo_path=$show/$1/demo
-    demo_in_agent=show/$1/demo       # the same file, from the agent repo's own root
-    demo_branch=ticket/$1
-    demo_worktree=$(dirname "$repo_root")/$repo-$1
-    demo_job=$repo-$1-demo
-    demo_session=job-$demo_job
-}
-
-# A directory is a ticket's worktree only if it has that branch checked out;
-# anything else there is someone's, and neither staged into nor removed.
-holds_ticket() { [ "$(git -C "$1" rev-parse --abbrev-ref HEAD 2> /dev/null)" = "$2" ]; }
-
-not_staged() { echo "dispatch: $1; nothing staged" >&2; } # <why>
-
-# The demo left waiting for the user to run: the ticket's two branches checked
-# out as the project keeps them, the agent repo inside the code one, and the
-# demo typed at a prompt with the Enter theirs to press. The staged mode is
-# `job`'s, so what they start is an ordinary job and its log and status land
-# where every job's do. Every way of not staging ends the same way, said out
-# loud and carried on from: the status is written and the page rendered by the
-# time this runs, and a landing whose session did not open is not a failed
-# landing.
-stage_demo() { # <ticket> <agent tip>
-    demo_names "$1"
-    # Mode as well as presence: a demo committed 100644 stages fine and fails
-    # with "permission denied" under the user's own Enter.
-    case $(git -C "$agent_top" ls-tree "$2" -- "$demo_in_agent" | cut -c1-6) in
-        100755) ;;
-        "")     not_staged "no $demo_path on $demo_branch, whether the diff is the demo or the demo is missing"; return 0 ;;
-        *)      not_staged "$demo_path on $demo_branch is not executable"; return 0 ;;
-    esac
-    command -v job > /dev/null ||
-        { not_staged "no \`job\` on PATH here"; return 0; }
-    job --help 2> /dev/null | grep -qw stage ||
-        { not_staged "the \`job\` here has no staged mode (\`job --help\`)"; return 0; }
-    if [ -e "$demo_worktree" ]; then
-        holds_ticket "$demo_worktree" "$demo_branch" ||
-            { not_staged "$demo_worktree is not $demo_branch"; return 0; }
-    else
-        run git worktree add "$demo_worktree" "$demo_branch" ||
-            { not_staged "could not check $demo_branch out at $demo_worktree"; return 0; }
-    fi
-    if [ -e "$demo_worktree/agent" ]; then
-        holds_ticket "$demo_worktree/agent" "$demo_branch" ||
-            { not_staged "$demo_worktree/agent is not $demo_branch"; return 0; }
-    else
-        run git -C "$agent_top" worktree add "$demo_worktree/agent" "$demo_branch" ||
-            { not_staged "could not check $demo_branch out at $demo_worktree/agent"; return 0; }
-    fi
-    # Not echoed: job names are unique until `job rm`, and on a first landing
-    # this is a name nothing has taken.
-    job rm "$demo_job" > /dev/null 2>&1
-    run job stage "$demo_job" --cwd "$demo_worktree" -- "./$demo_path" ||
-        { not_staged "\`job stage $demo_job\` failed"; return 0; }
-    echo "demo staged unrun in tmux session $demo_session: $demo_worktree/$demo_path"
-}
-
-# The staging ends when the round it showed does: at the ruling for accept, redo
-# and reject, which all reach `ctl cleanup`, and at the fetch of the next round
-# for amend, since git refuses to fetch into a branch a worktree holds.
-unstage_demo() { # <ticket>
-    demo_names "$1"
-    # `job rm` kills the session and forgets the run; the session is what is
-    # left to kill when the staging registered no run to forget. Its own output
-    # is suppressed, since every ticket is unstaged and most were never staged,
-    # and the line below says so when there was something to undo.
-    if job rm "$demo_job" > /dev/null 2>&1; then
-        echo "unstaged the demo in $demo_session"
-    else
-        tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"
-    fi
-    # On a local host the worker's own cleanup removes these same worktrees
-    # first, so whoever gets there second finds them gone. The agent one goes
-    # before the code one it sits inside.
-    holds_ticket "$demo_worktree/agent" "$demo_branch" &&
-        run git -C "$agent_top" worktree remove --force "$demo_worktree/agent"
-    holds_ticket "$demo_worktree" "$demo_branch" && run git worktree remove --force "$demo_worktree"
-    return 0
 }
 
 is_merged() { git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$(base_at "$1")"; } # code|agent <tip>
@@ -618,7 +509,7 @@ review() {
 
     # The worker's words, in one write: its closing comment, the questions its build raised, the
     # assumptions the notes below are made of, and the flip to `review` with them. The report is a
-    # file on the agent branch, where the worker committed it beside its demo. What is imported is
+    # file on the agent branch, where the worker committed it. What is imported is
     # the report this round wrote, which is the one whose blob differs from the last imported: a
     # resumed round starts with the round before it still committed there, and bringing that in
     # again would say everything it says twice.
@@ -690,9 +581,6 @@ review() {
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve "$diffviews"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
-
-    # Last, so the session the landing message names is the last line printed.
-    is_merged code "$code_tip" && is_merged agent "$agent_tip" || stage_demo "$id" "$agent_tip"
 }
 
 cmd=${1:-}

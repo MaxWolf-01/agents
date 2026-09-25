@@ -63,7 +63,7 @@ Which status may follow which is `tracker`'s, refused by the rule it names. What
 - **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It is on the frontier and built like an open ticket, so what waits is the ruling and not the build; its brief says what it was cut from.
 - **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already; silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
-- **review**: the work is finished and waits for the user's **ruling**, made on the ticket's review page and its show, or as a line in chat. It unblocks nothing, so a dependent never builds on a guess.
+- **review**: the work is finished and waits for the user's **ruling**, made on the ticket's review page, and on the landing's show where there is one, or as a line in chat. It unblocks nothing, so a dependent never builds on a guess.
 - **done**: the accept, and nothing less. A ticket the user is in the loop for (`needs-user`) is done on their ruling with no branch to merge, travelling the same statuses to get there.
 
 The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's CLAUDE.md, the tool's config.

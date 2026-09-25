@@ -58,7 +58,7 @@ The status of a ticket whose work is finished and waits for the user's ruling.
 _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:
-The user's answer on what a ticket built, made on its review page and show: accept, amend, redo or reject.
+The user's answer on what a ticket built, made on its review page, and on the landing's show where there is one: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Ticket question**:
@@ -145,7 +145,7 @@ _Avoid_: mark (a call mark or a row mark), xfail, skip
 
 **Show**:
 An explanation carried by an artefact the reader looks at, built for their understanding of a thing rather than as proof of it.
-_Avoid_: demo (the user's word for a show of the built thing's own output), explainer, walkthrough
+_Avoid_: demo (the user's word for a show of the built thing's own output)
 
 ### Sessions
 
