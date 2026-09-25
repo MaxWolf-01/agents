@@ -1,6 +1,7 @@
 ---
 name: tmux
 description: "Run commands in tmux whenever they might not come back on their own or need eyes on them: builds, test suites, training runs, servers, anything over the network, anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
+allowed-tools: Bash(job --help)
 ---
 
 # tmux
@@ -11,9 +12,9 @@ How long you expect it to take is the wrong test. The command you thought would 
 
 ## Anything you will wait on: `job`
 
-Read `job --help` before the first job of a session. It is the only home of the commands, the exit codes and the wait flags.
-
-Name jobs `<project>-<activity>`, like `api-migrate` or `docs-build`. The name shows up in `tmux ls`, and it stays taken until `job rm`.
+```text
+!`job --help || echo "job is not installed on this machine. Make sure it is accessible: install https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job into a directory on PATH, executable, then load this skill again."`
+```
 
 ## A pane you drive yourself
 

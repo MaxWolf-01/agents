@@ -2,13 +2,12 @@
 name: permissions-review
 description: Review and update Claude Code's auto-approved command allowlist based on Bash commands that triggered permission prompts in recent sessions.
 disable-model-invocation: true
+allowed-tools: Bash(uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_unapproved.py --help)
 ---
 
 # Permissions Review
 
 Scan recent sessions for Bash commands that triggered permission prompts, then recommend and apply allowlist additions. Reduce friction for read-only / benign operations; keep state-modifying commands gated. The review is complete when every signature the scanner reports has landed in exactly one bucket: allowlisted, rejected, or raised with the user.
-
-The scanner's `--help` says how Claude Code matches a command (per segment, with a built-in read-only set that bypasses settings.json) and what follows for the allowlist. Its copy of the built-in set goes stale between Claude Code versions: settle any doubt by **probing**, running the command in a live session. Running unprompted while absent from settings.json puts it in the built-in set.
 
 ## Safety bar
 
@@ -40,13 +39,19 @@ uv run <skill-dir>/scripts/scan_unapproved.py --days <N>
 
 The tests cover the shell parsing the scanner depends on. They take a second; a failure means the numbers below are fiction.
 
-The scanner defaults to the settings files of step 1 and every project's sessions, which is the right scope: friction rarely stays inside one project. `--help` says how to narrow it to one project when asked.
+```text
+!`uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_unapproved.py --help`
+```
 
-Read `--show-auto-approved` when the blocked list looks suspiciously short, and after a Claude Code upgrade.
+Settle any doubt about the built-in set by **probing**: run the command in a live session, and one that runs unprompted while absent from settings.json is in it.
+
+Keep the default scope unless the user asks to narrow it: friction rarely stays inside one project.
+
+Read `--show-auto-approved` too when the blocked list looks suspiciously short.
 
 ### 3. Categorize
 
-Spot-check the top few entries against the safety bar: one that looks obviously harmless means the built-in set has drifted, which `--show-auto-approved` confirms.
+Spot-check the top few entries against the safety bar: one that looks obviously harmless may be in a built-in set that has grown past the scanner's copy, which probing it settles.
 
 Drop one-offs (fewer than ~3 occurrences) unless clearly recurring across projects, and cap recommendations at ~20 so the user can skim. Then place every remaining signature in one bucket of the safety bar and present a table: signature, count, bucket, one-line rationale.
 
