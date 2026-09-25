@@ -1,5 +1,5 @@
 ---
-status: claimed
+status: done
 priority: 1
 size: L
 ---
@@ -97,9 +97,9 @@ As of board-orients' chain (tickets 01 to 10) plus master:
 ## Acceptance criteria
 
 - [x] Every question the grilling raised is decided and recorded above.
-- [ ] Every construct in the table above has an owner: read through the parser, merged, or dropped.
-- [ ] The three child tickets are filed with `parent: ticket-file-contract`.
-- [ ] This ticket's close-out review has run over the whole output.
+- [x] Every construct in the table above has an owner: read through the parser, merged, or dropped.
+- [x] The three child tickets are filed with `parent: ticket-file-contract`.
+- [x] This ticket's close-out review has run over the whole output.
 
 ## Comments
 
@@ -110,3 +110,5 @@ Rulings of 2026-09-24 on the two sibling builds, relayed in chat:
 - `/mx:to-tickets` becomes `mx/skills/tracker/SLICING.md`: accepted.
 - The release that ships this is a major version. Other repos' trackers are converted by the user, on demand; no ticket per repo.
 - Open, drawn at `agent/show/ticket-file-contract/open-points.html`: where a build's questions get their answers, light review and the ticket's context, the tracker skill's size, the README figures.
+
+Closed 2026-09-25 on the user's go: a light close-out review (`agent/show/ticket-file-contract/close-out-review.md`) and its fixes (`close-out-review-fixes`), harden and a review of the fixes skipped for speed, harden owed to a later pass. `close-out-review-fixes`' D1 (the Testing seams reworded to P7's four seams) and D2 (`tracker data -` keeping stdin with `--called`) were accepted as built by the orchestrator.

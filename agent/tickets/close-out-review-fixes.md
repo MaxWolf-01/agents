@@ -1,8 +1,9 @@
 ---
-status: review
+status: done
 parent: ticket-file-contract
 priority: 1
 size: M
+diff: [5090b5b..a855f5c]
 ---
 
 # The close-out review's findings, fixed
