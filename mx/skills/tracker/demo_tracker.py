@@ -9,10 +9,11 @@ priority and every size, tickets the user is in the loop for and tickets no work
 so that each of a row's marks is laid out somewhere.
 
 Two trees (a parent ticket with six child tickets, one with three) and eleven tickets in no tree,
-two builds waiting on a ruling on their ticket branches with their questions there, one build
-stopped on two questions of which one is ruled, one ticket whose only question is ruled, one ticket
-with no question at all, review pages beside the tickets, acceptance criteria a build in review has
-half met, a property cited by the criterion that takes it on, demo scripts and a figure under
+two builds waiting on a ruling with their branches unmerged and their questions in the tracker's
+copy, where `dispatch review` imported them from the worker's report, one build stopped on two
+questions of which one is ruled, one ticket whose only question is ruled, one ticket with no
+question at all, review pages beside the tickets, acceptance criteria a build in review has half
+met, a property cited by the criterion that takes it on, demo scripts and a figure under
 agent/show, and four sessions on the commits: three with a transcript under the claude/ config
 directory this writes, one worker on another host with none.
 
@@ -505,12 +506,16 @@ Bump the interpreter pin and fix the two deprecations.
 """)
 
 
-# ---- two builds waiting on a ruling, their questions on their ticket branches ----
+# ---- two builds waiting on a ruling, their reports imported into the tracker's copy ----
 
 
 def build_in_review(repo: Path) -> None:
     git(repo, "checkout", "-q", "-b", "ticket/map-columns")
     write(repo / "src/mapping.py", '"""Column mappings, remembered per bank."""\n')
+    commit(repo, S4, "2026-09-18T14:02:00+02:00", "map-columns: the mapping step", "src")
+    git(repo, "checkout", "-q", "master")
+
+    # the orchestrator's import: the worker's closing comment, its questions and the review flip
     ticket = repo / "agent/tickets/map-columns.md"
     set_status(ticket, "review")
     ticket.write_text(ticket.read_text().replace("- [ ] The second import", "- [x] The second import"))
@@ -523,7 +528,7 @@ def build_in_review(repo: Path) -> None:
 
 ## Comments
 
-The mapping step is built and remembers a bank's layout; on branch `ticket/map-columns`, not merged.
+The mapping step is built and remembers a bank's layout, on `ticket/map-columns`, not merged.
 
 **Demo**
 
@@ -534,10 +539,6 @@ The mapping step is built and remembers a bank's layout; on branch `ticket/map-c
 - [D4] Assumptions
   - A1 `src/mapping.py:1`: one mapping per bank, keyed by the export's header row.
 """)
-    commit(repo, S4, "2026-09-18T14:02:00+02:00", "map-columns: the mapping step", "src", "agent/tickets/map-columns.md")
-    git(repo, "checkout", "-q", "master")
-
-    set_status(ticket, "review")
     write(repo / "agent/show/map-columns/demo", """#!/usr/bin/env bash
 # Imports a sample export twice: the first run asks for the mapping, the second uses it.
 echo "== first import from Sparkasse: asks for the columns"
@@ -557,6 +558,9 @@ echo "12 rows read, 12 added"
 
     git(repo, "checkout", "-q", "-b", "ticket/speed-up-tests")
     write(repo / "src/conftest.py", '"""One template database per session, copied per test."""\n')
+    commit(repo, S4, "2026-09-19T10:45:00+02:00", "speed-up-tests: a template database per session", "src")
+    git(repo, "checkout", "-q", "master")
+
     ticket = repo / "agent/tickets/speed-up-tests.md"
     set_status(ticket, "review")
     append(ticket, """
@@ -567,7 +571,7 @@ echo "12 rows read, 12 added"
 
 ## Comments
 
-The suite runs in 48 seconds, down from four minutes; on branch `ticket/speed-up-tests`, not merged.
+The suite runs in 48 seconds, down from four minutes, on `ticket/speed-up-tests`, not merged.
 
 **Demo**
 
@@ -577,10 +581,6 @@ The suite runs in 48 seconds, down from four minutes; on branch `ticket/speed-up
 
 - [D3] Friction: the CI cache key did not include the migrations directory.
 """)
-    commit(repo, S4, "2026-09-19T10:45:00+02:00", "speed-up-tests: a template database per session", "src", "agent/tickets/speed-up-tests.md")
-    git(repo, "checkout", "-q", "master")
-
-    set_status(ticket, "review")
     write(repo / "agent/show/speed-up-tests/demo", """#!/usr/bin/env bash
 # Runs the suite twice and prints the wall time of each run.
 echo "== before: 4 min 02 s"

@@ -1,0 +1,14 @@
+sequenceDiagram
+    autonumber
+    participant O as the orchestrator
+    participant T as the ticket file<br/>in the agent repo
+    participant A as the agent repo's<br/>ticket branch
+    participant W as the worker
+    O->>T: status: claimed
+    O->>W: the ticket's context, and both repos on its ticket branch
+    W->>A: its show directory: the demo, the figures, report.md
+    Note over A,W: the committed report is the finished signal
+    W-->>O: exits
+    A-->>O: dispatch fetch brings the branch, the report on it
+    O->>T: dispatch review imports it: the comment,<br/>the questions, status: review
+    Note over O,T: `tracker rule` answers a question here, before the merge

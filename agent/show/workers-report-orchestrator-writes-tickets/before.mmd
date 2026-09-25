@@ -1,0 +1,15 @@
+sequenceDiagram
+    autonumber
+    participant O as the orchestrator
+    participant T as the ticket file<br/>in your checkout
+    participant B as the ticket file<br/>on the ticket branch
+    participant W as the worker
+    O->>T: status: claimed
+    O->>W: the ticket's context
+    W->>B: its questions, its closing comment
+    W->>B: status: review
+    Note over B,W: the worker's words are on its branch alone
+    W-->>O: exits, and the orchestrator reads the flip off the branch
+    O->>T: status: review
+    Note over O,T: `tracker rule` has no question to answer here yet
+    O->>T: the merge brings the branch's copy in

@@ -4,8 +4,7 @@
 # ///
 """Checks for the board's reading of a tracker. Run: uv run test_board.py
 
-Four seams: the tracker loader (a fixture tracker on disk in, ticket state out), the
-checkout discovery (a git repo with worktrees in, which copy of what is read out), the graph
+Three seams: the tracker loader (a fixture tracker on disk in, ticket state out), the graph
 sources (which tickets become nodes, in which class, joined by which edges), and the rendered
 page (groups, rows, the attributes the page's script matches against the graph sources). The
 oracle is the tracker skill and the board's --help: the frontier is open, unblocked,
@@ -13,8 +12,9 @@ unclaimed; a proposed ticket is not open whatever blocks it; a build in review w
 user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
 is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
-tickets with an edge; a ticket a branch added is shown, one it merely inherited is not; a ticket
-the tracker's own parser refuses is refused here, with its file and its line.
+tickets with an edge; one tracker directory holds every ticket the board shows, a build in
+flight included; a ticket the tracker's own parser refuses is refused here, with its file and
+its line.
 
 Under "properties" at the end sit the executable Properties of
 mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec is their oracle.
@@ -44,7 +44,6 @@ from board import (
     STATUS_SYMBOL,
     Seen,
     Diffviews,
-    Roots,
     board_graph,
     changed_note,
     content_stamp,
@@ -56,7 +55,6 @@ from board import (
     run_out,
     serve_diffviews,
     ticket_sessions,
-    tracker_roots,
     tracker_snapshot,
     tree_graph,
 )
@@ -130,10 +128,10 @@ def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return stub
 
 
-def load(root: Path) -> dict[str, board.Ticket]:
+def load(root: Path, repo: Path | None = None) -> dict[str, board.Ticket]:
     """The tracker as the board reads it, by slug."""
     dv = Diffviews(root.parent / "diffviews", None)
-    return {t.slug: t for t in load_tickets(Roots(root, []), dv)}
+    return {t.slug: t for t in load_tickets(root, repo, dv)}
 
 
 def page_of(root: Path) -> str:
@@ -386,22 +384,6 @@ def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(trac
     assert json.dumps(board.GRAPH_WINDOW).replace("</", "<\\/") in page, "the window is built from markup of its own"
 
 
-def test_a_row_read_from_a_worktree_links_that_worktrees_review_page(repo: Path, tracker: Path) -> None:
-    """`dispatch review` renders a page in the worktree it runs in, which is the worktree the tree's
-    parent ticket is built in, so that is where the row's link has to point while the tree is in
-    flight; a row the main checkout holds links the main checkout's."""
-    wt = repo.parent / "wt"
-    (wt / "agent" / "diffviews").mkdir(parents=True)
-    (wt / "agent" / "diffviews" / "second.html").write_text("<html>")
-    (tracker.parent / "diffviews").mkdir(parents=True)
-    (tracker.parent / "diffviews" / "second.html").write_text("<html>")
-    (tracker.parent / "diffviews" / "quoted.html").write_text("<html>")
-    roots = tracker_roots(tracker)
-    read = {t.slug: t for t in load_tickets(roots, Diffviews(tracker.parent / "diffviews", None))}
-    assert read["second"].diffview == f"file://{wt / 'agent' / 'diffviews' / 'second.html'}"
-    assert read["quoted"].diffview == f"file://{tracker.parent / 'diffviews' / 'quoted.html'}"
-
-
 def test_a_row_links_its_review_page(tracker: Path) -> None:
     dv = tracker.parent / "diffviews"
     dv.mkdir(parents=True)
@@ -422,7 +404,7 @@ def test_a_row_links_its_review_page_on_the_address_diffview_serves(tracker: Pat
     (dv / "quoted.html").write_text("<html>")
     diffviews = serve_diffviews(dv)
     assert Path(f"{stub_diffview}.args").read_text().split() == ["--serve", str(dv)]
-    page = render_page("demo", load_tickets(Roots(tracker, []), diffviews), log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", load_tickets(tracker, None, diffviews), log="", stamp="s", stamp_src="s.js")
     assert f'href="{STUB_ADDRESS}/second.html"' in page
     assert f'href="{STUB_ADDRESS}/quoted.html"' in page
 
@@ -464,65 +446,12 @@ def git(cwd: Path, *args: str) -> str:
 
 @pytest.fixture
 def repo(tracker: Path) -> Path:
-    """The tracker committed on main, and a worktree on the tree's parent ticket's branch beside the repo."""
+    """The tracker committed on main, in the checkout it is read from."""
     repo = tracker.parent.parent
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "tracker")
-    git(repo, "worktree", "add", "-q", str(repo.parent / "wt"), "-b", TREE)
     return repo
-
-
-def test_a_ticket_a_branch_added_is_shown_and_one_it_inherited_is_not(repo: Path, tracker: Path) -> None:
-    wt = repo.parent / "wt"
-    # main retires a chore after the branch was cut; the branch's inherited copy must not bring it back
-    git(repo, "rm", "-q", "agent/tickets/small-chore.md")
-    git(repo, "rm", "-q", "agent/tickets/needs-chore.md")  # its edge would dangle
-    git(repo, "commit", "-q", "-m", "small-chore: done")
-    branch_root = wt / "agent" / "tickets"
-    ticket(branch_root / "filed-on-branch.md", "open")  # untracked on the branch
-    ticket(branch_root / "loose-idea.md", "open", blocked_by=["second"])  # changed on the branch; main's copy wins
-    ticket(branch_root / "second.md", "claimed", parent=TREE)  # in the tree the branch is named after: its copy wins
-    roots = tracker_roots(tracker)
-    assert roots.main == tracker
-    assert roots.repo == repo
-    assert roots.branches == [(TREE, branch_root)]
-    read = {t.slug: t for t in load_tickets(roots, Diffviews(tracker.parent / "diffviews", None))}
-    assert {slug: t.source for slug, t in read.items() if t.source or slug in ("loose-idea", "quoted")} == {
-        "loose-idea": None, "quoted": None, "filed-on-branch": TREE,
-    }
-    assert read["loose-idea"].status == "proposed"  # main's copy, which the branch does not outvote
-    assert read["second"].status == "claimed"  # the tree is read from the worktree the branch is named after
-    page = render_page("demo", list(read.values()), log="", stamp="s", stamp_src="s.js")
-    assert f'data-tip="Filed on branch {TREE}, not on the main branch.">on {TREE}</span>' in page
-
-
-def test_a_row_copies_the_path_of_the_file_the_board_read(repo: Path, tracker: Path) -> None:
-    """A tree in flight is read from its worktree and a ticket filed on a branch exists only there,
-    so the main checkout's copy is the wrong path to hand to a session."""
-    branch_root = repo.parent / "wt" / "agent" / "tickets"
-    ticket(branch_root / "filed-on-branch.md", "open")
-    roots = tracker_roots(tracker)
-    read = load_tickets(roots, Diffviews(tracker.parent / "diffviews", None))
-    page = render_page("demo", read, log="", stamp="s", stamp_src="s.js")
-    paths = dict(re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" [^>]*data-path="([^"]*)"', page))
-    assert paths["t-second"] == str(branch_root / "second.md")
-    assert paths["t-filed-on-branch"] == str(branch_root / "filed-on-branch.md")
-    assert paths["t-quoted"] == str(tracker / "quoted.md")
-
-
-def test_a_worktree_whose_tracker_no_reader_can_read_leaves_the_render_the_main_checkouts(
-    repo: Path, tracker: Path, capsys: pytest.CaptureFixture,
-) -> None:
-    """The main checkout is the tracker; a branch is a source the render can do without, and the
-    refusal is printed whole so the file and the line are there to act on."""
-    branch_root = repo.parent / "wt" / "agent" / "tickets"
-    (branch_root / "second.md").write_text("---\nstatus: claimed\ntype: grilling\npriority: 2\nsize: S\n---\n\n# Second\n\n## Brief\n")
-    read = {t.slug: t for t in load_tickets(tracker_roots(tracker), Diffviews(tracker.parent / "diffviews", None))}
-    assert read["second"].status == "open", "the main checkout's copy"
-    said = capsys.readouterr().err
-    assert f"{TREE} holds a tracker no reader can read" in said
-    assert "second.md:3: `type` is dropped" in said
 
 
 def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
@@ -533,52 +462,9 @@ def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path
     (dv / "quoted.html").write_text("<html>")
     marker = dv / ".serve.json"
     marker.write_text('{"port": 54321, "pid": 1234}')  # what a live server leaves beside the pages
-    roots = tracker_roots(tracker)
-    before = tracker_snapshot(roots, repo)
+    before = tracker_snapshot(tracker, repo)
     marker.write_text('{"port": 54321}')  # the pid dropped, as a server does on its way out
-    assert tracker_snapshot(roots, repo) != before
-
-
-def test_a_worktree_holds_every_descendant_of_the_ticket_its_branch_names(repo: Path, tracker: Path) -> None:
-    """A tree goes as deep as the work needs, and the branch a parent ticket is built on holds all
-    of it: a grandchild's claim is on the board while the tree is in flight."""
-    branch_root = repo.parent / "wt" / "agent" / "tickets"
-    ticket(branch_root / "under-second.md", "open", parent="second")
-    git(repo.parent / "wt", "add", "-A")
-    git(repo.parent / "wt", "commit", "-q", "-m", "a grandchild")
-    ticket(branch_root / "under-second.md", "claimed", parent="second")
-    read = {t.slug: t for t in load_tickets(tracker_roots(tracker), Diffviews(tracker.parent / "diffviews", None))}
-    assert read["under-second"].status == "claimed", "the grandchild's copy is the worktree's"
-    assert read["under-second"].tree == TREE
-
-
-def test_a_worktree_on_a_landed_branch_is_ignored(repo: Path, tracker: Path) -> None:
-    wt = repo.parent / "wt"
-    ticket(wt / "agent" / "tickets" / "second.md", "done", parent=TREE)
-    git(wt, "commit", "-q", "-am", "second landed")
-    assert tracker_roots(tracker).branches == [(TREE, wt / "agent" / "tickets")]
-    git(repo, "merge", "-q", "--no-ff", "-m", f"{TREE}: landed", TREE)
-    assert tracker_roots(tracker).branches == []
-
-
-def test_a_tracker_the_main_checkout_does_not_have_yet_renders_from_the_worktree(repo: Path, tracker: Path) -> None:
-    git(repo, "rm", "-q", "-r", "agent/tickets")
-    git(repo, "commit", "-q", "-m", "tracker moved out")
-    roots = tracker_roots(repo.parent / "wt" / "agent" / "tickets")  # run from the worktree, the only tracker there is
-    assert not roots.main.is_dir() and roots.branches
-    read = load_tickets(roots, Diffviews(roots.main.parent / "diffviews", None))
-    # the tree the branch is named after is read from the worktree; the tickets outside it the
-    # branch merely inherited are main's to show, and main has retired them
-    assert {t.slug for t in read} == {TREE, "first", "second", "faster-suite", "uses-fast-suite",
-                                      "after-first", "needs-chore", "built"}
-    assert all(t.source is None for t in read), "an override is the tracker's own copy, not a branch's addition"
-
-
-def test_the_stamp_changes_with_a_tickets_source(tracker: Path) -> None:
-    read = list(load(tracker).values())
-    before = content_stamp("demo", read, "")
-    read[0].source = "some-branch"
-    assert content_stamp("demo", read, "") != before
+    assert tracker_snapshot(tracker, repo) != before
 
 
 # ---- what the root holds --------------------------------------------------
@@ -591,7 +477,7 @@ def test_markdown_at_the_tracker_root_that_no_reader_can_read_is_refused_by_the_
     sits, rather than rendered as half a row."""
     (tracker / "needs-human.md").write_text("# Needs human\n\n- rule on loose-idea :: built while proposed\n")
     with pytest.raises(tracker_module.Refused, match=r"needs-human\.md:1: no frontmatter"):
-        render(tracker_roots(tracker), repo, tmp_path / "out" / "board.html")
+        render(tracker, repo, tmp_path / "out" / "board.html")
 
 
 def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(tracker: Path) -> None:
@@ -858,7 +744,7 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, t
     whether or not its question is written down; a ticket a worker takes is stopped by an open
     question of its own and asks for the answer; one with no question asks nothing of the user."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     rows = rows_of(out.read_text())
     expected = {
         "t-map-columns": "review",  # status: review, a build waiting on a ruling
@@ -884,7 +770,7 @@ def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: P
     text says what it means, and says it about itself; that the words then paint on hover is the
     layout check's (test_board_layout.py)."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     page = out.read_text()
     seen = set()
     for row_id, row in rows_of(page).items():
@@ -933,7 +819,7 @@ def questions_on(row: str) -> list[tuple[str, str]]:
 def test_a_needs_me_row_lists_the_questions_its_ticket_file_asks_and_no_ruled_one(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The fixture's build stopped on two questions, of which a `Ruled` line answered one."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     row = rows_of(out.read_text())["t-flaky-upload-test"]
     assert questions_on(row) == [("D1", "Retry the upload, or fake the clock?")], "D2 is ruled, and a ruled question is answered"
     written = f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?** A retry hides a real slowdown; a fake clock makes the test say nothing about timing."
@@ -946,12 +832,13 @@ def test_a_needs_me_row_lists_the_questions_its_ticket_file_asks_and_no_ruled_on
     ]
 
 
-def test_a_build_in_review_shows_the_questions_and_the_closing_comment_on_its_ticket_branch(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """Both live on the branch until the merge, and the checkout's copy of the ticket has neither."""
-    checkout = (demo.root / "map-columns.md").read_text()
-    assert "## Questions" not in checkout and "## Comments" not in checkout
+def test_a_build_in_review_shows_the_questions_and_the_closing_comment_its_report_brought_in(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """Both are in the tracker's own copy from the moment the build waits for a ruling: the import
+    is what puts them there, and the branch carries the code alone."""
+    on_branch = demo_git(demo.repo, "show", "ticket/map-columns:agent/tickets/map-columns.md")
+    assert "## Questions" not in on_branch and "## Comments" not in on_branch
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     assert [tag for tag, _ in questions_on(row)] == ["D1", "D2", "D3"]
     assert "Remember the mapping per bank or per file name?" in row
@@ -964,23 +851,12 @@ def test_a_build_in_review_shows_the_questions_and_the_closing_comment_on_its_ti
     assert "[D4]" not in "".join(text for _, text, _, _ in copiers(row)), "the tags a closing comment carries are not questions"
 
 
-BRANCH = "ticket/map-columns"
-BUILT = """
-## Questions
-
-- [D1] **Per bank or per file name?** A bank renames its export.
-
-## Comments
-
-Built on its branch, not merged.
-"""
-
-
-@pytest.fixture
-def built(tmp_path: Path) -> tuple[Path, Path, Path]:
-    """A one-ticket tracker in a git repo whose build was committed on the ticket's own branch: the
-    tracker root, the repo, and the ticket file as the checkout still has it, questionless and
-    `claimed`, which is where dispatch leaves it until the orchestrator flips it."""
+def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """One writer, one directory: the claim and the review flip are committed in the tracker's own
+    checkout, and the worker's words reach it through the import, so the board reads no branch and
+    no worktree. A worktree left on a ticket branch holds whatever it holds."""
     root = tmp_path / "repo" / "agent" / "tickets"
     root.mkdir(parents=True)
     repo = root.parent.parent
@@ -989,80 +865,87 @@ def built(tmp_path: Path) -> tuple[Path, Path, Path]:
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "tracker")
-    git(repo, "checkout", "-q", "-b", BRANCH)
-    path.write_text(path.read_text() + BUILT)
-    git(repo, "commit", "-q", "-am", "the build")
-    git(repo, "checkout", "-q", "main")
-    return root, repo, path
+    git(repo, "worktree", "add", "-q", str(tmp_path / "wt"), "-b", "ticket/map-columns")
+    stale = tmp_path / "wt" / "agent" / "tickets" / "map-columns.md"
+    stale.write_text(stale.read_text().replace("status: claimed", "status: review") + STALE)
+    git(tmp_path / "wt", "commit", "-q", "-am", "a worker that wrote a ticket file")
 
-
-def rendered(root: Path, repo: Path, out: Path) -> str:
-    render(tracker_roots(root), repo, out)
-    return out.read_text()
-
-
-def test_a_build_in_review_keeps_the_status_its_checkout_gives_it(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The branch says what the worker wrote, the checkout where the ticket stands: the review flip
-    is the orchestrator's and lands on the tracker's copy, not on the worker's branch. Until that
-    flip the branch is a build in progress and the board reads none of it."""
-    root, repo, path = built
     out = tmp_path / "board.html"
+    before = tracker_snapshot(root, repo)
     page = rendered(root, repo, out)
-    assert questions_on(rows_of(page)["t-map-columns"]) == [], "a claimed ticket's branch is a build in progress"
-    assert 'id="grp-needs"' not in page, "nothing waits on the user, so the group is not on the page"
-    ticket(path, "review", priority=1, size="S")  # the flip the orchestrator makes on the tracker's copy
+    assert rows_of(page)["t-map-columns"], "the row is the tracker's"
+    assert questions_on(rows_of(page)["t-map-columns"]) == [], "no question of the branch's reaches the board"
+    assert 'id="grp-needs"' not in page, "nothing waits on the user: the tracker says the build is claimed"
+
+    # the import, as `dispatch review` makes it: in the tracker's own copy
+    path.write_text(path.read_text().replace("status: claimed", "status: review") + STALE)
+    assert tracker_snapshot(root, repo) != before, "a watching board renders the import"
     page = rendered(root, repo, out)
     assert rows_in(page, "needs") == {"t-map-columns"}
     assert questions_on(rows_of(page)["t-map-columns"]) == [("D1", "Per bank or per file name?")]
-    assert 'class="ticket row-review" id="t-map-columns"' in page, "the branch's own claimed does not outrank the tracker"
-    assert "brief" not in labels_of(rows_of(page)["t-map-columns"]), "the brief has one home, and the branch's copy does not open a second"
 
 
-def test_a_ruling_in_the_tracker_answers_a_question_its_branch_asks(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The board hands out the tracker's path on the clipboard, so that is where the session taking
-    the user's answer writes the `Ruled` line; the branch's copy is the worker's and does not move
-    again until the merge."""
-    root, repo, path = built
-    ticket(path, "review", priority=1, size="S")
-    path.write_text(path.read_text() + "\n## Questions\n\n- [D1] **Per bank or per file name?** A bank renames its export.\n  - Ruled 2026-09-23: per bank.\n")
-    page = rendered(root, repo, tmp_path / "board.html")
-    assert questions_on(summary_of(rows_of(page)["t-map-columns"])) == [], "the ruling is in the file the board named"
-    assert rows_in(page, "needs") == {"t-map-columns"}, "the build still waits for its ruling"
-    assert asked_in(rows_of(page)["t-map-columns"]) == [{
-        "tag": "D1", "head": "Per bank or per file name?", "detail": "A bank renames its export.",
-        "ruling": "Ruled 2026-09-23: per bank.",
-    }], "the opened ticket reads the branch's question with the ruling the tracker's copy carries"
+def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """A project is a code repo with its `agent/` a repo of its own inside it: `board` run anywhere
+    in the code repo renders that tracker, names the page after the code repo, and reads its commit
+    log from there, while the tickets and the sessions that wrote them come from the agent repo."""
+    code = tmp_path / "lamp"
+    tickets = code / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    (code / "src").mkdir()
+    ticket(tickets / "map-columns.md", "claimed", priority=1, size="S")
+    for at in (code, code / "agent"):
+        git(at.parent, "init", "-q", "-b", "main", str(at))
+    (code / ".gitignore").write_text("/agent/\n")
+    (code / "src" / "importer.py").write_text("the importer\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the importer reads a bank export")
+    git(code / "agent", "add", "-A")
+    git(code / "agent", "commit", "-q", "-m", "map-columns: filed")
 
+    assert board.find_tracker(code / "src") == tickets, "found from anywhere in the code repo"
+    assert board.find_tracker(code / "agent") == tickets, "and from inside the agent repo"
 
-def test_a_ticket_with_no_branch_of_its_own_left_reads_none(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The slug is the ticket's id across the tracker, so the branch ending in it is its own; once
-    that branch has merged and been deleted, the merge has brought the questions in and there is
-    nothing else for the row to read."""
-    root, repo, path = built
-    ticket(path, "review", priority=1, size="S")
     out = tmp_path / "board.html"
-    assert questions_on(rows_of(rendered(root, repo, out))["t-map-columns"]) == [("D1", "Per bank or per file name?")]
-    git(repo, "branch", "-D", BRANCH)
-    assert questions_on(rows_of(rendered(root, repo, out))["t-map-columns"]) == []
+    board.main(board.Args(tickets_root=tickets, out=out, open=False, watch=False))
+    page = out.read_text()
+    assert "t-map-columns" in rows_of(page)
+    assert "<title>board — lamp</title>" in page, "the project's name is the code repo's"
+    assert "the importer reads a bank export" in page, "and its log is the code repo's"
+    assert "map-columns: filed" not in page, "not the agent repo's, which is the tickets' own history"
 
 
-def test_the_board_reads_the_ticket_branches_again_on_every_render(built: tuple[Path, Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """A worker cutting its branch and committing on it moves no file under the tracker, so the
-    watcher's snapshot has to carry the branches, and a board that has been open for a day has to
-    ask again rather than answer from the list it read first."""
-    root, repo, path = built
-    sha = git(repo, "rev-parse", BRANCH)
-    git(repo, "branch", "-D", BRANCH)
-    ticket(path, "review", priority=1, size="S")
-    out = tmp_path / "board.html"
-    assert questions_on(rows_of(rendered(root, repo, out))["t-map-columns"]) == [], "no branch yet, nothing to read"
-    before = tracker_snapshot(tracker_roots(root), repo)
-    git(repo, "branch", BRANCH, sha)
-    assert tracker_snapshot(tracker_roots(root), repo) != before, "a watching board would never render the build's questions"
-    assert questions_on(rows_of(rendered(root, repo, out))["t-map-columns"]) == [("D1", "Per bank or per file name?")]
-    after = tracker_snapshot(tracker_roots(root), repo)
-    git(repo, "branch", "-f", BRANCH, "main")  # as a commit on the branch moves its tip
-    assert tracker_snapshot(tracker_roots(root), repo) != after
+def test_a_project_whose_agent_directory_is_not_a_repo_yet_still_renders(
+    tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """The state a project is in before the split: one repo holding both. The board reads it rather
+    than dying on a checkout that is not there."""
+    code = tmp_path / "lamp"
+    tickets = code / "agent" / "tickets"
+    tickets.mkdir(parents=True)
+    ticket(tickets / "map-columns.md", "open", priority=1, size="S")
+    git(code.parent, "init", "-q", "-b", "main", str(code))
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the project, tracker and all")
+    board.main(board.Args(tickets_root=tickets, out=tmp_path / "board.html", open=False, watch=False))
+    page = (tmp_path / "board.html").read_text()
+    assert "t-map-columns" in rows_of(page) and "the project, tracker and all" in page
+
+
+STALE = """
+## Questions
+
+- [D1] **Per bank or per file name?** A bank renames its export.
+
+## Comments
+
+Built, not merged.
+"""
+
+
+def rendered(root: Path, repo: Path, out: Path) -> str:
+    render(root, repo, out)
+    return out.read_text()
 
 
 def test_a_near_design_session_is_in_needs_me_with_no_question_written_down(tmp_path: Path) -> None:
@@ -1094,7 +977,7 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, 
     that copies a resume command is only drawn for a session the board can name, and a check that
     rendered without them would hold the Property for four kinds of button out of five."""
     out = tmp_path / "board.html"
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     page = out.read_text()
     found = copiers(page)
     assert {which for which, _, _, _ in found} == {"qcopy", "qall", "qgroup", "democopy", "resume"}
@@ -1123,7 +1006,7 @@ def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, 
 def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tickets_path(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """What the user pastes into an editor to answer a board's worth of questions at once."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     page = out.read_text()
     (text,) = [text for kind, text, _, _ in copiers(page) if kind == "qgroup"]
     blocks = [block.splitlines() for block in text.split("\n\n")]
@@ -1135,7 +1018,7 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
     }
     asked = [line for lines in blocks for line in lines[1:]]
     assert len(asked) == 11 and all(line.startswith("- [D") for line in asked)
-    assert any("Remember the mapping per bank" in line for line in asked), "the questions on a ticket branch are in it too"
+    assert any("Remember the mapping per bank" in line for line in asked), "a build in review asks its own"
     # the file's own markdown, so a question pastes back into the ticket as it was written
     assert "- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" in asked
     assert not any("Whose card does the sandbox go on" in line for line in asked), "a ruled question is answered"
@@ -1194,7 +1077,7 @@ def test_an_opened_ticket_reads_as_blocks_in_one_order(transcribed: Demo, tmp_pa
     on it, its artefacts, then its own sections as the file writes them, the comments last and
     folded."""
     out = tmp_path / "board.html"
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     assert labels_of(row) == [
         "questions", "sessions on this machine", "artefacts", "what to build", "acceptance criteria", "comments",
@@ -1209,7 +1092,7 @@ def test_an_opened_ticket_carries_every_question_with_its_detail_and_the_ruling_
     """The row shows the open headlines; the ticket shows all of them, the detail it had no room
     for, and what the user ruled on the ones that are answered."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     row = rows_of(out.read_text())["t-flaky-upload-test"]
     assert asked_in(row) == [
         {"tag": "D1", "head": "Retry the upload, or fake the clock?",
@@ -1227,7 +1110,7 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
     the block carries the same buttons beside the detail, copying the same line under the same
     path. The row's copy-all goes with the list it copies."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     page = out.read_text()
     rows = rows_of(page)
     row = rows["t-flaky-upload-test"]
@@ -1268,7 +1151,7 @@ def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_pa
     """The demo on a button that copies its path, since a demo is a command to run, and the figures
     beside it as links. Nothing in the ticket declares either: the directory is read."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     rows = rows_of(out.read_text())
     show = demo.repo / "agent" / "show" / "map-columns"
     assert artefacts_in(rows["t-map-columns"]) == [
@@ -1307,7 +1190,7 @@ def test_the_comments_fold_under_an_opened_ticket_as_history(demo: Demo, tmp_pat
     """A build's closing comment is what happened, not what the ticket is, so it opens only when
     the reader asks for it."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     folded = re.search(r'<details class="history"(\s+open)?>(.*)</details>', body_of(row), re.S)
     assert folded and not folded.group(1), "the comments are open before anyone asked for them"
@@ -1319,7 +1202,7 @@ def test_the_acceptance_criteria_read_as_a_checklist(demo: Demo, tmp_path: Path,
     """The build in review met one criterion on its branch and left the other, which is what the
     checklist says; neither reads as a line opening with a bracket."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     body = body_of(rows_of(out.read_text())["t-map-columns"])
     assert [(mark, text) for mark, text, _ in marks_on(body) if mark == "tick"] == [
         ("tick", "The second import from a bank asks nothing and maps the columns the first one did."),
@@ -1397,11 +1280,11 @@ def test_a_ticket_that_says_less_gets_fewer_blocks(tmp_path: Path) -> None:
 def test_the_watcher_notices_a_demo_landing_in_a_show_directory(repo: Path, tracker: Path) -> None:
     """A session writing a demo moves no file under the tracker, and the artefacts are what an
     opened ticket would otherwise never show."""
-    before = tracker_snapshot(tracker_roots(tracker), repo)
+    before = tracker_snapshot(tracker, repo)
     demo = tracker.parent / "show" / "built" / "demo"
     demo.parent.mkdir(parents=True)
     demo.write_text("#!/bin/sh\necho the import, twice\n")
-    assert tracker_snapshot(tracker_roots(tracker), repo) != before
+    assert tracker_snapshot(tracker, repo) != before
 
 
 # ---- the sessions behind a ticket ------------------------------------------
@@ -1503,7 +1386,7 @@ def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(
     whose working directory dispatch has since removed is resumed where the reader stands."""
     root, repo = worked
     out = tmp_path / "board.html"
-    render(tracker_roots(root), repo, out)
+    render(root, repo, out)
     rows = rows_of(out.read_text())
     assert sessions_in(rows["t-map-columns"]) == [
         ("Ledger imports", "2026-09-14 → 2026-09-16", f"cd '{repo}' && claude --resume {HERE}"),
@@ -1517,15 +1400,15 @@ def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(
 
 
 def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The board reads the log again on every render, as it does the ticket branches: a session
-    working while the board watches is on the ticket by the next one."""
+    """The board reads the log again on every render: a session working while the board watches is
+    on the ticket by the next one."""
     root, repo = worked
     out = tmp_path / "board.html"
-    render(tracker_roots(root), repo, out)
+    render(root, repo, out)
     assert [title for title, _, _ in sessions_in(rows_of(out.read_text())["t-view-list"])] == []
     append(root / "view-list.md", "\nThe list is a sidebar.\n")
     demo_commit(repo, HERE, "2026-09-21T10:00:00+02:00", "view-list: the list is a sidebar", "agent/tickets")
-    render(tracker_roots(root), repo, out)
+    render(root, repo, out)
     assert [title for title, _, _ in sessions_in(rows_of(out.read_text())["t-view-list"])] == ["Ledger imports"]
 
 
@@ -1534,7 +1417,7 @@ def test_the_button_that_resumes_a_session_shows_the_command_it_copies(worked: t
     the click puts on the clipboard, and its note names the session the way the reader knows it."""
     root, repo = worked
     out = tmp_path / "board.html"
-    render(tracker_roots(root), repo, out)
+    render(root, repo, out)
     listed = sessions_in(rows_of(out.read_text())["t-map-columns"])
     found = [c for c in copiers(rows_of(out.read_text())["t-map-columns"]) if c[0] == "resume"]
     assert len(found) == len(listed)
@@ -1553,7 +1436,7 @@ def test_a_resume_command_longer_than_a_button_shows_is_cut_where_every_other_on
     deep.mkdir()
     write_transcript(board.TRANSCRIPTS, HERE, str(deep), "Ledger imports")
     out = tmp_path / "board.html"
-    render(tracker_roots(root), repo, out)
+    render(root, repo, out)
     (resume, *_) = [c for c in copiers(rows_of(out.read_text())["t-map-columns"]) if c[0] == "resume"]
     _, text, _, tip = resume
     shown = tip.partition("\n\n")[2]
@@ -1566,7 +1449,7 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
     listed with their titles, the worker on another host left out. The second ran in a worktree
     dispatch has since removed, so its command resumes it where the reader stands."""
     out = tmp_path / "board.html"
-    render(tracker_roots(transcribed.root), transcribed.repo, out)
+    render(transcribed.root, transcribed.repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     assert sessions_in(row) == [
         ("Grilling the CSV import", "2026-09-14", f"cd {transcribed.repo} && claude --resume {S1}"),
@@ -1771,9 +1654,7 @@ STATED = {
 @pytest.fixture
 def referenced(tracker: Path) -> Path:
     """The tracker with a ticket naming a reference in every state the board tells apart, beside
-    the two its build ticket already names. It is a ticket in no tree, which the main checkout is
-    read for: a tree with a worktree on its parent ticket's branch is read from there
-    (tracker_roots), and the repo fixture commits the tracker before this rewrites it."""
+    the two its build ticket already names."""
     ticket(tracker / "small-chore.md", "open", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
     return tracker
 
@@ -1812,7 +1693,7 @@ def test_a_reference_wears_the_state_github_gives_it_and_says_it_in_words(
     of the two it is, and which state it is in."""
     gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     marks = gh_marks(out.read_text())
     assert {ref: state for ref, (state, _) in marks.items()} == STATED
     assert "merged" in marks["acme/backend#4"][1], "a merged pull request reads as merged without opening it"
@@ -1845,7 +1726,7 @@ def test_a_reference_written_in_another_case_wears_its_state_all_the_same(
     ticket(referenced / "loose-idea.md", "proposed", gh=["ACME/Backend#4"])
     gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert gh_marks(out.read_text())["ACME/Backend#4"][0] == "pr-merged"
 
 
@@ -1853,7 +1734,7 @@ def test_one_query_per_render_resolves_every_reference_in_every_repository(
     repo: Path, referenced: Path, tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     record = gh_answering(path_with, ANSWERED)
-    render(tracker_roots(referenced), repo, tmp_path / "board.html")
+    render(referenced, repo, tmp_path / "board.html")
     (asked,) = queries(record)
     assert runs(record) == [asked], "one gh for the render, which is the query"
     assert 'repository(owner: "acme", name: "backend")' in asked
@@ -1870,7 +1751,7 @@ def test_an_answer_carrying_data_is_read_though_gh_calls_the_request_failed(
     partial = {"data": {"r0": ANSWERED["data"]["r0"], "r1": None}}
     gh_answering(path_with, partial, said="gh: Could not resolve to a Repository with the name 'acme/helix'.")
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     marks = gh_marks(out.read_text())
     assert marks["acme/backend#4"][0] == "pr-merged"
     assert [marks[ref][0] for ref in ("acme/helix#6", "acme/helix#7")] == ["unknown", "unknown"]
@@ -1885,7 +1766,7 @@ def test_the_page_says_why_github_did_not_answer_in_ghs_own_words(
     there. What gh said is what the user has to fix, so the note carries it."""
     gh_answering(path_with, {"message": "Bad credentials", "status": "401"}, said="gh: Bad credentials (HTTP 401)")
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     page = out.read_text()
     assert absences(page, "github") == 1
     assert "Bad credentials" in page
@@ -1899,9 +1780,9 @@ def test_a_reference_filed_after_the_last_query_is_asked_about_at_once(
     not is worth the query it costs, rather than a window bare."""
     record = gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     ticket(referenced / "loose-idea.md", "proposed", gh=["acme/coding#9"])
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert len(queries(record)) == 2
     assert queries(record)[1].count("issueOrPullRequest") == len(STATED) + 1
 
@@ -1913,9 +1794,9 @@ def test_an_answer_older_than_its_lifetime_is_asked_again(
     the cache holds is the module's own business."""
     record = gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     monkeypatch.setattr(github, "LIFETIME", timedelta(0))
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert len(queries(record)) == 2
 
 
@@ -1926,9 +1807,9 @@ def test_a_cached_answer_dresses_the_links_the_render_it_served_did_not_ask_abou
     nothing about an absence, having wanted nothing."""
     record = gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     first = out.read_text()
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert len(queries(record)) == 1
     served = out.read_text()
     assert {ref: state for ref, (state, _) in gh_marks(served).items()} == STATED
@@ -1943,9 +1824,9 @@ def test_a_tracker_that_changed_without_its_references_changing_asks_nothing(
     on the rows."""
     record = gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     ticket(referenced / "small-chore.md", "claimed", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert len(queries(record)) == 1
     assert 'class="ticket row-claimed" id="t-small-chore"' in out.read_text(), "the render did happen"
 
@@ -1955,7 +1836,7 @@ def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing
 ) -> None:
     """A board with no GitHub reference on it has no source to miss, as a tracker with no review
     page rendered has no server to miss. Its own tracker, since the fixture's build ticket names
-    two references from the worktree its tree is read from."""
+    two references of its own."""
     record = gh_answering(path_with, ANSWERED)
     root = tmp_path / "repo" / "agent" / "tickets"
     root.mkdir(parents=True)
@@ -1964,7 +1845,7 @@ def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "tracker")
-    render(tracker_roots(root), repo, tmp_path / "board.html")
+    render(root, repo, tmp_path / "board.html")
     page = (tmp_path / "board.html").read_text()
     assert queries(record) == []
     assert absences(page, "github") == 0
@@ -1980,7 +1861,7 @@ def test_a_cache_this_version_cannot_read_is_asked_past(
     out = tmp_path / "board.html"
     github.cache_path(out).parent.mkdir(parents=True, exist_ok=True)
     github.cache_path(out).write_text('{"asked": "2026-09-23T')
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     assert len(queries(record)) == 1
     assert gh_marks(out.read_text())["acme/backend#4"][0] == "pr-merged"
 
@@ -1993,7 +1874,7 @@ def test_a_gh_that_never_answers_leaves_the_render_to_go_on_without_it(
     monkeypatch.setattr(github, "TIMEOUT", 0.5)
     path_with("gh", "while :; do :; done")
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     page = out.read_text()
     assert absences(page, "github") == 1
     assert gh_marks(page)["acme/backend#317"][0] == "unknown"
@@ -2006,7 +1887,7 @@ def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page(
     render without gh, so the styles the states wear are only visible here."""
     gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
-    render(tracker_roots(referenced), repo, out)
+    render(referenced, repo, out)
     style = out.read_text().split("<style>", 1)[1].split("</style>", 1)[0]
     looks = {state: re.findall(rf"\.gh\.{state}\b[^{{]*{{([^}}]*)}}", style) for state in github.SAYS}
     assert all(looks[state] for state in github.SAYS), f"states with no look of their own: {[s for s in looks if not looks[s]]}"
@@ -2071,7 +1952,7 @@ def test_the_briefing_the_cache_holds_is_what_the_board_shows_with_the_time_it_w
     out = tmp_path / "board.html"
     when = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 2).write(cache_path(out))
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     page = out.read_text()
     said = briefing_of(page)
     assert "Two builds wait on your ruling." in said
@@ -2113,23 +1994,19 @@ def test_a_watched_board_re_renders_on_a_change_under_the_tracker_and_tells_the_
     the page follows it. Only a status moving is the session's business, though (the spec's
     Decisions under "The board briefing"): a ticket filed or retired is a status appearing or going,
     prose rewritten is a render and no more, and a status that goes back to what the session was
-    last told leaves nothing to tell.
-
-    A ticket of the tree and one in no tree are both moved, since the two reach the board by
-    different roots: the worktree's copy and the main checkout's."""
+    last told leaves nothing to tell."""
     out = tmp_path / "board.html"
     when = datetime.now().astimezone()  # a briefing already written, so the opening pass arms nothing
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 0).write(cache_path(out))
-    render(tracker_roots(tracker), repo, out)  # as main() does before it starts watching
+    render(tracker, repo, out)  # as main() does before it starts watching
     watching, session = [Seen()], board.Briefer(repo, out)
     watching[0] = look(watching[0], session, tracker, repo, out)
     assert session.changed_at is None, "the opening pass has nothing to tell the session about"
-    assert watching[0].statuses == render(tracker_roots(tracker), repo, out), \
+    assert watching[0].statuses == render(tracker, repo, out), \
         "the baseline the first pass read is not the tracker the board draws"
 
     chore = tracker / "new-chore.md"
-    # the tree is read from the worktree on its parent ticket's branch, where a worker flips a status
-    second = repo.parent / "wt" / "agent" / "tickets" / "second.md"
+    second = tracker / "second.md"
     assert status_moved(watching, session, tracker, repo, out, lambda: ticket(chore, "open")), \
         "the briefing session was never told a ticket was filed"
     assert "t-new-chore" in rows_of(out.read_text()), "the new row is not on the page it re-rendered"
@@ -2182,7 +2059,7 @@ def test_a_briefing_the_session_wrote_does_not_disarm_githubs_clock(
     on a quiet tracker for as long as the board watched it."""
     path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     watching, session = Seen(), board.Briefer(repo, out)
     watching = look(watching, session, tracker, repo, out)
     assert watching.asked, "the render before the watch asked GitHub about the references on the board"
@@ -2203,7 +2080,7 @@ def test_a_run_of_the_model_that_answers_nothing_reaches_the_open_tab(
     claude = path_with("claude", "echo '{}'")  # on the machine, and answering nothing
     out = tmp_path / "board.html"
     stamp = lambda: Path(str(out) + ".stamp.js").read_text()  # noqa: E731
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     before = stamp()
     assert absences(out.read_text(), "model") == 0, "the model is here and nothing has failed yet"
 
@@ -2261,13 +2138,13 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     moved for the retry to carry (briefing.on_change holds the schedule itself)."""
     said = {"is_error": False, "session_id": "abc-123", "result": "Two builds wait on your ruling."}
     claude = path_with("claude", f"printf '%s\\n' {shlex.quote(json.dumps(said))}")
-    out, roots = tmp_path / "board.html", tracker_roots(tracker)
+    out = tmp_path / "board.html"
     at = datetime.now().astimezone()
     watcher = board.Briefer(repo, out)
 
-    statuses = board.statuses(load_tickets(roots, board.Diffviews(roots.main.parent / "diffviews", None)))
-    watcher.opened(tracker_snapshot(roots, repo), statuses, at)
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at)
+    statuses = board.statuses(load_tickets(tracker, repo, board.Diffviews(tracker.parent / "diffviews", None)))
+    watcher.opened(tracker_snapshot(tracker, repo), statuses, at)
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at)
     watcher.running.join(30)
     assert len(runs(claude)) == 1, "the change the watcher opened on starts one run"
     written = Briefing.read(cache_path(out))
@@ -2275,9 +2152,9 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     told = watcher.told
 
     watcher.saw(statuses + (("a-new-one", "open"),), statuses, at + timedelta(minutes=1))
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + timedelta(minutes=1))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + timedelta(minutes=1))
     assert len(runs(claude)) == 1, "a change inside the quiet window waits it out"
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + QUIET + timedelta(minutes=1))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + QUIET + timedelta(minutes=1))
     assert len(runs(claude)) == 1, "a run inside the cadence of the last one is not tried again (Briefer.tried)"
 
     path_with("claude", "echo '{\"is_error\": true}'")  # a login that has lapsed, a run past its limit
@@ -2285,7 +2162,7 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     # stamped while the session was exploring: a run's clock is read before it starts, so a change
     # landing during one reads as a change it has not heard, and the cadence after is when it does
     watcher.saw(statuses + (("small-chore", "done"),), statuses, written.last_activity + timedelta(seconds=1))
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + CADENCE + timedelta(seconds=1))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + CADENCE + timedelta(seconds=1))
     watcher.running.join(30)
     assert len(runs(claude)) == 2, "a change the session has not heard is pinged out the cadence after it"
     assert f"--resume {written.session}" in runs(claude)[1], "the cadence's change started a fresh exploration"
@@ -2293,14 +2170,14 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     assert watcher.told == told, "what the session was told about waits for the run that reaches it"
 
     # and the run that answered nothing is tried again a cadence later, not on every pass after it
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + CADENCE + timedelta(seconds=30))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + CADENCE + timedelta(seconds=30))
     assert len(runs(claude)) == 2, "a run that answered nothing was retried on the next pass"
-    watcher.tick(roots, tracker_snapshot(roots, repo), statuses, at + 2 * CADENCE + timedelta(seconds=2))
+    watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at + 2 * CADENCE + timedelta(seconds=2))
     watcher.running.join(30)
     assert len(runs(claude)) == 3, "a run that answered nothing was never retried"
 
     cache_path(out).unlink()  # and with no briefing to fall back on, the page says why there is none
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert absences(out.read_text(), "model") == 1
 
 
@@ -2312,16 +2189,15 @@ def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
     fails."""
     out = tmp_path / "board.html"
     cache_path(out).write_text('{"text": "half a fi')
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert "One build to rule on waits on you." in briefing_of(out.read_text())
 
 
 def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
     """What a fresh session starts from: the tracker as the board computes it, which is every row's
     marks, its brief, its open questions and the file the rest of it is in."""
-    roots = tracker_roots(demo.root)
-    state = board.briefing_state(roots, demo.repo)
-    shown = load_tickets(tracker_roots(demo.root), Diffviews(demo.root, None))
+    state = board.briefing_state(demo.root, demo.repo)
+    shown = load_tickets(demo.root, demo.repo, Diffviews(demo.root, None))
     for t in shown:
         assert f"{t.slug} · {t.status} · " in state, f"{t.slug} is a row on the board and not a line of the state"
         assert str(t.path) in state, f"{t.slug} is given without the file to read the rest of it in"
@@ -2345,8 +2221,7 @@ def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(tmp_path: 
     """What a ping tells the session. Its own copy of the demo tracker: this check moves files under
     it, and the shared fixture is read by every later check in this file and the next."""
     own = build_demo(tmp_path / "demo")
-    roots = tracker_roots(own.root)
-    before = tracker_snapshot(roots, own.repo)
+    before = tracker_snapshot(own.root, own.repo)
     assert changed_note(before, before, own.repo) == "something under the tracker was touched without changing"
 
     ticket(own.root / "new-slice.md", "open", parent="csv-import")
@@ -2354,7 +2229,7 @@ def test_a_tracker_change_reaches_the_session_as_the_files_that_moved(tmp_path: 
     faster = own.root / "speed-up-tests.md"
     faster.write_text(faster.read_text() + "\n## Questions\n\n- [D9] **Is the template rebuilt often enough?**\n")
     demo_commit(own.repo, S3, "2026-09-23T09:00:00+02:00", "tickets: a slice filed, a chore retired", "agent/tickets")
-    note = changed_note(before, tracker_snapshot(roots, own.repo), own.repo)
+    note = changed_note(before, tracker_snapshot(own.root, own.repo), own.repo)
 
     assert "new: agent/tickets/new-slice.md" in note
     assert "gone: agent/tickets/upgrade-python.md" in note
@@ -2411,10 +2286,10 @@ NEEDS_ME = {
 
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The same two properties as the checks above, at the seam the spec's Testing Decisions names: a
-    fixture tracker on disk in, groups out. map-columns keeps its questions on its ticket branch,
-    so the board has to read them there."""
+    fixture tracker on disk in, groups out. map-columns carries its questions in the tracker's own
+    copy, where the import left them."""
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     assert rows_in(out.read_text(), "needs") == NEEDS_ME
     assert "t-read-the-bank-formats" not in rows_in(out.read_text(), "needs"), "a worker's ticket with nothing open"
 
@@ -2431,7 +2306,7 @@ def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo:
 def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: Demo, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_with: Callable[..., Path]) -> None:
     monkeypatch.setattr(board, "TRANSCRIPTS", tmp_path / "no-transcripts")
     out = tmp_path / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     page = out.read_text()
     assert absences(page, "transcripts") == 1
     assert S1 not in page and S4 not in page, "no session is resumable without a transcript"
@@ -2439,7 +2314,7 @@ def test_the_board_renders_with_no_transcripts_and_says_the_absence_once(demo: D
 
 def test_the_board_renders_without_github_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     page = out.read_text()
     assert absences(page, "github") == 1
     assert "acme/backend#317" in page, "the references stay on the row, bare"
@@ -2447,7 +2322,7 @@ def test_the_board_renders_without_github_and_says_the_absence_once(repo: Path, 
 
 def test_the_board_renders_without_the_model_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert absences(out.read_text(), "model") == 1
 
 
@@ -2456,7 +2331,7 @@ def test_the_board_renders_with_no_review_page_server_and_says_the_absence_once(
     dv.mkdir(parents=True)
     (dv / "quoted.html").write_text("<html>")
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     page = out.read_text()
     assert f'href="file://{dv / "quoted.html"}"' in page, "the pages stay linked, as the files they are"
     assert absences(page, "review-page-server") == 1
@@ -2467,7 +2342,7 @@ def test_a_board_whose_review_pages_are_served_says_no_absence(tracker: Path, st
     dv.mkdir(parents=True)
     (dv / "quoted.html").write_text("<html>")
     diffviews = serve_diffviews(dv)
-    page = render_page("demo", load_tickets(Roots(tracker, []), diffviews), log="", stamp="s", stamp_src="s.js")
+    page = render_page("demo", load_tickets(tracker, None, diffviews), log="", stamp="s", stamp_src="s.js")
     assert f'href="{STUB_ADDRESS}/quoted.html"' in page
     assert absences(page, "review-page-server") == 0
 
@@ -2476,7 +2351,7 @@ def test_a_tracker_with_no_review_pages_rendered_says_nothing_about_the_server(r
     """Nothing has been sent for review yet, so there is no page a server could be answering for:
     the absence the Property names is the server for pages that exist."""
     out = tmp_path / "board.html"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert absences(out.read_text(), "review-page-server") == 0
 
 
@@ -2530,10 +2405,10 @@ def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_tic
     reference it was asked about; the briefing's cache is the session's thread's. None of them says
     anything a ticket file says, and the next cache added beside the board is what this names."""
     out = tmp_path / "beside" / "board.html"
-    render(tracker_roots(demo.root), demo.repo, out)
+    render(demo.root, demo.repo, out)
     beside = sorted(p.name for p in out.parent.iterdir())
     assert beside == ["board.html", "board.html.github.json", "board.html.stamp.js"]
-    rows = load_tickets(tracker_roots(demo.root), Diffviews(demo.root, None))
+    rows = load_tickets(demo.root, demo.repo, Diffviews(demo.root, None))
     about = [str(t.path) for t in rows] + [t.title for t in rows] + [t.brief for t in rows if t.brief]
     about += [q.tag for t in rows for q in t.questions]
     for sidecar in beside[1:]:
@@ -2545,9 +2420,9 @@ def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path,
     gh = path_with("gh", 'echo "{}"')
     out = tmp_path / "board.html"
     queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731  an auth probe is not a request for a reference
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert len(queries()) == 1, "one query per render resolves both references"
-    render(tracker_roots(tracker), repo, out)
+    render(tracker, repo, out)
     assert len(queries()) == 1, "the answer cached beside the board serves the unchanged render"
 
 

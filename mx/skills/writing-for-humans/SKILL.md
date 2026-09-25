@@ -30,4 +30,4 @@ Cache deliberately or not at all: a copy earns its place only when the lookup is
 
 ## Referencing by title
 
-Refer to a ticket, issue, or ADR by its title, in chat as much as in a file, with the id riding inside the link: `[Decide the ticket vocabulary](agent/tickets/tracker-rename/03-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.
+Refer to a ticket, issue, or ADR by its title, in chat as much as in a file, with the id riding inside the link: `[Decide the ticket vocabulary](agent/tickets/ticket-vocabulary.md)`. A bare `#42` or `03` standing in for the name is illegible in a list; the title reads at a glance and the id stays one click away.

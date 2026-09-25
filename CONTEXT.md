@@ -28,6 +28,11 @@ _Avoid_: Further Notes, Not yet specified, unknowns, TBD
 
 ### Tracker
 
+**Agent repo**:
+The repo of everything that plans a project, held inside the repo it plans and ignored by it: its tickets, show directories, prototypes and research.
+_In code_: `agent/`
+_Avoid_: tracker repo (the tracker is one directory in it), meta repo, planning repo
+
 **Ticket**:
 The unit of work on the tracker: one file, or one issue.
 _Avoid_: task, item, story
@@ -106,6 +111,10 @@ _Avoid_: dispatcher, coordinator, parent
 The agent that works one ticket in its own worktree, unattended.
 _Avoid_: subagent, implementer
 
+**Worker report**:
+What a worker hands back for its ticket: its closing comment and the questions its build raised.
+_Avoid_: closing comment (one part of a report), handoff, debrief (the orchestrator's)
+
 **Tick**:
 One pass of the orchestrator's loop.
 _Avoid_: iteration, cycle
@@ -120,7 +129,7 @@ _Avoid_: merged, finished, complete
 
 **Debrief**:
 What the orchestrator tells the user when a ticket's tree is finished: what the workers and the harden report found, and what it proposes to do about it.
-_Avoid_: synthesis, report, summary, PR description
+_Avoid_: synthesis, summary, PR description, report (a worker's is one)
 
 ### Testing
 

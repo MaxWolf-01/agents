@@ -118,6 +118,26 @@ def tickets(repo: Path) -> Path:
     return repo / "agent" / "tickets"
 
 
+@pytest.fixture
+def split(tmp_path: Path) -> Path:
+    """The layout a project has: a code repo, and its `agent/` a git repo of its own inside it that
+    the code repo ignores. Answers the code repo's root, one commit deep in each."""
+    code = tmp_path / "lamp"
+    (code / "agent" / "tickets").mkdir(parents=True)
+    for at in (code, code / "agent"):
+        git(tmp_path, "init", "-q", "-b", "main", str(at))
+        for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
+            git(at, "config", key, value)
+    (code / ".gitignore").write_text("/agent/\n")
+    (code / "src.txt").write_text("the lamp\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the lamp")
+    (code / "agent" / "README.md").write_text("what this repo is planned with\n")
+    git(code / "agent", "add", "-A")
+    git(code / "agent", "commit", "-q", "-m", "the agent repo")
+    return code
+
+
 def fresh(tickets: Path) -> Path:
     """The tracker emptied: a property's fixtures are function-scoped, so one run of it would
     otherwise file every example's tickets into the same tracker."""
@@ -267,7 +287,7 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
     ({"needs-user": "maybe"}, "`needs-user` is true or false"),
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
-    ({"diff": "[main..feature]"}, "a range is `<sha>..<sha>`"),
+    ({"diff": "[main..feature]"}, "a round lands as `code@<sha>..<sha>`"),
 ])
 def test_a_frontmatter_field_no_reader_can_read_is_refused(tickets: Path, repo: Path, written: dict, refused: str) -> None:
     path = ticket(tickets, "one-flow", **written)
@@ -542,7 +562,7 @@ def test_a_parent_ticket_is_done_once_every_child_ticket_is(tickets: Path, repo:
     children = [ticket(tickets, "map-columns", status="done", parent="one-flow"),
                 ticket(tickets, "saved-views", status="review", parent="one-flow")]
     said = run(repo, "set", "one-flow", "status=done")
-    assert said.code == 1 and "no branch ticket/one-flow here" in said.err, "one child still waits on a ruling"
+    assert said.code == 1 and "no branch ticket/one-flow in" in said.err, "one child still waits on a ruling"
     for child in children:
         child.write_text(child.read_text().replace("status: review", "status: done"))
     assert run(repo, "set", "one-flow", "status=done").code == 0
@@ -583,6 +603,138 @@ def test_a_ruling_goes_under_the_question_it_answers(tickets: Path, repo: Path) 
     assert run(repo, "rule", "one-flow", "D9", "nothing").code == 1
 
 
+# ---- the report ------------------------------------------------------------
+# `ticket-file-contract#P7`: a worker writes a report, and the import is the one write that brings
+# what it says into the ticket. The shapes are the ticket file's own, so the report is held to them.
+
+def reported(tmp_path: Path, text: str = "") -> Path:
+    """A report file, as a worker leaves one in its show directory."""
+    path = tmp_path / "report.md"
+    path.write_text(text or REPORT)
+    return path
+
+
+REPORT = """## Comments
+
+One preset lands, warm, on `ticket/warm-preset`, unmerged.
+
+- [D2] **Assumptions**
+  - A1 `lamp.py:41`: 2700K, since the bulb box says so.
+
+## Questions
+
+- [D3] **Warm at what temperature?** 2700K reads amber on the wall; 3000K is closer to the old bulb.
+"""
+
+
+def test_a_report_reaches_the_ticket_as_its_comment_its_questions_and_the_review_status(
+    tickets: Path, repo: Path, tmp_path: Path
+) -> None:
+    """The one write a worker's words make. Everything the report says lands where a reader of the
+    ticket looks for it, and the build waits in `review` from there."""
+    path = ticket(tickets, "warm-preset", "## Questions\n\n- [D1] **Which socket?** Bayonet or screw.\n\n## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
+    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
+
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert read["status"] == "review"
+    assert [(q["tag"], q["headline"]) for q in read["questions"]] == [
+        ("D1", "Which socket?"), ("D3", "Warm at what temperature?")]
+    assert [(a["id"], a["path"], a["line"]) for a in read["assumptions"]] == [(1, "lamp.py", 41)]
+    written = path.read_text()
+    assert "Filed off the kitchen rewire." in written, "the ticket's own comments stay"
+    assert written.index("## Questions") < written.index("## Comments"), "the sections keep their order"
+    assert written.index("2700K, since the bulb box says so") > written.index("## Comments")
+
+
+def test_a_ticket_with_no_questions_section_gains_one_above_its_comments(tickets: Path, repo: Path, tmp_path: Path) -> None:
+    ticket(tickets, "warm-preset", status="claimed")
+    assert run(repo, "import", "warm-preset", str(reported(tmp_path))).code == 0
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert [q["tag"] for q in read["questions"]] == ["D3"]
+    assert [s["heading"] for s in read["sections"]] == ["Brief", "Questions", "Comments"]
+
+
+def test_a_report_that_raises_no_question_opens_no_section_for_one(
+    tickets: Path, repo: Path, tmp_path: Path
+) -> None:
+    """The ordinary landing: nothing for the user to rule on, and a heading with nothing under it
+    would show on the board as a question the ticket asks."""
+    path = ticket(tickets, "warm-preset", "## Comments\n\nFiled off the kitchen rewire.\n", status="claimed")
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path, "## Comments\n\nIt lands, with nothing to rule on.\n")))
+    assert said.code == 0 and "0 questions" in said.out, said.said
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert [s["heading"] for s in read["sections"]] == ["Brief", "Comments"]
+    assert read["status"] == "review" and read["questions"] == []
+    assert "Filed off the kitchen rewire." in path.read_text()
+
+
+def test_a_report_read_from_stdin_is_named_by_what_it_came_from(tickets: Path, repo: Path) -> None:
+    """How dispatch hands one over: the report is a file on a branch, so it arrives on stdin and a
+    refusal names the object rather than the pipe."""
+    ticket(tickets, "warm-preset", status="claimed")
+    said = run(repo, "import", "warm-preset", "-", "--called", "ticket/warm-preset:show/warm-preset/report.md",
+               given=REPORT)
+    assert said.code == 0, said.said
+    read = json.loads(run(repo, "data", "warm-preset").out)["tickets"][0]
+    assert [q["tag"] for q in read["questions"]] == ["D3"] and read["status"] == "review"
+
+    ticket(tickets, "cool-preset", status="claimed")
+    broken = run(repo, "import", "cool-preset", "-", "--called", "ticket/cool-preset:show/cool-preset/report.md",
+                 given="## Comments\n\n- A1 no anchor in backticks here.\n")
+    assert broken.code == 1
+    assert "ticket/cool-preset:show/cool-preset/report.md:3:" in broken.err, broken.said
+
+
+def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: Path, tmp_path: Path) -> None:
+    ticket(tickets, "warm-preset", status="claimed")
+    run(repo, "import", "warm-preset", str(reported(tmp_path)))
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
+    assert said.code == 1 and "already in review" in said.err, said.said
+
+
+@pytest.mark.parametrize("broken, said, refused", [
+    ("## Comments\n\nlanded.\n\n## Findings\n\nthree.\n", "a heading a ticket takes nothing from", "`## Findings` is no part of a report"),
+    ("landed.\n", "words under no heading", "this text is under no heading"),
+    ("## Questions\n\n- [D3] **Warm?** Amber.\n", "no closing comment", "no `## Comments` section"),
+    ("## Comments\n\n- A1 no anchor in backticks here.\n", "an assumption the review page would drop", "this assumption has no anchor"),
+    ("## Comments\n\nlanded, as #P2 asks.\n", "a citation naming no ticket", "`#P2` names no ticket"),
+    ("## Comments\n\nlanded.\n\n## Questions\n\n- [D1] **A?** one.\n- [D1] **B?** two.\n",
+     "two questions under one tag", "tag D1 is already taken"),
+    ("## Comments\n\n- [D1] Assumptions\n  - A1 `x.py:1`: one.\n  - A1 `y.py:2`: two.\n",
+     "two assumptions under one id", "assumption A1 is already taken"),
+])
+def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_and_line(
+    tickets: Path, repo: Path, tmp_path: Path, broken: str, said: str, refused: str
+) -> None:
+    path = ticket(tickets, "warm-preset", status="claimed")
+    before = path.read_text()
+    written = tmp_path / "report.md"
+    written.write_text(broken)
+    answer = run(repo, "import", "warm-preset", str(written))
+    assert answer.code == 1, said
+    assert refused in answer.said, answer.said
+    assert f"{written}:" in answer.said, said
+    assert path.read_text() == before, "a refused report writes nothing"
+
+
+def test_a_report_whose_tags_the_ticket_already_holds_is_refused_at_the_lines_they_land_on(
+    tickets: Path, repo: Path, tmp_path: Path
+) -> None:
+    """The tags run as one sequence across the ticket, so a second round that started them again
+    would name two things by one id."""
+    ticket(tickets, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n", status="claimed")
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
+    assert said.code == 1
+    assert "tag D3 is already taken" in said.err, said.said
+
+
+def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo: Path, tmp_path: Path) -> None:
+    ticket(tickets, "warm-preset", status="open")
+    said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
+    assert said.code == 1
+    assert "open \u2192 review" in said.err and "a build starts from a claim" in said.err, said.said
+
+
 # ---- the corpus ------------------------------------------------------------
 
 
@@ -619,7 +771,8 @@ def test_the_corpus_reads_as_one_tree(corpus: Path) -> None:
 
 # ---- properties ------------------------------------------------------------
 # The executable Properties of agent/tickets/ticket-file-contract.md, at the one seam that ticket
-# names: the command line. P5 is reviewed, not executable, and is not here.
+# names: the command line. P5 is reviewed, not executable, and is not here. P7's flow half is at
+# the dispatch seam (mx/skills/dispatch/test_dispatch.py); its source half is below.
 
 WORDS = st.lists(
     st.sampled_from("retry the clock suite upload mapping bank payee ledger board window column".split()),
@@ -751,6 +904,21 @@ def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -
     assert not any(found.values()), "a second parser of a ticket file: " + json.dumps(
         {name: lines for name, lines in found.items() if lines}, indent=2
     )
+
+
+def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(repo: Path) -> None:
+    """`ticket-file-contract#P7` at the source: a worker is handed its ticket's context in its
+    prompt, so nothing staged on a worker host reads a ticket file, and `dispatch` is the only file
+    of the three that invokes the one command that does."""
+    staged = {name: (PLUGIN / "skills" / "dispatch" / name).read_text()
+              for name in ("dispatch-ctl", "run-worker.sh", "worker-prompt.md")}
+    invokes = re.compile(r"\$\{?tracker\b|tracker\.py")
+    holding = {name: invokes.findall(text) for name, text in staged.items()}
+    assert not any(holding.values()), f"a reader of a ticket file on a worker host: {holding}"
+
+    files = next(line for line in (PLUGIN / "skills" / "dispatch" / "dispatch").read_text().splitlines()
+                 if line.strip().startswith("files=("))
+    assert not invokes.search(files), f"the parser travels to the host again: {files.strip()}"
 
 
 DANGLING = [
@@ -1060,6 +1228,131 @@ def test_the_tracker_is_found_from_wherever_the_command_is_typed(tickets: Path, 
     deeper = repo / "agent" / "show" / "one-flow"
     deeper.mkdir(parents=True)
     assert run(deeper, "get", "one-flow", "status").out == "claimed\n"
+
+
+def test_the_tracker_is_the_agent_repos_main_checkout_wherever_the_command_runs(split: Path) -> None:
+    """A worker holds both repos on `ticket/<slug>` branches, the agent repo's worktree inside the
+    code repo's, and writes a ticket file on neither: every read and write is the main checkout's
+    copy, which is the one a ticket change is committed in."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    worktree = split.parent / "lamp-one-flow"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", "ticket/one-flow")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", "ticket/one-flow")
+    theirs = worktree / "agent" / "tickets" / "one-flow.md"
+    theirs.write_text(theirs.read_text().replace("status: open", "status: claimed"))
+
+    assert run(worktree, "root").out.strip() == str(tickets)
+    assert run(worktree, "get", "one-flow", "status").out == "open\n", "the main checkout's copy"
+    (worktree / "agent" / "show").mkdir(parents=True)
+    assert run(worktree / "agent" / "show", "root").out.strip() == str(tickets), "from inside the agent repo too"
+
+
+def test_a_ticket_branch_is_refused_the_ticket_file_it_staged(split: Path) -> None:
+    """`ticket-file-contract#P7` where the commit hook runs it: a worker's copy of the agent repo is
+    on a ticket branch, and a ticket file written there would be a second copy of one."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    worktree = split.parent / "lamp-one-flow"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", "ticket/one-flow")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", "ticket/one-flow")
+
+    theirs = worktree / "agent" / "tickets" / "one-flow.md"
+    theirs.write_text(theirs.read_text().replace("status: open", "status: review"))
+    git(worktree / "agent", "add", "agent/tickets/one-flow.md".removeprefix("agent/"))
+    said = run(worktree / "agent", "check")
+    assert said.code == 1 and "is a ticket branch" in said.err, said.said
+
+    (worktree / "agent" / "show").mkdir(parents=True, exist_ok=True)
+    (worktree / "agent" / "show" / "report.md").write_text("## Comments\n\nit lands.\n")
+    git(worktree / "agent", "reset", "-q")
+    git(worktree / "agent", "add", "show")
+    assert run(worktree / "agent", "check") == Run(0, "", ""), "what a worker does commit there"
+
+
+def test_the_commit_hook_answers_for_the_repo_the_commit_is_made_in(split: Path) -> None:
+    """A commit is made of one repo's staged files: the hook in the code repo answers for nothing
+    under `agent/`, which is the agent repo's to check, and the agent repo's own refuses there."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", status="nonsense")
+    git(split / "agent", "add", "-A")
+    (split / "src.txt").write_text("the lamp, rewired\n")
+    git(split, "add", "-A")
+
+    assert run(split, "check") == Run(0, "", ""), "the code repo's commit carries no ticket file"
+    said = run(split / "agent", "check")
+    assert said.code == 1 and "is no ticket status" in said.out, said.said
+
+
+def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
+    """A round lands in two repos, and `done` is the accept of the whole of it."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", status="review")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    (split / "src.txt").write_text("lit\n")
+    git(split, "commit", "-q", "-am", "the code")
+    for at in (split, split / "agent"):
+        git(at, "checkout", "-q", "-b", "ticket/one-flow")
+    (split / "src.txt").write_text("lit, warmly\n")
+    git(split, "commit", "-q", "-am", "the build")
+    (split / "agent" / "show" / "one-flow").mkdir(parents=True, exist_ok=True)
+    (split / "agent" / "show" / "one-flow" / "report.md").write_text("## Comments\n\nit lands.\n")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "the report")
+    for at in (split, split / "agent"):
+        git(at, "checkout", "-q", "main")
+
+    said = run(split, "set", "one-flow", "status=done")
+    assert said.code == 1 and "is not merged into main" in said.err, said.said
+    inside = run(split / "agent" / "tickets", "set", "one-flow", "status=done")
+    assert inside.code == 1 and "is not merged into main" in inside.err, "the code repo is read from either"
+    git(split, "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
+    said = run(split, "set", "one-flow", "status=done")
+    assert said.code == 1 and "is not merged into main" in said.err, "the agent branch is half of it"
+    git(split / "agent", "merge", "-q", "--no-ff", "-m", "one-flow landed", "ticket/one-flow")
+    assert run(split, "set", "one-flow", "status=done").code == 0
+
+
+def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> None:
+    """A ticket writes its links from the code repo's root, `agent/research/...`, and the agent repo
+    is rooted one directory down: what it owns is found either way."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow", "Its detail is in `agent/research/one-flow.md`.", status="done")
+    (split / "agent" / "show" / "one-flow").mkdir(parents=True)
+    (split / "agent" / "show" / "one-flow" / "demo").write_text("#!/bin/sh\necho one\n")
+    (split / "agent" / "research").mkdir()
+    (split / "agent" / "research" / "one-flow.md").write_text("what it found\n")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "one-flow, with what it owns")
+
+    (split / "agent" / "show" / "one-flow" / "notes.md").write_text("what it turned on\n")  # untracked
+    said = run(split, "retire", "one-flow")
+    assert said.code == 0, said.said
+    kept = Path.home() / "logs" / "agent" / split.name / "show" / "one-flow" / "notes.md"
+    assert kept.is_file(), f"an untracked file leaves to {kept}, under the project's own name"
+    kept.unlink()
+    for gone in ("tickets/one-flow.md", "show/one-flow/demo", "research/one-flow.md"):
+        assert not (split / "agent" / gone).exists(), f"{gone} stayed"
+    assert "one-flow, with what it owns" in git(split / "agent", "log", "-1", "--format=%s"), "staged, not committed"
+    assert sorted(git(split / "agent", "diff", "--cached", "--name-only").split()) == [
+        "research/one-flow.md", "show/one-flow/demo", "tickets/one-flow.md"], "every removal is staged"
+
+
+def test_a_range_names_which_of_the_two_repos_it_is_in(tickets: Path, repo: Path) -> None:
+    """A round lands in the code repo and in the agent repo, so the ticket carries one range each,
+    written together: two appends in one write keep both."""
+    ticket(tickets, "one-flow")
+    assert run(repo, "set", "one-flow", "diff+=code@4f2a91c..8b3ce07", "diff+=agent@aaaaaaa..bbbbbbb").code == 0
+    assert run(repo, "get", "one-flow", "diff").out.split() == ["code@4f2a91c..8b3ce07", "agent@aaaaaaa..bbbbbbb"]
+    for refused, says in (("lamp@4f2a91c..8b3ce07", "one per repo"),
+                          ("code@ticket/one-flow", "never as a branch name")):
+        said = run(repo, "set", "one-flow", f"diff+={refused}")
+        assert said.code == 1 and says in said.said, said.said
 
 
 def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path, tmp_path: Path) -> None:

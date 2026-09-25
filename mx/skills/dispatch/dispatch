@@ -4,8 +4,10 @@
 # Runs here, on the branch ticket branches cut from and merge back into: the
 # branch a parent ticket is built on, in that worktree, or the repo's
 # integration branch, in the checkout you are in, for a ticket with no parent
-# ticket. `dispatch-ctl` is its counterpart on a worker host, reached through
-# `ctl`.
+# ticket. A project is two repos, this one and the agent repo it holds at
+# `agent/`, and everything below does both: a ticket branch is cut, pushed,
+# fetched and merged in each. `dispatch-ctl` is its counterpart on a worker
+# host, reached through `ctl`.
 #
 # Usage: dispatch claim <slug>
 #        dispatch prompt <slug> < message-file
@@ -14,11 +16,12 @@
 #        dispatch fetch <slug>
 #        dispatch push
 #        dispatch review <slug>
-#   <slug> is the ticket's id: agent/tickets/<slug>.md.
-#   claim    flips <slug> to claimed and commits that on this branch. Refuses a
-#            ticket already claimed, which is one in somebody's hands; every
-#            other transition is `tracker set`'s to allow or refuse, and its
-#            refusal names the rule.
+#   <slug> is the ticket's id, and names its file in the tracker (`tracker root`).
+#   claim    flips <slug> to claimed and commits that in the agent repo's main
+#            checkout, where every ticket file is written. Refuses a ticket
+#            already claimed, which is one in somebody's hands; every other
+#            transition is `tracker set`'s to allow or refuse, and its refusal
+#            names the rule.
 #   prompt   writes stdin as <slug>'s message, here; the spawn that follows
 #            sends it with the ticket's context under it (`tracker context`:
 #            the ticket's body and every ancestor's, the one assembly a
@@ -54,60 +57,88 @@
 #            Exit 0 on `exited`; nonzero when the run is `gone` (1), the
 #            worklog went silent for --stall (2), --deadline passed (5), or
 #            the host stayed unreachable for two minutes.
-#   fetch    brings ticket/<slug> from its host into this repo,
-#            replacing an earlier fetch of it (ticket branches get rebased) and
-#            ending the staged demo of the round before, whose worktree would
-#            otherwise hold the branch the fetch writes.
-#   push     this branch to every host it still has a run on, so a worker
-#            resumed to rebase finds the tip it is rebasing onto. A host that
-#            refuses the push is reported and the rest still get it; the exit
-#            status is nonzero when any did not.
-#   review   once a ticket branch is fetched, before or after its merge alike:
-#            projects the ticket's assumptions into the review page's notes,
-#            renders agent/diffviews/<slug>.html, serves it, re-renders the
-#            board, and writes the ticket's status on this branch: `review`
-#            while the branch is unmerged, `done` with its final range in the
-#            `diff:` frontmatter once it has merged. One commit either way,
-#            and none when the ticket already says so.
-#            While the branch is unmerged it also stages the ticket's demo for
-#            the user to run: the ticket branch checked out beside this worktree
-#            as <repo>-<slug>, and the show directory's `demo` typed unrun at
-#            the prompt of a detached tmux session named job-<repo>-<slug>-demo,
-#            through `job`'s staged mode. The user starts it, so a demo meant to
-#            be watched is watched from its first line. The worktree is a plain
-#            checkout with no install step run in
-#            it, so the demo has what the user's machine already has and nothing
-#            more. Anything that stops a staging says so and leaves the rest of
-#            the landing standing: no demo on the branch, one committed
+#   fetch    brings both ticket/<slug> branches from the host into the two
+#            repos here, replacing an earlier fetch of them (ticket branches get
+#            rebased) and ending the staged demo of the round before, whose
+#            worktrees would otherwise hold the branches the fetch writes. The
+#            worker's report is a file on the agent branch, so it arrives with
+#            it.
+#   push     this branch, from both repos, to every host still holding a run of
+#            it, so a worker resumed to rebase finds the tips it is rebasing
+#            onto. A host that refuses the push is reported and the rest still
+#            get it; the exit status is nonzero when any did not.
+#   review   once a ticket's branches are fetched, before or after their merge
+#            alike: imports the report the agent branch carries at
+#            agent/show/<slug>/report.md into the ticket; refuses either branch
+#            that wrote a ticket file, whatever else it left; projects the
+#            ticket's assumptions into the review page's notes; renders
+#            agent/diffviews/<slug>.html in the agent repo, over both ranges,
+#            since a round is one diff per repo; serves it; re-renders the
+#            board; and writes the ticket's status: `review` while either
+#            branch is unmerged, `done` with the round's two ranges in the
+#            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
+#            once both have merged. One commit either way, and none when the
+#            ticket already says so.
+#            While a branch is unmerged it also stages the ticket's demo for the
+#            user to run: the ticket's branches checked out beside this worktree
+#            as <repo>-<slug> and its `agent/`, and the show directory's `demo`
+#            typed unrun at the prompt of a detached tmux session named
+#            job-<repo>-<slug>-demo, through `job`'s staged mode. The user
+#            starts it, so a demo meant to be watched is watched from its first
+#            line. The worktrees are plain checkouts with no install step run in
+#            them, so the demo has what the user's machine already has and
+#            nothing more. Anything that stops a staging says so and leaves the
+#            rest of the landing standing: no demo on the branch, one committed
 #            unexecutable, a `job` without the mode or no `job` at all. A ticket
 #            whose closing comment says the diff is the demo has none to stage,
 #            and reads the same here as one that lost its demo; the closing
 #            comment is what tells the two apart.
 #
-# Ticket branches merge into this branch with --no-ff; that merge commit is how
-# `review` finds a ticket's range after the merge (its second parent is the
-# ticket tip). A build merges only once the user has ruled on its review page,
-# so until then it renders unmerged and this branch carries the ticket's
-# status and nothing else of it.
+# A ticket branch merges into this branch with --no-ff, in each repo; that merge
+# commit is how `review` finds a ticket's range after the merge (its second
+# parent is the ticket tip). A build merges only once the user has ruled on its
+# review page, so until then it renders unmerged and the tracker carries the
+# ticket's status and nothing else of it.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Every read and write of a ticket file goes through the one command that
-# parses one; the worker hosts get a copy of it staged beside dispatch-ctl.
+# Every read and write of a ticket file goes through the one command that parses
+# one, which runs here and nowhere else: a worker is handed its ticket's context
+# in its prompt, so no worker host holds a reader of a ticket file.
 tracker=$skill/../tracker/tracker.py
 
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
+commit_ticket() { run git -C "$agent_top" commit -q -m "$2" -- "$tickets/$1.md"; } # <slug> <message>
+
+# The two repos a round lands in, by the name its `diff:` range carries, and the branch each one's
+# ticket branches cut from and merge back into.
+repo_at() { [ "$1" = agent ] && echo "$agent_top" || echo "$repo_root"; } # code | agent
+base_at() { [ "$1" = agent ] && echo "$agent_base" || echo "$base"; }     # code | agent
+
 # Every command runs on the branch ticket branches cut from and merge back
 # into: a parent ticket's, or the integration branch.
 locate() {
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
-    # Every path below is relative to the worktree root, this one included.
+    # Every path of this repo's own below is relative to its worktree root.
     cd "$repo_root" || die "cannot enter $repo_root"
     base=$(git branch --show-current)
     [ -n "$base" ] || die "detached HEAD; run this on the branch the ticket branches cut from"
-    tickets=agent/tickets diffviews=agent/diffviews show=agent/show
+    # A project is two repos: this one, and the agent repo it holds at `agent/`,
+    # where the tickets, the show directories, the prototypes and the research
+    # are. Every ticket change is committed in that repo's main checkout, and
+    # never on a ticket branch of either.
+    tickets=$("$tracker" root) || exit 1
+    agent_top=$(dirname "$tickets")
+    [ "$(git -C "$agent_top" rev-parse --show-toplevel 2>/dev/null)" = "$agent_top" ] ||
+        die "$agent_top is no git repo of its own, so this project is not two repos yet; /mx:project-setup splits it out"
+    # Each repo's own: the code repo is on the branch this worktree holds, a parent ticket's or the
+    # integration branch, while the agent repo keeps the branch its main checkout has out, since a
+    # ticket file is written there and on no branch of its own.
+    agent_base=$(git -C "$agent_top" branch --show-current)
+    [ -n "$agent_base" ] || die "$agent_top is on a detached HEAD; ticket files are written on the branch it has out"
+    diffviews=$agent_top/diffviews show=agent/show
     gitdir=$(realpath "$(git rev-parse --git-common-dir)")
     # The bare repo on a host, its ticket worktrees and its scratch dirs all
     # carry the repo's name, and nothing records it: the common git dir is
@@ -201,7 +232,7 @@ ticket_host() { # <slug>
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
-    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$tracker")
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
     # The setup command travels as a file named `setup`, so its quoting never
     # has to survive an ssh hop.
@@ -222,23 +253,31 @@ stage() { # <host> [setup-command]
     if [ "$h" = local ]; then
         run mkdir -p "$scratch"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
-        run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" || die "init failed"
+        run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
     else
         remote=${h//[@.]/-}
         git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
+        git -C "$agent_top" remote get-url "$remote" >/dev/null 2>&1 ||
+            run git -C "$agent_top" remote add "$remote" "$h:repos/dispatch/$repo-agent.git"
         run on_host "$h" mkdir -p "$scratch" || die "cannot reach $h"
         copy_to "$h" "$scratch" "${files[@]}" || die "copy to $h:$scratch failed"
-        # init creates the bare repo a push lands in; until it has run, the host
-        # has nothing to cut a ticket branch from.
-        run on_host "$h" bash "$scratch/dispatch-ctl" init "$repo" "$base" || die "init on $h failed"
+        # init creates the two bare repos a push lands in; until it has run, the
+        # host has nothing to cut a ticket branch from.
+        # the empty three are the host's own defaults for its two bare repos and its worktree dir
+        run on_host "$h" bash "$scratch/dispatch-ctl" init "$repo" "$base" "" "" "" "$agent_base" || die "init on $h failed"
     fi
     # Last, so a staging that broke halfway is done again instead of trusted.
     printf '%s\n' "$stamp" | on_host "$h" tee "$scratch/stamp" > /dev/null
 }
 
 push_to() { # <host>
-    [ "$1" = local ] && return 0  # a local host cuts ticket branches from this worktree
-    run git push -q "${1//[@.]/-}" "$base" || { echo "dispatch: push to $1 failed" >&2; return 1; }
+    [ "$1" = local ] && return 0  # a local host cuts ticket branches from these checkouts
+    rc=0
+    for at in code agent; do
+        run git -C "$(repo_at "$at")" push -q "${1//[@.]/-}" "$(base_at "$at")" ||
+            { echo "dispatch: pushing $(base_at "$at") of the $at repo to $1 failed" >&2; rc=1; }
+    done
+    return $rc
 }
 
 claim() {
@@ -247,14 +286,14 @@ claim() {
     # the status a ticket already has, so the ticket in hand is refused here.
     [ "$("$tracker" get "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
     run "$tracker" set "$1" status=claimed || exit 1
-    run git commit -q -m "claim $1" -- "$tickets/$1.md"
+    commit_ticket "$1" "claim $1"
 }
 
 # A worker resumed on a build the user sent back holds its ticket again.
 reclaim() { # <slug>
     [ "$("$tracker" get "$1" status)" = review ] || return 0
     run "$tracker" set "$1" status=claimed || exit 1
-    run git commit -q -m "claim $1" -- "$tickets/$1.md"
+    commit_ticket "$1" "claim $1"
 }
 
 # One host down is one host's failure: the others still get the tip, and the
@@ -339,6 +378,14 @@ ctl() {
             name=fuzz
             [ "${2:-}" = start ] && stages=1 ;;
     esac
+    # The one ticket a worker never gets, read in the tracker: the host reads no
+    # ticket at all, so this is where a ticket the user is in the loop for stops,
+    # for a resume as much as for a spawn.
+    if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
+        read=$("$tracker" data "$2") || die "$2 is no ticket any reader can read in $tickets"
+        [ "$(printf '%s' "$read" | jq -r '.tickets[0]["needs-user"]')" != true ] ||
+            die "$2 needs the user in the loop: it is worked with them, never handed to a worker"
+    fi
     [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
     if [ -z "$host" ]; then
         case $sub in
@@ -388,25 +435,32 @@ fetch() {
     locate; ticket_host "$1"
     branch=ticket/$1
     if [ "$host" = local ]; then
-        # The worker's own worktree is the one a staging here reused, and the
-        # worker is the one that moves it: nothing to unstage.
-        git rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch here"
-        echo "local host: $branch is already here"
-        return
+        # The worker's own worktrees are the ones a staging here reused, and the
+        # worker is the one that moves them: nothing to unstage.
+        for top in "$repo_root" "$agent_top"; do
+            git -C "$top" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $top"
+        done
+        echo "local host: $branch is already here, in both repos"
+    else
+        # A fetch is the next round of this ticket arriving, so the round before
+        # it stops waiting: git refuses to fetch into a branch a worktree holds,
+        # and a staged session that outlived the fetch would run the previous
+        # round's file.
+        unstage_demo "$1"
+        for top in "$repo_root" "$agent_top"; do
+            run git -C "$top" fetch -q "${host//[@.]/-}" "+$branch:$branch" ||
+                die "fetching $branch from $host into $top failed"
+        done
     fi
-    # A fetch is the next round of this ticket arriving, so the round before it
-    # stops waiting: git refuses to fetch into a branch a worktree holds, and a
-    # staged session that outlived the fetch would run the previous round's file.
-    unstage_demo "$1"
-    run git fetch -q "${host//[@.]/-}" "+$branch:$branch"
 }
 
 # What a ticket's demo is called on both sides of the staging. The worktree path
-# is dispatch-ctl's `names` derivation and has to stay it: on a local host that
-# path is the worker's own worktree, which is what makes the staging reuse it
-# rather than check the branch out twice.
+# is dispatch-ctl's `names` derivation and has to stay it: on a local host those
+# are the worker's own worktrees, which is what makes the staging reuse them
+# rather than check the branches out twice.
 demo_names() { # <slug>
     demo_path=$show/$1/demo
+    demo_in_agent=show/$1/demo       # the same file, from the agent repo's own root
     demo_branch=ticket/$1
     demo_worktree=$(dirname "$repo_root")/$repo-$1
     demo_job=$repo-$1-demo
@@ -419,18 +473,19 @@ holds_ticket() { [ "$(git -C "$1" rev-parse --abbrev-ref HEAD 2> /dev/null)" = "
 
 not_staged() { echo "dispatch: $1; nothing staged" >&2; } # <why>
 
-# The demo left waiting for the user to run: the ticket branch beside this
-# worktree, and its `demo` typed at a prompt with the Enter theirs to press. The
-# staged mode is `job`'s, so what they start is an ordinary job and its log and
-# status land where every job's do. Every way of not staging ends the same way,
-# said out loud and carried on from: the status is written and the page rendered
-# by the time this runs, and a landing whose session did not open is not a
-# failed landing.
-stage_demo() { # <ticket> <tip>
+# The demo left waiting for the user to run: the ticket's two branches checked
+# out as the project keeps them, the agent repo inside the code one, and the
+# demo typed at a prompt with the Enter theirs to press. The staged mode is
+# `job`'s, so what they start is an ordinary job and its log and status land
+# where every job's do. Every way of not staging ends the same way, said out
+# loud and carried on from: the status is written and the page rendered by the
+# time this runs, and a landing whose session did not open is not a failed
+# landing.
+stage_demo() { # <ticket> <agent tip>
     demo_names "$1"
     # Mode as well as presence: a demo committed 100644 stages fine and fails
     # with "permission denied" under the user's own Enter.
-    case $(git ls-tree "$2" -- "$demo_path" | cut -c1-6) in
+    case $(git -C "$agent_top" ls-tree "$2" -- "$demo_in_agent" | cut -c1-6) in
         100755) ;;
         "")     not_staged "no $demo_path on $demo_branch, whether the diff is the demo or the demo is missing"; return 0 ;;
         *)      not_staged "$demo_path on $demo_branch is not executable"; return 0 ;;
@@ -445,6 +500,13 @@ stage_demo() { # <ticket> <tip>
     else
         run git worktree add "$demo_worktree" "$demo_branch" ||
             { not_staged "could not check $demo_branch out at $demo_worktree"; return 0; }
+    fi
+    if [ -e "$demo_worktree/agent" ]; then
+        holds_ticket "$demo_worktree/agent" "$demo_branch" ||
+            { not_staged "$demo_worktree/agent is not $demo_branch"; return 0; }
+    else
+        run git -C "$agent_top" worktree add "$demo_worktree/agent" "$demo_branch" ||
+            { not_staged "could not check $demo_branch out at $demo_worktree/agent"; return 0; }
     fi
     # Not echoed: job names are unique until `job rm`, and on a first landing
     # this is a name nothing has taken.
@@ -468,33 +530,43 @@ unstage_demo() { # <ticket>
     else
         tmux has-session -t "=$demo_session" 2> /dev/null && run tmux kill-session -t "=$demo_session"
     fi
-    # On a local host the worker's own cleanup removes this same worktree first,
-    # so whoever gets there second finds it gone.
+    # On a local host the worker's own cleanup removes these same worktrees
+    # first, so whoever gets there second finds them gone. The agent one goes
+    # before the code one it sits inside.
+    holds_ticket "$demo_worktree/agent" "$demo_branch" &&
+        run git -C "$agent_top" worktree remove --force "$demo_worktree/agent"
     holds_ticket "$demo_worktree" "$demo_branch" && run git worktree remove --force "$demo_worktree"
     return 0
 }
 
-is_merged() { git merge-base --is-ancestor "$1" "$base"; }
+is_merged() { git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$(base_at "$1")"; } # code|agent <tip>
 
-# <tip> → <from>..<tip>, whether or not the ticket branch has merged yet. Before
-# the merge, merge-base against this branch is the answer; after it, the tip is
-# an ancestor of this branch and merge-base would return the tip itself, so the
-# start comes from the merge commit that brought it in. SHAs on both ends,
-# because cleanup deletes the branch while its commits survive.
-range_of() {
-    tip=$1
-    if is_merged "$tip"; then
-        merge=$(git rev-list --first-parent --merges --parents "$base" | awk -v t="$tip" '$3 == t { print $1; exit }')
-        [ -n "$merge" ] || die "$tip is on $base but no --no-ff merge brought it there; append the range to the ticket by hand"
-        echo "$(git merge-base "$merge^1" "$tip")..$tip"
+# <repo, code or agent> <tip> → <from>..<tip>, whether or not the ticket branch has merged yet,
+# and nothing at all for a branch that committed nothing, which is what a round
+# that touched one of the two repos leaves in the other. Before the merge,
+# merge-base against this branch is the answer; after it, the tip is an ancestor
+# of this branch and merge-base would return the tip itself, so the start comes
+# from the merge commit that brought it in. SHAs on both ends, because cleanup
+# deletes the branch while its commits survive.
+range_of() { # code|agent <tip>
+    at=$1 tip=$2 top=$(repo_at "$1") onto=$(base_at "$1")
+    if ! is_merged "$at" "$tip"; then
+        echo "$(git -C "$top" merge-base "$onto" "$tip")..$tip"
+        return 0
+    fi
+    merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
+    if [ -n "$merge" ]; then
+        echo "$(git -C "$top" merge-base "$merge^1" "$tip")..$tip"
+    elif [ -z "$(git -C "$top" rev-list -1 "$onto..$tip")" ]; then
+        return 0  # the branch carries nothing of its own, so it has no range
     else
-        echo "$(git merge-base "$base" "$tip")..$tip"
+        die "$tip is on $onto in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
     fi
 }
 
-# The notes file is a pure projection of the ticket on stdin, rewritten whole on
-# every render: the assumptions the tracker read become the page's notes, and
-# the comment ids the ticket's `Addressed:` lines name become its resolved list.
+# The notes file is a pure projection of the ticket, rewritten whole on every
+# render: the assumptions the tracker read become the page's notes, and the
+# comment ids the ticket's `Addressed:` lines name become its resolved list.
 # The ticket is read through `tracker data -`, so a bullet no reader can read is
 # refused with its line rather than dropped from the page, and however the
 # writer wrapped one it is read whole. The user's own comments live in
@@ -521,47 +593,93 @@ review() {
     ticket=$tickets/$id.md
     branch=ticket/$id
     [ -f "$ticket" ] || die "no ticket at $ticket"
-    tip=$(git rev-parse --verify -q "$branch") || die "no branch $branch here; fetch it from the worker host first"
-    range=$(range_of "$tip") || exit 1
+    # One round is two branches, one per repo, and a ticket's rounds are the pairs:
+    # `code@<range>` and `agent@<range>`, written together.
+    code_tip=$(git -C "$repo_root" rev-parse --verify -q "$branch") ||
+        die "no branch $branch in $repo_root; fetch it from the worker host first"
+    agent_tip=$(git -C "$agent_top" rev-parse --verify -q "$branch") ||
+        die "no branch $branch in $agent_top; fetch it from the worker host first"
+    code_range=$(range_of code "$code_tip") || exit 1
+    agent_range=$(range_of agent "$agent_tip") || exit 1
+    written=()
+    [ -n "$code_range" ] && written+=("code@$code_range")
+    [ -n "$agent_range" ] && written+=("agent@$agent_range")
 
-    # The status follows the branch: waiting for the ruling while unmerged,
-    # done once merged, when the range is final too. `tracker` writes both, and
-    # refuses a landing the tracker's transitions do not allow.
-    if is_merged "$tip"; then
-        fields=()
-        rounds_of "$id" | grep -qxF "$range" || fields+=("diff+=$range")
-        [ "$("$tracker" get "$id" status)" = done ] || fields+=("status=done")
-        [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
-        git diff --quiet -- "$ticket" || run git commit -q -m "$id landed" -- "$ticket"
-    elif [ "$("$tracker" get "$id" status)" != review ]; then
-        run "$tracker" set "$id" status=review || exit 1
-        run git commit -q -m "$id for review" -- "$ticket"
+    # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
+    # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
+    # import writes is the tracker's.
+    wrote=$(git -C "$agent_top" diff --name-only \
+        "$(git -C "$agent_top" merge-base "$agent_base" "$agent_tip")" "$agent_tip" -- tickets | tr '\n' ' ')
+    [ -z "$wrote" ] || die "$branch writes a ticket file, which is nobody's to write on a ticket branch: $wrote"
+
+    # The worker's words, in one write: its closing comment, the questions its build raised, the
+    # assumptions the notes below are made of, and the flip to `review` with them. The report is a
+    # file on the agent branch, where the worker committed it beside its demo. The status is what
+    # makes the second run of this, after the merge, a no-op: a round is imported into the build
+    # that is claimed, once.
+    reported=show/$id/report.md
+    status=$("$tracker" get "$id" status)
+    if ! git -C "$agent_top" cat-file -e "$agent_tip:$reported" 2>/dev/null; then
+        echo "dispatch: no $reported on $branch; the run left nothing to review" >&2
+    elif [ "$status" = claimed ]; then
+        git -C "$agent_top" show "$agent_tip:$reported" |
+            run "$tracker" import "$id" - --called "$branch:$reported" || exit 1
+        commit_ticket "$id" "$id for review"
+    else
+        echo "dispatch: $id is $status, so the report on $branch was not imported; a report lands once, on the build that is claimed" >&2
     fi
 
-    # One section per round: the rounds the ticket carries, then this branch's
-    # own while it is unmerged (a proposal waiting for its ruling, or a resumed
-    # worker's next round fetched before its merge). Read after the write
-    # above, so the round that just landed is in the list once.
+    # The status follows the branches: waiting for the ruling while either is unmerged, done once
+    # both are, when the ranges are final too. `tracker` writes both, and refuses a landing the
+    # tracker's transitions do not allow. A round whose branches carry no commit at all built
+    # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
+    # stopped before its first commit.
+    if [ ${#written[@]} -eq 0 ]; then
+        echo "dispatch: neither branch of $id carries a commit, so this round built nothing to review" >&2
+        return 0
+    elif is_merged code "$code_tip" && is_merged agent "$agent_tip"; then
+        fields=()
+        for round in "${written[@]}"; do
+            rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
+        done
+        [ "$("$tracker" get "$id" status)" = done ] || fields+=("status=done")
+        [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
+        git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$id landed"
+    elif [ "$("$tracker" get "$id" status)" != review ]; then
+        run "$tracker" set "$id" status=review || exit 1
+        commit_ticket "$id" "$id for review"
+    fi
+
+    # One section per round per repo: the rounds the ticket carries, then this
+    # round's while it is unmerged (a proposal waiting for its ruling, or a
+    # resumed worker's next round fetched before its merge). Read after the
+    # write above, so the round that just landed is in the list once.
     rounds=$(rounds_of "$id")
     specs=()
-    while read -r r; do [ -n "$r" ] && specs+=("$repo_root@$r"); done <<< "$rounds"
-    printf '%s\n' "$rounds" | grep -qxF "$range" || specs+=("$repo_root@$range")
+    while read -r r; do
+        [ -n "$r" ] || continue
+        # A range names the repo it was built in; one that names neither is a
+        # round from before this ticket's tracker had two repos, and belongs to
+        # the code one.
+        at=${r%%@*}
+        [ "$at" != "$r" ] || at=code
+        specs+=("$(repo_at "$at")@${r##*@}")
+    done <<< "$rounds"
+    for round in "${written[@]}"; do
+        printf '%s\n' "$rounds" | grep -qxF "$round" || specs+=("$(repo_at "${round%%@*}")@${round#*@}")
+    done
 
     out=$diffviews/$id
     mkdir -p "$(dirname "$out")"
-    # The ticket as the worker left it: this branch's copy predates the
-    # worker's closing comment until the merge brings it in.
-    if is_merged "$tip"; then
-        notes_of < "$ticket" > "$out.notes.json" || exit 1
-    else
-        git show "$tip:$ticket" | notes_of > "$out.notes.json" || exit 1
-    fi
+    # The tracker's own copy, which the import above has brought the worker's
+    # closing comment and its assumptions into.
+    notes_of < "$ticket" > "$out.notes.json" || exit 1
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
-    run diffview --serve agent/diffviews
-    run uv run "$skill/../tracker/board.py" agent/tickets --no-watch --no-open
+    run diffview --serve "$diffviews"
+    run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
 
     # Last, so the session the landing message names is the last line printed.
-    is_merged "$tip" || stage_demo "$id" "$tip"
+    is_merged code "$code_tip" && is_merged agent "$agent_tip" || stage_demo "$id" "$agent_tip"
 }
 
 cmd=${1:-}
