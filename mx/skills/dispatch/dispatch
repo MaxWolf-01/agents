@@ -502,11 +502,11 @@ unreviewed_of() { # <tip>, the record on stdin
     local tip=$1 text covered c r files
     text=$(cat)
     covered=$(
-        grep -oE '\breview range `[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}`' <<<"$text" | grep -oE '[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}' | while IFS= read -r r; do
-            git -C "$repo_root" rev-list "${r%%..*}..${r##*.}" 2>/dev/null
+        grep -oE '\breview range `[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}`' <<<"$text" | grep -oE '[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}' | while IFS= read -r r; do
+            git -C "$repo_root" rev-list "$r" 2>/dev/null
         done
         # A range's ends are not hashes a finding names: its start lies outside it.
-        sed -E 's/\b[0-9a-f]{7,40}\.\.\.?[0-9a-f]{7,40}\b//g' <<<"$text" | grep -oE '\b[0-9a-f]{7,40}\b' | while IFS= read -r r; do
+        sed -E 's/\b[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}\b//g' <<<"$text" | grep -oE '\b[0-9a-f]{7,40}\b' | while IFS= read -r r; do
             c=$(git -C "$repo_root" rev-parse -q --verify "$r^{commit}" 2>/dev/null) || continue
             git -C "$repo_root" log -1 --format=%B "$c" | grep -qx 'Workflow-stage: review' && echo "$c"
         done
@@ -597,6 +597,7 @@ review() {
         commit_ticket "$id" "$id for review"
     elif [ "$status" = claimed ]; then
         echo "dispatch: the report on $branch is the one $id already carries, so this round left none of its own to import" >&2
+        [ ${#written[@]} -gt 0 ] && return 0
     elif [ "$status" = open ] || [ "$status" = proposed ]; then
         # `review` and `done` are the ticket saying the report has landed, which is what the second
         # run of this after the merge finds; a ticket ruled back to open is a report with nowhere
@@ -608,7 +609,8 @@ review() {
     # both are, when the ranges are final too. `tracker` writes both, and refuses a landing the
     # tracker's transitions do not allow. A round whose branches carry no commit at all built
     # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
-    # stopped before its first commit.
+    # stopped before its first commit. A claimed round that wrote no report of its own stopped above,
+    # since a report this round wrote is what puts a build in front of the user.
     if [ ${#written[@]} -eq 0 ]; then
         echo "dispatch: neither branch of $id carries a commit, so this round built nothing to review" >&2
         return 0

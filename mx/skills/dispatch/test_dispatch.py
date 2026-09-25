@@ -101,6 +101,7 @@ dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
 cp "${files[@]:0:${#files[@]}-1}" "$dest"
 """
 
+
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
@@ -409,7 +410,9 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     assert "left none of its own to import" in said.stderr, said.stderr
-    assert (tracked(toy) / "warm-preset.md").read_text() == once, "nothing of the first round said twice"
+    assert status_of(toy, "warm-preset") == "claimed", "the build sent back is in front of nobody again"
+    assert (tracked(toy) / "warm-preset.md").read_text() == once.replace("status: review", "status: claimed"), \
+        "nothing of the first round said twice"
 
 
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
@@ -661,7 +664,7 @@ def test_a_range_covers_only_what_lies_inside_it(toy: Path) -> None:
     first = code(toy, "first", "1\n")
     second = code(toy, "second", "2\n", "b.txt")
     third = code(toy, "third", "3\n", "c.txt")
-    record(toy, f"review range `{first}...{second}`")
+    record(toy, f"review range `{first}..{second}`")
     assert unreviewed(toy) == (1, {first, third})
 
 
@@ -671,8 +674,9 @@ def test_hex_that_names_no_commit_covers_nothing(toy: Path) -> None:
     record(toy, "colour `deadbeefcafe`, range `abcdef0..1234567`")
     assert unreviewed(toy) == (1, {build})
 
+
 def shared_file(toy: Path, lines: int) -> list[str]:
-    """A file on main both sides of a rebase or merge will edit, before the branch is cut."""
+    """A file on main both sides of a merge will edit, before the branch is cut."""
     body = [f"l{i} = {i}" for i in range(1, lines + 1)]
     code(toy, "the shared file", "\n".join(body) + "\n", "shared.py")
     return body
@@ -695,8 +699,11 @@ def test_a_rebased_branch_is_listed_until_it_is_reviewed_again(toy: Path) -> Non
 
 
 def test_unreviewed_for_a_ticket_that_does_not_exist_says_so(toy: Path) -> None:
-    branched(toy)
-    code(toy, "the warm preset", "warm\n")
+    """Both branches there and the ticket file alone missing, which is when the record would
+    otherwise be the report without the rounds the ticket holds."""
+    git(toy, "checkout", "-q", "-b", "ticket/warm-presets")
+    git(toy / "agent", "branch", "ticket/warm-presets")
+    code(toy, "the warm presets", "warm\n")
     git(toy, "checkout", "-q", "main")
     said = run(toy, "unreviewed", "warm-presets")
     assert said.returncode != 0
@@ -750,6 +757,7 @@ def test_a_range_written_any_other_way_covers_nothing(toy: Path) -> None:
     record(toy, f"Landed `{cut}..{build}`, unmerged, meets AC1.")
     assert unreviewed(toy) == (1, {build})
 
+
 def test_unreviewed_without_the_agent_branch_says_to_fetch(toy: Path) -> None:
     git(toy, "checkout", "-q", "-b", "ticket/warm-preset")
     code(toy, "the warm preset", "warm\n")
@@ -774,6 +782,7 @@ def test_a_round_with_no_code_and_no_report_says_it_left_nothing_to_review(toy: 
     assert said.returncode == 0, said.stderr
     assert "left nothing to review" in said.stderr, said.stderr
     assert status_of(toy, "warm-preset") == "claimed", "a round with no report is in front of nobody"
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
