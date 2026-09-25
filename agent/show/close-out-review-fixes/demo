@@ -204,7 +204,7 @@ worker_is silent
 ( cd "$lamp" && run $dispatch ctl --host local resume warm-preset sonnet )
 ( cd "$lamp" && run $dispatch wait warm-preset --deadline 120 )
 note ""
-note "report=no, and `dispatch ctl log` is where that run's own words are."
+note 'report=no, and `dispatch ctl log` is where the run says what it did.'
 
 step "3. the round that left nothing imports nothing"
 
