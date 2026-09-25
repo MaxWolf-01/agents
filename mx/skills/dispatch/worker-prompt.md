@@ -33,7 +33,7 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 Under `## Comments` goes your closing comment, which the agent that dispatched you relays to the user unchanged:
 
 - One line saying what landed, what is not merged, and which of the ticket's acceptance criteria your work meets.
-- **Results only this host can produce**, where your work made any (a training run's metrics, a benchmark on this machine): committed as data with the work, as `/mx:ml` keeps a result, and named here by path. What the user is shown of your work is built after you, from your branch and these.
+- **Results only this host can produce**, where your work made any (a training run's metrics, a benchmark on this machine): committed as data with the work and named here by path. What the user is shown of your work is built after you, from your branch and these.
 - **Details, if you want them**, each entry tagged `[Dn]`: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
 Under `## Questions` go the calls only the user can make, one `- [Dn] **headline** detail` item each: an assumption worth the user's ruling, a declined finding, a question your build raised. The board shows each under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest the ticket already carries, so `[D7]` names one thing for good.

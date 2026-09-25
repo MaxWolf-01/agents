@@ -7,9 +7,9 @@ description: "Show, don't tell: build the artifact that makes a thing visible, s
 
 A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, build what the table names for the thing's shape, look at it yourself, put it in front of the reader.
 
-## The grid
+## What a reader can be shown
 
-What a reader can be shown sits on two axes. The **level** is what they look at: the **concept** (how it fits and why, drawn), the **code** (what is written: code, config, a prompt, a skill's prose) or the **output** (what it produces: a printout, a record, a render, what an agent answers). The **form** is the thing as it is, or how it changed.
+It sits on two axes. The **level** is what they look at: the **concept** (how it fits and why, drawn), the **code** (what is written: code, config, a prompt, a skill's prose) or the **output** (what it produces: a printout, a record, a render, what an agent answers). The **form** is the thing as it is, or how it changed.
 
 | | as it is | how it changed |
 | --- | --- | --- |
@@ -18,15 +18,15 @@ What a reader can be shown sits on two axes. The **level** is what they look at:
 | output | output | output diff |
 | prose | abstract prose, narrated example | |
 
-The line that matters is **narrated against real**. An example written from the head is a narrated example; one made by running the thing is output. A narrated example is often the better choice, a role-played exchange above all, and it says it is one.
+The line that matters is **narrated against real**: an example written from the head is a narrated example, one made by running the thing is output, and a narrated example says it is one.
 
 The reader's question picks the level: how does it fit, what did you write, what will I see. Whether something moved picks the form: a thing that existed and changed gets the diff form, a new thing the as-is form, and a decision nothing has built yet the concept level alone. Cells combine whenever each adds what the others do not; a clean output diff, the same scenario on the old and the new, is usually the one that shows most.
 
 A **demo**, in the user's words, is a show made of the built thing's own output, walked through: the rendered page, the running tool, an annotated tutorial of either.
 
-## The table
+## What each level looks like, per shape
 
-What each level looks like for a thing of a given shape. The code level is the same for every shape, the diff on the review page, so a show quotes code only for an interface (what an agent or the user types) or the snippet a concept needs.
+The code level is the same for every shape, the diff on the review page, so a show quotes code only for an interface (what an agent or the user types) or the snippet a concept needs.
 
 | Shape | Concept | Output |
 | --- | --- | --- |
@@ -45,12 +45,11 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 ## A landing's show
 
-Work that lands for the user's ruling comes with its review page and, when it holds something the diff does not make visible, one show. It is for the user's understanding of what was built; the tests and the review are what prove it works. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
+Work that lands for the user's ruling comes with its review page and, when it holds something the diff does not make visible, one show. It is for the user's understanding of what was built. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
 - **One per landing.** A tree's show covers every child ticket in review the user has not ruled on yet, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
 - **The few things the user would notice.** Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
-- **Output only another host can produce**, a training run's metrics on the GPU host, is drawn from the data that host's work committed, never rerun (`/mx:ml`).
 
 ## Where it goes
 
