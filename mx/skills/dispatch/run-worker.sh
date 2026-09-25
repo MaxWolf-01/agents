@@ -41,8 +41,13 @@ export DISPATCH_WORKLOG="$here/$run_id.log"
 # What the worker has to say about the ticket: its closing comment and the questions its build
 # raised, committed with its demo and its figures in the agent repo, which is a repo of its own at
 # `agent` inside this worktree. The orchestrator fetches that branch and imports the report into
-# the ticket; the report being committed is what says the worker finished.
-reported() { git -C agent cat-file -e "HEAD:show/$slug/report.md" 2> /dev/null; }
+# the ticket; this round's report being committed is what says the worker finished.
+#
+# This round's, not any: a resumed round starts with the round before it already committed there,
+# so what the run is measured against is the blob that was there when it started. A crash before
+# the worker writes anything then reads as the unfinished run it is.
+was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)
+reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"

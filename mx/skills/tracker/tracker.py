@@ -127,10 +127,10 @@ def get(slug: Annotated[str, tyro.conf.Positional], field: Annotated[Field, tyro
 
 
 @app.command(name="data")
-def data(source: Annotated[str, tyro.conf.Positional] = "") -> int:
+def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") -> int:
     """The tracker as JSON: every ticket with its frontmatter, sections, questions, properties,
     acceptance criteria and assumptions. One ticket alone when given a slug, a path or `-`, which
-    reads a ticket file from stdin, as a review page does from a ticket branch.
+    reads a ticket file from stdin.
 
     JSON schema:
 
@@ -150,10 +150,11 @@ def data(source: Annotated[str, tyro.conf.Positional] = "") -> int:
 
     Args:
         source: a slug, a ticket file, or `-` for one on stdin; the whole tracker when absent.
+        called: what a refusal calls a ticket read from stdin, so it names the object it came from.
     """
     if source == "-" or (source and source.endswith(".md")):
         alone = source == "-"
-        path = Path("-.md") if alone else Path(source)
+        path = Path(called or "<stdin>") if alone else Path(source)
         text = sys.stdin.read() if alone else path.read_text()
         ticket = read(path, text)
         # a file read by path is read in the tracker its directory holds, so its references resolve
@@ -273,7 +274,7 @@ def new(
     """
     if not SLUG.fullmatch(slug):
         raise Refused([f"`{slug}` is no slug; a slug is lower case words joined by hyphens, and the tracker is flat"])
-    tracker = here()
+    tracker = writing()
     path = tracker.root / f"{slug}.md"
     if path.exists():
         raise Refused([f"{path} is already a ticket"])
@@ -317,7 +318,7 @@ def set_fields(
         slug: the ticket.
         assignments: `status=claimed`, `diff+=4f2a91c..8b3ce07`, `blocked-by=[one, another]`.
     """
-    tracker = here()
+    tracker = writing()
     ticket = tracker.ticket(slug)
     changes, said, grown = {}, [], {}
     for assignment in assignments:
@@ -417,13 +418,25 @@ def repos_of(tracker: Tracker) -> list[Path]:
     """The checkouts a round lands in: the code repo's and the agent repo's, one each. The code
     repo's is the checkout this command runs in where that is the code repo, since dispatch runs in
     the worktree a parent ticket is built in and the merge is there; its main checkout otherwise.
-    One repo where the project's `agent/` is not one of its own yet."""
+    One repo where the project's `agent/` is not one of its own yet, and then a linked worktree of
+    it is that same repo seen from elsewhere, not a second one to land in."""
     agent = toplevel(tracker.root)
+    split = agent != project_root(tracker.root)
     here_ = tried(Path.cwd(), "rev-parse", "--show-toplevel")
     code = Path(here_.stdout.strip()) if here_.returncode == 0 else None
-    if code is None or code == agent:
+    if code is None or (split and same_repo(code, agent)):
         code = project_root(tracker.root)
-    return [code] if code == agent else [code, agent]
+    return [code, agent] if split else [code]
+
+
+def same_repo(one: Path, other: Path) -> bool:
+    """Whether two checkouts are two views of one repository: a linked worktree and the main
+    checkout share a git directory and differ in path."""
+    return git_common_dir(one) == git_common_dir(other)
+
+
+def git_common_dir(top: Path) -> Path:
+    return Path(git(top, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).resolve()
 
 
 def ticket_branch(top: Path, slug: str) -> str | None:
@@ -466,7 +479,7 @@ def rule(
         tag: the question's tag, D1 onward.
         answer: what the user ruled, in their words.
     """
-    tracker = here()
+    tracker = writing()
     ticket = tracker.ticket(slug)
     asked = next((question for question in ticket.questions if question.tag == tag), None)
     if not asked:
@@ -504,7 +517,7 @@ def import_report(
             its worker committed on the agent repo's ticket branch.
         called: what a refusal calls a report read from stdin, so it names the object it came from.
     """
-    tracker = here()
+    tracker = writing()
     ticket = tracker.ticket(slug)
     alone = report == "-"
     path = Path(called or "<stdin>") if alone else Path(report)
@@ -570,7 +583,7 @@ def retire(slug: Annotated[str, tyro.conf.Positional]) -> int:
     Args:
         slug: the ticket; its child tickets are retired with it.
     """
-    tracker = here()
+    tracker = writing()
     top = toplevel(tracker.root)
     retiring = [tracker.ticket(slug), *descendants(slug, tracker)]
     if standing := [one.slug for one in retiring if one.status != "done"]:
@@ -613,7 +626,7 @@ def drop(slug: Annotated[str, tyro.conf.Positional]) -> int:
     Args:
         slug: the ticket to drop.
     """
-    tracker = here()
+    tracker = writing()
     top = toplevel(tracker.root)
     dropping = tracker.ticket(slug)
     if dropping.status == "done":
@@ -723,17 +736,14 @@ exec tracker check
 
 
 @app.command(name="hook")
-def hook(repo: Annotated[Path, tyro.conf.Positional] = Path(".")) -> int:
-    """Install the pre-commit hook that runs `tracker check` over the staged ticket files. Prints
-    the path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
+def hook() -> int:
+    """Install the pre-commit hook that runs `tracker check` over the staged ticket files, into the
+    repository the working directory is in, from any worktree of it. Prints the path it wrote.
+    Leaves a pre-commit hook this did not write standing, and says so.
 
-    Args:
-        repo: the repository to install into, a bare one included; the working directory's by
-            default. It is the agent repo that wants one, since that is where ticket files are
-            written.
+    It is the agent repo that wants one, since that is where every ticket file is written.
     """
-    if not repo.is_dir():
-        raise Refused([f"{repo} is no directory"])
+    repo = Path.cwd()
     into = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
     if into.exists() and into.read_text() != HOOK:
         raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
@@ -1407,7 +1417,7 @@ def staged_tracker(start: Path) -> Path:
 
 def find_tracker(start: Path) -> Path:
     """The nearest `agent/tickets` at or above `start`: the tracker a repo keeps in itself, and
-    what the commit hook answers for, since a commit is made of one repo's staged files."""
+    where `tracker_root` falls back to when git cannot say."""
     for directory in [start, *start.parents]:
         if (directory / TICKETS).is_dir():
             return directory / TICKETS
@@ -1465,6 +1475,30 @@ def tracker_of(root: Path, texts: dict[Path, str] | None = None) -> Tracker:
 
 def here() -> Tracker:
     return tracker_of(tracker_root(Path.cwd()))
+
+
+def writing() -> Tracker:
+    """The tracker a write lands in, refused from a ticket branch. A worker holds both repos on
+    `ticket/<slug>` branches, and this command answers from either with the orchestrator's main
+    checkout, which is on no branch of the round: a write typed there would land in the live
+    tracker, off every branch and swept into whatever the next ticket commit carries."""
+    for top in checkouts_at(Path.cwd()):
+        if built := ticket_branch_out(top):
+            raise Refused([f"{built} is the branch {top} has out, and a ticket file is written in the agent repo's main checkout, never from a ticket branch"])
+    return here()
+
+
+def checkouts_at(start: Path) -> list[Path]:
+    """The checkouts a command typed at `start` is in: the working directory's own, and the agent
+    repo's beside it where that directory is a code repo holding one. Both, since a worker is given
+    a worktree of each."""
+    here_ = tried(start, "rev-parse", "--show-toplevel")
+    if here_.returncode != 0:
+        return []
+    top = Path(here_.stdout.strip())
+    beside = tried(top / TICKETS.parent, "rev-parse", "--show-toplevel")
+    agent = Path(beside.stdout.strip()) if beside.returncode == 0 else top
+    return [top] if agent == top else [top, agent]
 
 
 def refuse(found: Sequence[Refusal | str]) -> None:

@@ -1274,6 +1274,40 @@ def test_a_ticket_branch_is_refused_the_ticket_file_it_staged(split: Path) -> No
     assert run(worktree / "agent", "check") == Run(0, "", ""), "what a worker does commit there"
 
 
+def test_a_worker_is_refused_a_write_from_the_worktree_it_holds(split: Path) -> None:
+    """`ticket-file-contract#P7` on a local host, where a worker's worktrees are linked worktrees of
+    the user's own repos and this command is on its PATH: every read answers with the main
+    checkout's copy, so an unrefused write would land there, on no branch of the round and under
+    whatever the next ticket commit carries."""
+    tickets = split / "agent" / "tickets"
+    ticket(tickets, "one-flow")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", "a ticket")
+    worktree = split.parent / "lamp-one-flow"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", "ticket/one-flow")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", "ticket/one-flow")
+    report = worktree / "agent" / "show" / "one-flow" / "report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("## Comments\n\nit lands.\n")
+    live = (tickets / "one-flow.md").read_text()
+
+    writes = [
+        ("set", "one-flow", "status=claimed"),
+        ("new", "another-flow", "--priority", "2", "--size", "M"),
+        ("rule", "one-flow", "D1", "keep it"),
+        ("import", "one-flow", str(report)),
+        ("drop", "one-flow"),
+        ("retire", "one-flow"),
+    ]
+    for at in (worktree, worktree / "agent", report.parent):
+        for write in writes:
+            said = run(at, *write)
+            assert said.code == 1 and "ticket/one-flow is the branch" in said.err, (at, write, said.said)
+    assert (tickets / "one-flow.md").read_text() == live, "the live tracker untouched"
+    assert not (tickets / "another-flow.md").exists()
+    assert run(worktree, "get", "one-flow", "status").out == "open\n", "reading it is still the worker's"
+
+
 def test_the_commit_hook_answers_for_the_repo_the_commit_is_made_in(split: Path) -> None:
     """A commit is made of one repo's staged files: the hook in the code repo answers for nothing
     under `agent/`, which is the agent repo's to check, and the agent repo's own refuses there."""
@@ -1286,6 +1320,27 @@ def test_the_commit_hook_answers_for_the_repo_the_commit_is_made_in(split: Path)
     assert run(split, "check") == Run(0, "", ""), "the code repo's commit carries no ticket file"
     said = run(split / "agent", "check")
     assert said.code == 1 and "is no ticket status" in said.out, said.said
+
+
+def test_one_repo_seen_from_a_worktree_is_still_one_repo(tickets: Path, repo: Path, tmp_path: Path) -> None:
+    """A project whose `agent/` is not a repo of its own yet has one repo, whatever path it is read
+    from: dispatch runs in the worktree a parent ticket is built in, and the merge `done` follows is
+    the one there."""
+    ticket(tickets, "one-flow", status="review")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a ticket")
+    worktree = tmp_path.parent / "beside"
+    git(repo, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    git(worktree, "checkout", "-q", "-b", "ticket/one-flow")
+    (worktree / "src.txt").write_text("lit\n")
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "-m", "the work")
+    git(worktree, "checkout", "-q", "lamp-ui")
+    git(worktree, "merge", "-q", "--no-ff", "-m", "one-flow: landed", "ticket/one-flow")
+
+    said = run(worktree, "set", "one-flow", "status=done")
+    assert said.code == 0, said.said
+    assert run(repo, "get", "one-flow", "status").out == "done\n"
 
 
 def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
@@ -1363,22 +1418,6 @@ def test_the_hook_installs_where_git_looks_for_one_from_any_worktree(repo: Path,
     said = run(worktree, "hook")
     assert said.out.strip() == str(repo / ".git" / "hooks" / "pre-commit"), said.said
     assert (repo / ".git" / "hooks" / "pre-commit").exists()
-
-
-def test_the_hook_installs_into_a_bare_repo_named_on_the_command_line(repo: Path, tmp_path: Path) -> None:
-    """The repo dispatch stages on a worker host is bare, and nothing is ever checked out of it, so
-    the installer is given it rather than found from a working directory inside it."""
-    bare = tmp_path / "worker.git"
-    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
-    said = run(repo, "hook", str(bare))
-    assert said.code == 0, said.said
-    assert said.out.strip() == str(bare / "hooks" / "pre-commit"), said.said
-    assert os.access(bare / "hooks" / "pre-commit", os.X_OK)
-
-
-def test_the_hook_refuses_a_path_that_is_no_directory(repo: Path, tmp_path: Path) -> None:
-    said = run(repo, "hook", str(tmp_path / "nowhere"))
-    assert said.code == 1 and "is no directory" in said.err
 
 
 def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) -> None:

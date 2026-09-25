@@ -454,6 +454,29 @@ def repo(tracker: Path) -> Path:
     return repo
 
 
+def test_the_watcher_notices_the_project_moving_under_a_tracker_that_did_not(tracker: Path) -> None:
+    """The page's commit list is the project's, so a merge there that touches no ticket has to
+    re-render it; the tracker's own repo is the agent one, which a ticket commit moves instead."""
+    code, agent = tracker.parent.parent, tracker.parent
+    for at in (code, agent):
+        git(at, "init", "-q", "-b", "main")
+        git(at, "config", "user.email", "checks@example.com")
+        git(at, "config", "user.name", "checks")
+    (code / ".gitignore").write_text("/agent/\n")
+    (code / "src.txt").write_text("the lamp\n")
+    git(code, "add", "-A")
+    git(code, "commit", "-q", "-m", "the lamp")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tracker")
+
+    before = tracker_snapshot(tracker, agent)
+    (code / "src.txt").write_text("the lamp, rewired\n")
+    git(code, "commit", "-q", "-am", "rewired")
+    after = tracker_snapshot(tracker, agent)
+    assert after != before, "a commit in the project the board's log comes from"
+    assert "the repo has moved on: " in changed_note(before, after, code)
+
+
 def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
     """A page server exits a while after the last page closes, rewriting the marker it left beside
     the pages; noticing that is what gets the next render, which is what serves them again."""
@@ -765,8 +788,8 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo, t
 
 
 def test_every_mark_on_a_row_says_in_words_what_it_means(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The spec's reviewed Property "Every mark explains itself", at the seam its Testing Decisions
-    names for rows and marks: the demo tracker in, the page's rows out. Every mark that carries
+    """The ticket's reviewed Property "Every mark explains itself", at the seam its Testing seams
+    name for rows and marks: the demo tracker in, the page's rows out. Every mark that carries
     text says what it means, and says it about itself; that the words then paint on hover is the
     layout check's (test_board_layout.py)."""
     out = tmp_path / "board.html"
@@ -969,7 +992,7 @@ def test_a_near_design_session_is_in_needs_me_with_no_question_written_down(tmp_
 
 
 def test_every_copy_button_on_the_board_shows_what_it_copies(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The spec's reviewed Property, at the loader-and-page seam its Testing Decisions names: the
+    """The ticket's reviewed Property, at the loader-and-page seam its Testing seams name: the
     words a button shows on hover are what its click puts on the clipboard, cut off only where they
     run long.
 
@@ -1626,7 +1649,7 @@ ANSWERED = {
             "n3": pull(4, "MERGED", review="APPROVED"),
             "n4": pull(5, "CLOSED"),
             "n5": pull(8, "OPEN", draft=True, review="CHANGES_REQUESTED"),
-            "n6": pull(317, "OPEN"),  # the build ticket the tracker fixture already carries
+            "n6": pull(317, "OPEN"),  # the `built` ticket the tracker fixture already carries
         },
         "r1": {
             "nameWithOwner": "acme/helix",
@@ -1654,7 +1677,7 @@ STATED = {
 @pytest.fixture
 def referenced(tracker: Path) -> Path:
     """The tracker with a ticket naming a reference in every state the board tells apart, beside
-    the two its build ticket already names."""
+    the two its `built` ticket already names."""
     ticket(tracker / "small-chore.md", "open", gh=[ref for ref in STATED if not ref.endswith(("#317", "#412"))])
     return tracker
 
@@ -1835,7 +1858,7 @@ def test_a_tracker_naming_no_pull_request_or_issue_asks_nothing_and_says_nothing
     tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """A board with no GitHub reference on it has no source to miss, as a tracker with no review
-    page rendered has no server to miss. Its own tracker, since the fixture's build ticket names
+    page rendered has no server to miss. Its own tracker, since the fixture's `built` ticket names
     two references of its own."""
     record = gh_answering(path_with, ANSWERED)
     root = tmp_path / "repo" / "agent" / "tickets"
@@ -2285,7 +2308,7 @@ NEEDS_ME = {
 
 
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The same two properties as the checks above, at the seam the spec's Testing Decisions names: a
+    """The same two properties as the checks above, at the seam the ticket's Testing seams name: a
     fixture tracker on disk in, groups out. map-columns carries its questions in the tracker's own
     copy, where the import left them."""
     out = tmp_path / "board.html"
