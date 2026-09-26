@@ -15,6 +15,8 @@ Read `job --help` before the first job of a session. It is the only home of the 
 
 Name jobs `<project>-<activity>`, like `api-migrate` or `docs-build`. The name shows up in `tmux ls`, and it stays taken until `job rm`.
 
+Run `job wait` as a background task of your session, so its exit wakes you. A foreground call is cut off by the tool's own timeout, whatever `--deadline` says.
+
 ## A pane you drive yourself
 
 A REPL, a wizard, a sudo prompt, an app you poke at while watching it. Nothing here ends, so there is no completion to wait on and `job` buys nothing.
