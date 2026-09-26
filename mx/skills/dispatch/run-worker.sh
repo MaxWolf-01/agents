@@ -95,11 +95,10 @@ common=(
     --append-system-prompt "$(cat "$prompt_file")"
 )
 
-# Each attempt runs in a systemd scope of its own, named <run>-a<attempt>, and the scope is stopped
-# when the attempt ends: whatever the worker started and left running (a load generator whose
-# shell was killed before its `kill` line, a process that detached itself) goes with it. A host
-# with no user systemd manager runs the attempt as it is, and the worklog says those processes
-# outlive it.
+# Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
+# attempt ends: whatever the worker started and left running (a load generator whose shell was
+# killed before its `kill` line, a process that detached itself) goes with it. A host with no user
+# systemd manager runs the attempt as it is, and the worklog says those processes outlive it.
 if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
     scoped() { local unit=$1; shift; systemd-run --user --scope --quiet --collect --unit="$unit" -- "$@"; }
     unscope() { systemctl --user stop "$1.scope" 2> /dev/null; }
@@ -120,7 +119,7 @@ trap 'stopped=1' TERM
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
-    unit=$run_id-a$attempt
+    unit=$run_id-a$attempt-$$
     if [ "$attempt" -gt 1 ]; then
         scoped "$unit" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
