@@ -62,8 +62,8 @@
 #             its transcript answered in), or `gone` (runner dead, no status
 #             line: a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
-#   cleanup   kills the pane, forgets the run, removes both worktrees and both
-#             branches
+#   cleanup   kills the pane and whatever its runs left running, forgets the
+#             run, removes both worktrees and both branches
 #   fuzz      start: cuts fuzz/<base> from <base> in both repos into
 #             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/`, sets it up as
 #             a ticket worktree is, and runs `make fuzz` in a tmux session
@@ -404,6 +404,13 @@ cleanup() {
         run tmux kill-session -t "=$name"
     else
         echo "no session $name" >&2
+    fi
+    # A runner killed with its pane never stops the scope its attempt ran in (run-worker.sh), so
+    # what that attempt left running is stopped here, for every run of this name.
+    if [ -f "$manifest" ] && command -v systemctl > /dev/null; then
+        awk -F'\t' -v n="$name" '$1 == n { print $2 }' "$manifest" | while read -r run_id; do
+            systemctl --user stop "$run_id-a*.scope" 2> /dev/null
+        done
     fi
     if [ -f "$manifest" ]; then
         ( flock 9
