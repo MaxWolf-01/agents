@@ -92,7 +92,13 @@ def lint(pages: list[str], width: int) -> list[dict]:
         ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json"],
         capture_output=True, text=True,
     )
-    assert done.returncode in (0, 1, 2), f"render-lint: {done.stderr.strip()[-2000:]}"
+    # A run that never got as far as findings is its own failure, said here rather than left to a
+    # decode error further down: the tool crashing, a browser going with it, or uv failing to start
+    # it all arrive as an exit code with nothing on stdout.
+    assert done.returncode in (0, 1, 2) and done.stdout.startswith("["), (
+        f"render-lint at {width}px exited {done.returncode} with no findings to read: "
+        f"{done.stderr.strip()[-2000:]}"
+    )
     return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
 
 
