@@ -77,9 +77,11 @@
 #            branch is unmerged, `done` with the round's two ranges in the
 #            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
 #            once both have merged. One commit either way, and none when the
-#            ticket already says so. While the code branch is unmerged it first
-#            runs `unreviewed`, and refuses when that lists anything, before it
-#            imports or flips a thing.
+#            ticket already says so. A claimed ticket whose agent branch carries
+#            no report this round wrote stays claimed, and nothing is rendered:
+#            that report is what puts a build in front of the user. While the
+#            code branch is unmerged it first runs `unreviewed`, and refuses
+#            when that lists anything, before it imports or flips a thing.
 #   unreviewed
 #            prints the commits of an unmerged code-repo ticket branch that no
 #            review covers, one `<sha> <subject>` line each, and exits 1 when
@@ -609,8 +611,8 @@ review() {
     # both are, when the ranges are final too. `tracker` writes both, and refuses a landing the
     # tracker's transitions do not allow. A round whose branches carry no commit at all built
     # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
-    # stopped before its first commit. A claimed round that wrote no report of its own stopped above,
-    # since a report this round wrote is what puts a build in front of the user.
+    # stopped before its first commit. A claimed round that wrote no report of its own stopped above
+    # (`dispatch --help`, review).
     if [ ${#written[@]} -eq 0 ]; then
         echo "dispatch: neither branch of $id carries a commit, so this round built nothing to review" >&2
         return 0

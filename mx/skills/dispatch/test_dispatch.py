@@ -754,7 +754,7 @@ def test_a_range_written_any_other_way_covers_nothing(toy: Path) -> None:
     """A worker describing its own commits as a range has not said a review read them."""
     cut = git(branched(toy), "rev-parse", "--short", "HEAD").strip()
     build = code(toy, "the warm preset", "warm\n")
-    record(toy, f"Landed `{cut}..{build}`, unmerged, meets AC1.")
+    record(toy, f"Landed `{cut}..{build}`, unmerged, meets AC1; review range `{cut}...{build}`")
     assert unreviewed(toy) == (1, {build})
 
 
