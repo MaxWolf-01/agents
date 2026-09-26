@@ -93,8 +93,7 @@ gh stack view --json            # confirm
 Add `--open` to `submit` to create PRs ready for review instead of drafts. Branch names are
 verbatim — `gh stack add refactor/foo` creates `refactor/foo`.
 
-`submit --auto` titles a single-commit branch from its commit subject and a multi-commit one from its
-branch name; the titles and bodies it generates are rewritten per `/mx:github`, then set with `gh pr edit`.
+The titles and bodies `submit --auto` generates are rewritten per `/mx:github`, then set with `gh pr edit`.
 
 ## Staying in sync
 
