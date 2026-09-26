@@ -17,6 +17,7 @@ state (a claim is taken from the frontier, and a claimed ticket is in somebody's
 argued; this file is the cases the ticket-file move made.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -132,10 +133,18 @@ def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_
     return path
 
 
+def tmux_dir(toy: Path) -> Path:
+    """The socket directory of this check's own tmux server. A worker's session is named after the
+    repo and the slug, the same in every check, so each check runs a server no other check or user
+    shares. Under /tmp and short, since a socket path over about a hundred bytes is refused."""
+    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy).encode()).hexdigest()[:12]}"
+
+
 @pytest.fixture
-def toy(tmp_path: Path) -> Path:
+def toy(tmp_path: Path) -> Iterator[Path]:
     """A project on `main`: a code repo, its `agent/` a repo of its own inside it that the code repo
-    ignores, and a tree of two tickets in it. Answers the code repo's root."""
+    ignores, and a tree of two tickets in it. Answers the code repo's root, and takes down the tmux
+    server its workers ran on."""
     repo = tmp_path / "lamp"
     (repo / "agent" / "tickets").mkdir(parents=True)
     for at in (repo, repo / "agent"):
@@ -153,7 +162,9 @@ def toy(tmp_path: Path) -> Path:
     ticket(root, "name-the-presets", needs_user=True, brief="Naming them is a conversation.")
     git(repo / "agent", "add", "-A")
     git(repo / "agent", "commit", "-q", "-m", "the tracker")
-    return repo
+    yield repo
+    subprocess.run(["tmux", "kill-server"], capture_output=True, env=environment(repo))
+    shutil.rmtree(tmux_dir(repo), ignore_errors=True)
 
 
 def tracked(toy: Path) -> Path:
@@ -174,10 +185,12 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
+    tmux_dir(toy).mkdir(exist_ok=True)
     env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
-           "JOB_STATE_DIR": str(toy.parent / "jobs"),
+           "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
+    env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
     return env
 
 
@@ -198,7 +211,7 @@ def waited(toy: Path, state: Path | None = None) -> Path:
     left = list(state.glob("*.status"))
     assert left, "no status line 30s after the spawn: " + subprocess.run(
         ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
-        capture_output=True, text=True).stdout
+        capture_output=True, text=True, env=environment(toy)).stdout
     return left[0]
 
 
@@ -234,13 +247,10 @@ def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy:
 
 
 @pytest.fixture
-def staged(toy: Path) -> Iterator[Path]:
-    """The toy with a stub runner staged in the skill copy dispatch sends to a host.
-
-    A worker's tmux session is named after the repo and the slug, so every run of these checks
-    wants the same name: one left standing would have the next check's runner typed into a pane
-    whose worktree is gone. They are killed either side of the check, since a crashed one is still
-    there when the next starts."""
+def staged(toy: Path) -> Path:
+    """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
+    if not shutil.which("tmux"):
+        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     skill = toy.parent / "skills"
     (skill / "dispatch").mkdir(parents=True)
     (skill / "tracker").mkdir()
@@ -248,18 +258,7 @@ def staged(toy: Path) -> Iterator[Path]:
         shutil.copy(SKILL / name, skill / "dispatch" / name)
     shutil.copy(SKILL.parent / "tracker" / "tracker.py", skill / "tracker" / "tracker.py")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
-    kill_sessions()
-    yield skill / "dispatch" / "dispatch"
-    kill_sessions()
-
-
-def kill_sessions() -> None:
-    if not shutil.which("tmux"):
-        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
-    listed = subprocess.run(["tmux", "ls", "-F", "#{session_name}"], capture_output=True, text=True)
-    for session in listed.stdout.split():
-        if session.startswith("dispatch-lamp-"):  # the worker's
-            subprocess.run(["tmux", "kill-session", "-t", f"={session}"], capture_output=True)
+    return skill / "dispatch" / "dispatch"
 
 
 def spawn(toy: Path, staged: Path, slug: str, message: str, host: str = "local",

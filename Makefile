@@ -13,8 +13,11 @@ check:
 	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
 	@echo "manifests parse, hooks point at executables, bin/ answers --help"
 
+# One test process per core; JOBS=1 runs them one after another.
+JOBS ?= auto
+
 test:
-	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest mx/ -p no:cacheprovider
+	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest mx/ -p no:cacheprovider -n $(JOBS)
 
 version:
 	@jq -r .version $(PLUGIN)
