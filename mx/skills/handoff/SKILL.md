@@ -1,29 +1,51 @@
 ---
 name: handoff
-description: "Compact the current conversation into a handoff document for another agent to pick up: continue the work, or fork a side-quest out of it."
+description: "Compact the current conversation into a handoff file a fresh session starts from. Use when a context checkpoint says to write one, when the session is full or ending, or to fork a side-quest out of it."
 argument-hint: "What will the next session be used for?"
 ---
 
-Write a handoff document so a fresh agent can continue the work. A handoff requires a **purpose**: what the next session should do. The purpose sets the scope:
+A handoff is the conversation compacted into one file a fresh session starts from, written by the session that holds the context and read by the user before anything replaces it. That is its whole advantage over a summary a harness writes on its own: it can be proofread and corrected first.
 
-- **Continuation** (this session is full or ending): the next agent inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns.
-- **Fork** (a side-quest surfaced: a bug, a refactor, an idea out of scope here): extract only the slice that pertains to the forked task, and note in this session that it's now out of scope; that sharpens the parent too.
-- **Return** (this session was a detour, a prototype or an investigation, reporting back to its parent): capture only what the produced artifacts don't already show: non-obvious learnings, dead ends, decisions.
+## Purpose
 
-Load `/mx:writing-for-agents` before drafting the document, unless it's already loaded in this session: the handoff is read cold by an agent, and it's the standard for it.
+A handoff requires a **purpose**: what the next session should do. The purpose sets the scope:
 
-Before writing the file, tell the user in a few lines: the purpose, the scope, and all the things only this conversation knows that you'd carry over. Their reply is the mandate: a purpose you inferred yourself is a proposal until they've confirmed it. The same discipline holds inside the document: the user's decisions are binding input; your proposals stay labeled as proposals.
+- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint asking for a handoff means this purpose, and the file is written at once: the user's read before the next session starts is the check.
+- **Fork**: a side-quest surfaced (a bug, a refactor, an idea out of scope here). Extract only the slice that pertains to it, and note in this session that it is now out of scope. Tell the user in a few lines the purpose, the scope and what only this conversation knows that you would carry over, before writing: their reply is the mandate, and a purpose you inferred is a proposal until they confirm it.
 
-Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
+## What it carries
 
-Do not duplicate content already captured in other artifacts (tickets, ADRs, research, commits, diffs). Reference them by path or URL instead.
+Complete on these six even at the cost of length; everything else short:
 
-End with a **Sources** section: the tickets, ADRs, research artefacts, key code files, and external docs the next agent needs, each with a one-line why. Bias toward marking them MUST READ: you have context that shaped your thinking; the next agent doesn't. When in doubt, MUST READ.
+1. **Asked, decided, ruled out.** Every request, decision, rejection, preference and boundary, stated exactly, with the user's reason where they gave one. The user's words stay close to verbatim; a decision you proposed and they never confirmed is marked as your proposal.
+2. **Options set aside.** Every approach raised, tried or dropped, and why.
+3. **Difficulties.** What went wrong and how it was handled or left.
+4. **Where things stand.** What is done, landed, merged, pushed; what sits on which branch or worktree, unmerged.
+5. **What is open.** Questions waiting on the user, work promised, jobs still running, the next step.
+6. **What is hard to reconstruct.** Names, numbers, paths, commands, exact wording, measurements: kept exactly.
 
-Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+Your own explanations and reasoning condense to what they concluded. What already lives in an artefact (a ticket, an ADR, research, a commit, a diff) is a pointer to that artefact by path, never a copy of what it says.
 
-The file is the deliverable; don't also summarize it in chat. Write it to `agent/handoffs/YYYY-MM-DD-<descriptive-keyword-slug>.md`, then give the user the pickup prompt:
+Two sections close the file:
+
+- **Suggested skills**: the skills the next session should invoke, and when.
+- **Sources**: the tickets, ADRs, research, key code files and external docs the next session needs, each with a one-line why, the ones that shaped your thinking marked MUST READ. When in doubt, MUST READ: you have context the next session does not.
+
+## The file
+
+A handoff is `agent/handoffs/YYYY-MM-DD-<descriptive-slug>.md` in the agent repo of the project the work is in, committed in its main checkout, as a ticket file is. Its frontmatter carries this session's id:
+
+```markdown
+---
+session: <the value of $CLAUDE_CODE_SESSION_ID>
+purpose: continuation | fork
+---
+```
+
+The file is the deliverable, so the chat gets its absolute path and the pickup line, not a summary of it:
 
 ```
-Continue from agent/handoffs/YYYY-MM-DD-<slug>.md. Read it in full first.
+Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
 ```
+
+For a continuation, the user runs `/clear` once they have read the file and gives the fresh session that line.
