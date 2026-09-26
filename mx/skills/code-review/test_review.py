@@ -248,6 +248,19 @@ def ticketed(repo: Path) -> Path:
     return tickets
 
 
+def test_every_reviewer_is_given_a_time_budget_the_caller_can_change(repo):
+    """The budget is the brief's, which the reviewer paces its work to; the clock it checks against
+    is `date`, so every reviewer may run that."""
+    assert run(repo, "--light").returncode == 0
+    brief = (review_dir(repo) / "briefs" / "light.md").read_text()
+    assert "You have 10 minutes." in brief
+    assert "Bash(date)" in launched(repo)
+    assert run(repo, "--light", "--minutes", "25").returncode == 0
+    assert "You have 25 minutes." in (review_dir(repo) / "briefs" / "light.md").read_text()
+    refused = run(repo, "--light", "--minutes", "soon")
+    assert refused.returncode != 0 and "--minutes takes a whole number" in refused.stderr
+
+
 def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     ticketed(repo)
 
