@@ -5,8 +5,9 @@
 """Checks for `change-summary`: the flags that keep its model call bare, the prose rules it hands
 the model, its retry past the cap and each way it fails. Run: uv run test_change_summary.py
 
-The seam is the `mx/bin` shim, run with a stand-in `claude` on PATH that records each call's
-arguments, stdin and working directory and answers with the reply the test queued for that call.
+The seams are the `mx/bin` shim, run with a stand-in `claude` on PATH that records each call's
+arguments, stdin and working directory and answers with the reply the test queued for that call,
+and the rule selection, catalogue text in, rule blocks out.
 The oracles are `agent/tickets/change-summary-tool.md`'s acceptance criteria and the parent
 `pr-body` ticket's P1 and P2: the summary is written from the diff alone, and never exceeds 150
 words. The rule selection is held to the awk command CATALOGUE.md's header publishes as its
@@ -15,6 +16,7 @@ format contract, with the `artifact` scope put in for `chat`.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -131,7 +133,7 @@ def test_the_model_runs_where_no_project_file_is_in_reach(claude: Claude) -> Non
 def test_the_system_prompt_carries_the_catalogues_artifact_and_both_rules(claude: Claude) -> None:
     claude.replies("A paragraph.")
     run(claude)
-    assert awk_selection() in claude.flag("--system-prompt")
+    assert claude.flag("--system-prompt").endswith("# Rules\n\n" + awk_selection())
 
 
 FIXTURE = """# Tells
@@ -204,6 +206,25 @@ def test_a_failed_model_call_fails_with_its_reason(claude: Claude) -> None:
     done = run(claude, FAKE_EXIT="3", FAKE_STDERR="rate limited")
     assert (done.returncode, done.stdout) == (1, "")
     assert "exited 3" in done.stderr and "rate limited" in done.stderr
+
+
+def test_no_claude_on_path_fails_with_its_reason(claude: Claude) -> None:
+    tools = claude.dir.parent / "tools"
+    tools.mkdir()
+    for tool in ("bash", "uv", "readlink", "dirname"):
+        (tools / tool).symlink_to(shutil.which(tool))
+    claude.path = str(tools)
+    done = run(claude)
+    assert (done.returncode, done.stdout) == (1, "")
+    assert "did not run" in done.stderr
+
+
+def test_a_diff_that_is_not_utf8_still_reaches_the_model(claude: Claude) -> None:
+    claude.replies("A paragraph.")
+    done = subprocess.run([str(SHIM)], input=DIFF.replace("world", "w\xf6rld").encode("latin-1"),
+                          capture_output=True, timeout=120, env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir)})
+    assert (done.returncode, done.stdout) == (0, b"A paragraph.\n")
+    assert "w\ufffdrld" in claude.stdin()
 
 
 def test_an_empty_answer_fails(claude: Claude) -> None:

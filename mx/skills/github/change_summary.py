@@ -7,7 +7,7 @@
 
 A model reads the diff and nothing else, and says in one plain-English paragraph what behaviour changes and why it matters. It runs `claude -p` in an empty directory with no user settings, plugins, hooks, MCP servers, tools, slash commands or session file. Its prose rules are the rules tagged `artifact` or `both` in writing-for-humans/CATALOGUE.md, read from the plugin at run time.
 
-The paragraph goes to stdout. One over 150 words is asked for once more; still over, it goes to stderr instead. An empty diff, a failed model call, or a paragraph still over 150 words exits 1 with the reason on stderr.
+The paragraph goes to stdout. When it runs past 150 words the model is asked once more. An empty diff, a failed model call, or a paragraph still past 150 words after that exits 1, with the reason, and the paragraph, on stderr.
 
 Env: CHANGE_SUMMARY_MODEL sets the default model.
 
@@ -76,7 +76,7 @@ def ask(model: str, system: str, prompt: str) -> str:
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
                 input=prompt, capture_output=True, text=True, timeout=600, cwd=empty,
-                env={**os.environ, "CLAUDECODE": "", "CHAT_REVIEW_OFF": "1"},
+                env={**os.environ, "CLAUDECODE": ""},
             )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise Failure(f"claude did not run: {e}") from e
@@ -105,7 +105,7 @@ def summarize(diff: str, model: str) -> str:
 def main() -> None:
     args = tyro.cli(Args, prog="change-summary", description=__doc__)
     try:
-        print(summarize(sys.stdin.read(), args.model))
+        print(summarize(sys.stdin.buffer.read().decode(errors="replace"), args.model))
     except Failure as e:
         sys.exit(f"change-summary: {e}")
 
