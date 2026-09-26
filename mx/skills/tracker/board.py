@@ -53,7 +53,9 @@ it from the code repo's root. The sessions are read from the `Session:` trailer
 on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
 one with no transcript on this machine, a worker on another host, is left out,
-and each of the rest carries a button that copies the command resuming it. The
+and each of the rest carries a button that copies the command resuming it and,
+where one has been rendered, a link to its session page, read from
+agent/sessions/<session-id>/ under the directory the session ran in. The
 brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
@@ -873,6 +875,7 @@ class Session:
     cwd: str  # the working directory its transcript records
     first: str  # when it first committed on the ticket
     last: str
+    page: Path | None = None  # its session page, where one has been rendered
 
     @property
     def resume(self) -> str:
@@ -898,8 +901,16 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
     for sid, (first, last) in session_log(repo).get(name, {}).items():
         if written := transcript(sid, transcripts or TRANSCRIPTS):
             title, cwd = written
-            found.append(Session(sid, title or sid, cwd, first, last))
+            found.append(Session(sid, title or sid, cwd, first, last, session_page(sid, cwd)))
     return found
+
+
+def session_page(session: str, cwd: str) -> Path | None:
+    """The session's page, where the session-page renderer writes it under the directory the session
+    ran in (mx/skills/session-page/session_page.py), or None where there is none: a session that
+    never needed one, or one whose directory, and the page with it, dispatch has since removed."""
+    page = Path(cwd) / "agent" / "sessions" / session / "index.html"
+    return page if cwd and page.is_file() else None
 
 
 # one record per commit: the date the session wrote it, and the session that signed it, with the
@@ -1114,11 +1125,13 @@ def asked_block(asked: Sequence[Question], said: str, path: Path, status: str) -
 
 
 RESUME_TIP = "Click to copy the command that resumes this session in the directory it ran in."
+PAGE_TIP = "This session's page: its turns, the questions it waits on you for, and what it produced. Opens in a new tab."
 WHEN_TIP = "When this session first committed on the ticket, and when it last did."
 
 
 def sessions_block(worked: Sequence[Session]) -> str:
-    """The sessions that worked on the ticket, each with the command that resumes it. The label says
+    """The sessions that worked on the ticket, each with its session page where it has one and the
+    command that resumes it. The label says
     on this machine because that is the list: a worker on another host is not in it (ticket_sessions),
     and a ticket no session has committed on has no block at all."""
     if not worked:
@@ -1126,6 +1139,8 @@ def sessions_block(worked: Sequence[Session]) -> str:
     items = "".join(
         f'<li><span class="stitle">{html.escape(session.title)}</span>'
         f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(worked_on(session))}</span>'
+        + (f'<a class="spage" href="file://{html.escape(str(session.page))}" target="_blank" '
+           f'data-tip="{html.escape(PAGE_TIP)}">page</a>' if session.page else "")
         + copy_button("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}")
         + "</li>"
         for session in worked
@@ -2082,6 +2097,7 @@ ${columns}
   /* a session is its name and the days it worked, the command that resumes it on the button */
   .sessions .stitle { color: var(--strong); }
   .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
+  .sessions .spage { flex: none; font-size: .82rem; }
   /* a criterion's mark is the glyph its list item carries instead of a bullet */
   .body li.tick { list-style: none; position: relative; }
   .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;
