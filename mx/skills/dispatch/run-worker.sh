@@ -48,9 +48,26 @@ export DISPATCH_WORKLOG="$here/$run_id.log"
 # the worker writes anything then reads as the unfinished run it is.
 was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)
 reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
+# The models this round's turns of the session transcript answered in, comma-separated: <model> is
+# an alias the host's claude resolves, so what ran is read off the run, not the command line. `-`
+# is a round no model answered, `?` one whose transcript or `jq` is missing. This round's, as with
+# the report: a resumed session's transcript opens with the rounds before it. `<synthetic>` marks
+# messages claude wrote itself (an API error).
+transcript() { cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$session".jsonl 2> /dev/null; }
+transcript_before=$(transcript | wc -l)
+models() {
+    local found
+    command -v jq > /dev/null && transcript > /dev/null || { echo '?'; return; }
+    found=$(transcript | tail -n "+$((transcript_before + 1))" |
+        jq -r 'select(.type == "assistant") | .message.model // empty' |
+        grep -vx '<synthetic>' | sort -u | paste -sd,)
+    echo "${found:--}"
+}
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
-printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+claude_version=$(claude --version 2> /dev/null | cut -d' ' -f1)
+printf '%s runner: started %s on %s with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
+    "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
 git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
@@ -112,5 +129,5 @@ done
 [ -n "$stopped" ] && rc=stopped
 # Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
 # a report to import.
-printf 'attempts=%s exit=%s report=%s session=%s\n' \
-    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" > "$here/$run_id.status"
+printf 'attempts=%s exit=%s report=%s session=%s models=%s\n' \
+    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" "$(models)" > "$here/$run_id.status"

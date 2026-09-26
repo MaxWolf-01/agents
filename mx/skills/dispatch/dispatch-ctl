@@ -36,8 +36,11 @@
 #             that worktree's `agent/`, where the project keeps it; sets the
 #             code worktree up (the `setup` file's command, run as given;
 #             without that file `make install`, under `nix develop -c` where a
-#             flake.nix exists), then starts the worker on prompt-<slug>.md from
-#             this directory, in a tmux session named dispatch-<repo>-<slug>.
+#             flake.nix exists), runs `claude update`, then starts the worker
+#             on prompt-<slug>.md from this directory, in a tmux session named
+#             dispatch-<repo>-<slug>. A failed update is said on stderr and the
+#             worker starts anyway; the `spawned` line names the claude version
+#             it starts on.
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
@@ -57,8 +60,9 @@
 #             report of its own, over the one the round before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
-#             report is committed, session id), or `gone` (runner dead, no
-#             status line: a killed pane, a rebooted host).
+#             report is committed, session id, the models the run's turns of
+#             its transcript answered in), or `gone` (runner dead, no status
+#             line: a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane, forgets the run, removes both worktrees and both
 #             branches
@@ -69,9 +73,10 @@
 #             stop: kills that session and removes its worktrees and branches.
 #             One per base branch; it holds no state beyond the session and the
 #             worktree, so `stop` is the whole of undoing it.
-# This host needs `git` and `tmux`, and `init` wants `curl` and `claude`: it
+# This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
+# ran on out of its transcript), and `init` wants `curl` and `claude`: it
 # fetches `job` with the first where the host has none, and updates this plugin
-# with the second, saying so when that fails.
+# with the second, saying so when that fails; `spawn` updates `claude` itself.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
@@ -245,6 +250,7 @@ spawn() {
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
     [ -d "$worktree" ] || checkout
+    update_claude
     run_id=$name-$(date +%s)
 
     # The session is a shell the runner is typed into, so it outlives the
@@ -272,7 +278,21 @@ spawn() {
     fi
 
     ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    echo "spawned $name  run=$run_id"
+    echo "spawned $name  run=$run_id  claude=$claude_version"
+}
+
+# A model alias names whichever model the host's `claude` resolves it to, so a
+# stale launcher runs a worker on an older model without a word, and the API
+# refuses the newest models to an old enough one. The updater cannot be left to
+# itself: a host whose sessions were all print-mode workers was seen to stay
+# versions behind a host with interactive sessions on it. One update at a time per
+# user, whose install it is, since a wave spawns its workers side by side. A
+# failed update is said, and the worker runs on the version that is here.
+update_claude() {
+    ( flock 9; run timeout 300 claude update ) 9>>"$(dirname "$here")/claude-update.lock" >&2 ||
+        echo "spawn: claude update failed; $name runs on the claude this host has" >&2
+    claude_version=$(claude --version 2>/dev/null | cut -d' ' -f1)
+    claude_version=${claude_version:-?}
 }
 
 # The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an
