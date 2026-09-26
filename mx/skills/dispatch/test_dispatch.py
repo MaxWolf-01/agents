@@ -98,13 +98,15 @@ dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
 cp "${files[@]:0:${#files[@]}-1}" "$dest"
 """
 
-# The host's claude as a spawn meets it: it records what it was asked, answers a version, and its
-# updater fails when CLAUDE_UPDATE_FAILS is set. Plugin commands succeed and do nothing.
+# The host's claude as a spawn meets it: it records what it was asked, starts on 2.1.243 and its
+# updater takes it to 2.1.283, or fails when CLAUDE_UPDATE_FAILS is set. Plugin commands succeed
+# and do nothing.
 FAKE_CLAUDE = """#!/bin/sh
 printf '%s\\n' "$*" >> CALLS
 case $1 in
-    --version) echo "2.1.283 (Claude Code)" ;;
-    update) [ -z "${CLAUDE_UPDATE_FAILS:-}" ] || { echo "update: network unreachable" >&2; exit 1; } ;;
+    --version) echo "$(cat CALLS.version 2>/dev/null || echo 2.1.243) (Claude Code)" ;;
+    update) [ -z "${CLAUDE_UPDATE_FAILS:-}" ] || { echo "update: network unreachable" >&2; exit 1; }
+            echo 2.1.283 > CALLS.version ;;
 esac
 """
 
@@ -298,7 +300,7 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
     assert said.returncode == 0, said.stderr
     asked = calls.read_text().splitlines()
     assert asked.index("update") < asked.index("worker starts")
-    assert "claude=2.1.283" in said.stdout, said.stdout
+    assert f"claude={'2.1.243' if fails else '2.1.283'}" in said.stdout, said.stdout
     assert ("claude update failed" in said.stderr) == fails, said.stderr
 
 
@@ -504,7 +506,8 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
     )
-    (bin_dir / "claude").write_text("#!/bin/sh\n" + (committing if wrote else "") + f"exit {exits}\n")
+    (bin_dir / "claude").write_text(
+        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
     (bin_dir / "claude").chmod(0o755)
 
     done = subprocess.run(
@@ -517,41 +520,49 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     assert "runner: started warm-preset" in (state / "run-1.log").read_text()
 
 
-def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path) -> None:
+@pytest.mark.parametrize("resumed", [False, True])
+def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
     """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
-    answered, so the status line reads it off the session's transcript: the models its assistant
-    turns carry, and none of the strings a turn merely mentions (an Agent call's `model` input) or
-    claude's own `<synthetic>` error turns. The worklog's first line names the launcher's version."""
+    answered, so the status line reads it off the session's transcript: the models this round's
+    assistant turns carry, none of the rounds' before it on a resumed session, and none of the
+    strings a turn merely mentions (an Agent call's `model` input) or claude's own `<synthetic>`
+    error turns. The worklog's first line names the launcher's version."""
     state = tmp_path / "state"
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
     (tmp_path / "message.md").write_text("Work it.\n")
+    session = "5e55-10n"
+    project = tmp_path / "profile" / "projects" / "-toy"
+    project.mkdir(parents=True)
+    if resumed:
+        (project / f"{session}.jsonl").write_text(
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-5", "content": "a round"}}) + "\n")
     turns = [
         {"type": "user", "message": {"role": "user", "content": "Work it."}},
         {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
             {"type": "tool_use", "name": "Agent", "input": {"model": "sonnet", "prompt": "review"}}]}},
         {"type": "assistant", "message": {"model": "<synthetic>", "content": "API Error"}},
-        {"type": "assistant", "message": {"model": "claude-opus-5", "content": "done"}},
+        {"type": "assistant", "message": {"model": "claude-sonnet-5", "content": "done"}},
     ]
     transcript = "\n".join(json.dumps(turn) for turn in turns)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "claude").write_text(
         '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
-        'while [ "$1" != --session-id ]; do shift; done\n'
-        f'mkdir -p "$CLAUDE_CONFIG_DIR/projects/-toy"\ncat > "$CLAUDE_CONFIG_DIR/projects/-toy/$2.jsonl" <<\'T\'\n'
-        f'{transcript}\nT\n')
+        'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
+        f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
     (bin_dir / "claude").chmod(0o755)
 
     subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
+         *([session] if resumed else [])],
         cwd=tmp_path, capture_output=True, text=True, timeout=120,
         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
              "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")},
     )
     status = (state / "run-1.status").read_text()
-    assert status.split()[-1] == "models=claude-opus-5,claude-opus-5-5", status
+    assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
     assert "on opus with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
 
 

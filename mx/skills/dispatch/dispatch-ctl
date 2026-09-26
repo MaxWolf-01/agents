@@ -60,9 +60,9 @@
 #             report of its own, over the one the round before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
-#             report is committed, session id, the models its transcript
-#             names), or `gone` (runner dead, no
-#             status line: a killed pane, a rebooted host).
+#             report is committed, session id, the models the run's turns of
+#             its transcript answered in), or `gone` (runner dead, no status
+#             line: a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane, forgets the run, removes both worktrees and both
 #             branches
@@ -284,8 +284,9 @@ spawn() {
 # A model alias names whichever model the host's `claude` resolves it to, so a
 # stale launcher runs a worker on an older model without a word, and the API
 # refuses the newest models to an old enough one. The updater cannot be left to
-# itself: it does not run in the print-mode sessions a worker host holds. One
-# update at a time per host, since a wave spawns its workers side by side. A
+# itself: a host whose sessions were all print-mode workers was seen to stay
+# versions behind a host with interactive sessions on it. One update at a time per
+# user, whose install it is, since a wave spawns its workers side by side. A
 # failed update is said, and the worker runs on the version that is here.
 update_claude() {
     ( flock 9; run timeout 300 claude update ) 9>>"$(dirname "$here")/claude-update.lock" >&2 ||
