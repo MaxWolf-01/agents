@@ -98,6 +98,17 @@ dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
 cp "${files[@]:0:${#files[@]}-1}" "$dest"
 """
 
+# The host's claude as a spawn meets it: it records what it was asked, answers a version, and its
+# updater fails when CLAUDE_UPDATE_FAILS is set. Plugin commands succeed and do nothing.
+FAKE_CLAUDE = """#!/bin/sh
+printf '%s\\n' "$*" >> CALLS
+case $1 in
+    --version) echo "2.1.283 (Claude Code)" ;;
+    update) [ -z "${CLAUDE_UPDATE_FAILS:-}" ] || { echo "update: network unreachable" >&2; exit 1; } ;;
+esac
+"""
+
+
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
@@ -158,6 +169,8 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
         'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
     (bin_dir / "diffview").chmod(0o755)
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
            "JOB_STATE_DIR": str(toy.parent / "jobs"),
@@ -266,6 +279,27 @@ def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_
     assert "## warm-preset" in written and "One preset, warm." in written
     assert "## parent ticket: lamp-ui" in written and "The whole of giving the lamp presets." in written
     assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, staged: Path, fails: bool) -> None:
+    """`worker-hosts-run-the-current-claude`: a model alias is whatever the host's claude resolves
+    it to, so the updater runs before every worker, and one that fails is said out loud while the
+    worker starts on the version the host has, which the spawn names either way."""
+    calls = toy.parent / "bin" / "claude.calls"
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "set -eu\n", f"set -eu\nprintf 'worker starts\\n' >> {calls}\n"))
+    run(toy, "claim", "warm-preset")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, **({"CLAUDE_UPDATE_FAILS": "1"} if fails else {})))
+    waited(toy)
+
+    assert said.returncode == 0, said.stderr
+    asked = calls.read_text().splitlines()
+    assert asked.index("update") < asked.index("worker starts")
+    assert "claude=2.1.283" in said.stdout, said.stdout
+    assert ("claude update failed" in said.stderr) == fails, said.stderr
 
 
 def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, staged: Path) -> None:
@@ -481,6 +515,44 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     assert done.returncode == 0, done.stderr
     assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
     assert "runner: started warm-preset" in (state / "run-1.log").read_text()
+
+
+def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path) -> None:
+    """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
+    answered, so the status line reads it off the session's transcript: the models its assistant
+    turns carry, and none of the strings a turn merely mentions (an Agent call's `model` input) or
+    claude's own `<synthetic>` error turns. The worklog's first line names the launcher's version."""
+    state = tmp_path / "state"
+    state.mkdir()
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    turns = [
+        {"type": "user", "message": {"role": "user", "content": "Work it."}},
+        {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+            {"type": "tool_use", "name": "Agent", "input": {"model": "sonnet", "prompt": "review"}}]}},
+        {"type": "assistant", "message": {"model": "<synthetic>", "content": "API Error"}},
+        {"type": "assistant", "message": {"model": "claude-opus-5", "content": "done"}},
+    ]
+    transcript = "\n".join(json.dumps(turn) for turn in turns)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(
+        '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
+        'while [ "$1" != --session-id ]; do shift; done\n'
+        f'mkdir -p "$CLAUDE_CONFIG_DIR/projects/-toy"\ncat > "$CLAUDE_CONFIG_DIR/projects/-toy/$2.jsonl" <<\'T\'\n'
+        f'{transcript}\nT\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
+             "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")},
+    )
+    status = (state / "run-1.status").read_text()
+    assert status.split()[-1] == "models=claude-opus-5,claude-opus-5-5", status
+    assert "on opus with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
 
 
 def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
