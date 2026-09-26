@@ -2,7 +2,7 @@ PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 HOOKS := mx/hooks/hooks.json
 
-.PHONY: check test version release-patch release-minor release-major
+.PHONY: check test test-all version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -15,9 +15,18 @@ check:
 
 # One test process per core; JOBS=1 runs them one after another.
 JOBS ?= auto
+# What `make test` measures the change from: the merge-base of this tree with BASE.
+BASE ?= master
+PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest -p no:cacheprovider -n $(JOBS)
 
+# The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
 test:
-	PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest mx/ -p no:cacheprovider -n $(JOBS)
+	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
+	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
+	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; $(PYTEST) $$tests; fi
+
+test-all:
+	$(PYTEST) mx/
 
 version:
 	@jq -r .version $(PLUGIN)
@@ -26,7 +35,7 @@ release-patch: PART = patch
 release-minor: PART = minor
 release-major: PART = major
 
-release-patch release-minor release-major: check test
+release-patch release-minor release-major: check test-all
 	@V=$$(jq -r .version $(PLUGIN)); \
 	NEW=$$(echo $$V | awk -F. -v part=$(PART) '{ \
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \
