@@ -19,5 +19,5 @@ The default-page kit: a hero with a big number and a small label, gradient washe
 ## Build
 
 1. One sentence on what must click for the reader; the sections as a list.
-2. Build. `render-lint` the file and fix every fatal finding; then screenshot both schemes, `Read` them, fix what the eye catches.
+2. Build. `render-lint` the file (its `--help` says what each outcome means) and fix every fatal finding; then screenshot both schemes, `Read` them, fix what the eye catches.
 3. Remove one thing. Then present.
