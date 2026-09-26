@@ -89,7 +89,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
         repo=Path(str(front["repo"])),
         title=title,
         brief=sections.get("Brief", (0, ""))[1],
-        turns=tuple(replace(t, written=t.number in written, messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
+        turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
         settled=settled,
     )
 
@@ -144,7 +144,7 @@ class Turn:
     path: Path
     date: str
     headline: str  # the record's H1
-    written: bool = False  # whether the transcript shows the call that wrote the record
+    written: datetime | None = None  # when the transcript shows the record written, where it shows it
     messages: tuple[str, ...] = ()  # what the user said that this turn answered, whole, oldest first
     questions: tuple[Question, ...] = ()
     links: tuple[Link, ...] = ()
@@ -594,9 +594,9 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
 
 def you(t: Turn) -> str:
     """The user's messages behind one click, each whole, its paragraphs and line breaks kept."""
+    if t.written is None:
+        return '<p class="v-meta you-none">no message of yours paired, since the transcript never writes this turn\'s record</p>'
     messages = t.messages
-    if not t.written:
-        return '<p class="v-meta you-none">no message of yours: the transcript shows no write of this turn\'s record</p>'
     if not messages:
         return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
     words = sum(len(m.split()) for m in messages)

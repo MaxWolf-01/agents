@@ -24,7 +24,8 @@ sessions' hand-backs that Claude Code writes as user entries; and the message qu
 before the fourth one was still running, which sits in an `attachment` and in no user entry.
 
 Four lines are not the session's: one assistant entry per record, a Write call on its
-`turns/NN.md`, timed after the last prompt the prototype's sample gives that record and before
-the first it gives the next, and placed in order by that time. The renderer reads when a record was written from such a call. The
-session the fixture was trimmed from wrote all four records at once, after the fact, so its own
-write calls would pair every message with record 01.
+`turns/NN.md` with no content, timed after the last prompt the prototype's sample gives that
+record and before the first it gives the next, and placed in order by that time. The renderer
+takes a record's write time from that call. The session the fixture was trimmed from wrote all
+four records at once, after the fact, so its own write calls would pair every message with
+record 01.

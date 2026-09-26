@@ -61,9 +61,9 @@ def written(calls: dict[int, str]) -> list[tuple[str, int, str]]:
 
 
 def test_a_turn_carries_what_the_user_said_since_the_record_before_it(worked_example: Path, transcript: Path) -> None:
-    """The six prompts of the worked example against the Write calls of its four records: the
-    first prompt's resubmission stands for it, the slash command reads as typed, the queued
-    message joins the turn it was queued in."""
+    """session-page#P2, which turn a message reaches. The six prompts of the worked example against
+    the Write calls of its four records: the first prompt's resubmission stands for it, the slash
+    command reads as typed, the queued message joins the turn it was queued in."""
     shown = messages_of(render_session(worked_example, transcript, now=NOW))
     assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
     assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
@@ -100,8 +100,9 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
     page = render_session(worked_example, unwritten, now=NOW)
     shown, section = messages_of(page), sections_of(page)["03"]
-    assert shown["03"] == [] and "shows no write of this turn" in section
+    assert shown["03"] == [] and "never writes this turn's record" in section
     assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
+    assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
 
 
 def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_example: Path) -> None:
