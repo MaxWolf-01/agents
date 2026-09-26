@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "pyyaml", "markdown"]
+# dependencies = ["pytest", "hypothesis", "pyyaml", "markdown-it-py"]
 # ///
 """The session renderer's properties. Run: uv run test_session_page.py
 
@@ -13,8 +13,8 @@ session's transcript.
 
 A drawn session's transcript carries one prompt per turn in the shape the real one carries a
 prompt. What the checks ask of a message is that it reaches one turn's section and that the noise
-Claude Code writes as the user reaches none, never which turn a given prompt belongs to: the
-Decisions do not say, so the pairing is session-renderer's to settle.
+Claude Code writes as the user reaches none, never which turn a given prompt belongs to, which
+test_reading.py checks.
 """
 
 import itertools

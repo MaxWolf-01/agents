@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest"]
+# dependencies = ["pytest", "pyyaml", "markdown-it-py"]
 # ///
 """The Stop hook's properties. Run: uv run test_stop_hook.py
 
@@ -26,7 +26,7 @@ from session_page import PAGE
 from stop_hook import SESSIONS, decide, session_directory
 
 LIFTED = "decide is a stub; lifted by session-stop-hook"
-BOTH = "decide and render_session are stubs; lifted by session-stop-hook and session-renderer"
+BOTH = "decide is a stub; lifted by session-stop-hook"
 # the sessions the hook leaves alone are marked in the environment, and the suite runs in one of
 # them whenever a dispatched worker verifies its branch
 UNATTENDED = ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")

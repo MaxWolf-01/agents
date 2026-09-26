@@ -1,9 +1,9 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
 # ///
-"""Render a session directory and its transcript into the session page.
+"""Render a session directory and its transcript into the session page, `index.html` in that directory.
 
 The directory is `agent/sessions/<session-id>/`: `session.md` (frontmatter `session` and `repo`, an
 H1 title, a `## Brief`) and one `turns/NN.md` per turn (frontmatter `date`, `answered`,
@@ -17,7 +17,6 @@ and no page is written.
 Examples:
 
     session-page agent/sessions/e5ca76dc-3093-419b-aa93-b8eb8f35811f ~/.claude/projects/<project>/e5ca76dc-3093-419b-aa93-b8eb8f35811f.jsonl
-    session-page <directory> <transcript> -o /tmp/page.html
 """
 
 import html
@@ -30,8 +29,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-import markdown
 import yaml
+from markdown_it import MarkdownIt
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
@@ -54,8 +53,6 @@ def main() -> None:
         """The session directory: session.md and turns/."""
         transcript: Annotated[Path, tyro.conf.Positional]
         """The session's transcript, the JSONL Claude Code writes."""
-        output: Annotated[Path | None, tyro.conf.arg(aliases=["-o"], metavar="PATH")] = None
-        """The HTML file to write. Default: index.html in the session directory."""
 
     args = tyro.cli(Args, description=__doc__)
     try:
@@ -63,7 +60,7 @@ def main() -> None:
     except RecordError as e:
         print(e, file=sys.stderr)
         sys.exit(1)
-    output = args.output or args.directory / PAGE
+    output = args.directory / PAGE
     output.write_text(rendered)
     print(output)
 
@@ -206,14 +203,14 @@ def read_turn(path: Path) -> Turn:
     for name in ("answered", "superseded"):
         table = front.get(name) or {}
         if not isinstance(table, dict):
-            raise RecordError(path, 2, f"{name}: a mapping of question tags, like `Q1: a`")
+            raise RecordError(path, line_of(path, name), f"{name}: a mapping of question tags, like `Q1: a`")
         tables[name] = {str(tag): str(value) for tag, value in table.items()}
         for tag in tables[name]:
             if not TAG.fullmatch(tag):
-                raise RecordError(path, 2, f"{name}: {tag!r} is not a question tag like Q7")
+                raise RecordError(path, line_of(path, tag), f"{name}: {tag!r} is not a question tag like Q7")
     for old, new in tables["superseded"].items():
         if not TAG.fullmatch(new):
-            raise RecordError(path, 2, f"superseded: {old} names {new!r}, not a question tag like Q7")
+            raise RecordError(path, line_of(path, old), f"superseded: {old} names {new!r}, not a question tag like Q7")
     return Turn(
         number=int(path.stem),
         path=path,
@@ -237,18 +234,25 @@ def read_record(
     if not m:
         raise RecordError(path, 1, "no frontmatter: the file opens with --- and a YAML block closed by ---")
     try:
-        front = yaml.safe_load(m.group(1) or "") or {}
+        front = yaml.load(m.group(1) or "", Loader=yaml.BaseLoader) or {}  # every scalar as written: `no` stays "no"
     except yaml.YAMLError as e:
         mark = getattr(e, "problem_mark", None)
         raise RecordError(path, mark.line + 2 if mark else 2, f"frontmatter is not YAML: {getattr(e, 'problem', None) or e}") from None
     if not isinstance(front, dict):
         raise RecordError(path, 2, "frontmatter is not a mapping")
     if unknown := sorted(set(front) - allowed):
-        raise RecordError(path, 2, f"unknown frontmatter field {unknown[0]!r}; the fields are {', '.join(sorted(allowed))}")
+        raise RecordError(path, line_of(path, unknown[0]), f"unknown frontmatter field {unknown[0]!r}; the fields are {', '.join(sorted(allowed))}")
     if missing := sorted(required - set(front)):
         raise RecordError(path, 2, f"frontmatter lacks {missing[0]!r}")
     h1, parts = split_sections(path, text[m.end():], m.group(0).count("\n") + 1, sections)
     return front, h1, parts
+
+
+def line_of(path: Path, key: str) -> int:
+    """The frontmatter line `key` is set on, the first line of the frontmatter where none is."""
+    lines = path.read_text().split("\n")
+    end = lines.index("---", 1) if "---" in lines[1:] else len(lines)
+    return next((n for n, line in enumerate(lines[:end], start=1) if re.match(rf"\s*{re.escape(key)}\s*:", line)), 2)
 
 
 def split_sections(path: Path, body: str, offset: int, allowed: set[str]) -> tuple[str, dict[str, tuple[int, str]]]:
@@ -275,7 +279,7 @@ def split_sections(path: Path, body: str, offset: int, allowed: set[str]) -> tup
             if name in sections:
                 raise RecordError(path, n, f"a second ## {name}")
             if h1 is None:
-                raise RecordError(path, n, "a section before the H1")
+                raise RecordError(path, None, "no H1 before the first section; a record's headline is its H1")
             current = name
             sections[name] = (n + 1, [])
         elif current is not None:
@@ -372,9 +376,9 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
         for how, table in (("answered", turn.answered), ("superseded", turn.superseded)):
             for tag, value in table.items():
                 if tag not in asked:
-                    raise RecordError(turn.path, 2, f"{how}: {tag} is not a question of an earlier turn")
+                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} is not a question of an earlier turn")
                 if tag in settled:
-                    raise RecordError(turn.path, 2, f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
+                    raise RecordError(turn.path, line_of(turn.path, tag), f"{how}: {tag} was already {settled[tag].how} in turn {settled[tag].turn:02d}")
                 settled[tag] = Settled(how, value, turn.number)
         for question in turn.questions:
             if question.tag in asked:
@@ -383,14 +387,14 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
     for turn in turns:
         for old, new in turn.superseded.items():
             if new not in asked:
-                raise RecordError(turn.path, 2, f"superseded: {old} names {new}, which no turn asks")
+                raise RecordError(turn.path, line_of(turn.path, old), f"superseded: {old} names {new}, which no turn asks")
     return settled
 
 
 # ---- reading the transcript -------------------------------------------------
 
 # What Claude Code writes as a user entry or a queued command that the user never typed.
-NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|local-command-\w+|system-reminder)\b|\[Request interrupted by user)")
+NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
 
 
 def read_transcript(transcript: Path) -> list[dict]:
@@ -407,8 +411,7 @@ def read_transcript(transcript: Path) -> list[dict]:
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
     """What the user said, with when, oldest first: their own prompts and the ones they queued
     mid-turn, and none of what Claude Code writes as the user (images, task notifications, other
-    sessions' hand-backs). A prompt the next one repeats whole and extends, as a resubmission
-    does, is shown as the next one."""
+    sessions' hand-backs)."""
     out = []
     for entry in entries:
         if entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary")):
@@ -423,8 +426,7 @@ def said(entries: list[dict]) -> list[tuple[datetime, str]]:
             continue
         if (text := message_text(content)) and "timestamp" in entry:
             out.append((datetime.fromisoformat(entry["timestamp"]), text))
-    out.sort(key=lambda m: m[0])
-    return [m for m, later in zip(out, out[1:] + [None]) if not (later and later[1].startswith(m[1]))]
+    return sorted(out, key=lambda m: m[0])
 
 
 def message_text(content: object) -> str:
@@ -441,31 +443,38 @@ def message_text(content: object) -> str:
     return re.sub(r"</?pasted_content\b[^>]*>", "", content).strip()
 
 
+WRITES = {"Write", "Edit", "MultiEdit"}  # the tools whose call on a path writes it
+
+
 def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[int, datetime]:
-    """When each record was written: the last tool call in the transcript that wrote its path,
-    else the file's own modification time."""
+    """When each record was written: the first tool call in the transcript that wrote its path,
+    else the file's own modification time. A later edit, as a send-back asks for, or a read
+    leaves the time where it was."""
     written: dict[int, datetime] = {}
     names = {t.path.name: t.number for t in turns}
     for entry in entries:
         if entry.get("type") != "assistant" or "timestamp" not in entry:
             continue
         for block in entry.get("message", {}).get("content") or []:
-            target = isinstance(block, dict) and block.get("type") == "tool_use" and (block.get("input") or {}).get("file_path")
+            writes = isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in WRITES
+            target = writes and (block.get("input") or {}).get("file_path")
             if isinstance(target, str) and Path(target).parts[-3:-1] == (directory.name, "turns") and Path(target).name in names:
-                written[names[Path(target).name]] = datetime.fromisoformat(entry["timestamp"])
+                written.setdefault(names[Path(target).name], datetime.fromisoformat(entry["timestamp"]))
     return {t.number: written.get(t.number) or datetime.fromtimestamp(t.path.stat().st_mtime, UTC) for t in turns}
 
 
 def pair(messages: list[tuple[datetime, str]], written: list[datetime]) -> list[list[str]]:
     """Each record's messages: the ones said before it was written and after the record before it
-    was. A message said after the newest record waits for the record that answers it."""
+    was. A message said after the newest record is on no turn until a later record is written.
+    Within a turn, a prompt the next one repeats whole and extends, as a resubmission does, is
+    shown as the next one."""
     out: list[list[str]] = [[] for _ in written]
     for when, text in messages:
         for i, at in enumerate(written):
             if when <= at:
                 out[i].append(text)
                 break
-    return out
+    return [[m for m, later in zip(turn, turn[1:] + [""]) if not later.startswith(m)] for turn in out]
 
 
 # ---- the page ---------------------------------------------------------------
@@ -665,22 +674,28 @@ THEME = """
 
 
 def block(text: str) -> str:
-    """A record's markdown as HTML, its links resolved from the repo root and opening in a new tab."""
-    return retarget(markdown.markdown(text, extensions=["fenced_code", "tables"], tab_length=2)) if text else ""
+    """A record's markdown as HTML: CommonMark with tables, raw HTML shown as text, links resolved
+    from the repo root and opening in a new tab."""
+    return MARKDOWN.render(text)
 
 
 def inline(text: str) -> str:
     """Markdown as one line of HTML: a headline carries code and emphasis, never a block."""
-    return re.sub(r"^<p>|</p>$", "", block(text).strip())
+    return MARKDOWN.renderInline(text)
 
 
-def retarget(rendered: str) -> str:
-    def one(m: re.Match) -> str:
-        target = html.unescape(m.group(1))
-        if target.startswith("#"):
-            return m.group(0)
-        return f'<a href="{esc(href(target))}" target="_blank" rel="noopener"'
-    return re.sub(r'<a href="([^"]*)"', one, rendered)
+def link_open(self, tokens, idx, options, env) -> str:
+    token = tokens[idx]
+    target = token.attrGet("href") or ""
+    if not target.startswith("#"):
+        token.attrSet("href", href(target))
+        token.attrSet("target", "_blank")
+        token.attrSet("rel", "noopener")
+    return self.renderToken(tokens, idx, options, env)
+
+
+MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
+MARKDOWN.add_render_rule("link_open", link_open)
 
 
 def href(path: str) -> str:
