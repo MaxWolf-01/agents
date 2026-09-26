@@ -37,7 +37,7 @@ Three claims, each load-bearing: where the text came from, that its content was 
 Nothing goes out without max's yes on the rendered text:
 
 1. **Read the body as a stranger would, for what it discloses**, on any repo others can read. Hostnames, paths, usernames, tokens, internal URLs, a stack trace carrying any of those, and the subtler kind, where the shape of a setup or the reason for a question says more about max than he'd choose to publish. Redact to the minimum that still makes the point.
-2. **Show max** what would be published, rendered the way its destination renders it, opened with `claude-browser` where it exists, else `xdg-open`:
+2. **Show max** what would be published, the title with it, rendered the way its destination renders it, opened with `claude-browser` where it exists, else `xdg-open`:
 
    ```console
    gh api -X POST /markdown -f mode=gfm -f context=<owner/repo> \
@@ -45,6 +45,6 @@ Nothing goes out without max's yes on the rendered text:
    ```
 
    `mode=gfm` with the repo as `context` is what resolves `#123` and `@name`; the default mode leaves them as text.
-3. **His explicit yes.** Then publish the file he saw, with the command its companion names, and report the URL back.
+3. **His explicit yes.** Then publish the title and file he saw, with the command its companion names, and report the URL back.
 
 A wording change after the yes is a new text, and it goes through the gate again.

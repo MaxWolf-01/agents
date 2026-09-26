@@ -40,14 +40,15 @@ plainly as a single occurrence.
 
 Drilling down is slow and mostly mechanical, so hand it to a subagent and carry on
 with the session's real work. Give it the finding, the repo, this skill and this
-file, and name the file it writes to, `agent/research/upstream-<repo>-<slug>.md`,
-holding the body, written per [The body](#the-body), the duplicate search, and
-whatever it could not verify. It writes that file; it never files the issue.
+file, and name the two files it writes: `agent/research/upstream-<repo>-<slug>.md`,
+holding the title, the duplicate search and whatever it could not verify, and
+beside it `upstream-<repo>-<slug>.body.md`, holding the body alone, written per
+[The body](#the-body). It writes those files; it never files the issue.
 
 The main session then **sanity checks** the body against what the session actually
 knows, since the subagent worked from a brief and can have drifted, and takes it
 through the skill's publishing gate. After max's yes: `gh issue create -R <repo>
---body-file <file>` with the label the template assigns.
+--title <title> --body-file <body file>` with the label the template assigns.
 
 A gate that does not pass sends it round again: another subagent round when the
 gap is real work, a direct edit and a fresh yes when it is wording. A finding the
@@ -56,7 +57,7 @@ already paid for itself by being understood.
 
 ## The body
 
-It opens with the disclaimer, then the finding: expected against actual, or, for a
+It opens on the finding, after the disclaimer where the skill's rule asks for one: expected against actual, or, for a
 request, the ask itself. The evidence a reader checks only if they doubt you, the
 repro's files, commands and output, a stack, a probe of the cause, goes inside
 `<details>` blocks.

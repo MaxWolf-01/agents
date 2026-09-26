@@ -16,4 +16,4 @@ Headings are available, not owed.
 
 ## Publishing
 
-After max's yes, the file he saw becomes the body: `gh pr create --body-file <file>` for a new PR, `gh pr edit <n> --body-file <file>` for one that exists, each PR `gh stack submit` opened included.
+After max's yes, the title and file he saw become the PR's: `gh pr create --title <title> --body-file <file>` for a new PR, `gh pr edit <n> --title <title> --body-file <file>` for one that exists, each PR `gh stack submit` opened included.
