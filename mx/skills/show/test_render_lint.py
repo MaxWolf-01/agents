@@ -16,6 +16,12 @@ hides its text by visibility, and not by opacity, which has no box to act on. Te
 renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
 off only what it is the containing block of, the page itself included.
 
+What the reader sees also depends on when and where the page is read: a page still moving when the
+network goes quiet is measured once it stops and reported unmeasurable when it never does; what an
+address' fragment slides under fixed chrome is no finding, while the same chrome over the top of
+the page is one; and an opaque card drawn over a text hides it, where two texts nothing covers
+collide in plain sight.
+
 A run launches Chromium, so these take a second or two each.
 """
 
@@ -40,6 +46,51 @@ TWO_LABELS = """
 </div>
 """
 
+
+def settles(top_at_first: int, top_at_rest: int) -> str:
+    """A page laying itself out for a second after the requests stop, the way a graph engine does:
+    the late label finds its place only once the churn ends."""
+    return """
+    <div style="position:relative;height:60px">
+      <span style="position:absolute;left:20px;top:10px">Row label one</span>
+      <span id="late" style="position:absolute;left:20px;top:FIRSTpx">Row label two</span>
+    </div>
+    <div id="growing"></div>
+    <script>
+      let n = 0
+      const tick = setInterval(() => {
+        document.getElementById("growing").append(document.createElement("hr"))
+        if (++n < 10) return
+        clearInterval(tick)
+        document.getElementById("late").style.top = "RESTpx"
+      }, 100)
+    </script>
+    """.replace("FIRST", str(top_at_first)).replace("REST", str(top_at_rest))
+
+
+# A page that never comes to rest, so there is no moment at which measuring it means anything.
+RESTLESS = """
+<div style="position:relative;height:200px">
+  <span id="pacer" style="position:absolute;left:20px;top:10px">A label that never stops</span>
+</div>
+<script>let n = 0; setInterval(() => document.getElementById("pacer").style.top = (10 + (n = (n + 13) % 90)) + "px", 60)</script>
+"""
+
+# A fixed bar and a note far enough down the page for an address to scroll it under the bar. The
+# bar carries no background, so what suppresses the pairing is where the page is read, not what is
+# painted over what; the tail is sized in vh, so the page still scrolls once the window is the
+# height the page asked for.
+FIXED_CHROME = """
+<style>
+  #bar {{ position: fixed; top: 0; left: 0; right: 0; padding: 2px 8px; font-size: 14px }}
+  .grow {{ height: 100vh }}
+</style>
+<div id="bar">The fixed chrome</div>
+{above}
+<p id="note" style="margin:0;font-size:14px">A note the chrome would cover</p>
+<div class="grow"></div>
+"""
+
 # Two screens of a layout sized in vh, which grows under the viewport the run resizes: the
 # labels land below the height the page first asked for.
 TWO_SCREENS = """
@@ -52,11 +103,15 @@ TWO_SCREENS = """
 """
 
 
-def lint(tmp_path: Path, body: str, crops: Path | None = None) -> tuple[int, list[dict]]:
+def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "") -> tuple[int, list[dict]]:
+    """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
-    run = subprocess.run([str(LINT), str(page), "--json", *(["--crops", str(crops)] if crops else [])], capture_output=True, text=True)
-    assert run.returncode in (0, 1) and run.stdout, run.stderr
+    run = subprocess.run(
+        [str(LINT), f"{page}{at}", "--json", *flags, *(["--crops", str(crops)] if crops else [])],
+        capture_output=True, text=True,
+    )
+    assert run.returncode in (0, 1, 2) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
 
 
@@ -323,6 +378,73 @@ def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
     # file that exists.
     box, (wide, tall) = findings[0]["box"], png_size(crop)
     assert abs(wide - (box["w"] + 48)) <= 1 and abs(tall - (box["h"] + 48)) <= 1, (wide, tall, box)
+
+
+def test_a_page_still_moving_when_the_network_goes_quiet_is_measured_once_it_stops(tmp_path):
+    """The board's own failure, as one page: the labels are stacked when the requests stop and
+    apart a moment later, so a run that measures at network idle reads a collision nobody sees."""
+    code, findings = lint(tmp_path, settles(top_at_first=10, top_at_rest=34))
+    assert findings == []
+    assert code == 0
+
+
+def test_a_page_that_settles_into_a_collision_still_reports_it(tmp_path):
+    code, findings = lint(tmp_path, settles(top_at_first=34, top_at_rest=12))
+    assert kinds(findings) == ["overlap"]
+    assert code == 1
+
+
+def test_a_page_that_never_stops_moving_is_unmeasurable(tmp_path):
+    """Distinct from a finding and from the run itself failing: nothing on the page was measured,
+    so a clean result would be a lie and an overlap would be an accident of timing."""
+    code, findings = lint(tmp_path, RESTLESS, "--patience", "1.5")
+    assert kinds(findings) == ["unmeasurable"]
+    assert findings[0]["text"] == "still moving after 1.5s"
+    assert code == 2
+
+
+def test_what_an_address_scrolls_under_fixed_chrome_is_no_finding(tmp_path):
+    """A page is read at the top, where its chrome belongs; the fragment in an address decides
+    what the reader scrolls to, not what the page puts under its own bar."""
+    code, findings = lint(tmp_path, FIXED_CHROME.format(above='<div style="height:300px"></div>'), at="#note")
+    assert findings == []
+    assert code == 0
+
+
+def test_the_same_chrome_over_the_top_of_the_page_still_collides(tmp_path):
+    code, findings = lint(tmp_path, FIXED_CHROME.format(above=""), at="#note")
+    assert kinds(findings) == ["overlap"]
+    assert set(findings[0]["text"].split(" | ")) == {"The fixed chrome", "A note the chrome would cover"}
+    assert code == 1
+
+
+def test_a_card_painted_over_a_text_is_no_finding_and_two_visible_texts_are(tmp_path):
+    """An overlap is a collision only where the browser paints both texts. The note under the card
+    is not one a reader can see crossed, so it is not one the tool reports; the pair beside it,
+    with nothing over either, is."""
+    code, findings = lint(
+        tmp_path,
+        """
+        <div style="position:relative;height:170px">
+          <span style="position:absolute;left:24px;top:24px">A note under the card</span>
+          <div style="position:absolute;left:0;top:0;width:420px;height:120px;padding:22px 20px 0;box-sizing:border-box;background:#fff">The card's own words</div>
+          <span id="over" style="position:absolute;left:24px;top:130px">Two visible labels here</span>
+          <span style="position:absolute;left:24px;top:132px">And the one under them</span>
+        </div>
+        """,
+    )
+    assert [f["text"] for f in findings] == ["Two visible labels here | And the one under them"]
+    assert findings[0]["el"] == "span#over | div span"
+    assert code == 1
+
+
+def test_a_finding_names_the_element_it_was_measured_on(tmp_path):
+    code, findings = lint(
+        tmp_path,
+        '<main id="board"><div class="row"><span class="title" style="display:block;width:80px;white-space:nowrap">A title far too long for it</span></div></main>',
+    )
+    assert [f["el"] for f in findings] == ["main#board div.row span.title"]
+    assert code == 1
 
 
 def test_a_scrolling_box_cuts_nothing_off(tmp_path):

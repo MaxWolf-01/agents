@@ -10,10 +10,15 @@ render-lint. The oracle is the no-overlap Property of mx/skills/tracker/corpus/b
 either scheme.
 
 Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page out in W/Z CSS
-pixels, which is what render-lint's --width takes: WIDTHS is that quotient over the corners of the
-matrix. A page that ignores
-`?theme=` would be measured twice in the same scheme, so the scheme switch the house style
-prescribes is the check's precondition rather than a second check.
+pixels, which is what render-lint's --width takes: the Property states a range of layout widths,
+that quotient over the corners of its grid. What is measured inside the range is both edges of
+every band the board's own `@media` rules cut it into, read off the rendered page, so a new
+breakpoint brings its two widths here with no edit. What that gives up is a collision that exists
+only mid-band, which takes a box whose size does not track the window's: `.body` at 46rem, `main`
+and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board has.
+
+A page that ignores `?theme=` would be measured twice in the same scheme, so the scheme switch the
+house style prescribes is the check's precondition rather than a second check.
 
 Each width is measured on six pages: both schemes with every row folded, both schemes with one row
 opened through its anchor, which lays out the blocks the ticket reads as and paints the dependency
@@ -22,24 +27,27 @@ the address opens.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
 Property covers is never laid out.
 
-Fourteen widths, two schemes, folded, open and the full size graph is fourteen browser runs of six
-pages, a minute of the suite: the matrix the Property states, rather than a sample of it.
+Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
+means nothing until the same widths have been shown reporting a defect.
 
-What render-lint measures is text against its own box, and SVG text against other SVG text: two
-HTML marks overlapping each other are outside its reach, and so is text a box clips rather than
-spills, which every mark that truncates does by design. The Property is executable as far as that
-reaches; the rest was read by eye at these widths, in both schemes (02-rows' closing comment).
+What render-lint measures is text against its own box, and text drawn over other text, HTML over
+HTML included; what it does not reach is text a box clips rather than spills, which every mark
+that truncates does by design, and an overlap the browser paints an opaque box over, which is
+what a card drawn over the page is. The Property is executable as far as that reaches; the rest
+was read by eye at these widths, in both schemes (02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -52,9 +60,9 @@ from briefing import Briefing, cache_path
 from demo_tracker import Demo
 
 RENDER_LINT = Path(__file__).resolve().parents[1] / "show" / "render_lint.py"
-WINDOWS = (900, 1280, 1920, 2560)  # from the Property's floor to a wide monitor
-ZOOMS = (0.8, 1.0, 1.5, 2.0)  # the Property's range
-WIDTHS = sorted({round(window / zoom) for window in WINDOWS for zoom in ZOOMS})
+WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
+ZOOMS = (0.8, 2.0)  # the Property's range
+NARROWEST, WIDEST = round(min(WINDOWS) / max(ZOOMS)), round(max(WINDOWS) / min(ZOOMS))
 SCHEMES = ("day", "night")
 OPENED = "t-map-columns"  # the demo tracker's build in review: the row carrying every mark
 FOLDED = "t-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
@@ -78,16 +86,51 @@ The first two touch nothing in common and can run as one wave."""
 
 
 def lint(pages: list[str], width: int) -> list[dict]:
-    """render-lint's findings on each page at `width`, the ones it reports without failing aside."""
+    """render-lint's findings on each page at `width`, the ones it reports without failing aside.
+    A page it could not measure comes back as its own finding rather than as a clean run."""
     done = subprocess.run(
         ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json"],
         capture_output=True, text=True,
     )
-    assert done.returncode in (0, 1), f"render-lint: {done.stderr.strip()}"
+    # A run that never got as far as findings is its own failure, said here rather than left to a
+    # decode error further down: the tool crashing, a browser going with it, or uv failing to start
+    # it all arrive as an exit code with nothing on stdout.
+    assert done.returncode in (0, 1, 2) and done.stdout.startswith("["), (
+        f"render-lint at {width}px exited {done.returncode} with no findings to read: "
+        f"{done.stderr.strip()[-2000:]}"
+    )
     return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
 
 
-@pytest.mark.xfail(strict=False, reason="passes or fails by machine, not by code: agent/tickets/layout-check-flaky.md fixes it or retires the check")
+def band_edges(page: Path) -> list[int]:
+    """Both edges of every layout band the page's own `@media` rules cut the Property's range of
+    layout widths into. Only a rule's prelude is read, so a width a ticket's prose or a container
+    query names brings no band with it."""
+    edges = {NARROWEST, WIDEST}
+    for prelude in re.findall(r"@media[^{]*", page.read_text()):
+        for side, px in re.findall(r"\((min|max)-width:\s*(\d+)px\)", prelude):
+            edges |= {int(px), int(px) - 1} if side == "min" else {int(px), int(px) + 1}
+    return sorted(w for w in edges if NARROWEST <= w <= WIDEST)
+
+
+def measured(pages: list[str], widths: list[int]) -> dict[int, list[dict]]:
+    """Each width in a browser of its own, on a pool a third of the machine's cores wide, shared out
+    when the suite itself is running in parallel: a browser lays the whole page out in a window as
+    tall as the page, and an unbounded pool crashes a tab."""
+    share = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", 1))
+    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 3) // 3 // share)) as pool:
+        found = list(pool.map(lambda width: lint(pages, width), widths))
+    return {width: f for width, f in zip(widths, found, strict=True) if f}
+
+
+def named(found: dict[int, list[dict]]) -> str:
+    """What was found, by the width, the address and the element each was measured on."""
+    return "\n".join(
+        f"{width}px {Path(f['file']).name}: {f['kind']} on {f['el'] or '(the page)'} {f['text']!r}"
+        for width, fs in sorted(found.items()) for f in fs
+    )
+
+
 def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
@@ -97,8 +140,32 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     render(transcribed.root, transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
              for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
-    found = {width: lint(pages, width) for width in WIDTHS}
-    assert {width: f for width, f in found.items() if f} == {}
+    widths = band_edges(out)
+    assert len(widths) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {widths}"
+    assert not (found := measured(pages, widths)), named(found)
+
+
+# A defect put back into the board: the brief of every folded row, in a box too narrow for the one
+# unbreakable line it is set as, with nothing left to hide the rest.
+DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
+
+
+def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """A width where the defect goes unreported is a width the Property is not checked at, whatever
+    the clean run above says. The oracle is the defect itself, named by the element it was measured
+    on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    broken = tmp_path / "broken.html"
+    broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
+    widths = band_edges(out)
+    found = measured([f"{broken}?theme=day"], widths)
+    seen = [width for width, fs in found.items()
+            if any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in fs)]
+    assert sorted(seen) == widths, f"the defect went unseen at {sorted(set(widths) - set(seen))}px"
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
@@ -423,9 +490,27 @@ with sync_playwright() as pw:
     page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
     window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
     window["still_open"] = not win.is_closed()
-    page.keyboard.press("j")  # the window follows the board's cursor without redrawing
-    win.wait_for_selector(".gfbody g.node.cur")
+    # The window follows the board's cursor without redrawing: the cursor moves to another row of
+    # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
+    # a different graph, and a standalone ticket's tree has none at all, which leaves the window
+    # showing its note and no mark for this to wait on.
+    drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
+    steps, slug = page.evaluate("""
+      () => {
+        const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
+        const at = shown.findIndex((r) => r.classList.contains("kcur"))
+        const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
+        return [next - at, shown[next]?.dataset.slug]
+      }
+    """)
+    assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
+    for _ in range(steps):
+        page.keyboard.press("j")
+    page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
+    node = "T_f_" + slug.replace("-", "_")
+    win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
     window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
+    window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
     window["html"] = win.evaluate("document.documentElement.outerHTML")
     out["window"] = window
 
@@ -527,6 +612,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     assert win["marked"] == 1 and win["follows_cursor"] == 1, (
         "the window does not mark the row the board's cursor is on, or stopped following it"
     )
+    assert win["same_drawing"], "the window redrew the graph to follow a cursor move inside it"
     assert win["overflow"] > 0, "the window's graph fits its box, so nothing there is scrolled or panned"
     assert win["switched"] == "csv-import" and win["board_name"] == "csv-import", (
         f"the switch in the window left it on {win['switched']!r} and the board on {win['board_name']!r}"
