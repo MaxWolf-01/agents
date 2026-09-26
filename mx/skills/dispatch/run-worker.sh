@@ -95,6 +95,20 @@ common=(
     --append-system-prompt "$(cat "$prompt_file")"
 )
 
+# Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
+# attempt ends: whatever the worker started and left running (a load generator whose shell was
+# killed before its `kill` line, a process that detached itself) goes with it. A host with no user
+# systemd manager runs the attempt as it is, and the worklog says those processes outlive it.
+if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
+    scoped() { local unit=$1; shift; systemd-run --user --scope --quiet --collect --unit="$unit" -- "$@"; }
+    unscope() { systemctl --user stop "$1.scope" 2> /dev/null; }
+else
+    scoped() { shift; "$@"; }
+    unscope() { :; }
+    printf '%s runner: no user systemd manager here, so what the worker leaves running outlives it\n' \
+        "$(date -u +%FT%TZ)" >> "$DISPATCH_WORKLOG"
+fi
+
 # `dispatch-ctl stop` sends TERM to this process group: claude dies with it and returns, then
 # this runs, and the loop below ends the run instead of retrying it. The status line says
 # `exit=stopped` and carries the session id, which is what a later resume needs.
@@ -105,14 +119,16 @@ trap 'stopped=1' TERM
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
+    unit=$run_id-a$attempt-$$
     if [ "$attempt" -gt 1 ]; then
-        claude "${common[@]}" --resume "$session" continue
+        scoped "$unit" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        claude "${common[@]}" --resume "$session" "$(cat "$message")"
+        scoped "$unit" claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
-        claude "${common[@]}" --session-id "$session" < "$message"
+        scoped "$unit" claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
+    unscope "$unit"
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.

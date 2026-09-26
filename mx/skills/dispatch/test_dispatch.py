@@ -581,6 +581,43 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
     assert "on opus with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
 
 
+def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> None:
+    """A worker whose shell was killed before its cleanup line leaves its children behind, and a
+    child that detached itself escapes even the process group `dispatch-ctl stop` signals. The
+    runner's scope is what takes both down, on a host with a user systemd manager."""
+    probe = subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "--collect", "--", "true"],
+                           capture_output=True) if shutil.which("systemd-run") else None
+    if probe is None or probe.returncode != 0:
+        pytest.skip("no user systemd manager here, and the runner says so in the worklog instead")
+    state = tmp_path / "state"
+    state.mkdir()
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    left = tmp_path / "left.pid"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
+    (bin_dir / "claude").write_text(
+        f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
+         f"check-{tmp_path.name}"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+    )
+    pid = left.read_text().strip()
+    for _ in range(20):
+        if not Path(f"/proc/{pid}").exists():
+            break
+        time.sleep(0.25)
+    else:
+        subprocess.run(["kill", pid])
+        pytest.fail(f"the worker's detached sleep (pid {pid}) outlived the run")
+
+
 def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
     """Without that repo the worker has nowhere to commit a report, so every attempt would end in
     `report=no` with nothing saying why."""
