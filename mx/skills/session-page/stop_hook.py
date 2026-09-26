@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["pyyaml", "markdown"]
 # ///
 """Stop hook: what the end of a turn does to the session page.
 
@@ -22,9 +22,7 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from session_page import PAGE, Session, render_session  # noqa: E402
-
-SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
+from session_page import PAGE, SESSIONS, Session, render_session  # noqa: E402
 
 Verb = Literal["render", "send back", "allow"]
 

@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis"]
+# dependencies = ["pytest", "hypothesis", "pyyaml", "markdown"]
 # ///
 """The session renderer's properties. Run: uv run test_session_page.py
 
@@ -34,7 +34,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from session_page import PAGE, QUESTION, QUESTIONS, RECORD, render_session
 
-LIFTED = "render_session is a stub; lifted by session-renderer"
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -197,7 +196,6 @@ def test_the_page_is_read_by_the_values_its_module_names() -> None:
         "index.html", "open-questions", "data-record", "data-question")
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 @settings(deadline=None)  # an example writes a session directory and renders it twice
 @given(drawn=sessions())
 def test_the_top_holds_the_open_questions_and_nothing_else(
@@ -215,7 +213,6 @@ def test_the_top_holds_the_open_questions_and_nothing_else(
     assert [n for n in range(1, len(turns) + 1) if f"What turn {n} settled." in top] == []
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     worked_example: Path, transcript: Path
 ) -> None:
@@ -224,7 +221,6 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     assert questions_in(top_of(render_session(worked_example, transcript, now=NOW))) == {"Q7"}
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 @settings(deadline=None)
 @given(drawn=sessions(), which=st.integers(min_value=0))
 def test_a_turns_record_is_the_only_source_of_its_section(
@@ -247,7 +243,6 @@ def test_a_turns_record_is_the_only_source_of_its_section(
     assert questions_in(top_of(after_page)) == questions_in(top_of(before_page)), "a headline answers nothing"
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     worked_example: Path, transcript: Path, stale_page: str, tmp_path: Path
 ) -> None:
@@ -269,7 +264,6 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     assert again == page
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 @settings(deadline=None)
 @given(drawn=sessions(), which=st.integers(min_value=0))
 def test_a_message_reaches_one_turns_section_and_no_other(
@@ -302,7 +296,6 @@ SAID = (
 NOT_SAID = ("[Image: original 1400x3400", "Another Claude session sent a message", "task-notification")
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason=LIFTED)
 def test_the_page_carries_what_the_user_said_and_none_of_what_claude_code_said_for_them(
     worked_example: Path, transcript: Path
 ) -> None:
