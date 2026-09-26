@@ -1,6 +1,6 @@
 {
   "name": "mx",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Agent workflow for multi-session work. File-based tickets, domain glossary and ADRs, research artefacts, session continuity.",
   "author": {
     "name": "MaxWolf-01"
