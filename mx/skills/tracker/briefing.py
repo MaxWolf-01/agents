@@ -29,7 +29,7 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-MODEL = "claude-opus-5-5"  # what the briefing is written by, and how hard it thinks: the spec's Decisions under "The board briefing"
+MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The list is what the
 # run allows on top of the machine's own settings, which stand whatever it says, so the three that

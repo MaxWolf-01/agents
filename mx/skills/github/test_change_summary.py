@@ -164,15 +164,16 @@ def test_a_catalogue_with_no_artifact_rules_fails() -> None:
         artifact_rules(FIXTURE.replace("`both`", "`chat`").replace("`artifact`", "`chat`"))
 
 
-def test_opus_by_default_and_the_flag_beats_the_environment(claude: Claude) -> None:
+def test_opus_at_medium_by_default_and_the_flag_beats_the_environment(claude: Claude) -> None:
     claude.replies("A paragraph.")
     run(claude)
-    assert claude.flag("--model") == "opus"
-    for n, (args, env) in enumerate([((), {"CHANGE_SUMMARY_MODEL": "haiku"}),
-                                     (("--model", "sonnet"), {"CHANGE_SUMMARY_MODEL": "haiku"})], 2):
+    assert (claude.flag("--model"), claude.flag("--effort")) == ("opus", "medium")
+    for n, (args, env) in enumerate([((), {"CHANGE_SUMMARY_MODEL": "haiku", "CHANGE_SUMMARY_EFFORT": "low"}),
+                                     (("--model", "sonnet", "--effort", "high"), {"CHANGE_SUMMARY_MODEL": "haiku"})], 2):
         (claude.dir / f"reply.{n}").write_text("A paragraph.")
         run(claude, DIFF, *args, **env)
     assert (claude.flag("--model", 2), claude.flag("--model", 3)) == ("haiku", "sonnet")
+    assert (claude.flag("--effort", 2), claude.flag("--effort", 3)) == ("low", "high")
 
 
 def test_a_paragraph_at_the_cap_is_kept(claude: Claude) -> None:

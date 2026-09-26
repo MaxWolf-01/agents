@@ -9,7 +9,7 @@ records its arguments, works for a set time and writes the report its brief name
 are the user's rulings in `agent/tickets/review-launcher.md`: D113, a review that was killed,
 by kill -9 or a crash, never blocks a later one, and a review that is still running, or anything
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
-caller's setup and runs Opus at the effort the caller gives, `high` by default; and
+caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
 every ancestor's, assembled by the one command that assembles a worker's brief.
 """
@@ -226,9 +226,9 @@ def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
     assert set(value(argv, "--tools").split(",")) == {"Read", "Grep", "Glob", "Bash", "Edit", "Write"}
 
 
-def test_every_reviewer_runs_opus_at_high_effort_unless_told_otherwise(repo):
+def test_every_reviewer_runs_opus_at_medium_effort_unless_told_otherwise(repo):
     assert run(repo, "--light").returncode == 0
-    assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "high")
+    assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "medium")
 
     assert run(repo, "--light", "--effort", "low").returncode == 0
     assert value(launched(repo), "--effort") == "low"

@@ -25,8 +25,8 @@
 #            reporting as the `light` axis. With --spec it takes that brief's
 #            third part too, so one reviewer judges the diff against what was
 #            asked for as well.
-#   --effort every reviewer's effort, `high` by default; `claude --help` lists
-#            the levels.
+#   --effort every reviewer's effort, `medium` by default; `claude --help`
+#            lists the levels.
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its brief states and it
 #            paces its work to, 10 by default; a budget, not a timeout.
@@ -93,7 +93,7 @@ case ${1:-} in
 esac
 fixed=$1; shift
 
-axes= spec= light= model=opus effort=high minutes=10
+axes= spec= light= model=opus effort=medium minutes=10
 while [ $# -gt 0 ]; do
     case $1 in
         --axes)   axes=${2:-};   [ -n "$axes" ]   || die "--axes takes a comma-separated list of axes"; shift 2 ;;
