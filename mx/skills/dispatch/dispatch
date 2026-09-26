@@ -30,7 +30,9 @@
 #            conversation it resumes.
 #   ctl      runs `dispatch-ctl <args>` on a host, from this branch's scratch
 #            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
-#            `dispatch ctl --help` is that script's reference.
+#            `dispatch ctl --help` is that script's reference. DISPATCH_RUNNER,
+#            when set, is a runner file here: a spawn or resume copies it into
+#            the scratch dir as `runner` and runs the worker on that copy.
 #            --host names the host, user@host or `local` for this machine, and
 #            a spawn (or `fuzz start`) is where you name it: the run is
 #            recorded here, so wait, fetch, log, stop, resume and cleanup find
@@ -39,12 +41,14 @@
 #            `probe` with no --host polls every host this branch still has a run
 #            on, each line behind its host; one that cannot answer says so in
 #            place of its workers.
-#            The first spawn on a host stages it: the git remote, this plugin
+#            The first spawn on a host stages it: the git remotes, this plugin
 #            version's dispatch-ctl, runner and worker prompt in this branch's
-#            scratch dir there, `dispatch-ctl init`, and the push a ticket
-#            branch cuts from. A later spawn finds them staged and skips it;
-#            one that finds a version other than this plugin's stages again, so
-#            no worker starts on a stale contract.
+#            scratch dir there, and `dispatch-ctl init`. A later spawn finds
+#            them staged and skips that; one that finds a version other than
+#            this plugin's stages again, so no worker starts on a stale
+#            contract. Every spawn and `fuzz start` then pushes this branch of
+#            both repos to a remote host, so a ticket branch cuts from its
+#            current tip; a local host cuts from these checkouts.
 #            --setup-cmd is the project's own setup line, run in every ticket
 #            worktree on that host before its worker starts. The staged one
 #            stays until another --setup-cmd replaces it; with none ever given,
@@ -340,6 +344,11 @@ probe_all() {
 }
 
 ctl() {
+    # The reference needs no repo and no host: every host is staged from this copy.
+    case ${1:-} in -h|--help|"") exec bash "$skill/dispatch-ctl" --help ;; esac
+    # Made absolute before locate moves to the worktree root, so a relative path
+    # means what it meant where it was typed.
+    [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
     locate
     host= setup_cmd=
     while :; do
@@ -375,6 +384,9 @@ ctl() {
         [ "$(printf '%s' "$read" | jq -r '.tickets[0]["needs-user"]')" != true ] ||
             die "$2 needs the user in the loop: it is worked with them, never handed to a worker"
     fi
+    # Before anything is staged or recorded, so a mistyped path leaves the host as it was.
+    [ -z "$carries" ] || [ -z "${DISPATCH_RUNNER:-}" ] || [ -f "$DISPATCH_RUNNER" ] ||
+        die "DISPATCH_RUNNER=$DISPATCH_RUNNER is not a file"
     [ -n "$host" ] || [ -z "$name" ] || host=$(host_of "$name")
     if [ -z "$host" ]; then
         case $sub in
@@ -396,7 +408,19 @@ ctl() {
         copy_to "$host" "$scratch" "$carry"
     fi
     env=()
-    [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
+    [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
+    # A replacement runner travels with the command that starts a worker on it, as the message does.
+    # It is renamed after the ticket: under its own name it could replace a file the scratch dir
+    # holds, the manifest say, which scp does silently, and one shared name would let two tickets'
+    # runners replace each other. The name, not a path, goes to dispatch-ctl, which looks it up
+    # beside itself: a remote scratch dir is relative to a home this side cannot see.
+    if [ -n "$carries" ] && [ -n "${DISPATCH_RUNNER:-}" ]; then
+        runner_dir=$(mktemp -d)
+        trap 'rm -rf "$runner_dir"' EXIT
+        cp "$DISPATCH_RUNNER" "$runner_dir/runner-$2"
+        copy_to "$host" "$scratch" "$runner_dir/runner-$2" || die "copying the runner to $host failed"
+        env+=("DISPATCH_RUNNER=runner-$2")
+    fi
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return

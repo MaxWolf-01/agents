@@ -186,10 +186,11 @@ def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
                           env=environment(toy, **extra), timeout=180)
 
 
-def waited(toy: Path) -> Path:
+def waited(toy: Path, state: Path | None = None) -> Path:
     """The status line the runner's last act writes, once it is there: a check that carried on
-    without it would read a worker that timed out or died as one that finished."""
-    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    without it would read a worker that timed out or died as one that finished. `state` is the
+    scratch dir, this machine's unless given."""
+    state = state or toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     for _ in range(60):
         if list(state.glob("*.status")):
             break
@@ -262,11 +263,26 @@ def kill_sessions() -> None:
 
 
 def spawn(toy: Path, staged: Path, slug: str, message: str, host: str = "local",
-          env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+          env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
     env = env or environment(toy)
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
     return subprocess.run([str(staged), "ctl", "--host", host, "--setup-cmd", "true", "spawn", slug, "sonnet"],
-                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+                          cwd=cwd or toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
+    """A remote host `agent@far` behind the fake ssh and scp, with a `claude` whose plugin update
+    fails as a host's may: its home, and the environment a command reaches it in."""
+    remote = toy.parent / "remote"
+    remote.mkdir()
+    fakes = toy.parent / "fakes"
+    fakes.mkdir()
+    for name, body in (("ssh", FAKE_SSH), ("scp", FAKE_SCP), ("claude", "#!/bin/sh\nexit 1\n")):
+        (fakes / name).write_text(body)
+        (fakes / name).chmod(0o755)
+    env = environment(toy, REMOTE_HOME=str(remote), **extra)
+    env["PATH"] = f"{fakes}:{env['PATH']}"
+    return remote, env
 
 
 def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
@@ -424,10 +440,10 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     before = set(state.glob("*.status"))
 
-    # the round the user sent back, resumed on a worker that stops before writing one of its own.
-    # Staged beside the runner it replaces, since that directory is where a run writes its log and
-    # its status line, and a resume stages nothing of its own.
-    quiet = state / "quiet-runner.sh"
+    # the round the user sent back, resumed on a worker that stops before writing one of its own,
+    # from a runner outside the scratch dir: the resume copies it in, beside the log and status
+    # line a run writes.
+    quiet = toy.parent / "quiet-runner.sh"
     quiet.write_text(RUNNER)
     resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
                              cwd=toy, capture_output=True, text=True, timeout=180,
@@ -645,15 +661,7 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     the code repo's slot and no ticket branch can be cut. The agent repo is on a branch of its own
     name, as a project's is."""
     git(toy / "agent", "branch", "-m", "plans")
-    remote = toy.parent / "remote"
-    remote.mkdir()
-    fakes = toy.parent / "fakes"
-    fakes.mkdir()
-    for name, body in (("ssh", FAKE_SSH), ("scp", FAKE_SCP), ("claude", "#!/bin/sh\nexit 1\n")):
-        (fakes / name).write_text(body)
-        (fakes / name).chmod(0o755)
-    env = environment(toy, REMOTE_HOME=str(remote))
-    env["PATH"] = f"{fakes}:{env['PATH']}"
+    remote, env = fake_remote(toy)
     run(toy, "claim", "warm-preset")
 
     said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
@@ -667,6 +675,67 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     worktree = remote / "repos" / "dispatch" / "lamp-warm-preset"
     assert git(worktree, "branch", "--show-current").strip() == "ticket/warm-preset"
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
+
+
+def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
+    """`dispatch --help` names `dispatch ctl --help` as dispatch-ctl's reference, and the skill
+    renders it on load wherever the session is."""
+    first = (SKILL / "dispatch-ctl").read_text().splitlines()[1].removeprefix("# ")
+    for args in (["ctl", "--help"], ["ctl"]):
+        said = subprocess.run([str(DISPATCH), *args], cwd=tmp_path, capture_output=True, text=True)
+        assert said.returncode == 0, said.stderr
+        assert said.stdout.startswith(first), said.stdout
+
+
+def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
+    """DISPATCH_RUNNER set on the orchestrator reaches a remote host and is the one its worker runs.
+    It is renamed after the ticket whatever its own name: this one is called `manifest`, the file
+    on the host that records every run. Given relative to a subdirectory the spawn runs in, which
+    dispatch leaves for the repo's root before it reads anything."""
+    (toy / "docs").mkdir()
+    (toy.parent / "runners").mkdir()
+    (toy.parent / "runners" / "manifest").write_text(RUNNER.replace("stub: built", "replacement: built"))
+    remote, env = fake_remote(toy, DISPATCH_RUNNER="../../runners/manifest")
+    run(toy, "claim", "warm-preset")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env, cwd=toy / "docs")
+
+    assert said.returncode == 0, said.stdout + said.stderr
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    waited(toy, state)
+    (log,) = state.glob("dispatch-lamp-warm-preset-*.log")
+    assert "replacement: built warm-preset" in log.read_text()
+    record = (state / "manifest").read_text().split("\t")
+    assert record[0] == "dispatch-lamp-warm-preset", record
+    assert record[-1].strip() == f"{state}/runner-warm-preset", record
+
+
+def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path, staged: Path) -> None:
+    """A resume hands the worker its old session id, which only the harness that made it knows."""
+    replacement = toy.parent / "replacement.sh"
+    replacement.write_text(RUNNER.replace("stub: built", "replacement: built"))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, DISPATCH_RUNNER=str(replacement))).returncode == 0
+    state = waited(toy).parent
+    before = set(state.glob("*.log"))
+
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="continue\n", text=True, check=True,
+                   env=environment(toy))
+    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
+                             cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
+    assert resumed.returncode == 0, resumed.stderr
+    (log,) = set(state.glob("*.log")) - before
+    assert "replacement: built warm-preset" in log.read_text()
+
+
+def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy: Path, staged: Path) -> None:
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, DISPATCH_RUNNER="no-such-runner.sh"))
+    assert said.returncode != 0
+    assert "no-such-runner.sh is not a file" in said.stderr, said.stderr
+    assert not (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").exists()
 
 
 if __name__ == "__main__":
