@@ -55,6 +55,12 @@ gap is real work, a direct edit and a fresh yes when it is wording. A finding th
 session later invalidates, or max judges not worth filing, is dropped; the work
 already paid for itself by being understood.
 
+## Title
+
+The finding in one line: the symptom and the condition that makes it wrong
+("`--timeout 0` waits forever instead of disabling the timeout"), specific enough
+that someone skimming the tracker learns the bug without opening it.
+
 ## The body
 
 It opens on the finding, after the disclaimer where the skill's rule asks for one: expected against actual, or, for a

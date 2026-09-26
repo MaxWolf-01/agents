@@ -1,6 +1,10 @@
-# A PR body
+# A PR
 
 A PR body describes a change, so change narration ("now", "no longer", "before this"), which writing-for-humans treats as residue in an artifact, is its point here. Every other rule of writing-for-humans holds.
+
+## Title
+
+A squash merge makes the title the commit subject, so it follows the repo's commit convention and says what the change does, the way a good commit subject does. It stays true for the whole PR: when the PR grows past it, retitle.
 
 ## Shape
 
