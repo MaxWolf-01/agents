@@ -1481,6 +1481,20 @@ def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: t
     assert pages == {HERE: repo / "agent" / "sessions" / HERE / "index.html", NAMED: None, NEW: None}
 
 
+def test_a_session_that_moved_directory_carries_the_page_it_wrote_in_the_later_one(worked: tuple[Path, Path]) -> None:
+    """The page is written under the directory the session was in when its turn ended: one that
+    started in the repo and went on in a worktree has its page there, and its resume command still
+    starts where it did."""
+    root, repo = worked
+    later = repo.parent / "the ledger-map-columns"
+    (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
+    append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
+    put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
+    assert moved.page == later / "agent" / "sessions" / NEW / "index.html"
+    assert moved.resume == f"cd '{repo}' && claude --resume {NEW}"
+
+
 def test_an_opened_ticket_links_the_page_of_each_session_that_has_one(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The link opens the page in a new tab and says on hover what it opens; a session with no page
     shows no link, and its resume button is there all the same."""
