@@ -12,7 +12,7 @@ metadata:
 
 # gh-stack
 
-Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md` and the line that points at it, which are local.
+Vendored from [github/gh-stack](https://github.com/github/gh-stack) `skills/gh-stack` at 2bd699a (2026-08-27), MIT; update by re-copying, keeping `references/github-side.md`, the line that points at it, and the line under Core loop that points at `/mx:github`, which are local.
 
 `gh stack` is a [GitHub CLI](https://cli.github.com/) extension for stacked branches and pull
 requests. A stack is an ordered chain of branches rooted on a trunk, where each branch has one PR
@@ -92,6 +92,9 @@ gh stack view --json            # confirm
 
 Add `--open` to `submit` to create PRs ready for review instead of drafts. Branch names are
 verbatim — `gh stack add refactor/foo` creates `refactor/foo`.
+
+`submit --auto` titles a single-commit branch from its commit subject and a multi-commit one from its
+branch name; the titles and bodies it generates are rewritten per `/mx:github`, then set with `gh pr edit`.
 
 ## Staying in sync
 
