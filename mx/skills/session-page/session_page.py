@@ -5,8 +5,9 @@ A session that needs more than a line writes `agent/sessions/<session-id>/sessio
 beside them. The seam is `render_session`: a session directory and a transcript in, the page out.
 
 The reading is stubbed. test_session_page.py holds the properties the page has to satisfy, and
-the `session-renderer` slice of agent/tickets/session-page.md fills the stubs in against its
-Decisions; the worked example those properties read is `fixtures/session/` beside this file.
+agent/tickets/session-renderer.md fills the stubs in against the Decisions of its parent,
+agent/tickets/session-page.md; the worked example those properties read is `fixtures/session/`
+beside this file.
 """
 
 from dataclasses import dataclass, field
@@ -15,33 +16,61 @@ from pathlib import Path
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 
-# The marks the page carries, which a check reads it by.
-OPEN_QUESTIONS = "open-questions"  # id of the block at the top: the questions waiting on the user
-TURN = "data-turn"  # on a turn's section: the two digits of the record it renders
-QUESTION = "data-question"  # on a question, at the top or in its turn: its tag
+# What the page carries so a check can find its parts, each once on the thing it names. The
+# prototype has no counterpart for any of the three, and test_session_page.py pins their values.
+QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
+RECORD = "data-record"  # the attribute on a turn's section: the two digits of the record it renders
+QUESTION = "data-question"  # the attribute on a question, at the top and in its turn: its tag
+
+
+def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
+    """The session page for `directory`: its title, brief and resume command, the questions no
+    later turn answered or superseded, then the turns newest first.
+
+    `now` is the clock the page is rendered against, the machine's by default; a check pins it so
+    that two renders of the same records compare. Lifted by session-renderer.
+    """
+    raise NotImplementedError
+
+
+def read_session(directory: Path, transcript: Path) -> "Session":
+    """The session `directory` holds, with each turn's message read from `transcript`.
+
+    Raises RecordError where a record does not parse. Lifted by session-renderer.
+    """
+    raise NotImplementedError
 
 
 class RecordError(Exception):
-    """A record the renderer cannot read, at the line it gave up on. The Stop hook sends the
-    agent back with `str(e)`, which reads `path:line: reason`."""
+    """A record the renderer cannot read, at the line it gave up on where the reason has one. The
+    Stop hook sends the agent back with `str(e)`."""
 
-    def __init__(self, path: Path, line: int, reason: str) -> None:
-        super().__init__(f"{path}:{line}: {reason}")
-        self.path, self.line, self.reason = path, line, reason
+    def __init__(self, path: Path, line: int | None, reason: str) -> None:
+        super().__init__(f"{path}{f':{line}' if line is not None else ''}: {reason}")
+
+
+# ---- what a session's directory holds ---------------------------------------
+
+
+@dataclass(frozen=True)
+class Option:
+    """One answer a question offers, as a sub-item under it."""
+
+    letter: str
+    text: str
+    picked: bool  # the agent's own pick, which the record marks
 
 
 @dataclass(frozen=True)
 class Question:
     """One `- [Qn] **headline** detail` item under a turn's `## Questions`: a call only the user
-    can make, with its options as sub-items and the agent's pick marked."""
+    can make. It clears through the frontmatter of the turn that received the answer."""
 
     tag: str  # Q1, Q2, ... the session's running sequence
     headline: str  # the bold sentence the page shows
     detail: str  # the rest of the item, as written
-    options: tuple[str, ...] = ()  # the sub-items, in the order the record has them
-    picked: str | None = None  # the letter of the option marked as the agent's pick
-    answered: str | None = None  # a later turn's answer: the option's letter, or the user's own words
-    superseded: str | None = None  # the tag of the question that replaced it
+    options: tuple[Option, ...] = ()
+    why: str = ""  # the `- Why:` sub-item under the options, where the question carries one
 
 
 @dataclass(frozen=True)
@@ -50,7 +79,7 @@ class Link:
     its own."""
 
     text: str
-    path: str  # from the repo root, which the renderer resolves
+    path: Path  # from the repo root, which the renderer resolves
     note: str
 
 
@@ -59,11 +88,17 @@ class Turn:
     """One `turns/NN.md`, with the user's message the transcript carries for it."""
 
     number: int
+    path: Path
+    date: str
     headline: str  # the record's H1
     message: str  # the user's message this turn answered, whole, from the transcript
     questions: tuple[Question, ...] = ()
     links: tuple[Link, ...] = ()
     details: str = ""  # the `## Details` section, as markdown
+    # the record's frontmatter: the tag of a question this turn cleared, to the option's letter or
+    # the user's own words, and to the tag of the question that replaced it
+    answered: dict[str, str] = field(default_factory=dict)
+    superseded: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -71,25 +106,7 @@ class Session:
     """A session's directory, read: `session.md` and the turn records in it, oldest first."""
 
     id: str
-    repo: str
+    repo: Path
     title: str  # session.md's H1
     brief: str  # its `## Brief`
-    turns: tuple[Turn, ...] = field(default_factory=tuple)
-
-
-def read_session(directory: Path, transcript: Path) -> Session:
-    """The session `directory` holds, with each turn's message read from `transcript`.
-
-    Raises RecordError where a record does not parse. Lifted by session-renderer.
-    """
-    raise NotImplementedError
-
-
-def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
-    """The session page for `directory`: its title, brief and resume command, the questions no
-    later turn answered or superseded, then the turns newest first.
-
-    `now` is what the page says it was rendered at, the clock by default; a check pins it so that
-    two renders of the same records can be compared. Lifted by session-renderer.
-    """
-    raise NotImplementedError
+    turns: tuple[Turn, ...] = ()
