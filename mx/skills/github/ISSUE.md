@@ -59,7 +59,8 @@ already paid for itself by being understood.
 
 The finding in one line: the symptom and the condition that makes it wrong
 ("`--timeout 0` waits forever instead of disabling the timeout"), specific enough
-that someone skimming the tracker learns the bug without opening it.
+that someone skimming the tracker learns the bug without opening it. A request
+takes the ask in one line instead.
 
 ## The body
 
