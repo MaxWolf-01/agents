@@ -74,6 +74,7 @@ criterion.
 
 - [D1] **Assumptions**
   - A1 `lamp.txt:1`: 2700K, since the bulb box says so.
+  - A2 `agent/show/warm-preset/report.md:1`: the report itself, anchored from the worktree root.
 
 ## Questions
 
@@ -314,7 +315,9 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "The warm preset lands, unmerged" in written and "**Warm at what temperature?**" in written
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
-    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
+    # a worker anchors from its worktree root, and the agent repo is rendered from its own root
+    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [
+        (1, "lamp.txt", 1), (2, "show/warm-preset/report.md", 1)]
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,

@@ -468,6 +468,9 @@ range_of() { # code|agent <tip>
 # refused with its file and line rather than dropped from the page, and however
 # the writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
+# A worker anchors from its worktree root, where the agent repo sits at
+# `agent/`; the page renders that repo from its own root, and the code repo
+# ignores `agent/`, so the prefix names the agent repo and nothing else.
 notes_of() { # <slug>
     # Its own status, taken before the pipe: a refusal prints to stderr and writes
     # nothing, and jq over an empty input exits 0, so a pipeline would answer that
@@ -475,7 +478,8 @@ notes_of() { # <slug>
     read=$("$tracker" data "$1") || return 1
     printf '%s\n' "$read" | jq '{
         notes: [ .tickets[0].assumptions[]
-                 | {id, path, text} + (if .line == null then {} else {line} end) ],
+                 | {id, path: (.path | sub("^agent/"; "")), text}
+                   + (if .line == null then {} else {line} end) ],
         resolved: .tickets[0].resolved,
     }'
 }
