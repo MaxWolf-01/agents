@@ -43,11 +43,11 @@ def session_directory(hook: dict) -> Path:
 
 
 def review(session: Session) -> list[str]:
-    """At most three findings on the prose of the record the last turn wrote, from a small model
-    reading it against the chat rules of mx/skills/writing-for-humans/CATALOGUE.md with what the
-    reader of the page has seen: the session's earlier records and the user's messages, no tool
+    """At most three findings on the prose of the record the last turn wrote, from Opus 5.5 at low
+    effort reading it against the chat rules of mx/skills/writing-for-humans/CATALOGUE.md with what
+    the reader of the page has seen: the session's earlier records and the user's messages, no tool
     calls. The agent revises the record, and the page renders on the turn after. Lifted by
-    session-stop-hook.
+    turn-record-review.
     """
     raise NotImplementedError
 
@@ -57,9 +57,9 @@ def decide(hook: dict, directory: Path) -> Decision:
 
     A record that does not parse is sent back with the reason the reader gives, and nothing
     renders; a session whose directory holds a record, answered in the chat without writing one
-    this turn, is sent back to move the answer onto the page; a turn whose record `review` finds
-    something in is sent back with the findings; a session whose directory holds the records of
-    this turn renders them; anything else lets the turn end. Lifted by session-stop-hook.
+    this turn, is sent back to move the answer onto the page; a session whose directory holds the
+    records of this turn renders them; anything else lets the turn end. Lifted by
+    session-stop-hook; turn-record-review adds the send-back for what `review` finds in a record.
     """
     raise NotImplementedError
 
