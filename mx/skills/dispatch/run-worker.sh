@@ -6,7 +6,8 @@
 #                 committed in the agent repo this pane's worktree holds at `agent`
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
-# TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
+# TERM (from `dispatch-ctl stop`) and INT (a Ctrl-C in the pane) end the run: the status line then
+# reads `exit=stopped`.
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
@@ -123,9 +124,11 @@ fi
 
 # `dispatch-ctl stop` sends TERM to this process group: claude dies with it and returns, then
 # this runs, and the loop below ends the run instead of retrying it. The status line says
-# `exit=stopped` and carries the session id, which is what a later resume needs.
+# `exit=stopped` and carries the session id, which is what a later resume needs. INT is the same
+# event typed by hand by someone attached to the pane; untrapped it would kill this script before
+# the status line, leaving a run that reads as a crash and cannot be resumed.
 stopped=
-trap 'stopped=1' TERM
+trap 'stopped=1' TERM INT
 
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
