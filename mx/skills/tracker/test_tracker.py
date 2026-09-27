@@ -286,6 +286,7 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
 @pytest.mark.parametrize("written, refused", [
     ({"kind": "build"}, "`kind` is no ticket field"),
     ({"needs-user": "maybe"}, "`needs-user` is true or false"),
+    ({"hinge": "yes please"}, "`hinge` is true or false"),
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
     ({"diff": "[main..feature]"}, "a round lands as `code@<sha>..<sha>`"),
@@ -879,7 +880,7 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
 # What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
 # start of a line, a `## ` heading, a `[Dn]` question, a `- A<n>` assumption, an `NN-` file name.
 SECOND_PARSER = re.compile(
-    r"\^(?:status|parent|blocked-by|needs-user|priority|size|diff|gh):"
+    r"\^(?:status|parent|blocked-by|needs-user|hinge|priority|size|diff|gh):"
     r"|\^##\\?s|\^## |\[D\\d|- A\\d|\[0-9\]\[0-9\]-|\\d\\d-"
 )
 PLUGIN = Path(tr.__file__).parents[2]
@@ -1047,8 +1048,6 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
 # checkout the commands run in. Beside the tree sits another feature's leaf, `other-flow-0`, in
 # review and merged into its own parent's branch: a blocker that is no sibling.
 
-WHOLE_PARENT = pytest.mark.xfail(strict=True, reason="whole-parent-ruling: the tracker reads no `hinge` and no whole-parent rule yet")
-
 
 @dataclass(frozen=True)
 class Leaf:
@@ -1131,7 +1130,6 @@ def startable(tree: list[Leaf]) -> set[str]:
             if leaf.status == "open" and all(ref in by_slug and frees(by_slug[ref]) for ref in leaf.blocked_by)}
 
 
-@WHOLE_PARENT
 @given(tree=leaves(("review",)), up=st.booleans())
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(tickets: Path, repo: Path, tree: list[Leaf], up: bool) -> None:
@@ -1152,7 +1150,6 @@ def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(tickets: Path, repo
             path.write_text(text)
 
 
-@WHOLE_PARENT
 @given(tree=leaves(("open", "claimed", "review", "done")))
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged_and_no_hinge(
@@ -1471,6 +1468,34 @@ def test_one_repo_seen_from_a_worktree_is_still_one_repo(tickets: Path, repo: Pa
     assert run(repo, "get", "one-flow", "status").out == "done\n"
 
 
+def test_a_sibling_built_in_the_agent_repo_alone_frees_nothing_until_it_merges_there(split: Path) -> None:
+    """A research child builds in the agent repo only, so its code branch never moves off the
+    parent's branch and reads as merged into it; `speculative-first#P3` still holds its dependent
+    until the agent side has merged, and the parent's accept waits for it the same way."""
+    tickets, agent = split / "agent" / "tickets", split / "agent"
+    ticket(tickets, "one-flow", status="review")
+    ticket(tickets, "ask-around", status="review", parent="one-flow")
+    ticket(tickets, "map-columns", parent="one-flow", **{"blocked-by": "[ask-around]"})
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tree")
+    git(split, "branch", "one-flow")
+    git(split, "branch", "ticket/ask-around", "one-flow")
+    git(agent, "checkout", "-q", "-b", "ticket/ask-around")
+    (agent / "research").mkdir()
+    (agent / "research" / "ask-around.md").write_text("what they said\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the research")
+    git(agent, "checkout", "-q", "main")
+
+    ready = lambda: run(split, "frontier").out.partition("waiting\n")[0]  # noqa: E731
+    assert "map-columns" not in ready()
+    git(split, "merge", "-q", "--no-ff", "-m", "one-flow up", "one-flow")
+    assert "ask-around, map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+    git(agent, "merge", "-q", "--no-ff", "-m", "ask-around read", "ticket/ask-around")
+    assert "map-columns" in ready()
+    assert "refused: one-flow review → done: map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+
+
 def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
     """A round lands in two repos, and `done` is the accept of the whole of it."""
     tickets = split / "agent" / "tickets"
@@ -1561,10 +1586,10 @@ def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) 
 def test_filing_writes_every_field_it_was_given(tickets: Path, repo: Path) -> None:
     ticket(tickets, "one-flow")
     run(repo, "new", "map-columns", "--priority", "3", "--size", "XL", "--status", "open",
-        "--needs-user", "--blocked-by", "one-flow")
+        "--needs-user", "--hinge", "--blocked-by", "one-flow")
     read = json.loads(run(repo, "data", "map-columns").out)["tickets"][0]
     assert (read["status"], read["priority"], read["size"]) == ("open", 3, "XL")
-    assert read["needs-user"] is True and read["blocked-by"] == ["one-flow"]
+    assert read["needs-user"] is True and read["hinge"] is True and read["blocked-by"] == ["one-flow"]
 
 
 def test_a_list_field_is_printed_one_entry_per_line(tickets: Path, repo: Path) -> None:

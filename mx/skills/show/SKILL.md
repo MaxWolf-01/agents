@@ -47,7 +47,7 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 Work that lands for the user's ruling comes with its review page and, when it holds something the diff does not make visible, one show. It is for the user's understanding of what was built. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
-- **One per landing.** A tree's show covers every child ticket in review the user has not ruled on yet, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule. A standalone ticket's goes to its own.
+- **One per landing.** A tree's show covers every child ticket in review, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule: on a hinge alone, and on the rest with the parent ticket at its close-out. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
 - **The few things the user would notice.** Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
 
