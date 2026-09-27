@@ -8,7 +8,7 @@ check:
 	@jq -e . $(PLUGIN) >/dev/null
 	@jq -e . $(MARKETPLACE) >/dev/null
 	@jq -e . $(HOOKS) >/dev/null
-	@jq -r '.hooks[][].hooks[].command' $(HOOKS) | tr -d '"' | sed 's|$${CLAUDE_PLUGIN_ROOT}|mx|' | \
+	@jq -r '.hooks[][].hooks[].command' $(HOOKS) | tr -d '"' | sed 's|$${CLAUDE_PLUGIN_ROOT}|mx|' | cut -d' ' -f1 | \
 	  while read -r c; do [ -x "$$c" ] || { echo "$(HOOKS): $$c is not an executable file"; exit 1; }; done
 	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
 	@echo "manifests parse, hooks point at executables, bin/ answers --help"
