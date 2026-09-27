@@ -54,6 +54,7 @@ Gather sufficient context, verify your assumptions and sources.
 - When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
 - Provide evidence-backed recommendations rather than assumptions.
 
+Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
 </workflow>
 
 <git>
