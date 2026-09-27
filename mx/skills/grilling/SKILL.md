@@ -15,7 +15,7 @@ Map the design as a **design tree**: every decision branches into the decisions 
 
 When more than one design survives that bar, deliver each with the questions that refine it, then the questions that choose between them: the trade-offs one pays and the other doesn't. That second level is where the framing of the problem gets decided explicitly, since rival designs usually embody rival readings of it. A rival whole joins only under the same bar as an option: one you would defend.
 
-**Then the questions**, only where two live options survive expert judgment. Each names the part of the design it would change, and that part carries its `(open → Qn)` mark: a question's decision is always visible in the design.
+**Then the questions**, only where two live options survive expert judgment. They lean to the intent, what the thing is for and its shape, since the agent fills in an implementation better than the user does; how far the intent reaches depends on what is grilled: a grilling of one function is about that function's trade-offs, and architecture, algorithms and data structures are part of a larger intent to a degree. Each names the part of the design it would change, and that part carries its `(open → Qn)` mark: a question's decision is always visible in the design.
 
 ```
 ❓ **Q1**: **<the decision, as a question>**
