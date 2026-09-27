@@ -2,6 +2,7 @@
 demo tracker built once per run, and a PATH the board's optional tools are absent from."""
 
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -14,7 +15,10 @@ import board  # noqa: E402
 import briefing  # noqa: E402
 from demo_tracker import Demo, build  # noqa: E402
 
-KEPT = ("git", "uv", "chromium")  # what a check may still need: the repo, a script's own run, a browser
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
+# What a check may still need: the repo, a script's own run, a browser, and what `run-log` wraps a
+# model run with, which it names itself.
+KEPT = tuple(dict.fromkeys(("git", "uv", "chromium", *subprocess.run([str(RUN_LOG), "needs"], capture_output=True, text=True, check=True).stdout.split())))
 
 
 @pytest.fixture(scope="session")
@@ -29,13 +33,15 @@ def demo(tmp_path_factory: pytest.TempPathFactory) -> Demo:
 
 
 @pytest.fixture(autouse=True)
-def fresh_caches() -> None:
+def fresh_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The caches a render clears, cleared per check too: they are keyed by a repo or a transcript,
-    and the fixtures hand out a new one of each per check while the process lives on."""
+    and the fixtures hand out a new one of each per check while the process lives on. The run log
+    a briefing's model run appends to goes under the check's own directory, never this machine's."""
     board.session_log.cache_clear()
     board.read_transcript.cache_clear()
     board.toplevel.cache_clear()
     briefing.SILENT = ""  # what the last run of the model said, which the page says once
+    monkeypatch.setenv("RUN_LOG", str(tmp_path / "runs.jsonl"))
 
 
 @pytest.fixture

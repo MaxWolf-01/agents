@@ -14,6 +14,7 @@ words. The rule selection is held to the awk command CATALOGUE.md's header publi
 format contract, with the `artifact` scope put in for `chat`.
 """
 
+import json
 import os
 import re
 import shutil
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from change_summary import CATALOGUE, Failure, artifact_rules
 
 SHIM = Path(__file__).resolve().parents[2] / "bin" / "change-summary"
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
 
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
 n=$(( $(cat "$FAKE_DIR/calls" 2>/dev/null || echo 0) + 1 ))
@@ -36,7 +38,8 @@ printf '%s\0' "$@" > "$FAKE_DIR/argv.$n"
 cat > "$FAKE_DIR/stdin.$n"
 pwd > "$FAKE_DIR/cwd.$n"
 ls -A > "$FAKE_DIR/ls.$n"
-[ -f "$FAKE_DIR/reply.$n" ] && cat "$FAKE_DIR/reply.$n"
+# what claude prints for an answer under --output-format stream-json, which run-log reads
+[ -f "$FAKE_DIR/reply.$n" ] && jq -c -n --rawfile r "$FAKE_DIR/reply.$n" '{type: "result", subtype: "success", result: $r}'
 [ -n "${FAKE_STDERR:-}" ] && echo "$FAKE_STDERR" >&2
 exit "${FAKE_EXIT:-0}"
 """
@@ -94,7 +97,8 @@ def run(claude: Claude, diff: str = DIFF, *args: str, **env: str) -> subprocess.
     base = {k: v for k, v in os.environ.items() if k not in ("CHANGE_SUMMARY_MODEL", "CHANGE_SUMMARY_EFFORT")}
     return subprocess.run(
         [str(SHIM), *args], input=diff, capture_output=True, text=True, timeout=120,
-        cwd=claude.dir.parent, env={**base, "PATH": claude.path, "FAKE_DIR": str(claude.dir), **env},
+        cwd=claude.dir.parent, env={**base, "PATH": claude.path, "FAKE_DIR": str(claude.dir),
+                                    "RUN_LOG": str(claude.dir / "runs.jsonl"), **env},
     )
 
 
@@ -110,6 +114,8 @@ def test_a_diff_gives_its_paragraph_on_stdout(claude: Claude) -> None:
     done = run(claude)
     assert (done.returncode, done.stdout, claude.calls) == (0, "The greeting now names the world.\n", 1)
     assert claude.stdin() == DIFF
+    (logged,) = [json.loads(l) for l in (claude.dir / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["model"], logged["end"]) == ("change-summary", "opus", "success"), "the call left no line in the run log"
 
 
 def test_the_model_call_loads_no_settings_plugins_mcp_tools_commands_or_session(claude: Claude) -> None:
@@ -213,18 +219,20 @@ def test_a_failed_model_call_fails_with_its_reason(claude: Claude) -> None:
 def test_no_claude_on_path_fails_with_its_reason(claude: Claude) -> None:
     tools = claude.dir.parent / "tools"
     tools.mkdir()
-    for tool in ("bash", "uv", "readlink", "dirname"):
+    needs = subprocess.run([str(RUN_LOG), "needs"], capture_output=True, text=True, check=True).stdout.split()
+    for tool in ("uv", "readlink", *needs):  # the shim's own, then run-log's, and no claude
         (tools / tool).symlink_to(shutil.which(tool))
     claude.path = str(tools)
     done = run(claude)
     assert (done.returncode, done.stdout) == (1, "")
-    assert "did not run" in done.stderr
+    assert "claude is not on PATH" in done.stderr
 
 
 def test_a_diff_that_is_not_utf8_still_reaches_the_model(claude: Claude) -> None:
     claude.replies("A paragraph.")
     done = subprocess.run([str(SHIM)], input=DIFF.replace("world", "w\xf6rld").encode("latin-1"),
-                          capture_output=True, timeout=120, env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir)})
+                          capture_output=True, timeout=120,
+                          env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir), "RUN_LOG": str(claude.dir / "runs.jsonl")})
     assert (done.returncode, done.stdout) == (0, b"A paragraph.\n")
     assert "w\ufffdrld" in claude.stdin()
 

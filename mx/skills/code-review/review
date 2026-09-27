@@ -56,6 +56,8 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 templates=$skill/briefs
 # Every read of a ticket file goes through the one command that parses one.
 tracker=$skill/../tracker/tracker.py
+# Every reviewer runs through it, one line per axis in the run log.
+run_log=$skill/../run-log/run-log
 # Reading history is every reviewer's, by the subcommand and never by the tool,
 # which is the bar `/mx:permissions-review` holds an allowlist to.
 # Both forms of anything anyone types bare, since a trailing glob wants an
@@ -307,7 +309,8 @@ reviewer() { # <axis>
     if [ "$axis" = tests ]; then cwd=$checkout; allowed+=("${runners[@]}"); fi
     # Whoever reads the glossary format runs the half of it that is mechanical.
     if [ -n "$formats" ]; then case $axis in standards|light) allowed+=("${linters[@]}") ;; esac; fi
-    local cmd=(claude -p --model "$model" --effort "$effort"
+    local cmd=(bash "$run_log" run --site review --ticket "$slug" --axis "$axis" --range "$range" --
+               claude -p --model "$model" --effort "$effort"
                --setting-sources "" --strict-mcp-config --disable-slash-commands
                --settings '{"autoMemoryEnabled": false}'
                --tools Read,Grep,Glob,Bash,Edit,Write
