@@ -2436,6 +2436,29 @@ def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_an
     assert "t-built" in rows_in(page_of(tracker), "needs"), "a hinge is ruled alone, merged or not"
 
 
+def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blocks_until_done(tracker: Path, repo: Path) -> None:
+    """The board's blocked is the frontier's: `after-built` waits on `built`, its sibling under
+    lamp-ui in review. It is blocked until `built` merges into lamp-ui's branch, open from then on,
+    and blocked again once `built` is a hinge, which frees nothing until the user accepts it."""
+    ticket(tracker / "after-built.md", "open", parent=TREE, blocked_by=["built"])
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "after-built")
+    git(repo, "branch", TREE)
+    git(repo, "checkout", "-q", "-b", "ticket/built", TREE)
+    (repo / "built.txt").write_text("the build\n")
+    git(repo, "add", "built.txt")
+    git(repo, "commit", "-q", "-m", "built")
+    git(repo, "checkout", "-q", "main")
+    assert load(tracker)["after-built"].status == "blocked", "not merged yet: nothing may build on it"
+    git(repo, "checkout", "-q", TREE)
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge built", "ticket/built")
+    git(repo, "checkout", "-q", "main")
+    assert load(tracker)["after-built"].status == "open"
+    assert "t-after-built" in rows_in(page_of(tracker), "open")
+    ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
+    assert load(tracker)["after-built"].status == "blocked", "a hinge frees nothing before its accept"
+
+
 def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo: Demo) -> None:
     path = demo.root / "map-columns.md"
     listed = ticket_sessions(path, demo.repo, demo.transcripts)

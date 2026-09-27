@@ -718,7 +718,7 @@ def load_tickets(root: Path, repo: Path | None, diffviews: Diffviews) -> list[Ti
     """
     read = parsed(root)
     under = folded(read)
-    tickets = [shown(one, read.tickets, repo, diffviews, under.get(one.slug)) for one in read.tickets.values()]
+    tickets = [shown(one, read, repo, diffviews, under.get(one.slug)) for one in read.tickets.values()]
     ids = [slug_id(one.slug) for one in tickets]
     assert len(ids) == len(set(ids)), f"slugs collide as mermaid ids: {sorted(ids)}"
     return sorted(tickets, key=lambda one: one.slug)
@@ -764,15 +764,17 @@ def tree_of(slug: str, tickets: dict[str, "tracker.Ticket"]) -> str:
 
 
 def shown(
-    read: "tracker.Ticket", tickets: dict[str, "tracker.Ticket"], repo: Path | None, diffviews: Diffviews,
+    read: "tracker.Ticket", whole: "tracker.Tracker", repo: Path | None, diffviews: Diffviews,
     under: str | None,
 ) -> Ticket:
     """One ticket as the board shows it: what its file says, plus the status derived from what it
-    waits on, and the review page and sessions beside it."""
+    waits on, and the review page and sessions beside it. An open ticket is blocked while a
+    blocker the board can see holds it back, as the frontier reads it (tracker.frees)."""
     assert_safe_name(read.slug)
+    tickets = whole.tickets
     blocked_by = [(ref, ref_status(ref, tickets)) for ref in read.blocked_by]
     status = read.status
-    if status == "open" and any(state != "done" for _, state in blocked_by):
+    if status == "open" and any(ref in tickets and not frees(tickets[ref], read, whole) for ref in read.blocked_by):
         status = "blocked"
     worked = ticket_sessions(read.path, repo)
     return Ticket(
@@ -794,6 +796,15 @@ def shown(
         hinge=read.hinge,
         under=under,
     )
+
+
+def frees(blocker: "tracker.Ticket", ticket: "tracker.Ticket", whole: "tracker.Tracker") -> bool:
+    """tracker.frees, with what merged read in the code repo the tracker plans, wherever the board
+    runs from. A tracker in no checkout has merged nothing, so there nothing merged frees a ticket."""
+    try:
+        return tracker.frees(blocker, ticket, whole, project(whole.root))
+    except tracker.Refused:
+        return False
 
 
 def ref_status(ref: str, tickets: dict[str, "tracker.Ticket"]) -> str:

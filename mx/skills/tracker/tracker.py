@@ -249,14 +249,15 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
     return ""
 
 
-def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker) -> bool:
+def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker, start: Path | None = None) -> bool:
     """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review, no
-    hinge, merged into the branch of the parent ticket the two share."""
+    hinge, merged into the branch of the parent ticket the two share. `start` is where the code
+    repo is looked for (repos_of)."""
     if blocker.status == "done":
         return True
     if blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
         return False
-    return merged_under_parent(blocker, tracker)
+    return merged_under_parent(blocker, tracker, start)
 
 
 def merged_under_parent(child: Ticket, tracker: Tracker, start: Path | None = None) -> bool:
