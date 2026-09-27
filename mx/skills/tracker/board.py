@@ -20,11 +20,11 @@ proposed, done folded.
 Needs me holds every ticket whose next step is the user's own time: a build to
 rule on, a ticket stopped on a question, and a ticket at p1 or p2 the user is in
 the loop for that nobody has taken up (board.needs_me). A parent ticket is ruled
-whole: at its close-out it is one needs-me row with its child tickets folded
-under it, and while it is still being built, a child in review merged into its
-branch folds under its row wherever that row is, since it waits for the
-close-out and not on the user. A hinge, ruled alone, is a row of its own with a
-mark saying so (board.folded).
+whole, so at its close-out it is one needs-me row with its child tickets folded
+under it. While it is still being built, a child in review merged into its
+branch folds under its row wherever that row is: it waits for the close-out,
+not on the user. A hinge, ruled alone, is a row of its own with a mark saying
+so (board.folded).
 Its open questions show under its row while the row is folded, each with a
 button that copies it, one that copies the ticket's own, and one on the group
 that copies every question on the board; each button says on hover what it will
@@ -198,8 +198,8 @@ HINGE_TIP = ("A hinge: what builds on it would have to be rewritten, not amended
              "You rule on it alone, before anything builds on it.")
 # what a parent ticket's row says of the child tickets folded under it (board.folded)
 KIN_TIP = {
-    "review": "Its child tickets, folded under it: you rule on the parent whole with them. Open the row to read each, and amend, redo or reject any one from there.",
-    "building": "Its child tickets in review, merged into its branch: they wait for its close-out, where you rule on them with it. Open the row to read each.",
+    "closed-out": "Its child tickets, folded under it: you rule on the parent whole with them. Open the row to read each, and amend, redo or reject any one from there.",
+    "merged": "Its child tickets in review, merged into its branch: they wait for its close-out, where you rule on them with it. Open the row to read each.",
 }
 ALONE = "alone"  # the pill for a ticket with no parent ticket and no child tickets
 # what a row is grouped under (board.group_of); a ticket in review has no group of its own,
@@ -725,19 +725,20 @@ def load_tickets(root: Path, repo: Path | None, diffviews: Diffviews) -> list[Ti
 
 
 def parsed(root: Path) -> "tracker.Tracker":
-    """One tracker root as the tracker command reads it: every ticket file in it, by slug. A file
-    no reader can read is refused there, with its own file and line."""
+    """One tracker root as the tracker command reads it, its tickets by slug; a root that does not
+    exist is a tracker with none. A file no reader can read is refused there, with its own file and
+    line."""
     read = tracker.tracker_of(root)
     tracker.refuse([refusal for one in read.tickets.values() for refusal in tracker.refusals_of(one, read)])
     return read
 
 
 def folded(read: "tracker.Tracker") -> dict[str, str]:
-    """The rows that fold under their parent ticket's row, each to that parent's slug: every child
-    of a parent at its close-out, since the user rules on the parent whole with them; and under a
+    """The rows that fold under their parent ticket's row, each to that parent's slug. Every child
+    of a parent at its close-out does, since the user rules on the parent whole with them. Under a
     parent still being built, each child in review that is no hinge and is merged into the
-    parent's branch, since it waits for that close-out, not on the user. Whether it merged is read
-    in the code repo the tracker plans, wherever the board runs from."""
+    parent's branch does, since it waits for that close-out, not on the user. Whether it merged is
+    read in the code repo the tracker plans, wherever the board runs from."""
     code = project(read.root)
     checked = toplevel(read.root) is not None
 
@@ -764,7 +765,7 @@ def tree_of(slug: str, tickets: dict[str, "tracker.Ticket"]) -> str:
 
 def shown(
     read: "tracker.Ticket", tickets: dict[str, "tracker.Ticket"], repo: Path | None, diffviews: Diffviews,
-    under: str | None = None,
+    under: str | None,
 ) -> Ticket:
     """One ticket as the board shows it: what its file says, plus the status derived from what it
     waits on, and the review page and sessions beside it."""
@@ -1556,9 +1557,8 @@ def kin_tag(t: Ticket, count: int) -> str:
     """How many child tickets fold under a parent ticket's row, saying why they are there."""
     if not count:
         return ""
-    tip = KIN_TIP["review" if t.status == "review" else "building"]
+    tip = KIN_TIP["closed-out" if t.status == "review" else "merged"]
     return f'<span class="kin" data-tip="{html.escape(tip)}">{count} child ticket{"s" if count != 1 else ""}</span>'
-
 
 
 def tree_chip(tree: str, tickets: list[Ticket]) -> str:

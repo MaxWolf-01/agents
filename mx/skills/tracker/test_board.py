@@ -2315,10 +2315,16 @@ def absences(page: str, source: str) -> int:
     return page.count(f'data-absent="{source}"')
 
 
+def group_body(page: str, group: str) -> str:
+    """The markup of one of the board's groups, empty where the page has no such group."""
+    if f'id="grp-{group}"' not in page:
+        return ""
+    return page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
+
+
 def rows_in(page: str, group: str) -> set[str]:
     """The ticket rows one of the board's groups holds, and not the rows folded under them."""
-    body = page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
-    rows = rows_of(body)
+    rows = rows_of(group_body(page, group))
     return {one for one in rows if not any(f'id="{one}"' in inside for inside in rows.values())}
 
 
@@ -2366,12 +2372,8 @@ def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo
 # its children under it; a hinge carries a row mark.
 
 def anywhere_in(page: str, group: str) -> set[str]:
-    """Every ticket row inside one of the board's groups, the rows folded under another included;
-    none where the page has no such group."""
-    if f'id="grp-{group}"' not in page:
-        return set()
-    body = page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
-    return set(re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body))
+    """Every ticket row inside one of the board's groups, the rows folded under another included."""
+    return set(re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', group_body(page, group)))
 
 
 def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
