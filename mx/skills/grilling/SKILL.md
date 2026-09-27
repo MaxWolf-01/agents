@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
+description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted on fog, an intent too unclear to draft a brief for, and on a call left in a draft that is the user's and hard to reverse, asked alone; `/mx:orient`'s gate sends both here. Also on any \"grill\" trigger phrase. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for a whole design.
