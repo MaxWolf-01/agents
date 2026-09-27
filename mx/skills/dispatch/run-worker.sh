@@ -38,6 +38,16 @@ if [ ! -f "$run_log" ]; then
         "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
+# The mx the host's claude has installed, the version `dispatch-ctl init` last updated to. The
+# worker reads no user settings, so the plugin reaches it by path or not at all, and without it
+# none of the skills its contract names exist.
+plugin=$(claude plugin list --json 2> /dev/null |
+    jq -r '[.[] | select(.id == "mx@MaxWolf-01") | .installPath][0] // empty' 2> /dev/null)
+if [ ! -d "$plugin" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "no mx@MaxWolf-01 in this host's claude plugin list --json (or no jq to read it)" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
 
 # By id, never --continue: --continue means the newest conversation in this
 # directory, which stops being this worker's the moment anything else runs
@@ -77,33 +87,28 @@ models() {
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 claude_version=$(claude --version 2> /dev/null | cut -d' ' -f1)
-printf '%s runner: started %s on %s at %s effort with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
-    "$effort" "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
+printf '%s runner: started %s on %s at %s effort with claude %s and mx %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" \
+    "$model" "$effort" "${claude_version:-?}" "$(basename "$plugin")" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
 git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
     printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
         "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
 
-# The user CLAUDE.md and output style are written for a human at a terminal: they tell their
-# reader to ask and how to shape a reply, for a conversation this worker is not in.
-# worker-prompt.md replaces them. On an isolated worker host neither is set, and both lines are
-# inert.
-settings=$(cat <<EOF
-{
-  "claudeMdExcludes": ["${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"],
-  "outputStyle": "default",
-  "autoMemoryEnabled": false
-}
-EOF
-)
-
+# What the worker inherits from this host: the project's own settings and CLAUDE.md, and the mx
+# plugin its contract names skills from, which brings the plugin's hooks along. Not the user's
+# settings, CLAUDE.md or output style, written for a human at a terminal in a conversation this
+# worker is not in (worker-prompt.md stands in for them), nor their hooks and other plugins, nor
+# an MCP server, the host's connectors and the project's `.mcp.json` alike, nor auto memory.
 common=(
     -p
     --permission-mode "$permission_mode"
     --model "$model"
     --effort "$effort"
-    --settings "$settings"
+    --setting-sources project
+    --strict-mcp-config
+    --plugin-dir "$plugin"
+    --settings '{"autoMemoryEnabled": false}'
     --append-system-prompt "$(cat "$prompt_file")"
 )
 

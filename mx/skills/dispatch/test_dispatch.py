@@ -254,6 +254,21 @@ def stage_runner(state: Path) -> None:
     shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
 
 
+def host_claude(bin_dir: Path, script: str) -> Path:
+    """`claude` in bin_dir as the runner meets it on a host with mx installed: `plugin list --json`
+    names an mx under bin_dir, the shape claude prints it in, and every other call runs `script`.
+    Answers the plugin's directory."""
+    plugin = bin_dir / "mx" / "1.0.11"
+    plugin.mkdir(parents=True, exist_ok=True)
+    listed = json.dumps([{"id": "mx@MaxWolf-01", "version": "1.0.11", "scope": "user", "enabled": True,
+                          "installPath": str(plugin)}])
+    shebang, body = script.split("\n", 1)
+    (bin_dir / "claude").write_text(
+        f"{shebang}\n[ \"$1 $2\" = 'plugin list' ] && {{ echo '{listed}'; exit 0; }}\n{body}")
+    (bin_dir / "claude").chmod(0o755)
+    return plugin
+
+
 @pytest.fixture
 def staged(toy: Path) -> Path:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
@@ -560,9 +575,7 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
     )
-    (bin_dir / "claude").write_text(
-        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
-    (bin_dir / "claude").chmod(0o755)
+    host_claude(bin_dir, '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
 
     done = subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
@@ -584,8 +597,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
+    host_claude(bin_dir, FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
     env.pop("DISPATCH_EFFORT", None)
     if given:
@@ -601,6 +613,52 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "high")
+
+
+def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path) -> None:
+    """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
+    CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
+    CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
+    names the mx version it runs."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    plugin = host_claude(bin_dir, FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)})
+
+    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    inherits = f'--setting-sources project --strict-mcp-config --plugin-dir {plugin} --settings {{"autoMemoryEnabled": false}} '
+    assert attempts and all(inherits in line for line in attempts), attempts
+    assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
+    assert "with claude 2.1.243 and mx 1.0.11" in (state / "run-1.log").read_text().splitlines()[0]
+
+
+def test_a_host_whose_claude_has_no_mx_starts_no_worker(tmp_path: Path) -> None:
+    """A worker without the plugin has none of the skills its contract names, so the runner says so
+    on the status line rather than start one."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60,
+                          env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)})
+
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith(
+        "attempts=0 exit=1 report=no session=- error=no mx@MaxWolf-01 in this host's claude plugin list")
+    assert not any(line.startswith("-p ") for line in (bin_dir / "claude.calls").read_text().splitlines())
 
 
 @pytest.mark.parametrize("resumed", [False, True])
@@ -630,11 +688,10 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
     transcript = "\n".join(json.dumps(turn) for turn in turns)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "claude").write_text(
+    host_claude(bin_dir,
         '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
         'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
         f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
-    (bin_dir / "claude").chmod(0o755)
 
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
@@ -664,9 +721,8 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
-    (bin_dir / "claude").write_text(
+    host_claude(bin_dir,
         f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n')
-    (bin_dir / "claude").chmod(0o755)
 
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
@@ -693,8 +749,7 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
-    (bin_dir / "claude").chmod(0o755)
+    host_claude(bin_dir, "#!/bin/sh\nexit 0\n")
 
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
