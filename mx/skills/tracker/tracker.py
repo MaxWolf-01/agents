@@ -49,7 +49,7 @@ from tyro.extras import SubcommandApp
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
-Field = Literal["status", "parent", "blocked-by", "needs-user", "priority", "size", "diff", "gh"]
+Field = Literal["status", "parent", "blocked-by", "needs-user", "hinge", "priority", "size", "diff", "gh"]
 STATUSES, SIZES, PRIORITIES = get_args(Status), get_args(Size), get_args(Priority)
 FIELDS = get_args(Field)
 LIST_FIELDS = ("blocked-by", "diff", "gh")
@@ -135,7 +135,7 @@ def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") ->
     JSON schema:
 
         {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
-          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "priority": int,
+          "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "hinge": bool, "priority": int,
           "size": "str", "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
           "sections": [{"heading": "str", "line": int, "text": "str"}],
           "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
@@ -174,7 +174,7 @@ def as_data(ticket: Ticket, tracker: Tracker) -> dict:
     return {
         "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
         "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
-        "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
+        "hinge": ticket.hinge, "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
         "diff": [str(one) for one in ticket.meta.get("diff") or []],
         "gh": [str(one) for one in ticket.meta.get("gh") or []],
         "title": ticket.title, "brief": ticket.brief,
@@ -216,7 +216,10 @@ def assembled(ticket: Ticket, tracker: Tracker) -> str:
 @app.command(name="frontier")
 def frontier() -> int:
     """What can be started right now: the unclaimed, unblocked tickets that are open or proposed and
-    do not need the user. Everything else not done follows under `waiting`, with what holds it back.
+    do not need the user. A blocker holds until it is done, or until it is a sibling in review, no
+    hinge, and merged into the branch of the parent ticket the two share: a parent ticket ruled
+    whole lets its children build on each other unruled, and a hinge is ruled alone before anything
+    builds on it. Everything else not done follows under `waiting`, with what holds it back.
     """
     tracker = here()
     refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
@@ -240,10 +243,22 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
         return f"{ticket.status}, not the frontier's"
     if ticket.needs_user:
         return "on the user, who is in the loop for it"
-    blocking = [ref for ref in ticket.blocked_by if tracker.tickets[ref].status != "done"]
+    blocking = [tracker.tickets[ref] for ref in ticket.blocked_by if not frees(tracker.tickets[ref], ticket, tracker)]
     if blocking:
-        return "on " + ", ".join(f"{ref} ({tracker.tickets[ref].status})" for ref in blocking)
+        return "on " + ", ".join(f"{one.slug} ({one.status}{', a hinge' if one.hinge else ''})" for one in blocking)
     return ""
+
+
+def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker) -> bool:
+    """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review, no
+    hinge, whose branch has reached the branch of the parent ticket the two share."""
+    if blocker.status == "done":
+        return True
+    if blocker.status != "review" or blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
+        return False
+    code = repos_of(tracker)[0]
+    shared, own = parent_branch(code, ticket.parent), branch_of(code, blocker, tracker)
+    return bool(shared and own and reached(code, own, shared))
 
 
 def line_of(ticket: Ticket, said: str) -> str:
@@ -259,6 +274,7 @@ def new(
     blocked_by: tuple[str, ...] = (),
     status: Literal["proposed", "open"] = "proposed",
     needs_user: bool = False,
+    hinge: bool = False,
 ) -> int:
     """File a ticket: its frontmatter and the skeleton of its body, which the filing agent writes
     into. Prints the path. Refuses a slug the tracker already holds.
@@ -271,6 +287,8 @@ def new(
         blocked_by: the tickets that have to be done first, by slug.
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
+        hinge: mark a child ticket as one its dependents would have to be rewritten, not amended,
+            were it wrong, so the user rules on it alone before they start.
     """
     if not SLUG.fullmatch(slug):
         raise Refused([f"`{slug}` is no slug; a slug is lower case words joined by hyphens, and the tracker is flat"])
@@ -279,7 +297,7 @@ def new(
     if path.exists():
         raise Refused([f"{path} is already a ticket"])
     meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
-            "needs-user": needs_user, "priority": priority, "size": size}
+            "needs-user": needs_user, "hinge": hinge, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
     written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n## Acceptance criteria\n\n## Comments\n"
     filed = read(path, written)
@@ -300,7 +318,7 @@ def rendered(value: object) -> str:
 INTO = {
     "claimed": (("open", "proposed", "review"), "a claim is taken from the frontier, a proposal like an open ticket, and a build the user sent back is claimed again"),
     "review": (("claimed",), "review is where a finished build waits for the user's ruling, and a build starts from a claim"),
-    "done": (("review",), "done is the accept and nothing less, written once the user has ruled on the review page"),
+    "done": (("review",), "done is the accept and nothing less, written once the user has ruled on the review page, of the ticket or of the parent ticket it was ruled with"),
     "open": (("proposed", "review", "claimed"), "open is a ticket ruled and not yet built: the ruling on a proposal, the redo ruling that discards a build and keeps the ticket, or a claim released when its session is lost"),
     "proposed": ((), "proposed is where an agent files a ticket the user has not ruled on, and nothing moves back to it"),
 }
@@ -386,10 +404,12 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 
 
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
-    """Why the ticket's work has not landed here, or None once it has: its own branch merged into
-    the branch this runs on, which is the branch ticket branches merge into; for a parent ticket,
-    every child ticket done; for a ticket the user is in the loop for, the ruling itself."""
-    branches = [(top, ticket_branch(top, ticket.slug)) for top in repos_of(tracker)]
+    """Why the ticket's work has not reached the branch the user's accept merges it into
+    (`accepted_into`), or None once it has, in every repo holding a branch of it. A parent ticket's
+    own branch has reached it only with every child done or merged into that branch, since the
+    parent's accept takes them in with it. A ticket with no branch anywhere is done once every child
+    ticket is, or, where the user is in the loop for it, at the ruling itself."""
+    branches = [(top, branch_of(top, ticket, tracker)) for top in repos_of(tracker)]
     if all(branch is None for _, branch in branches):
         children = tracker.children(ticket.slug)
         if ticket.needs_user or (children and all(child.status == "done" for child in children)):
@@ -398,13 +418,53 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     for top, branch in branches:
         if branch is None:
             continue
-        onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
-        if onto == branch:
+        if git(top, "rev-parse", "--abbrev-ref", "HEAD").strip() == branch:
             return f"{branch} is the branch {top} has out; done is written where the ticket branch merges into, never on the branch itself"
-        tip = git(top, "rev-parse", branch).strip()
-        if tried(top, "merge-base", "--is-ancestor", tip, "HEAD").returncode != 0:
+        onto = accepted_into(top, ticket, tracker)
+        if onto is None:
+            return f"{ticket.slug} is ruled with its parent ticket {ticket.parent}, whose accept merges {ticket.parent} into the branch above it; done is written there, once it has"
+        if not reached(top, branch, onto):
             return f"{branch} is not merged into {onto} in {top}; done follows the user's accept and its merge"
+        if branch == ticket.slug and (waiting := [
+            child.slug for child in tracker.children(ticket.slug)
+            if child.status != "done" and not ((own := branch_of(top, child, tracker)) and reached(top, own, branch))
+        ]):
+            return f"{', '.join(waiting)} not done and not merged into {branch} in {top}; the parent ticket's accept takes in every child, so each is merged first or ruled out of the tree"
     return None
+
+
+def accepted_into(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
+    """The branch the user's accept merges the ticket's work into, in `top`. Where its parent ticket
+    has a branch there: the parent's branch for a hinge, ruled alone, and for a parent ticket, ruled
+    at its close-out; for any other child, the branch above the parent's, which the parent's accept
+    brings it to: the grandparent's branch, or the branch this runs on. None where that would be the
+    parent's branch itself. Where the parent has no branch, the branch this runs on."""
+    onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    parent = ticket.parent and parent_branch(top, ticket.parent)
+    if not parent:
+        return onto
+    if ticket.hinge or tracker.children(ticket.slug):
+        return parent
+    grand = tracker.tickets[ticket.parent].parent if ticket.parent in tracker.tickets else None
+    if grand and (above := parent_branch(top, grand)):
+        return above
+    return None if onto == parent else onto
+
+
+def branch_of(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
+    """The ticket's branch in `top`: a parent ticket's own, named by its slug alone, where it has
+    children and that branch; its `ticket/<slug>` branch otherwise; None where the repo has neither."""
+    return (tracker.children(ticket.slug) and parent_branch(top, ticket.slug)) or ticket_branch(top, ticket.slug)
+
+
+def parent_branch(top: Path, slug: str) -> str | None:
+    """The branch a parent ticket's children merge into, named by its slug alone as `/mx:dispatch`
+    cuts it, or None where the repo has none."""
+    return slug if tried(top, "rev-parse", "--verify", "-q", f"refs/heads/{slug}").returncode == 0 else None
+
+
+def reached(top: Path, branch: str, onto: str) -> bool:
+    return tried(top, "merge-base", "--is-ancestor", branch, onto).returncode == 0
 
 
 def ticket_branch_out(root: Path) -> str | None:
@@ -808,6 +868,8 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
 
     if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
         refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
+    if "hinge" in meta and not isinstance(meta["hinge"], bool):
+        refuse("hinge", "`hinge` is true or false: whether the child ticket's dependents would have to be rewritten, not amended, were it wrong, so the user rules on it alone")
 
     # a list field is checked for being a list first: a bare scalar is a string, and walking it
     # would refuse the line once per character
@@ -991,6 +1053,10 @@ class Ticket:
     @property
     def needs_user(self) -> bool:
         return bool(self.meta.get("needs-user"))
+
+    @property
+    def hinge(self) -> bool:
+        return self.meta.get("hinge") is True
 
 
 @dataclass(frozen=True)
