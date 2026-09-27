@@ -27,11 +27,11 @@ One flow carries every piece of work: an intent arrives in chat; the gate picks 
 
 **The gate.** Draft the ticket first: writing it is the test of how far a build can run ahead of the user. The first answer to an intent is the cheapest artefact the user can judge, and the draft picks it:
 
-- **Fog**: no brief can be written. Grill it (step 1); the round's design and figures are the artefact.
+- **Fog**: no brief can be written. Grill it (step 1) until the intent is settled: what the user wants the thing to do, at the highest level, just enough to write the ticket and build a sensible first version. The round's design and figures are the artefact.
 - **Rival shapes**: several sensible shapes survive the draft. Prototype or draw them (step 2); the rivals rendered side by side are the artefact.
 - **One sensible shape**: build it (steps 3 to 5); the review page and the landing's show are the artefact, and the ticket's brief on the board says what the session understood.
 
-A call left in the draft that is the user's and hard to reverse (a persisted format, an interface other tickets consume, anything ship-shaped or destructive) is asked alone, and the gate runs on with its answer. Every other call is the session's, marked `(my call)` in the ticket; taste is judged in front of the render. When one sensible shape cannot be told from fog, build, and open the brief with the doubted call. A build that misses gets no new ruling: an amend where the user can say the miss in comments, otherwise a grilling round in front of the build that rewrites the ticket, then a redo.
+No build is irreversible: nothing merges before the user rules, and a ship-shaped action waits for their explicit yes. So implementation calls are the session's, marked `(my call)` in the ticket, and taste is judged in front of the render. Where a build rests on a call the user may want to set, the message that starts it names the call and the choice made, and the build does not wait: an answer that arrives while it runs reaches the worker as guidance on resume, and one that does not is ruled on the review page. When one sensible shape cannot be told from fog, build, and open the brief with the doubted call. A build that misses gets no new ruling: an amend where the user can say the miss in comments, otherwise a grilling round in front of the build that rewrites the ticket, then a redo.
 
 One intent per route, from mx's own tracker:
 
