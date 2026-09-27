@@ -50,4 +50,4 @@ Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). Th
 
 Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: slug, blocked by, what it delivers, with the granularity and the edges you are least sure of named, so the user knows where to look. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
-`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each hinge is then ruled on alone from what it built, and the rest with the ticket being cut, at its close-out, on the review pages and the landing's show.
+`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each hinge is then ruled on alone from what it built, and the rest with the ticket being cut, at its close-out, on the calls their landing shows the user.

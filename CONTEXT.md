@@ -67,7 +67,7 @@ The user's answer on what a ticket built, made on the calls its landing shows th
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Standing yes**:
-The user's accept, given in advance, of every build that carries no call they have not made and none worth their time.
+The user's accept, given in advance, of every build that carries no call worth their time that they have not already made.
 _Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:

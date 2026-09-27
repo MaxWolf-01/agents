@@ -183,7 +183,7 @@ SIZE_TIP = (
     "Your time on this ticket, never the agent's: reading the diff or the design, looking at its show, deciding.\n"
 ) + "\n".join(f"{size} {means}" for size, (_, means) in SIZES.items())
 ASKS = {  # what a row asks of the user: the word in its column, and what that word means
-    "review": ("to rule on", "A worker has finished this. Read its review page and its artefacts, then accept, amend, redo or reject it."),
+    "review": ("to rule on", "A worker has finished this and it carries calls of yours: rule on the ones its landing shows you, with the review page as the drill-down, then accept, amend, redo or reject it."),
     "answer": ("your answer", "The work stops until you answer the questions on this ticket."),
     "session": ("with you", "A ticket you are in the loop for: it is worked with you, and dispatch keeps it from a worker."),
     "build": ("build", "An agent builds this alone. It comes back to you as a build to rule on."),
