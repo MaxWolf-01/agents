@@ -56,8 +56,10 @@
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
-#             the same prompt file holds the guidance. The round commits a
-#             report of its own, over the one the round before it left.
+#             the same prompt file holds the guidance, and --effort is given
+#             again or the round runs at `high`, as the model is given again.
+#             The round commits a report of its own, over the one the round
+#             before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
 #             report is committed, session id, the models the run's turns of
@@ -80,7 +82,6 @@
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
-#   DISPATCH_EFFORT           what --effort sets for the runner; the flag wins
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
 #                             (default ~/.claude), passed through to the runner
 #   DISPATCH_RUNNER           pane script, the one place a harness is named: a
@@ -128,7 +129,7 @@ manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
 case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
-effort=${DISPATCH_EFFORT:-high}
+effort=high
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 run() { echo "+ $*" >&2; "$@"; }
@@ -252,7 +253,7 @@ checkout() {
     fi
 }
 
-# `--effort <level>` anywhere after the subcommand; what is left is positional.
+# `--effort <level>` after the positional arguments; what is left is positional.
 take_effort() {
     positional=()
     while [ $# -gt 0 ]; do
