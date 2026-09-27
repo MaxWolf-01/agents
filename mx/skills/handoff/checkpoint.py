@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx"
-MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "200000,400000,600000").split(",") if m.strip()]
+MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "300000,500000,600000").split(",") if m.strip()]
 TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
 BLOCK = 64 * 1024
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")

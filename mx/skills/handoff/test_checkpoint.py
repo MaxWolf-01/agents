@@ -59,15 +59,15 @@ def test_a_session_crossing_a_mark_is_told_once_per_mark_and_the_note_names_the_
     transcript.write_text(turn("assistant", cache_read_input_tokens=150_000))
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == "", "under every mark, nothing is said"
 
-    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=199_996))
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=299_996))
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == "", "one token under the mark is under it"
-    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=199_997) + turn("user"))
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=299_997) + turn("user"))
     note = context(hook(tmp_path, "checkpoint", event(transcript)))
-    assert note.startswith("Context checkpoint: this session's context stands at 200k tokens, past the first of 3 marks (200k; the marks are 200k, 400k, 600k)"), note
+    assert note.startswith("Context checkpoint: this session's context stands at 300k tokens, past the first of 3 marks (300k; the marks are 300k, 500k, 600k)"), note
     assert "mx handoff skill" in note
 
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == "", "the same mark is not said twice"
-    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=380_000))
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=480_000))
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == "", "between marks, nothing"
     transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=610_000))
     note = context(hook(tmp_path, "checkpoint", event(transcript)))
@@ -83,11 +83,11 @@ def test_a_session_crossing_a_mark_is_told_once_per_mark_and_the_note_names_the_
 
 def test_a_record_no_reading_can_trust_counts_as_never_told(tmp_path: Path) -> None:
     transcript = tmp_path / "s1.jsonl"
-    transcript.write_text(turn("assistant", cache_read_input_tokens=250_000))
+    transcript.write_text(turn("assistant", cache_read_input_tokens=350_000))
     (tmp_path / "state" / "mx" / "checkpoints").mkdir(parents=True)
     (tmp_path / "state" / "mx" / "checkpoints" / "s1").write_text("garbage")
     assert "past the first of 3 marks" in context(hook(tmp_path, "checkpoint", event(transcript)))
-    assert (tmp_path / "state" / "mx" / "checkpoints" / "s1").read_text() == "200000"
+    assert (tmp_path / "state" / "mx" / "checkpoints" / "s1").read_text() == "300000"
 
 
 def test_a_context_that_fell_back_under_a_mark_hears_it_again_on_the_way_up(tmp_path: Path) -> None:
@@ -98,9 +98,9 @@ def test_a_context_that_fell_back_under_a_mark_hears_it_again_on_the_way_up(tmp_
     assert "third of 3 marks" in context(hook(tmp_path, "checkpoint", event(transcript)))
     transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=30_000))
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == ""
-    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=210_000))
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=310_000))
     assert "past the first of 3 marks" in context(hook(tmp_path, "checkpoint", event(transcript)))
-    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=250_000))
+    transcript.write_text(transcript.read_text() + turn("assistant", cache_read_input_tokens=350_000))
     assert context(hook(tmp_path, "checkpoint", event(transcript))) == ""
 
 
@@ -113,24 +113,24 @@ def test_the_marks_come_from_the_environment_so_a_demo_can_cross_one(tmp_path: P
 
 def test_the_last_assistant_message_is_found_behind_a_line_longer_than_the_read_block(tmp_path: Path) -> None:
     transcript = tmp_path / "s1.jsonl"
-    transcript.write_text(turn("assistant", cache_read_input_tokens=250_000)
+    transcript.write_text(turn("assistant", cache_read_input_tokens=350_000)
                           + json.dumps({"type": "user", "message": {"content": "y" * 200_000}}) + "\n"
                           + json.dumps({"type": "system", "content": "z" * 100_000}) + "\n")
-    assert "stands at 250k" in context(hook(tmp_path, "checkpoint", event(transcript)))
+    assert "stands at 350k" in context(hook(tmp_path, "checkpoint", event(transcript)))
 
 
 def test_an_assistant_line_cut_by_a_read_block_boundary_is_read_whole(tmp_path: Path) -> None:
     """The file is read from its end in 64 KiB blocks; the line a block boundary falls inside is
     completed by the next block, not dropped."""
     block = 64 * 1024
-    assistant = turn("assistant", cache_read_input_tokens=250_000)
+    assistant = turn("assistant", cache_read_input_tokens=350_000)
     trailer = json.dumps({"type": "system", "content": "z" * (block - len(assistant) // 2 - 40)}) + "\n"
     trailer = trailer + "\n" * (block - len(assistant) // 2 - len(trailer))  # the boundary lands mid-line
     transcript = tmp_path / "s1.jsonl"
     transcript.write_text(turn("user") + assistant + trailer)
     size = transcript.stat().st_size
     assert len(turn("user")) < size - block < len(turn("user")) + len(assistant), "the boundary is inside the assistant line"
-    assert "stands at 250k" in context(hook(tmp_path, "checkpoint", event(transcript)))
+    assert "stands at 350k" in context(hook(tmp_path, "checkpoint", event(transcript)))
 
 
 def test_a_worker_a_print_mode_session_and_a_subagent_hear_nothing(tmp_path: Path) -> None:
