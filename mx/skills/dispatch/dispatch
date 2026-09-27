@@ -87,13 +87,14 @@
 #            ticket already says so.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
-#            `worker-hosts --targets` that failed an `incomplete` one, and
-#            either makes the exit status nonzero. For a human looking in; the
+#            scratch dir whose probe failed an `unreadable` one, a
+#            `worker-hosts --targets` that failed an `incomplete` one, and any
+#            of them makes the exit status nonzero. For a human looking in; the
 #            orchestrator's own view is `dispatch ctl probe`.
 #   attach   opens a worker's tmux session, as the user that runs it there.
-#            A Ctrl-C in it ends the run the way `ctl stop` does, resumable; a
-#            line left typed in the pane runs when the runner exits, which is a
-#            second worker on that ticket.
+#            A Ctrl-C in it ends the run the way `ctl stop` does, resumable.
+#            Whatever is typed into the pane while the runner runs, the pane's
+#            shell runs once the runner exits.
 #   peek     prints the last <lines> (default 100) of a worker's pane.
 #   ps, attach and peek ask every host `worker-hosts --targets` publishes and
 #   every host this repo's runs name, all at once, and read every scratch dir
@@ -675,7 +676,7 @@ fleet() { # <published>
 }
 
 # Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
-# front), and `missing`, what did not answer.
+# front), and `missing`, what went unread.
 gather() {
     local published= register_error= i rc
     self=$(id -un)@$(uname -n)
@@ -719,6 +720,9 @@ gather() {
         fi
         [ -s "$answers/$i" ] &&
             mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${hosts[$i]}" '{ print h "\t" $0 }' "$answers/$i")
+        # A scratch dir whose probe failed there is runs unread on a host that did
+        # answer.
+        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${hosts[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
     done
     rm -rf "$answers"
 }
@@ -768,7 +772,7 @@ resolve() { # <worker>
     # Forced to strings: awk compares two strnums as numbers, and `1` is not
     # the ticket `01`.
     mapfile -t hits < <(printf '%s\n' "${rows[@]}" | awk -F'\t' -v q="$1" '
-        $4 != "unreachable" && $4 != "incomplete" &&
+        $3 != "-" &&
         (q "" == $3 "" || q "" == $7 "" || q "" == $1 "/" $3 || q "" == $1 "/" $7)')
     if [ ${#hits[@]} -eq 0 ]; then
         [ ${#missing[@]} -eq 0 ] || die "no worker called \`$1\` on the hosts that answered; ${missing[*]} did not"
@@ -812,9 +816,13 @@ peek() {
     # name would also take a longer one that starts the same way. The capture
     # is the history asked for plus the whole screen, blank rows under the
     # cursor included, so its last written <lines> are cut out of it here.
-    look "$r_host" tmux capture-pane -p -J -t "=$r_session:" -S "-$lines" |
-        awk -v n="$lines" '{ l[NR] = $0; if ($0 != "") last = NR }
-            END { for (i = last - n + 1 > 1 ? last - n + 1 : 1; i <= last; i++) print l[i] }'
+    # Captured whole before it is cut: a session that ended since the read above,
+    # or a connection that dropped, is a failure, not an empty pane.
+    pane=$(look "$r_host" tmux capture-pane -p -J -t "=$r_session:" -S "-$lines") ||
+        die "could not read the pane of $r_session on $r_host"
+    printf '%s\n' "$pane" | awk -v n="$lines" '
+        { l[NR] = $0; if ($0 != "") last = NR }
+        END { for (i = last - n + 1 > 1 ? last - n + 1 : 1; i <= last; i++) print l[i] }'
 }
 
 cmd=${1:-}

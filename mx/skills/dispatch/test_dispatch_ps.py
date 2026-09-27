@@ -207,6 +207,17 @@ def test_a_scratch_dir_staged_per_feature_is_still_read(tmp_path: Path, tmux: di
     assert row[:3] == ["agents/testing-workflow", "01-hypofuzz-default", "exited"]
 
 
+def test_a_probe_that_fails_over_a_manifest_is_a_row_not_an_empty_scratch_dir(tmp_path: Path, tmux: dict[str, str]):
+    """A half-staged scratch dir holds runs its probe cannot read; left out, the table would read short."""
+    d = scratch(tmp_path, "agents", "master")
+    spawned(d, "hypofuzz-default")
+    (d / "dispatch-ctl").write_text("exit 3\n")
+
+    (row,) = rows(tmp_path, tmux)
+    assert row[:3] == ["agents/master", "-", "unreadable"]
+    assert "exit 3" in row[7]
+
+
 def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, str]):
     d = scratch(tmp_path, "agents", "master")
     finished(d, spawned(d, "hypofuzz-default"))
@@ -369,6 +380,31 @@ def test_a_host_that_does_not_answer_is_a_row_and_a_nonzero_exit(home: Path, tmu
     (row,) = [line for line in out.stdout.splitlines() if line.startswith("agent@off")]
     assert "unreachable" in row and why in row
     assert "hypofuzz-default" in out.stdout, "the host that did answer is still read"
+
+
+def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: dict[str, str]):
+    d = scratch(home / ROOT, "jarvis", "main")
+    spawned(d, "thread-registry")
+    (d / "dispatch-ctl").write_text("exit 3\n")
+
+    out = dispatch(tmux, home, "ps")
+    assert out.returncode != 0
+    assert "unreadable" in out.stdout
+    assert "hypofuzz-default" in out.stdout, "the scratch dir beside it is still read"
+
+
+def test_a_pane_that_cannot_be_read_is_a_failed_peek_not_an_empty_one(home: Path, tmux: dict[str, str]):
+    """The session can end between the read that resolved it and the capture."""
+    session(tmux, "dispatch-agents-hypofuzz-default")
+    wrapper = home / "bin" / "tmux"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    real = shutil.which("tmux", path=tmux["PATH"])
+    wrapper.write_text(f'#!/usr/bin/env bash\n[ "$1" = capture-pane ] && exit 1\nexec {real} "$@"\n')
+    wrapper.chmod(0o755)
+
+    out = dispatch(tmux, home, "peek", "hypofuzz-default")
+    assert out.returncode != 0
+    assert "could not read the pane" in out.stderr
 
 
 def test_a_worker_not_found_while_a_host_was_missing_says_so(home: Path, tmux: dict[str, str]):

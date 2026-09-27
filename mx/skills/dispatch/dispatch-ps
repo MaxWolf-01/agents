@@ -8,7 +8,8 @@
 #   <repo>/<base>  ticket  state  age  idle  session  pane  detail
 #     ticket   the ticket's slug, or `fuzz` for the base branch's fuzz run
 #     state    running | exited | gone, from that scratch dir's own
-#              `dispatch-ctl probe`
+#              `dispatch-ctl probe`; `unreadable`, with ticket `-`, where that
+#              probe failed
 #     age      seconds since the run was spawned
 #     idle     seconds since its worklog last changed, `-` when it has none
 #     pane     y while its tmux session is there, n once it is gone
@@ -42,8 +43,17 @@ for dir in "$root"/*/; do
 
     # The scratch dir's own dispatch-ctl, the version its runners started with,
     # is the authority on state. Its line is name, state, run id and the rest;
-    # everything else on the row is derived here.
-    bash "$dir/dispatch-ctl" probe 2>/dev/null |
+    # everything else on the row is derived here. With no manifest there is no
+    # run to probe; a probe that fails over one leaves runs unread, which is a
+    # row of its own rather than a scratch dir that reads as empty.
+    probe= rc=0
+    [ -f "$dir/manifest" ] && { probe=$(bash "$dir/dispatch-ctl" probe 2>/dev/null) || rc=$?; }
+    if [ "$rc" -ne 0 ]; then
+        printf '%s/%s\t-\tunreadable\t-\t-\t-\tn\tdispatch-ctl probe failed in %s (exit %s)\n' \
+            "$repo" "$base" "$dir" "$rc"
+        probe=
+    fi
+    [ -z "$probe" ] || printf '%s\n' "$probe" |
         awk '{ name = $1; state = $2; run = $3; sub(/^run=/, "", run)
                $1 = $2 = $3 = ""; sub(/^ +/, "")
                print name "\t" state "\t" run "\t" $0 }' |
