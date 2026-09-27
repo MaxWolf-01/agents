@@ -1042,7 +1042,8 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
 
 # The executable Properties of agent/tickets/speculative-first.md, P2 and P3, over one parent ticket
 # ruled whole: `one-flow`, whose branch is cut from main, and its leaf children, each cut from the
-# parent's branch and merged back into it or not. main is the branch above the parent, and the
+# parent's branch and merged back into it or not. A parent's branch is named by its slug alone and a
+# leaf's `ticket/<slug>`, as `/mx:dispatch` cuts them. main is the branch above the parent, and the
 # checkout the commands run in. Beside the tree sits another feature's leaf, `other-flow-0`, in
 # review and merged into its own parent's branch: a blocker that is no sibling.
 
@@ -1078,7 +1079,8 @@ def leaves(draw: st.DrawFn, statuses: tuple[str, ...]) -> list[Leaf]:
 def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool) -> None:
     """The tree on the tracker and in git, from an emptied tracker and main back at its first commit.
     Every commit carries main's one tree, so no branch moves a file under the working tree."""
-    for ref in git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/ticket/").split():
+    for ref in git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/ticket/", "refs/heads/one-flow",
+                   "refs/heads/other-flow").split():
         git(repo, "update-ref", "-d", ref)
     first = git(repo, "rev-list", "--max-parents=0", "HEAD").strip()
     git(repo, "update-ref", "refs/heads/main", first)
@@ -1092,12 +1094,12 @@ def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool) ->
         git(repo, "update-ref", f"refs/heads/ticket/{leaf.slug}", own)
         if leaf.merged:
             tip = built(f"one-flow: {leaf.slug} merged", tip, own)
-    git(repo, "update-ref", "refs/heads/ticket/one-flow", tip)
+    git(repo, "update-ref", "refs/heads/one-flow", tip)
     if up:
         git(repo, "update-ref", "refs/heads/main", built("main: one-flow merged", first, tip))
     beside = built("other-flow-0: built", other := built("other-flow: built", first))
     git(repo, "update-ref", "refs/heads/ticket/other-flow-0", beside)
-    git(repo, "update-ref", "refs/heads/ticket/other-flow", built("other-flow: other-flow-0 merged", other, beside))
+    git(repo, "update-ref", "refs/heads/other-flow", built("other-flow: other-flow-0 merged", other, beside))
 
     ticket(fresh(tickets), "other-flow", status="claimed")
     ticket(tickets, "other-flow-0", status="review", parent="other-flow")
@@ -1111,8 +1113,12 @@ def accepted(tree: list[Leaf], up: bool) -> dict[str, bool]:
     """`speculative-first#P2`'s rule, from The states: `done` is accepted exactly where the ticket's
     tip has reached the branch its accept merges into. A hinge's is the parent's branch, which it
     reached once merged; any other leaf's is the branch above the parent, which it reached once
-    merged into the parent's branch and that branch merged up; the parent's is the branch above."""
-    return {"one-flow": up, **{leaf.slug: leaf.merged and (leaf.hinge or up) for leaf in tree}}
+    merged into the parent's branch and that branch merged up; the parent's is the branch above.
+    The parent is done only once every child is, which its accept makes of each child `done` or
+    merged into its branch; a child in `review` not merged is one the orchestrator has not passed,
+    and it refuses the parent's accept while it stands."""
+    whole = all(leaf.status == "done" or leaf.merged for leaf in tree)
+    return {"one-flow": up and whole, **{leaf.slug: leaf.merged and (leaf.hinge or up) for leaf in tree}}
 
 
 def startable(tree: list[Leaf]) -> set[str]:
