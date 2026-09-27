@@ -63,8 +63,12 @@ The status of a ticket whose work is finished and waits for the user's ruling.
 _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:
-The user's answer on what a ticket built, made on its review page, and on the landing's show where there is one: accept, amend, redo or reject.
+The user's answer on what a ticket built, made on the calls its landing shows them: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
+
+**Standing yes**:
+The user's accept, given in advance, of every build that carries no call they have not made and none worth their time.
+_Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:
 A decision only the user can make, asked as part of the ticket it concerns.
