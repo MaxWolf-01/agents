@@ -52,7 +52,7 @@ class Args:
     """Model the paragraph is asked of: an alias or a full model name."""
 
     effort: str = field(default_factory=lambda: os.environ.get("CHANGE_SUMMARY_EFFORT", "medium"))
-    """How hard it thinks; `claude --help` lists the levels."""
+    """Effort level, `medium` by default."""
 
 
 def artifact_rules(catalogue: str) -> str:

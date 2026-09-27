@@ -44,9 +44,8 @@
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
-#             on the same file, which then holds the guidance. --effort is the
-#             worker's reasoning effort, `high` unless given; `claude --help`
-#             lists the levels.
+#             on the same file, which then holds the guidance. --effort is
+#             `high` unless given.
 #   wait      blocks until the current run of <slug> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
@@ -56,10 +55,9 @@
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
-#             the same prompt file holds the guidance, and --effort is given
-#             again or the round runs at `high`, as the model is given again.
-#             The round commits a report of its own, over the one the round
-#             before it left.
+#             the same prompt file holds the guidance; --effort is given again
+#             or the round runs at `high`. The round commits a report of its
+#             own, over the one the round before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
 #             report is committed, session id, the models the run's turns of
