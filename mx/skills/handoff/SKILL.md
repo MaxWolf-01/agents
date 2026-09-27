@@ -10,7 +10,7 @@ A handoff is the conversation compacted into one file a fresh session starts fro
 
 A handoff requires a **purpose**: what the next session should do. The purpose sets the scope:
 
-- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and once a mark says to write, the file is written without asking first: the user's read before the next session starts is the check. A checkpoint is the plugin's hook saying where the context stands, once per mark (three marks, 300k, 500k and 600k tokens unless the hook says otherwise), and each mark asks for something else:
+- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and once a mark says to write, the file is written without asking first: the user's read before the next session starts is the check. A checkpoint is the plugin's hook saying where the context stands, once per mark, and each mark asks for something else:
   - the first: close the phase in hand; at the next phase boundary (`/mx:orient`, Phase boundaries), rule out Continue and write the handoff.
   - the second: write the handoff at the next phase boundary and tell the user it is there.
   - the third: write it now and tell the user to `/clear`.
