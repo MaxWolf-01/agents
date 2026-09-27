@@ -251,14 +251,26 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
 
 def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker) -> bool:
     """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review, no
-    hinge, whose branch has reached the branch of the parent ticket the two share."""
+    hinge, merged into the branch of the parent ticket the two share."""
     if blocker.status == "done":
         return True
-    if blocker.status != "review" or blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
+    if blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
         return False
-    code = repos_of(tracker)[0]
-    shared, own = parent_branch(code, ticket.parent), branch_of(code, blocker, tracker)
-    return bool(shared and own and reached(code, own, shared))
+    return merged_under_parent(blocker, tracker)
+
+
+def merged_under_parent(child: Ticket, tracker: Tracker) -> bool:
+    """Whether a child ticket in review has merged into its parent ticket's branch, which the code
+    repo holds: its branch in every repo has reached the branch its siblings merge into there, the
+    parent's branch or, in a repo holding none, the branch it has out. Every repo, since a round
+    that built in one repo alone leaves its branch in the other unmoved, which reads as merged."""
+    if child.status != "review" or not child.parent or not parent_branch(repos_of(tracker)[0], child.parent):
+        return False
+    for top in repos_of(tracker):
+        own = branch_of(top, child, tracker)
+        if not (own and reached(top, own, parent_branch(top, child.parent) or head(top))):
+            return False
+    return True
 
 
 def line_of(ticket: Ticket, said: str) -> str:
@@ -406,9 +418,9 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not reached the branch the user's accept merges it into
     (`accepted_into`), or None once it has, in every repo holding a branch of it. A parent ticket's
-    own branch has reached it only with every child done or merged into that branch, since the
-    parent's accept takes them in with it. A ticket with no branch anywhere is done once every child
-    ticket is, or, where the user is in the loop for it, at the ruling itself."""
+    own branch has reached it only with every child done or in review merged into that branch,
+    since the parent's accept takes them in with it. A ticket with no branch anywhere is done once
+    every child ticket is, or, where the user is in the loop for it, at the ruling itself."""
     branches = [(top, branch_of(top, ticket, tracker)) for top in repos_of(tracker)]
     if all(branch is None for _, branch in branches):
         children = tracker.children(ticket.slug)
@@ -418,18 +430,16 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     for top, branch in branches:
         if branch is None:
             continue
-        if git(top, "rev-parse", "--abbrev-ref", "HEAD").strip() == branch:
+        if head(top) == branch:
             return f"{branch} is the branch {top} has out; done is written where the ticket branch merges into, never on the branch itself"
         onto = accepted_into(top, ticket, tracker)
         if onto is None:
             return f"{ticket.slug} is ruled with its parent ticket {ticket.parent}, whose accept merges {ticket.parent} into the branch above it; done is written there, once it has"
         if not reached(top, branch, onto):
             return f"{branch} is not merged into {onto} in {top}; done follows the user's accept and its merge"
-        if branch == ticket.slug and (waiting := [
-            child.slug for child in tracker.children(ticket.slug)
-            if child.status != "done" and not ((own := branch_of(top, child, tracker)) and reached(top, own, branch))
-        ]):
-            return f"{', '.join(waiting)} not done and not merged into {branch} in {top}; the parent ticket's accept takes in every child, so each is merged first or ruled out of the tree"
+    if waiting := [child.slug for child in tracker.children(ticket.slug)
+                   if child.status != "done" and not merged_under_parent(child, tracker)]:
+        return f"{', '.join(waiting)} neither done nor in review merged into {ticket.slug}; the parent ticket's accept takes in every child, so each is merged first or ruled out of the tree"
     return None
 
 
@@ -439,16 +449,15 @@ def accepted_into(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
     at its close-out; for any other child, the branch above the parent's, which the parent's accept
     brings it to: the grandparent's branch, or the branch this runs on. None where that would be the
     parent's branch itself. Where the parent has no branch, the branch this runs on."""
-    onto = git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
     parent = ticket.parent and parent_branch(top, ticket.parent)
     if not parent:
-        return onto
+        return head(top)
     if ticket.hinge or tracker.children(ticket.slug):
         return parent
     grand = tracker.tickets[ticket.parent].parent if ticket.parent in tracker.tickets else None
     if grand and (above := parent_branch(top, grand)):
         return above
-    return None if onto == parent else onto
+    return None if head(top) == parent else head(top)
 
 
 def branch_of(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
@@ -461,6 +470,11 @@ def parent_branch(top: Path, slug: str) -> str | None:
     """The branch a parent ticket's children merge into, named by its slug alone as `/mx:dispatch`
     cuts it, or None where the repo has none."""
     return slug if tried(top, "rev-parse", "--verify", "-q", f"refs/heads/{slug}").returncode == 0 else None
+
+
+def head(top: Path) -> str:
+    """The branch `top` has out."""
+    return git(top, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
 def reached(top: Path, branch: str, onto: str) -> bool:

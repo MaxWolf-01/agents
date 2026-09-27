@@ -1468,6 +1468,34 @@ def test_one_repo_seen_from_a_worktree_is_still_one_repo(tickets: Path, repo: Pa
     assert run(repo, "get", "one-flow", "status").out == "done\n"
 
 
+def test_a_sibling_built_in_the_agent_repo_alone_frees_nothing_until_it_merges_there(split: Path) -> None:
+    """A research child builds in the agent repo only, so its code branch never moves off the
+    parent's branch and reads as merged into it; `speculative-first#P3` still holds its dependent
+    until the agent side has merged, and the parent's accept waits for it the same way."""
+    tickets, agent = split / "agent" / "tickets", split / "agent"
+    ticket(tickets, "one-flow", status="review")
+    ticket(tickets, "ask-around", status="review", parent="one-flow")
+    ticket(tickets, "map-columns", parent="one-flow", **{"blocked-by": "[ask-around]"})
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tree")
+    git(split, "branch", "one-flow")
+    git(split, "branch", "ticket/ask-around", "one-flow")
+    git(agent, "checkout", "-q", "-b", "ticket/ask-around")
+    (agent / "research").mkdir()
+    (agent / "research" / "ask-around.md").write_text("what they said\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the research")
+    git(agent, "checkout", "-q", "main")
+
+    ready = lambda: run(split, "frontier").out.partition("waiting\n")[0]  # noqa: E731
+    assert "map-columns" not in ready()
+    git(split, "merge", "-q", "--no-ff", "-m", "one-flow up", "one-flow")
+    assert "ask-around, map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+    git(agent, "merge", "-q", "--no-ff", "-m", "ask-around read", "ticket/ask-around")
+    assert "map-columns" in ready()
+    assert "refused: one-flow review → done: map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+
+
 def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
     """A round lands in two repos, and `done` is the accept of the whole of it."""
     tickets = split / "agent" / "tickets"

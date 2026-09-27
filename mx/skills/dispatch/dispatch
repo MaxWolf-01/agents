@@ -94,12 +94,14 @@
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
-# parent is the ticket tip). Nothing merges above a parent ticket's branch
+# parent is the ticket tip). No code merges above a parent ticket's branch
 # before the user has ruled: a hinge, and a ticket with no parent ticket's
 # branch to merge into, merge only on the accept, and until then render
 # unmerged, the tracker carrying the ticket's status and nothing else of it; any
 # other child merges into its parent's branch on the orchestrator's read, and
-# its parent's accept takes it up.
+# its parent's accept takes it up. The agent repo holds no parent ticket's
+# branch, so that child's agent branch merges into the branch it has out, at
+# the same read.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -595,7 +597,8 @@ review() {
         else
             now=done landed="$id landed"
         fi
-        [ "$("$tracker" get "$id" status)" = "$now" ] || fields+=("status=$now")
+        status=$("$tracker" get "$id" status)
+        [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
         [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
         git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$landed"
     elif [ "$("$tracker" get "$id" status)" != review ]; then
