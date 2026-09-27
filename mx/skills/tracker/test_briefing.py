@@ -166,7 +166,6 @@ def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_pi
     and the time it was written stay as they are, so the column does not claim to be newer than it
     is, and the ping is spent either way: it is what the session's retirement is counted in."""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.setenv("RUN_LOG", str(tmp_path / "runs.jsonl"))
     claude = path_with("claude", answered(f"`{UNCHANGED}`."))
     cached = Briefing("where things stand", START, "abc-123", START, START, 3)
     now = START + timedelta(minutes=20)
