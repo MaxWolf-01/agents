@@ -20,10 +20,11 @@ and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board 
 A page that ignores `?theme=` would be measured twice in the same scheme, so the scheme switch the
 house style prescribes is the check's precondition rather than a second check.
 
-Each width is measured on six pages: both schemes with every row folded, both schemes with one row
+Each width is measured on eight pages: both schemes with every row folded, both schemes with one row
 opened through its anchor, which lays out the blocks the ticket reads as and paints the dependency
-graph beside it, and both schemes with the graph at full size over the board, which `&graph=1` on
-the address opens.
+graph beside it, both schemes with the graph at full size over the board, which `&graph=1` on
+the address opens, and both schemes with a row folded under its parent ticket's opened through its
+anchor, which opens the parent's row too and lays out the rows folded under it.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
 Property covers is never laid out.
 
@@ -66,6 +67,7 @@ NARROWEST, WIDEST = round(min(WINDOWS) / max(ZOOMS)), round(max(WINDOWS) / min(Z
 SCHEMES = ("day", "night")
 OPENED = "t-map-columns"  # the demo tracker's build in review: the row carrying every mark
 FOLDED = "t-retire-legacy-exporter"  # a needs-me row the anchor leaves folded, so it keeps its question list
+KIN = "t-carry-balances"  # a row folded under its parent ticket's, which its anchor opens with it
 # A briefing as a session writes one, so the no-overlap matrix measures the head of the column as
 # prose; the hover probe below renders the other branch, the board's own count. No model runs in a
 # check: the fixtures take claude off PATH.
@@ -140,9 +142,12 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     render(transcribed.root, transcribed.repo, out)
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
              for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
+    # a run of its own: one browser measuring all eight pages crashes a tab on this suite's pool
+    folded = [f"{out}?theme={scheme}#{KIN}" for scheme in SCHEMES]
     widths = band_edges(out)
     assert len(widths) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {widths}"
     assert not (found := measured(pages, widths)), named(found)
+    assert not (found := measured(folded, widths)), named(found)
 
 
 # A defect put back into the board: the brief of every folded row, in a box too narrow for the one
@@ -220,8 +225,8 @@ with sync_playwright() as pw:
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
     out["names"] = page.evaluate("""
       () => [...document.querySelectorAll("details.ticket")].map((row) => {
-        const clip = row.querySelector(".title .clip"), name = clip.getBoundingClientRect()
-        const links = [...row.querySelectorAll(".titleline > a")]
+        const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
+        const links = [...row.querySelectorAll(":scope > summary .titleline > a")]
         return {
           row: row.id, text: clip.textContent,
           cut: clip.scrollWidth > clip.clientWidth + 1,
@@ -282,7 +287,8 @@ print(json.dumps(out))
 # a mark of the row the anchor opens, or a selector of its own for one that sits elsewhere or
 # repeats within the row. An opened row lists its questions in its block rather than under its
 # name, so the marks of that list are read off a row the anchor leaves folded.
-MARKS = ("tree", "slug", "asks", "title", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
+MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", "gh", "runcopy", "tick",
+         "#t-month-close .kin",
          f"#{OPENED} .asked > li:first-child .tag", f"#{OPENED} .asked > li:first-child > .copier",
          "#grp-needs .qgroup",
          f"#{OPENED} .sessions li:first-child .when", f"#{OPENED} .sessions li:first-child .resume",
@@ -312,7 +318,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     beside it give way, that ?theme= pinned each scheme, that the anchor opened a row, that an
     opened row shows each of its questions once, and that the graph survives the scheme switch.
     Three of those, the scheme, the anchor and the graph, are what the layout check above assumes
-    of its six pages; the fourth, that ?graph opened the overlay on a graph rather than on the
+    of its eight pages; the fourth, that ?graph opened the overlay on a graph rather than on the
     placeholder, belongs to the graph probe below."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
