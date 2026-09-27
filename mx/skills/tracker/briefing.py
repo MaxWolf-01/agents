@@ -29,6 +29,7 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
+RUN_LOG = Path(__file__).resolve().parent.parent / "run-log" / "run-log"  # every run goes through it, one line each in the run log
 MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The list is what the
@@ -188,8 +189,8 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
 
 
 def ask(args: list[str], repo: Path) -> dict | None:
-    """One `claude -p` run in `repo`: what it answered and the session it answered in, or None where
-    it did not answer at all.
+    """One `claude -p` run in `repo`, through `run-log`: what it answered and the session it answered
+    in, or None where it did not answer at all.
 
     The board renders without the model, so every way this comes back empty is one the caller goes
     on from: no claude on the machine, no auth, no network, a run past RUN_LIMIT, an error. Each of
@@ -200,7 +201,8 @@ def ask(args: list[str], repo: Path) -> dict | None:
         return None
     try:
         done = subprocess.run(
-            [COMMAND, *args, "--model", MODEL, "--effort", EFFORT, "--output-format", "json",
+            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--",
+             COMMAND, *args, "--model", MODEL, "--effort", EFFORT,
              "--allowedTools", TOOLS, "--disallowedTools", DENIED, "--settings", settings()],
             cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
         )

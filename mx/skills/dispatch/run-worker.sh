@@ -11,6 +11,8 @@
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
 #   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
+#   RUN_LOG                   where each attempt's line goes (run-log, staged beside
+#                             this script); its own default unless set
 set -u
 
 message=$1
@@ -27,6 +29,13 @@ if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
+# Every attempt runs through it, so a run nobody logged cannot happen quietly.
+run_log=$here/run-log
+if [ ! -f "$run_log" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 
@@ -123,12 +132,13 @@ trap 'stopped=1' TERM
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
+    logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
-        scoped "$unit" claude "${common[@]}" --resume "$session" continue
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        scoped "$unit" claude "${common[@]}" --resume "$session" "$(cat "$message")"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
-        scoped "$unit" claude "${common[@]}" --session-id "$session" < "$message"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
     unscope "$unit"

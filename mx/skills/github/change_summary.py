@@ -27,6 +27,7 @@ from pathlib import Path
 import tyro
 
 CATALOGUE = Path(__file__).resolve().parents[1] / "writing-for-humans/CATALOGUE.md"
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log/run-log"  # every call goes through it, one line each in the run log
 TARGET, STATED, CAP = 60, 100, 150  # Opus overshoots the length it is asked for by about half, so the prompt asks for less than the cap the tool enforces
 
 INSTRUCTION = f"""You write the opening paragraph of a pull request description, from the unified diff you are given and nothing else.
@@ -71,11 +72,12 @@ def artifact_rules(catalogue: str) -> str:
 
 
 def ask(model: str, effort: str, system: str, prompt: str) -> str:
-    """One bare `claude -p` call, from an empty directory so no project file is in reach."""
+    """One bare `claude -p` call through `run-log`, from an empty directory so no project file is in reach."""
     with tempfile.TemporaryDirectory() as empty:
         try:
             proc = subprocess.run(
-                ["claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
+                [str(RUN_LOG), "run", "--site", "change-summary", "--",
+                 "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
                 input=prompt, capture_output=True, text=True, timeout=600, cwd=empty,

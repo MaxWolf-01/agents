@@ -258,6 +258,8 @@ def staged(toy: Path) -> Path:
     for name in ("dispatch", "dispatch-ctl", "worker-prompt.md"):
         shutil.copy(SKILL / name, skill / "dispatch" / name)
     shutil.copy(SKILL.parent / "tracker" / "tracker.py", skill / "tracker" / "tracker.py")
+    (skill / "run-log").mkdir()
+    shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
     return skill / "dispatch" / "dispatch"
 
@@ -528,6 +530,7 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
     (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
@@ -572,6 +575,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -588,6 +592,10 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     attempt = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")][0]
     assert f"--model opus --effort {given or 'high'} " in attempt, attempt
     assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
+    # `run-log`: the attempt left its line, in the log this HOME defaults to
+    (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
+        ("worker", "warm-preset", 1, "opus", given or "high")
 
 
 @pytest.mark.parametrize("resumed", [False, True])
@@ -601,6 +609,7 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
     (tmp_path / "message.md").write_text("Work it.\n")
     session = "5e55-10n"
     project = tmp_path / "profile" / "projects" / "-toy"
@@ -648,6 +657,7 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
     (tmp_path / "message.md").write_text("Work it.\n")
     left = tmp_path / "left.pid"
     bin_dir = tmp_path / "bin"
@@ -680,6 +690,7 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     state.mkdir()
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

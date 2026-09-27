@@ -14,7 +14,10 @@ import board  # noqa: E402
 import briefing  # noqa: E402
 from demo_tracker import Demo, build  # noqa: E402
 
-KEPT = ("git", "uv", "chromium")  # what a check may still need: the repo, a script's own run, a browser
+# What a check may still need: the repo, a script's own run, a browser, and what `run-log` wraps a
+# model run with.
+KEPT = ("git", "uv", "chromium", "bash", "jq", "hostname", "realpath", "basename", "dirname", "mktemp",
+        "date", "cat", "grep", "tail", "mkdir", "rm", "sed", "wc", "tee", "touch", "column")
 
 
 @pytest.fixture(scope="session")
