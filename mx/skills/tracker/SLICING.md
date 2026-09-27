@@ -42,7 +42,7 @@ A property no single slice can make hold means the cut is wrong: merge the slice
 
 `tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, `--hinge` on a hinge, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
-Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker carries them as anchored assumptions and the review page puts each in front of the user on the line it shaped.
+Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker carries them as anchored assumptions on the lines they shaped, and the landing shows the user each one on the intent side.
 
 **The breakdown is filed when the check is clean.** `property-coverage` holds every executable property to having a check and names what does not line up, at the line it read; its `--help` is its reference. Fix what it names and run it again.
 
@@ -50,4 +50,4 @@ Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). Th
 
 Render the board (`/mx:tracker`) and present the breakdown in chat as a numbered list: slug, blocked by, what it delivers, with the granularity and the edges you are least sure of named, so the user knows where to look. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
-`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each hinge is then ruled on alone from what it built, and the rest with the ticket being cut, at its close-out, on the review pages and the landing's show.
+`/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves. Each hinge is then ruled on alone from what it built, and the rest with the ticket being cut, at its close-out, on the calls their landing shows the user.
