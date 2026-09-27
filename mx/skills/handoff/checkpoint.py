@@ -2,36 +2,49 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Three hooks that tell a session where its context stands and hand a fresh one its handoff.
+"""Three hooks: a session hears where its context stands, and a /clear finds the handoff it wrote.
 
 `checkpoint` runs on PostToolBatch and UserPromptSubmit: it reads the session's context size off
 the last assistant message in the transcript (the tokens the last request sent as its prompt) and,
-the first time it stands past a mark, says so to the model, once per mark. The marks are
-MX_CONTEXT_CHECKPOINTS, comma-separated token counts, 200000,400000,600000 unless set. A dispatched
-worker (DISPATCH_WORKLOG set) and a print-mode session (CLAUDE_CODE_SESSION_ATTENDED=0) hear
-nothing: neither has a user to type /clear.
+the first time it stands past a mark, says so to the model, once per mark, naming the mark by its
+place (the first, second, third of them) and its figure. The marks are MX_CONTEXT_CHECKPOINTS,
+comma-separated token counts, three of them unless set (MARKS below). A context that has fallen
+back under a mark said (a compaction) hears that mark again on its way back up. A dispatched
+worker (DISPATCH_WORKLOG set), a print-mode session (CLAUDE_CODE_SESSION_ATTENDED=0) and a
+subagent's tool batches (agent_id in the event) hear nothing: only the session's own thread has a
+user to tell.
 
 `ended <pid>` runs on SessionEnd with reason clear and `started <pid>` on SessionStart with source
 clear, in the same Claude Code process: the first records the session id that just ended under
-that process's pid, the second reads it back and looks for a handoff that session wrote in the agent
-repo of the working directory (`tracker root` finds it). With one there, the fresh session is told
-where to continue from; with none, or nothing recorded, it is told nothing. <pid> is the hook
-shell's $PPID, which is the Claude Code process.
+that process's pid, the second reads it back and looks for a continuation handoff that session
+wrote in the agent repo of the working directory (`tracker root` finds it). With one there, the
+fresh session is handed the handoff skill's pickup line; with none, or nothing recorded, nothing.
+<pid> is the hook shell's $PPID, which is the Claude Code process.
 
 State is under $XDG_STATE_HOME/mx (~/.local/state/mx): checkpoints/<session id> holds the highest
-mark said, clear/<pid> the id of the session that /clear ended.
+mark said, clear/<pid> the id of the session that /clear ended, and hooks.jsonl one line per run
+of any of the three, with what it decided and why, so a hook that never ran reads differently
+from one that ran and stayed silent.
 """
 
 import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx"
 MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "200000,400000,600000").split(",") if m.strip()]
-PLUGIN = Path(__file__).resolve().parents[2]
+TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
 BLOCK = 64 * 1024
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
+
+
+def log(mode: str, session: str | None, **entry: object) -> None:
+    STATE.mkdir(parents=True, exist_ok=True)
+    with (STATE / "hooks.jsonl").open("a") as f:
+        f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "hook": mode, "session_id": session, **entry}) + "\n")
 
 
 def context_tokens(transcript: Path) -> int | None:
@@ -70,74 +83,90 @@ def said(text: str, event: str) -> None:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}))
 
 
+def figure(tokens: int) -> str:
+    return f"{tokens // 1000}k"
+
+
 def checkpoint(hook: dict) -> None:
-    if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
-        return
-    session, transcript = hook.get("session_id"), hook.get("transcript_path")
-    if not session or not transcript:
-        return
-    tokens = context_tokens(Path(transcript))
+    session = hook["session_id"]
+    if os.environ.get("DISPATCH_WORKLOG"):
+        return log("checkpoint", session, decision="skip", why="dispatched worker")
+    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        return log("checkpoint", session, decision="skip", why="unattended session")
+    if hook.get("agent_id"):
+        return log("checkpoint", session, decision="skip", why="subagent", agent_id=hook["agent_id"])
+    tokens = context_tokens(Path(hook["transcript_path"]))
     if tokens is None:
-        return
+        return log("checkpoint", session, decision="quiet", why="no assistant message in the transcript")
     seen = STATE / "checkpoints" / session
-    told = int(seen.read_text()) if seen.exists() else 0
+    try:
+        told = int(seen.read_text())
+    except (OSError, ValueError):
+        told = 0  # never told, or a record no reading can trust: the marks are unsaid again
+    if tokens < told:
+        # the context fell back under a mark already said (a compaction): the marks above it are
+        # unsaid again, so the session hears them as it grows back
+        told = max([m for m in MARKS if m <= tokens], default=0)
+        seen.write_text(str(told))
     passed = [m for m in MARKS if told < m <= tokens]
     if not passed:
-        return
+        return log("checkpoint", session, decision="quiet", tokens=tokens, told=told)
     mark = max(passed)
     seen.parent.mkdir(parents=True, exist_ok=True)
     seen.write_text(str(mark))
-    marks = ", ".join(f"{m // 1000}k" for m in MARKS)
-    said(f"Context checkpoint: this session's context stands at {tokens // 1000}k tokens, past the "
-         f"{mark // 1000}k mark (the marks are {marks}). What a session does at a checkpoint is in the "
-         f"mx handoff skill, under Continuation.", hook.get("hook_event_name", "PostToolBatch"))
+    place = ORDINALS[MARKS.index(mark)] if MARKS.index(mark) < len(ORDINALS) else f"{MARKS.index(mark) + 1}th"
+    marks = ", ".join(figure(m) for m in MARKS)
+    said(f"Context checkpoint: this session's context stands at {figure(tokens)} tokens, past the "
+         f"{place} of {len(MARKS)} marks ({figure(mark)}; the marks are {marks}). What a session does at "
+         f"each mark is in the mx handoff skill, under Continuation.", hook["hook_event_name"])
+    log("checkpoint", session, decision="said", tokens=tokens, mark=mark)
 
 
 def ended(hook: dict, pid: str) -> None:
-    session = hook.get("session_id")
-    if not session or not pid:
-        return
     record = STATE / "clear" / pid
     record.parent.mkdir(parents=True, exist_ok=True)
-    record.write_text(session)
+    record.write_text(hook["session_id"])
+    log("ended", hook["session_id"], decision="recorded", pid=pid)
 
 
 def handoffs_of(cwd: Path) -> Path | None:
     """The agent repo's handoffs directory for the project at cwd, through the one command that
-    finds the agent repo; None outside any project."""
-    done = subprocess.run(["uv", "run", "--quiet", str(PLUGIN / "skills" / "tracker" / "tracker.py"), "root"],
-                          cwd=cwd, capture_output=True, text=True)
+    finds the agent repo; None outside any project, with the command's own words on stderr."""
+    done = subprocess.run([str(TRACKER), "root"], cwd=cwd, capture_output=True, text=True)
     if done.returncode != 0 or not done.stdout.strip():
+        print(f"checkpoint.py: no agent repo found from {cwd}: {done.stderr.strip()}", file=sys.stderr)
         return None
     return Path(done.stdout.strip()).parent / "handoffs"
 
 
-def names_session(handoff: Path, session: str) -> bool:
-    """Whether the handoff's frontmatter carries `session: <session>`."""
+def continuation_of(handoff: Path, session: str) -> bool:
+    """Whether the handoff's frontmatter names `session` and the continuation purpose: a fork's
+    handoff carries the same session id and is another session's to pick up."""
     text = handoff.read_text(errors="replace")
-    if not text.startswith("---"):
+    if not text.startswith("---") or text.count("---") < 2:
         return False
-    front = text.split("---", 2)[1] if text.count("---") >= 2 else ""
-    return any(line.strip() == f"session: {session}" for line in front.splitlines())
+    lines = {line.strip() for line in text.split("---", 2)[1].splitlines()}
+    return f"session: {session}" in lines and "purpose: continuation" in lines
 
 
 def started(hook: dict, pid: str) -> None:
     record = STATE / "clear" / pid
-    if not pid or not record.exists():
-        return
+    if not record.exists():
+        return log("started", hook["session_id"], decision="quiet", why="no session recorded for this pid", pid=pid)
     session = record.read_text().strip()
     record.unlink()
-    handoffs = handoffs_of(Path(hook.get("cwd") or os.getcwd()))
+    cwd = Path(hook["cwd"])
+    handoffs = handoffs_of(cwd)
     if handoffs is None or not handoffs.is_dir():
-        return
-    written = [p for p in handoffs.glob("*.md") if names_session(p, session)]
+        return log("started", hook["session_id"], decision="quiet", why="no handoffs directory", cwd=str(cwd), ended=session)
+    written = [p for p in handoffs.glob("*.md") if continuation_of(p, session)]
     if not written:
-        return
-    latest = max(written, key=lambda p: p.stat().st_mtime)
-    said(f"The session before /clear wrote a handoff for this one: {latest.resolve()}. "
-         f"The mx handoff skill says a continuation reads it in full first, then git rm's it in the "
-         f"agent repo and commits, since a handoff is retired once a session has picked it up.",
-         "SessionStart")
+        return log("started", hook["session_id"], decision="quiet", why="no continuation of the ended session", ended=session)
+    latest = max(written, key=lambda p: p.stat().st_mtime).resolve()
+    # the pickup line, as /mx:handoff gives it to the user to type
+    said(f"Continue from {latest}. Read it in full first, then git rm it in the agent repo and commit: "
+         f"a handoff is retired once a session has picked it up.", "SessionStart")
+    log("started", hook["session_id"], decision="said", handoff=str(latest), ended=session)
 
 
 def main() -> None:
@@ -146,12 +175,10 @@ def main() -> None:
     hook = json.load(sys.stdin)
     if mode == "checkpoint":
         checkpoint(hook)
-    elif mode == "ended":
-        ended(hook, pid)
-    elif mode == "started":
-        started(hook, pid)
+    elif mode in ("ended", "started") and pid:
+        (ended if mode == "ended" else started)(hook, pid)
     else:
-        sys.exit(f"checkpoint.py: takes checkpoint, ended <pid> or started <pid>, not {mode!r}")
+        sys.exit(f"checkpoint.py: takes checkpoint, ended <pid> or started <pid>, not {sys.argv[1:]!r}")
 
 
 if __name__ == "__main__":

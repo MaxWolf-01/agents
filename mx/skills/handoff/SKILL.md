@@ -10,7 +10,10 @@ A handoff is the conversation compacted into one file a fresh session starts fro
 
 A handoff requires a **purpose**: what the next session should do. The purpose sets the scope:
 
-- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and the file is written at once: the user's read before the next session starts is the check. A checkpoint is the plugin's hook saying where the context stands, once per mark, and each mark asks for something else: at 200k, close the phase in hand and take a handoff over Continue at the next phase boundary (`/mx:orient`, Phase boundaries); at 400k, write the handoff at the next boundary and tell the user; at 600k, write it now and tell the user to `/clear`.
+- **Continuation**: this session is full or ending, and the next one inherits the thread. Walk the conversation start to end before writing; early decisions and corrections carry the same weight as the last few turns. A context checkpoint means this purpose, and once a mark says to write, the file is written without asking first: the user's read before the next session starts is the check. A checkpoint is the plugin's hook saying where the context stands, once per mark (three marks, 200k, 400k and 600k tokens unless the hook says otherwise), and each mark asks for something else:
+  - the first: close the phase in hand; at the next phase boundary (`/mx:orient`, Phase boundaries), rule out Continue and write the handoff.
+  - the second: write the handoff at the next phase boundary and tell the user it is there.
+  - the third: write it now and tell the user to `/clear`.
 - **Fork**: a side-quest surfaced (a bug, a refactor, an idea out of scope here). Extract only the slice that pertains to it, and note in this session that it is now out of scope. Tell the user in a few lines the purpose, the scope and what only this conversation knows that you would carry over, before writing: their reply is the mandate, and a purpose you inferred is a proposal until they confirm it.
 
 ## What it carries
@@ -48,4 +51,4 @@ The file is the deliverable, so the chat gets its absolute path and the pickup l
 Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
 ```
 
-For a continuation, the user runs `/clear` once they have read the file and gives the fresh session that line.
+For a continuation, the user runs `/clear` once they have read the file: in a project whose agent repo holds the handoff, the plugin's `SessionStart` hook hands the fresh session that line itself. A fresh `claude` started any other way is given the line by the user.
