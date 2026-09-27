@@ -12,7 +12,7 @@ tmux new-session -d -s fork-<slug>-<id8> "env -u CLAUDECODE -u CLAUDE_CODE_SESSI
   --dangerously-skip-permissions '<directive>' > <workdir>/fork.log 2>&1"
 ```
 
-- `--setting-sources user,project,local` is the default, spelled out: a fork inherits every settings file its parent had, and every unattended launch in mx names what it inherits.
+- `--setting-sources user,project,local` is the default, spelled out: a fork inherits every settings file its parent had.
 - `--fork-session` gives the child its own transcript; resuming without it interleaves both processes into one.
 - Detached tmux with `CLAUDECODE` unset avoids the nested-interactive-claude freeze; `claude -p` this way is verified safe.
 - `--dangerously-skip-permissions` is needed here: headless runs can't answer prompts and session grants don't carry over. It is acceptable only because the directive is bounded (see SKILL.md).

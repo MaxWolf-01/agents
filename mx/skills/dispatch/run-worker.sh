@@ -38,14 +38,14 @@ if [ ! -f "$run_log" ]; then
         "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
-# The mx the host's claude has installed, the version `dispatch-ctl init` last updated to. The
+# The mx the host's claude has installed for the user, the scope `dispatch-ctl init` updates. The
 # worker reads no user settings, so the plugin reaches it by path or not at all, and without it
 # none of the skills its contract names exist.
 plugin=$(claude plugin list --json 2> /dev/null |
-    jq -r '[.[] | select(.id == "mx@MaxWolf-01") | .installPath][0] // empty' 2> /dev/null)
+    jq -r '[.[] | select(.id == "mx@MaxWolf-01" and .scope == "user") | .installPath][0] // empty' 2> /dev/null)
 if [ ! -d "$plugin" ]; then
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
-        "no mx@MaxWolf-01 in this host's claude plugin list --json (or no jq to read it)" | tee "$here/$run_id.status" >&2
+        "no user-scope mx@MaxWolf-01 in this host's claude plugin list --json (or no jq to read it)" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 

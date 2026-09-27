@@ -633,8 +633,9 @@ def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_el
                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)})
 
     attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
-    inherits = f'--setting-sources project --strict-mcp-config --plugin-dir {plugin} --settings {{"autoMemoryEnabled": false}} '
-    assert attempts and all(inherits in line for line in attempts), attempts
+    inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
+                '--settings {"autoMemoryEnabled": false}')
+    assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
     assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
     assert "with claude 2.1.243 and mx 1.0.11" in (state / "run-1.log").read_text().splitlines()[0]
 
@@ -657,7 +658,7 @@ def test_a_host_whose_claude_has_no_mx_starts_no_worker(tmp_path: Path) -> None:
 
     assert done.returncode == 1
     assert (state / "run-1.status").read_text().startswith(
-        "attempts=0 exit=1 report=no session=- error=no mx@MaxWolf-01 in this host's claude plugin list")
+        "attempts=0 exit=1 report=no session=- error=no user-scope mx@MaxWolf-01 in this host's claude plugin list")
     assert not any(line.startswith("-p ") for line in (bin_dir / "claude.calls").read_text().splitlines())
 
 
