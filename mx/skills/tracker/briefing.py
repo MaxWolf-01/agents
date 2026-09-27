@@ -37,7 +37,7 @@ EFFORT = "medium"
 # write are named as denied rather than left out.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
-RUN_LIMIT = 900  # seconds a run gets; one that has not answered by then is dropped and the next change tries again
+RUN_LIMIT = 900  # seconds a run gets, which run-log enforces; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
 SILENT = ""  # what the last run that answered nothing said, for the page to say once (board.absences)
@@ -201,10 +201,10 @@ def ask(args: list[str], repo: Path) -> dict | None:
         return None
     try:
         done = subprocess.run(
-            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--",
+            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
              COMMAND, *args, "--model", MODEL, "--effort", EFFORT,
              "--allowedTools", TOOLS, "--disallowedTools", DENIED, "--settings", settings()],
-            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
+            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))

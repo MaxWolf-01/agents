@@ -15,6 +15,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -70,15 +71,15 @@ def lines(where: Path) -> list[dict]:
 
 def test_a_run_leaves_one_line_with_what_claude_reported_and_prints_the_answer(tmp_path: Path) -> None:
     fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, TURN_C, RESULT))
-    done = run_log(tmp_path, "run", "--site", "review", "--ticket", "warm-preset", "--axis", "tests", "--",
+    done = run_log(tmp_path, "run", "--site", "review", "--ticket", "warm-preset", "--axis", "tests", "--range", "a1b2c3d..e4f5a6b", "--",
                    "claude", "-p", "--model", "opus", "--effort", "medium", "--tools", "", stdin="the brief")
     assert done.returncode == 0, done.stderr
-    assert done.stdout == "The answer.\n", "the caller sees what the model answered, as before"
+    assert done.stdout == "The answer.\n", "the caller sees what the model answered"
     assert (tmp_path / "stdin").read_text() == "the brief", "claude reads the caller's stdin"
-    assert "--output-format\nstream-json" in (tmp_path / "argv").read_text()
+    assert "--verbose\n--output-format\nstream-json" in (tmp_path / "argv").read_text()
     (line,) = lines(tmp_path)
-    assert {k: line[k] for k in ("site", "ticket", "axis", "attempt", "model", "effort", "session", "ran", "exit", "end")} == {
-        "site": "review", "ticket": "warm-preset", "axis": "tests", "attempt": None, "model": "opus", "effort": "medium",
+    assert {k: line[k] for k in ("site", "ticket", "axis", "attempt", "range", "model", "effort", "session", "ran", "exit", "end")} == {
+        "site": "review", "ticket": "warm-preset", "axis": "tests", "attempt": None, "range": "a1b2c3d..e4f5a6b", "model": "opus", "effort": "medium",
         "session": "sess-1", "ran": ["claude-opus-5-5", "claude-sonnet-5"], "exit": 0, "end": "success"}
     assert (line["cost_usd"], line["api_s"], line["turns"]) == (0.1234, 3.9, 2)
     assert line["tokens"] == {"input": 22, "output": 70, "cache_read": 1100, "cache_write": 20}, "the result's totals, not the messages'"
@@ -110,8 +111,9 @@ def test_a_run_that_ends_without_a_result_still_gets_its_line(tmp_path: Path) ->
     """Killed, crashed or cut off: the line says so, sums the tokens of the messages that arrived,
     one per message however many lines it streamed as, and carries claude's exit and the session
     id a resume needs. What claude printed goes through, since with no result it is the error."""
-    fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B) + "API Error: overloaded\n", then="exit 1")
-    done = run_log(tmp_path, "run", "--site", "worker", "--attempt", "2", "--", "claude", "-p", "--model", "opus")
+    synthetic = {"type": "assistant", "message": {"id": "m9", "model": "<synthetic>", "usage": {"input_tokens": 0, "output_tokens": 0}}}
+    fake_claude(tmp_path, stream(INIT, TURN_A, TURN_B, synthetic) + "API Error: overloaded\n", then="exit 1")
+    done = run_log(tmp_path, "run", "--site", "worker", "--attempt", "2", "--range", "", "--", "claude", "-p", "--model", "opus")
     assert done.returncode == 1
     assert done.stdout == "API Error: overloaded\n"
     (line,) = lines(tmp_path)
@@ -122,7 +124,10 @@ def test_a_run_that_ends_without_a_result_still_gets_its_line(tmp_path: Path) ->
 
 def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:
     """What `dispatch-ctl stop` sends: claude gets it, the line is written, the exit is TERM's."""
-    fake_claude(tmp_path, stream(INIT, TURN_A), then="trap 'exit 143' TERM\nsleep 30 & wait $!")
+    # a claude that writes one more message on its way out, which the line has to carry
+    (tmp_path / "late").write_text(stream({"type": "assistant", "message": {"id": "m7", "model": "claude-opus-5-5",
+                                   "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1}}}))
+    fake_claude(tmp_path, stream(INIT, TURN_A), then=f"trap 'sleep 0.5; cat {tmp_path}/late; exit 143' TERM\nsleep 30 & wait $!")
     proc = subprocess.Popen([str(SCRIPT), "run", "--site", "worker", "--", "claude", "-p"], cwd=tmp_path,
                             env={**os.environ, "RUN_LOG": str(tmp_path / "runs.jsonl"),
                                  "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}"},
@@ -138,20 +143,60 @@ def test_a_term_ends_the_run_and_the_line_says_stopped(tmp_path: Path) -> None:
     (line,) = lines(tmp_path)
     assert (line["exit"], line["end"], line["session"]) == ("stopped", "no result", "sess-1")
     assert line["duration_s"] < 10, "claude was signalled rather than waited out"
+    assert line["tokens"] == {"input": 11, "output": 3, "cache_read": 501, "cache_write": 21}, "what claude wrote after TERM is in the line"
+
+
+def test_a_timeout_ends_the_run_the_way_a_term_does_and_the_line_says_so(tmp_path: Path) -> None:
+    """The callers with a limit of their own (the briefing, change-summary) give it to run-log,
+    which is what can still write the line and stop claude; a kill from above would leave claude
+    running and the line unwritten."""
+    fake_claude(tmp_path, stream(INIT, TURN_A), then="trap 'exit 143' TERM\nsleep 30 & wait $!")
+    done = run_log(tmp_path, "run", "--site", "briefing", "--timeout", "1", "--", "claude", "-p")
+    assert done.returncode == 124
+    (line,) = lines(tmp_path)
+    assert (line["exit"], line["end"], line["session"]) == ("timeout", "no result", "sess-1")
+    assert line["duration_s"] < 10
+    fake_claude(tmp_path, stream(INIT, RESULT))
+    done = run_log(tmp_path, "run", "--site", "briefing", "--timeout", "30", "--", "claude", "-p")
+    assert done.returncode == 0 and done.stdout == "The answer.\n", "a run within its limit is untouched"
+    assert lines(tmp_path)[1]["exit"] == 0
+    assert "whole number" in run_log(tmp_path, "run", "--site", "x", "--timeout", "soon", "--", "claude").stderr
 
 
 def test_json_prints_the_result_object_for_a_caller_that_reads_it(tmp_path: Path) -> None:
-    fake_claude(tmp_path, stream(INIT, RESULT))
+    """The last result where a stream carries several, in both forms."""
+    first = {**RESULT, "session_id": "sess-0", "result": "An earlier answer.\n"}
+    fake_claude(tmp_path, stream(INIT, first, RESULT))
     done = run_log(tmp_path, "run", "--site", "briefing", "--json", "--", "claude", "-p")
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == RESULT
+    done = run_log(tmp_path, "run", "--site", "briefing", "--", "claude", "-p")
+    assert done.stdout == "The answer.\n"
+    assert [line["session"] for line in lines(tmp_path)] == ["sess-1", "sess-1"]
 
 
 def test_run_refuses_a_call_with_no_site_or_no_command(tmp_path: Path) -> None:
     fake_claude(tmp_path, "")
     assert "--site" in run_log(tmp_path, "run", "--", "claude").stderr
     assert "after --" in run_log(tmp_path, "run", "--site", "worker").stderr
+    done = run_log(tmp_path, "run", "--site", "worker", "--", "no-such-claude", "-p")
+    assert (done.returncode, done.stdout) == (127, "") and "not on PATH" in done.stderr
     assert not (tmp_path / "runs.jsonl").exists()
+
+
+def test_needs_names_the_commands_the_script_runs_and_nothing_it_does_not(tmp_path: Path) -> None:
+    """What a host or a test's PATH has to hold: every external command the script runs is in the
+    list, and everything in the list is on this machine."""
+    fake_claude(tmp_path, "")
+    needs = run_log(tmp_path, "needs").stdout.split()
+    assert {"jq", "git", "ssh", "hostname", "column"} <= set(needs)
+    for tool in needs:
+        assert subprocess.run(["sh", "-c", f"command -v {tool}"], capture_output=True).returncode == 0, tool
+    source = SCRIPT.read_text()
+    for tool in ("jq", "git", "hostname", "realpath", "basename", "dirname", "mktemp", "date", "cat", "grep", "sed", "wc",
+                 "mkdir", "rm", "tee", "touch", "column", "ssh", "timeout", "kill"):
+        assert tool in needs, f"{tool} is run by the script but not in its Needs line"
+        assert tool in source
 
 
 def test_pull_appends_the_lines_a_host_has_that_this_log_lacks_and_no_line_twice(tmp_path: Path) -> None:
@@ -167,7 +212,8 @@ def test_pull_appends_the_lines_a_host_has_that_this_log_lacks_and_no_line_twice
     assert done.returncode == 0, done.stderr
     assert "pulled 1 new run(s) from agent@far" in done.stdout
     assert [line["id"] for line in lines(tmp_path)] == ["a", "b"]
-    assert "agent@far" in (tmp_path / "ssh.calls").read_text()
+    call = (tmp_path / "ssh.calls").read_text()
+    assert "agent@far" in call and "RUN_LOG" in call and "logs/agent/runs.jsonl" in call, "the same path is read on the host"
     done = run_log(tmp_path, "pull", "agent@far")
     assert "pulled 0 new run(s)" in done.stdout and [line["id"] for line in lines(tmp_path)] == ["a", "b"]
 
@@ -177,25 +223,33 @@ def test_report_rolls_cost_and_time_up_per_site_ticket_and_axis(tmp_path: Path) 
         return {"id": str(fields), "at": "2026-09-26T10:00:00Z", "repo": "agents", "ticket": "", "axis": "",
                 "cost_usd": 0.5, "duration_s": 120, "end": "success", **fields}
     (tmp_path / "runs.jsonl").write_text(stream(
-        line(site="worker", ticket="warm-preset", cost_usd=2.0, duration_s=600),
-        line(site="review", ticket="warm-preset", axis="tests", duration_s=300),
-        line(site="review", ticket="warm-preset", axis="spec"),
-        line(site="review", ticket="warm-preset", axis="tests", cost_usd=None, end="no result", at="2026-09-20T10:00:00Z"),
-        line(site="briefing", repo="lamp"),
-    ))
+        line(site="worker", ticket="warm-preset", cost_usd=2.0, duration_s=600, model="opus", effort="high"),
+        line(site="review", ticket="warm-preset", axis="tests", duration_s=300, model="opus", effort="medium"),
+        line(site="review", ticket="warm-preset", axis="spec", model="opus", effort="medium"),
+        line(site="review", ticket="warm-preset", axis="tests", cost_usd=None, end="no result", at="2026-09-20T10:00:00Z", model="opus", effort="high"),
+        line(site="briefing", repo="lamp", model="opus", effort="medium"),
+    ) + "{half a line\n")
     done = run_log(tmp_path, "report", "--json")
     assert done.returncode == 0, done.stderr
+    assert "1 line(s)" in done.stderr and "could not be read" in done.stderr
     rows = json.loads(done.stdout)
-    assert {r["key"]: (r["runs"], r["cost_usd"], r["minutes"]) for r in rows["by_site"]} == {
-        "worker": (1, 2.0, 10), "review": (3, 1.0, 9), "briefing": (1, 0.5, 2)}
+    assert {r["key"]: (r["runs"], r["cost_usd"], r["minutes"], r["mean_minutes"]) for r in rows["by_site"]} == {
+        "worker": (1, 2.0, 10, 10), "review": (3, 1.0, 9, 3.0), "briefing": (1, 0.5, 2, 2)}
     assert {r["key"]: (r["runs"], r["no_result"]) for r in rows["by_axis"]} == {"tests": (2, 1), "spec": (1, 0)}
     assert [r["key"] for r in rows["by_ticket"]] == ["warm-preset"]
+    assert {r["key"]: r["runs"] for r in rows["by_effort"]} == {"worker opus high": 1, "review opus medium": 2, "review opus high": 1, "briefing opus medium": 1}
     rows = json.loads(run_log(tmp_path, "report", "--json", "--since", "2026-09-25", "--repo", "agents").stdout)
     assert {r["key"]: r["runs"] for r in rows["by_site"]} == {"worker": 1, "review": 2}
+    rows = json.loads(run_log(tmp_path, "report", "--json", "--site", "review").stdout)
+    assert [r["key"] for r in rows["by_site"]] == ["review"] and {r["key"] for r in rows["by_axis"]} == {"tests", "spec"}
     table = run_log(tmp_path, "report").stdout
-    assert "by_site" in table and "warm-preset" in table and "tests" in table
+    assert "by_site" in table and "warm-preset" in table and "tests" in table and "review opus medium" in table
 
 
 def test_report_with_nothing_logged_says_so(tmp_path: Path) -> None:
     done = run_log(tmp_path, "report")
     assert done.returncode == 1 and "no runs logged" in done.stderr
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-q"]))

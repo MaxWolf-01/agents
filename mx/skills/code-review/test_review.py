@@ -270,6 +270,10 @@ def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     ticketed(repo)
 
     done = run(repo, "--axes", "spec", "--spec", "lamp-presets")
+    # `run-log`: the axis's line names the ticket the spec came from, and the range it read
+    (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["axis"], logged["ticket"]) == ("review", "spec", "lamp-presets")
+    assert logged["range"] and ".." in logged["range"]
 
     assert done.returncode == 0, done.stderr
     assembled = (review_dir(repo) / "ticket.md").read_text()

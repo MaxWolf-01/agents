@@ -247,6 +247,13 @@ def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy:
     assert git(toy / "agent", "branch", "--show-current").strip() == "main", "on the branch it had out"
 
 
+def stage_runner(state: Path) -> None:
+    """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+
+
 @pytest.fixture
 def staged(toy: Path) -> Path:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
@@ -528,9 +535,7 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     reads is whether this run wrote that file, never whether the file is there."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
@@ -573,9 +578,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -607,9 +610,7 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
     error turns. The worklog's first line names the launcher's version."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work it.\n")
     session = "5e55-10n"
     project = tmp_path / "profile" / "projects" / "-toy"
@@ -655,9 +656,7 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
         pytest.skip("no user systemd manager here, and the runner says so in the worklog instead")
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work it.\n")
     left = tmp_path / "left.pid"
     bin_dir = tmp_path / "bin"
@@ -688,9 +687,7 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     `report=no` with nothing saying why."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -704,6 +701,64 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     )
     assert "no agent repo at" in (state / "run-1.log").read_text()
     assert "report=no" in (state / "run-1.status").read_text()
+
+
+def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> None:
+    """Every attempt runs through run-log, so a staging that lacks it is said on the status line
+    rather than run unlogged."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (state / "run-log").unlink()
+    (tmp_path / "message.md").write_text("Work it.\n")
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path)})
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+
+
+def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
+    """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
+    cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
+    machine's log itself."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    theirs = remote / "logs" / "agent" / "runs.jsonl"
+    theirs.parent.mkdir(parents=True)
+    theirs.write_text('{"id": "r1", "at": "2026-09-27T10:00:00Z", "site": "worker"}\n{"id": "r2", "at": "2026-09-27T10:05:00Z", "site": "review"}\n')
+    mine = toy.parent / "home" / "logs" / "agent" / "runs.jsonl"
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "pulled 2 new run(s) from agent@far" in fetched.stdout
+    assert [json.loads(l)["id"] for l in mine.read_text().splitlines()] == ["r1", "r2"]
+
+    theirs.write_text(theirs.read_text() + '{"id": "r3", "at": "2026-09-27T10:09:00Z", "site": "worker"}\n')
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "pulled 1 new run(s)" in cleaned.stdout
+    assert [json.loads(l)["id"] for l in mine.read_text().splitlines()] == ["r1", "r2", "r3"]
+
+    # the host's log unreadable: the fetch still lands, and says the pull is to try again
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    theirs.unlink()
+    theirs.mkdir()
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
+    subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "pulled" not in fetched.stdout + fetched.stderr
 
 
 def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: Path) -> None:

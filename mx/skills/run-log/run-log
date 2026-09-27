@@ -2,15 +2,19 @@
 # One line per model run the workflow starts, and what those lines add up to.
 #
 # Usage: run-log run --site <site> [--ticket <slug>] [--axis <axis>] [--attempt <n>]
-#                    [--json] -- claude <args...>
+#                    [--range <a..b>] [--timeout <secs>] [--json] -- claude <args...>
 #        run-log pull <user@host>
 #        run-log report [--since <YYYY-MM-DD>] [--repo <name>] [--site <site>] [--json]
-#   run     runs the `claude` command line after `--` with `--output-format
-#           stream-json` added, prints what the model answered, exits with
-#           claude's status, and appends one line to the log. --site names
-#           the call site (worker, review, briefing, change-summary); the
-#           repo is read off the working directory's git dir, the model and
-#           effort off the command line, the rest off what claude reported.
+#        run-log needs
+#   run     runs the `claude` command line after `--` with `--verbose
+#           --output-format stream-json` added, prints what the model answered,
+#           exits with claude's status, and appends one line to the log. --site
+#           names the call site (worker, review, briefing, change-summary,
+#           chat-review); the repo is read off the working directory's git
+#           dir, the model and effort off the command line, the rest off what
+#           claude reported. --range is the commit range a review ran over.
+#           --timeout ends the run after that many seconds as TERM does, so
+#           the line is still written and claude is not left running.
 #           --json prints claude's own result object instead of the answer
 #           text, for a caller that reads the session id or the cost itself.
 #           A run that ends without a result (killed, crashed, cut off) still
@@ -18,36 +22,40 @@
 #           the messages that did arrive, and `cost_usd` is null.
 #   pull    appends the lines a worker host's log holds that this one does
 #           not, by id, reading the same path there over ssh.
-#   report  cost, time and runs per site, per ticket and per review axis,
-#           over the lines --since and --repo and --site keep; --json prints
-#           the rows as one JSON array instead of a table.
+#   report  cost, time and runs per site, per ticket, per review axis and per
+#           model and effort, over the lines --since, --repo and --site keep;
+#           --json prints the rows as one JSON object instead of tables. Cost
+#           is summed over the runs that reported one; `no_result` counts the
+#           runs that did not. A line no reader can read is counted on stderr.
+#   needs   prints the commands this script runs, one per line, for a check
+#           of a host or a test's PATH.
 #
 # The line, one JSON object:
 #   id        this run's own id (a uuid), what `pull` deduplicates on
 #   at        when the run started, UTC
-#   site, repo, ticket, axis, attempt, host   where it ran and for what
+#   site, repo, ticket, axis, attempt, range, host   where it ran and for what
 #   model, effort                             what was asked for
 #   session   the Claude Code session id, which names the transcript
 #   ran       the models that answered, canonical names
 #   cost_usd, duration_s, api_s, turns        what claude's result reported;
 #                                             duration_s is this script's clock
 #   tokens    {input, output, cache_read, cache_write}
-#   exit      claude's exit status, or `stopped` for a run ended by TERM
+#   exit      claude's exit status, `stopped` for a run ended by TERM or an
+#             interrupt, `timeout` for one --timeout ended
 #   end       claude's result subtype (success, error_max_turns, ...), or
 #             `no result`
 #
 # Env:
 #   RUN_LOG   the log file; ~/logs/agent/runs.jsonl unless set. `pull` reads
 #             the same path on the host.
-# Needs `jq`, and `uuidgen` or /proc/sys/kernel/random/uuid.
+# Needs: bash jq git hostname realpath basename dirname mktemp date cat grep tail sed wc mkdir rm tee touch column ssh timeout kill
 set -u
 
 log=${RUN_LOG:-$HOME/logs/agent/runs.jsonl}
 
 die() { echo "run-log: $1" >&2; exit 1; }
 help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
-
-uuid() { cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen; }
+needs() { sed -n 's/^# Needs: //p' "${BASH_SOURCE[0]}" | tr ' ' '\n'; }
 
 # The repo's name off the common git dir: <repo>/.git in a checkout, <repo>.git
 # in a bare repo whose worktree this is (a worker host's), the same rule
@@ -61,13 +69,15 @@ repo_name() {
 }
 
 run() {
-    local site= ticket= axis= attempt= json=
+    local site= ticket= axis= attempt= range= timeout= json=
     while [ $# -gt 0 ]; do
         case $1 in
             --site)    site=${2:-};    shift 2 ;;
             --ticket)  ticket=${2:-};  shift 2 ;;
             --axis)    axis=${2:-};    shift 2 ;;
             --attempt) attempt=${2:-}; shift 2 ;;
+            --range)   range=${2:-};   shift 2 ;;
+            --timeout) timeout=${2:-}; [[ $timeout =~ ^[1-9][0-9]*$ ]] || die "--timeout takes a whole number of seconds"; shift 2 ;;
             --json)    json=1; shift ;;
             --) shift; break ;;
             *) die "unknown argument to run: $1 (the claude command line goes after --)" ;;
@@ -87,30 +97,35 @@ run() {
         esac
     done
 
-    local id at t0 raw rc stopped= child
-    id=$(uuid)
+    local id at t0 raw rc ended= child
+    id=$(cat /proc/sys/kernel/random/uuid)
     at=$(date -u +%FT%TZ)
     t0=$(date +%s)
     raw=$(mktemp)
-    # TERM ends the run as `dispatch-ctl stop` does: claude gets it too, the
-    # line then says `stopped` and carries the session id a resume needs.
-    # `<&0`: a background command in a script reads /dev/null unless its stdin
-    # is redirected, and the caller's stdin is the worker's message.
-    trap 'stopped=1; kill -TERM "$child" 2>/dev/null' TERM
-    "$@" --output-format stream-json > "$raw" <&0 &
+    # `timeout` wraps claude itself and sends it TERM at the limit, so nothing
+    # of this script's is left holding the caller's pipes afterwards.
+    [ -z "$timeout" ] || set -- timeout "$timeout" "$@"
+    # TERM ends the run as `dispatch-ctl stop` does, and an interrupt the same
+    # way: claude gets TERM, the line then says `stopped` and carries the
+    # session id a resume needs. `<&0`: a background command in a script reads
+    # /dev/null unless its stdin is redirected, and the caller's stdin is the
+    # worker's message.
+    trap 'ended=stopped; kill -TERM "$child" 2>/dev/null' TERM INT
+    "$@" --verbose --output-format stream-json > "$raw" <&0 &
     child=$!
     wait "$child"
     rc=$?
     # A second wait, in case the trap interrupted the first before the child ended.
     wait "$child" 2>/dev/null
-    trap - TERM
+    trap - TERM INT
+    [ -n "$timeout" ] && [ "$rc" -eq 124 ] && [ -z "$ended" ] && ended=timeout
 
     local line
     line=$(jq -R -s -c \
         --arg id "$id" --arg at "$at" --arg site "$site" --arg repo "$(repo_name)" \
-        --arg ticket "$ticket" --arg axis "$axis" --arg attempt "$attempt" \
+        --arg ticket "$ticket" --arg axis "$axis" --arg attempt "$attempt" --arg range "$range" \
         --arg host "$(hostname -s)" --arg model "$model" --arg effort "$effort" \
-        --arg exit "${stopped:+stopped}" --arg rc "$rc" --argjson duration "$(( $(date +%s) - t0 ))" '
+        --arg ended "$ended" --arg rc "$rc" --argjson duration "$(( $(date +%s) - t0 ))" '
         split("\n") | map(fromjson? // empty) as $events
         | ($events | map(select(.type == "system" and .subtype == "init")) | first) as $init
         | ($events | map(select(.type == "result")) | last) as $res
@@ -120,9 +135,9 @@ run() {
         | {
             id: $id, at: $at, site: $site, repo: $repo, ticket: $ticket, axis: $axis,
             attempt: (if $attempt == "" then null else ($attempt | tonumber) end),
-            host: $host, model: $model, effort: $effort,
+            range: $range, host: $host, model: $model, effort: $effort,
             session: ($res.session_id // $init.session_id),
-            ran: (if $res.modelUsage then [$res.modelUsage[] | .canonicalModel] | unique
+            ran: (if $res.modelUsage then [$res.modelUsage | to_entries[] | .value.canonicalModel // .key] | unique
                   else [$msgs[].model | select(. != "<synthetic>")] | unique end),
             cost_usd: $res.total_cost_usd,
             duration_s: $duration,
@@ -135,7 +150,7 @@ run() {
                 cache_creation_input_tokens: ([$msgs[].usage.cache_creation_input_tokens] | add)
               }) | {input: (.input_tokens // 0), output: (.output_tokens // 0),
                     cache_read: (.cache_read_input_tokens // 0), cache_write: (.cache_creation_input_tokens // 0)}),
-            exit: (if $exit == "stopped" then "stopped" else ($rc | tonumber) end),
+            exit: (if $ended != "" then $ended else ($rc | tonumber) end),
             end: ($res.subtype // "no result")
           }' "$raw")
     mkdir -p "$(dirname "$log")"
@@ -150,7 +165,7 @@ run() {
     # printed an error instead would have shown.
     if jq -e 'select(.type == "result")' "$raw" > /dev/null 2>&1; then
         if [ -n "$json" ]; then
-            jq -c 'select(.type == "result")' "$raw" | tail -1
+            jq -c -s '[.[] | select(.type == "result")] | last' "$raw"
         else
             jq -r -s '[.[] | select(.type == "result")] | last | .result // "" | rtrimstr("\n")' "$raw"
         fi
@@ -158,7 +173,10 @@ run() {
         grep -v '^{"type":' "$raw"
     fi
     rm -f "$raw"
-    [ -n "$stopped" ] && return 143
+    case $ended in
+        stopped) return 143 ;;
+        timeout) return 124 ;;
+    esac
     return "$rc"
 }
 
@@ -191,6 +209,9 @@ report() {
         esac
     done
     [ -s "$log" ] || die "no runs logged at $log"
+    local unread
+    unread=$(jq -R 'fromjson? // "unread"' "$log" | grep -c '^"unread"$')
+    [ "$unread" -eq 0 ] || echo "report: $unread line(s) of $log could not be read and are left out" >&2
     local rows
     rows=$(jq -c -R -s --arg since "$since" --arg repo "$repo" --arg site "$site" '
         split("\n") | map(fromjson? // empty)
@@ -205,14 +226,15 @@ report() {
         {
           by_site: rollup(.site),
           by_ticket: (map(select(.ticket != "")) | rollup(.ticket)),
-          by_axis: (map(select(.axis != "")) | rollup(.axis))
+          by_axis: (map(select(.axis != "")) | rollup(.axis)),
+          by_effort: rollup("\(.site) \(.model) \(.effort)")
         }' "$log")
     if [ -n "$json" ]; then
         printf '%s\n' "$rows"
         return
     fi
     local group
-    for group in by_site by_ticket by_axis; do
+    for group in by_site by_ticket by_axis by_effort; do
         printf '%s\n' "$rows" | jq -r --arg g "$group" '
             .[$g] | select(length > 0)
             | (["\($g)", "runs", "cost_usd", "minutes", "mean_min", "no_result"] | @tsv),
@@ -225,6 +247,7 @@ case ${1:-} in
     run)    shift; run "$@" ;;
     pull)   shift; pull "$@" ;;
     report) shift; report "$@" ;;
+    needs)  needs ;;
     -h|--help|"") help ;;
     *) die "unknown command: $1" ;;
 esac

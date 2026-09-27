@@ -2,6 +2,7 @@
 demo tracker built once per run, and a PATH the board's optional tools are absent from."""
 
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -14,10 +15,10 @@ import board  # noqa: E402
 import briefing  # noqa: E402
 from demo_tracker import Demo, build  # noqa: E402
 
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
 # What a check may still need: the repo, a script's own run, a browser, and what `run-log` wraps a
-# model run with.
-KEPT = ("git", "uv", "chromium", "bash", "jq", "hostname", "realpath", "basename", "dirname", "mktemp",
-        "date", "cat", "grep", "tail", "mkdir", "rm", "sed", "wc", "tee", "touch", "column")
+# model run with, which it names itself.
+KEPT = tuple(dict.fromkeys(("git", "uv", "chromium", *subprocess.run([str(RUN_LOG), "needs"], capture_output=True, text=True, check=True).stdout.split())))
 
 
 @pytest.fixture(scope="session")

@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from change_summary import CATALOGUE, Failure, artifact_rules
 
 SHIM = Path(__file__).resolve().parents[2] / "bin" / "change-summary"
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
 
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
 n=$(( $(cat "$FAKE_DIR/calls" 2>/dev/null || echo 0) + 1 ))
@@ -217,8 +218,8 @@ def test_a_failed_model_call_fails_with_its_reason(claude: Claude) -> None:
 def test_no_claude_on_path_fails_with_its_reason(claude: Claude) -> None:
     tools = claude.dir.parent / "tools"
     tools.mkdir()
-    for tool in ("bash", "uv", "readlink", "dirname", "jq", "hostname", "realpath", "basename", "mktemp", "date",
-                 "cat", "grep", "tail", "mkdir", "rm", "tee", "wc", "sed", "git"):
+    needs = subprocess.run([str(RUN_LOG), "needs"], capture_output=True, text=True, check=True).stdout.split()
+    for tool in ("uv", "readlink", *needs):  # the shim's own, then run-log's, and no claude
         (tools / tool).symlink_to(shutil.which(tool))
     claude.path = str(tools)
     done = run(claude)
@@ -229,7 +230,8 @@ def test_no_claude_on_path_fails_with_its_reason(claude: Claude) -> None:
 def test_a_diff_that_is_not_utf8_still_reaches_the_model(claude: Claude) -> None:
     claude.replies("A paragraph.")
     done = subprocess.run([str(SHIM)], input=DIFF.replace("world", "w\xf6rld").encode("latin-1"),
-                          capture_output=True, timeout=120, env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir)})
+                          capture_output=True, timeout=120,
+                          env={**os.environ, "PATH": claude.path, "FAKE_DIR": str(claude.dir), "RUN_LOG": str(claude.dir / "runs.jsonl")})
     assert (done.returncode, done.stdout) == (0, b"A paragraph.\n")
     assert "w\ufffdrld" in claude.stdin()
 

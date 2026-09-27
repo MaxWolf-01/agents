@@ -76,11 +76,11 @@ def ask(model: str, effort: str, system: str, prompt: str) -> str:
     with tempfile.TemporaryDirectory() as empty:
         try:
             proc = subprocess.run(
-                [str(RUN_LOG), "run", "--site", "change-summary", "--",
+                [str(RUN_LOG), "run", "--site", "change-summary", "--timeout", "600", "--",
                  "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
-                input=prompt, capture_output=True, text=True, timeout=600, cwd=empty,
+                input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
                 env={**os.environ, "CLAUDECODE": ""},
             )
         except (OSError, subprocess.TimeoutExpired) as e:
