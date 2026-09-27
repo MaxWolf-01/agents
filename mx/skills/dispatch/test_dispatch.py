@@ -190,6 +190,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
+    env.pop("DISPATCH_EFFORT", None)
     env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
     return env
 
@@ -317,6 +318,36 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
     assert asked.index("update") < asked.index("worker starts")
     assert f"claude={'2.1.243' if fails else '2.1.283'}" in said.stdout, said.stdout
     assert ("claude update failed" in said.stderr) == fails, said.stderr
+
+
+def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
+    """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
+    when the orchestrator says nothing, and it reaches the runner with the permission mode."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    def logs() -> str:
+        return "".join(p.read_text() for p in state.glob("*.log"))
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    env = environment(toy)
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+
+    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    waited(toy)
+    assert said.returncode == 0, said.stderr
+    assert "model=sonnet  effort=high" in said.stdout, said.stdout
+    assert "stub: built warm-preset at high" in logs()
+
+    said = subprocess.run([str(staged), "ctl", "spawn", "warm-preset", "sonnet", "--effort", "low"],
+                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    for _ in range(60):
+        if "at low" in logs():
+            break
+        time.sleep(0.5)
+    assert said.returncode == 0, said.stderr
+    assert "effort=low" in said.stdout, said.stdout
+    assert "stub: built warm-preset at low" in logs()
 
 
 def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, staged: Path) -> None:
@@ -535,6 +566,32 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     assert "runner: started warm-preset" in (state / "run-1.log").read_text()
 
 
+@pytest.mark.parametrize("given", ["", "low"])
+def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, given: str) -> None:
+    """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs
+    at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
+    state = tmp_path / "state"
+    state.mkdir()
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    env.pop("DISPATCH_EFFORT", None)
+    if given:
+        env["DISPATCH_EFFORT"] = given
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+
+    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
+    assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
+
+
 @pytest.mark.parametrize("resumed", [False, True])
 def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
     """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
@@ -578,7 +635,7 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
     )
     status = (state / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
-    assert "on opus with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
+    assert "on opus at high effort with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
 
 
 def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> None:
@@ -749,7 +806,7 @@ def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) ->
 def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path, staged: Path) -> None:
     """A resume hands the worker its old session id, which only the harness that made it knows."""
     replacement = toy.parent / "replacement.sh"
-    replacement.write_text(RUNNER.replace("stub: built", "replacement: built"))
+    replacement.write_text(RUNNER.replace("printf 'stub: built %s\\n' \"$slug\"", "printf 'replacement: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n",
                  env=environment(toy, DISPATCH_RUNNER=str(replacement))).returncode == 0
@@ -758,11 +815,16 @@ def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path,
 
     subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="continue\n", text=True, check=True,
                    env=environment(toy))
-    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
+    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet", "--effort", "low"],
                              cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
     assert resumed.returncode == 0, resumed.stderr
+    assert "effort=low" in resumed.stdout, resumed.stdout
     (log,) = set(state.glob("*.log")) - before
-    assert "replacement: built warm-preset" in log.read_text()
+    for _ in range(60):
+        if "at low" in log.read_text():
+            break
+        time.sleep(0.5)
+    assert "replacement: built warm-preset at low" in log.read_text(), "a resume takes --effort as a spawn does"
 
 
 def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy: Path, staged: Path) -> None:

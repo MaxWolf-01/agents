@@ -91,7 +91,7 @@ def claude(tmp_path: Path) -> Claude:
 
 
 def run(claude: Claude, diff: str = DIFF, *args: str, **env: str) -> subprocess.CompletedProcess:
-    base = {k: v for k, v in os.environ.items() if k != "CHANGE_SUMMARY_MODEL"}
+    base = {k: v for k, v in os.environ.items() if k not in ("CHANGE_SUMMARY_MODEL", "CHANGE_SUMMARY_EFFORT")}
     return subprocess.run(
         [str(SHIM), *args], input=diff, capture_output=True, text=True, timeout=120,
         cwd=claude.dir.parent, env={**base, "PATH": claude.path, "FAKE_DIR": str(claude.dir), **env},
@@ -164,15 +164,16 @@ def test_a_catalogue_with_no_artifact_rules_fails() -> None:
         artifact_rules(FIXTURE.replace("`both`", "`chat`").replace("`artifact`", "`chat`"))
 
 
-def test_opus_by_default_and_the_flag_beats_the_environment(claude: Claude) -> None:
+def test_opus_at_medium_by_default_and_the_flag_beats_the_environment(claude: Claude) -> None:
     claude.replies("A paragraph.")
     run(claude)
-    assert claude.flag("--model") == "opus"
-    for n, (args, env) in enumerate([((), {"CHANGE_SUMMARY_MODEL": "haiku"}),
-                                     (("--model", "sonnet"), {"CHANGE_SUMMARY_MODEL": "haiku"})], 2):
+    assert (claude.flag("--model"), claude.flag("--effort")) == ("opus", "medium")
+    for n, (args, env) in enumerate([((), {"CHANGE_SUMMARY_MODEL": "haiku", "CHANGE_SUMMARY_EFFORT": "low"}),
+                                     (("--model", "sonnet", "--effort", "high"), {"CHANGE_SUMMARY_MODEL": "haiku", "CHANGE_SUMMARY_EFFORT": "low"})], 2):
         (claude.dir / f"reply.{n}").write_text("A paragraph.")
         run(claude, DIFF, *args, **env)
     assert (claude.flag("--model", 2), claude.flag("--model", 3)) == ("haiku", "sonnet")
+    assert (claude.flag("--effort", 2), claude.flag("--effort", 3)) == ("low", "high")
 
 
 def test_a_paragraph_at_the_cap_is_kept(claude: Claude) -> None:
@@ -183,10 +184,11 @@ def test_a_paragraph_at_the_cap_is_kept(claude: Claude) -> None:
 
 def test_a_paragraph_past_the_cap_is_asked_for_again(claude: Claude) -> None:
     claude.replies(words(151), "A shorter paragraph.")
-    done = run(claude)
+    done = run(claude, DIFF, "--model", "sonnet", "--effort", "low")
     assert (done.returncode, done.stdout, claude.calls) == (0, "A shorter paragraph.\n", 2)
     assert claude.stdin(2).startswith(DIFF) and "151 words" in claude.stdin(2)
     assert claude.flag("--system-prompt", 2) == claude.flag("--system-prompt", 1)
+    assert (claude.flag("--model", 2), claude.flag("--effort", 2)) == ("sonnet", "low"), "the retry dropped the caller's model or effort"
 
 
 def test_a_paragraph_still_past_the_cap_after_the_retry_fails_with_it_on_stderr(claude: Claude) -> None:

@@ -10,6 +10,7 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
+#   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
 set -u
 
 message=$1
@@ -18,6 +19,7 @@ model=$3
 run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
+effort=${DISPATCH_EFFORT:-high}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
@@ -66,8 +68,8 @@ models() {
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 claude_version=$(claude --version 2> /dev/null | cut -d' ' -f1)
-printf '%s runner: started %s on %s with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
-    "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
+printf '%s runner: started %s on %s at %s effort with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
+    "$effort" "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
 git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
@@ -91,6 +93,7 @@ common=(
     -p
     --permission-mode "$permission_mode"
     --model "$model"
+    --effort "$effort"
     --settings "$settings"
     --append-system-prompt "$(cat "$prompt_file")"
 )

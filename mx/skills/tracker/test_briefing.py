@@ -150,7 +150,7 @@ def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
     assert CADENCE == timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)
     assert CADENCE < IDLE, "a session retires before it can be pinged, so the cap is unreachable"
-    assert (MODEL, EFFORT) == ("claude-opus-5-5", "medium")
+    assert (MODEL, EFFORT) == ("opus", "medium")
 
 
 def answered(said: str) -> str:
