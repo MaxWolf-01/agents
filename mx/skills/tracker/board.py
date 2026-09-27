@@ -706,6 +706,7 @@ class Ticket:
     path: Path  # the ticket file this row was read from
     brief: str = ""  # the ## Brief section, as inline HTML
     questions: list["Question"] = field(default_factory=list)  # its ## Questions, ruled ones included
+    freed: list[str] = field(default_factory=list)  # blockers not done that hold it back no longer (tracker.frees)
     hinge: bool = False  # a child ticket the user rules on alone, before anything builds on it
     under: str | None = None  # the parent ticket whose row this one folds under (board.folded)
 
@@ -717,8 +718,9 @@ def load_tickets(root: Path, repo: Path | None, diffviews: Diffviews) -> list[Ti
     checkout, claims and review flips included, so nothing of a build in flight is anywhere else.
     """
     read = parsed(root)
-    under = folded(read)
-    tickets = [shown(one, read, repo, diffviews, under.get(one.slug)) for one in read.tickets.values()]
+    checked = toplevel(root) is not None  # a tracker in no checkout has merged nothing
+    under = folded(read, checked)
+    tickets = [shown(one, read, repo, diffviews, under.get(one.slug), checked) for one in read.tickets.values()]
     ids = [slug_id(one.slug) for one in tickets]
     assert len(ids) == len(set(ids)), f"slugs collide as mermaid ids: {sorted(ids)}"
     return sorted(tickets, key=lambda one: one.slug)
@@ -733,14 +735,14 @@ def parsed(root: Path) -> "tracker.Tracker":
     return read
 
 
-def folded(read: "tracker.Tracker") -> dict[str, str]:
+def folded(read: "tracker.Tracker", checked: bool) -> dict[str, str]:
     """The rows that fold under their parent ticket's row, each to that parent's slug. Every child
     of a parent at its close-out does, since the user rules on the parent whole with them. Under a
     parent still being built, each child in review that is no hinge and is merged into the
     parent's branch does, since it waits for that close-out, not on the user. Whether it merged is
-    read in the code repo the tracker plans, wherever the board runs from."""
+    read in the code repo the tracker plans, wherever the board runs from, and only where the
+    tracker is `checked` in, since a tracker in no checkout has merged nothing."""
     code = project(read.root)
-    checked = toplevel(read.root) is not None
 
     def merged(one: "tracker.Ticket") -> bool:
         return checked and one.status == "review" and not one.hinge and tracker.merged_under_parent(one, read, code)
@@ -765,16 +767,22 @@ def tree_of(slug: str, tickets: dict[str, "tracker.Ticket"]) -> str:
 
 def shown(
     read: "tracker.Ticket", whole: "tracker.Tracker", repo: Path | None, diffviews: Diffviews,
-    under: str | None,
+    under: str | None, checked: bool,
 ) -> Ticket:
     """One ticket as the board shows it: what its file says, plus the status derived from what it
     waits on, and the review page and sessions beside it. An open ticket is blocked while a
-    blocker the board can see holds it back, as the frontier reads it (tracker.frees)."""
+    blocker the board can see holds it back, as the frontier reads it (tracker.frees), with what
+    merged read in the code repo the tracker plans, wherever the board runs from. In a tracker
+    that is not `checked` in, where nothing has merged, only a done blocker frees it."""
     assert_safe_name(read.slug)
     tickets = whole.tickets
     blocked_by = [(ref, ref_status(ref, tickets)) for ref in read.blocked_by]
+    freed = [
+        ref for ref, state in blocked_by if state != "done" and ref in tickets and checked
+        and tracker.frees(tickets[ref], read, whole, project(whole.root))
+    ]
     status = read.status
-    if status == "open" and any(ref in tickets and not frees(tickets[ref], read, whole) for ref in read.blocked_by):
+    if status == "open" and any(state != "done" and ref not in freed for ref, state in blocked_by):
         status = "blocked"
     worked = ticket_sessions(read.path, repo)
     return Ticket(
@@ -785,6 +793,7 @@ def shown(
         parent=read.parent,
         tree=tree_of(read.slug, tickets),
         blocked_by=blocked_by,
+        freed=freed,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
         body_html=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked),
         diffview=diffviews.link(diffviews.root, f"{read.slug}.html"),
@@ -796,15 +805,6 @@ def shown(
         hinge=read.hinge,
         under=under,
     )
-
-
-def frees(blocker: "tracker.Ticket", ticket: "tracker.Ticket", whole: "tracker.Tracker") -> bool:
-    """tracker.frees, with what merged read in the code repo the tracker plans, wherever the board
-    runs from. A tracker in no checkout has merged nothing, so there nothing merged frees a ticket."""
-    try:
-        return tracker.frees(blocker, ticket, whole, project(whole.root))
-    except tracker.Refused:
-        return False
 
 
 def ref_status(ref: str, tickets: dict[str, "tracker.Ticket"]) -> str:
@@ -869,7 +869,7 @@ def content_stamp(
     key = repr((
         project,
         [(t.slug, t.title, t.status, t.needs_user, t.parent, t.tree, t.blocked_by, t.gh, t.body_html,
-          t.diffview, t.path, t.priority, t.size, t.brief, t.questions, t.hinge, t.under) for t in tickets],
+          t.diffview, t.path, t.priority, t.size, t.brief, t.questions, t.freed, t.hinge, t.under) for t in tickets],
         log,
         sorted(gh.states.items()),
         gh.missing,
@@ -1366,14 +1366,16 @@ def sort_key(t: Ticket) -> tuple:
     return (t.priority, SIZE_RANK[t.size], t.title.lower())
 
 
-def dep_chips(refs: list[tuple[str, str]]) -> str:
-    return "".join(blocker_chip(ref, status, ref_anchor(ref)) for ref, status in refs)
+def dep_chips(refs: list[tuple[str, str]], freed: Sequence[str] = ()) -> str:
+    return "".join(blocker_chip(ref, status, ref_anchor(ref), ref in freed) for ref, status in refs)
 
 
-def blocker_chip(ref: str, status: str, href: str) -> str:
-    done = "done" if status == "done" else "not done yet"
+def blocker_chip(ref: str, status: str, href: str, freed: bool = False) -> str:
+    said = (f"Builds on {html.escape(ref)}, in review and merged into the parent ticket's branch: "
+            "this can start before you rule on it." if freed
+            else f"Waits on {html.escape(ref)}, {'done' if status == 'done' else 'not done yet'}.")
     return (f'<a class="chip {status}" href="{html.escape(href)}" onclick="event.stopPropagation()" '
-            f'data-tip="Waits on {html.escape(ref)}, {done}.">{html.escape(ref)}</a>')
+            f'data-tip="{said}">{html.escape(ref)}</a>')
 
 
 def review_link(address: str | None) -> str:
@@ -1550,7 +1552,7 @@ def row(t: Ticket, gh: dict[str, str], kids: dict[str, list[Ticket]] | None = No
         f'{asks_tag(t)}'
         f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
         f'{hinge_tag(t)}{kin_tag(t, len(under))}{review_link(t.diffview)}{gh_links(t.gh, gh)}</span>{brief}{questions_block(t)}</span>'
-        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{dep_chips(t.blocked_by)}</span></span>'
+        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{dep_chips(t.blocked_by, t.freed)}</span></span>'
         f'</summary>{inner}<div class="body">{t.body_html}</div></details>'
     )
 

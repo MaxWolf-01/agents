@@ -2455,8 +2455,13 @@ def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blo
     git(repo, "checkout", "-q", "main")
     assert load(tracker)["after-built"].status == "open"
     assert "t-after-built" in rows_in(page_of(tracker), "open")
+    assert "in review and merged into the parent ticket's branch" in rows_of(page_of(tracker))["t-after-built"], (
+        "the chip of a blocker that frees it says so, rather than that the row still waits"
+    )
     ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
     assert load(tracker)["after-built"].status == "blocked", "a hinge frees nothing before its accept"
+    ticket(tracker / "built.md", "done", parent=TREE, blocked_by=["first"], hinge=True)
+    assert load(tracker)["after-built"].status == "open", "a hinge accepted frees what waited on it"
 
 
 def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo: Demo) -> None:

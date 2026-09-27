@@ -266,8 +266,10 @@ def merged_under_parent(child: Ticket, tracker: Tracker, start: Path | None = No
     parent's branch or, in a repo holding none, the branch it has out. Every repo, since a round
     that built in one repo alone leaves its branch in the other unmoved, which reads as merged.
     `start` is where the code repo is looked for (repos_of)."""
+    if child.status != "review" or not child.parent:
+        return False
     repos = repos_of(tracker, start)
-    if child.status != "review" or not child.parent or not parent_branch(repos[0], child.parent):
+    if not parent_branch(repos[0], child.parent):
         return False
     for top in repos:
         own = branch_of(top, child, tracker)
