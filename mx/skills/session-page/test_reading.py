@@ -105,6 +105,27 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
 
 
+def test_a_message_another_session_sent_is_on_no_turn(worked_example: Path, transcript: Path, tmp_path: Path) -> None:
+    """session-page-pairs-only-the-users-messages: another session's message, delivered mid-turn
+    in turn 4 as a queued command and between turns as a user entry, wrapped as Claude Code wraps
+    one, with no origin that says it is not the user's. The user's own messages pair as before."""
+    peer = ('<cross-session-message from="uds:/run/user/1000/cc-socks/2118235.sock" from-name="agents-d2"'
+            ' from-mode="prompting">\n{}\n</cross-session-message>')
+    entries = [
+        {"type": "attachment", "timestamp": "2026-09-23T01:05:00.000Z",
+         "attachment": {"type": "queued_command", "prompt": peer.format("ruled good to ship, dispatch both")}},
+        {"type": "user", "timestamp": "2026-09-23T01:25:00.000Z",
+         "message": {"role": "user", "content": [{"type": "text", "text": peer.format("merged, the tree is yours")}]}},
+    ]
+    t = tmp_path / "t.jsonl"
+    t.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
+    page = render_session(worked_example, t, now=NOW)
+    shown = messages_of(page)
+    assert "good to ship" not in page and "the tree is yours" not in page
+    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
+    assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
+
+
 def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_example: Path) -> None:
     """A prompt the next one starts with collapses only as a resubmission within one turn."""
     entries = [

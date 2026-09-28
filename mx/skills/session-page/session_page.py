@@ -408,7 +408,7 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
 # ---- reading the transcript -------------------------------------------------
 
 # What Claude Code writes as a user entry or a queued command that the user never typed.
-NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
+NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|cross-session-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
 
 
 def read_transcript(transcript: Path) -> list[dict]:
@@ -425,7 +425,7 @@ def read_transcript(transcript: Path) -> list[dict]:
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
     """What the user said, with when, oldest first: their own prompts and the ones they queued
     mid-turn, and none of what Claude Code writes as the user (images, task notifications, other
-    sessions' hand-backs)."""
+    sessions' hand-backs and messages)."""
     out = []
     for entry in entries:
         if entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary")):
