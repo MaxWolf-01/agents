@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, CDPSession, Page
 
-# What the protocol already undid: the body it hands over is decoded and whole.
+# Headers that no longer describe the body: the protocol hands it over decoded and whole.
 DROPPED = {"content-encoding", "content-length", "transfer-encoding"}
 
 
@@ -64,25 +64,32 @@ def intercept(context: BrowserContext, page: Page, root: Path, offline: bool) ->
 
 
 def answer(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
-    """One request paused on its way out, or its response on the way back in. A request the page
-    dropped meanwhile, by navigating away or closing, is no one's to answer."""
+    """One request paused on its way out, or its response on the way back in. A response whose body
+    the protocol will not hand over goes on as it came; a request the page
+    dropped meanwhile, by navigating away or closing, is past answering."""
     from playwright.sync_api import Error
 
     try:
         settle(cdp, paused, root, offline)
     except Error:
-        pass
+        try:
+            cdp.send("Fetch.continueRequest", {"requestId": paused["requestId"]})
+        except Error:
+            pass
 
 
 def settle(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
     request, rid = paused["request"], paused["requestId"]
     copy = root / hashlib.sha256(request["url"].encode()).hexdigest()
-    if "responseStatusCode" in paused:  # a fetch this asked to see the answer to
+    if "responseStatusCode" in paused:  # the response to a GET this let through
         status = paused["responseStatusCode"]
         headers = [h for h in paused.get("responseHeaders", []) if h["name"].lower() not in DROPPED]
-        said = cdp.send("Fetch.getResponseBody", {"requestId": rid})
-        body = base64.b64decode(said["body"]) if said["base64Encoded"] else said["body"].encode()
-        if status == 200:
+        if 300 <= status < 400:  # a redirect has no body, and its copy sends the page on the same way
+            body = b""
+        else:
+            said = cdp.send("Fetch.getResponseBody", {"requestId": rid})
+            body = base64.b64decode(said["body"]) if said["base64Encoded"] else said["body"].encode()
+        if status == 200 or 300 <= status < 400:
             keep(copy, json.dumps({"status": status, "headers": headers}).encode() + b"\n" + body)
         fulfil(cdp, rid, status, headers, body)
     elif request["method"] == "GET" and copy.exists():

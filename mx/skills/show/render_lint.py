@@ -278,7 +278,7 @@ class Args:
     settle: float = 0.25
     """Seconds between readings of the page's geometry; three that agree mean it is at rest."""
     patience: float = 20.0
-    """Seconds to wait for a page to come to rest before reporting it unmeasurable."""
+    """Seconds a page gets to load and come to rest before it is reported unmeasurable."""
     crops: Path | None = None
     """Directory for one PNG per finding, the finding's box with a margin around it."""
     cache: Path | None = None

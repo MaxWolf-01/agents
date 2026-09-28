@@ -16,8 +16,8 @@ hides its text by visibility, and not by opacity, which has no box to act on. Te
 renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
 off only what it is the containing block of, the page itself included.
 
-What the reader sees also depends on when and where the page is read: a page still moving when the
-network goes quiet is measured once it stops and reported unmeasurable when it never does; what an
+What the reader sees also depends on when and where the page is read: a page still moving once its
+requests are done is measured once it stops and reported unmeasurable when it never does; what an
 address' fragment slides under fixed chrome is no finding, while the same chrome over the top of
 the page is one; and an opaque card drawn over a text hides it, where two texts nothing covers
 collide in plain sight.
@@ -389,9 +389,9 @@ def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
     assert abs(wide - (box["w"] + 48)) <= 1 and abs(tall - (box["h"] + 48)) <= 1, (wide, tall, box)
 
 
-def test_a_page_still_moving_when_the_network_goes_quiet_is_measured_once_it_stops(tmp_path):
+def test_a_page_still_moving_once_its_requests_are_done_is_measured_once_it_stops(tmp_path):
     """The board's own failure, as one page: the labels are stacked when the requests stop and
-    apart a moment later, so a run that measures at network idle reads a collision nobody sees."""
+    apart a moment later, so a run that measures once the requests stop reads a collision nobody sees."""
     code, findings = lint(tmp_path, settles(top_at_first=10, top_at_rest=34))
     assert findings == []
     assert code == 0
@@ -465,7 +465,6 @@ def test_a_scrolling_box_cuts_nothing_off(tmp_path):
     assert code == 0
 
 
-
 class Remote:
     """A server a page loads a script from, answering until told to hang."""
 
@@ -484,6 +483,11 @@ class Remote:
             def do_GET(self) -> None:
                 if remote.hanging.is_set():
                     remote.released.wait()
+                    return
+                if self.path == "/moved.js":
+                    self.send_response(302)
+                    self.send_header("Location", "/labels.js")
+                    self.end_headers()
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/javascript")
@@ -516,6 +520,14 @@ def test_a_page_measured_from_its_copies_no_longer_waits_on_the_server_they_came
     assert kinds(findings) == ["unmeasurable"] and findings[0]["text"] == "still loading after 2s"
     code, findings = lint(tmp_path, remote.page, "--cache", str(cache), "--patience", "2")
     assert kinds(findings) == ["overlap"] and code == 1
+
+
+def test_a_script_behind_a_redirect_is_kept_with_the_redirect(tmp_path, remote):
+    moved, cache = remote.page.replace("labels.js", "moved.js"), str(tmp_path / "cache")
+    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5")
+    assert kinds(findings) == ["overlap"] and code == 1
+    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5", env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    assert kinds(findings) == ["overlap"] and code == 1, "the redirect was not kept, so the page lost its script offline"
 
 
 def test_with_the_network_cut_off_a_page_without_its_copy_is_measured_without_the_script(tmp_path, remote):

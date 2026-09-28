@@ -238,8 +238,10 @@ with sync_playwright() as pw:
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
     # the graph engine is imported by the module that runs the board, before the page loads, so by
-    # now it either failed to arrive, and nothing past this point has a script behind it, or is drawing
-    out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
+    # now it either failed to arrive, and nothing past this point has a script behind it, or is
+    # drawing. Only the two imports count: the chunks mermaid fetches while it draws are what the
+    # second load aborts.
+    out["cdn"] = not any(url.endswith(".esm.min.mjs") for url in failed)
     if not out["cdn"]:
         print(json.dumps(out))
         sys.exit()
@@ -442,11 +444,12 @@ with sync_playwright() as pw:
     # ?graph on the address, beside the row's anchor: the state the layout check measures
     page.goto(f"{page_url}?theme=night&graph=1#{ROW}")
     page.evaluate("document.fonts.ready")
-    out = {"cdn": not any("mermaid" in url or "elk" in url for url in failed),
+    out = {"cdn": not any(url.endswith(".esm.min.mjs") for url in failed),
            "ground": page.evaluate("getComputedStyle(document.body).backgroundColor"),
            "font": page.evaluate("getComputedStyle(document.getElementById('gname')).fontFamily"),
            "node": NODE}
     if not out["cdn"]:  # the board's module never ran, so nothing below has a script behind it
+        out["errors"] = errors
         print(json.dumps(out))
         sys.exit()
     page.wait_for_selector("#gfull .gsvg svg")
@@ -597,9 +600,9 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
     seen = graph_probe(out)
+    assert seen["errors"] == [], seen["errors"]
     if not seen["cdn"]:
         pytest.skip("no mermaid: the module that runs the board never ran")
-    assert seen["errors"] == [], seen["errors"]
     row = seen["node"].removeprefix("#")
 
     # what the layout matrix above assumes of its two ?graph pages
