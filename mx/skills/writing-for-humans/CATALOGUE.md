@@ -1,8 +1,8 @@
 # AI prose tells
 
-The catalogue every prose reviewer sweeps against: the Standards axis on a diff, the chat reviewer on a reply, `/mx:writing-for-humans` on a file. A rule about punctuation or formatting binds hard; every other rule is a named heuristic, so a finding cites the id, quotes the hit and names the fix rather than asserting a violation, and a documented repo standard wins where it endorses what a rule would flag. One match may be coincidence; several co-occurring is the tell.
+The catalogue every prose reviewer sweeps against: the Standards axis on a diff, the turn review on a session page's record, `/mx:writing-for-humans` on a file. A rule about punctuation or formatting binds hard; every other rule is a named heuristic, so a finding cites the id, quotes the hit and names the fix rather than asserting a violation, and a documented repo standard wins where it endorses what a rule would flag. One match may be coincidence; several co-occurring is the tell.
 
-Each rule is one block: a bullet carrying its id, its scope tag and its name, plus the lines indented under it. Ids are permanent and cited from elsewhere, so they do not run in order, and a removed rule leaves a gap. The scope tag says where the rule's fix belongs: `artifact` for text that ships in a file, `chat` for a reply the user reads, `both` where the fix improves either. One scope is selectable without reading the rest, here the rules a chat reviewer applies:
+Each rule is one block: a bullet carrying its id, its scope tag and its name, plus the lines indented under it. Ids are permanent and cited from elsewhere, so they do not run in order, and a removed rule leaves a gap. The scope tag says where the rule's fix belongs: `artifact` for text that ships in a file, `chat` for a reply the user reads, `both` where the fix improves either. One scope is selectable without reading the rest, here the rules the turn review applies:
 
 ```
 awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
