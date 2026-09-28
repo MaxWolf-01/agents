@@ -5,11 +5,10 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `agent/sessions/<session-id>/`: `session.md` (frontmatter `session` and `repo`, an
-H1 title, a `## Brief`) and one `turns/NN.md` per turn (frontmatter `date`, `answered`,
-`superseded`; an H1 headline; `## Questions`, `## Links`, `## Details`, each optional). The page
-shows the title, brief and resume command, the questions no later turn answered or superseded,
-then the turns newest first, each with the user's messages it answered, read from the transcript.
+The directory is `agent/sessions/<session-id>/`: `session.md` and one `turns/NN.md` per turn, in
+the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
+brief and resume command, the questions no later turn answered or superseded, then the turns
+newest first, each with the user's messages it answered, read from the transcript.
 
 A record that does not parse is reported as `file:line: reason` on stderr, the exit code is 1,
 and no page is written.
