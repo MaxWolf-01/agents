@@ -24,8 +24,8 @@ def worked_example(tmp_path: Path) -> Path:
 
     It sits under a project of its own (`tmp_path`, whose agent repo holds a tracker), at the path
     the hook derives from a session id, so the two seams read the same fixture. The records are
-    stamped a second apart in their own order, so the last turn's is the newest whatever way the
-    hook comes to read "written this turn".
+    stamped a second apart in their own order, so the last turn's is the newest by its modification
+    time as well as by its write call.
     """
     directory = tmp_path / SESSIONS / SESSION
     shutil.copytree(FIXTURES / "session", directory)

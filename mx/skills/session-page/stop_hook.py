@@ -51,7 +51,7 @@ IN_THE_CHAT = (
     "Move it onto the page as {record}, then reply with one line and the page's link: {page}"
 )
 OUTSIDE_WRITE = (
-    "This turn wrote {record} without the Write tool, so the page pairs no message of yours with it. "
+    "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
     "Write it again with Write, then reply with one line and the page's link: {page}"
 )
 
@@ -61,10 +61,11 @@ def decide(hook: dict, directory: Path | None) -> Decision:
 
     In a session that has a directory, a record that does not parse is sent back with the reason
     the reader gives, and nothing renders; a reply longer than CHAT_LINES with no record written
-    since the user last spoke is sent back to move the answer onto the page, or, where the turn wrote
-    its record without the Write tool, to write that record again with it; a record written this
+    since the user last spoke is sent back to move the answer onto the page; a record written this
     turn that `turn_review` finds fault with is sent back with its findings; otherwise the page
-    renders. A session with no directory, or one left alone, lets the turn end.
+    renders. A session with no directory, or one left alone, lets the turn end. Where that long
+    reply's turn wrote a record without the Write tool, the send-back names that record, to be
+    written again with Write.
 
     The answer in the chat and the review each send the agent back once per turn: a turn a Stop hook
     already continued renders a long reply, and a record reviewed since the user last spoke renders

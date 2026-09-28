@@ -271,8 +271,8 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     """stop-hook-reads-writes-from-the-transcript-only: a record counts as written this turn only by
     its write call in the transcript, as the page pairs messages. One written through the shell,
     with a long reply beside it, goes back once naming that record, to be written again with Write
-    (its D1), and the turn the Stop hook continued renders; written with Write, it carries the
-    user's message."""
+    (that ticket's D1), and the turn the Stop hook continued renders; written with Write, it carries
+    the user's message."""
     record = worked_example / "turns" / "05.md"
     record.write_text(RECORD_05)
     run(payload(worked_example, unrecorded, reply=LONG))
@@ -288,8 +288,9 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
 def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_one(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """Its D2: the page keeps a record's earliest write, so an Edit of record 04 after the user spoke
-    writes no record this turn, and the long reply goes back to be moved onto 05."""
+    """stop-hook-reads-writes-from-the-transcript-only's D2: the page keeps a record's earliest write,
+    so an Edit of record 04 after the user spoke writes no record this turn, and the long reply goes
+    back to be moved onto 05."""
     record = worked_example / "turns" / "04.md"
     record.write_text(record.read_text() + "\n- Edited this turn to answer the question.\n")
     with_write(unrecorded, "Edit", record)
