@@ -11,6 +11,9 @@ it by writing the first record.
 
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
+
+Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the hook
+took that path, and the session directory it resolved.
 """
 
 import json
@@ -34,6 +37,7 @@ class Decision:
     """What the turn's end comes to, and what the agent is sent back with."""
 
     verb: Verb
+    why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     page: str = ""  # the session page, where the verb is render
 
@@ -64,23 +68,28 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     since the page never renders one.
     """
     if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
-        return Decision("allow")
-    if directory is None or not directory.is_dir():
-        return Decision("allow")
+        return Decision("allow", "dispatched worker" if os.environ.get("DISPATCH_WORKLOG") else "print-mode session")
+    if directory is None:
+        return Decision("allow", "no project with an agent repo")
+    if not directory.is_dir():
+        return Decision("allow", "no session directory")
     try:
         session = read_session(directory, Path(hook["transcript_path"]))
     except RecordError as e:
-        return Decision("send back", f"{e}\n{UNPARSED}")
+        return Decision("send back", "record does not parse", f"{e}\n{UNPARSED}")
     reply = [line for line in (hook.get("last_assistant_message") or "").splitlines() if line.strip()]
     turn = written_this_turn(session)
     again = hook.get("stop_hook_active")
     if len(reply) > CHAT_LINES and turn is None and not again:
-        return Decision("send back", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
-    if turn is not None and turn_review.reviewed_since(session.id, session.last_said):
+        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
+    if turn is None:
+        return Decision("render", "no record written this turn", page=page(session, datetime.now()))
+    if turn_review.reviewed_since(session.id, session.last_said):
         turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
-    elif turn is not None and (said := turn_review.feedback_on(session, turn)):
-        return Decision("send back", said)
-    return Decision("render", page=page(session, datetime.now()))
+        return Decision("render", "record reviewed this turn", page=page(session, datetime.now()))
+    if said := turn_review.feedback_on(session, turn):
+        return Decision("send back", "review findings", said)
+    return Decision("render", "review found nothing", page=page(session, datetime.now()))
 
 
 def written_this_turn(session: Session) -> Turn | None:
@@ -101,6 +110,7 @@ def main() -> None:
     hook = json.load(sys.stdin)
     directory = session_directory(Path(hook["cwd"]), hook["session_id"])
     decision = decide(hook, directory)
+    turn_review.log(hook["session_id"], verb=decision.verb, why=decision.why, directory=directory and str(directory))
     if decision.verb == "render":
         (directory / PAGE).write_text(decision.page)
     elif decision.verb == "send back":
