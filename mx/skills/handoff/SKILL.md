@@ -51,4 +51,4 @@ The file is the deliverable, so the chat gets its absolute path and the pickup l
 Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
 ```
 
-For a continuation, the user runs `/clear` once they have read the file: in a project whose agent repo holds the handoff, the plugin's `SessionStart` hook hands the fresh session that line itself. A fresh `claude` started any other way is given the line by the user.
+For a continuation, tell the user the two steps once they have read the file: `/clear`, then any message (`go` will do). In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. A fresh `claude` started any other way is given the line by the user.
