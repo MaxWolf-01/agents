@@ -85,4 +85,4 @@ Loose work has no ticket to retire: its show directory and the prototypes it mad
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows. The human runs `board` and the tab follows every tracker change on its own; a session renders once, without opening a tab, after it changes tracker state, so the page on disk is current for whoever opens it next.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows. Every link on it is relative, so the page opens served from any origin and as a file. The human runs `board`, which opens it served by the diffview server over the agent repo, so a review page opened from it saves its comments; opened as a file, the board opens its review pages as files, where nothing written on them is saved. The tab follows every tracker change on its own; a session renders once, without opening a tab, after it changes tracker state, so the page on disk is current for whoever opens it next.

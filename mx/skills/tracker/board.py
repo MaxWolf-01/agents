@@ -7,8 +7,8 @@
 
 Run `board` from anywhere inside the repo: it finds the tracker the way the
 `tracker` command does (the `tickets` of the agent repo the project holds at
-`agent/`, in that repo's main checkout), renders, opens the tab, and keeps
-re-rendering until Ctrl-C. --no-watch --no-open is the
+`agent/`, in that repo's main checkout), renders, opens the tab served, and
+keeps re-rendering until Ctrl-C. --no-watch --no-open is the
 one-shot form: render the page and exit.
 
 Reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
@@ -105,13 +105,17 @@ every ticket file is written and committed in the agent repo's main checkout,
 claims and review flips included, so a build is on the board from its claim
 onward.
 
-A ticket row links its diffview review page when one has been rendered:
-agent/diffviews/<slug>.html beside the tracker. Those pages are gitignored, so the
-link appears only on the machine that rendered them. Every render asks
-`diffview --serve` for the address the pages answer on, so a click from the
-board opens a page that saves comments. A server exiting is itself a change to
-re-render on, so a watching board keeps its links live; where the pages cannot
-be served the link is the file, which the page itself says is read-only.
+Every link the page writes is relative to it, so it opens wherever the page is
+opened: served from any origin, or as a file. `board` opens the page served,
+from the diffview server over the whole agent repo (`diffview --serve
+agent/`), and while it watches it brings that server back on the same port
+whenever it exits, so an open tab keeps answering. Where no diffview is
+installed or its server does not answer, it opens the file. A ticket row links
+its diffview review page when one has been rendered: agent/diffviews/<slug>.html
+beside the tracker, gitignored, so the link appears only on the machine that
+rendered it. Served, a review page opened from the board saves the comments
+written on it; opened as a file, the board opens its review pages as files,
+read-only, and says so at the top. --no-open starts no server.
 
 Every pull request and issue the rows name is resolved in one `gh api graphql`
 query per render, GitHub giving issues and pull requests one number space per
@@ -151,11 +155,13 @@ import json
 import os
 import re
 import shlex
+import socket
 import stat
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from collections import Counter
 from itertools import takewhile
 from collections.abc import Sequence
@@ -225,7 +231,7 @@ class Args:
     repo: Path | None = None
     """Repo for the commit log and the sessions that worked on a ticket. Default: the agent repo the tracker is in, which is where a ticket file's commits are."""
     open: bool = True
-    """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window."""
+    """Open the result in the browser diffview pages open in ($DIFFVIEW_BROWSER, else xdg-open), so the board and the diffs it links share a window: at the address the diffview server over the agent repo answers on, else as the file."""
     watch: bool = True
     """Keep running and re-render whenever anything under the tracker changes, until Ctrl-C."""
 
@@ -244,12 +250,14 @@ def main(args: Args) -> None:
         render(tickets_root, repo, out)
     except tracker.Refused as refused:
         sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
+    address = None
     if args.open:
+        address = served(tickets_root.parent, out)
         browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
-        subprocess.Popen([browser, str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen([browser, address or str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if args.watch:
         try:
-            watch(tickets_root, repo, out)
+            watch(tickets_root, repo, out, address)
         except KeyboardInterrupt:
             pass
 
@@ -274,9 +282,8 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     pings the briefing session on a status that moved, and the render is where the tracker is
     already read."""
     code = project(root)
-    serve_diffviews.cache_clear()  # once per directory per render; the next render asks again, which is what revives a server
-    session_log.cache_clear()  # likewise: the sessions that committed on a ticket while the board watches
-    tickets = load_tickets(root, repo, serve_diffviews(root.parent / "diffviews"))
+    session_log.cache_clear()  # once per render: the sessions that committed on a ticket while the board watches
+    tickets = load_tickets(root, repo, out.parent)
     log = git_log(code)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(tickets), github.cache_path(out))
@@ -307,16 +314,16 @@ def tracker_statuses(root: Path, repo: Path) -> tuple[tuple[str, str], ...]:
     Read here rather than taken from the render `main` does before watching, so that the baseline
     and the file snapshot it is the baseline for are read in the same pass: a status that moves
     between the two would otherwise sit inside the snapshot and outside the baseline. It costs one
-    load of the tracker per watcher start. The review pages are no part of a status, so this reads
-    them unserved (briefing_state does the same)."""
-    return statuses(load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)))
+    load of the tracker per watcher start. The links are no part of a status, so this writes them
+    from the tracker's own directory (briefing_state does the same)."""
+    return statuses(load_tickets(root, repo, root.parent))
 
 
-def watch(tickets_root: Path, repo: Path, out: Path) -> None:
+def watch(tickets_root: Path, repo: Path, out: Path, address: str | None) -> None:
     """Re-render on any change under the tracker, in every checkout that contributes to it, and on
     the three things that move on their own: the briefing a session has rewritten since the page
     was written, GitHub's answer running out of the lifetime it is cached for, and a run of the
-    model that came back with nothing.
+    model that came back with nothing. A page opened at `address` keeps a server answering there.
 
     Those three are what the watcher is for as much as the tracker is. A pull request merged while
     the tracker sits still would otherwise show as open until someone touched a ticket, a briefing
@@ -325,6 +332,8 @@ def watch(tickets_root: Path, repo: Path, out: Path) -> None:
     seen, session = Seen(), Briefer(repo, out)
     while True:
         try:
+            if address:
+                address = kept(tickets_root.parent, out, address)
             seen = look(seen, session, tickets_root, repo, out)
         except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
             print(f"board: {e}; retrying", file=sys.stderr)
@@ -490,7 +499,7 @@ def briefing_state(root: Path, repo: Path) -> str:
     # the session is given the tickets; a review page is the user's to read and its address the
     # render's to find, so this reads them unserved
     code = project(root)
-    return state_of(code.name, load_tickets(root, repo, Diffviews(root.parent / "diffviews", None)), git_log(code))
+    return state_of(code.name, load_tickets(root, repo, root.parent), git_log(code))
 
 
 # ---- the board briefing ---------------------------------------------------
@@ -649,10 +658,9 @@ def tracker_snapshot(root: Path, repo: Path) -> tuple:
     the repo the tracker is in, and the commit list is the project's, which moves on a merge that
     touches no ticket at all.
 
-    A page server's own bookkeeping counts too, hidden as it is: its exit moves those files, and
-    the render that follows is what puts the pages back on an address that answers. So do the show
-    directories, where an opened ticket reads its artefacts from; each file's mode is read with its
-    time and size, since an artefact made executable gains a button and `chmod` moves neither.
+    A review page rendered gives its row a link, and a show directory is where an opened ticket
+    reads its artefacts from; each file's mode is read with its time and size, since an artefact
+    made executable gains a button and `chmod` moves neither.
     """
     dirs = [root, root.parent / "diffviews", root.parent / "show"]
     return (git(repo, "rev-parse", "HEAD"), git(project(root), "rev-parse", "HEAD")) + tuple(
@@ -670,25 +678,17 @@ def git(cwd: Path, *args: str) -> str:
 # ---- tracker state --------------------------------------------------------
 
 
-@dataclass
-class Diffviews:
-    """Where review pages live, and the server for them when one is answering.
+def href(target: Path, here: Path) -> str:
+    """A link to `target` from a page in `here`, relative, so it opens wherever the page is opened:
+    served from any origin, or as a file."""
+    return urllib.parse.quote(os.path.relpath(target.resolve(), here.resolve()))
 
-    A served page can save comments; one opened as a file is read-only, so which
-    link a ticket gets says which of the two the reader will land on.
-    """
 
-    root: Path
-    base: str | None
-
-    def link(self, directory: Path, pattern: str) -> str | None:
-        matches = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
-        if not matches:
-            return None
-        page = matches[-1].resolve()
-        if self.base is None:
-            return f"file://{page}"
-        return f"{self.base}/{page.relative_to(self.root.resolve())}"
+def review_page(root: Path, slug: str, here: Path) -> str | None:
+    """The link to a ticket's review page, `agent/diffviews/<slug>.html` beside the tracker, where
+    one has been rendered."""
+    page = root.parent / "diffviews" / f"{slug}.html"
+    return href(page, here) if page.is_file() else None
 
 
 @dataclass
@@ -720,15 +720,16 @@ class Ticket:
     under: str | None = None  # the parent ticket whose row this one folds under (board.folded)
 
 
-def load_tickets(root: Path, repo: Path | None, diffviews: Diffviews) -> list[Ticket]:
+def load_tickets(root: Path, repo: Path | None, here: Path) -> list[Ticket]:
     """Every ticket the board shows, read through the one parser of a ticket file.
 
     One directory holds them all: ticket files are written and committed in the tracker's own
     checkout, claims and review flips included, so nothing of a build in flight is anywhere else.
+    `here` is the directory the page is written in, which every link on it is relative to.
     """
     read = parsed(root)
     under = folded(read)
-    tickets = [shown(one, read, repo, diffviews, under.get(one.slug)) for one in read.tickets.values()]
+    tickets = [shown(one, read, repo, here, under.get(one.slug)) for one in read.tickets.values()]
     ids = [slug_id(one.slug) for one in tickets]
     assert len(ids) == len(set(ids)), f"slugs collide as mermaid ids: {sorted(ids)}"
     return sorted(tickets, key=lambda one: one.slug)
@@ -773,7 +774,7 @@ def tree_of(slug: str, tickets: dict[str, "tracker.Ticket"]) -> str:
 
 
 def shown(
-    read: "tracker.Ticket", whole: "tracker.Tracker", repo: Path | None, diffviews: Diffviews,
+    read: "tracker.Ticket", whole: "tracker.Tracker", repo: Path | None, here: Path,
     under: str | None,
 ) -> Ticket:
     """One ticket as the board shows it: what its file says, plus the status derived from what it
@@ -801,8 +802,8 @@ def shown(
         blocked_by=blocked_by,
         freed=freed,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
-        body_html=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked),
-        diffview=diffviews.link(diffviews.root, f"{read.slug}.html"),
+        body_html=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked, here=here),
+        diffview=review_page(whole.root, read.slug, here),
         path=read.path,
         priority=read.meta.get("priority"),
         size=read.meta.get("size"),
@@ -825,28 +826,47 @@ def assert_safe_name(name: str) -> None:
     assert re.fullmatch(r"[A-Za-z0-9._-]+", name), f"unsafe tracker name: {name!r}"
 
 
-@functools.cache
-def serve_diffviews(root: Path) -> Diffviews:
-    """The review pages under `root`, on the address diffview answers for them.
+def served(agent: Path, out: Path) -> str | None:
+    """The address the page `out` answers on from the diffview server over the agent repo, or None
+    where it can be opened only as a file: the page is outside the agent repo, no diffview is
+    installed, or the server does not answer.
 
-    `diffview --serve` is idempotent and prints that address, so the port stays diffview's
-    to decide; asking on every render is also what brings back a server that has idled out
-    since the last one.
-    """
-    if not root.is_dir():
-        return Diffviews(root, None)
+    `diffview --serve` is idempotent and prints the server's address, so the port stays diffview's
+    to decide, and one that exited comes back on the port it had, which is the one an open page
+    knows."""
+    if not out.is_relative_to(agent):
+        return None
     try:
-        done = subprocess.run(["diffview", "--serve", str(root)], capture_output=True, text=True, timeout=60)
-    except FileNotFoundError:  # no diffview on this machine, so no server for its pages either
-        return Diffviews(root, None)
+        done = subprocess.run(["diffview", "--serve", str(agent)], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:  # no diffview on this machine, so no server either
+        return None
     except subprocess.TimeoutExpired:
-        print(f"board: diffview --serve {root} did not come back; linking the pages as files", file=sys.stderr)
-        return Diffviews(root, None)
-    address = re.search(r"https?://\S+", done.stdout) if done.returncode == 0 else None
-    if not address:
-        print(f"board: diffview left {root} unserved, so its pages are read-only: {(done.stderr or done.stdout).strip()}", file=sys.stderr)
-        return Diffviews(root, None)
-    return Diffviews(root, address.group().rstrip("/"))
+        print(f"board: diffview --serve {agent} did not come back; opening the page as a file", file=sys.stderr)
+        return None
+    found = re.search(r"https?://\S+", done.stdout) if done.returncode == 0 else None
+    address = f"{found.group().rstrip('/')}/{href(out, agent)}" if found else None
+    if not (address and answers(address)):
+        said = (done.stderr or done.stdout).strip()
+        print(f"board: diffview does not serve {agent}, so the page opens as a file: {said}", file=sys.stderr)
+        return None
+    return address
+
+
+def kept(agent: Path, out: Path, address: str) -> str:
+    """The address the open page is served at, its server brought back where it has exited: the
+    watcher's part in keeping a served tab answering."""
+    return address if answers(address) else served(agent, out) or address
+
+
+def answers(address: str) -> bool:
+    """Whether a server is listening where `address` points. A connection, not a request: a request
+    is what keeps a diffview server from idling out, and this is asked every pass of the watcher."""
+    at = urllib.parse.urlsplit(address)
+    try:
+        socket.create_connection((at.hostname, at.port or 80), timeout=1).close()
+    except OSError:
+        return False
+    return True
 
 
 def inline_md(text: str) -> str:
@@ -1082,17 +1102,19 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
     return next((titles[key] for key in TITLES if key in titles), ""), tuple(cwds)
 
 
-def absence_note(source: str, words: str) -> str:
+def absence_note(source: str, words: str, hidden: bool = False) -> str:
     """An optional source the render did without, said once on the page: GitHub, the model, the
-    transcripts, the review-page server."""
-    return f'<p class="absent" data-absent="{html.escape(source)}">{html.escape(words)}</p>'
+    transcripts. The review-page server is one only the open page can tell it lacks, so its note is
+    written `hidden` and the page shows it."""
+    return f'<p class="absent" data-absent="{html.escape(source)}"{" hidden" if hidden else ""}>{html.escape(words)}</p>'
 
 
 # ---- an opened ticket -----------------------------------------------------
 
 
 def ticket_blocks(
-    read: "tracker.Ticket", asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session]
+    read: "tracker.Ticket", asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session],
+    here: Path,
 ) -> str:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
@@ -1112,7 +1134,7 @@ def ticket_blocks(
         else:
             blocks.append(block(heading, prose(heading, text)))
     front = [asked_block(asked, prose(None, "".join(said)), path, status),
-             sessions_block(worked), artefacts_block(show_dir(path), project(path.parent))]
+             sessions_block(worked), artefacts_block(show_dir(path), project(path.parent), here)]
     return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
@@ -1219,14 +1241,14 @@ def worked_on(session: Session) -> str:
 RUN_TIP = "Click to copy the command that runs this file, to paste at the code repo's root."
 
 
-def artefacts_block(show: Path, code: Path) -> str:
+def artefacts_block(show: Path, code: Path, here: Path) -> str:
     """What the ticket produced to look at: every file in its show directory as a link, and each
     one that runs on a button that copies the command running it from the code repo's root."""
     files = artefacts(show)
     if not files:
         return ""
     items = "".join(
-        f'<li><a href="file://{html.escape(str(file))}" target="_blank">'
+        f'<li><a href="{html.escape(href(file, here))}" target="_blank">'
         f'{html.escape(str(file.relative_to(show)))}</a>'
         + (copy_button("runcopy", "copy command", RUN_TIP, shlex.quote(str(file.relative_to(code))),
                        f"the command that runs {file.name}") if runs(file) else "")
@@ -1801,8 +1823,9 @@ def absences(
     tickets: list[Ticket], gh: github.Answer, standing: "briefing.Briefing | None" = None,
 ) -> list[str]:
     """What this render did without, said once each (the board renders with any optional source
-    missing). A review page linked as a file is one nothing answered for; a tracker with no page
-    rendered yet has no server to miss, so it says nothing. A machine with no transcripts directory
+    missing). A board opened as a file opens its review pages as files, where nothing they are
+    given is saved, which the page says of itself; a tracker with no review page rendered yet has
+    no server to miss, so it says nothing. A machine with no transcripts directory
     has run no session this board could name, whatever the commits say. GitHub says its own absence
     in its own words, since what stopped the query is what the user has to fix (github.ask). A
     briefing already written is no absence whatever the machine has now: the column is not empty,
@@ -1811,11 +1834,12 @@ def absences(
     The model says its own absence in its own words too: a machine with no claude and a login that
     has lapsed are the same empty column and two different things to fix (briefing.missing)."""
     said = []
-    pages = [t.diffview for t in tickets]
-    if any(page and page.startswith("file://") for page in pages):
+    if any(t.diffview for t in tickets):
         said.append(absence_note(
             "review-page-server",
-            "Nothing is serving the review pages, so they open as files and what you write on one is not saved.",
+            "This board is open as a file, so the review pages it links open as files too and what you "
+            "write on one is not saved. `board` opens it served.",
+            hidden=True,
         ))
     if not TRANSCRIPTS.is_dir():
         said.append(absence_note(
@@ -2627,8 +2651,8 @@ ${viewjs}
   attach(full.querySelector(".gfbody"), (href) => { openFull(false); openTarget(href); });
 
   // ---- the window of its own ----
-  // It talks to the board by message rather than by reaching into it. The board is a file:// page,
-  // so its origin is opaque and a reload mints another one: from the reload on, the window's
+  // It talks to the board by message rather than by reaching into it. A board opened as a file has
+  // an opaque origin, and a reload mints another one: from the reload on, the window's
   // `opener.<anything>` throws and the board's own handle on the window is gone. A message crosses
   // either way regardless, so the window says hello on a timer and the board answers whoever asked,
   // which is how the two find each other again after every re-render.
@@ -2878,6 +2902,10 @@ ${viewjs}
     try { window.name = "board:" + JSON.stringify({ saved: state, cache: svgs }); } catch {}
   }
 
+  // opened as a file, the review pages it links cannot save either, which the page says of itself
+  const served = location.protocol !== "file:";
+  if (!served) document.querySelector("[data-absent=review-page-server]")?.removeAttribute("hidden");
+
   // Reload only when the renderer wrote different content. fetch() is blocked on
   // file://, but a classic script tag isn't — so poll the sidecar stamp file the
   // renderer writes beside this page.
@@ -2889,7 +2917,13 @@ ${viewjs}
       if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
       else setTimeout(poll, 5_000);
     };
-    s.onerror = () => { saveState(); location.reload(); };  // no sidecar: stay current the blunt way
+    // opened as a file, no sidecar: stay current the blunt way. Served, the server is between an exit
+    // and the watcher bringing it back on this port, and a reload now would land on an error page.
+    s.onerror = () => {
+      s.remove();
+      if (served) setTimeout(poll, 5_000);
+      else { saveState(); location.reload(); }
+    };
     document.head.append(s);
   }
   setTimeout(poll, 5_000);

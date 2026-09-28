@@ -84,7 +84,7 @@ def build(dest: Path) -> Demo:
     # claude/ is a CLAUDE_CONFIG_DIR of its own, so the board reads the fixture's sessions by
     # pointing at it and the demo's resume commands are the ones the fixture's transcripts answer
     demo = Demo(repo, repo / "agent" / "tickets", repo / "claude" / "projects", local_sessions(repo))
-    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nagent/sessions/\nclaude/\n")
+    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nagent/sessions/\nagent/.serve.*\nclaude/\n")
     git(repo, "init", "-q", "-b", "master")
 
     csv_import(repo)
