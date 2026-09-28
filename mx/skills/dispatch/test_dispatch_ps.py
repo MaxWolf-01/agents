@@ -477,8 +477,58 @@ def test_attach_to_a_remote_worker_is_ssh_with_a_terminal(home: Path, tmux: dict
     out = dispatch(tmux, home, "attach", "far-away", hosts="local agent@far",
                    answers={"agent@far": elsewhere("far-away")})
     assert out.returncode == 0, out.stderr
-    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t =dispatch-agents-far-away"
+    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t \\=dispatch-agents-far-away", \
+        "the line on_host builds, its leading `=` escaped for a zsh login shell"
     assert (home / "bin" / "ssh.calls").read_text().count("\n") == 2, "one read, then the attach"
+
+
+# ssh as the real one delivers a command: the arguments after the host joined into one line, run by
+# the remote user's login shell, which is REMOTE_SHELL here, in the remote home.
+LOGIN_SHELL_SSH = """#!/usr/bin/env bash
+while [[ ${1:-} == -* ]]; do case $1 in -o) shift 2 ;; *) shift ;; esac; done
+shift
+cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec "$REMOTE_SHELL" -c "$*"
+"""
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
+        tmp_path: Path, home: Path, tmux: dict[str, str], shell: str):
+    """A tmux target starts with `=`, which zsh reads as the path of a command: `=name` unescaped
+    never reaches tmux. The host is `agent@far`, whose home is <home> and whose login shell is
+    <shell>; ps reads it, peek captures its pane and attach reaches its tmux, all through ssh."""
+    login = shutil.which(shell)
+    if login is None:
+        pytest.skip(f"no {shell} here; the escaped form is pinned by the remote attach check")
+    session(tmux, "dispatch-agents-hypofuzz-default", "printf 'said on far\\n'; sleep 30")
+    here = tmp_path / "here"
+    fakes = here / "bin"
+    fakes.mkdir(parents=True)
+    (fakes / "ssh").write_text(LOGIN_SHELL_SSH)
+    (fakes / "ssh").chmod(0o755)
+    (fakes / "worker-hosts").write_text("#!/bin/sh\necho agent@far\n")
+    (fakes / "worker-hosts").chmod(0o755)
+    real = shutil.which("tmux", path=tmux["PATH"])
+    (fakes / "tmux").write_text(
+        f'#!/usr/bin/env bash\n[ "$1" = attach ] || exec {real} "$@"\necho "$*" > {here / "attached"}\n')
+    (fakes / "tmux").chmod(0o755)
+    env = {**tmux, "HOME": str(here), "PATH": f"{fakes}:{tmux['PATH']}", "REMOTE_HOME": str(home),
+           "REMOTE_SHELL": login}
+
+    def dispatched(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", str(DISPATCH), *args], capture_output=True, text=True, cwd=here,
+                              env=env, timeout=60)
+
+    listed = dispatched("ps")
+    assert listed.returncode == 0, listed.stderr
+    assert "agent@far" in listed.stdout and "hypofuzz-default" in listed.stdout
+    time.sleep(0.5)
+    peeked = dispatched("peek", "hypofuzz-default", "12")
+    assert peeked.returncode == 0, peeked.stderr
+    assert "said on far" in peeked.stdout
+    attached = dispatched("attach", "hypofuzz-default")
+    assert attached.returncode == 0, attached.stderr
+    assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default"
 
 
 def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: dict[str, str]):

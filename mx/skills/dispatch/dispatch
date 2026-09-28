@@ -187,11 +187,24 @@ scratch_dir() { # <host>
 # never speak again. The connect timeout is for a host that is off, which `ps`
 # asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
 # the background, where a passphrase prompt would be several on one terminal.
-# ssh joins its arguments with spaces into one line for the remote shell, which
-# drops an empty one and splits one with a space; each is quoted for that shell.
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(printf '%q ' "$@")"; fi
+    if [ "$h" = local ]; then "$@"; else ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(remote_line "$@")"; fi
+}
+
+# ssh joins its arguments with spaces into one line for the remote login shell,
+# which drops an empty one and splits one with a space, so each is quoted for
+# that shell, which may be bash or zsh. `%q` quotes for bash; zsh also reads a
+# word that starts with `=` as the path of a command (`=ls` is `/usr/bin/ls`),
+# so that `=` is escaped too.
+remote_line() { # <command...>
+    local arg quoted line=
+    for arg; do
+        quoted=$(printf '%q' "$arg")
+        [ "${quoted#=}" = "$quoted" ] || quoted=\\$quoted
+        line+=" $quoted"
+    done
+    printf '%s' "${line# }"
 }
 
 # Through a side directory and a rename, never written in place: a worker
@@ -805,7 +818,7 @@ attach() {
         unset TMUX
         exec tmux attach -t "=$r_session"
     fi
-    exec ssh -t "$r_host" tmux attach -t "=$r_session"
+    exec ssh -t "$r_host" "$(remote_line tmux attach -t "=$r_session")"
 }
 
 peek() {
