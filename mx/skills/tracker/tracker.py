@@ -265,8 +265,9 @@ def merged_under_parent(child: Ticket, tracker: Tracker, start: Path | None = No
     repo holds: its branch in every repo has reached the branch its siblings merge into there, the
     parent's branch or, in a repo holding none, the branch it has out. Every repo, since a round
     that built in one repo alone leaves its branch in the other unmoved, which reads as merged.
-    `start` is where the code repo is looked for (repos_of)."""
-    if child.status != "review" or not child.parent:
+    `start` is where the code repo is looked for (repos_of). A tracker in no checkout has merged
+    nothing."""
+    if child.status != "review" or not child.parent or tried(tracker.root, "rev-parse").returncode != 0:
         return False
     repos = repos_of(tracker, start)
     if not parent_branch(repos[0], child.parent):
@@ -483,6 +484,7 @@ def head(top: Path) -> str:
 
 
 def reached(top: Path, branch: str, onto: str) -> bool:
+    """Whether `branch`'s tip is in `onto`'s history, in `top`."""
     return tried(top, "merge-base", "--is-ancestor", branch, onto).returncode == 0
 
 
@@ -889,7 +891,7 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
     if "needs-user" in meta and not isinstance(meta["needs-user"], bool):
         refuse("needs-user", "`needs-user` is true or false: whether the ticket is worked with the user rather than by a worker")
     if "hinge" in meta and not isinstance(meta["hinge"], bool):
-        refuse("hinge", "`hinge` is true or false: whether the child ticket's dependents would have to be rewritten, not amended, were it wrong, so the user rules on it alone")
+        refuse("hinge", "`hinge` is true or false: whether the child ticket is a hinge, ruled alone (SLICING.md)")
 
     # a list field is checked for being a list first: a bare scalar is a string, and walking it
     # would refuse the line once per character
@@ -1076,7 +1078,7 @@ class Ticket:
 
     @property
     def hinge(self) -> bool:
-        return self.meta.get("hinge") is True
+        return bool(self.meta.get("hinge"))
 
 
 @dataclass(frozen=True)

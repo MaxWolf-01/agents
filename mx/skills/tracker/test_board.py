@@ -9,7 +9,8 @@ sources (which tickets become nodes, in which class, joined by which edges), and
 page (groups, rows, the attributes the page's script matches against the graph sources). The
 oracle is the tracker skill and the board's --help: the frontier is open, unblocked,
 unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
-user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
+user's ruling in its own group and unblocks nothing until the accept writes done, save a sibling
+merged into the branch of the parent ticket the two share, no hinge; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
 is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
 tickets with an edge; one tracker directory holds every ticket the board shows, a build in
@@ -1041,11 +1042,11 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
     assert {lines[0] for lines in blocks} == {
         str(demo.root / name) for name in [
             "map-columns.md", "view-storage.md", "view-list-shape.md", "flaky-upload-test.md",
-            "pick-a-date-library.md", "retire-legacy-exporter.md", "speed-up-tests.md",
+            "pick-a-date-library.md", "retire-legacy-exporter.md", "speed-up-tests.md", "carry-balances.md",
         ]
     }
     asked = [line for lines in blocks for line in lines[1:]]
-    assert len(asked) == 11 and all(line.startswith("- [D") for line in asked)
+    assert len(asked) == 12 and all(line.startswith("- [D") for line in asked)
     assert any("Remember the mapping per bank" in line for line in asked), "a build in review asks its own"
     # the file's own markdown, so a question pastes back into the ticket as it was written
     assert "- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" in asked
@@ -2277,6 +2278,8 @@ def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file
         " it remembers that per bank and never asks again.\n"
         "  waits on: parse-rows\n"
     ) in state
+    # a row folded under its parent ticket's says which one
+    assert f"Carry the balances forward \u00b7 {demo.root / 'carry-balances.md'} \u00b7 folded under month-close\n" in state
     # the tickets are written out under the tree each is part of, the ones in no tree under their own
     assert "## alone\nexport-to-xlsx \u00b7 blocked \u00b7 build \u00b7 p4 later \u00b7 20 min \u00b7 Export to Excel \u00b7 " in state
 
@@ -2382,6 +2385,7 @@ def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_
     render(demo.root, demo.repo, out)
     page = out.read_text()
     rows = rows_of(page)
+    assert 'id="grp-needs"' in page
     assert "t-duplicate-rule" not in anywhere_in(page, "needs")
     assert "t-csv-import" in rows_in(page, "claimed")
     assert 'id="t-duplicate-rule"' in body_of(rows["t-csv-import"]), "the leaf sits under its parent's row"
@@ -2391,8 +2395,8 @@ def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_
 
 def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_under_it(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """month-close is in review with carry-balances; lock-period, its hinge, was ruled alone and is
-    done. The group counts the parent as one row, and the button copying the group's questions
-    copies the children's with it."""
+    done. The group counts the parent as one row, and the parent's row asks carry-balances'
+    question, which the button copying the group's questions copies with the rest."""
     out = tmp_path / "board.html"
     render(demo.root, demo.repo, out)
     page = out.read_text()
@@ -2403,6 +2407,22 @@ def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_
     assert all(f'id="{one}"' in body_of(rows["t-month-close"]) for one in children)
     assert f'<h2>needs me <span class="n">{len(NEEDS_ME)}</span>' in page, "the parent and its children count as one row"
     assert "2 child tickets" in [text for mark, text, _ in marks_on(summary_of(rows["t-month-close"])) if mark == "kin"]
+    searched = html.unescape(re.search(r'id="t-month-close" [^>]*data-search="([^"]*)"', page).group(1))
+    assert "closing a month writes each account's balance" in searched, "a word of a folded child finds the row holding it"
+    asked = "Carry a closed month's balances, or recompute them from its transactions?"
+    assert questions_on(summary_of(rows["t-month-close"])) == [("carry-balances D1", asked)]
+    [(_, group, _, _)] = [one for one in copiers(page) if one[0] == "qgroup"]
+    assert f"{demo.root / 'carry-balances.md'}\n- [D1] **{asked}**" in group
+
+
+def test_the_fallback_counts_the_questions_a_parent_at_its_close_out_asks_for_its_children(tracker: Path) -> None:
+    """lamp-ui at its close-out, `built` under it asking one question: the sentence counts it, as
+    the parent's row asks it."""
+    ticket(tracker / f"{TREE}.md", "review", priority=1, size="L", name="Feat")
+    built = tracker / "built.md"
+    built.write_text(built.read_text() + "\n## Questions\n\n- [D1] **Keep the suite serial?** It is slow.\n")
+    said = board.fallback(list(load(tracker).values()))
+    assert said.startswith("One build to rule on and one question wanting a word wait on you."), said
 
 
 def test_a_hinge_carries_its_mark_on_its_row(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -2416,19 +2436,29 @@ def test_a_hinge_carries_its_mark_on_its_row(demo: Demo, tmp_path: Path, path_wi
     assert "t-map-columns" in rows_in(page, "needs")
 
 
-def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_and_a_hinge_never(tracker: Path, repo: Path) -> None:
-    """The same rule at the tracker's seam, before and after the merge the orchestrator's read
-    makes: `built` is in review under lamp-ui, which is still being built."""
+def built_on_its_branch(repo: Path) -> None:
+    """`built`'s round: lamp-ui's branch cut from main, and ticket/built one commit ahead of it."""
     git(repo, "branch", TREE)
     git(repo, "checkout", "-q", "-b", "ticket/built", TREE)
     (repo / "built.txt").write_text("the build\n")
     git(repo, "add", "built.txt")
     git(repo, "commit", "-q", "-m", "built")
     git(repo, "checkout", "-q", "main")
-    assert "t-built" in rows_in(page_of(tracker), "needs"), "not merged yet: it waits for the orchestrator's read"
+
+
+def merged_into_the_tree(repo: Path) -> None:
+    """The orchestrator's read passing `built`: ticket/built merged --no-ff into lamp-ui's branch."""
     git(repo, "checkout", "-q", TREE)
     git(repo, "merge", "-q", "--no-ff", "-m", "merge built", "ticket/built")
     git(repo, "checkout", "-q", "main")
+
+
+def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_and_a_hinge_never(tracker: Path, repo: Path) -> None:
+    """The same rule at the tracker's seam, before and after the merge the orchestrator's read
+    makes: `built` is in review under lamp-ui, which is still being built."""
+    built_on_its_branch(repo)
+    assert "t-built" in rows_in(page_of(tracker), "needs"), "not merged yet: it waits for the orchestrator's read"
+    merged_into_the_tree(repo)
     page = page_of(tracker)
     assert "t-built" not in anywhere_in(page, "needs")
     assert 'id="t-built"' in body_of(rows_of(page)[f"t-{TREE}"])
@@ -2443,16 +2473,9 @@ def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blo
     ticket(tracker / "after-built.md", "open", parent=TREE, blocked_by=["built"])
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "after-built")
-    git(repo, "branch", TREE)
-    git(repo, "checkout", "-q", "-b", "ticket/built", TREE)
-    (repo / "built.txt").write_text("the build\n")
-    git(repo, "add", "built.txt")
-    git(repo, "commit", "-q", "-m", "built")
-    git(repo, "checkout", "-q", "main")
+    built_on_its_branch(repo)
     assert load(tracker)["after-built"].status == "blocked", "not merged yet: nothing may build on it"
-    git(repo, "checkout", "-q", TREE)
-    git(repo, "merge", "-q", "--no-ff", "-m", "merge built", "ticket/built")
-    git(repo, "checkout", "-q", "main")
+    merged_into_the_tree(repo)
     assert load(tracker)["after-built"].status == "open"
     assert "t-after-built" in rows_in(page_of(tracker), "open")
     assert "in review and merged into the parent ticket's branch" in rows_of(page_of(tracker))["t-after-built"], (

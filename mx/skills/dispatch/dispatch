@@ -649,8 +649,9 @@ review() {
 }
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
-# one commit, or none of them. `tracker` refuses each one whose work has not reached the branch its
-# accept merges into, which is what makes this safe to run before the merge up: it refuses.
+# one commit, or none of them. Before the merge up it refuses on its own; after it, `tracker`
+# refuses each ticket whose work has not reached the branch its accept merges into, and the files
+# already written are put back.
 accept() { # <slug>
     locate
     id=$1
@@ -664,12 +665,13 @@ accept() { # <slug>
     for child in $ruled; do paths+=("$tickets/$child.md"); done
     # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
     git -C "$agent_top" diff --quiet -- "${paths[@]}" || die "a ticket file of $id's tree has uncommitted changes; commit them first"
+    put_back() { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
     for child in $ruled; do
-        run "$tracker" set "$child" status=done || { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
+        run "$tracker" set "$child" status=done || put_back
     done
     fields=(status=done)
     [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
-    run "$tracker" set "$id" "${fields[@]}" || { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
+    run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
 }

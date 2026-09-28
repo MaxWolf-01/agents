@@ -12,12 +12,12 @@ Three trees (a parent ticket with six child tickets, one with three, one at its 
 two) and eleven tickets in no tree, two builds waiting on a ruling with their branches unmerged
 and their questions in the tracker's copy, where `dispatch review` imported them from the worker's
 report, one of them a hinge, a child in review merged into the branch of a parent still being
-built, a parent ticket at its close-out whose children are ruled with it, one build stopped on two
-questions of which one is ruled, one ticket whose only question is ruled, one ticket with no
-question at all, review pages beside the tickets, acceptance criteria a build in review has half
-met, a property cited by the criterion that takes it on, files that run and a figure under
-agent/show, and four sessions on the commits: three with a transcript under the claude/ config
-directory this writes, one worker on another host with none.
+built, a parent ticket at its close-out whose children are ruled with it, one of them asking a
+question, one build stopped on two questions of which one is ruled, one ticket whose only
+question is ruled, one ticket with no question at all, review pages beside the tickets,
+acceptance criteria a build in review has half met, a property cited by the criterion that takes
+it on, files that run and a figure under agent/show, and four sessions on the commits: three with
+a transcript under the claude/ config directory this writes, one worker on another host with none.
 
 A demo tracker, not a show: the word is the sample repo the checks render, and nothing here is an
 artefact of the workflow, which a landing hands the user as a show (`/mx:show`).
@@ -650,7 +650,7 @@ def merged_under_parent(repo: Path) -> None:
     write(repo / "src/dedupe.py", '"""A row matches a transaction on date, amount and payee."""\n')
     commit(repo, S4, "2026-09-18T17:10:00+02:00", "duplicate-rule: match on date, amount and payee", "src")
     git(repo, "checkout", "-q", "csv-import")
-    git(repo, "merge", "-q", "--no-ff", "-m", "Merge ticket/duplicate-rule into csv-import", "ticket/duplicate-rule",
+    git(repo, "merge", "-q", "--no-ff", "-m", "duplicate-rule: a row matching a transaction is flagged", "ticket/duplicate-rule",
         when="2026-09-18T17:30:00+02:00")
     git(repo, "checkout", "-q", "master")
     set_status(repo / "agent/tickets/duplicate-rule.md", "review")
@@ -663,6 +663,11 @@ def closed_out(repo: Path) -> None:
     set_status(repo / "agent/tickets/lock-period.md", "done")
     for waiting in ("month-close", "carry-balances"):
         set_status(repo / f"agent/tickets/{waiting}.md", "review")
+    append(repo / "agent/tickets/carry-balances.md", """
+## Questions
+
+- [D1] **Carry a closed month's balances, or recompute them from its transactions?** Carried is one write per account; recomputed survives an edit before the lock.
+""")
     commit(repo, S2, "2026-09-19T16:20:00+02:00", "month-close: closed out, for the ruling on the whole", "agent/tickets")
 
 
