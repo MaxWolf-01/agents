@@ -14,8 +14,10 @@ It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a disp
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
 The render that writes a session's page for the first time opens it with `claude-browser`, where
-the host has one; later renders rewrite the same file, and the open tab is reloaded by hand. That
-open is a line of the log too, saying what came of it.
+the host has one; later renders rewrite the same file, and the open tab is reloaded by hand. The
+same render keeps `sessions/` out of the agent repo's `git status`, through that clone's
+`.git/info/exclude`, where nothing ignores it yet. Each is a line of the log too, saying what came
+of it.
 
 The agent ends a turn whose answer is on the page without a reply, so a render whose turn wrote a
 record shows the user one line of the hook's own under it, as a `systemMessage`: the questions
@@ -156,6 +158,35 @@ def open_in_browser(page: Path) -> str:
     return f"started {opener}"
 
 
+def exclude_sessions(sessions: Path) -> str:
+    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it, and
+    say what came of that. The line is anchored at its path from the repo root, so it matches that
+    directory and no other of the same name. Outside git, or where git fails, nothing is written."""
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(sessions.parent), *args], capture_output=True, text=True)
+
+    checked = git("check-ignore", "-q", f"{sessions.name}/")
+    if checked.returncode == 0:
+        return "already ignored"
+    if checked.returncode != 1:
+        return f"git check-ignore failed: {checked.stderr.strip()}"
+    found = git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude", "--show-prefix")
+    if found.returncode != 0:
+        return f"git rev-parse failed: {found.stderr.strip()}"
+    exclude, prefix = (found.stdout.splitlines() + [""])[:2]
+    line = f"/{prefix}{sessions.name}/"
+    try:
+        Path(exclude).parent.mkdir(parents=True, exist_ok=True)
+        with Path(exclude).open("a+") as f:
+            f.seek(0)
+            before = f.read()
+            f.write(("\n" if before and not before.endswith("\n") else "") + line + "\n")
+    except OSError as e:
+        return f"{exclude} not written: {e}"
+    return f"added {line} to {exclude}"
+
+
 def main() -> None:
     hook = json.load(sys.stdin)
     directory = session_directory(Path(hook["cwd"]), hook["session_id"])
@@ -166,6 +197,7 @@ def main() -> None:
         (directory / PAGE).write_text(decision.page)
         if first:
             turn_review.log(hook["session_id"], opened=open_in_browser(directory / PAGE), page=str(directory / PAGE))
+            turn_review.log(hook["session_id"], excluded=exclude_sessions(directory.parent))
         if decision.shown:
             print(json.dumps({"systemMessage": decision.shown}))
     elif decision.verb == "send back":
