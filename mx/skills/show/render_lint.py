@@ -19,14 +19,16 @@ Kinds, by severity:
   box rather than a mask sized to the label (reported, never fatal).
 - clipped: a box with overflow hidden cuts an HTML text off, by an ellipsis or plainly
   (reported, never fatal: a truncated title is sometimes the design).
-- unmeasurable: the page never stopped moving, so nothing on it was measured.
+- unmeasurable: the page never finished loading or never stopped moving, so nothing on it was
+  measured.
 
 Every finding names the element it was measured on, as a path up to the nearest ancestor
 carrying an id: a graph label reads as its node.
 
 A page is measured at rest and at the top. The run waits for the page's geometry to hold
-still before it reads the height, resizes the window to it, waits again, then scrolls to
-the top, so what an address' fragment slides under sticky or fixed chrome is no finding.
+still, with none of its requests in flight, before it reads the height, resizes the window to
+it, waits again, then scrolls to the top, so what an address' fragment slides under sticky or
+fixed chrome is no finding.
 
 Skipped on purpose: overflow under 2px; the touching line boxes of a multi-line label; text a
 clip leaves less than 4px of, or a collapsed box hides; and two texts whose glyphs cross by
@@ -38,8 +40,8 @@ resolves to an opaque colour, so a card drawn as an image or a gradient does not
 does an SVG shape, whose fill is not a background. Where the two texts meet outside the window
 the engine cannot be asked and the finding stands.
 
-Exit codes: 0 nothing found, 1 an escape or an overlap, 2 a page that never stopped moving,
-3 the run itself failed, a usage error among them. A page that never stopped moving outranks a
+Exit codes: 0 nothing found, 1 an escape or an overlap, 2 a page that never loaded or stopped moving,
+3 the run itself failed, a usage error among them. A page that could not be measured outranks a
 finding, so a run holding both exits 2.
 
 Examples:
@@ -47,6 +49,7 @@ Examples:
     render-lint figure.html
     render-lint page.html?theme=night#row-3    # a query and a fragment go on the address
     render-lint figure.html --crops /tmp/lint  # a PNG per finding, to look at
+    render-lint board.html --cache ~/.cache/mx/page-cache  # the CDN answered from disk after the first run
     render-lint a.html b.html --json | jq '.[] | select(.kind != "tight" and .kind != "clipped")'
 """
 
@@ -275,9 +278,13 @@ class Args:
     settle: float = 0.25
     """Seconds between readings of the page's geometry; three that agree mean it is at rest."""
     patience: float = 20.0
-    """Seconds to wait for a page to come to rest before reporting it unmeasurable."""
+    """Seconds a page gets to load and come to rest before it is reported unmeasurable."""
     crops: Path | None = None
     """Directory for one PNG per finding, the finding's box with a margin around it."""
+    cache: Path | None = None
+    """Directory answering every remote request from a copy kept there, fetched once when missing
+    (page_cache.py says how). A copy is never refreshed, so a page linking an address whose content
+    moves is measured against the day it was first fetched."""
     json: bool = False
     """Emit findings as a JSON array. Schema: [{"file": str, "kind": "escapes"|"overlap"|"tight"|"clipped"|"unmeasurable", "where": str, "el": str, "text": str, "by": float, "box": {"x","y","w","h"}, "crop": str|null}]"""
 
@@ -297,6 +304,10 @@ def main(args: Args) -> None:
         context = browser.new_context(viewport={"width": args.width, "height": 900})
         for spec in args.files:
             page = context.new_page()
+            if args.cache:
+                from page_cache import serve
+
+                serve(context, args.cache)
             try:
                 for f in measure(page, spec, args):
                     findings.append({"file": str(spec), "crop": None} | f)
@@ -321,24 +332,32 @@ def main(args: Args) -> None:
 def measure(page: Page, spec: Path, args: Args) -> list[dict]:
     """One address, in a tab of its own: at rest, in a window as tall as the page, at the top.
 
-    The patience is the page's, not each wait's: the two rests and the scroll share one deadline."""
+    The patience is the page's, not each wait's: the load, the two rests and the scroll share one
+    deadline."""
+    from playwright.sync_api import TimeoutError
+
     head, mark, fragment = str(spec).partition("#")
     path, _, query = head.partition("?")
     url = Path(path).resolve().as_uri() + (f"?{query}" if query else "") + (mark + fragment)
-    page.goto(url, wait_until="networkidle")
-    page.evaluate("document.fonts.ready")
+    loading: set = set()
+    page.on("request", lambda r: loading.add(r))
+    page.on("requestfinished", lambda r: loading.discard(r))
+    page.on("requestfailed", lambda r: loading.discard(r))
     until = time.monotonic() + args.patience
-    still = at_rest(page, args, until)
+    try:
+        page.goto(url, timeout=args.patience * 1000)
+    except TimeoutError:
+        return [unmeasurable(f"still loading after {args.patience:g}s")]
+    still = at_rest(page, loading, args, until)
     if still:
         page.set_viewport_size({"width": args.width, "height": page.evaluate("document.documentElement.scrollHeight")})
-        still = at_rest(page, args, until)
+        still = at_rest(page, loading, args, until)
     if still:
         # instant, because a page set to scroll smoothly would still be travelling on the next call
         page.evaluate("scrollTo({top: 0, left: 0, behavior: 'instant'})")
-        still = at_rest(page, args, until)
+        still = at_rest(page, loading, args, until)
     if not still:
-        return [{"kind": "unmeasurable", "where": "page", "el": "", "by": 0,
-                 "text": f"still moving after {args.patience:g}s", "box": {"x": 0, "y": 0, "w": 0, "h": 0}}]
+        return [unmeasurable(f"still {'loading' if loading else 'moving'} after {args.patience:g}s")]
     found = page.evaluate(MEASURE, args.pad)
     if args.crops:
         for n, f in enumerate(found, start=1):
@@ -349,12 +368,18 @@ def measure(page: Page, spec: Path, args: Args) -> list[dict]:
     return found
 
 
-def at_rest(page: Page, args: Args, until: float) -> bool:
-    """Block until AGREE readings of the page's geometry in a row agree, or `until` passes."""
+def unmeasurable(why: str) -> dict:
+    return {"kind": "unmeasurable", "where": "page", "el": "", "by": 0, "text": why, "box": {"x": 0, "y": 0, "w": 0, "h": 0}}
+
+
+def at_rest(page: Page, loading: set, args: Args, until: float) -> bool:
+    """Block until AGREE readings of the page's geometry in a row agree with none of its requests
+    in flight, or `until` passes. A request pending drops every reading before it, since what it
+    brings (a module, a stylesheet, a font) moves the page when it lands."""
     seen: list[str] = []
     while True:
-        seen.append(page.evaluate(STILL))
-        if seen[-AGREE:].count(seen[-1]) == AGREE:
+        seen = [] if loading else [*seen, page.evaluate(STILL)]
+        if seen and seen[-AGREE:].count(seen[-1]) == AGREE:
             return True
         if time.monotonic() > until:
             return False

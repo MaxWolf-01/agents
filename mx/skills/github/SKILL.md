@@ -1,6 +1,6 @@
 ---
 name: github
-description: "Writing to GitHub under max's name: issues to projects he doesn't maintain, PR titles and bodies, and his yes before any of it is published. Use when a dependency, tool or service turns out broken, undocumented or wrong and its maintainers should hear about it; when opening a PR, at work or in open source; when rewriting the PRs `gh stack submit` opened."
+description: "Writing to GitHub under max's name: issues to projects he doesn't maintain, PR titles and bodies, and his yes before any of it is published. Use when a dependency, tool or service turns out broken, undocumented or wrong and its maintainers should hear about it; when opening a PR, at work or in open source; when closing out a PR's review; when rewriting the PRs `gh stack submit` opened."
 argument-hint: "[what to write, and where]"
 ---
 
@@ -9,7 +9,7 @@ Everything written here goes out on max's account, to people who owe him no atte
 What each kind of document holds is in its companion:
 
 - **An issue on a project max doesn't maintain**: [ISSUE.md](ISSUE.md), from earning the filing to the title and body.
-- **A PR**, its title and body: [PR.md](PR.md).
+- **A PR**, its title and body, and closing out its reviews: [PR.md](PR.md).
 
 ## The reader
 

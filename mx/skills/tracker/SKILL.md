@@ -18,7 +18,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **needs-user**: the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
 - **hinge**: a child ticket ruled alone, before anything builds on it; the cut marks it (SLICING.md, Mark the hinges).
 
-**The H1 is the ticket's short name**, the few words a board row shows; the sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `CONTEXT.md`, in this order:
+**The H1 is the ticket's short name**, the few words a board row shows, and the slug is the same words kebab-cased. Both name what the work delivers, so a reader skimming the board knows the ticket without opening it: "Retry failed uploads", where "Upload panel queue" names only where the work happens. The sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `CONTEXT.md`, in this order:
 
 - **`## Brief`**, always, right under the H1: the intent and why it matters, as a technical stakeholder writes it, read cold. A proposal's says what it was cut from.
 - **`## User stories`**: numbered, `As an <actor>, I want <a capability>, so that <a benefit>`.

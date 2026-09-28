@@ -12,10 +12,11 @@ either scheme.
 Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page out in W/Z CSS
 pixels, which is what render-lint's --width takes: the Property states a range of layout widths,
 that quotient over the corners of its grid. What is measured inside the range is both edges of
-every band the board's own `@media` rules cut it into, read off the rendered page, so a new
-breakpoint brings its two widths here with no edit. What that gives up is a collision that exists
-only mid-band, which takes a box whose size does not track the window's: `.body` at 46rem, `main`
-and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board has.
+every band the board's own `@media` rules cut it into, read off the stylesheet board.py renders the
+page with, so a new breakpoint brings its two widths here with no edit. What that gives up is a
+collision that exists only mid-band, which takes a box whose size does not track the window's:
+`.body` at 46rem, `main` and `.absences` at 110rem, and `.side` at 40vh of height are the ones the
+board has.
 
 A page that ignores `?theme=` would be measured twice in the same scheme, so the scheme switch the
 house style prescribes is the check's precondition rather than a second check.
@@ -26,7 +27,8 @@ graph beside it, both schemes with the graph at full size over the board, which 
 the address opens, and both schemes with a row folded under its parent ticket's opened through its
 anchor, which opens the parent's row too and lays out the rows folded under it.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
-Property covers is never laid out.
+Property covers is never laid out. Each width, and each set of pages at it, is a check of its own,
+for the suite's processes to share out.
 
 Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
 means nothing until the same widths have been shown reporting a defect.
@@ -39,6 +41,11 @@ was read by eye at these widths, in both schemes (02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
+
+Every page load here answers the board's remote requests, its graph engine and its fonts, from
+copies kept on this machine (show/page_cache.py), so a run after the first touches no network.
+With neither the network nor a copy, the module that runs the board never runs, and the checks
+that drive it skip.
 """
 
 import json
@@ -48,19 +55,20 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
+SHOW = Path(__file__).resolve().parents[1] / "show"
+sys.path[:0] = [str(Path(__file__).parent), str(SHOW)]
 
-from board import render
+from board import PAGE, render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
+from page_cache import default_root
 
-RENDER_LINT = Path(__file__).resolve().parents[1] / "show" / "render_lint.py"
+RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
 NARROWEST, WIDEST = round(min(WINDOWS) / max(ZOOMS)), round(max(WINDOWS) / min(ZOOMS))
@@ -91,7 +99,7 @@ def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
     done = subprocess.run(
-        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json"],
+        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root())],
         capture_output=True, text=True,
     )
     # A run that never got as far as findings is its own failure, said here rather than left to a
@@ -104,25 +112,30 @@ def lint(pages: list[str], width: int) -> list[dict]:
     return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
 
 
-def band_edges(page: Path) -> list[int]:
+def band_edges(page: str) -> list[int]:
     """Both edges of every layout band the page's own `@media` rules cut the Property's range of
     layout widths into. Only a rule's prelude is read, so a width a ticket's prose or a container
     query names brings no band with it."""
     edges = {NARROWEST, WIDEST}
-    for prelude in re.findall(r"@media[^{]*", page.read_text()):
+    for prelude in re.findall(r"@media[^{]*", page):
         for side, px in re.findall(r"\((min|max)-width:\s*(\d+)px\)", prelude):
             edges |= {int(px), int(px) - 1} if side == "min" else {int(px), int(px) + 1}
     return sorted(w for w in edges if NARROWEST <= w <= WIDEST)
 
 
-def measured(pages: list[str], widths: list[int]) -> dict[int, list[dict]]:
-    """Each width in a browser of its own, on a pool a third of the machine's cores wide, shared out
-    when the suite itself is running in parallel: a browser lays the whole page out in a window as
-    tall as the page, and an unbounded pool crashes a tab."""
-    share = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", 1))
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 3) // 3 // share)) as pool:
-        found = list(pool.map(lambda width: lint(pages, width), widths))
-    return {width: f for width, f in zip(widths, found, strict=True) if f}
+# Read before any board is rendered, so that each width is a check of its own; each check holds
+# the rendered board to the same widths.
+WIDTHS = band_edges(PAGE.template)
+# The anchors each set of pages is measured under, in both schemes: every row folded, one row
+# opened, the graph over the board; and a row folded under its parent ticket's, a run of its own
+# because one browser measuring all eight pages crashes a tab.
+VIEWS = {"board": ("", f"#{OPENED}", f"&graph=1#{OPENED}"), "kin": (f"#{KIN}",)}
+
+
+def test_a_breakpoint_added_to_the_board_brings_its_two_widths() -> None:
+    added = PAGE.template.replace("<style>", "<style>\n  @media (min-width: 1700px) { main { gap: 0 } }", 1)
+    assert len(WIDTHS) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {WIDTHS}"
+    assert band_edges(added) == sorted([*WIDTHS, 1699, 1700])
 
 
 def named(found: dict[int, list[dict]]) -> str:
@@ -133,21 +146,18 @@ def named(found: dict[int, list[dict]]) -> str:
     )
 
 
-def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("view", VIEWS)
+@pytest.mark.parametrize("width", WIDTHS)
+def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int, view: str) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
-    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
-             for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
-    # a run of its own: one browser measuring all eight pages crashes a tab on this suite's pool
-    folded = [f"{out}?theme={scheme}#{KIN}" for scheme in SCHEMES]
-    widths = band_edges(out)
-    assert len(widths) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {widths}"
-    assert not (found := measured(pages, widths)), named(found)
-    assert not (found := measured(folded, widths)), named(found)
+    assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
+    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in VIEWS[view]]
+    assert not (found := lint(pages, width)), named({width: found})
 
 
 # A defect put back into the board: the brief of every folded row, in a box too narrow for the one
@@ -155,7 +165,8 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
 
 
-def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
     """A width where the defect goes unreported is a width the Property is not checked at, whatever
     the clean run above says. The oracle is the defect itself, named by the element it was measured
     on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
@@ -164,13 +175,13 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
+    assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
     broken = tmp_path / "broken.html"
     broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
-    widths = band_edges(out)
-    found = measured([f"{broken}?theme=day"], widths)
-    seen = [width for width, fs in found.items()
-            if any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in fs)]
-    assert sorted(seen) == widths, f"the defect went unseen at {sorted(set(widths) - set(seen))}px"
+    found = lint([f"{broken}?theme=day"], width)
+    assert any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in found), (
+        f"the defect went unseen at {width}px: {named({width: found})}"
+    )
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
@@ -183,7 +194,8 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
 PROBE = r'''
 import json, os, shutil, sys
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError, sync_playwright
+from page_cache import default_root, serve
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 width, marks = int(sys.argv[2]), sys.argv[3].split(",")
@@ -218,13 +230,26 @@ with sync_playwright() as pw:
     context = browser.new_context(viewport={"width": width, "height": 1000},
                                   permissions=["clipboard-read", "clipboard-write"])
     page = context.new_page()
+    serve(context, default_root())
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
     for scheme in ("day", "night"):
-        page.goto(f"{page_url}?theme={scheme}#{ROW}", wait_until="networkidle")
+        page.goto(f"{page_url}?theme={scheme}#{ROW}")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    # the graph engine is imported by the module that runs the board, before the page loads, so by
+    # now it either failed to arrive, and nothing past this point has a script behind it, or is
+    # drawing. Only the two imports count: the chunks mermaid fetches while it draws are what the
+    # second load aborts.
+    out["cdn"] = not any(url.endswith(".esm.min.mjs") for url in failed)
+    if not out["cdn"]:
+        print(json.dumps(out))
+        sys.exit()
+    try:
+        page.wait_for_selector(".side .mermaid svg", timeout=10_000)
+    except TimeoutError:
+        pass  # counted as no graph below
     out["names"] = page.evaluate("""
       () => [...document.querySelectorAll("details.ticket")].map((row) => {
         const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
@@ -245,7 +270,6 @@ with sync_playwright() as pw:
       }
     """)
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
-    out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
         where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
         page.hover(where)
@@ -302,7 +326,7 @@ MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", 
 def probe(page: Path, width: int) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
-        input=PROBE, capture_output=True, text=True,
+        input=PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
@@ -329,13 +353,14 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
+    if not seen["cdn"]:
+        pytest.skip("no mermaid: the module that runs the board never ran")
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"
-    if seen["cdn"]:
-        assert seen["graphs"] == 1, "the graph beside the rows never painted"
-        assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
+    assert seen["graphs"] == 1, "the graph beside the rows never painted"
+    assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
     # an opened row shows each of its questions once: the list under the name goes, and the block
     # carries the same questions with a copy button on each
@@ -384,6 +409,7 @@ GRAPH_PROBE = r'''
 import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from page_cache import default_root, serve
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 ROW, NODE, NEXT = "t-map-columns", "#t-commit-import", "#t-parse-rows"
@@ -410,20 +436,24 @@ with sync_playwright() as pw:
                                  args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     context = browser.new_context(viewport={"width": 1600, "height": 950})
     page = context.new_page()
+    serve(context, default_root())
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     errors = []
     page.on("pageerror", lambda e: errors.append("board: " + str(e)))
 
     # ?graph on the address, beside the row's anchor: the state the layout check measures
-    page.goto(f"{page_url}?theme=night&graph=1#{ROW}", wait_until="networkidle")
+    page.goto(f"{page_url}?theme=night&graph=1#{ROW}")
     page.evaluate("document.fonts.ready")
-    out = {"cdn": not any("mermaid" in url or "elk" in url for url in failed),
+    out = {"cdn": not any(url.endswith(".esm.min.mjs") for url in failed),
            "ground": page.evaluate("getComputedStyle(document.body).backgroundColor"),
            "font": page.evaluate("getComputedStyle(document.getElementById('gname')).fontFamily"),
            "node": NODE}
-    if out["cdn"]:
-        page.wait_for_selector("#gfull .gsvg svg")
+    if not out["cdn"]:  # the board's module never ran, so nothing below has a script behind it
+        out["errors"] = errors
+        print(json.dumps(out))
+        sys.exit()
+    page.wait_for_selector("#gfull .gsvg svg")
     out["from_the_address"] = {"open": page.is_visible("#gfull"), "nodes": nodes(page, "#gfull .gsvg"),
                                "name": page.inner_text("#gfull .gname")}
     out["preview_width"] = page.evaluate(WIDE, ".side .g:not([hidden]) .mermaid svg")
@@ -525,7 +555,7 @@ with sync_playwright() as pw:
     out["window"] = window
 
     # the re-render every tracker change triggers, under a window that has to find the board again
-    page.reload(wait_until="networkidle")
+    page.reload()
     page.evaluate("document.fonts.ready")
     page.keyboard.press("Escape")
     page.wait_for_selector(f"#{ROW} > summary")
@@ -549,7 +579,7 @@ print(json.dumps(out))
 def graph_probe(page: Path) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page)],
-        input=GRAPH_PROBE, capture_output=True, text=True,
+        input=GRAPH_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
     )
     assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-3000:]}"
     return json.loads(done.stdout)
@@ -573,7 +603,7 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     seen = graph_probe(out)
     assert seen["errors"] == [], seen["errors"]
     if not seen["cdn"]:
-        pytest.skip("no mermaid: the graph never painted")
+        pytest.skip("no mermaid: the module that runs the board never ran")
     row = seen["node"].removeprefix("#")
 
     # what the layout matrix above assumes of its two ?graph pages

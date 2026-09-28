@@ -16,18 +16,27 @@ hides its text by visibility, and not by opacity, which has no box to act on. Te
 renders late, or lays out below the first screen of a page that scrolls, is measured. A box cuts
 off only what it is the containing block of, the page itself included.
 
-What the reader sees also depends on when and where the page is read: a page still moving when the
-network goes quiet is measured once it stops and reported unmeasurable when it never does; what an
+What the reader sees also depends on when and where the page is read: a page still moving once its
+requests are done is measured once it stops and reported unmeasurable when it never does; what an
 address' fragment slides under fixed chrome is no finding, while the same chrome over the top of
 the page is one; and an opaque card drawn over a text hides it, where two texts nothing covers
 collide in plain sight.
+
+A page that loads a script from a server is measured with the script, and with --cache it is
+measured with the script after the server stops answering: a server that hangs holds a page without
+its copy unmeasurable, and one with its copy not at all. With the network cut off and no copy, the
+script's request fails rather than waits.
 
 A run launches Chromium, so these take a second or two each.
 """
 
 import json
+import os
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -103,13 +112,13 @@ TWO_SCREENS = """
 """
 
 
-def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "") -> tuple[int, list[dict]]:
+def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "", env: dict | None = None) -> tuple[int, list[dict]]:
     """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
     run = subprocess.run(
         [str(LINT), f"{page}{at}", "--json", *flags, *(["--crops", str(crops)] if crops else [])],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=os.environ | (env or {}),
     )
     assert run.returncode in (0, 1, 2) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
@@ -380,9 +389,9 @@ def test_a_finding_below_the_first_screen_still_gets_its_crop(tmp_path):
     assert abs(wide - (box["w"] + 48)) <= 1 and abs(tall - (box["h"] + 48)) <= 1, (wide, tall, box)
 
 
-def test_a_page_still_moving_when_the_network_goes_quiet_is_measured_once_it_stops(tmp_path):
+def test_a_page_still_moving_once_its_requests_are_done_is_measured_once_it_stops(tmp_path):
     """The board's own failure, as one page: the labels are stacked when the requests stop and
-    apart a moment later, so a run that measures at network idle reads a collision nobody sees."""
+    apart a moment later, so a run that measures once the requests stop reads a collision nobody sees."""
     code, findings = lint(tmp_path, settles(top_at_first=10, top_at_rest=34))
     assert findings == []
     assert code == 0
@@ -454,6 +463,78 @@ def test_a_scrolling_box_cuts_nothing_off(tmp_path):
     )
     assert findings == []
     assert code == 0
+
+
+class Remote:
+    """A server a page loads a script from, answering until told to hang."""
+
+    SCRIPT = b"""document.body.insertAdjacentHTML("beforeend", `
+      <div style="position:relative;height:60px">
+        <span style="position:absolute;left:20px;top:10px">Row label one</span>
+        <span style="position:absolute;left:20px;top:12px">Row label two</span>
+      </div>`)"""
+
+    def __init__(self) -> None:
+        self.hanging = threading.Event()
+        self.released = threading.Event()
+        remote = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if remote.hanging.is_set():
+                    remote.released.wait()
+                    return
+                if self.path == "/moved.js":
+                    self.send_response(302)
+                    self.send_header("Location", "/labels.js")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/javascript")
+                self.end_headers()
+                self.wfile.write(remote.SCRIPT)
+
+            def log_message(self, *_) -> None:
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.page = f'<script src="http://127.0.0.1:{self.server.server_port}/labels.js"></script>'
+
+
+@pytest.fixture
+def remote() -> Iterator[Remote]:
+    r = Remote()
+    threading.Thread(target=r.server.serve_forever, daemon=True).start()
+    yield r
+    r.released.set()
+    r.server.shutdown()
+
+
+def test_a_page_measured_from_its_copies_no_longer_waits_on_the_server_they_came_from(tmp_path, remote):
+    cache = tmp_path / "cache"
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache))
+    assert kinds(findings) == ["overlap"] and code == 1, "the script the server answered with never ran"
+    remote.hanging.set()
+    code, findings = lint(tmp_path, remote.page, "--patience", "2")
+    assert kinds(findings) == ["unmeasurable"] and findings[0]["text"] == "still loading after 2s"
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache), "--patience", "2")
+    assert kinds(findings) == ["overlap"] and code == 1
+
+
+def test_a_script_behind_a_redirect_is_kept_with_the_redirect(tmp_path, remote):
+    moved, cache = remote.page.replace("labels.js", "moved.js"), str(tmp_path / "cache")
+    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5")
+    assert kinds(findings) == ["overlap"] and code == 1
+    code, findings = lint(tmp_path, moved, "--cache", cache, "--patience", "5", env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    assert kinds(findings) == ["overlap"] and code == 1, "the redirect was not kept, so the page lost its script offline"
+
+
+def test_with_the_network_cut_off_a_page_without_its_copy_is_measured_without_the_script(tmp_path, remote):
+    remote.hanging.set()
+    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), "--patience", "2",
+                          env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    assert findings == [] and code == 0
 
 
 if __name__ == "__main__":
