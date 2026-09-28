@@ -17,7 +17,7 @@
 #        dispatch-ctl probe
 #        dispatch-ctl log <slug> [lines]
 #        dispatch-ctl cleanup <slug>
-#        dispatch-ctl fuzz start|restart|stop|clean|check
+#        dispatch-ctl fuzz <verb>
 #   <slug> is the ticket's id, which names its branches, worktrees and session
 #         here; no ticket file is read on this side.
 #   init      what staging this host runs, once per scratch dir and again
@@ -70,30 +70,7 @@
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane and whatever its runs left running, forgets the
 #             run, removes both worktrees and both branches
-#   fuzz      the repo's fuzz run, from the scratch dir of its integration
-#             branch, <base>; `dispatch fuzz` is what calls these.
-#             start: cuts fuzz/<base> from <base> in both repos into
-#             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/` (set up as a
-#             ticket worktree is) or resets the ones there to <base> and sets
-#             them up again, links `fuzz.hypothesis` in this directory into
-#             it as `.hypothesis`, hooks the code repo's bare repo (a remote
-#             host's alone), and runs `make fuzz` there as the `job`
-#             fuzz-<repo>. Refuses a project whose conftest.py sets a
-#             Hypothesis database, and a run already running.
-#             restart: what the hook runs when a push moves <base>: ends the
-#             job, resets both worktrees to the tips pushed and sets them up
-#             again, runs it again.
-#             stop: unhooks and ends the job; worktrees and database stay.
-#             clean: unhooks, ends and forgets the job, removes both worktrees
-#             and both branches; the database stays.
-#             check: runs `make test` in the worktree, which replays every
-#             failure the database holds, and prints a line `FAILED <node id>`
-#             per failure, each line of its failing test case under it behind
-#             four spaces, then `patch: <path>` where Hypothesis wrote the
-#             patch adding every case as an `@example`. A failing suite with
-#             no failure to read out has its tail on stderr. Exit 0 when the
-#             suite passes, its own status when it fails.
-#             Nothing here removes the database; that is the user's, by hand.
+#   fuzz      the repo's fuzz run's host side, for `dispatch fuzz` and its hook
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
 # list --json`), and `init` wants `curl` and `claude`: it
@@ -145,10 +122,7 @@
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
 #   <run>.status|.log            written by the runner
 #   <name>.install.log           the setup command's output
-#   fuzz.hypothesis/             the fuzz run's Hypothesis database: its
-#                                corpus, its findings, the patches `check`
-#                                has Hypothesis write
-#   fuzz.check.log               the suite's output from the last `fuzz check`
+#   fuzz.*                       the fuzz run's database and its check's files
 #
 # Every command that changes something is echoed before it runs, so a
 # transcript shows the primitives; anything this script does wrong can be
@@ -531,10 +505,12 @@ remove_worktrees() {
     return 0
 }
 
-# The repo's fuzz run: one `job`, on a worktree of the integration branch this
-# scratch dir is for, and its Hypothesis database in this scratch dir, beside
-# the worktree rather than in it, so that removing the worktree leaves the
-# corpus and every finding where the next run finds them.
+# The repo's fuzz run: one `job`, fuzz-<repo>, running `make fuzz` in a
+# worktree of the integration branch this scratch dir is for, cut as fuzz/<base>
+# in both repos into <worktrees-dir>/<repo>-<base>-fuzz and its `agent/`. Its
+# Hypothesis database is `fuzz.hypothesis` in this scratch dir, beside the
+# worktree rather than in it, so that removing the worktree leaves the corpus
+# and every finding where the next run finds them; nothing here removes it.
 fuzz_names() {
     name=fuzz-$repo
     branch=fuzz/$base
@@ -602,6 +578,9 @@ hook_install() {
 
 hook_remove() { [ -z "$hook" ] || [ ! -f "$hook" ] || run rm "$hook"; }
 
+# Cuts the worktrees, set up as a ticket's are, or resets the ones there; links
+# the database in; hooks the bare repo; runs the job. Refuses a project whose
+# conftest.py sets a Hypothesis database, and a run already running.
 fuzz_start() {
     load; fuzz_names
     git -C "$git_dir" show "$base:Makefile" 2>/dev/null | grep -q '^fuzz:' ||
@@ -620,7 +599,8 @@ fuzz_start() {
     echo "fuzzing $name  worktree=$worktree  database=$db"
 }
 
-# What the hook runs, once a push has moved the integration branch.
+# What the hook runs, once a push has moved the integration branch: the job
+# again, on worktrees reset to the tips pushed and set up again.
 fuzz_restart() {
     load; fuzz_names
     [ -d "$worktree" ] || die "no fuzz worktree at $worktree; \`dispatch fuzz start\` cuts one"
@@ -630,6 +610,7 @@ fuzz_restart() {
     echo "restarted $name on $(git -C "$worktree" rev-parse --short HEAD)"
 }
 
+# Unhooks and ends the job; worktrees and database stay.
 fuzz_stop() {
     load; fuzz_names
     hook_remove
@@ -637,6 +618,8 @@ fuzz_stop() {
     echo "stopped $name; its worktree and database stay"
 }
 
+# Unhooks, ends and forgets the job, removes both worktrees and both branches;
+# the database stays.
 fuzz_clean() {
     load; fuzz_names
     hook_remove
@@ -646,55 +629,21 @@ fuzz_clean() {
 }
 
 # Every failure the database holds, replayed by the project's own suite, which
-# prints each one's failing test case and writes a patch adding them as
-# `@example`s. HypoFuzz and the plain loop both leave findings nowhere else.
+# has Hypothesis write a patch adding each failing case to its property as an
+# `@example`. That patch, the one written since the stamp, is what this prints.
+# A suite that fails with no patch written has its tail on stderr. Exit 0 when
+# the suite passes, its own status when it fails.
 fuzz_check() {
     load; fuzz_names
     [ -d "$worktree" ] || die "no fuzz worktree at $worktree; \`dispatch fuzz start\` cuts one"
-    log=$here/fuzz.check.log
+    log=$here/fuzz.check.log stamp=$here/fuzz.check.stamp
+    run touch "$stamp"
     echo "+ (cd $worktree && make test) > $log 2>&1" >&2
     (cd "$worktree" && make test) > "$log" 2>&1 && { echo "no failure: the suite passes on everything $db holds"; return 0; }
     rc=$?
-    found=$(findings < "$log")
-    if [ -n "$found" ]; then
-        printf '%s\n' "$found" | sed "s|^patch: |patch: $worktree/|"
-    else
-        tail -20 "$log" >&2
-    fi
+    patch=$(find "$db/patches" -name '*.patch' -newer "$stamp" 2>/dev/null | sort | tail -1)
+    if [ -n "$patch" ]; then cat "$patch"; else tail -20 "$log" >&2; fi
     return "$rc"
-}
-
-# pytest's output, read down to what `fuzz check` prints. A failure section is
-# titled by the test's name alone, so it meets its node id in the short
-# summary, in the order both list them.
-findings() {
-    awk '
-        /^_+ [^_ ].* _+$/ { t = $0; sub(/^_+ /, "", t); sub(/ _+$/, "", t); title[++n] = t; next }
-        open {
-            line = substr($0, cut + 1); example[n] = example[n] "\n    " line
-            if (line ~ /^\)/) open = 0
-            next
-        }
-        match($0, /(Falsifying example|Failing test case)[^:]*: /) {
-            cut = RSTART - 1; line = substr($0, RSTART); example[n] = example[n] "\n    " line
-            open = line ~ /\($/
-            next
-        }
-        /^FAILED / { failed[++m] = $2 }
-        match($0, /git apply [^` ]+/) { patch = substr($0, RSTART + 10, RLENGTH - 10) }
-        END {
-            for (i = 1; i <= n; i++) {
-                if (example[i] == "") continue
-                id = title[i]
-                for (j = 1; j <= m; j++) {
-                    tail = failed[j]; sub(/^[^:]*::/, "", tail); gsub(/::/, ".", tail)
-                    if (!used[j] && tail == title[i]) { used[j] = 1; id = failed[j]; break }
-                }
-                print "FAILED " id example[i]
-            }
-            for (j = 1; j <= m; j++) if (!used[j]) print "FAILED " failed[j]
-            if (patch != "") print "patch: " patch
-        }'
 }
 
 fuzz() {

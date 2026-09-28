@@ -11,11 +11,10 @@
 ## Testing
 
 - `uv add --group dev hypothesis hypofuzz`, and `tests/properties/` for the checks that run over generated inputs (`/mx:testing`). Those two are the testing dependencies the project takes on: harden runs mutmut and coverage from its own environment, so neither belongs in the dev group.
-- Hypothesis takes two profiles in `tests/conftest.py`, picked up with `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))`: `harden`, so a mutation run costs a small example budget instead of the full one, and `fuzz`, the budget `make fuzz` runs until you stop it where the project has no HypoFuzz. Hypothesis keeps what either one finds in `.hypothesis/`, and the ordinary suite replays it from there.
+- Hypothesis takes a `harden` profile in `tests/conftest.py`, picked up with `settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))`, so a mutation run costs a small example budget instead of the full one. Hypothesis keeps what it and `make fuzz` find in `.hypothesis/`, and the ordinary suite replays it from there.
 
   ```python
   settings.register_profile("harden", max_examples=25, deadline=None)
-  settings.register_profile("fuzz", max_examples=5000, deadline=None)
   ```
 
 - mutmut's config, in `pyproject.toml`, is what scopes `make harden`:
@@ -29,4 +28,3 @@
 
 - `mutants/`, `.coverage` and `.hypothesis/` are gitignored, and `[tool.pytest.ini_options] testpaths = ["tests"]` keeps pytest out of the copies of the suite that mutmut leaves in `mutants/`.
 - A project on SQLAlchemy's async engine sets `[tool.coverage.run] concurrency = ["thread", "greenlet"]` for its own coverage runs (CI, a local `--cov`), or coverage's default tracer records nothing after an `await` into the engine and warns about nothing. Harden's own pass needs no setting from the project.
-- HypoFuzz is licensed for non-commercial use, which is the user's call per project: ask, and drop the dependency where they rule it a problem. Without it `make fuzz` loops the `fuzz` profile instead, and Atheris drives the same property tests through Hypothesis' `fuzz_one_input` where a project wants coverage guidance anyway.

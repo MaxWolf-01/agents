@@ -290,7 +290,7 @@ def test_a_database_an_earlier_integration_branch_left_is_no_run(
 @pytest.mark.parametrize("status, state", [("exit=0 ended=2026-09-28T07:40:33+00:00 secs=4", "exited"),
                                            ("", "gone")])
 def test_a_fuzz_run_that_ended_reads_as_ended(tmp_path: Path, tmux: dict[str, str], status: str, state: str):
-    """The plain loop ends on its first finding, and a killed runner leaves no status line."""
+    """A run that ended, and a killed runner, which leaves no status line."""
     dead = subprocess.Popen(["true"])
     dead.wait()
     fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=60, pid=dead.pid, status=status)

@@ -13,15 +13,9 @@ harden:
 	@command -v $(HARDEN) >/dev/null || { echo "$(HARDEN) not found: run from a session with the mx plugin, put its bin/ on PATH, or set HARDEN=<path>"; exit 1; }
 	$(HARDEN) $(ARGS)
 
-# The property tests again, coverage-guided by HypoFuzz, until you stop it. A project without
-# HypoFuzz (its licence is the user's call) loops them at the fuzz profile's budget instead.
+# The property tests again, coverage-guided by HypoFuzz, until you stop it.
 fuzz:
-	@if uv run python -c "import hypofuzz" >/dev/null 2>&1; then \
-	  uv run hypothesis fuzz -- tests/properties; \
-	else \
-	  echo "no hypofuzz: looping the fuzz profile instead, ctrl-c to stop"; \
-	  while HYPOTHESIS_PROFILE=fuzz uv run pytest tests/properties -q; do :; done; \
-	fi
+	uv run hypothesis fuzz -- tests/properties
 
 check: lint typecheck
 	@echo "All checks passed!"
