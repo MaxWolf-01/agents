@@ -62,7 +62,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 </git>
 
 <style>
-**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. `/mx:writing-for-humans` is its standard; the reviewer applies it. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the closing comment your report carries. Organize files top-down (newspaper style).
+**One home per fact**: artifact text (code comments, docs, docstrings, UI copy, --help, ticket prose) never restates what code, config or --help already says; a copy is a cache that goes stale. It is read cold, by someone without this conversation, and states only what is. A comment earns its line by explaining non-obvious behavior, warning of a trap, or unpacking hard code, in plain words. `/mx:writing-for-humans` is its standard, and a review applies it where one runs. What is not what-is (why a change was made, what was decided against, a note for the reviewer) goes in the commit message or the closing comment your report carries. Organize files top-down (newspaper style).
 </style>
 
 <tools>
