@@ -12,8 +12,9 @@ either scheme.
 Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page out in W/Z CSS
 pixels, which is what render-lint's --width takes: the Property states a range of layout widths,
 that quotient over the corners of its grid. What is measured inside the range is both edges of
-every band the board's own `@media` rules cut it into, read off the rendered page, so a new
-breakpoint brings its two widths here with no edit. What that gives up is a collision that exists
+every band the board's own `@media` rules cut it into, read off the stylesheet board.py renders the
+page with, so a new breakpoint brings its two widths here with no edit. Each width, and each set of
+pages at it, is a check of its own, for the suite's processes to share out. What that gives up is a collision that exists
 only mid-band, which takes a box whose size does not track the window's: `.body` at 46rem, `main`
 and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board has.
 
@@ -48,7 +49,6 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -56,7 +56,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from board import render
+from board import PAGE, render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 
@@ -104,25 +104,29 @@ def lint(pages: list[str], width: int) -> list[dict]:
     return [f for f in json.loads(done.stdout) if f["kind"] not in ("tight", "clipped")]
 
 
-def band_edges(page: Path) -> list[int]:
+def band_edges(page: str) -> list[int]:
     """Both edges of every layout band the page's own `@media` rules cut the Property's range of
     layout widths into. Only a rule's prelude is read, so a width a ticket's prose or a container
     query names brings no band with it."""
     edges = {NARROWEST, WIDEST}
-    for prelude in re.findall(r"@media[^{]*", page.read_text()):
+    for prelude in re.findall(r"@media[^{]*", page):
         for side, px in re.findall(r"\((min|max)-width:\s*(\d+)px\)", prelude):
             edges |= {int(px), int(px) - 1} if side == "min" else {int(px), int(px) + 1}
     return sorted(w for w in edges if NARROWEST <= w <= WIDEST)
 
 
-def measured(pages: list[str], widths: list[int]) -> dict[int, list[dict]]:
-    """Each width in a browser of its own, on a pool a third of the machine's cores wide, shared out
-    when the suite itself is running in parallel: a browser lays the whole page out in a window as
-    tall as the page, and an unbounded pool crashes a tab."""
-    share = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", 1))
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 3) // 3 // share)) as pool:
-        found = list(pool.map(lambda width: lint(pages, width), widths))
-    return {width: f for width, f in zip(widths, found, strict=True) if f}
+# Read before any board is rendered, so that each width is a check of its own; each check holds
+# the rendered board to the same widths.
+WIDTHS = band_edges(PAGE.template)
+# The anchors each set of pages is measured under, in both schemes: every row folded, one row
+# opened, the graph over the board; and a row folded under its parent ticket's, a run of its own
+# because one browser measuring all eight pages crashes a tab.
+VIEWS = {"board": ("", f"#{OPENED}", f"&graph=1#{OPENED}"), "kin": (f"#{KIN}",)}
+
+
+def test_a_breakpoint_added_to_the_board_brings_its_two_widths() -> None:
+    added = PAGE.template.replace("<style>", "<style>\n  @media (min-width: 1700px) { main { gap: 0 } }", 1)
+    assert band_edges(added) == sorted([*WIDTHS, 1699, 1700])
 
 
 def named(found: dict[int, list[dict]]) -> str:
@@ -133,21 +137,19 @@ def named(found: dict[int, list[dict]]) -> str:
     )
 
 
-def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("view", VIEWS)
+@pytest.mark.parametrize("width", WIDTHS)
+def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int, view: str) -> None:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
-    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES
-             for anchor in ("", f"#{OPENED}", f"&graph=1#{OPENED}")]
-    # a run of its own: one browser measuring all eight pages crashes a tab on this suite's pool
-    folded = [f"{out}?theme={scheme}#{KIN}" for scheme in SCHEMES]
-    widths = band_edges(out)
-    assert len(widths) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {widths}"
-    assert not (found := measured(pages, widths)), named(found)
-    assert not (found := measured(folded, widths)), named(found)
+    assert len(WIDTHS) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {WIDTHS}"
+    assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
+    pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in VIEWS[view]]
+    assert not (found := lint(pages, width)), named({width: found})
 
 
 # A defect put back into the board: the brief of every folded row, in a box too narrow for the one
@@ -155,7 +157,8 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
 
 
-def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
     """A width where the defect goes unreported is a width the Property is not checked at, whatever
     the clean run above says. The oracle is the defect itself, named by the element it was measured
     on: any other finding, an unmeasurable page among them, leaves the width unchecked."""
@@ -166,11 +169,10 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
     render(transcribed.root, transcribed.repo, out)
     broken = tmp_path / "broken.html"
     broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
-    widths = band_edges(out)
-    found = measured([f"{broken}?theme=day"], widths)
-    seen = [width for width, fs in found.items()
-            if any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in fs)]
-    assert sorted(seen) == widths, f"the defect went unseen at {sorted(set(widths) - set(seen))}px"
+    found = lint([f"{broken}?theme=day"], width)
+    assert any(f["kind"] == "escapes" and f["el"].endswith("span.brief") for f in found), (
+        f"the defect went unseen at {width}px: {named({width: found})}"
+    )
 
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
