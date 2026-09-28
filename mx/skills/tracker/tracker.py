@@ -41,7 +41,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Annotated, Callable, Iterable, Literal, Sequence, get_args
+from typing import Annotated, Iterable, Literal, Sequence, get_args
 
 import tyro
 import yaml
@@ -99,7 +99,7 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
             raise Refused([f"{file}:1: {built} is a ticket branch, and a ticket file is written in the agent repo's main checkout, never on one" for file in files])
         reports = staged_reports(tracker.root)
     checked = {path: refusals_of(tracker.at_path(path), tracker) for path in files}
-    checked |= {path: report_refusals(path, text, tracker, staged_text) for path, text in reports}
+    checked |= {path: report_refusals(path, text, tracker) for path, text in reports}
     for said in checked.values():
         for refusal in said:
             print(refusal)
@@ -634,17 +634,21 @@ def landed(ticket: Ticket, was: str, report: Report, path: Path, tracker: Tracke
     return written, [f"{path}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken] if broken else []
 
 
-def report_refusals(path: Path, text: str, tracker: Tracker, text_of: Callable[[Path], str]) -> list[Refusal | str]:
-    """What `import` would refuse of the report at `path` before it writes a word, for the ticket
-    its show directory names: what the report says that no reader can read, and then what it would
-    leave that ticket saying. The second is read only while the ticket is `claimed`, the build an
-    import takes to review; a ticket past that already carries its report, and one short of it is
-    refused by status, which is the orchestrator's to change and no fault of the report."""
+def report_refusals(path: Path, text: str, tracker: Tracker) -> list[Refusal | str]:
+    """What `import` would refuse of the staged report at `path` before it writes a word, for the
+    ticket its show directory names: what the report says that no reader can read, and then what it
+    would leave that ticket saying. The second is read only while the ticket is `claimed`, the build
+    an import takes to review; a ticket past that already carries its report, and one short of it
+    is refused by status, which is the orchestrator's to change and no fault of the report.
+
+    The ticket is the one this commit's index holds, which on a worker's branch is the ticket as the
+    branch was cut: what the orchestrator wrote into it since, a round imported before a resume
+    among it, the import reads and this does not."""
     read_back = read_report(path, text)
     ticket = tracker.tickets.get(path.parent.name)
     if read_back.refusals or ticket is None or ticket.status != "claimed":
         return list(read_back.refusals)
-    return landed(ticket, text_of(ticket.path), read_back, path, tracker)[1]
+    return landed(ticket, staged_text(ticket.path), read_back, path, tracker)[1]
 
 
 def with_report(text: str, ticket: Ticket, report: Report) -> str:
@@ -1652,6 +1656,7 @@ def staged(root: Path) -> Tracker:
 
 
 def staged_text(path: Path) -> str:
+    """The text the index holds for `path`: the file as this commit makes it."""
     top = toplevel(path.parent)
     return git(top, "show", f":{path.relative_to(top)}")
 
