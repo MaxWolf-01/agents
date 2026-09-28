@@ -10,6 +10,9 @@
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
+#   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
+#   RUN_LOG                   where each attempt's line goes (run-log, staged beside
+#                             this script); its own default unless set
 set -u
 
 message=$1
@@ -18,6 +21,7 @@ model=$3
 run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
+effort=${DISPATCH_EFFORT:-high}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
@@ -25,6 +29,13 @@ if [ ! -f "$prompt_file" ]; then
     # Without it the worker would run on no instructions at all, and silently.
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
+# Every attempt runs through it, so a run nobody logged cannot happen quietly.
+run_log=$here/run-log
+if [ ! -f "$run_log" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 
@@ -66,8 +77,8 @@ models() {
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
 claude_version=$(claude --version 2> /dev/null | cut -d' ' -f1)
-printf '%s runner: started %s on %s with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
-    "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
+printf '%s runner: started %s on %s at %s effort with claude %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" \
+    "$effort" "${claude_version:-?}" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
 git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
@@ -91,6 +102,7 @@ common=(
     -p
     --permission-mode "$permission_mode"
     --model "$model"
+    --effort "$effort"
     --settings "$settings"
     --append-system-prompt "$(cat "$prompt_file")"
 )
@@ -120,12 +132,13 @@ trap 'stopped=1' TERM
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
+    logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
-        scoped "$unit" claude "${common[@]}" --resume "$session" continue
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        scoped "$unit" claude "${common[@]}" --resume "$session" "$(cat "$message")"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
-        scoped "$unit" claude "${common[@]}" --session-id "$session" < "$message"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
     unscope "$unit"

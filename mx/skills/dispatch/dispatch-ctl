@@ -10,10 +10,10 @@
 # commits, merges, pushes, fetches -- stays with the orchestrator.
 #
 # Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]
-#        dispatch-ctl spawn <slug> <model> [session-id]
+#        dispatch-ctl spawn <slug> <model> [session-id] [--effort <level>]
 #        dispatch-ctl wait <slug> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <slug>
-#        dispatch-ctl resume <slug> <model>
+#        dispatch-ctl resume <slug> <model> [--effort <level>]
 #        dispatch-ctl probe
 #        dispatch-ctl log <slug> [lines]
 #        dispatch-ctl cleanup <slug>
@@ -44,7 +44,8 @@
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
-#             on the same file, which then holds the guidance.
+#             on the same file, which then holds the guidance. --effort is
+#             `high` unless given.
 #   wait      blocks until the current run of <slug> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
@@ -54,8 +55,9 @@
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
-#             the same prompt file holds the guidance. The round commits a
-#             report of its own, over the one the round before it left.
+#             the same prompt file holds the guidance; --effort is given again
+#             or the round runs at `high`. The round commits a report of its
+#             own, over the one the round before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
 #             report is committed, session id, the models the run's turns of
@@ -86,7 +88,9 @@
 #                             copies the orchestrator's as runner-<slug>. A
 #                             resume without it runs the runner the run was
 #                             spawned on. The contract it owes: argv is
-#                             <prompt> <slug> <model> <run> [session-id]; it
+#                             <prompt> <slug> <model> <run> [session-id], with
+#                             DISPATCH_EFFORT and DISPATCH_PERMISSION_MODE in
+#                             its environment; it
 #                             puts worker-prompt.md from
 #                             this directory into the worker's system prompt,
 #                             which is where a worker's whole contract lives;
@@ -123,6 +127,7 @@ manifest=$here/manifest
 runner=${DISPATCH_RUNNER:-run-worker.sh}
 case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
+effort=high
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 run() { echo "+ $*" >&2; "$@"; }
@@ -246,7 +251,19 @@ checkout() {
     fi
 }
 
+# `--effort <level>` after the positional arguments; what is left is positional.
+take_effort() {
+    positional=()
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
+            *) positional+=("$1"); shift ;;
+        esac
+    done
+}
+
 spawn() {
+    take_effort "$@"; set -- "${positional[@]}"
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
@@ -271,7 +288,7 @@ spawn() {
     # `=` everywhere a target is named: without it tmux falls back to prefix and
     # pattern matching, so a new-session that failed would type this line into
     # whichever session matched, one another worker holds included.
-    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $slug $model $run_id $session_id"
+    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
     # The runner creates the log within its first seconds; its absence means the
@@ -286,7 +303,7 @@ spawn() {
     fi
 
     ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    echo "spawned $name  run=$run_id  claude=$claude_version"
+    echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version"
 }
 
 # A model alias names whichever model the host's `claude` resolves it to, so a
@@ -371,6 +388,7 @@ stop() {
 }
 
 resume() {
+    take_effort "$@"; set -- "${positional[@]}"
     load; names "$1"
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name to resume; spawn it"

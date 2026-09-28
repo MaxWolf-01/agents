@@ -9,7 +9,7 @@ records its arguments, works for a set time and writes the report its brief name
 are the user's rulings in `agent/tickets/review-launcher.md`: D113, a review that was killed,
 by kill -9 or a crash, never blocks a later one, and a review that is still running, or anything
 it started, is never disturbed by another; D114 and D115, a reviewer starts from none of the
-caller's setup and runs Opus at the effort the caller gives, `high` by default; and
+caller's setup and runs Opus at the effort the caller gives, `medium` by default; and
 `agent/tickets/ticket-file-contract.md` P4, that a reviewer's context is the ticket's body with
 every ancestor's, assembled by the one command that assembles a worker's brief.
 """
@@ -74,7 +74,8 @@ def argv_file(repo: Path) -> Path:
 
 def command(repo: Path, secs: int, args: tuple[str, ...], **extra: str) -> dict:
     env = {**os.environ, "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
-           "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)), **extra}
+           "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)),
+           "RUN_LOG": str(repo.parent / "runs.jsonl"), **extra}
     return {"args": [str(REVIEW), "main~1", *args], "cwd": repo, "env": env, "text": True}
 
 
@@ -226,9 +227,13 @@ def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
     assert set(value(argv, "--tools").split(",")) == {"Read", "Grep", "Glob", "Bash", "Edit", "Write"}
 
 
-def test_every_reviewer_runs_opus_at_high_effort_unless_told_otherwise(repo):
+def test_every_reviewer_runs_opus_at_medium_effort_unless_told_otherwise(repo):
     assert run(repo, "--light").returncode == 0
-    assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "high")
+    assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "medium")
+    # `run-log`: one line per axis, naming the axis and the spec's ticket where one was given
+    (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["axis"], logged["ticket"], logged["model"], logged["effort"]) == \
+        ("review", "light", "", "opus", "medium")
 
     assert run(repo, "--light", "--effort", "low").returncode == 0
     assert value(launched(repo), "--effort") == "low"
@@ -265,6 +270,10 @@ def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     ticketed(repo)
 
     done = run(repo, "--axes", "spec", "--spec", "lamp-presets")
+    # `run-log`: the axis's line names the ticket the spec came from, and the range it read
+    (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["axis"], logged["ticket"]) == ("review", "spec", "lamp-presets")
+    assert logged["range"] and ".." in logged["range"]
 
     assert done.returncode == 0, done.stderr
     assembled = (review_dir(repo) / "ticket.md").read_text()

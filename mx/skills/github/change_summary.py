@@ -9,7 +9,7 @@ A model reads the diff and nothing else, and says in one plain-English paragraph
 
 The paragraph goes to stdout. When it runs past 150 words the model is asked once more. An empty diff, a failed model call, or a paragraph still past 150 words after that exits 1, with the reason, and the paragraph, on stderr.
 
-Env: CHANGE_SUMMARY_MODEL sets the default model.
+Env: CHANGE_SUMMARY_MODEL sets the default model, CHANGE_SUMMARY_EFFORT the default effort.
 
 Examples:
 
@@ -27,6 +27,7 @@ from pathlib import Path
 import tyro
 
 CATALOGUE = Path(__file__).resolve().parents[1] / "writing-for-humans/CATALOGUE.md"
+RUN_LOG = Path(__file__).resolve().parents[1] / "run-log/run-log"  # every call goes through it, one line each in the run log
 TARGET, STATED, CAP = 60, 100, 150  # Opus overshoots the length it is asked for by about half, so the prompt asks for less than the cap the tool enforces
 
 INSTRUCTION = f"""You write the opening paragraph of a pull request description, from the unified diff you are given and nothing else.
@@ -51,6 +52,9 @@ class Args:
     model: str = field(default_factory=lambda: os.environ.get("CHANGE_SUMMARY_MODEL", "opus"))
     """Model the paragraph is asked of: an alias or a full model name."""
 
+    effort: str = field(default_factory=lambda: os.environ.get("CHANGE_SUMMARY_EFFORT", "medium"))
+    """Effort level, `medium` by default."""
+
 
 def artifact_rules(catalogue: str) -> str:
     """The catalogue's rule blocks tagged `artifact` or `both`, whole, headings dropped."""
@@ -67,15 +71,16 @@ def artifact_rules(catalogue: str) -> str:
     return "\n".join(kept).rstrip("\n")
 
 
-def ask(model: str, system: str, prompt: str) -> str:
-    """One bare `claude -p` call, from an empty directory so no project file is in reach."""
+def ask(model: str, effort: str, system: str, prompt: str) -> str:
+    """One bare `claude -p` call through `run-log`, from an empty directory so no project file is in reach."""
     with tempfile.TemporaryDirectory() as empty:
         try:
             proc = subprocess.run(
-                ["claude", "-p", "--model", model, "--system-prompt", system,
+                [str(RUN_LOG), "run", "--site", "change-summary", "--timeout", "600", "--",
+                 "claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
                  "--setting-sources", "", "--strict-mcp-config", "--tools", "",
                  "--disable-slash-commands", "--no-session-persistence"],
-                input=prompt, capture_output=True, text=True, timeout=600, cwd=empty,
+                input=prompt, capture_output=True, text=True, timeout=630, cwd=empty,
                 env={**os.environ, "CLAUDECODE": ""},
             )
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -87,15 +92,15 @@ def ask(model: str, system: str, prompt: str) -> str:
     return proc.stdout.strip()
 
 
-def summarize(diff: str, model: str) -> str:
+def summarize(diff: str, model: str, effort: str) -> str:
     """The paragraph for a diff, asked for once more when the first runs past the cap."""
     if not diff.strip():
         raise Failure("no diff on stdin")
     system = INSTRUCTION + artifact_rules(CATALOGUE.read_text())
-    paragraph = ask(model, system, diff)
+    paragraph = ask(model, effort, system, diff)
     words = len(paragraph.split())
     if words > CAP:
-        paragraph = ask(model, system, f"{diff}\n\n---\nYour previous paragraph ran {words} words; write at most {STATED}. Write it again within the cap.")
+        paragraph = ask(model, effort, system, f"{diff}\n\n---\nYour previous paragraph ran {words} words; write at most {STATED}. Write it again within the cap.")
         words = len(paragraph.split())
     if words > CAP:
         raise Failure(f"the paragraph ran {words} words after a retry, over the cap of {CAP}:\n{paragraph}")
@@ -105,7 +110,7 @@ def summarize(diff: str, model: str) -> str:
 def main() -> None:
     args = tyro.cli(Args, prog="change-summary", description=__doc__)
     try:
-        print(summarize(sys.stdin.buffer.read().decode(errors="replace"), args.model))
+        print(summarize(sys.stdin.buffer.read().decode(errors="replace"), args.model, args.effort))
     except Failure as e:
         sys.exit(f"change-summary: {e}")
 

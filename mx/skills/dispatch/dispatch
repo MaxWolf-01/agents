@@ -64,7 +64,8 @@
 #   fetch    brings both ticket/<slug> branches from the host into the two
 #            repos here, replacing an earlier fetch of them (ticket branches get
 #            rebased). The worker's report is a file on the agent branch, so it arrives with
-#            it.
+#            it, and the host's run log lines come with it too (`run-log pull`),
+#            as they do on a cleanup; a pull that fails is said and stops nothing.
 #   push     this branch, from both repos, to every host still holding a run of
 #            it, so a worker resumed to rebase finds the tips it is rebasing
 #            onto. A host that refuses the push is reported and the rest still
@@ -109,6 +110,10 @@ skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # one, which runs here and nowhere else: a worker is handed its ticket's context
 # in its prompt, so no worker host holds a reader of a ticket file.
 tracker=$skill/../tracker/tracker.py
+# Every model run on a host leaves a line in that host's log; a fetch or a
+# cleanup is when the orchestrator is talking to the host anyway, so the lines
+# come back here then (`run-log --help`).
+run_log=$skill/../run-log/run-log
 
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
@@ -240,7 +245,7 @@ ticket_host() { # <slug>
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
-    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md")
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
     # The setup command travels as a file named `setup`, which stays on the host
     # for every later spawn until another --setup-cmd replaces it.
@@ -439,7 +444,7 @@ ctl() {
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
-    [ -n "$forgets" ] && forget_run "$name"
+    [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     [ "$sub" = resume ] && reclaim "$2"
     return 0
 }
@@ -473,6 +478,14 @@ fetch() {
                 die "fetching $branch from $host into $top failed"
         done
     fi
+    pull_runs "$host"
+}
+
+# A local host writes the log this machine reads; a remote one's lines are read
+# over ssh and appended here once each.
+pull_runs() { # <host>
+    [ "$1" = local ] && return 0
+    run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
 }
 
 is_merged() { git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$(base_at "$1")"; } # code|agent <tip>
