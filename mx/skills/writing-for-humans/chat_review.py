@@ -39,7 +39,7 @@ from pathlib import Path
 
 CATALOGUE = Path(__file__).resolve().parent / "CATALOGUE.md"
 LOG = Path(os.environ.get("CHAT_REVIEW_LOG", Path.home() / "logs/chat-review/log.jsonl"))
-RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"  # every model run goes through it, one line each in the run log
+MODEL_LOG = Path(__file__).resolve().parents[1] / "model-log" / "model-log"  # every model run goes through it, one line each in the model log
 MODEL = os.environ.get("CHAT_REVIEW_MODEL", "haiku")
 REVIEWER_TIMEOUT_S = 45
 # Claude Code moves hook output past 10,000 characters into a file and shows the session a preview.
@@ -162,7 +162,7 @@ def review(message: str, rules: str) -> list[dict]:
     # cannot recurse into itself. Thinking off: with it on, Haiku spends ~14k output tokens and
     # two minutes on a 300-token answer.
     proc = subprocess.run(
-        [str(RUN_LOG), "run", "--site", "chat-review", "--json", "--timeout", str(REVIEWER_TIMEOUT_S), "--",
+        [str(MODEL_LOG), "run", "--site", "chat-review", "--json", "--timeout", str(REVIEWER_TIMEOUT_S), "--",
          "claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "",
          "--strict-mcp-config", "--settings", '{"alwaysThinkingEnabled": false}',
          "--model", MODEL, prompt],

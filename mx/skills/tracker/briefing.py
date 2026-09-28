@@ -28,7 +28,7 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-RUN_LOG = Path(__file__).resolve().parent.parent / "run-log" / "run-log"  # every run goes through it, one line each in the run log
+MODEL_LOG = Path(__file__).resolve().parent.parent / "model-log" / "model-log"  # every run goes through it, one line each in the model log
 MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
 # What the session explores with: reading the repo is the whole of its work. The run reads none of
@@ -36,7 +36,7 @@ EFFORT = "medium"
 # name besides.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
-RUN_LIMIT = 900  # seconds a run gets, which run-log enforces; one that has not answered by then is dropped and the next change tries again
+RUN_LIMIT = 900  # seconds a run gets, which model-log enforces; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
 SILENT = ""  # what the last run that answered nothing said, for the page to say once (board.absences)
@@ -171,7 +171,7 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
 
 
 def ask(args: list[str], repo: Path) -> dict | None:
-    """One `claude -p` run in `repo`, through `run-log`: what it answered and the session it answered
+    """One `claude -p` run in `repo`, through `model-log`: what it answered and the session it answered
     in, or None where it did not answer at all.
 
     The board renders without the model, so every way this comes back empty is one the caller goes
@@ -187,12 +187,12 @@ def ask(args: list[str], repo: Path) -> dict | None:
     # a file it reads like any other.
     try:
         done = subprocess.run(
-            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
+            [str(MODEL_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
              COMMAND, *args, "--model", MODEL, "--effort", EFFORT,
              "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
              "--settings", '{"autoMemoryEnabled": false}',
              "--allowedTools", TOOLS, "--disallowedTools", DENIED],
-            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
+            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # model-log's own limit ends the run and writes its line; this one is for a model-log that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))

@@ -174,7 +174,7 @@ import subprocess
 COMMAND = "claude"
 FLAGS = ["--setting-sources", ""]
 subprocess.run(["claude", "-p", "--model", "opus"])
-subprocess.run(["run-log", "--", "claude", "-p", "--setting-sources", "", "--strict-mcp-config"])
+subprocess.run(["model-log", "--", "claude", "-p", "--setting-sources", "", "--strict-mcp-config"])
 subprocess.run([COMMAND, *args, "--model", "opus"])
 subprocess.run(["claude", "--version"])
 subprocess.run(["claude", "plugin", "list", "-p"])
@@ -192,7 +192,7 @@ common=(
 bare=(-p --model opus)
 claude "${common[@]}" --resume "$session"
 claude "${bare[@]}" < "$message"
-cmd=(bash run-log run --
+cmd=(bash model-log run --
      claude -p --model "$model"
      --effort high)
 version=$(claude --version 2> /dev/null)
@@ -206,7 +206,7 @@ claude --resume "$id"
 def test_markdown_mentions_are_not_launches_and_its_commands_are(tmp_path: Path) -> None:
     path = write(tmp_path, "CLI.md", '''# A skill
 
-Every `claude -p` the workflow starts goes through run-log, and `claude --resume <id>` finds it.
+Every `claude -p` the workflow starts goes through model-log, and `claude --resume <id>` finds it.
 Ask it later with `claude -p --resume <id> '<question>'`.
 
 ```bash

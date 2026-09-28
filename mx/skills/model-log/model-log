@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # One line per model run the workflow starts, and what those lines add up to.
 #
-# Usage: run-log run --site <site> [--ticket <slug>] [--axis <axis>] [--attempt <n>]
+# Usage: model-log run --site <site> [--ticket <slug>] [--axis <axis>] [--attempt <n>]
 #                    [--range <a..b>] [--timeout <secs>] [--json] -- claude <args...>
-#        run-log pull <user@host>
-#        run-log report [--since <YYYY-MM-DD>] [--repo <name>] [--site <site>] [--json]
-#        run-log needs
+#        model-log pull <user@host>
+#        model-log report [--since <YYYY-MM-DD>] [--repo <name>] [--site <site>] [--json]
+#        model-log needs
 #   run     runs the `claude` command line after `--` with `--verbose
 #           --output-format stream-json` added, prints what the model answered,
 #           exits with claude's status, and appends one line to the log. --site
@@ -46,14 +46,14 @@
 #             `no result`
 #
 # Env:
-#   RUN_LOG   the log file; ~/logs/agent/runs.jsonl unless set. `pull` reads
+#   MODEL_LOG   the log file; ~/logs/agent/runs.jsonl unless set. `pull` reads
 #             the same path on the host.
 # Needs: bash jq git hostname realpath basename dirname mktemp date cat grep tail sed wc mkdir rm tee touch column ssh timeout kill
 set -u
 
-log=${RUN_LOG:-$HOME/logs/agent/runs.jsonl}
+log=${MODEL_LOG:-$HOME/logs/agent/runs.jsonl}
 
-die() { echo "run-log: $1" >&2; exit 1; }
+die() { echo "model-log: $1" >&2; exit 1; }
 help() { sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; }
 needs() { sed -n 's/^# Needs: //p' "${BASH_SOURCE[0]}" | tr ' ' '\n'; }
 
@@ -85,7 +85,7 @@ run() {
     done
     [ -n "$site" ] || die "run takes --site <site>"
     [ $# -gt 0 ] || die "run takes the claude command line after --"
-    command -v "$1" > /dev/null || { echo "run-log: $1 is not on PATH, so no run was started" >&2; exit 127; }
+    command -v "$1" > /dev/null || { echo "model-log: $1 is not on PATH, so no run was started" >&2; exit 127; }
     # What was asked for, read off the command line: the alias is what the
     # caller chose, the result says what answered.
     local model= effort= a i=0 args=("$@")
@@ -157,7 +157,7 @@ run() {
     if [ -n "$line" ]; then
         printf '%s\n' "$line" >> "$log"
     else
-        echo "run-log: no line written for this run of $site; the jq error above says why" >&2
+        echo "model-log: no line written for this run of $site; the jq error above says why" >&2
     fi
 
     # What the caller sees: the answer, or the result object it asked for,
@@ -189,7 +189,7 @@ pull() {
     have=$(mktemp)
     jq -r '.id' "$log" > "$have" 2>/dev/null
     remote_lines=$(ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$host" \
-        "cat \${RUN_LOG:-\$HOME/logs/agent/runs.jsonl} 2>/dev/null") || die "cannot read the log on $host"
+        "cat \${MODEL_LOG:-\$HOME/logs/agent/runs.jsonl} 2>/dev/null") || die "cannot read the log on $host"
     n=$(printf '%s\n' "$remote_lines" | jq -c -R --rawfile have "$have" '
         ($have | split("\n") | map(select(. != ""))) as $ids
         | fromjson? // empty | select(.id as $i | $ids | index($i) | not)' | tee -a "$log" | wc -l)

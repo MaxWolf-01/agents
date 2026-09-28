@@ -154,7 +154,7 @@ def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
 
 
 def answered(said: str) -> str:
-    """What `claude -p --output-format stream-json` prints for an answer, which `run-log` reads."""
+    """What `claude -p --output-format stream-json` prints for an answer, which `model-log` reads."""
     return "printf '%s\\n' " + shlex.quote(json.dumps(
         {"type": "result", "subtype": "success", "is_error": False, "session_id": "def-456", "result": said}))
 
@@ -181,7 +181,7 @@ def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_pi
     assert '--settings {"autoMemoryEnabled": false} ' in run, "it reads and writes the user's auto memory"
     assert f"--model {MODEL} --effort {EFFORT}" in run, "the briefing ran on whatever this machine defaults to"
     (logged,) = [json.loads(line) for line in (tmp_path / "runs.jsonl").read_text().splitlines()]
-    assert (logged["site"], logged["session"], logged["end"]) == ("briefing", "def-456", "success"), "the run left no line in the run log"
+    assert (logged["site"], logged["session"], logged["end"]) == ("briefing", "def-456", "success"), "the run left no line in the model log"
 
 
 def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(

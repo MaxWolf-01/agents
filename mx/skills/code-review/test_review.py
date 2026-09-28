@@ -75,7 +75,7 @@ def argv_file(repo: Path) -> Path:
 def command(repo: Path, secs: int, args: tuple[str, ...], **extra: str) -> dict:
     env = {**os.environ, "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
            "FAKE_REVIEW_SECS": str(secs), "FAKE_ARGV": str(argv_file(repo)),
-           "RUN_LOG": str(repo.parent / "runs.jsonl"), **extra}
+           "MODEL_LOG": str(repo.parent / "runs.jsonl"), **extra}
     return {"args": [str(REVIEW), "main~1", *args], "cwd": repo, "env": env, "text": True}
 
 
@@ -230,7 +230,7 @@ def test_a_reviewer_starts_from_none_of_the_callers_setup(repo):
 def test_every_reviewer_runs_opus_at_medium_effort_unless_told_otherwise(repo):
     assert run(repo, "--light").returncode == 0
     assert (value(launched(repo), "--model"), value(launched(repo), "--effort")) == ("opus", "medium")
-    # `run-log`: one line per axis, naming the axis and the spec's ticket where one was given
+    # `model-log`: one line per axis, naming the axis and the spec's ticket where one was given
     (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["axis"], logged["ticket"], logged["model"], logged["effort"]) == \
         ("review", "light", "", "opus", "medium")
@@ -270,7 +270,7 @@ def test_a_spec_given_as_a_slug_is_the_ticket_with_every_ancestors_body(repo):
     ticketed(repo)
 
     done = run(repo, "--axes", "spec", "--spec", "lamp-presets")
-    # `run-log`: the axis's line names the ticket the spec came from, and the range it read
+    # `model-log`: the axis's line names the ticket the spec came from, and the range it read
     (logged,) = [json.loads(l) for l in (repo.parent / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["axis"], logged["ticket"]) == ("review", "spec", "lamp-presets")
     assert logged["range"] and ".." in logged["range"]

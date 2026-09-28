@@ -260,7 +260,7 @@ def stage_runner(state: Path) -> None:
     """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+    shutil.copy(SKILL.parent / "model-log" / "model-log", state / "model-log")
 
 
 def mx(tmp_path: Path) -> Path:
@@ -282,8 +282,8 @@ def staged(toy: Path) -> Path:
         shutil.copy(SKILL / name, skill / "dispatch" / name)
     for name in ("tracker.py", "pre-commit"):
         shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
-    (skill / "run-log").mkdir()
-    shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
+    (skill / "model-log").mkdir()
+    shutil.copy(SKILL.parent / "model-log" / "model-log", skill / "model-log" / "model-log")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
     return skill / "dispatch" / "dispatch"
 
@@ -759,7 +759,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
     assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
-    # `run-log`: the attempt left its line, in the log this HOME defaults to
+    # `model-log`: the attempt left its line, in the log this HOME defaults to
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "high")
@@ -940,22 +940,22 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     assert "report=no" in (state / "run-1.status").read_text()
 
 
-def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> None:
-    """Every attempt runs through run-log, so a staging that lacks it is said on the status line
+def test_a_runner_staged_without_model_log_refuses_to_start(tmp_path: Path) -> None:
+    """Every attempt runs through model-log, so a staging that lacks it is said on the status line
     rather than run unlogged."""
     state = tmp_path / "state"
     state.mkdir()
     stage_runner(state)
-    (state / "run-log").unlink()
+    (state / "model-log").unlink()
     (tmp_path / "message.md").write_text("Work it.\n")
     done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
                           cwd=tmp_path, capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path)})
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no model-log beside run-worker.sh")
 
 
-def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
-    """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
+def test_a_hosts_model_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
+    """`model-log`: a worker host's lines reach this machine's log when its ticket is fetched or
     cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
     machine's log itself."""
     remote, env = fake_remote(toy)
@@ -985,7 +985,7 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     theirs.mkdir()
     fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert fetched.returncode == 0, fetched.stderr
-    assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
+    assert "could not be pulled; model-log pull agent@far tries again" in fetched.stderr
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 

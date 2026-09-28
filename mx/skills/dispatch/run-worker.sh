@@ -14,7 +14,7 @@
 #   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
 #   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
 #                             `dispatch-ctl` resolves it on the host
-#   RUN_LOG                   where each attempt's line goes (run-log, staged beside
+#   MODEL_LOG                   where each attempt's line goes (model-log, staged beside
 #                             this script); its own default unless set
 set -u
 
@@ -35,10 +35,10 @@ if [ ! -f "$prompt_file" ]; then
     exit 1
 fi
 # Every attempt runs through it, so a run nobody logged cannot happen quietly.
-run_log=$here/run-log
-if [ ! -f "$run_log" ]; then
+model_log=$here/model-log
+if [ ! -f "$model_log" ]; then
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
-        "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
+        "no model-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 # The worker reads no user settings, so the mx plugin reaches it by path or not at all, and without
@@ -145,7 +145,7 @@ trap 'stopped=1' TERM INT
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
     unit=$run_id-a$attempt-$$
-    logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
+    logged=(bash "$model_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
         scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
