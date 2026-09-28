@@ -25,6 +25,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import session_page
 import stop_hook
 import turn_review
 from session_page import PAGE
@@ -39,12 +40,12 @@ UNATTENDED = ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")
 def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Every check here is a turn of a session someone is sitting at, whose record the prose
     reviewer finds nothing in unless the check says otherwise: no check spends a model call. The
-    review's log is the check's own, and handed back."""
+    log is the check's own, and handed back."""
     for marker in UNATTENDED:
         monkeypatch.delenv(marker, raising=False)
     monkeypatch.setattr(turn_review, "review", lambda system, prompt: [])
-    monkeypatch.setattr(turn_review, "LOG", tmp_path / "turn-review.jsonl")
-    return turn_review.LOG
+    monkeypatch.setattr(session_page, "LOG", tmp_path / "session-page.jsonl")
+    return session_page.LOG
 
 
 @pytest.fixture
@@ -510,12 +511,12 @@ PATHS = {
 
 
 @pytest.mark.parametrize("arrange, verb, why, resolved", PATHS.values(), ids=PATHS)
-def test_every_decision_is_one_line_in_the_reviews_log(
+def test_every_decision_is_one_line_in_the_session_pages_log(
     arrange: Callable, verb: str, why: str, resolved: bool, worked_example: Path, transcript: Path,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], request: pytest.FixtureRequest, attended: Path,
 ) -> None:
     """stop-hook-logs-its-decisions: the verb, why the hook took that path, and the session
-    directory it resolved, in the log the review writes to."""
+    directory it resolved, in the log the review writes to as well."""
     hook = arrange(worked_example, transcript, request)
     before = len(logged(attended, "verb"))
     run(hook)
@@ -531,7 +532,7 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
 ) -> None:
     """The log is for diagnosis: a full disk or a read-only home still renders the page."""
     (tmp_path / "not-a-directory").write_text("")
-    monkeypatch.setattr(turn_review, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
+    monkeypatch.setattr(session_page, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert capsys.readouterr().out == ""

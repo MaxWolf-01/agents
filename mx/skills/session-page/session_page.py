@@ -37,6 +37,7 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
+LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the Stop hook's decisions and the turn review's, one JSON line each
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 
