@@ -3,15 +3,16 @@
 Fallback when the fork subagent type is unavailable: forks the session via the documented CLI. Mint the identifiers first; they make concurrent forks safe and every fork resumable:
 
 1. Read the parent id from `$CLAUDE_CODE_SESSION_ID`, and the origin id, the session the user is talking to, from `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}`.
-2. `uuidgen` → the fork's session id. Always pass it via `--session-id`: it is the handle to resume or interrogate the fork later (`claude --resume <fork-id>`, or `claude -p --resume <fork-id> '<follow-up>'`).
+2. `uuidgen` → the fork's session id. Always pass it via `--session-id`: it is the handle to resume or interrogate the fork later (`claude --resume <fork-id>`, or `claude -p --setting-sources user,project,local --resume <fork-id> '<follow-up>'`).
 3. tmux session name `fork-<slug>-<first 8 of fork-id>`: unique, so concurrent forks never clash.
 
 ```bash
 tmux new-session -d -s fork-<slug>-<id8> "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID MX_ORIGIN_SESSION=<origin-id> \
-  claude -p --resume <parent-session-id> --fork-session --session-id <fork-id> \
+  claude -p --setting-sources user,project,local --resume <parent-session-id> --fork-session --session-id <fork-id> \
   --dangerously-skip-permissions '<directive>' > <workdir>/fork.log 2>&1"
 ```
 
+- `--setting-sources user,project,local` is the default, spelled out: a fork inherits every settings file its parent had.
 - `--fork-session` gives the child its own transcript; resuming without it interleaves both processes into one.
 - `MX_ORIGIN_SESSION` tells the fork, which runs under an id of its own, whose session its pages are stamped with (diffview's header, a show page's meta line).
 - Detached tmux with `CLAUDECODE` unset avoids the nested-interactive-claude freeze; `claude -p` this way is verified safe.

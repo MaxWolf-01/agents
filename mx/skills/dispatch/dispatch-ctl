@@ -38,11 +38,12 @@
 #             that worktree's `agent/`, where the project keeps it; sets the
 #             code worktree up (the `setup` file's command, run as given;
 #             without that file `make install`, under `nix develop -c` where a
-#             flake.nix exists), runs `claude update`, then starts the worker
-#             on prompt-<slug>.md from this directory, in a tmux session named
-#             dispatch-<repo>-<slug>. A failed update is said on stderr and the
-#             worker starts anyway; the `spawned` line names the claude version
-#             it starts on.
+#             flake.nix exists), runs `claude update`, finds the mx install
+#             the worker loads (DISPATCH_PLUGIN_DIR below), then starts the
+#             worker on prompt-<slug>.md from this directory, in a tmux session
+#             named dispatch-<repo>-<slug>. A failed update is said on stderr and
+#             the worker starts anyway; a host with no mx starts none. The
+#             `spawned` line names the claude and mx versions it starts on.
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
@@ -76,12 +77,20 @@
 #             One per base branch; it holds no state beyond the session and the
 #             worktree, so `stop` is the whole of undoing it.
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
-# ran on out of its transcript), and `init` wants `curl` and `claude`: it
+# ran on out of its transcript, `spawn` the mx install out of `claude plugin
+# list --json`), and `init` wants `curl` and `claude`: it
 # fetches `job` with the first where the host has none, and updates this plugin
 # with the second, saying so when that fails; `spawn` updates `claude` itself.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
+#   DISPATCH_PLUGIN_DIR       the mx install a worker loads by path, passed
+#                             through to the runner, which keeps it from the
+#                             worker; unless set, the user-scope mx@MaxWolf-01
+#                             that `claude plugin list --json` names, the
+#                             install `init` updates. Set, it stands in for
+#                             that listing, which is what the checks use it
+#                             for; `dispatch` forwards none to a host.
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
 #                             (default ~/.claude), passed through to the runner
 #   DISPATCH_RUNNER           pane script, the one place a harness is named: a
@@ -91,8 +100,8 @@
 #                             resume without it runs the runner the run was
 #                             spawned on. The contract it owes: argv is
 #                             <prompt> <slug> <model> <run> [session-id], with
-#                             DISPATCH_EFFORT and DISPATCH_PERMISSION_MODE in
-#                             its environment; it
+#                             DISPATCH_EFFORT, DISPATCH_PERMISSION_MODE and
+#                             DISPATCH_PLUGIN_DIR in its environment; it
 #                             puts worker-prompt.md from
 #                             this directory into the worker's system prompt,
 #                             which is where a worker's whole contract lives;
@@ -189,6 +198,14 @@ state_line() { # <name> <run> <runner>
     esac
 }
 
+# The mx install `init` updates and a spawn hands its worker: the user-scope
+# one, as the JSON object `claude plugin list --json` holds for it; nothing
+# where the host has none.
+listed_mx() {
+    claude plugin list --json 2>/dev/null |
+        jq -c '[.[] | select(.id == "mx@MaxWolf-01" and .scope == "user")][0] // empty' 2>/dev/null
+}
+
 init() {
     repo=$1 base=$2
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
@@ -231,7 +248,7 @@ init() {
     # from here on. A failed update leaves the installed version, said out loud.
     { run claude plugin marketplace update MaxWolf-01 && run claude plugin update mx@MaxWolf-01; } >&2 ||
         echo "init: plugin update failed; workers run the installed version" >&2
-    version=$(claude plugin list 2>/dev/null | grep -A1 'mx@MaxWolf-01' | sed -n 's/.*Version: //p')
+    version=$(listed_mx | jq -r '.version // empty')
     echo "initialised $here  mx=${version:-?}  base=$base  git=$git_dir  agent=$agent_dir@$agent_base  worktrees=$worktrees"
 }
 
@@ -287,6 +304,7 @@ spawn() {
     fi
     [ -d "$worktree" ] || checkout
     update_claude
+    find_plugin
     run_id=$name-$(date +%s)
 
     # The session is a shell the runner is typed into, so it outlives the
@@ -299,7 +317,7 @@ spawn() {
     # `=` everywhere a target is named: without it tmux falls back to prefix and
     # pattern matching, so a new-session that failed would type this line into
     # whichever session matched, one another worker holds included.
-    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort bash $runner $prompt $slug $model $run_id $session_id"
+    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
     # The runner creates the log within its first seconds; its absence means the
@@ -314,7 +332,7 @@ spawn() {
     fi
 
     ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version"
+    echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version  mx=${plugin_dir##*/}"
 }
 
 # A model alias names whichever model the host's `claude` resolves it to, so a
@@ -329,6 +347,20 @@ update_claude() {
         echo "spawn: claude update failed; $name runs on the claude this host has" >&2
     claude_version=$(claude --version 2>/dev/null | cut -d' ' -f1)
     claude_version=${claude_version:-?}
+}
+
+# A worker reads none of the user's settings, so the mx plugin its contract
+# names skills from reaches it by path. Read on every spawn and resume, so a
+# round runs the version this host has now.
+find_plugin() {
+    if [ -n "${DISPATCH_PLUGIN_DIR:-}" ]; then
+        plugin_dir=$DISPATCH_PLUGIN_DIR
+        [ -d "$plugin_dir" ] || die "no mx plugin for $name: DISPATCH_PLUGIN_DIR=$plugin_dir is no directory"
+    else
+        plugin_dir=$(listed_mx | jq -r '.installPath // empty')
+        [ -d "$plugin_dir" ] ||
+            die "no mx plugin for $name: \`claude plugin list --json\` names no user-scope mx@MaxWolf-01 here"
+    fi
 }
 
 # The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an

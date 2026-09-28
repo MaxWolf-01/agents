@@ -175,9 +175,10 @@ def tracked(toy: Path) -> Path:
 
 
 def environment(toy: Path, **extra: str) -> dict[str, str]:
-    """What every command here runs in: a HOME of its own, and a `diffview` that records the
+    """What every command here runs in: a HOME of its own, a `diffview` that records the
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
-    what dispatch has to get right."""
+    what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
+    spawn hands its runner in place of the one the host's claude lists."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
@@ -191,10 +192,12 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
     (bin_dir / "tracker").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
+    plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
     env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
-           "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
+           "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
     env.pop("DISPATCH_EFFORT", None)
     env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
@@ -258,6 +261,13 @@ def stage_runner(state: Path) -> None:
     for name in ("run-worker.sh", "worker-prompt.md"):
         shutil.copy(SKILL / name, state / name)
     shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
+
+
+def mx(tmp_path: Path) -> Path:
+    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
+    shaped like a real one, whose leaf the lines that name the install print."""
+    (tmp_path / "mx" / "installed").mkdir(parents=True, exist_ok=True)
+    return tmp_path / "mx" / "installed"
 
 
 @pytest.fixture
@@ -364,6 +374,39 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
     assert said.returncode == 0, said.stderr
     assert "effort=low" in said.stdout, said.stdout
     assert "stub: built warm-preset at low" in logs()
+
+
+def test_a_spawn_hands_the_runner_the_hosts_mx_install(toy: Path, staged: Path) -> None:
+    """`unattended-launch`: a worker reads no user settings, so the mx its contract names skills from
+    reaches it by path, and the path travels on the line the spawn types into the pane. The spawn
+    names the install it gave."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s with %s\\n' \"$slug\" \"${DISPATCH_PLUGIN_DIR:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    plugin = mx(toy.parent)
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    waited(toy)
+
+    assert said.returncode == 0, said.stderr
+    assert f"mx={plugin.name}" in said.stdout, said.stdout
+    assert f"stub: built warm-preset with {plugin}\n" in "".join(p.read_text() for p in state.glob("*.log"))
+
+
+def test_a_host_whose_claude_lists_no_mx_starts_no_worker(toy: Path, staged: Path) -> None:
+    """Without the plugin a worker has none of the skills its contract names, so a spawn on a host
+    whose claude lists no user-scope mx stops before the pane, once, rather than in every run."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    run(toy, "claim", "warm-preset")
+    env = environment(toy)
+    env.pop("DISPATCH_PLUGIN_DIR")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", env=env)
+
+    assert said.returncode != 0
+    assert "no mx plugin for dispatch-lamp-warm-preset" in said.stderr, said.stderr
+    assert not list(state.glob("dispatch-lamp-warm-preset-*.log")), "a worker started without the plugin"
 
 
 def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, staged: Path) -> None:
@@ -686,7 +729,7 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     done = subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
         cwd=worktree, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
     )
     assert done.returncode == 0, done.stderr
     assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
@@ -705,7 +748,7 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     bin_dir.mkdir()
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))}
     env.pop("DISPATCH_EFFORT", None)
     if given:
         env["DISPATCH_EFFORT"] = given
@@ -720,6 +763,57 @@ def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path:
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "high")
+
+
+def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path) -> None:
+    """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
+    CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
+    CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
+    names the mx install it runs."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    plugin = mx(tmp_path)
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+
+    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
+                '--settings {"autoMemoryEnabled": false}')
+    assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
+    assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
+    assert f" and mx {plugin.name} (run-1)" in (state / "run-1.log").read_text().splitlines()[0]
+
+
+def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
+    """A worker without the plugin has none of the skills its contract names, so a runner started
+    without DISPATCH_PLUGIN_DIR says so on the status line rather than start one."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    env.pop("DISPATCH_PLUGIN_DIR", None)  # whatever the shell running these checks carries
+
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env=env)
+
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith(
+        "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
+    assert not (bin_dir / "claude.calls").exists(), "claude ran"
 
 
 @pytest.mark.parametrize("resumed", [False, True])
@@ -759,7 +853,7 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
          *([session] if resumed else [])],
         cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
              "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")},
     )
     status = (state / "run-1.status").read_text()
@@ -791,7 +885,7 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
          f"check-{tmp_path.name}"],
         cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
     )
     pid = left.read_text().strip()
     for _ in range(20):
@@ -818,7 +912,7 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
         cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
     )
     assert "no agent repo at" in (state / "run-1.log").read_text()
     assert "report=no" in (state / "run-1.status").read_text()
