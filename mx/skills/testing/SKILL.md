@@ -31,7 +31,7 @@ Choose inputs that can tell the bug from the fix. An input symmetric in the dime
 
 Generate structure rather than raw randomness: draw whole valid values of the domain (a note, an order, a request), so the generator explores the space the code actually meets. Unstructured random input lands on the rejection path almost every time, and a run that always rejects proves the validator, not the feature.
 
-Property tests live in the project's properties directory and run in the ordinary suite.
+Property tests live in the project's properties directory, as module-level functions, and run in the ordinary suite. Hypothesis writes a failing case back as an `@example` only on a function it finds at module level; a property that is a method of a test class never gets its case written back.
 
 A property written before the behaviour it tests exists is an **expected failure**: strict, so the run goes red the moment the property passes with the annotation still on, and naming the ticket that lifts it. At a stub it tolerates only the not-implemented exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A seam that exists without the behaviour, or a wire seam with no route yet, fails in more ways than one, so its expected failure tolerates any; the orchestrator's check that none names a landed ticket is the guard there. A property that holds carries none.
 
