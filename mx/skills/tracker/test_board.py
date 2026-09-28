@@ -1656,6 +1656,8 @@ def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tup
     (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
     append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
     put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
+    assert moved.page == later / "agent" / "sessions" / NEW / "index.html", "the board finds the page it leaves unlinked"
     out = root.parent / "board.html"
     render(root, repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
