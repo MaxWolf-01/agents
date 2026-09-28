@@ -1481,18 +1481,33 @@ def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: t
     assert pages == {HERE: repo / "agent" / "sessions" / HERE / "index.html", NAMED: None, NEW: None}
 
 
-def test_a_session_that_moved_directory_carries_the_page_it_wrote_in_the_later_one(worked: tuple[Path, Path]) -> None:
-    """The page is written under the directory the session was in when its turn ended: one that
-    started in the repo and went on in a worktree has its page there, and its resume command still
-    starts where it did."""
+def test_a_session_that_moved_project_carries_the_page_it_wrote_in_the_later_one(worked: tuple[Path, Path]) -> None:
+    """The page is written in the agent repo of the project the session was in when its turn
+    ended: one that started in the repo and went on in another project has its page there, and its
+    resume command still starts where it did."""
     root, repo = worked
-    later = repo.parent / "the ledger-map-columns"
+    later = repo.parent / "the budget"
+    (later / "agent" / "tickets").mkdir(parents=True)
     (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
     append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
     put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
     (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
     assert moved.page == later / "agent" / "sessions" / NEW / "index.html"
     assert moved.resume == f"cd '{repo}' && claude --resume {NEW}"
+
+
+def test_a_session_in_a_worktree_carries_the_page_its_project_keeps_in_the_main_checkout(worked: tuple[Path, Path]) -> None:
+    """A linked worktree of the code repo holds no `agent/`: the page of a session that went on in
+    one is in the main checkout's, where the Stop hook writes it (session-stop-hook)."""
+    root, repo = worked
+    worktree = repo.parent / "ledger-map-columns"
+    demo_git(repo, "worktree", "add", "-q", str(worktree), "ticket/map-columns")
+    (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
+    append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(worktree)}) + "\n")
+    put(repo / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
+    assert moved.page == repo / "agent" / "sessions" / NEW / "index.html"
+    assert not (worktree / "agent" / "sessions").exists()
 
 
 def test_an_opened_ticket_links_the_page_of_each_session_that_has_one(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:

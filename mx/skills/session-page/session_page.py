@@ -32,6 +32,9 @@ from typing import Annotated
 import yaml
 from markdown_it import MarkdownIt
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
+import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
+
 PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
@@ -62,6 +65,16 @@ def main() -> None:
     print(output)
 
 
+def session_directory(cwd: Path, session: str) -> Path | None:
+    """Where the session's records and page live, whether or not they exist yet: `sessions/<id>` in
+    the agent repo of the project `cwd` is in, found the way `tracker root` finds the tracker, so
+    every worktree of the project names the same one. None outside a project with an agent repo."""
+    try:
+        return tracker.tracker_root(cwd).parent / SESSIONS.name / session
+    except tracker.Refused:
+        return None
+
+
 def render_session(directory: Path, transcript: Path, now: datetime | None = None) -> str:
     """The session page for `directory`: its title, brief and resume command, the questions no
     later turn answered or superseded, then the turns newest first.
@@ -83,7 +96,8 @@ def read_session(directory: Path, transcript: Path) -> "Session":
     settled = settle(turns)
     entries = read_transcript(transcript)
     written = written_at(entries, directory, turns)
-    messages = pair(said(entries), [written.get(t.number) for t in turns])
+    spoken = said(entries)
+    messages = pair(spoken, [written.get(t.number) for t in turns])
     return Session(
         id=str(front["session"]),
         repo=Path(str(front["repo"])),
@@ -91,6 +105,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
         brief=sections.get("Brief", (0, ""))[1],
         turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
         settled=settled,
+        last_said=spoken[-1][0] if spoken else None,
     )
 
 
@@ -179,6 +194,7 @@ class Session:
     brief: str  # its `## Brief`
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
+    last_said: datetime | None = None  # when the user last said something, as the transcript has it
 
 
 # ---- reading the records ----------------------------------------------------
