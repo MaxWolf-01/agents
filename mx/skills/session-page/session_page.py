@@ -39,30 +39,24 @@ HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
 
 
-CLI = """Print the directory a session's records go in: `sessions/<session-id>` in the agent repo of
-the project the working directory is in, the same directory from every worktree of that project.
-It need not exist yet.
+CLI = """Print the directory this session's records go in: `sessions/<session-id>` in the agent repo
+of the project the working directory is in, the same directory from every worktree of that
+project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
 
-Exits 1, saying why, outside a project with an agent repo or with no session id.
+Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
 
 Examples:
 
     session-page
-    session-page --session e5ca76dc-3093-419b-aa93-b8eb8f35811f
 """
 
 
 def main() -> None:
     import tyro
 
-    @dataclass(frozen=True)
-    class Args:
-        session: str = ""
-        """The session's id; empty for this session's, $CLAUDE_CODE_SESSION_ID."""
-
-    args = tyro.cli(Args, description=CLI)
-    if not (session := args.session or os.environ.get("CLAUDE_CODE_SESSION_ID", "")):
-        sys.exit("no session id: pass --session, or run it inside a Claude Code session")
+    tyro.cli(lambda: None, description=CLI)
+    if not (session := os.environ.get("CLAUDE_CODE_SESSION_ID", "")):
+        sys.exit("no session id: run it inside a Claude Code session")
     if (directory := session_directory(Path.cwd(), session)) is None:
         sys.exit(f"{Path.cwd()} is in no project with an agent repo")
     print(directory)
@@ -465,11 +459,17 @@ def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
                   key=lambda s: s[0])
 
 
+def prompted(entry: dict) -> bool:
+    """Whether a user entry is one Claude Code wrote as a prompt: not a meta line, a subagent's own
+    transcript or a compaction's summary."""
+    return entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"))
+
+
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
     """Each user entry and queued prompt, with when, the kind of its origin and its content."""
     out = []
     for entry in entries:
-        if entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary")):
+        if prompted(entry):
             content = entry.get("message", {}).get("content")
         elif entry.get("type") == "attachment" and entry.get("attachment", {}).get("type") == "queued_command":
             if entry["attachment"].get("commandMode", "prompt") != "prompt":
@@ -487,9 +487,7 @@ def turn_start(entries: list[dict]) -> datetime | None:
     whoever sent it, the user, a finished task or another session. A message queued mid-turn joins
     the turn it arrived in, and a tool result is part of the turn that called the tool."""
     return max((datetime.fromisoformat(entry["timestamp"]) for entry in entries
-                if entry.get("type") == "user" and "timestamp" in entry
-                and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"))
-                and flat(entry.get("message", {}).get("content"))), default=None)
+                if prompted(entry) and "timestamp" in entry and flat(entry.get("message", {}).get("content"))), default=None)
 
 
 def flat(content: object) -> str:
@@ -540,13 +538,13 @@ def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[
 
 def pair(messages: list[tuple[datetime, str]], written: list[datetime | None]) -> list[list[str]]:
     """Each record's messages, as `bucket` pairs them. Within a turn, a prompt the next one repeats
-    whole and extends past a line break or a space, as a resubmission does, is shown as the next
+    whole and extends past the end of a word, as a resubmission does, is shown as the next
     one; `a` then `also, …` are two messages."""
     return [[m for m, later in zip(turn, turn[1:] + [""]) if not resubmitted(m, later)] for turn in bucket(messages, written)]
 
 
 def resubmitted(message: str, later: str) -> bool:
-    return later.startswith(message) and (len(later) == len(message) or later[len(message)].isspace())
+    return later.startswith(message) and (len(later) == len(message) or not later[len(message)].isalnum())
 
 
 T = TypeVar("T")
@@ -707,7 +705,7 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> s
         for m in messages)
     return f"""
 <details class="{cls}">
-  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta lead">{lead}{words:,} words</span></summary>
+  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{lead}{words:,} words</span></summary>
   <div class="said-text">{parts}</div>
 </details>"""
 

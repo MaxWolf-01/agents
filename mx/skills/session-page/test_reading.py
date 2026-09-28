@@ -171,6 +171,20 @@ def test_a_short_answer_the_next_message_happens_to_start_with_is_its_own_messag
     assert shown["01"] == ["a", "also, keep the second bank"]
 
 
+def test_a_prompt_resubmitted_with_more_after_a_comma_is_shown_once(tmp_path: Path, worked_example: Path) -> None:
+    """The fixture README's resubmission, with the text going on past a comma rather than a line
+    break: the turn carries the longer prompt alone."""
+    entries = [
+        {"type": "user", "timestamp": "2026-09-22T21:00:00Z", "message": {"role": "user", "content": "fix the header"}},
+        {"type": "user", "timestamp": "2026-09-22T21:01:00Z", "message": {"role": "user", "content": "fix the header, and the footer"}},
+    ]
+    t = tmp_path / "t.jsonl"
+    t.write_text("\n".join(map(json.dumps, entries)) + "\n")
+    calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
+    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
+    assert shown["01"] == ["fix the header, and the footer"]
+
+
 def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
     worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:

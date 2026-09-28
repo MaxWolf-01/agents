@@ -958,10 +958,11 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
 
 
 def page_of(session: str, cwds: Sequence[str], ticket: Path) -> Path | None:
-    """The session's page, or None where it never needed one. The session-page Stop hook writes it
+    """The session's page, or None where there is none to find. The session-page Stop hook writes it
     in the agent repo of the project the session was in when its turn ended, so the newest of its
     directories that holds one answers; where each is gone, as a worktree dispatch removed is, the
-    project the ticket is in answers."""
+    project the ticket is in answers. A page in another project whose every directory the session
+    ran in is gone is not found."""
     places = [cwd for cwd in reversed(cwds) if Path(cwd).is_dir()] + [str(ticket.parent)]
     pages = (sessions / session / SESSION_PAGE for sessions in map(sessions_in, places) if sessions)
     return next((page for page in pages if page.is_file()), None)
