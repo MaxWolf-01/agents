@@ -516,6 +516,20 @@ def test_filing_writes_the_frontmatter_and_the_skeleton_and_leaves_the_body_to_t
     assert run(repo, "new", "map-columns", "--priority", "2", "--size", "M").code == 1, "a slug names one ticket"
 
 
+def test_a_ticket_filed_with_its_title_and_brief_reads_them_back(tickets: Path, repo: Path) -> None:
+    brief = "The importer guesses each column's type.\n\n```\n## not a heading, in a block\n```\n"
+    said = run(repo, "new", "map-columns", "--priority", "2", "--size", "M", "--title", "Map the CSV's columns",
+               "--brief", "-", given=brief)
+    assert said.code == 0, said.err
+    read_back = json.loads(run(repo, "data", "map-columns").out)["tickets"][0]
+    assert read_back["title"] == "Map the CSV's columns"
+    assert read_back["brief"] == " ".join(brief.split()), "the brief, as data joins its lines"
+    assert run(repo, "check", "agent/tickets/map-columns.md").code == 0
+    missing = run(repo, "new", "other-columns", "--priority", "2", "--size", "M", "--brief", "nowhere.md")
+    assert missing.code == 1 and "nowhere.md is no file" in missing.err
+    assert not (tickets / "other-columns.md").exists()
+
+
 def test_filing_a_ticket_under_a_parent_that_is_no_ticket_is_refused(tickets: Path, repo: Path) -> None:
     said = run(repo, "new", "map-columns", "--parent", "nowhere", "--priority", "2", "--size", "M")
     assert said.code == 1 and "names no ticket" in said.err

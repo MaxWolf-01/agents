@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest"]
+# dependencies = ["pytest", "hypothesis", "libcst"]
 # ///
 """Checks for what `dispatch` and `dispatch-ctl` read and write on a ticket. Run: pytest test_dispatch.py
 
@@ -14,15 +14,22 @@ instead; `needs-user` as the one field that keeps a ticket from a worker) and `/
 state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands).
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
-argued; this file is the cases the ticket-file move made.
+argued; this file is the cases the ticket-file move made, and the repo's fuzz run. The fuzz checks
+answer to `agent/tickets/fuzz-run-on-integration-branch.md`: P1 a finding survives the run being
+stopped, restarted and its worktrees removed; P3 the next run reuses the corpus; P4 a finding reaches
+the repo as a committed example and the tracker as a proposed ticket; P6 the project knows nothing
+of being fuzzed. Their oracles are the patch Hypothesis wrote in that ticket's prototype, a push
+into the host's bare repo, and the database directory outliving what stops and removes the run.
 """
 
+import ast
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -1158,6 +1165,395 @@ def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy
     assert said.returncode != 0
     assert "no-such-runner.sh is not a file" in said.stderr, said.stderr
     assert not (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").exists()
+
+
+# --- the repo's fuzz run -------------------------------------------------------------------------
+#
+# The toy as a project with properties and bugs under them. One is the prototype's
+# (`agent/prototypes/fuzz-lifecycle`): `zzz` does not survive the round trip. The other fails on
+# any integer from 1000 up, and sorts first, so two findings are read out of one suite run. Its
+# `make fuzz` stands in for HypoFuzz with a loop of pytest, which ends on its findings. Its default
+# Hypothesis profile only replays the database, so the ordinary suite fails exactly when the
+# database holds a finding. Nothing in it knows dispatch (P6).
+
+LAB = '''def encode(s: str) -> str:
+    # Planted bug: a run of three or more 'z' is mangled.
+    if "zzz" in s:
+        return s.replace("zzz", "zz")
+    return s
+
+def decode(s: str) -> str:
+    return s
+'''
+PROPERTY = '''from hypothesis import given, strategies as st
+from lab import decode, encode
+
+@given(st.text(alphabet="az", min_size=0, max_size=12))
+def test_roundtrip(s):
+    assert decode(encode(s)) == s
+
+@given(st.integers())
+def test_fine(n):
+    assert n + 0 == n
+'''
+BOUND = '''from hypothesis import given, strategies as st
+
+@given(st.integers())
+def test_small(n):
+    assert n < 1000
+'''
+CONFTEST = '''import os
+from hypothesis import Phase, settings
+settings.register_profile("fuzz", max_examples=5000, deadline=None)
+settings.register_profile("replay", phases=[Phase.explicit, Phase.reuse, Phase.shrink])
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "replay"))
+'''
+MAKEFILE = '''PY ?= python
+install:
+\t@true
+test:
+\t$(PY) -m pytest -q -p no:cacheprovider tests
+fuzz:
+\twhile HYPOTHESIS_PROFILE=fuzz $(PY) -m pytest -q -p no:cacheprovider tests/properties; do :; done
+'''
+# The patch Hypothesis wrote in the prototype's run, `hypothesis-wrote-this.patch` there: what
+# `fuzz patch` applies, whatever layout the Hypothesis of the day gives its `@example`.
+PROTOTYPE_PATCH = '''--- ./tests/properties/test_roundtrip.py
++++ ./tests/properties/test_roundtrip.py
+@@ -2,6 +2,7 @@
+ from lab import decode, encode
+ 
+ @given(st.text(alphabet="az", min_size=0, max_size=12))
++@example(s="zzz").via("discovered failure")
+ def test_roundtrip(s):
+     assert decode(encode(s)) == s
+ 
+'''
+NODE = "tests/properties/test_roundtrip.py::test_roundtrip"
+FINDING = "fuzz-tests-properties-test-roundtrip-test-roundtrip"
+BOUND_NODE = "tests/properties/test_bound.py::test_small"
+BOUND_FINDING = "fuzz-tests-properties-test-bound-test-small"
+
+
+@pytest.fixture
+def fuzzable(toy: Path) -> Path:
+    """The toy with the two properties and their bugs committed on `main`."""
+    if not shutil.which("tmux"):
+        pytest.skip("no tmux here, and the fuzz run is a job in a tmux session")
+    for path, text in (("lab/__init__.py", LAB), ("tests/properties/test_roundtrip.py", PROPERTY),
+                       ("tests/properties/test_bound.py", BOUND), ("tests/conftest.py", CONFTEST),
+                       ("Makefile", MAKEFILE)):
+        (toy / path).parent.mkdir(parents=True, exist_ok=True)
+        (toy / path).write_text(text)
+    git(toy, "add", "-A")
+    git(toy, "commit", "-q", "-m", "properties, and bugs under them")
+    return toy
+
+
+def mend(toy: Path) -> None:
+    """Both bugs fixed on `main`, so a run on it fuzzes until it is stopped."""
+    (toy / "lab" / "__init__.py").write_text(LAB.replace('s.replace("zzz", "zz")', "s"))
+    (toy / "tests" / "properties" / "test_bound.py").write_text(BOUND.replace("n < 1000", "n + 0 == n"))
+    git(toy, "commit", "-q", "-am", "the round trip keeps zzz, and no bound")
+
+
+def fuzz(toy: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """`dispatch fuzz`. The toy's suite runs on this interpreter, which is why the checks take
+    Hypothesis, and libcst, without which Hypothesis writes no patch."""
+    env = {**(env or environment(toy)), "PY": sys.executable}
+    return subprocess.run([str(DISPATCH), "fuzz", *args], cwd=toy, capture_output=True, text=True,
+                          env=env, timeout=180)
+
+
+def fuzz_job(toy: Path) -> Path:
+    return toy.parent / "jobs" / "fuzz-lamp"
+
+
+def fuzz_ended(toy: Path) -> str:
+    """The fuzz job's status line, once it has ended."""
+    job = fuzz_job(toy)
+    for _ in range(120):
+        if (job / "status").exists():
+            return (job / "status").read_text()
+        time.sleep(0.5)
+    log = (job / "log").read_text() if (job / "log").exists() else "(no log)"
+    raise AssertionError(f"the fuzz job never ended; its log:\n{log}")
+
+
+def fuzz_pid(toy: Path) -> str:
+    return (fuzz_job(toy) / "meta").read_text().split("pid=")[1].split("\n")[0]
+
+
+def local_scratch(toy: Path) -> Path:
+    return toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+
+
+def examples(db: Path) -> set[Path]:
+    return {p.relative_to(db) for p in (db / "examples").rglob("*") if p.is_file()}
+
+
+def patched(toy: Path, patch: str) -> dict[str, str]:
+    """What a patch `fuzz check` printed makes of the toy's property files, applied to a copy."""
+    copy = toy.parent / "patched"
+    shutil.rmtree(copy, ignore_errors=True)
+    shutil.copytree(toy / "tests", copy / "tests")
+    subprocess.run(["git", "apply", "-"], cwd=copy, input=patch, text=True, check=True)
+    return {p.name: p.read_text() for p in (copy / "tests" / "properties").glob("*.py")}
+
+
+def ps_rows(toy: Path, env: dict[str, str] | None = None) -> list[list[str]]:
+    """`dispatch ps`'s rows, with a register that publishes no host, so the ones read are the
+    repo's own."""
+    register = toy.parent / "bin" / "worker-hosts"
+    register.write_text("#!/bin/sh\n")
+    register.chmod(0o755)
+    listed = subprocess.run([str(DISPATCH), "ps"], cwd=toy, capture_output=True, text=True,
+                            env=env or environment(toy), timeout=120)
+    assert listed.returncode == 0, listed.stderr
+    return [row.split() for row in listed.stdout.splitlines()[1:]]
+
+
+def test_a_fuzz_run_is_one_job_on_the_host_it_designates_with_its_database_beside_the_worktree(
+        fuzzable: Path) -> None:
+    remote, env = fake_remote(fuzzable)
+
+    started = fuzz(fuzzable, "start", "--host", "agent@far", env=env)
+
+    assert started.returncode == 0, started.stdout + started.stderr
+    assert git(fuzzable, "config", "dispatch.fuzz.host").strip() == "agent@far"
+    assert git(fuzzable, "config", "dispatch.fuzz.branch").strip() == "main"
+    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
+    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main"), "cut from the tip it pushed"
+    db = remote / ".local" / "state" / "dispatch" / "lamp-main" / "fuzz.hypothesis"
+    assert (worktree / ".hypothesis").resolve() == db
+    fuzz_ended(fuzzable)
+    assert examples(db), "the findings are in the database, beside the worktree"
+
+    for host in ("agent@far", "local"):
+        again = fuzz(fuzzable, "start", "--host", host, env=env)
+        assert again.returncode != 0
+        assert "already fuzzes on agent@far" in again.stderr, again.stderr
+
+
+def test_a_push_of_the_integration_branch_restarts_the_run_on_its_tips_and_leaves_the_database(
+        fuzzable: Path) -> None:
+    remote, env = fake_remote(fuzzable)
+    assert fuzz(fuzzable, "start", "--host", "agent@far", env=env).returncode == 0
+    ended = fuzz_ended(fuzzable)
+    db = remote / ".local" / "state" / "dispatch" / "lamp-main" / "fuzz.hypothesis"
+    (db / "kept").write_text("the restart never touches this\n")
+    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
+    before = git(worktree, "rev-parse", "HEAD")
+
+    other = subprocess.run(["git", "-C", str(fuzzable), "push", "-q", "agent-far", "main:elsewhere"],
+                           capture_output=True, text=True, env=env, timeout=120)
+    assert other.returncode == 0, other.stderr
+    assert (fuzz_job(fuzzable) / "status").read_text() == ended, "a push of another branch restarts nothing"
+
+    mend(fuzzable)
+    (fuzzable / "agent" / "notes.md").write_text("the agent repo moved too\n")
+    git(fuzzable / "agent", "add", "notes.md")
+    git(fuzzable / "agent", "commit", "-q", "-m", "a note")
+    pushed = subprocess.run([str(DISPATCH), "push"], cwd=fuzzable, capture_output=True, text=True,
+                            env={**env, "PY": sys.executable}, timeout=120)
+
+    assert pushed.returncode == 0, pushed.stderr
+    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main") != before
+    assert git(worktree / "agent", "rev-parse", "HEAD") == git(fuzzable / "agent", "rev-parse", "main")
+    assert not (fuzz_job(fuzzable) / "status").exists(), "a fresh job, fuzzing the mended code with no end in sight"
+    assert (db / "kept").exists()
+    checked = fuzz(fuzzable, "check", env=env)
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    assert "no failure" in checked.stdout
+
+
+def test_stop_ends_a_running_run_and_start_resumes_it_on_the_tip(fuzzable: Path) -> None:
+    """User story 3: stopping frees the machine, a push to it restarts nothing until the next
+    `start`, and that start takes the tip there is by then."""
+    mend(fuzzable)
+    remote, env = fake_remote(fuzzable)
+    assert fuzz(fuzzable, "start", "--host", "agent@far", env=env).returncode == 0
+    pid = fuzz_pid(fuzzable)
+    again = fuzz(fuzzable, "start", env=env)
+    assert again.returncode != 0
+    assert "already fuzzing" in again.stderr, again.stderr
+    assert fuzz_pid(fuzzable) == pid, "the running job is left alone"
+    assert [row[:4] for row in ps_rows(fuzzable, env)] == [["agent@far", "lamp/main", "fuzz", "running"]]
+
+    stopped = fuzz(fuzzable, "stop", env=env)
+
+    assert stopped.returncode == 0, stopped.stderr
+    assert "exit=143" in fuzz_ended(fuzzable)
+    assert not (remote / "repos" / "dispatch" / "lamp.git" / "hooks" / "post-receive").exists()
+    worktree = remote / "repos" / "dispatch" / "lamp-main-fuzz"
+    stopped_at = git(worktree, "rev-parse", "HEAD")
+    (fuzzable / "lamp.txt").write_text("the lamp, brighter\n")
+    git(fuzzable, "commit", "-q", "-am", "brighter")
+    assert subprocess.run([str(DISPATCH), "push"], cwd=fuzzable, capture_output=True, env=env,
+                          timeout=120).returncode == 0
+    assert git(worktree, "rev-parse", "HEAD") == stopped_at, "no hook, no restart"
+    assert (fuzz_job(fuzzable) / "status").exists()
+
+    resumed = fuzz(fuzzable, "start", env=env)
+
+    assert resumed.returncode == 0, resumed.stderr
+    assert git(worktree, "rev-parse", "HEAD") == git(fuzzable, "rev-parse", "main")
+    assert not (fuzz_job(fuzzable) / "status").exists(), "running again"
+    assert (remote / "repos" / "dispatch" / "lamp.git" / "hooks" / "post-receive").exists()
+
+
+def test_stop_and_clean_leave_the_finding_and_the_next_start_resumes_on_it(fuzzable: Path) -> None:
+    """P1 and P3, on `local`, whose repo is the user's own checkout and takes no hook of the run's,
+    nor loses one of its own."""
+    (fuzzable / "hooks").mkdir()
+    (fuzzable / "hooks" / "post-receive").write_text("#!/bin/sh\n# the project's own\n")
+    git(fuzzable, "add", "hooks")
+    git(fuzzable, "commit", "-q", "-m", "a hook the project ships")
+    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
+    fuzz_ended(fuzzable)
+    worktree = fuzzable.parent / "lamp-main-fuzz"
+    db = local_scratch(fuzzable) / "fuzz.hypothesis"
+    found = examples(db)
+    assert found
+
+    stopped = fuzz(fuzzable, "stop")
+    assert stopped.returncode == 0, stopped.stderr
+    assert worktree.is_dir() and examples(db) == found
+    assert [row[:4] for row in ps_rows(fuzzable)] == [["local", "lamp/main", "fuzz", "exited"]]
+
+    cleaned = fuzz(fuzzable, "clean")
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not worktree.exists()
+    for at in (fuzzable, fuzzable / "agent"):
+        assert "fuzz/main" not in git(at, "branch", "--list")
+    assert examples(db) == found
+    assert (fuzzable / "hooks" / "post-receive").exists()
+    assert "dispatch.fuzz" not in git(fuzzable, "config", "--list"), "the host is forgotten with the run"
+
+    again = fuzz(fuzzable, "start", "--host", "local")
+    assert again.returncode == 0, again.stderr
+    assert (worktree / ".hypothesis").resolve() == db, "the corpus the next run starts on"
+    checked = fuzz(fuzzable, "check")
+    assert checked.returncode != 0
+    files = patched(fuzzable, checked.stdout)
+    assert "n=1000" in files["test_bound.py"] and "s='zzz'" in files["test_roundtrip.py"], checked.stdout
+
+
+def test_clean_frees_a_repo_whose_host_is_gone(toy: Path) -> None:
+    gone = toy.parent / "gone"
+    gone.mkdir()
+    (gone / "ssh").write_text("#!/bin/sh\necho 'ssh: Could not resolve hostname far' >&2\nexit 255\n")
+    (gone / "ssh").chmod(0o755)
+    git(toy, "config", "dispatch.fuzz.host", "agent@far")
+    git(toy, "config", "dispatch.fuzz.branch", "main")
+    env = environment(toy)
+    env["PATH"] = f"{gone}:{env['PATH']}"
+
+    cleaned = fuzz(toy, "clean", env=env)
+
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "no answer from agent@far" in cleaned.stderr
+    assert "dispatch.fuzz" not in git(toy, "config", "--list")
+
+
+def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
+    """`dispatch --help` gives the fuzz run one line, and the text it points at is there."""
+    for args in (["fuzz", "--help"], ["fuzz"]):
+        said = subprocess.run([str(DISPATCH), *args], capture_output=True, text=True)
+        assert said.returncode == 0, said.stderr
+        assert said.stdout.startswith("Usage: dispatch fuzz start")
+        assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
+    assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
+            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help"]
+
+
+def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
+    (fuzzable / "tests" / "conftest.py").write_text(CONFTEST.replace("deadline=None", "deadline=None, database=None"))
+    git(fuzzable, "commit", "-q", "-am", "no database")
+
+    refused = fuzz(fuzzable, "start", "--host", "local")
+
+    assert refused.returncode != 0
+    assert "tests/conftest.py:3" in refused.stderr, refused.stderr
+    assert not (fuzzable.parent / "lamp-main-fuzz").exists()
+    assert "dispatch.fuzz" not in git(fuzzable, "config", "--list")
+    unread = fuzz(fuzzable, "check")
+    assert unread.returncode != 0
+    assert "no fuzz run designated" in unread.stderr
+
+
+def test_patch_brings_each_finding_here_as_an_example_and_to_the_tracker_as_one_proposed_ticket(
+        fuzzable: Path, tmp_path: Path) -> None:
+    """P4, with the prototype's patch as the oracle: the property as the tree has it once the patch
+    Hypothesis wrote there is applied, compared as Python rather than as layout."""
+    expected = tmp_path / "expected"
+    (expected / "tests" / "properties").mkdir(parents=True)
+    (expected / "tests" / "properties" / "test_roundtrip.py").write_text(PROPERTY)
+    (expected / "prototype.patch").write_text(PROTOTYPE_PATCH)
+    subprocess.run(["git", "apply", "prototype.patch"], cwd=expected, check=True)
+    want = ast.dump(ast.parse((expected / "tests" / "properties" / "test_roundtrip.py").read_text()))
+    bound = BOUND.replace("def test_small", '@example(n=1000).via("discovered failure")\ndef test_small')
+    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
+    fuzz_ended(fuzzable)
+
+    patched = fuzz(fuzzable, "patch")
+
+    assert patched.returncode == 0, patched.stdout + patched.stderr
+    have = (fuzzable / "tests" / "properties" / "test_roundtrip.py").read_text()
+    assert ast.dump(ast.parse(have)) == want, have
+    have = (fuzzable / "tests" / "properties" / "test_bound.py").read_text()
+    assert ast.dump(ast.parse(have)) == ast.dump(ast.parse(bound)), have
+    assert "tests/properties/test_roundtrip.py" in git(fuzzable, "status", "--porcelain"), "left for the user to commit"
+    ticket = tracked(fuzzable) / f"{FINDING}.md"
+    assert status_of(fuzzable, FINDING) == "proposed"
+    assert NODE in ticket.read_text() and "s='zzz'" in ticket.read_text()
+    assert "n=1000" in (tracked(fuzzable) / f"{BOUND_FINDING}.md").read_text(), "each case on its own property's ticket"
+    assert "s='zzz'" not in (tracked(fuzzable) / f"{BOUND_FINDING}.md").read_text()
+    assert git(fuzzable / "agent", "status", "--porcelain") == "", "filed and committed"
+
+    ticket_text = ticket.read_text()
+    commits = git(fuzzable / "agent", "rev-list", "--count", "HEAD")
+
+    again = fuzz(fuzzable, "patch")
+
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert ast.dump(ast.parse((fuzzable / "tests" / "properties" / "test_roundtrip.py").read_text())) == want, \
+        "taken in once"
+    assert sorted(p.name for p in tracked(fuzzable).glob("fuzz-*.md")) == [f"{BOUND_FINDING}.md", f"{FINDING}.md"]
+    assert ticket.read_text() == ticket_text, "filed once"
+    assert git(fuzzable / "agent", "rev-list", "--count", "HEAD") == commits
+    assert f"{FINDING} is filed already" in again.stdout and "s='zzz'" in again.stdout
+
+
+def test_a_finding_hypothesis_writes_no_case_for_is_still_said(fuzzable: Path) -> None:
+    """Hypothesis 6.168 writes no `@example` for a property that is a method of a test class."""
+    (fuzzable / "tests" / "properties" / "test_codec.py").write_text(
+        "from hypothesis import given, strategies as st\n\n"
+        "class TestCodec:\n    @given(st.integers())\n    def test_small(self, n):\n        assert n < 500\n")
+    git(fuzzable, "add", "-A")
+    git(fuzzable, "commit", "-q", "-m", "a property in a class")
+    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
+    fuzz_ended(fuzzable)
+
+    said = fuzz(fuzzable, "patch")
+
+    assert "tests/properties/test_codec.py::TestCodec::test_small" in said.stderr, said.stderr
+    assert not list(tracked(fuzzable).glob("fuzz-*codec*.md"))
+
+
+def test_a_suite_that_fails_with_no_case_written_says_why_and_files_nothing(fuzzable: Path) -> None:
+    mend(fuzzable)
+    (fuzzable / "tests" / "test_plain.py").write_text("def test_plain():\n    assert 'lamp' == 'lantern'\n")
+    git(fuzzable, "add", "-A")
+    git(fuzzable, "commit", "-q", "-m", "a plain test that fails")
+    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
+
+    said = fuzz(fuzzable, "patch")
+
+    assert said.returncode != 0
+    assert "lantern" in said.stderr, said.stderr
+    assert said.stdout.strip() == ""
+    assert not list(tracked(fuzzable).glob("fuzz-*.md"))
 
 
 if __name__ == "__main__":

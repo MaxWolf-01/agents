@@ -20,6 +20,7 @@
 #        dispatch ps
 #        dispatch attach <worker>
 #        dispatch peek <worker> [lines]
+#        dispatch fuzz <verb>
 #   <slug> is the ticket's id, and names its file in the tracker (`tracker root`).
 #   claim    flips <slug> to claimed and commits that in the agent repo's main
 #            checkout, where every ticket file is written. Refuses a ticket
@@ -38,10 +39,10 @@
 #            when set, is a runner file here: a spawn or resume copies it into
 #            the scratch dir as `runner` and runs the worker on that copy.
 #            --host names the host, user@host or `local` for this machine, and
-#            a spawn (or `fuzz start`) is where you name it: the run is
-#            recorded here, so wait, fetch, log, stop, resume and cleanup find
-#            a ticket's host from the slug; `cleanup` forgets the run it just
-#            removed; `resume` claims a review ticket again, as `claim` would.
+#            a spawn is where you name it: the run is recorded here, so wait,
+#            fetch, log, stop, resume and cleanup find a ticket's host from
+#            the slug; `cleanup` forgets the run it just removed; `resume`
+#            claims a review ticket again, as `claim` would.
 #            `probe` with no --host polls every host this branch still has a run
 #            on, each line behind its host; one that cannot answer says so in
 #            place of its workers.
@@ -51,9 +52,9 @@
 #            init`. A later spawn finds
 #            them staged and skips that; one that finds a version other than
 #            this plugin's stages again, so no worker starts on a stale
-#            contract. Every spawn and `fuzz start` then pushes this branch of
-#            both repos to a remote host, so a ticket branch cuts from its
-#            current tip; a local host cuts from these checkouts.
+#            contract. Every spawn then pushes this branch of both repos to a
+#            remote host, so a ticket branch cuts from its current tip; a
+#            local host cuts from these checkouts.
 #            --setup-cmd is the project's own setup line, run in every ticket
 #            worktree on that host before its worker starts. The staged one
 #            stays until another --setup-cmd replaces it; with none ever given,
@@ -71,9 +72,10 @@
 #            it, and the host's run log lines come with it too (`run-log pull`),
 #            as they do on a cleanup; a pull that fails is said and stops nothing.
 #   push     this branch, from both repos, to every host still holding a run of
-#            it, so a worker resumed to rebase finds the tips it is rebasing
-#            onto. A host that refuses the push is reported and the rest still
-#            get it; the exit status is nonzero when any did not.
+#            it, and to the fuzz host when this is the branch it fuzzes, so a
+#            worker resumed to rebase finds the tips it is rebasing onto. A
+#            host that refuses the push is reported and the rest still get it;
+#            the exit status is nonzero when any did not.
 #   review   once a ticket's branches are fetched, before or after their merge
 #            alike: imports the report the agent branch carries at
 #            agent/show/<slug>/report.md into the ticket, once per report;
@@ -107,12 +109,13 @@
 #            Whatever is typed into the pane while the runner runs, the pane's
 #            shell runs once the runner exits.
 #   peek     prints the last <lines> (default 100) of a worker's pane.
+#   fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help
 #   ps, attach and peek ask every host `worker-hosts --targets` publishes and
-#   every host this repo's runs name, all at once, and read every scratch dir
-#   on each, whichever repo and branch it is for. They change nothing, so they
-#   run from any branch and any directory in a repo.
+#   every host this repo's runs and fuzz run name, all at once, and read
+#   every scratch dir on each, whichever repo and branch it is for. They
+#   change nothing, so they run from any branch and any directory in a repo.
 #   <worker> is a ticket's slug, or its session's name, exactly; `fuzz` is a
-#   base branch's fuzz run. One held on two hosts, or in two repos, resolves to
+#   repo's fuzz run. One held on two hosts, or in two repos, resolves to
 #   nothing: its candidates are listed, each with a `<host>/<slug>` or
 #   `<host>/<session>` form to type.
 #
@@ -242,9 +245,9 @@ copy_to() { # <host> <dir> <file...>
 
 # The run record: which host a ticket went to, written by the spawn that sent
 # it there before the spawn runs, so one that dies halfway still says where to
-# look. Newest line for a name wins; the name is the ticket's slug, or `fuzz`
-# for this branch's fuzz run. Locked like the manifest on the host: the file is
-# the repo's, so a dispatcher on another branch writes to it too.
+# look. Newest line for a name wins; the name is the ticket's slug. Locked
+# like the manifest on the host: the file is the repo's, so a dispatcher on
+# another branch writes to it too.
 record_run() { # <name> <host>
     mkdir -p "$state"
     ( flock 9; printf '%s\t%s\t%s\n' "$base" "$1" "$2" >> "$runs" ) 9>>"$runs.lock"
@@ -327,7 +330,9 @@ stage() { # <host> [setup-command]
 push_to() { # <host>
     [ "$1" = local ] && return 0  # a local host cuts ticket branches from these checkouts
     rc=0
-    for at in code agent; do
+    # The agent repo first: a fuzz run's host restarts on the code repo's push
+    # and finds the agent repo's tip current by then.
+    for at in agent code; do
         run git -C "$(repo_at "$at")" push -q "${1//[@.]/-}" "$(base_at "$at")" ||
             { echo "dispatch: pushing $(base_at "$at") of the $at repo to $1 failed" >&2; rc=1; }
     done
@@ -355,7 +360,10 @@ reclaim() { # <slug>
 # is blocked on.
 push() {
     locate
-    hosts=$(hosts_used)
+    # The fuzz host holds the branch it fuzzes, and a push is what restarts it.
+    hosts=$( { hosts_used
+               [ "$(git config dispatch.fuzz.branch)" != "$base" ] || git config dispatch.fuzz.host
+             } | sort -u)
     [ -n "$hosts" ] || { echo "no run recorded for $base: no host holds it yet"; return; }
     rc=0
     for h in $hosts; do push_to "$h" || rc=1; done
@@ -433,9 +441,6 @@ ctl() {
                 resume)  carries=1 ;;
                 cleanup) forgets=1 ;;
             esac ;;
-        fuzz)
-            name=fuzz
-            [ "${2:-}" = start ] && stages=1 ;;
     esac
     # The one ticket a worker never gets, read in the tracker: the host reads no
     # ticket at all, so this is where a ticket the user is in the loop for stops,
@@ -452,7 +457,7 @@ ctl() {
     if [ -z "$host" ]; then
         case $sub in
             probe)      probe_all; return ;;
-            spawn|fuzz) die "name the host: dispatch ctl --host <user@host|local> $*" ;;
+            spawn)      die "name the host: dispatch ctl --host <user@host|local> $*" ;;
             *)          die "no run of ${name:-$sub} recorded here; --host names the host to run this on" ;;
         esac
     fi
@@ -717,6 +722,158 @@ accept() { # <slug>
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
 }
 
+# Usage: dispatch fuzz start [--host <host>]
+#        dispatch fuzz stop | clean | check | patch
+# The repo's fuzz run: one `make fuzz` on one worker host, against the
+# integration branch, with its Hypothesis database kept beside its worktree
+# there. Once the host is named, every push that moves that branch on it
+# restarts the run on the new tip, with nobody typing anything; a `local` host
+# has no such restart. The orchestrator neither starts nor stops the run: the
+# user names the host once, with the first `start`, and stops or cleans the run
+# to take the machine back. Its host and the branch it fuzzes are the repo's, in
+# its git config (`dispatch.fuzz.host`, `dispatch.fuzz.branch`), so every verb
+# but the first `start` runs from any branch.
+#   start   the first time, --host names the host, and the branch it is run on
+#           is the one fuzzed: stages the host as a spawn does, pushes that
+#           branch of both repos there, and starts the run. Again, with no
+#           --host: the run starts there again, on the same database.
+#   stop    ends the run; its worktrees and database stay.
+#   clean   ends it, removes its worktrees and branches, and forgets its host,
+#           even when the host does not answer; the database stays, for the
+#           next `start --host` on that host.
+#   check   replays what the run has found through the project's `make test`
+#           there, and prints the patch Hypothesis writes of it, which adds
+#           each failing case to its property as an `@example`. Exit 0 when
+#           there is none.
+#   patch   check, then applies that patch in this tree, uncommitted, and
+#           files one proposed ticket per property it names, carrying the
+#           case; a property filed before is said, with its case.
+
+fuzz_at() {
+    host=$(git config dispatch.fuzz.host) ||
+        die "no fuzz run designated for $repo; dispatch fuzz start --host <user@host|local> designates one"
+    base=$(git config dispatch.fuzz.branch) || die "dispatch.fuzz.branch is unset; fuzz start sets it with the host"
+    scratch=$(scratch_dir "$host")
+}
+
+fuzz_start() {
+    given=
+    case ${1:-} in
+        --host) given=${2:-}; [ -n "$given" ] || die "--host takes user@host, or local" ;;
+        "")     ;;
+        *)      die "fuzz start takes --host <user@host|local> and nothing else" ;;
+    esac
+    designated=$(git config dispatch.fuzz.host)
+    if [ -n "$designated" ]; then
+        [ -z "$given" ] || die "$repo already fuzzes on $designated; \`dispatch fuzz start\` starts it there again, and \`dispatch fuzz clean\` frees the repo for another host"
+        fuzz_at
+    else
+        [ -n "$given" ] || die "name the host: dispatch fuzz start --host <user@host|local>"
+        host=$given
+    fi
+    stage "$host"
+    push_to "$host" || die "$host has no $base to fuzz"
+    run on_host "$host" bash "$(scratch_dir "$host")/dispatch-ctl" fuzz start || exit 1
+    # Designated once a run is there, so a host that refused it holds no claim.
+    [ -n "$designated" ] || { run git config dispatch.fuzz.host "$host" && run git config dispatch.fuzz.branch "$base"; }
+}
+
+# A host that cannot be reached is forgotten all the same, or a host that is
+# gone would hold the repo for good.
+fuzz_clean() {
+    run on_host "$host" bash "$scratch/dispatch-ctl" fuzz clean
+    cleaned=$?
+    if [ "$cleaned" -eq 255 ] && [ "$host" != local ]; then
+        echo "dispatch: no answer from $host; its fuzz worktrees, hook and job stay there, and $repo is free for another host" >&2
+    elif [ "$cleaned" -ne 0 ]; then
+        exit 1
+    fi
+    run git config --unset dispatch.fuzz.host
+    run git config --unset dispatch.fuzz.branch
+}
+
+# The patch `fuzz check` prints, brought into this tree, and a proposed ticket
+# into the tracker per property it names.
+fuzz_patch() {
+    found=$(on_host "$host" bash "$scratch/dispatch-ctl" fuzz check)
+    checked=$?
+    printf '%s\n' "$found"
+    [ "$checked" -ne 0 ] || return 0
+    [ "$checked" -ne 255 ] || [ "$host" = local ] || die "no answer from $host"
+    # No patch: the suite failed on something Hypothesis wrote no case for, and
+    # check has said what on stderr.
+    [ -n "$found" ] || return "$checked"
+    taken=$(mktemp) || die "no temp file for the patch"
+    trap 'rm -f "$taken"' EXIT
+    printf '%s\n' "$found" > "$taken"
+    rc=0
+    # A patch taken in before is one the run keeps writing until the branch it
+    # fuzzes has it too.
+    if git apply --check -R "$taken" 2>/dev/null; then
+        echo "this tree has the patch already"
+    elif ! run git apply "$taken"; then
+        echo "dispatch: the patch does not apply to this tree; the tickets carry every failing case" >&2
+        rc=1
+    fi
+    id= example=
+    while IFS= read -r line; do
+        case $line in
+            "    "*) example+=${line#    }$'\n'; continue ;;
+        esac
+        [ -z "$id" ] || file_finding "$id" "$example"
+        id=$line example=
+    done < <(cases "$taken")
+    [ -z "$id" ] || file_finding "$id" "$example"
+    return $rc
+}
+
+# The patch read down to each property it adds a case to: its node id, which is
+# the file the hunk is in and the name of the `def` its added lines sit above,
+# then those lines behind four spaces.
+cases() { # <patch>
+    awk '
+        /^\+\+\+ / { path = $2; sub(/^(\.\/|b\/)/, "", path); added = ""; next }
+        /^(--- |@@)/ { added = ""; next }
+        /^[+ ]/ {
+            line = substr($0, 2)
+            if (match(line, /^[ \t]*(async[ \t]+)?def[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
+                name = substr(line, RSTART, RLENGTH); sub(/.*def[ \t]+/, "", name)
+                if (added != "") printf "%s::%s\n%s", path, name, added
+                added = ""
+            } else if (/^\+/) added = added "    " line "\n"
+        }' "$1"
+}
+
+# One proposed ticket per property, its slug made of the property's node id, so
+# a finding filed once is found again by it.
+file_finding() { # <node id> <case>
+    slug=fuzz-$(printf '%s' "$1" | sed 's/\.py::/-/; s/::/-/g' | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
+    if [ -f "$tickets/$slug.md" ]; then
+        printf '%s is filed already; this case of %s:\n%s' "$slug" "$1" "$2"
+        return 0
+    fi
+    printf 'The fuzz run of `%s` fails `%s` on this case:\n\n```python\n%s```\n' "$base" "$1" "$2" |
+        run "$tracker" new "$slug" --priority 2 --size S --title "\`$1\` fails under the fuzz run" --brief - > /dev/null ||
+        exit 1
+    run git -C "$agent_top" add -- "$tickets/$slug.md"
+    commit_ticket "$slug" "fuzz: $slug filed"
+}
+
+fuzz() {
+    case ${1:-} in
+        -h|--help|"") sed -n '/^# Usage: dispatch fuzz/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d'; return ;;
+    esac
+    locate
+    sub=$1; shift
+    case $sub in
+        start)       fuzz_start "$@" ;;
+        stop|check)  fuzz_at; run on_host "$host" bash "$scratch/dispatch-ctl" fuzz "$sub" ;;
+        clean)       fuzz_at; fuzz_clean ;;
+        patch)       fuzz_at; fuzz_patch ;;
+        *)           die "fuzz takes start, stop, clean, check or patch; dispatch fuzz --help" ;;
+    esac
+}
+
 # ps, attach and peek: the hosts as a human looking in reads them. dispatch-ps
 # is the half that runs on a host.
 
@@ -728,12 +885,13 @@ via() { if [ "$1" = "$self" ]; then echo local; else echo "$1"; fi; } # <host> â
 # its workers on: the user's default one, whichever the caller sits in.
 look() { ( unset TMUX; on_host "$(via "$1")" "${@:2}" ) } # <host> <command...>
 
-# Every host the register publishes and every host this repo's runs name, once
-# each; `local` gives way to this machine's own register entry.
+# Every host the register publishes and every host this repo's runs and fuzz
+# run name, once each; `local` gives way to this machine's own register entry.
 fleet() { # <published>
     { printf '%s\n' "$1"
       common=$(git rev-parse --git-common-dir 2>/dev/null) && [ -f "$common/dispatch/runs" ] &&
           awk -F'\t' '{ print $3 }' "$common/dispatch/runs"
+      git config dispatch.fuzz.host 2>/dev/null
     } | grep -v '^$' | sort -u | awk -v self="$self" '
         { host[NR] = $0; if ($0 == self) mine = 1 }
         END { for (i = 1; i <= NR; i++) if (!(mine && host[i] == "local")) print host[i] }'
@@ -902,6 +1060,7 @@ case $cmd in
     ps)      ps_ ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;
+    fuzz)    shift; fuzz "$@" ;;
     -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
     *) die "unknown command: $cmd" ;;
 esac

@@ -22,6 +22,7 @@ Examples:
     tracker context map-columns          # the ticket's body, then every ancestor's
     tracker frontier
     tracker new map-columns --parent csv-import --priority 2 --size M
+    tracker new map-columns --priority 2 --size M --title "Map the CSV's columns" --brief - < brief.md
     tracker set map-columns status=claimed
     tracker rule map-columns D3 "keep it in the fast suite"
     tracker import map-columns report.md  # a worker's report into the ticket it is of
@@ -301,6 +302,8 @@ def new(
     status: Literal["proposed", "open"] = "proposed",
     needs_user: bool = False,
     hinge: bool = False,
+    title: str = "",
+    brief: str = "",
 ) -> int:
     """File a ticket: its frontmatter and the skeleton of its body, which the filing agent writes
     into. Prints the path. Refuses a slug the tracker already holds.
@@ -314,6 +317,9 @@ def new(
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
         hinge: mark a child ticket as a hinge, ruled alone before anything builds on it (SLICING.md).
+        title: the ticket's name; the slug's words when not given.
+        brief: a file holding the ticket's brief, or `-` for one on stdin; the brief is left to the
+            filing agent when not given.
     """
     if not SLUG.fullmatch(slug):
         raise Refused([f"`{slug}` is no slug; a slug is lower case words joined by hyphens, and the tracker is flat"])
@@ -321,10 +327,15 @@ def new(
     path = tracker.root / f"{slug}.md"
     if path.exists():
         raise Refused([f"{path} is already a ticket"])
+    if brief not in ("", "-") and not Path(brief).is_file():
+        raise Refused([f"{brief} is no file to read a brief from"])
     meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
             "needs-user": needs_user, "hinge": hinge, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
-    written += f"\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n## Acceptance criteria\n\n## Comments\n"
+    told = (sys.stdin.read() if brief == "-" else Path(brief).read_text()).strip() if brief else ""
+    written += f"\n# {title or slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n"
+    written += f"{told}\n\n" if told else ""
+    written += "## Acceptance criteria\n\n## Comments\n"
     filed = read(path, written)
     refuse(refusals_of(filed, tracker.with_ticket(filed)))
     path.write_text(written)
