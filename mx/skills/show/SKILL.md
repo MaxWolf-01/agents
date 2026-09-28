@@ -20,7 +20,7 @@ A turn that answers with more than a line, in order:
 3. **The turn record**, below.
 4. **The chat reply**: one line and the page's link.
 
-A question still open when the session ends goes into the ticket it concerns as one of its questions (`/mx:tracker`), or into a proposed ticket where no ticket holds it, since every question on the board belongs to a ticket. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
+A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
 
 ### The turn record
 
