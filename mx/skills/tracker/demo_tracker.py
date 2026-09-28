@@ -8,9 +8,11 @@
 priority and every size, tickets the user is in the loop for and tickets no worker is kept from,
 so that each of a row's marks is laid out somewhere.
 
-Two trees (a parent ticket with six child tickets, one with three) and eleven tickets in no tree,
-two builds waiting on a ruling with their branches unmerged and their questions in the tracker's
-copy, where `dispatch review` imported them from the worker's report, one build stopped on two
+Three trees (a parent ticket with six child tickets, one with three, one at its close-out with
+two) and eleven tickets in no tree, two builds waiting on a ruling with their branches unmerged
+and their questions in the tracker's copy, where `dispatch review` imported them from the worker's
+report, one of them a hinge, a child in review merged into the branch of a parent still being
+built, a parent ticket at its close-out whose children are ruled with it, one build stopped on two
 questions of which one is ruled, one ticket whose only question is ruled, one ticket with no
 question at all, review pages beside the tickets, acceptance criteria a build in review has half
 met, a property cited by the criterion that takes it on, files that run and a figure under
@@ -90,6 +92,8 @@ def build(dest: Path) -> Demo:
     commit(repo, S1, "2026-09-15T16:40:00+02:00", "saved-views: a parent ticket and three slices", "agent/tickets")
     alone(repo)
     commit(repo, S3, "2026-09-16T09:05:00+02:00", "tickets: work filed during triage", "agent/tickets")
+    month_close(repo)
+    commit(repo, S1, "2026-09-16T11:30:00+02:00", "month-close: a parent ticket and two slices", "agent/tickets")
 
     # the orchestrator claims, a worker builds map-columns on its ticket branch, the orchestrator flips it
     set_status(repo / "agent/tickets/parse-rows.md", "done")
@@ -97,6 +101,8 @@ def build(dest: Path) -> Demo:
         set_status(repo / claimed, "claimed")
     commit(repo, S2, "2026-09-17T11:20:00+02:00", "csv-import: parse-rows landed; claim map-columns, duplicate-rule and speed-up-tests", "agent/tickets")
     build_in_review(repo)
+    merged_under_parent(repo)
+    closed_out(repo)
     stopped_on_questions(repo)
     review_pages(repo)
     transcripts(demo.transcripts, demo.sessions)
@@ -149,6 +155,7 @@ A reader for the four export formats the users' banks produce, returning rows an
 status: open
 parent: csv-import
 blocked-by: [parse-rows]
+hinge: true
 priority: 1
 size: M
 gh: [ledger-org/ledger#57]
@@ -314,6 +321,52 @@ Three layouts for the list of saved views are drawn side by side; you pick one b
 ## Questions
 
 - [D1] **A sidebar, a command palette, or tabs over the transaction list?** Each is drawn; the pick is yours in front of the render.
+""")
+
+
+# ---- the tree month-close: a parent ticket ruled whole at its close-out, a hinge ruled alone before it ----
+
+
+def month_close(repo: Path) -> None:
+    write(repo / "agent/tickets/month-close.md", """---
+status: open
+priority: 2
+size: M
+---
+
+# Close a month
+
+## Brief
+
+A closed month can no longer be edited, and its closing balances open the next one.
+""")
+    write(repo / "agent/tickets/lock-period.md", """---
+status: open
+parent: month-close
+hinge: true
+priority: 2
+size: S
+---
+
+# Lock a period
+
+## Brief
+
+A period has a lock date; every write before it is refused. The balances build on how a lock is stored.
+""")
+    write(repo / "agent/tickets/carry-balances.md", """---
+status: open
+parent: month-close
+blocked-by: [lock-period]
+priority: 2
+size: S
+---
+
+# Carry the balances forward
+
+## Brief
+
+Closing a month writes each account's balance as the opening balance of the next.
 """)
 
 
@@ -582,6 +635,35 @@ echo "== before: 4 min 02 s"
 echo "== after: 48 s"
 """, executable=True)
     commit(repo, S2, "2026-09-19T11:10:00+02:00", "speed-up-tests for review", "agent/tickets/speed-up-tests.md", "agent/show/speed-up-tests")
+
+
+# ---- a parent ticket ruled whole: a child merged under it while it is built, and one at its close-out ----
+
+
+def merged_under_parent(repo: Path) -> None:
+    """duplicate-rule passes the orchestrator's read and merges into csv-import's branch, where it
+    waits for csv-import's close-out rather than on the user."""
+    set_status(repo / "agent/tickets/csv-import.md", "claimed")
+    commit(repo, S2, "2026-09-18T16:00:00+02:00", "csv-import: claimed for its tree", "agent/tickets")
+    git(repo, "branch", "csv-import")
+    git(repo, "checkout", "-q", "-b", "ticket/duplicate-rule", "csv-import")
+    write(repo / "src/dedupe.py", '"""A row matches a transaction on date, amount and payee."""\n')
+    commit(repo, S4, "2026-09-18T17:10:00+02:00", "duplicate-rule: match on date, amount and payee", "src")
+    git(repo, "checkout", "-q", "csv-import")
+    git(repo, "merge", "-q", "--no-ff", "-m", "Merge ticket/duplicate-rule into csv-import", "ticket/duplicate-rule",
+        when="2026-09-18T17:30:00+02:00")
+    git(repo, "checkout", "-q", "master")
+    set_status(repo / "agent/tickets/duplicate-rule.md", "review")
+    commit(repo, S2, "2026-09-18T17:40:00+02:00", "duplicate-rule merged into csv-import, for its close-out", "agent/tickets")
+
+
+def closed_out(repo: Path) -> None:
+    """month-close at its close-out: lock-period, the hinge, was ruled alone and is done; the rest
+    waits in review for the ruling on the whole."""
+    set_status(repo / "agent/tickets/lock-period.md", "done")
+    for waiting in ("month-close", "carry-balances"):
+        set_status(repo / f"agent/tickets/{waiting}.md", "review")
+    commit(repo, S2, "2026-09-19T16:20:00+02:00", "month-close: closed out, for the ruling on the whole", "agent/tickets")
 
 
 # ---- a build stopped on two questions; one answered later through a Ruled line ----

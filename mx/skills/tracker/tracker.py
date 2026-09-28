@@ -249,24 +249,29 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
     return ""
 
 
-def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker) -> bool:
+def frees(blocker: Ticket, ticket: Ticket, tracker: Tracker, start: Path | None = None) -> bool:
     """Whether `blocker` no longer holds `ticket` back: it is done, or it is a sibling in review, no
-    hinge, merged into the branch of the parent ticket the two share."""
+    hinge, merged into the branch of the parent ticket the two share. `start` is where the code
+    repo is looked for (repos_of)."""
     if blocker.status == "done":
         return True
     if blocker.hinge or not ticket.parent or blocker.parent != ticket.parent:
         return False
-    return merged_under_parent(blocker, tracker)
+    return merged_under_parent(blocker, tracker, start)
 
 
-def merged_under_parent(child: Ticket, tracker: Tracker) -> bool:
+def merged_under_parent(child: Ticket, tracker: Tracker, start: Path | None = None) -> bool:
     """Whether a child ticket in review has merged into its parent ticket's branch, which the code
     repo holds: its branch in every repo has reached the branch its siblings merge into there, the
     parent's branch or, in a repo holding none, the branch it has out. Every repo, since a round
-    that built in one repo alone leaves its branch in the other unmoved, which reads as merged."""
-    if child.status != "review" or not child.parent or not parent_branch(repos_of(tracker)[0], child.parent):
+    that built in one repo alone leaves its branch in the other unmoved, which reads as merged.
+    `start` is where the code repo is looked for (repos_of)."""
+    if child.status != "review" or not child.parent:
         return False
-    for top in repos_of(tracker):
+    repos = repos_of(tracker, start)
+    if not parent_branch(repos[0], child.parent):
+        return False
+    for top in repos:
         own = branch_of(top, child, tracker)
         if not (own and reached(top, own, parent_branch(top, child.parent) or head(top))):
             return False
@@ -488,15 +493,16 @@ def ticket_branch_out(root: Path) -> str | None:
     return said if said.startswith("ticket/") else None
 
 
-def repos_of(tracker: Tracker) -> list[Path]:
+def repos_of(tracker: Tracker, start: Path | None = None) -> list[Path]:
     """The checkouts a round lands in: the code repo's and the agent repo's, one each. The code
-    repo's is the checkout this command runs in where that is the code repo, since dispatch runs in
+    repo's is the checkout `start` is in, this command's own directory unless a reader names
+    another, where that is the code repo, since dispatch runs in
     the worktree a parent ticket is built in and the merge is there; its main checkout otherwise.
     One repo where the project's `agent/` is not one of its own yet, and then a linked worktree of
     it is that same repo seen from elsewhere, not a second one to land in."""
     agent = toplevel(tracker.root)
     split = agent != project_root(tracker.root)
-    here_ = tried(Path.cwd(), "rev-parse", "--show-toplevel")
+    here_ = tried(start or Path.cwd(), "rev-parse", "--show-toplevel")
     code = Path(here_.stdout.strip()) if here_.returncode == 0 else None
     if code is None or (split and same_repo(code, agent)):
         code = project_root(tracker.root)
