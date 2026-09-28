@@ -258,9 +258,10 @@ def stage_runner(state: Path) -> None:
 
 
 def mx(tmp_path: Path) -> Path:
-    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here."""
-    (tmp_path / "mx").mkdir(exist_ok=True)
-    return tmp_path / "mx"
+    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
+    shaped like a real one, whose leaf the lines that name the install print."""
+    (tmp_path / "mx" / "installed").mkdir(parents=True, exist_ok=True)
+    return tmp_path / "mx" / "installed"
 
 
 @pytest.fixture
@@ -669,7 +670,7 @@ def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_el
                 '--settings {"autoMemoryEnabled": false}')
     assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
     assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
-    assert f"with claude 2.1.243 and mx {plugin.name} " in (state / "run-1.log").read_text().splitlines()[0]
+    assert f" and mx {plugin.name} (run-1)" in (state / "run-1.log").read_text().splitlines()[0]
 
 
 def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
@@ -685,7 +686,7 @@ def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
     (bin_dir / "claude").chmod(0o755)
 
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
-    env.pop("DISPATCH_PLUGIN_DIR", None)  # set where these checks run inside a dispatched worker
+    env.pop("DISPATCH_PLUGIN_DIR", None)  # whatever the shell running these checks carries
 
     done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
                           cwd=tmp_path, capture_output=True, text=True, timeout=60, env=env)

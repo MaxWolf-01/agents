@@ -48,6 +48,8 @@ if [ -z "$plugin" ]; then
         "DISPATCH_PLUGIN_DIR unset, so no mx plugin to give the worker" | tee "$here/$run_id.status" >&2
     exit 1
 fi
+# Kept from the worker, so a `dispatch-ctl` it runs lists the host's mx for itself.
+unset DISPATCH_PLUGIN_DIR
 
 # By id, never --continue: --continue means the newest conversation in this
 # directory, which stops being this worker's the moment anything else runs
