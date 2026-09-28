@@ -53,7 +53,9 @@ it from the code repo's root. The sessions are read from the `Session:` trailer
 on every commit that changed the ticket file, or an earlier path of it, on
 every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
 one with no transcript on this machine, a worker on another host, is left out,
-and each of the rest carries a button that copies the command resuming it. The
+and each of the rest carries a button that copies the command resuming it and,
+where one has been rendered, a link to its session page, read from
+agent/sessions/<session-id>/ under the directory the session ran in. The
 brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
@@ -873,6 +875,7 @@ class Session:
     cwd: str  # the working directory its transcript records
     first: str  # when it first committed on the ticket
     last: str
+    page: Path | None  # its session page, where one has been rendered
 
     @property
     def resume(self) -> str:
@@ -897,9 +900,18 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
     found = []
     for sid, (first, last) in session_log(repo).get(name, {}).items():
         if written := transcript(sid, transcripts or TRANSCRIPTS):
-            title, cwd = written
-            found.append(Session(sid, title or sid, cwd, first, last))
+            title, cwds = written
+            found.append(Session(sid, title or sid, cwds[0] if cwds else "", first, last, session_page(sid, cwds)))
     return found
+
+
+def session_page(session: str, cwds: Sequence[str]) -> Path | None:
+    """The session's page, or None where there is none: a session that never needed one, or one
+    whose directory, and the page with it, dispatch has since removed. The session-page renderer
+    writes it under the directory the session was in when its turn ended
+    (mx/skills/session-page/stop_hook.py), so the newest of those that holds one answers."""
+    pages = (Path(cwd) / "agent" / "sessions" / session / "index.html" for cwd in reversed(cwds))
+    return next((page for page in pages if page.is_file()), None)
 
 
 # one record per commit: the date the session wrote it, and the session that signed it, with the
@@ -977,8 +989,8 @@ def toplevel(directory: Path) -> Path | None:
 TITLES = ("customTitle", "aiTitle")  # a session's /rename name, else Claude Code's own
 
 
-def transcript(session: str, transcripts: Path) -> tuple[str, str] | None:
-    """(the session's title, the directory it ran in) from its transcript on this machine, or None
+def transcript(session: str, transcripts: Path) -> tuple[str, tuple[str, ...]] | None:
+    """(the session's title, the directories it ran in) from its transcript on this machine, or None
     where this machine has no transcript of it. The newest transcript answers, since a session
     resumed in another directory writes a second one."""
     written = sorted(transcripts.glob(f"*/{session}.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -988,14 +1000,15 @@ def transcript(session: str, transcripts: Path) -> tuple[str, str] | None:
 
 
 @functools.cache
-def read_transcript(path: Path, size: int) -> tuple[str, str]:
-    """The title a transcript's records carry and the working directory they were written in. The
-    last title the session was given wins, and a name it was given by hand wins over the model's.
+def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
+    """The title a transcript's records carry and the working directories they were written in, in
+    the order the session first reached each. The last title the session was given wins, and a name
+    it was given by hand wins over the model's.
 
     `size` keys the cache: a transcript the session is still writing is read again as it grows.
     """
     titles: dict[str, str] = {}
-    cwd = ""
+    cwds: dict[str, None] = {}
     for line in path.read_text(errors="replace").splitlines():
         if not any(key in line for key in (*TITLES, "cwd")):
             continue
@@ -1004,8 +1017,9 @@ def read_transcript(path: Path, size: int) -> tuple[str, str]:
         except json.JSONDecodeError:  # a line the session was still writing when the board read it
             continue
         titles.update({key: record[key] for key in TITLES if record.get(key)})
-        cwd = cwd or str(record.get("cwd") or "")
-    return next((titles[key] for key in TITLES if key in titles), ""), cwd
+        if record.get("cwd"):
+            cwds.setdefault(str(record["cwd"]))
+    return next((titles[key] for key in TITLES if key in titles), ""), tuple(cwds)
 
 
 def absence_note(source: str, words: str) -> str:
@@ -1114,18 +1128,22 @@ def asked_block(asked: Sequence[Question], said: str, path: Path, status: str) -
 
 
 RESUME_TIP = "Click to copy the command that resumes this session in the directory it ran in."
+PAGE_TIP = "This session's page: its turns, the questions it waits on you for, and what it produced. Opens in a new tab."
 WHEN_TIP = "When this session first committed on the ticket, and when it last did."
 
 
 def sessions_block(worked: Sequence[Session]) -> str:
-    """The sessions that worked on the ticket, each with the command that resumes it. The label says
-    on this machine because that is the list: a worker on another host is not in it (ticket_sessions),
-    and a ticket no session has committed on has no block at all."""
+    """The sessions that worked on the ticket, each with its session page where it has one and the
+    command that resumes it. The label says on this machine because that is the list: a worker on
+    another host is not in it (ticket_sessions), and a ticket no session has committed on has no
+    block at all."""
     if not worked:
         return ""
     items = "".join(
         f'<li><span class="stitle">{html.escape(session.title)}</span>'
         f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(worked_on(session))}</span>'
+        + (f'<a class="spage" href="file://{html.escape(str(session.page))}" target="_blank" '
+           f'data-tip="{html.escape(PAGE_TIP)}">page</a>' if session.page else "")
         + copy_button("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}")
         + "</li>"
         for session in worked
@@ -2082,6 +2100,7 @@ ${columns}
   /* a session is its name and the days it worked, the command that resumes it on the button */
   .sessions .stitle { color: var(--strong); }
   .sessions .when { flex: none; font-family: var(--font-mono); font-size: .74rem; color: var(--muted); }
+  .sessions .spage { flex: none; font-size: .82rem; }
   /* a criterion's mark is the glyph its list item carries instead of a bullet */
   .body li.tick { list-style: none; position: relative; }
   .body li.tick::before { content: "○"; display: inline-block; width: 1.2em; margin-left: -1.2em;

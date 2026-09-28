@@ -1364,7 +1364,9 @@ def worked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]
     """(the tracker, its repo) of a ticket four sessions committed on: one on the main branch, one
     only on the ticket's own branch, one a worker on another host, one too new to have a title.
     Beside it, a ticket committed before any session put its id on a commit, and a file elsewhere in
-    the repo with the ticket's own name under a directory of the ticket's own name.
+    the repo with the ticket's own name under a directory of the ticket's own name. The session on
+    the main branch has a session page; the one too new to have a title ran in the same directory
+    and has none.
 
     The repo's path carries a space, which a resume command has to survive. It uses the demo
     tracker's git helpers rather than this file's, since only those pin a commit's date.
@@ -1398,6 +1400,7 @@ def worked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]
     write_transcript(written, NAMED, str(tmp_path / "gone"), "Wave 1 of csv-import", "Mapping the Sparkasse export")
     write_transcript(written, NEW, str(repo), "")
     monkeypatch.setattr(board, "TRANSCRIPTS", written)
+    put(repo / "agent" / "sessions" / HERE / "index.html", "<!doctype html>\n<title>Ledger imports</title>\n")
     return root, repo
 
 
@@ -1458,6 +1461,53 @@ def test_an_opened_ticket_lists_its_sessions_with_the_command_that_resumes_each(
     assert absences(out.read_text(), "transcripts") == 0, "this machine has its transcripts"
 
 
+def pages_in(row: str) -> list[tuple[str, str, str, str | None]]:
+    """(the session's title, where its link goes, what the link says on hover, where it opens) for
+    every session an opened ticket links a session page for."""
+    listed = re.search(r'<ul class="sessions">(.*?)</ul>', body_of(row), re.S)
+    found = []
+    for item in re.findall(r"<li>(.*?)</li>", listed.group(1) if listed else "", re.S):
+        title = next(text for mark, text, _ in marks_on(item) if mark == "stitle")
+        found += [(title, got["href"], got["data-tip"], got.get("target")) for mark, _, got in elements_of(item) if mark == "spage"]
+    return found
+
+
+def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: tuple[Path, Path]) -> None:
+    """board-links-session-pages, at the board's loader: the page is the one the session-page
+    renderer writes under the directory the session ran in. The session sharing that directory
+    never needed a page, and the one whose directory dispatch removed took its page with it."""
+    root, repo = worked
+    pages = {s.id: s.page for s in ticket_sessions(root / "map-columns.md", repo)}
+    assert pages == {HERE: repo / "agent" / "sessions" / HERE / "index.html", NAMED: None, NEW: None}
+
+
+def test_a_session_that_moved_directory_carries_the_page_it_wrote_in_the_later_one(worked: tuple[Path, Path]) -> None:
+    """The page is written under the directory the session was in when its turn ended: one that
+    started in the repo and went on in a worktree has its page there, and its resume command still
+    starts where it did."""
+    root, repo = worked
+    later = repo.parent / "the ledger-map-columns"
+    (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
+    append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
+    put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
+    assert moved.page == later / "agent" / "sessions" / NEW / "index.html"
+    assert moved.resume == f"cd '{repo}' && claude --resume {NEW}"
+
+
+def test_an_opened_ticket_links_the_page_of_each_session_that_has_one(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The link opens the page in a new tab and says on hover what it opens; a session with no page
+    shows no link, and its resume button is there all the same."""
+    root, repo = worked
+    out = tmp_path / "board.html"
+    render(root, repo, out)
+    row = rows_of(out.read_text())["t-map-columns"]
+    ((title, href, tip, target),) = pages_in(row)
+    assert (title, href, target) == ("Ledger imports", f"file://{repo / 'agent' / 'sessions' / HERE / 'index.html'}", "_blank")
+    assert len(tip.split()) >= 4 and "page" in tip, f"the link says {tip!r} of itself"
+    assert len(sessions_in(row)) == 3, "every listed session keeps its resume button"
+
+
 def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The board reads the log again on every render: a session working while the board watches is
     on the ticket by the next one."""
@@ -1515,6 +1565,7 @@ def test_the_demo_trackers_ticket_lists_the_sessions_this_machine_can_resume(tra
         ("Dispatching csv-import, wave 1", "2026-09-17 → 2026-09-18", f"claude --resume {S2}"),
     ]
     assert S4 not in out.read_text(), "the worker built it on another host, where the user cannot resume it"
+    assert [title for title, *_ in pages_in(row)] == ["Grilling the CSV import"], "only the grilling needed a page"
 
 
 FILED = "b4c5d6e7-1111-4111-8111-111111111111"  # filed both tickets, before either moved
