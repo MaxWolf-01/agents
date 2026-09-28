@@ -470,9 +470,12 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     assert run(worktree, "claim", "lamp-ui").returncode == 0
     main = git(toy, "rev-parse", "main").strip()
     env = environment(toy)
-    frontier = lambda: subprocess.run(  # noqa: E731
-        [str(staged.parent.parent / "tracker" / "tracker.py"), "frontier"], cwd=worktree, capture_output=True,
-        text=True, env=env).stdout.partition("waiting\n")[0]
+    def frontier(held: bool = False) -> str:
+        """The frontier's ready lines, or with `held` its waiting ones."""
+        said = subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "frontier"], cwd=worktree,
+                              capture_output=True, text=True, env=env)
+        assert said.returncode == 0, said.stderr
+        return said.stdout.partition("waiting\n")[2 if held else 0]
 
     def built(slug: str) -> None:
         assert run(worktree, "claim", slug).returncode == 0
@@ -495,6 +498,7 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     assert "warm-preset" not in frontier()
     built("preset-format")
     assert "warm-preset" not in frontier(), "a hinge in review holds its dependents"
+    assert "on preset-format (review, a hinge)" in frontier(held=True)
     merged("preset-format")  # the user's accept of the hinge, ruled alone
     assert status_of(toy, "preset-format") == "done"
 
@@ -518,8 +522,31 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
                    cwd=toy, check=True, capture_output=True, env=env)  # its close-out: the whole tree waits for the ruling
     git(agent, "commit", "-q", "-am", "lamp-ui for review")
     git(toy, "merge", "-q", "--no-ff", "-m", "lamp-ui: accepted whole", "lamp-ui")
+
+    # a ticket file of the tree edited and not committed: refused, and the edit kept
+    parent = tickets / "lamp-ui.md"
+    parent.write_text(parent.read_text() + "\nA note not committed yet.\n")
+    dirty = run(toy, "accept", "lamp-ui")
+    assert dirty.returncode != 0 and "uncommitted changes" in dirty.stderr, dirty.stderr
+    assert parent.read_text().endswith("A note not committed yet.\n")
+    git(agent, "checkout", "-q", "--", "tickets/lamp-ui.md")
+    # a child in review the orchestrator never merged: the tracker refuses it, and none is written
+    ticket(tickets, "dim-preset", status="review", parent="lamp-ui")
+    git(agent, "add", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset for review")
+    dim = git(toy, "commit-tree", "lamp-ui^{tree}", "-p", "lamp-ui", "-m", "dim-preset: built").strip()
+    git(toy, "branch", "ticket/dim-preset", dim)
+    before = {path.name: path.read_text() for path in tickets.glob("*.md")}
+    partial = run(toy, "accept", "lamp-ui")
+    assert partial.returncode != 0 and "dim-preset" in partial.stderr, partial.stderr
+    assert {path.name: path.read_text() for path in tickets.glob("*.md")} == before
+    assert not git(agent, "status", "--porcelain", "--", "tickets")
+    git(agent, "rm", "-q", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset dropped")
+
     accepted = run(toy, "accept", "lamp-ui")
     assert accepted.returncode == 0, accepted.stderr
+    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in parent.read_text(), "the parent's range"
     assert {slug: status_of(toy, slug) for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset")} == dict.fromkeys(
         ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
     assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")

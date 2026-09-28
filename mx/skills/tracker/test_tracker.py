@@ -1042,11 +1042,13 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
 
 
 # The executable Properties of agent/tickets/speculative-first.md, P2 and P3, over one parent ticket
-# ruled whole: `one-flow`, whose branch is cut from main, and its leaf children, each cut from the
-# parent's branch and merged back into it or not. A parent's branch is named by its slug alone and a
-# leaf's `ticket/<slug>`, as `/mx:dispatch` cuts them. main is the branch above the parent, and the
-# checkout the commands run in. Beside the tree sits another feature's leaf, `other-flow-0`, in
-# review and merged into its own parent's branch: a blocker that is no sibling.
+# ruled whole: `one-flow`, whose branch is cut from the branch above it, and its leaf children, each
+# cut from the parent's branch and merged back into it or not. A parent's branch is named by its slug
+# alone and a leaf's `ticket/<slug>`, as `/mx:dispatch` cuts them. The branch above the parent is
+# main, or, where `one-flow` is itself a child, its own parent `whole-flow`'s branch, cut from main.
+# The commands run in the checkout of main, or of the parent's branch. Beside the tree sits another
+# feature's leaf, `other-flow-0`, in review and merged into its own parent's branch: a blocker that
+# is no sibling.
 
 
 @dataclass(frozen=True)
@@ -1075,11 +1077,14 @@ def leaves(draw: st.DrawFn, statuses: tuple[str, ...]) -> list[Leaf]:
     return drawn
 
 
-def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool) -> None:
-    """The tree on the tracker and in git, from an emptied tracker and main back at its first commit.
-    Every commit carries main's one tree, so no branch moves a file under the working tree."""
+def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool, nested: bool = False,
+          where: str = "main") -> None:
+    """The tree on the tracker and in git, from an emptied tracker and main back at its first commit,
+    checked out at `where`. `up` is the parent's branch merged into the branch above it. Every commit
+    carries main's one tree, so no branch moves a file under the working tree."""
+    git(repo, "symbolic-ref", "HEAD", "refs/heads/main")
     for ref in git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/ticket/", "refs/heads/one-flow",
-                   "refs/heads/other-flow").split():
+                   "refs/heads/whole-flow", "refs/heads/other-flow").split():
         git(repo, "update-ref", "-d", ref)
     first = git(repo, "rev-list", "--max-parents=0", "HEAD").strip()
     git(repo, "update-ref", "refs/heads/main", first)
@@ -1087,7 +1092,9 @@ def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool) ->
         repo, "commit-tree", f"{first}^{{tree}}", *(arg for sha in parents for arg in ("-p", sha)), "-m", what
     ).strip()
 
-    cut = tip = built("one-flow: built", first)
+    above, base = ("whole-flow", built("whole-flow: built", first)) if nested else ("main", first)
+    git(repo, "update-ref", f"refs/heads/{above}", base)
+    cut = tip = built("one-flow: built", base)
     for leaf in (leaf for leaf in tree if leaf.status != "open"):
         own = built(f"{leaf.slug}: built", cut)
         git(repo, "update-ref", f"refs/heads/ticket/{leaf.slug}", own)
@@ -1095,29 +1102,40 @@ def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool) ->
             tip = built(f"one-flow: {leaf.slug} merged", tip, own)
     git(repo, "update-ref", "refs/heads/one-flow", tip)
     if up:
-        git(repo, "update-ref", "refs/heads/main", built("main: one-flow merged", first, tip))
+        git(repo, "update-ref", f"refs/heads/{above}", built(f"{above}: one-flow merged", base, tip))
+    git(repo, "symbolic-ref", "HEAD", f"refs/heads/{where}")
     beside = built("other-flow-0: built", other := built("other-flow: built", first))
     git(repo, "update-ref", "refs/heads/ticket/other-flow-0", beside)
     git(repo, "update-ref", "refs/heads/other-flow", built("other-flow: other-flow-0 merged", other, beside))
 
     ticket(fresh(tickets), "other-flow", status="claimed")
     ticket(tickets, "other-flow-0", status="review", parent="other-flow")
-    ticket(tickets, "one-flow", status=parent)
+    if nested:
+        ticket(tickets, "whole-flow", status="claimed")
+    ticket(tickets, "one-flow", status=parent, parent="whole-flow" if nested else None)
     for leaf in tree:
         ticket(tickets, leaf.slug, status=leaf.status, parent="one-flow", hinge="true" if leaf.hinge else None,
                **{"blocked-by": f"[{', '.join(leaf.blocked_by)}]" if leaf.blocked_by else None})
 
 
-def accepted(tree: list[Leaf], up: bool) -> dict[str, bool]:
+def accepted(tree: list[Leaf], up: bool, nested: bool = False, where: str = "main") -> dict[str, bool]:
     """`speculative-first#P2`'s rule, from The states: `done` is accepted exactly where the ticket's
     tip has reached the branch its accept merges into. A hinge's is the parent's branch, which it
     reached once merged; any other leaf's is the branch above the parent, which it reached once
     merged into the parent's branch and that branch merged up; the parent's is the branch above.
     The parent is done only once every child is, which its accept makes of each child `done` or
     merged into its branch; a child in `review` not merged is one the orchestrator has not passed,
-    and it refuses the parent's accept while it stands."""
+    and it refuses the parent's accept while it stands.
+
+    `done` is written where the accept merges into, never on the branch merged. Run on the parent's
+    branch, that is no branch above it, except the one a parent that is itself a child names by
+    its own parent's slug: there only a hinge, and a leaf that has reached `whole-flow`, is done."""
     whole = all(leaf.status == "done" or leaf.merged for leaf in tree)
-    return {"one-flow": up and whole, **{leaf.slug: leaf.merged and (leaf.hinge or up) for leaf in tree}}
+    above_known = nested or where != "one-flow"
+    return {
+        "one-flow": up and whole and where != "one-flow",
+        **{leaf.slug: leaf.merged and (leaf.hinge or (up and above_known)) for leaf in tree},
+    }
 
 
 def startable(tree: list[Leaf]) -> set[str]:
@@ -1130,22 +1148,27 @@ def startable(tree: list[Leaf]) -> set[str]:
             if leaf.status == "open" and all(ref in by_slug and frees(by_slug[ref]) for ref in leaf.blocked_by)}
 
 
-@given(tree=leaves(("review",)), up=st.booleans())
-@settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
-def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(tickets: Path, repo: Path, tree: list[Leaf], up: bool) -> None:
+@given(tree=leaves(("review",)), up=st.booleans(), nested=st.booleans(), where=st.sampled_from(["main", "one-flow"]))
+@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(
+    tickets: Path, repo: Path, tree: list[Leaf], up: bool, nested: bool, where: str
+) -> None:
     """`speculative-first#P2` at the command line. Every ticket of the tree waits in review, and
     `done` is attempted on each alone, the files put back between attempts. An accept may write
     `done` on other tickets of the tree too, as the parent's does on its children, but only on one
-    whose tip has reached the branch its own accept merges into."""
-    grown(repo, tickets, tree, "review", up)
+    whose tip has reached the branch its own accept merges into. The parent is a top-level ticket
+    or a child of `whole-flow`, and the command runs from main or from the parent's own branch,
+    which is where the orchestrator writes a leaf's review."""
+    grown(repo, tickets, tree, "review", up, nested, where)
     written = {path: path.read_text() for path in tickets.glob("*.md")}
-    reaching = accepted(tree, up)
+    reaching = accepted(tree, up, nested, where)
+    case = (tree, up, nested, where)
     for slug, reached in reaching.items():
         said = run(repo, "set", slug, "status=done")
-        assert (said.code == 0) is reached, (slug, tree, up, said.said)
-        assert run(repo, "get", slug, "status").out.strip() == ("done" if reached else "review"), (slug, tree, up)
+        assert (said.code == 0) is reached, (slug, case, said.said)
+        assert run(repo, "get", slug, "status").out.strip() == ("done" if reached else "review"), (slug, case)
         done = {other for other in reaching if run(repo, "get", other, "status").out.strip() == "done"}
-        assert done <= {other for other, there in reaching.items() if there}, (slug, tree, up, done)
+        assert done <= {other for other, there in reaching.items() if there}, (slug, case, done)
         for path, text in written.items():
             path.write_text(text)
 
@@ -1487,8 +1510,13 @@ def test_a_sibling_built_in_the_agent_repo_alone_frees_nothing_until_it_merges_t
     git(agent, "commit", "-q", "-m", "the research")
     git(agent, "checkout", "-q", "main")
 
-    ready = lambda: run(split, "frontier").out.partition("waiting\n")[0]  # noqa: E731
+    def ready() -> str:
+        said = run(split, "frontier")
+        assert said.code == 0, said.said
+        return said.out.partition("waiting\n")[0]
+
     assert "map-columns" not in ready()
+    assert "on ask-around (review)" in run(split, "frontier").out.partition("waiting\n")[2]
     git(split, "merge", "-q", "--no-ff", "-m", "one-flow up", "one-flow")
     assert "ask-around, map-columns neither done" in run(split, "set", "one-flow", "status=done").err
     git(agent, "merge", "-q", "--no-ff", "-m", "ask-around read", "ticket/ask-around")
