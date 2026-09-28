@@ -870,12 +870,13 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
         f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
     (bin_dir / "claude").chmod(0o755)
 
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
+           "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")}
+    env.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
          *([session] if resumed else [])],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
-             "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")},
+        cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env,
     )
     status = (state / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
