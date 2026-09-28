@@ -25,6 +25,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import session_page
 import stop_hook
 import turn_review
 from session_page import PAGE
@@ -39,12 +40,12 @@ UNATTENDED = ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")
 def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Every check here is a turn of a session someone is sitting at, whose record the prose
     reviewer finds nothing in unless the check says otherwise: no check spends a model call. The
-    review's log is the check's own, and handed back."""
+    log is the check's own, and handed back."""
     for marker in UNATTENDED:
         monkeypatch.delenv(marker, raising=False)
     monkeypatch.setattr(turn_review, "review", lambda system, prompt: [])
-    monkeypatch.setattr(turn_review, "LOG", tmp_path / "turn-review.jsonl")
-    return turn_review.LOG
+    monkeypatch.setattr(session_page, "LOG", tmp_path / "session-page.jsonl")
+    return session_page.LOG
 
 
 @pytest.fixture
@@ -68,6 +69,12 @@ def payload(directory: Path, transcript: Path, reply: str = "One line, and the p
         "last_assistant_message": reply,
         **rest,
     }
+
+
+def logged(log: Path, key: str) -> list[dict]:
+    """The log's lines that carry `key`: `decision` the review's, `verb` the hook's."""
+    lines = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    return [entry for entry in lines if key in entry]
 
 
 def git(where: Path, *args: str) -> None:
@@ -348,7 +355,7 @@ def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     run(payload(worked_example, transcript))
     assert capsys.readouterr().out == ""
     assert (worked_example / PAGE).read_text() != stale_page
-    (entry,) = [json.loads(line) for line in attended.read_text().splitlines()]
+    (entry,) = logged(attended, "decision")
     assert (entry["session_id"], entry["decision"]) == (worked_example.name, "failed")
 
 
@@ -379,7 +386,7 @@ def test_a_turn_that_wrote_no_record_spends_no_model_call(
     monkeypatch.setattr(turn_review, "review", unreachable)
     run(payload(worked_example, unrecorded))
     assert capsys.readouterr().out == ""
-    assert not attended.exists()
+    assert logged(attended, "decision") == []
 
 
 def test_each_review_decision_is_logged_with_the_record_it_read(
@@ -393,7 +400,7 @@ def test_each_review_decision_is_logged_with_the_record_it_read(
     run(payload(worked_example, transcript))
     run(payload(worked_example, transcript, stop_hook_active=True))
     capsys.readouterr()
-    draft, revision = [json.loads(line) for line in attended.read_text().splitlines()]
+    draft, revision = logged(attended, "decision")
     assert (draft["decision"], draft["findings"], draft["dropped"]) == ("feedback", [finding(IN_RECORD[0])], [finding(NOT_IN_RECORD)])
     assert revision["decision"] == "re-entry"
     assert {draft["record"], revision["record"]} == {str(record)} and draft["text"] == record.read_text()
@@ -432,6 +439,104 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
 
 
 REVIEW = turn_review.review  # the real one, which the autouse stub replaces
+
+
+# ---- the hook's log ---------------------------------------------------------
+
+# Each arrangement takes the worked example, its transcript and the check's fixtures, and returns
+# the hook JSON of a turn that takes one path.
+
+def worker(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setenv("DISPATCH_WORKLOG", "/w/log")
+    return payload(example, transcript)
+
+
+def print_mode(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setenv("CLAUDE_CODE_SESSION_ATTENDED", "0")
+    return payload(example, transcript)
+
+
+def in_no_project(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    loose = fixtures.getfixturevalue("tmp_path_factory").mktemp("loose")
+    return payload(example, transcript) | {"cwd": str(loose)}
+
+
+def with_no_directory(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example.parent / "8e0f1c22-0000-0000-0000-000000000000", transcript)
+
+
+def unparsed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    (example / "turns" / "04.md").write_text("no frontmatter\n")
+    return payload(example, transcript)
+
+
+def in_the_chat(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, fixtures.getfixturevalue("unrecorded"), reply=LONG)
+
+
+def found_fault(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
+    return payload(example, transcript)
+
+
+def no_record(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, fixtures.getfixturevalue("unrecorded"))
+
+
+def reviewed_earlier(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    """The stop after the review sent the record back."""
+    found_fault(example, transcript, fixtures)
+    decide(payload(example, transcript), example)
+    return payload(example, transcript, stop_hook_active=True)
+
+
+def found_nothing(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, transcript)
+
+
+# Each path the hook takes, and the line it logs for it: the verb, why, and whether it resolved a
+# session directory. The four that let a turn end are the ones that look the same from outside.
+PATHS = {
+    "a dispatched worker": (worker, "allow", "dispatched worker", True),
+    "a print-mode session": (print_mode, "allow", "print-mode session", True),
+    "a directory in no project": (in_no_project, "allow", "no project with an agent repo", False),
+    "a session with no directory": (with_no_directory, "allow", "no session directory", True),
+    "a record that does not parse": (unparsed, "send back", "record does not parse", True),
+    "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
+    "a record the review finds fault with": (found_fault, "send back", "review findings", True),
+    "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
+    "a record reviewed at an earlier stop": (reviewed_earlier, "render", "record reviewed this turn", True),
+    "a record the review finds nothing in": (found_nothing, "render", "review found nothing", True),
+}
+
+
+@pytest.mark.parametrize("arrange, verb, why, resolved", PATHS.values(), ids=PATHS)
+def test_every_decision_is_one_line_in_the_session_pages_log(
+    arrange: Callable, verb: str, why: str, resolved: bool, worked_example: Path, transcript: Path,
+    capsys: pytest.CaptureFixture, run: Callable[[dict], None], request: pytest.FixtureRequest, attended: Path,
+) -> None:
+    """stop-hook-logs-its-decisions: the verb, why the hook took that path, and the session
+    directory it resolved, in the log the review writes to as well."""
+    hook = arrange(worked_example, transcript, request)
+    before = len(logged(attended, "verb"))
+    run(hook)
+    capsys.readouterr()
+    entries = logged(attended, "verb")[before:]
+    directory = str(Path(hook["cwd"]) / SESSIONS / hook["session_id"]) if resolved else None
+    assert entries == [{"ts": entries[0]["ts"], "session_id": hook["session_id"], "verb": verb, "why": why, "directory": directory}]
+
+
+def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
+    worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The log is for diagnosis: a full disk or a read-only home still renders the page."""
+    (tmp_path / "not-a-directory").write_text("")
+    monkeypatch.setattr(session_page, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
+    (worked_example / PAGE).write_text(stale_page)
+    run(payload(worked_example, transcript))
+    assert capsys.readouterr().out == ""
+    assert (worked_example / PAGE).read_text() != stale_page
 
 
 # ---- the catalogue's chat rules ---------------------------------------------

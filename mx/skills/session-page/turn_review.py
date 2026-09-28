@@ -8,9 +8,11 @@ never sees them. It answers against a JSON schema; a finding whose quote is not 
 dropped, and at most three go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
-review is one JSON line in LOG, carrying the session id and the record as it was reviewed.
+review is one JSON line in session_page.LOG, carrying the session id and the record as it was
+reviewed.
 """
 
+import contextlib
 import json
 import re
 import subprocess
@@ -18,11 +20,11 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import session_page
 from session_page import Session, Turn
 
 HERE = Path(__file__).resolve().parent
 CATALOGUE = HERE.parent / "writing-for-humans" / "CATALOGUE.md"
-LOG = Path.home() / "logs" / "turn-review" / "log.jsonl"
 MODEL = "claude-opus-5-5"
 EFFORT = "low"
 REVIEWER_TIMEOUT_S = 45  # under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
@@ -87,12 +89,12 @@ def feedback_on(session: Session, turn: Turn) -> str:
 
 
 def reviewed_since(session_id: str, when: datetime | None) -> bool:
-    """Whether LOG has a review of this session after `when`, which is what holds the review to
+    """Whether the log has a review of this session after `when`, which is what holds the review to
     once per turn whichever send-back continued it. A line cut short by a concurrent write is
     skipped."""
-    if not LOG.exists():
+    if not session_page.LOG.exists():
         return False
-    with LOG.open() as f:
+    with session_page.LOG.open() as f:
         for line in f:
             if session_id not in line:
                 continue
@@ -187,9 +189,11 @@ def feedback(turn: Turn, found: list[dict], rules: dict[str, str]) -> str:
 
 
 def log(session_id: str | None, **entry: object) -> None:
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a") as f:
-        f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
+    """Fails open: a log that cannot be written never holds up the turn it describes."""
+    with contextlib.suppress(OSError):
+        session_page.LOG.parent.mkdir(parents=True, exist_ok=True)
+        with session_page.LOG.open("a") as f:
+            f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
 
 
 def ms_since(t0: float) -> int:
