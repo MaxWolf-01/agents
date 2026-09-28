@@ -62,7 +62,8 @@ one with no transcript on this machine, a worker on another host, is left out,
 and each of the rest carries a button that copies the command resuming it and,
 where one has been rendered, a link to its session page, read from
 agent/sessions/<session-id>/ in the agent repo of the project the session ran
-in. The brief is not repeated there: it is on the row.
+in; a page in another project's agent repo, which the board's server does not
+serve, is not linked. The brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
@@ -1143,7 +1144,7 @@ def ticket_blocks(
         else:
             blocks.append(block(heading, prose(heading, text)))
     front = [asked_block(asked, prose(None, "".join(said)), path, status),
-             sessions_block(worked), artefacts_block(show_dir(path), project(path.parent), here)]
+             sessions_block(worked, path.parent.parent, here), artefacts_block(show_dir(path), project(path.parent), here)]
     return "".join(filter(None, front + blocks)) + history_block("".join(history))
 
 
@@ -1223,18 +1224,23 @@ PAGE_TIP = "This session's page: its turns, the questions it waits on you for, a
 WHEN_TIP = "When this session first committed on the ticket, and when it last did."
 
 
-def sessions_block(worked: Sequence[Session]) -> str:
+def sessions_block(worked: Sequence[Session], agent: Path, here: Path) -> str:
     """The sessions that worked on the ticket, each with its session page where it has one and the
     command that resumes it. The label says on this machine because that is the list: a worker on
     another host is not in it (ticket_sessions), and a ticket no session has committed on has no
-    block at all."""
+    block at all.
+
+    Only a page in `agent`, the agent repo the board is in, is linked: the board is served from that
+    repo, so a page in another project's has no link that opens there, and its session keeps only
+    its resume button."""
     if not worked:
         return ""
+    linked = {s.id: href(s.page, here) for s in worked if s.page and s.page.resolve().is_relative_to(agent.resolve())}
     items = "".join(
         f'<li><span class="stitle">{html.escape(session.title)}</span>'
         f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(worked_on(session))}</span>'
-        + (f'<a class="spage" href="file://{html.escape(str(session.page))}" target="_blank" '
-           f'data-tip="{html.escape(PAGE_TIP)}">page</a>' if session.page else "")
+        + (f'<a class="spage" href="{html.escape(linked[session.id])}" target="_blank" '
+           f'data-tip="{html.escape(PAGE_TIP)}">page</a>' if session.id in linked else "")
         + copy_button("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}")
         + "</li>"
         for session in worked

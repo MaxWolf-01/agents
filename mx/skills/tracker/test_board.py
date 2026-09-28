@@ -541,15 +541,17 @@ def test_a_rendered_board_links_nothing_by_a_file_or_a_loopback_address(
     assert [ref for ref in written if ref.startswith("file:") or "127.0.0.1" in ref] == []
 
 
-def test_served_from_the_agent_repo_every_link_on_the_demo_board_opens(tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_served_from_the_agent_repo_every_link_on_the_demo_board_opens(tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch) -> None:
     """The mirror serves the agent repo as a plain directory, as `python -m http.server` does: every
-    review page and artefact the board links has to answer there, and as a file beside the page."""
+    review page, artefact and session page the board links has to answer there, and as a file
+    beside the page."""
     demo = build_demo(tmp_path / "demo")
+    monkeypatch.setattr(board, "TRANSCRIPTS", demo.transcripts)
     agent = demo.root.parent
     out = agent / "board.html"
     render(demo.root, demo.repo, out)
     linked = to_files(out.read_text())
-    assert any(ref.startswith("diffviews/") for ref in linked) and any(ref.startswith("show/") for ref in linked)
+    assert {ref.split("/")[0] for ref in linked} >= {"diffviews", "show", "sessions"}
     assert [ref for ref in linked if not (agent / urllib.parse.unquote(ref)).is_file()] == []
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(agent))
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
@@ -1636,13 +1638,29 @@ def test_an_opened_ticket_links_the_page_of_each_session_that_has_one(worked: tu
     """The link opens the page in a new tab and says on hover what it opens; a session with no page
     shows no link, and its resume button is there all the same."""
     root, repo = worked
-    out = tmp_path / "board.html"
+    out = root.parent / "board.html"
     render(root, repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     ((title, href, tip, target),) = pages_in(row)
-    assert (title, href, target) == ("Ledger imports", f"file://{repo / 'agent' / 'sessions' / HERE / 'index.html'}", "_blank")
+    assert (title, href, target) == ("Ledger imports", f"sessions/{HERE}/index.html", "_blank")
     assert len(tip.split()) >= 4 and "page" in tip, f"the link says {tip!r} of itself"
     assert len(sessions_in(row)) == 3, "every listed session keeps its resume button"
+
+
+def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tuple[Path, Path], path_with: Callable[..., Path]) -> None:
+    """The board is served from its own agent repo, so no link it writes reaches a page kept in
+    another project's: the session is listed with its resume button and no page link."""
+    root, repo = worked
+    later = repo.parent / "the budget"
+    (later / "agent" / "tickets").mkdir(parents=True)
+    (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
+    append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
+    put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    out = root.parent / "board.html"
+    render(root, repo, out)
+    row = rows_of(out.read_text())["t-map-columns"]
+    assert [title for title, _, _, _ in pages_in(row)] == ["Ledger imports"], "only the page this agent repo keeps"
+    assert len(sessions_in(row)) == 3
 
 
 def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
