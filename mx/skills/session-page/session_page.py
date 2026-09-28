@@ -25,7 +25,7 @@ import re
 import shlex
 import sys
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -35,10 +35,7 @@ from markdown_it import MarkdownIt
 PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
-# What the page carries so a check can find its parts, each once on the thing it names.
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
-RECORD = "data-record"  # the attribute on a turn's section: the two digits of the record it renders
-QUESTION = "data-question"  # the attribute on a question, at the top and in its turn: its tag
 
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
@@ -86,13 +83,13 @@ def read_session(directory: Path, transcript: Path) -> "Session":
     settled = settle(turns)
     entries = read_transcript(transcript)
     written = written_at(entries, directory, turns)
-    messages = pair(said(entries), [written[t.number] for t in turns])
+    messages = pair(said(entries), [written.get(t.number) for t in turns])
     return Session(
         id=str(front["session"]),
         repo=Path(str(front["repo"])),
         title=title,
         brief=sections.get("Brief", (0, ""))[1],
-        turns=tuple(replace(t, messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
+        turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
         settled=settled,
     )
 
@@ -147,6 +144,7 @@ class Turn:
     path: Path
     date: str
     headline: str  # the record's H1
+    written: datetime | None = None  # when the transcript shows the record written, where it shows it
     messages: tuple[str, ...] = ()  # what the user said that this turn answered, whole, oldest first
     questions: tuple[Question, ...] = ()
     links: tuple[Link, ...] = ()
@@ -447,9 +445,8 @@ WRITES = {"Write", "Edit", "MultiEdit"}  # the tools whose call on a path writes
 
 
 def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[int, datetime]:
-    """When each record was written: the first tool call in the transcript that wrote its path,
-    else the file's own modification time. A later edit, as a send-back asks for, or a read
-    leaves the time where it was."""
+    """When each record the transcript shows a write for was written: the earliest tool call that
+    wrote its path. A later edit, as a send-back asks for, or a read leaves the time where it was."""
     written: dict[int, datetime] = {}
     names = {t.path.name: t.number for t in turns}
     for entry in entries:
@@ -459,19 +456,20 @@ def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[
             writes = isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in WRITES
             target = writes and (block.get("input") or {}).get("file_path")
             if isinstance(target, str) and Path(target).parts[-3:-1] == (directory.name, "turns") and Path(target).name in names:
-                written.setdefault(names[Path(target).name], datetime.fromisoformat(entry["timestamp"]))
-    return {t.number: written.get(t.number) or datetime.fromtimestamp(t.path.stat().st_mtime, UTC) for t in turns}
+                number, at = names[Path(target).name], datetime.fromisoformat(entry["timestamp"])
+                written[number] = min(at, written.get(number, at))
+    return written
 
 
-def pair(messages: list[tuple[datetime, str]], written: list[datetime]) -> list[list[str]]:
-    """Each record's messages: the ones said before it was written and after the record before it
-    was. A message said after the newest record is on no turn until a later record is written.
-    Within a turn, a prompt the next one repeats whole and extends, as a resubmission does, is
-    shown as the next one."""
+def pair(messages: list[tuple[datetime, str]], written: list[datetime | None]) -> list[list[str]]:
+    """Each record's messages: the ones said before it was written and after the written record
+    before it was. A record with no write time pairs none. A message said after the newest record
+    is on no turn until a later record is written. Within a turn, a prompt the next one repeats
+    whole and extends, as a resubmission does, is shown as the next one."""
     out: list[list[str]] = [[] for _ in written]
     for when, text in messages:
         for i, at in enumerate(written):
-            if when <= at:
+            if at is not None and when <= at:
                 out[i].append(text)
                 break
     return [[m for m, later in zip(turn, turn[1:] + [""]) if not later.startswith(m)] for turn in out]
@@ -554,7 +552,7 @@ def open_question(turn: Turn, q: Question) -> str:
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
     return f"""
-<article class="q blk" id="{q.tag.lower()}" {QUESTION}="{q.tag}" tabindex="-1" data-block>
+<article class="q blk" id="{q.tag.lower()}" tabindex="-1" data-block>
   <span class="rail v-num">{q.tag}</span>
   <div class="q-main">
     <h3 class="v-h3">{inline(q.headline)}</h3>
@@ -582,20 +580,23 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
     asked = "".join(asked_question(q, settled[q.tag]) for q in t.questions if q.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
-<details class="turn blk" id="t{t.key}" {RECORD}="{t.key}" data-block{' open' if open_ else ''}>
+<details class="turn blk" id="t{t.key}" data-block{' open' if open_ else ''}>
   <summary class="head">
     <span class="rail v-num">{t.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
     <span class="v-meta date">{esc(t.date)}</span>
   </summary>
   <div class="turn-body">
-    {you(t.messages)}{answers(t)}{details}{links(t.links)}{asked}
+    {you(t)}{answers(t)}{details}{links(t.links)}{asked}
   </div>
 </details>"""
 
 
-def you(messages: tuple[str, ...]) -> str:
+def you(t: Turn) -> str:
     """The user's messages behind one click, each whole, its paragraphs and line breaks kept."""
+    if t.written is None:
+        return '<p class="v-meta you-none">no message of yours paired, since the transcript never writes this turn\'s record</p>'
+    messages = t.messages
     if not messages:
         return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
     words = sum(len(m.split()) for m in messages)
@@ -632,7 +633,7 @@ def links(items: tuple[Link, ...]) -> str:
 
 
 def asked_question(q: Question, how: Settled) -> str:
-    anchor = f'id="{q.tag.lower()}" {QUESTION}="{q.tag}"'
+    anchor = f'id="{q.tag.lower()}"'
     if how.how == "superseded":
         return (f'<div class="aq superseded" {anchor}><span class="k v-num">{q.tag}</span><div><p class="aq-h">{inline(q.headline)}</p>'
                 f'<p class="v-meta">replaced by <a href="#{how.value.lower()}">{how.value}</a> in turn {how.turn:02d}</p></div></div>')

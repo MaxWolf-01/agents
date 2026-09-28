@@ -32,7 +32,7 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_page import PAGE, QUESTION, QUESTIONS, RECORD, render_session
+from session_page import PAGE, QUESTIONS, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
@@ -42,10 +42,10 @@ VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "met
 # ---- reading the page -------------------------------------------------------
 
 
-def elements(page: str, attribute: str, pattern: str) -> dict[str, str]:
-    """Each element of the page that carries `attribute` with a value `pattern` matches, whole,
-    keyed by that value: a block is read by what marks it, not by where the next one starts, so
-    anything nested inside a marked element stays part of it."""
+def elements(page: str, pattern: str) -> dict[str, str]:
+    """Each element of the page whose id `pattern` matches, whole, keyed by that id: a block is
+    read by the anchor that names it, not by where the next one starts, so anything nested inside
+    it stays part of it."""
     starts = list(itertools.accumulate((len(line) for line in page.splitlines(keepends=True)), initial=0))
     found: dict[str, str] = {}
     open_tags: list[tuple[str, str | None, int]] = []
@@ -58,7 +58,7 @@ def elements(page: str, attribute: str, pattern: str) -> dict[str, str]:
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
             if tag in VOID:
                 return
-            value = dict(attrs).get(attribute)
+            value = dict(attrs).get("id")
             open_tags.append((tag, value if value and re.fullmatch(pattern, value) else None, self.at()))
 
         def handle_endtag(self, tag: str) -> None:
@@ -76,17 +76,22 @@ def elements(page: str, attribute: str, pattern: str) -> dict[str, str]:
 def top_of(page: str) -> str:
     """The block the questions waiting on the user sit in, and nothing where a session with none
     open carries no block."""
-    return elements(page, "id", QUESTIONS).get(QUESTIONS, "")
+    return elements(page, QUESTIONS).get(QUESTIONS, "")
+
+
+def question_anchors(fragment: str) -> list[str]:
+    """The questions a fragment of the page shows, by tag, once per time it shows one."""
+    return [anchor.upper() for anchor in re.findall(r'\bid="(q\d+)"', fragment)]
 
 
 def questions_in(fragment: str) -> set[str]:
     """The questions a fragment of the page shows, by tag."""
-    return set(re.findall(rf'{QUESTION}="(Q\d+)"', fragment))
+    return set(question_anchors(fragment))
 
 
 def sections_of(page: str) -> dict[str, str]:
     """Each turn's section, keyed by the two digits of its record."""
-    return elements(page, RECORD, r"\d+")
+    return {anchor[1:]: section for anchor, section in elements(page, r"t\d+").items()}
 
 
 # ---- sessions to render -----------------------------------------------------
@@ -145,9 +150,10 @@ def record(number: int, turn: dict, headline: str = "", details: str = "") -> st
 
 
 def write_transcript(path: Path, messages: list[str]) -> Path:
-    """A transcript holding the user's prompts and nothing else, each entry carrying what the real
-    one's prompts carry: what tells a prompt from the images, task notifications and other
-    sessions' hand-backs Claude Code also writes as user entries."""
+    """A transcript holding the user's prompts and, half an hour after each, the Write call of the
+    record that answered it. A prompt carries what the real one's prompts carry: what tells a
+    prompt from the images, task notifications and other sessions' hand-backs Claude Code also
+    writes as user entries."""
     lines, parent = [], None
     for number, text in enumerate(messages, start=1):
         uuid = f"{number:08d}-0000-0000-0000-000000000000"
@@ -155,6 +161,11 @@ def write_transcript(path: Path, messages: list[str]) -> Path:
             "parentUuid": parent, "isSidechain": False, "promptId": f"prompt-{number}", "type": "user",
             "message": {"role": "user", "content": text}, "uuid": uuid,
             "timestamp": f"2026-09-23T0{number}:00:00.000Z", "sessionId": DRAWN,
+        }))
+        call = {"type": "tool_use", "name": "Write", "input": {"file_path": f"{path.parent}/{DRAWN}/turns/{number:02d}.md"}}
+        lines.append(json.dumps({
+            "type": "assistant", "message": {"role": "assistant", "content": [call]},
+            "timestamp": f"2026-09-23T0{number}:30:00.000Z", "sessionId": DRAWN,
         }))
         parent = uuid
     path.write_text("\n".join(lines) + "\n")
@@ -192,8 +203,16 @@ def write_session(directory: Path, turns: list[dict]) -> tuple[Path, Path]:
 def test_the_page_is_read_by_the_values_its_module_names() -> None:
     """The page's side of the contract, pinned outside the module that states it: renaming one of
     these renames what the checks below and every later reader match on."""
-    assert (PAGE, QUESTIONS, RECORD, QUESTION) == (
-        "index.html", "open-questions", "data-record", "data-question")
+    assert (PAGE, QUESTIONS) == ("index.html", "open-questions")
+
+
+def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
+    """The ids the checks find a turn and a question by are the ones the page's own links jump to,
+    and each names one part: an anchor that breaks, or a part shown twice, fails here."""
+    page = render_session(worked_example, transcript, now=NOW)
+    ids = re.findall(r'\bid="([^"]+)"', page)
+    assert [i for i in set(ids) if ids.count(i) > 1] == []
+    assert sorted({target for target in re.findall(r'href="#([^"]+)"', page)} - set(ids)) == []
 
 
 @settings(deadline=None)  # an example writes a session directory and renders it twice
@@ -208,8 +227,8 @@ def test_the_top_holds_the_open_questions_and_nothing_else(
     directory, transcript = write_session(scratch() / DRAWN, turns)
     top = top_of(render_session(directory, transcript, now=NOW))
     assert questions_in(top) == open_tags
-    assert len(re.findall(rf"{QUESTION}=", top)) == len(open_tags)
-    assert RECORD not in top, "a turn sits below the questions, and a link to one carries its id"
+    assert len(question_anchors(top)) == len(open_tags)
+    assert not re.search(r'\bid="t\d+"', top), "a turn sits below the questions, and a link to one carries its id"
     assert [n for n in range(1, len(turns) + 1) if f"What turn {n} settled." in top] == []
 
 

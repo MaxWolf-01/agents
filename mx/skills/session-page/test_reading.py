@@ -26,9 +26,6 @@ from test_session_page import sections_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
-# When each of the worked example's records was written, between the prompts the prototype's sample
-# pairs it with, as the Write call the session made would stamp it.
-WRITTEN = {1: "2026-09-22T21:00:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-23T00:20:00Z", 4: "2026-09-23T01:30:00Z"}
 # The start of what the user said in each turn of the prototype's sample, `sample/turns/NN.you.md`.
 SAMPLE = {
     "01": ["i feel like we need like a leading word"],
@@ -63,14 +60,11 @@ def written(calls: dict[int, str]) -> list[tuple[str, int, str]]:
     return [("Write", number, at) for number, at in calls.items()]
 
 
-def test_a_turn_carries_what_the_user_said_since_the_record_before_it(
-    worked_example: Path, transcript: Path, tmp_path: Path
-) -> None:
-    """The six prompts of the worked example against its four records: the first prompt's
-    resubmission stands for it, the slash command reads as typed, the queued message joins the
-    turn it was queued in."""
-    page = render_session(worked_example, with_calls(transcript, worked_example, tmp_path / "t.jsonl", written(WRITTEN)), now=NOW)
-    shown = messages_of(page)
+def test_a_turn_carries_what_the_user_said_since_the_record_before_it(worked_example: Path, transcript: Path) -> None:
+    """session-page#P2, which turn a message reaches. The six prompts of the worked example against
+    the Write calls of its four records: the first prompt's resubmission stands for it, the slash
+    command reads as typed, the queued message joins the turn it was queued in."""
+    shown = messages_of(render_session(worked_example, transcript, now=NOW))
     assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
     assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
 
@@ -79,8 +73,8 @@ def test_a_message_said_after_the_newest_record_is_on_no_turn_yet(
     worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
     """Record 4 written before the last prompt: that prompt reaches no turn."""
-    early = {**WRITTEN, 4: "2026-09-23T00:40:00Z"}
-    page = render_session(worked_example, with_calls(transcript, worked_example, tmp_path / "t.jsonl", written(early)), now=NOW)
+    early = written({4: "2026-09-23T00:40:00Z"})
+    page = render_session(worked_example, with_calls(transcript, worked_example, tmp_path / "t.jsonl", early), now=NOW)
     assert [m[:20] for m in messages_of(page)["04"]] == ["okay okay i like it."]
     assert "hey can you please" not in page
 
@@ -91,9 +85,24 @@ def test_reading_or_fixing_an_older_record_leaves_its_messages_where_they_were(
     """A later turn reads record 2 for its question tags and edits record 3 when it is sent back:
     neither moves when those records were written."""
     later = [("Read", 2, "2026-09-23T01:40:00Z"), ("Edit", 3, "2026-09-23T01:41:00Z")]
-    t = with_calls(transcript, worked_example, tmp_path / "t.jsonl", written(WRITTEN) + later)
+    t = with_calls(transcript, worked_example, tmp_path / "t.jsonl", later)
     shown = messages_of(render_session(worked_example, t, now=NOW))
     assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
+
+
+def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_so(
+    worked_example: Path, transcript: Path, tmp_path: Path
+) -> None:
+    """Record 3's Write call gone, as from a session whose record was written some other way: turn
+    3 pairs no message and says why, and what the user said in it reaches the next written record,
+    whatever the file's own modification time says."""
+    unwritten = tmp_path / "t.jsonl"
+    unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
+    page = render_session(worked_example, unwritten, now=NOW)
+    shown, section = messages_of(page), sections_of(page)["03"]
+    assert shown["03"] == [] and "never writes this turn's record" in section
+    assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
+    assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
 
 
 def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_example: Path) -> None:
