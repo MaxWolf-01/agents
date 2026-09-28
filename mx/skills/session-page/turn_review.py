@@ -1,16 +1,16 @@
 """The light review a turn record's prose gets before the session page renders it.
 
-A fresh Opus 5.5 at low effort reads the record the turn wrote against the rules of
+A fresh model, MODEL at EFFORT, reads the record the turn wrote against the rules of
 ../writing-for-humans/CATALOGUE.md tagged `chat` or `both`, the selection that file's header
 states, seeing what the page's reader has seen: the earlier records, each after the user's messages
 it answered, and the messages this record answers. Tool calls are not on the page, so the reviewer
 never sees them. The record's shape, as ../show/SKILL.md gives it to the agent, is exempt as
 structure. It answers against a JSON schema; a finding whose quote is not in the record is
-dropped, and at most three go back to the agent.
+dropped, and at most MOST go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
-review is one JSON line in session_page.LOG, carrying the session id and the record as it was
-reviewed.
+review is one JSON line in LOG, carrying the session id and the record as it was
+reviewed; the Stop hook logs its own decisions there too.
 """
 
 import contextlib
@@ -21,7 +21,6 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-import session_page
 from session_page import Session, Turn
 
 HERE = Path(__file__).resolve().parent
@@ -34,6 +33,8 @@ EFFORT = "low"
 REVIEWER_TIMEOUT_S = 45
 WRAPPER_TIMEOUT_S = 55
 MOST = 3  # findings handed back per record
+REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
+LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisions and the Stop hook's, one JSON line each
 
 SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
 SHAPE = "### The turn record"
@@ -94,9 +95,9 @@ def reviewed_since(session_id: str, when: datetime | None) -> bool:
     """Whether the log has a review of this session after `when`, which is what holds the review to
     once per turn whichever send-back continued it. A line cut short by a concurrent write is
     skipped."""
-    if not session_page.LOG.exists():
+    if not LOG.exists():
         return False
-    with session_page.LOG.open() as f:
+    with LOG.open() as f:
         for line in f:
             if session_id not in line:
                 continue
@@ -110,19 +111,16 @@ def reviewed_since(session_id: str, when: datetime | None) -> bool:
     return False
 
 
-REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
-
-
 def reviewer_input(session: Session, turn: Turn) -> str:
     """The session up to `turn` as its page shows it, oldest first, with `turn`'s record fenced
     last in <record>."""
     earlier = [t for t in session.turns if t.number < turn.number]
-    parts = [block(t) + f"\n<turn>\n{t.path.read_text().strip()}\n</turn>" for t in earlier]
-    parts.append(block(turn) + f"\n<record>\n{turn.path.read_text().strip()}\n</record>")
+    parts = [user_messages(t) + f"\n<turn>\n{t.path.read_text().strip()}\n</turn>" for t in earlier]
+    parts.append(user_messages(turn) + f"\n<record>\n{turn.path.read_text().strip()}\n</record>")
     return "\n\n".join(p.strip() for p in parts)
 
 
-def block(turn: Turn) -> str:
+def user_messages(turn: Turn) -> str:
     return "\n".join(f"<user>\n{m.strip()}\n</user>" for m in turn.messages)
 
 
@@ -220,8 +218,8 @@ def feedback(turn: Turn, found: list[dict], rules: dict[str, str]) -> str:
 def log(session_id: str | None, **entry: object) -> None:
     """Fails open: a log that cannot be written never holds up the turn it describes."""
     with contextlib.suppress(OSError):
-        session_page.LOG.parent.mkdir(parents=True, exist_ok=True)
-        with session_page.LOG.open("a") as f:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a") as f:
             f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
 
 

@@ -172,7 +172,7 @@ import github  # the state of the pull requests and issues the tickets name, bes
 import tracker  # the one parser of a ticket file, and the rules it refuses one by, beside this script
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "session-page"))
-from session_page import PAGE as SESSION_PAGE, session_directory  # noqa: E402  where a session's page lives
+from session_page import PAGE as SESSION_PAGE, sessions_directory  # noqa: E402  where a session's page lives
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
@@ -953,18 +953,25 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
     for sid, (first, last) in session_log(repo).get(name, {}).items():
         if written := transcript(sid, transcripts or TRANSCRIPTS):
             title, cwds = written
-            found.append(Session(sid, title or sid, cwds[0] if cwds else "", first, last, session_page(sid, cwds)))
+            found.append(Session(sid, title or sid, cwds[0] if cwds else "", first, last, page_of(sid, cwds, path)))
     return found
 
 
-def session_page(session: str, cwds: Sequence[str]) -> Path | None:
-    """The session's page, or None where there is none: a session that never needed one, or one
-    whose directories are all gone, since a removed worktree no longer says which project it was
-    of. The session-page Stop hook writes it where `session_directory` puts it from the directory
-    the session was in when its turn ended, so the newest of those that holds one answers."""
-    directories = (session_directory(Path(cwd), session) for cwd in reversed(cwds) if Path(cwd).is_dir())
-    pages = (directory / SESSION_PAGE for directory in directories if directory)
+def page_of(session: str, cwds: Sequence[str], ticket: Path) -> Path | None:
+    """The session's page, or None where there is none to find. The session-page Stop hook writes it
+    in the agent repo of the project the session was in when its turn ended, so the newest of its
+    directories that holds one answers; where each is gone, as a worktree dispatch removed is, the
+    project the ticket is in answers. A page in another project whose every directory the session
+    ran in is gone is not found."""
+    places = [cwd for cwd in reversed(cwds) if Path(cwd).is_dir()] + [str(ticket.parent)]
+    pages = (sessions / session / SESSION_PAGE for sessions in map(sessions_in, places) if sessions)
     return next((page for page in pages if page.is_file()), None)
+
+
+@functools.cache
+def sessions_in(directory: str) -> Path | None:
+    """`sessions_directory` once per directory a render asks about, since each answer runs git."""
+    return sessions_directory(Path(directory))
 
 
 # one record per commit: the date the session wrote it, and the session that signed it, with the

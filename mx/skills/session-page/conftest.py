@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from stop_hook import SESSIONS  # noqa: E402
+from session_page import SESSIONS  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of

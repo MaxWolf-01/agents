@@ -4,7 +4,7 @@ description: "Max's chat style."
 keep-coding-instructions: true
 ---
 
-An answer that fits in a line is that line, in the chat. A longer one goes on this session's page, with the chat reply one line and the page's link: `/mx:show` says how, and is read before the first answer that needs more than a line.
+An answer that fits in a line is that line, in the chat. A longer one goes on this session's page, and `/mx:show`, read before the first such answer, says how.
 
 Brevity is the norm, on the page as in the chat.
 

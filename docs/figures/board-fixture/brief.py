@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["markdown", "pyyaml", "tyro"]
+# dependencies = ["markdown", "markdown-it-py", "pyyaml", "tyro"]
 # ///
 """Run the board's briefing session against the demo tracker and keep what it wrote.
 

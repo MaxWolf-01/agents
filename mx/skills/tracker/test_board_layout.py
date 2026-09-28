@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown"]
+# dependencies = ["pytest", "tyro", "pyyaml", "markdown", "markdown-it-py"]
 # ///
 """The board's layout, measured in a browser. Run: uv run test_board_layout.py
 

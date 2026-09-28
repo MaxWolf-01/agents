@@ -10,23 +10,19 @@ the shape the show skill gives them (../show/SKILL.md, The session page). The pa
 brief and resume command, the questions no later turn answered or superseded, then the turns
 newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
 
-A record that does not parse is reported as `file:line: reason` on stderr, the exit code is 1,
-and no page is written.
-
-Examples:
-
-    session-page agent/sessions/e5ca76dc-3093-419b-aa93-b8eb8f35811f ~/.claude/projects/<project>/e5ca76dc-3093-419b-aa93-b8eb8f35811f.jsonl
+Run as a command, it prints where a session's directory is.
 """
 
 import html
 import json
+import os
 import re
 import shlex
 import sys
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, TypeVar
+from typing import Literal, TypeVar
 
 import yaml
 from markdown_it import MarkdownIt
@@ -36,7 +32,6 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
-LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the Stop hook's decisions and the turn review's, one JSON line each
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 
@@ -44,33 +39,42 @@ HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
 
 
+CLI = """Print the directory this session's records go in: `sessions/<session-id>` in the agent repo
+of the project the working directory is in, the same directory from every worktree of that
+project, the id being $CLAUDE_CODE_SESSION_ID. It need not exist yet.
+
+Exits 1, saying why, outside a project with an agent repo or outside a Claude Code session.
+
+Examples:
+
+    session-page
+"""
+
+
 def main() -> None:
     import tyro
 
-    @dataclass(frozen=True)
-    class Args:
-        directory: Annotated[Path, tyro.conf.Positional]
-        """The session directory: session.md and turns/."""
-        transcript: Annotated[Path, tyro.conf.Positional]
-        """The session's transcript, the JSONL Claude Code writes."""
-
-    args = tyro.cli(Args, description=__doc__)
-    try:
-        rendered = render_session(args.directory, args.transcript)
-    except RecordError as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
-    output = args.directory / PAGE
-    output.write_text(rendered)
-    print(output)
+    tyro.cli(lambda: None, description=CLI)
+    if not (session := os.environ.get("CLAUDE_CODE_SESSION_ID", "")):
+        sys.exit("no session id: run it inside a Claude Code session")
+    if (directory := session_directory(Path.cwd(), session)) is None:
+        sys.exit(f"{Path.cwd()} is in no project with an agent repo")
+    print(directory)
 
 
 def session_directory(cwd: Path, session: str) -> Path | None:
-    """Where the session's records and page live, whether or not they exist yet: `sessions/<id>` in
-    the agent repo of the project `cwd` is in, found the way `tracker root` finds the tracker, so
-    every worktree of the project names the same one. None outside a project with an agent repo."""
+    """Where the session's records and page live, whether or not they exist yet. None outside a
+    project with an agent repo."""
+    sessions = sessions_directory(cwd)
+    return sessions / session if sessions else None
+
+
+def sessions_directory(cwd: Path) -> Path | None:
+    """`sessions/` in the agent repo of the project `cwd` is in, found the way `tracker root` finds
+    the tracker, so every worktree of the project names the same one. None outside a project with an
+    agent repo."""
     try:
-        return tracker.tracker_root(cwd).parent / SESSIONS.name / session
+        return tracker.tracker_root(cwd).parent / SESSIONS.name
     except tracker.Refused:
         return None
 
@@ -107,7 +111,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
         turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before), sent=tuple(sent_before))
                     for t, said_before, sent_before in zip(turns, messages, peers)),
         settled=settled,
-        last_said=spoken[-1][0] if spoken else None,
+        began=turn_start(entries),
     )
 
 
@@ -190,7 +194,7 @@ class Settled:
     """How a question left the top: answered with `value`, or superseded by the question `value`
     names, in turn `turn`."""
 
-    how: str  # "answered" or "superseded"
+    how: Literal["answered", "superseded"]
     value: str
     turn: int
 
@@ -205,7 +209,7 @@ class Session:
     brief: str  # its `## Brief`
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
-    last_said: datetime | None = None  # when the user last said something, as the transcript has it
+    began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
 
 
 # ---- reading the records ----------------------------------------------------
@@ -330,7 +334,7 @@ WHY = re.compile(r"Why:\s*(.*)")
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
-    """`- [Q7] **headline** detail` items, each with `(a) text` options, one marked `*my pick*`,
+    """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
     and at most one `Why: text`, as sub-items; a line indented under an item continues it."""
     items: list[dict] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
@@ -365,8 +369,10 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
         options = tuple(Option(o["letter"], PICK.sub(" ", o["text"]).strip(), bool(PICK.search(o["text"]))) for o in item["options"])
-        if sum(o.picked for o in options) > 1:
-            raise RecordError(path, item["line"], f"{item['tag']} marks more than one option *my pick*")
+        if len(options) < 2:
+            raise RecordError(path, item["line"], f"{item['tag']} offers {len(options)} option{'s' * (len(options) != 1)}; a question offers at least two, `(a) text` sub-items")
+        if sum(o.picked for o in options) != 1:
+            raise RecordError(path, item["line"], f"{item['tag']} marks {'no option' if not any(o.picked for o in options) else 'more than one option'} *my pick*; it marks one")
         why = item["why"]["text"] if item["why"] else ""
         questions.append(Question(item["tag"], item["headline"], item["text"], options, why))
     return tuple(questions)
@@ -453,11 +459,17 @@ def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
                   key=lambda s: s[0])
 
 
+def prompted(entry: dict) -> bool:
+    """Whether a user entry is one Claude Code wrote as a prompt: not a meta line, a subagent's own
+    transcript or a compaction's summary."""
+    return entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"))
+
+
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
     """Each user entry and queued prompt, with when, the kind of its origin and its content."""
     out = []
     for entry in entries:
-        if entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary")):
+        if prompted(entry):
             content = entry.get("message", {}).get("content")
         elif entry.get("type") == "attachment" and entry.get("attachment", {}).get("type") == "queued_command":
             if entry["attachment"].get("commandMode", "prompt") != "prompt":
@@ -468,6 +480,14 @@ def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
         if "timestamp" in entry:
             out.append((datetime.fromisoformat(entry["timestamp"]), entry.get("origin", {}).get("kind", "human"), content))
     return out
+
+
+def turn_start(entries: list[dict]) -> datetime | None:
+    """When the newest turn began: the last prompt Claude Code answered with a turn of its own,
+    whoever sent it, the user, a finished task or another session. A message queued mid-turn joins
+    the turn it arrived in, and a tool result is part of the turn that called the tool."""
+    return max((datetime.fromisoformat(entry["timestamp"]) for entry in entries
+                if prompted(entry) and "timestamp" in entry and flat(entry.get("message", {}).get("content"))), default=None)
 
 
 def flat(content: object) -> str:
@@ -518,8 +538,13 @@ def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[
 
 def pair(messages: list[tuple[datetime, str]], written: list[datetime | None]) -> list[list[str]]:
     """Each record's messages, as `bucket` pairs them. Within a turn, a prompt the next one repeats
-    whole and extends, as a resubmission does, is shown as the next one."""
-    return [[m for m, later in zip(turn, turn[1:] + [""]) if not later.startswith(m)] for turn in bucket(messages, written)]
+    whole and extends past the end of a word, as a resubmission does, is shown as the next
+    one; `a` then `also, …` are two messages."""
+    return [[m for m, later in zip(turn, turn[1:] + [""]) if not resubmitted(m, later)] for turn in bucket(messages, written)]
+
+
+def resubmitted(message: str, later: str) -> bool:
+    return later.startswith(message) and (len(later) == len(message) or not later[len(message)].isalnum())
 
 
 T = TypeVar("T")
@@ -658,12 +683,12 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
 def you(t: Turn) -> str:
     """The user's messages, under "you"."""
     if t.written is None:
-        return '<p class="v-meta you-none">no message of yours paired, since the transcript never writes this turn\'s record</p>'
+        return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'
     messages = t.messages
     if not messages:
         return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
-    count = f"{len(messages)} messages · " if len(messages) > 1 else ""
-    return message_block("said you", "you", messages, count)
+    lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
+    return message_block("said you", "you", messages, lead)
 
 
 def peer(s: Sent) -> str:
@@ -671,7 +696,7 @@ def peer(s: Sent) -> str:
     return message_block("said peer", s.name, (s.text,), "another session · ")
 
 
-def message_block(cls: str, who: str, messages: tuple[str, ...], count: str) -> str:
+def message_block(cls: str, who: str, messages: tuple[str, ...], lead: str) -> str:
     """Messages behind one click, each whole, its paragraphs and line breaks kept."""
     words = sum(len(m.split()) for m in messages)
     parts = "".join(
@@ -680,7 +705,7 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], count: str) -> 
         for m in messages)
     return f"""
 <details class="{cls}">
-  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{count}{words:,} words</span></summary>
+  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{lead}{words:,} words</span></summary>
   <div class="said-text">{parts}</div>
 </details>"""
 
@@ -730,7 +755,7 @@ def help_dialog() -> str:
   <div class="card">
     <p class="v-h3" id="help-title">Keys</p>
     <table>{rows}</table>
-    <p class="v-meta">diffview's keys, where diffview has the move</p>
+    <p class="v-meta">the same keys as diffview, where diffview has one</p>
   </div>
 </div>"""
 

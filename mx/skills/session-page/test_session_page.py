@@ -240,6 +240,14 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     assert questions_in(top_of(render_session(worked_example, transcript, now=NOW))) == {"Q7"}
 
 
+def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Path, transcript: Path) -> None:
+    """The Decisions' layout: the turns newest first, the newest open and the older ones
+    collapsed."""
+    turns = re.findall(r'<details class="turn[^"]*" id="t(\d+)"([^>]*)>', render_session(worked_example, transcript, now=NOW))
+    assert [key for key, _ in turns] == ["04", "03", "02", "01"]
+    assert [key for key, attributes in turns if re.search(r"\bopen\b", attributes)] == ["04"]
+
+
 @settings(deadline=None)
 @given(drawn=sessions(), which=st.integers(min_value=0))
 def test_a_turns_record_is_the_only_source_of_its_section(

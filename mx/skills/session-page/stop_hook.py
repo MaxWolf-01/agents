@@ -5,9 +5,10 @@
 # ///
 """Stop hook: what the end of a turn does to the session page.
 
-It reads the Stop hook JSON on stdin and answers with a Verb over the session's own directory,
-which `main` then applies. A session with no directory never gets one from here: the agent creates
-it by writing the first record.
+It reads the Stop hook JSON on stdin; `decide` answers with a Verb over the session's own
+directory, running the turn review and logging a re-entry on the way, and `main` applies it. A
+session with no directory never gets one from here: the agent creates it by writing the first
+record.
 
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
@@ -16,7 +17,7 @@ The render that writes a session's page for the first time opens it with `claude
 the host has one; later renders rewrite the same file, and the open tab is reloaded by hand. That
 open is a line of the log too, saying what came of it.
 
-Every decision is one JSON line in `session_page.LOG`, beside the review's own: the verb, why the
+Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
 """
 
@@ -33,7 +34,7 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import PAGE, SESSIONS, RecordError, Session, Turn, page, read_session, session_directory  # noqa: E402
+from session_page import PAGE, RecordError, Session, Turn, page, read_session, session_directory  # noqa: E402
 
 Verb = Literal["render", "send back", "allow"]
 
@@ -53,7 +54,7 @@ CHAT_LINES = 3
 
 UNPARSED = "Fix the record; the session page renders once every record parses."
 IN_THE_CHAT = (
-    "This session has a page, and this turn wrote no record for it: the answer went to the chat. "
+    "This session has a page, and this turn wrote no record for it, so the answer went to the chat. "
     "Move it onto the page as {record}, then reply with one line and the page's link: {page}"
 )
 OUTSIDE_WRITE = (
@@ -63,21 +64,24 @@ OUTSIDE_WRITE = (
 
 
 def decide(hook: dict, directory: Path | None) -> Decision:
-    """What to do with the turn the hook JSON describes, over the session directory.
+    """What to do with the turn the hook JSON describes, over the session directory. "This turn"
+    runs from the prompt that started it (`session_page.turn_start`), whoever sent that prompt.
 
-    In a session that has a directory, a record that does not parse is sent back with the reason
-    the reader gives, and nothing renders; a reply longer than CHAT_LINES with no record written
-    since the user last spoke is sent back to move the answer onto the page; a record written this
-    turn that `turn_review` finds fault with is sent back with its findings; otherwise the page
-    renders. A session with no directory, or one left alone, lets the turn end. Where that long
-    reply's turn wrote a record without the Write tool, the send-back names that record, to be
-    written again with Write.
+    A session with no directory, or one left alone, lets the turn end. In a session that has a
+    directory:
 
-    The answer in the chat and the review each send the agent back once per turn: a turn a Stop hook
-    already continued renders a long reply, and a record reviewed since the user last spoke renders
-    unreviewed, so the revised record reaches the page and an agent that keeps its answer in the
-    chat is not held in a loop. A record that does not parse is sent back every time,
-    since the page never renders one.
+    - A record that does not parse is sent back with the reason the reader gives, every time, and
+      nothing renders.
+    - A reply longer than CHAT_LINES with no record written this turn is sent back to move the
+      answer onto the page. Where the turn wrote a record without the Write tool, the send-back
+      names that record, to be written again with Write.
+    - A record written this turn that `turn_review` finds fault with is sent back with its findings.
+    - Otherwise the page renders.
+
+    The answer in the chat and the review each send the agent back once per turn. A turn a Stop hook
+    already continued renders a long reply, so an agent that keeps its answer in the chat is not
+    held in a loop. A record reviewed this turn renders unreviewed, so the revised record reaches
+    the page.
     """
     if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
         return Decision("allow", "dispatched worker" if os.environ.get("DISPATCH_WORKLOG") else "print-mode session")
@@ -98,7 +102,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
-    if turn_review.reviewed_since(session.id, session.last_said):
+    if turn_review.reviewed_since(session.id, session.began):
         turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
         return Decision("render", "record reviewed this turn", page=page(session, datetime.now()))
     if said := turn_review.feedback_on(session, turn):
@@ -107,26 +111,26 @@ def decide(hook: dict, directory: Path | None) -> Decision:
 
 
 def written_this_turn(session: Session) -> Turn | None:
-    """The newest record the transcript writes after the user last spoke, by the write time the page
-    pairs messages by. With nothing said yet, the newest record the transcript writes."""
-    written = [t for t in session.turns if t.written and (session.last_said is None or t.written > session.last_said)]
+    """The newest record the transcript writes after this turn began, by the write time the page
+    pairs messages by. With no turn begun yet, the newest record the transcript writes."""
+    written = [t for t in session.turns if t.written and (session.began is None or t.written > session.began)]
     return written[-1] if written else None
 
 
 def written_outside_write(session: Session) -> Turn | None:
-    """The newest record the transcript never writes whose file changed since the user last spoke:
+    """The newest record the transcript never writes whose file changed since this turn began:
     one written through the shell. Its modification time names it in a send-back and decides
     nothing else."""
-    if session.last_said is None:
+    if session.began is None:
         return None
     outside = [
         t for t in session.turns
-        if t.written is None and datetime.fromtimestamp(t.path.stat().st_mtime, UTC) > session.last_said
+        if t.written is None and datetime.fromtimestamp(t.path.stat().st_mtime, UTC) > session.began
     ]
     return outside[-1] if outside else None
 
 
-def show(page: Path) -> str:
+def open_in_browser(page: Path) -> str:
     """Open the page in the browser without waiting on it, and say what came of that. A host with no
     `claude-browser`, or one that fails to start, leaves the page on disk and the turn as it was."""
     if not (opener := shutil.which("claude-browser")):
@@ -148,7 +152,7 @@ def main() -> None:
         first = not (directory / PAGE).exists()
         (directory / PAGE).write_text(decision.page)
         if first:
-            turn_review.log(hook["session_id"], opened=show(directory / PAGE), page=str(directory / PAGE))
+            turn_review.log(hook["session_id"], opened=open_in_browser(directory / PAGE), page=str(directory / PAGE))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
 

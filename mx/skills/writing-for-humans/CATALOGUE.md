@@ -2,7 +2,7 @@
 
 The catalogue every prose reviewer sweeps against: the Standards axis on a diff, the turn review on a session page's record, `/mx:writing-for-humans` on a file. A rule about punctuation or formatting binds hard; every other rule is a named heuristic, so a finding cites the id, quotes the hit and names the fix rather than asserting a violation, and a documented repo standard wins where it endorses what a rule would flag. One match may be coincidence; several co-occurring is the tell.
 
-Each rule is one block: a bullet carrying its id, its scope tag and its name, plus the lines indented under it. Ids are permanent and cited from elsewhere, so they do not run in order, and a removed rule leaves a gap. The scope tag says where the rule's fix belongs: `artifact` for text that ships in a file, `chat` for a reply the user reads, `both` where the fix improves either. One scope is selectable without reading the rest, here the rules the turn review applies:
+Each rule is one block: a bullet carrying its id, its scope tag and its name, plus the lines indented under it. Ids are permanent and cited from elsewhere, so they do not run in order, and a removed rule leaves a gap. The scope tag says where the rule's fix belongs: `artifact` for text that ships in a file, `chat` for a reply the user reads, in the chat or as a turn on the session page, `both` where the fix improves either. One scope is selectable without reading the rest, here the rules the turn review applies:
 
 ```
 awk '/^#/{k=0} /^- `/{k=($3=="`chat`"||$3=="`both`")} k' CATALOGUE.md
@@ -77,7 +77,7 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `36` `both` **Meta-commentary about the text itself.** Sentences about how it is structured or how it follows a style: "To keep this brief", "In short, as requested", "Here's a quick summary of what I did", "Hint:", "Plot twist:", "Spoiler:", "The rest of this essay explains...", "Let me walk you through...", "In this section, we'll...", "As we'll see...", "You already know this, but", "But that's another post". Delete; the reader sees the structure.
 
-- `53` `chat` **A thing to open, named but not reachable.** A reply that sends the reader to a ticket, a file, a draft or a page by its name alone ("the draft is in `model-effort-defaults`", "see the review page") leaves them to find it. Give its absolute path on this machine or its URL, one the reader can copy as it stands, or open it for them and say so.
+- `53` `chat` **A thing to open, named but not reachable.** A reply that sends the reader to a ticket, a file, a draft or a page by its name alone ("the draft is in `model-effort-defaults`", "see the review page") leaves them to find it. Give its absolute path on this machine or its URL, one the reader can copy as it stands, link it from the turn record on the session page, or open it for them and say so.
 
 - `51` `artifact` **Unfilled placeholders.** "[Your Name]", "2025-XX-XX", "PASTE_URL_HERE": template blanks that shipped. Sweep for brackets and XX before delivering.
 

@@ -11,6 +11,7 @@ said after the record before it was written and before it was) and the prototype
 holds, per record, the messages that turn answered.
 """
 
+import html
 import json
 import re
 import sys
@@ -21,7 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_page import PAGE, RecordError, render_session
+from session_page import RecordError, render_session
 from test_session_page import sections_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
@@ -61,7 +62,7 @@ def sent_of(page: str) -> dict[str, list[tuple[str, str]]]:
 
 
 def html_text(fragment: str) -> str:
-    return re.sub(r"<[^>]+>", " ", fragment).strip()
+    return html.unescape(re.sub(r"<[^>]+>", " ", fragment)).strip()
 
 
 def written(calls: dict[int, str]) -> list[tuple[str, int, str]]:
@@ -108,7 +109,7 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
     page = render_session(worked_example, unwritten, now=NOW)
     shown, section = messages_of(page), sections_of(page)["03"]
-    assert shown["03"] == [] and "never writes this turn's record" in section
+    assert shown["03"] == [] and "no Write call for this turn's record" in section
     assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
     assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
 
@@ -155,6 +156,64 @@ def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_ex
     assert (shown["01"], shown["02"], shown["03"]) == (["yes"], ["yes"], ["yes, and split it"])
 
 
+def test_a_short_answer_the_next_message_happens_to_start_with_is_its_own_message(tmp_path: Path, worked_example: Path) -> None:
+    """Only a resubmission collapses: the user answers `a`, then queues a message that starts with
+    the same letter, and the turn carries both."""
+    entries = [
+        {"type": "user", "timestamp": "2026-09-22T21:00:00Z", "message": {"role": "user", "content": "a"}},
+        {"type": "attachment", "timestamp": "2026-09-22T21:05:00Z",
+         "attachment": {"type": "queued_command", "prompt": "also, keep the second bank"}},
+    ]
+    t = tmp_path / "t.jsonl"
+    t.write_text("\n".join(map(json.dumps, entries)) + "\n")
+    calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
+    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
+    assert shown["01"] == ["a", "also, keep the second bank"]
+
+
+def test_a_prompt_resubmitted_with_more_after_a_comma_is_shown_once(tmp_path: Path, worked_example: Path) -> None:
+    """The fixture README's resubmission, with the text going on past a comma rather than a line
+    break: the turn carries the longer prompt alone."""
+    entries = [
+        {"type": "user", "timestamp": "2026-09-22T21:00:00Z", "message": {"role": "user", "content": "fix the header"}},
+        {"type": "user", "timestamp": "2026-09-22T21:01:00Z", "message": {"role": "user", "content": "fix the header, and the footer"}},
+    ]
+    t = tmp_path / "t.jsonl"
+    t.write_text("\n".join(map(json.dumps, entries)) + "\n")
+    calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
+    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
+    assert shown["01"] == ["fix the header, and the footer"]
+
+
+def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
+    worked_example: Path, transcript: Path, tmp_path: Path
+) -> None:
+    """A record is this session's only under this session's directory: a write to the prototype's
+    sample `turns/04.md`, before the last prompt, leaves turn 4's messages where they were."""
+    call = {"type": "tool_use", "name": "Write", "input": {"file_path": "/elsewhere/agent/prototypes/session-page/sample/turns/04.md"}}
+    t = tmp_path / "t.jsonl"
+    t.write_text(transcript.read_text() + json.dumps(
+        {"type": "assistant", "timestamp": "2026-09-23T00:30:00Z", "message": {"role": "assistant", "content": [call]}}) + "\n")
+    shown = messages_of(render_session(worked_example, t, now=NOW))
+    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
+    assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
+
+
+def test_a_link_in_the_details_is_a_path_from_the_repo_root_too(worked_example: Path, transcript: Path) -> None:
+    """The Decision resolves every link a record writes, the ones in its prose as well as its
+    Links: followed from the page's directory, it lands on the path the record wrote, in a tab of
+    its own. A link to a part of the page stays on the page."""
+    root = worked_example.parents[2]
+    (worked_example / "turns" / "05.md").write_text(
+        "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Details\n\n"
+        "The [second bank](agent/show/ledger/banks.html) is drawn, and [Q7](#q7) still waits.\n")
+    section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
+    ((href, target),) = re.findall(r'<a href="([^"#][^"]*)"[^>]*?target="([^"]+)"', section)
+    assert (worked_example / href).resolve().relative_to(root.resolve()).as_posix() == "agent/show/ledger/banks.html"
+    assert target == "_blank"
+    assert '<a href="#q7">Q7</a>' in section
+
+
 def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: Path) -> None:
     """Each link on the page, followed from the page's own directory, lands on the path the record
     wrote, from the root of the repo the session directory sits in."""
@@ -183,7 +242,7 @@ def test_a_record_shows_what_it_says_and_marks_up_nothing_of_its_own(worked_exam
     ("superseded:\n  Q7: Q8", 4, "names Q8, which no turn asks"),
     ("asked: Q7", 3, "unknown frontmatter field 'asked'"),
 ])
-def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line_and_no_page_is_written(
+def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
     worked_example: Path, transcript: Path, frontmatter: str, line: int, reason: str
 ) -> None:
     record = worked_example / "turns" / "05.md"
@@ -191,7 +250,6 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line_and_no
     with pytest.raises(RecordError, match=re.escape(reason)) as refused:
         render_session(worked_example, transcript, now=NOW)
     assert str(refused.value).startswith(f"{record}:{line}: ")
-    assert not (worked_example / PAGE).exists()
 
 
 if __name__ == "__main__":

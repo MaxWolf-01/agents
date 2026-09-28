@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown"]  # the last three: the demo tracker and the board the shared fixtures import
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown", "markdown-it-py"]  # the last four: the demo tracker and the board the shared fixtures import
 # ///
 """The briefing session's schedule. Run: uv run test_briefing.py
 

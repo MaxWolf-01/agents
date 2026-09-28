@@ -1,4 +1,4 @@
-// The session page's keys, diffview's where diffview has the move; `?` on the page lists them.
+// The session page's keys, the same as diffview's where diffview has one; `?` on the page lists them.
 const root = document.documentElement
 const reduce = matchMedia("(prefers-reduced-motion: reduce)")
 const behavior = () => (reduce.matches ? "auto" : "smooth")
@@ -103,7 +103,7 @@ document.addEventListener("keydown", (e) => {
       const turn = focused && focused.matches(".turn") ? focused : turns[0]
       const link = turn && turn.querySelectorAll("a.link")[+e.key - 1]
       if (link) window.open(link.href, "_blank", "noopener")
-      else say(`turn ${turn ? turn.dataset.record : ""} has no link ${e.key}`)
+      else say(`turn ${turn ? turn.id.slice(1) : ""} has no link ${e.key}`)
     }
   }
   e.preventDefault()
