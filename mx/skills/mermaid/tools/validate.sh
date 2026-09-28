@@ -30,13 +30,17 @@ if [ -z "$OUTPUT" ]; then
     CLEANUP=1
 fi
 
-trap 'if [ "$CLEANUP" -eq 1 ]; then rm -f "$OUTPUT"; fi' EXIT
+# The browser carries the run it belongs to, which `browsers` names it by.
+PUPPETEER_CONFIG=$(mktemp /tmp/mermaid_validate.XXXXXX.json)
+node -e 'console.log(JSON.stringify({args: [`--mx-run=${process.env.MX_RUN || process.cwd()}`]}))' > "$PUPPETEER_CONFIG"
+
+trap 'rm -f "$PUPPETEER_CONFIG"; if [ "$CLEANUP" -eq 1 ]; then rm -f "$OUTPUT"; fi' EXIT
 
 echo "Validating: $INPUT"
 
 # Use mermaid-cli (mmdc) to parse and render. Errors mean invalid syntax.
 # Filter out JS stack traces, keep only the parse error.
-if npx -y @mermaid-js/mermaid-cli -i "$INPUT" -o "$OUTPUT" -q 2> >(grep -vE '^\s*at |^Parser3?\.' >&2); then
+if npx -y @mermaid-js/mermaid-cli -p "$PUPPETEER_CONFIG" -i "$INPUT" -o "$OUTPUT" -q 2> >(grep -vE '^\s*at |^Parser3?\.' >&2); then
     echo "✓ Mermaid OK"
     echo ""
     echo "ASCII preview:"

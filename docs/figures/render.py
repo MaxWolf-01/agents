@@ -10,6 +10,7 @@ emulated system preference, the way a reader's does; the toggle button is hidden
 The shot is of the body element, so the image is the figure's own height whatever the viewport.
 """
 
+import os
 import shutil
 from pathlib import Path
 
@@ -22,7 +23,9 @@ SCHEMES = {"light": "-light.png", "dark": ".png"}
 
 def main() -> None:
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=CHROMIUM)
+        # the run it belongs to, which `browsers` names it by
+        browser = p.chromium.launch(executable_path=CHROMIUM,
+                                    args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         page = browser.new_page(viewport={"width": 1312, "height": 400}, device_scale_factor=2)
         for html in sorted(HERE.glob("*.html")):
             for scheme, suffix in SCHEMES.items():

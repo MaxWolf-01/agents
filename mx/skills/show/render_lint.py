@@ -53,6 +53,7 @@ Examples:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import time
@@ -288,7 +289,9 @@ def main(args: Args) -> None:
     if args.crops:
         args.crops.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=browser_path())
+        # the run it belongs to, which `browsers` names it by
+        browser = pw.chromium.launch(executable_path=browser_path(),
+                                     args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         # One context, a tab per address: a fresh document and window each time, and whatever the
         # pages fetch in common, a graph engine among them, fetched once.
         context = browser.new_context(viewport={"width": args.width, "height": 900})
