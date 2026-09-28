@@ -17,7 +17,7 @@
 #        dispatch-ctl probe
 #        dispatch-ctl log <slug> [lines]
 #        dispatch-ctl cleanup <slug>
-#        dispatch-ctl fuzz start|stop
+#        dispatch-ctl fuzz start|restart|stop|clean|check
 #   <slug> is the ticket's id, which names its branches, worktrees and session
 #         here; no ticket file is read on this side.
 #   init      what staging this host runs, once per scratch dir and again
@@ -70,13 +70,28 @@
 #   log       the current run's status line and the tail of its worklog
 #   cleanup   kills the pane and whatever its runs left running, forgets the
 #             run, removes both worktrees and both branches
-#   fuzz      start: cuts fuzz/<base> from <base> in both repos into
-#             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/`, sets it up as
-#             a ticket worktree is, and runs `make fuzz` in a tmux session
-#             fuzz-<repo>-<base>, which then runs until it is stopped.
-#             stop: kills that session and removes its worktrees and branches.
-#             One per base branch; it holds no state beyond the session and the
-#             worktree, so `stop` is the whole of undoing it.
+#   fuzz      the repo's fuzz run, from the scratch dir of its integration
+#             branch, <base>; `dispatch fuzz` is what calls these.
+#             start: cuts fuzz/<base> from <base> in both repos into
+#             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/` (set up as a
+#             ticket worktree is) or resets the ones there to <base>, links
+#             `fuzz.hypothesis` in this directory into it as `.hypothesis`,
+#             hooks the code repo's bare repo (a remote host's alone), and runs
+#             `make fuzz` there as the `job` fuzz-<repo>. Refuses a project
+#             whose conftest.py sets a Hypothesis database, and a run already
+#             running.
+#             restart: what the hook runs when a push moves <base>: ends the
+#             job, resets both worktrees to the tips pushed, runs it again.
+#             stop: unhooks and ends the job; worktrees and database stay.
+#             clean: unhooks, ends and forgets the job, removes both worktrees
+#             and both branches; the database stays.
+#             check: runs `make test` in the worktree, which replays every
+#             failure the database holds, and prints `FAILED <node id>` for
+#             each failure with its failing test case indented under it, then
+#             `patch: <path>` where Hypothesis wrote the patch adding them as
+#             `@example`s. Exit 0 when the suite passes, its own status when
+#             it fails.
+#             Nothing here removes the database; that is the user's, by hand.
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
 # list --json`), and `init` wants `curl` and `claude`: it
@@ -128,6 +143,10 @@
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
 #   <run>.status|.log            written by the runner
 #   <name>.install.log           the setup command's output
+#   fuzz.hypothesis/             the fuzz run's Hypothesis database: its
+#                                corpus, its findings, the patches `check`
+#                                has Hypothesis write
+#   fuzz.check.log               the suite's output from the last `fuzz check`
 #
 # Every command that changes something is echoed before it runs, so a
 # transcript shows the primitives; anything this script does wrong can be
@@ -500,43 +519,180 @@ remove_worktrees() {
     return 0
 }
 
-# The fuzz run is the base branch's, not a ticket's: one worktree, one session,
-# no manifest line, since there is no run to resume and nothing to read on exit.
+# The repo's fuzz run: one `job`, on a worktree of the integration branch this
+# scratch dir is for, and its Hypothesis database in this scratch dir, beside
+# the worktree rather than in it, so that removing the worktree leaves the
+# corpus and every finding where the next run finds them.
 fuzz_names() {
-    name=fuzz-$repo-$base
+    name=fuzz-$repo
     branch=fuzz/$base
     worktree=$worktrees/$repo-$base-fuzz
     agent_worktree=$worktree/agent
+    db=$here/fuzz.hypothesis
+    hook=$git_dir/hooks/post-receive
+    job=$(command -v job || echo "$HOME/.local/bin/job")
+    [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
 }
+
+# running, done or gone as `job` reads the run; nothing when there is no job.
+fuzz_state() { "$job" log "$name" 1 2>/dev/null | awk 'NR == 1 { print $2 }'; }
+
+# `job` holds a name until it is removed, finished or not.
+fuzz_end() {
+    [ "$(fuzz_state)" != running ] || run "$job" stop "$name" >&2
+    [ -z "$(fuzz_state)" ] || run "$job" rm "$name" >&2
+}
+
+# The tmux server `job run` starts when none is running keeps every descriptor
+# it was handed beyond the standard three. Under the hook, one of them is the
+# push's own channel, and a server holding it open leaves the push hanging.
+fuzz_run() {
+    (
+        for fd in /proc/$BASHPID/fd/*; do
+            fd=${fd##*/}
+            [ "$fd" -le 2 ] || exec {fd}>&-
+        done 2>/dev/null
+        run "$job" run "$name" --cwd "$worktree" -- make fuzz
+    ) || exit 1
+}
+
+# Hypothesis keeps everything in `.hypothesis` under the directory the suite
+# runs in, so a link there is the whole of what the project takes part in.
+fuzz_link() {
+    run mkdir -p "$db"
+    [ -L "$worktree/.hypothesis" ] || [ ! -e "$worktree/.hypothesis" ] || run rm -rf "$worktree/.hypothesis"
+    run ln -sfn "$db" "$worktree/.hypothesis"
+}
+
+fuzz_reset() {
+    run git -C "$worktree" reset -q --hard "$base" || exit 1
+    run git -C "$agent_worktree" reset -q --hard "$agent_base" || exit 1
+}
+
+# The integration branch reaches this host by push alone, so a push that moves
+# it is the restart's one trigger. `dispatch` pushes the agent repo first, so
+# the code repo's push, the hooked one, finds both tips current. A local host's
+# repo is the user's own checkout, whose hooks are theirs, and gets none.
+hook_install() {
+    [ "$(git -C "$git_dir" rev-parse --is-bare-repository)" = true ] || return 0
+    echo "+ write $hook" >&2
+    { echo '#!/usr/bin/env bash'
+      echo '# The fuzz run'"'"'s: `dispatch-ctl fuzz start` writes it, `fuzz stop` and `fuzz clean` remove it.'
+      printf 'grep -q %q || exit 0\n' " refs/heads/$base\$"
+      # A hook runs with GIT_DIR and its kin set to the bare repo, which would
+      # take every git command of the restart there instead of to the worktree.
+      echo 'unset $(git rev-parse --local-env-vars)'
+      printf 'exec bash %q fuzz restart\n' "$here/dispatch-ctl"
+    } > "$hook" && chmod +x "$hook"
+}
+
+hook_remove() { [ ! -f "$hook" ] || run rm "$hook"; }
 
 fuzz_start() {
     load; fuzz_names
     git -C "$git_dir" show "$base:Makefile" 2>/dev/null | grep -q '^fuzz:' ||
         die "no \`fuzz\` target on $base; the project wires one first (/mx:project-setup)"
-    ! tmux has-session -t "=$name" 2>/dev/null || die "$name is already fuzzing; dispatch-ctl fuzz stop ends it"
-    [ -d "$worktree" ] || checkout
-    run tmux new-session -d -s "$name" -c "$worktree"
-    run tmux send-keys -t "=$name:" -l "make fuzz"
-    run tmux send-keys -t "=$name:" Enter
-    echo "fuzzing $name  worktree=$worktree  (tmux attach -t $name)"
+    # A database the project names itself is one the link never reaches: the run
+    # would keep its findings where nothing here reads them.
+    configured=$(git -C "$git_dir" grep -nE '(^|[^A-Za-z_])database *=' "$base" -- '*conftest.py')
+    [ -z "$configured" ] ||
+        die "the project sets its own Hypothesis database, where the fuzz run's findings would go unread:"$'\n'"$configured"
+    [ "$(fuzz_state)" != running ] || die "$name is already fuzzing; \`dispatch fuzz stop\` ends it"
+    if [ -d "$worktree" ]; then fuzz_reset; else checkout; fi
+    fuzz_link
+    hook_install
+    fuzz_end
+    fuzz_run
+    echo "fuzzing $name  worktree=$worktree  database=$db"
+}
+
+# What the hook runs, once a push has moved the integration branch.
+fuzz_restart() {
+    load; fuzz_names
+    [ -d "$worktree" ] || die "no fuzz worktree at $worktree; \`dispatch fuzz start\` cuts one"
+    fuzz_end
+    fuzz_reset
+    fuzz_run
+    echo "restarted $name on $(git -C "$worktree" rev-parse --short HEAD)"
 }
 
 fuzz_stop() {
     load; fuzz_names
-    if tmux has-session -t "=$name" 2>/dev/null; then
-        run tmux kill-session -t "=$name"
-    else
-        echo "no session $name" >&2
-    fi
+    hook_remove
+    if [ "$(fuzz_state)" = running ]; then run "$job" stop "$name"; else echo "$name is not running" >&2; fi
+    echo "stopped $name; its worktree and database stay"
+}
+
+fuzz_clean() {
+    load; fuzz_names
+    hook_remove
+    fuzz_end
     remove_worktrees
-    echo "stopped $name"
+    echo "cleaned $name; its database stays at $db"
+}
+
+# Every failure the database holds, replayed by the project's own suite, which
+# prints each one's failing test case and writes a patch adding them as
+# `@example`s. HypoFuzz and the plain loop both leave findings nowhere else.
+fuzz_check() {
+    load; fuzz_names
+    [ -d "$worktree" ] || die "no fuzz worktree at $worktree; \`dispatch fuzz start\` cuts one"
+    log=$here/fuzz.check.log
+    echo "+ (cd $worktree && make test) > $log 2>&1" >&2
+    (cd "$worktree" && make test) > "$log" 2>&1 && { echo "no failure: the suite passes on everything $db holds"; return 0; }
+    rc=$?
+    found=$(findings < "$log")
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" | sed "s|^patch: |patch: $worktree/|"
+    else
+        tail -20 "$log"
+    fi
+    return "$rc"
+}
+
+# pytest's output, read down to one `FAILED <node id>` line per failure, each
+# failing test case under its node id indented by four, and `patch: <path>`
+# where Hypothesis wrote one. A failure section is titled by the test's name
+# alone, so it meets its node id in the short summary, in the order both list
+# them.
+findings() {
+    awk '
+        /^_+ [^_ ].* _+$/ { t = $0; sub(/^_+ /, "", t); sub(/ _+$/, "", t); title[++n] = t; next }
+        open {
+            line = substr($0, cut + 1); example[n] = example[n] "\n    " line
+            if (line ~ /^\)/) open = 0
+            next
+        }
+        match($0, /(Falsifying example|Failing test case)[^:]*: /) {
+            cut = RSTART - 1; line = substr($0, RSTART); example[n] = example[n] "\n    " line
+            open = line ~ /\($/
+            next
+        }
+        /^FAILED / { failed[++m] = $2 }
+        match($0, /git apply [^` ]+/) { patch = substr($0, RSTART + 10, RLENGTH - 10) }
+        END {
+            for (i = 1; i <= n; i++) {
+                if (example[i] == "") continue
+                id = title[i]
+                for (j = 1; j <= m; j++) {
+                    tail = failed[j]; sub(/^[^:]*::/, "", tail); gsub(/::/, ".", tail)
+                    if (!used[j] && tail == title[i]) { used[j] = 1; id = failed[j]; break }
+                }
+                print "FAILED " id example[i]
+            }
+            for (j = 1; j <= m; j++) if (!used[j]) print "FAILED " failed[j]
+            if (patch != "") print "patch: " patch
+        }'
 }
 
 fuzz() {
     case ${1:-} in
-        start) fuzz_start ;;
-        stop)  fuzz_stop ;;
-        *)     die "fuzz takes start or stop" ;;
+        start)   fuzz_start ;;
+        restart) fuzz_restart ;;
+        stop)    fuzz_stop ;;
+        clean)   fuzz_clean ;;
+        check)   fuzz_check ;;
+        *)       die "fuzz takes start, restart, stop, clean or check" ;;
     esac
 }
 
