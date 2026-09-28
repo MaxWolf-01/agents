@@ -93,15 +93,31 @@ def test_a_run_is_mx_run_where_set_and_the_working_directory_where_not(tmp_path:
     assert browsers(cwd=tmp_path, env=unset).stdout.split()[0] in pids(by_directory)
 
 
+def launches(text: str, shell: bool) -> Iterator[tuple[int, str]]:
+    """Each browser launch in `text` with its line: a Playwright launch call to its closing
+    parenthesis, and in a shell script or a doc, a `chromium --headless` command to the end of its
+    continued line and a mermaid-cli command line."""
+    for m in re.finditer(r"chromium\.launch\(", text):
+        depth, end = 1, m.end()
+        while depth:
+            depth += {"(": 1, ")": -1}.get(text[end], 0)
+            end += 1
+        yield text.count("\n", 0, m.start()) + 1, text[m.start():end]
+    if shell:
+        for m in re.finditer(r"^.*(chromium --headless(?:.*\\\n)*.*|npx .*@mermaid-js/mermaid-cli.*)$", text, re.M):
+            yield text.count("\n", 0, m.start()) + 1, m.group(1)
+
+
 def test_every_browser_mx_launches_carries_its_run() -> None:
-    """A launch site that leaves the tag off makes a browser no run can kill but by name."""
-    tracked = subprocess.run(["git", "ls-files", "*.py", "*.sh"], cwd=REPO, capture_output=True,
-                             text=True, check=True).stdout.split()
-    launches = {}
+    """A launch site that leaves the tag off makes a browser no run can kill but by name. The
+    mermaid check's tag is in the Puppeteer config it hands mermaid-cli."""
+    tracked = subprocess.run(["git", "ls-files", "mx", "docs"], cwd=REPO, capture_output=True, text=True,
+                             check=True).stdout.split()
+    sites = {}
     for name in tracked:
-        text = (REPO / name).read_text()
-        for m in re.finditer(r"chromium\.launch\(|mermaid-cli ", text):
-            launches[f"{name}:{text.count(chr(10), 0, m.start()) + 1}"] = "--mx-run=" in text[m.start():m.start() + 200] \
-                or "PUPPETEER_CONFIG" in text[m.start():m.start() + 200]
-    assert launches, "no launch site found, so this check reads nothing"
-    assert all(launches.values()), [site for site, tagged in launches.items() if not tagged]
+        if Path(name).suffix not in (".py", ".sh", ".md") or Path(name).name == Path(__file__).name:
+            continue
+        for line, call in launches((REPO / name).read_text(), shell=Path(name).suffix != ".py"):
+            sites[f"{name}:{line}"] = "--mx-run=" in call or '-p "$PUPPETEER_CONFIG"' in call
+    assert len(sites) >= 7, f"fewer launch sites than the seven this repo has: {sorted(sites)}"
+    assert all(sites.values()), [site for site, tagged in sites.items() if not tagged]

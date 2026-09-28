@@ -132,7 +132,7 @@ def shoot(board: Path, review: Path | None) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        # the run it belongs to, which `browsers` names it by
+        # the run it belongs to, as `browsers --help` defines it
         browser = p.chromium.launch(executable_path=CHROMIUM,
                                     args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         page = browser.new_page(viewport={"width": WIDE, "height": TALL}, device_scale_factor=2)

@@ -23,7 +23,7 @@ SCHEMES = {"light": "-light.png", "dark": ".png"}
 
 def main() -> None:
     with sync_playwright() as p:
-        # the run it belongs to, which `browsers` names it by
+        # the run it belongs to, as `browsers --help` defines it
         browser = p.chromium.launch(executable_path=CHROMIUM,
                                     args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         page = browser.new_page(viewport={"width": 1312, "height": 400}, device_scale_factor=2)

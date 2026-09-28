@@ -211,7 +211,7 @@ TIP = """
 }
 """
 with sync_playwright() as pw:
-    # the run it belongs to, which `browsers` names it by
+    # the run it belongs to, as `browsers --help` defines it
     browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
                                  args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     # the clipboard is what a copy button is for, and a page reaches it only where it is granted
@@ -405,7 +405,7 @@ def named(frame, where, name):
     frame.wait_for_function("([w, n]) => document.querySelector(w)?.textContent === n", arg=[where, name])
 
 with sync_playwright() as pw:
-    # the run it belongs to, which `browsers` names it by
+    # the run it belongs to, as `browsers --help` defines it
     browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
                                  args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     context = browser.new_context(viewport={"width": 1600, "height": 950})

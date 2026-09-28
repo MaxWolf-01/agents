@@ -30,7 +30,7 @@ if [ -z "$OUTPUT" ]; then
     CLEANUP=1
 fi
 
-# The browser carries the run it belongs to, which `browsers` names it by.
+# The browser carries the run it belongs to, as `browsers --help` defines it.
 PUPPETEER_CONFIG=$(mktemp /tmp/mermaid_validate.XXXXXX.json)
 node -e 'console.log(JSON.stringify({args: [`--mx-run=${process.env.MX_RUN || process.cwd()}`]}))' > "$PUPPETEER_CONFIG"
 

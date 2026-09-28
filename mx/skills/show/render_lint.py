@@ -289,7 +289,7 @@ def main(args: Args) -> None:
     if args.crops:
         args.crops.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
-        # the run it belongs to, which `browsers` names it by
+        # the run it belongs to, as `browsers --help` defines it
         browser = pw.chromium.launch(executable_path=browser_path(),
                                      args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         # One context, a tab per address: a fresh document and window each time, and whatever the
