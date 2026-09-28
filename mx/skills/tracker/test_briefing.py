@@ -150,20 +150,21 @@ def test_the_schedule_and_the_launch_are_the_ones_the_spec_decides() -> None:
     assert CADENCE == timedelta(minutes=10)
     assert IDLE == timedelta(hours=1)
     assert CADENCE < IDLE, "a session retires before it can be pinged, so the cap is unreachable"
-    assert (MODEL, EFFORT) == ("claude-opus-5-5", "medium")
+    assert (MODEL, EFFORT) == ("opus", "medium")
 
 
 def answered(said: str) -> str:
-    return "printf '%s\\n' " + shlex.quote(json.dumps({"is_error": False, "session_id": "def-456", "result": said}))
+    """What `claude -p --output-format stream-json` prints for an answer, which `run-log` reads."""
+    return "printf '%s\\n' " + shlex.quote(json.dumps(
+        {"type": "result", "subtype": "success", "is_error": False, "session_id": "def-456", "result": said}))
 
 
 def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_ping(
-    tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
     """The answer the prompt asks for where nothing it was told changes what it wrote. The briefing
     and the time it was written stay as they are, so the column does not claim to be newer than it
     is, and the ping is spent either way: it is what the session's retirement is counted in."""
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
     claude = path_with("claude", answered(f"`{UNCHANGED}`."))
     cached = Briefing("where things stand", START, "abc-123", START, START, 3)
     now = START + timedelta(minutes=20)
@@ -173,9 +174,14 @@ def test_a_ping_the_session_answers_unchanged_keeps_the_briefing_and_spends_a_pi
     run = claude.read_text()
     assert f"--resume {cached.session}" in run, "the ping started a session of its own instead of resuming"
     assert f"--allowedTools {TOOLS}" in run and f"--disallowedTools {DENIED}" in run, "the unattended run could write"
-    assert str(tmp_path / "cfg" / "CLAUDE.md") in run, "it was given the user's own memory to read"
+    # `unattended-launch`: the ruling of 2026-09-26, that the briefing gets none of the machine's
+    # settings, CLAUDE.md, output style, hooks, MCP servers, skills or memory. The stub records its
+    # arguments joined by spaces, so the empty value of --setting-sources is the doubled space.
+    assert "--setting-sources  --strict-mcp-config --disable-slash-commands" in run, "it inherits the machine's settings"
+    assert '--settings {"autoMemoryEnabled": false} ' in run, "it reads and writes the user's auto memory"
     assert f"--model {MODEL} --effort {EFFORT}" in run, "the briefing ran on whatever this machine defaults to"
-    assert '"outputStyle": "default"' in run, "it wore the user's own output style, which writes for them at a terminal"
+    (logged,) = [json.loads(line) for line in (tmp_path / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["session"], logged["end"]) == ("briefing", "def-456", "success"), "the run left no line in the run log"
 
 
 def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(
@@ -192,7 +198,7 @@ def test_a_ping_the_session_answers_with_a_rewrite_replaces_the_briefing(
 def test_a_ping_the_session_does_not_answer_leaves_the_cache_where_it_is(
     tmp_path: Path, path_with: Callable[..., Path]
 ) -> None:
-    path_with("claude", "echo '{\"is_error\": true}'")
+    path_with("claude", "echo '{\"type\": \"result\", \"is_error\": true}'")
     cached = Briefing("where things stand", START, "abc-123", START, START, 3)
     assert ping(cached, "new: agent/tickets/a-chore.md", tmp_path, START + timedelta(minutes=20)) is None
     assert briefing.SILENT, "a run that answered nothing said nothing of itself"

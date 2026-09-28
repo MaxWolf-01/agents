@@ -10,10 +10,10 @@
 # commits, merges, pushes, fetches -- stays with the orchestrator.
 #
 # Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]
-#        dispatch-ctl spawn <slug> <model> [session-id]
+#        dispatch-ctl spawn <slug> <model> [session-id] [--effort <level>]
 #        dispatch-ctl wait <slug> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <slug>
-#        dispatch-ctl resume <slug> <model>
+#        dispatch-ctl resume <slug> <model> [--effort <level>]
 #        dispatch-ctl probe
 #        dispatch-ctl log <slug> [lines]
 #        dispatch-ctl cleanup <slug>
@@ -23,45 +23,53 @@
 #   init      what staging this host runs, once per scratch dir and again
 #             whenever the orchestrator stages a different version of these
 #             scripts: writes `config`, creates the two bare repos when missing,
-#             fetches `job` into ~/.local/bin when the host has none, updates
-#             the mx plugin and prints its version. git-dir defaults to
+#             fetches `job` into ~/.local/bin when the host has none, puts the
+#             tracker's commit hook (`pre-commit` here) in the agent repo where
+#             it has no pre-commit hook of another's, updates the mx plugin and
+#             prints its version. git-dir defaults to
 #             ~/repos/dispatch/<repo>.git, agent-dir to
 #             ~/repos/dispatch/<repo>-agent.git and worktrees-dir to
 #             ~/repos/dispatch; a local orchestrator passes its own checkouts
 #             and the directory beside them. agent-base is the branch the agent
 #             repo's ticket branches cut from, which is the one its main
 #             checkout has out and rarely the code repo's <base>.
-#   spawn     cuts ticket/<slug> from <base> in both repos when absent, the
-#             code one into <worktrees-dir>/<repo>-<slug> and the agent one into
-#             that worktree's `agent/`, where the project keeps it; sets the
-#             code worktree up (the `setup` file's command, run as given;
-#             without that file `make install`, under `nix develop -c` where a
-#             flake.nix exists), then starts the worker on prompt-<slug>.md from
-#             this directory, in a tmux session named dispatch-<repo>-<slug>.
+#   spawn     finds the mx install the worker loads (DISPATCH_PLUGIN_DIR
+#             below; a host with no mx stops here), cuts ticket/<slug> from
+#             <base> in both repos when absent, the code one into
+#             <worktrees-dir>/<repo>-<slug> and the agent one into that
+#             worktree's `agent/`, where the project keeps it; sets the code
+#             worktree up (the `setup` file's command, run as given; without
+#             that file `make install`, under `nix develop -c` where a
+#             flake.nix exists), runs `claude update`, then starts the worker
+#             on prompt-<slug>.md from this directory, in a tmux session named
+#             dispatch-<repo>-<slug>. A failed update is said on stderr and the
+#             worker starts anyway. The `spawned` line names the claude and mx
+#             versions it starts on.
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
-#             on the same file, which then holds the guidance.
+#             on the same file, which then holds the guidance. --effort is
+#             `high` unless given.
 #   wait      blocks until the current run of <slug> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
 #             --deadline after SECS of waiting (exit 5). Both leave the worker
-#             running: a quiet worker may be wedged or may be taking its time
-#             over something hard, and telling those apart is the
-#             orchestrator's to judge from the pane.
+#             running.
 #   stop      ends the current run without losing it: the runner writes its
 #             status line (`exit=stopped`, session id). Worktree and branch
 #             stay for a resume.
 #   resume    spawn with the session id from the current run's status line;
-#             the same prompt file holds the guidance. The round commits a
-#             report of its own, over the one the round before it left.
+#             the same prompt file holds the guidance; --effort is given again
+#             or the round runs at `high`. The round commits a report of its
+#             own, over the one the round before it left.
 #   probe     one line per worker: `running` with the worklog's last line,
 #             `exited` with the status line (attempts, exit code, whether a
-#             report is committed, session id), or `gone` (runner dead, no
-#             status line: a killed pane, a rebooted host).
+#             report is committed, session id, the models the run's turns of
+#             its transcript answered in), or `gone` (runner dead, no status
+#             line: a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
-#   cleanup   kills the pane, forgets the run, removes both worktrees and both
-#             branches
+#   cleanup   kills the pane and whatever its runs left running, forgets the
+#             run, removes both worktrees and both branches
 #   fuzz      start: cuts fuzz/<base> from <base> in both repos into
 #             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/`, sets it up as
 #             a ticket worktree is, and runs `make fuzz` in a tmux session
@@ -69,18 +77,33 @@
 #             stop: kills that session and removes its worktrees and branches.
 #             One per base branch; it holds no state beyond the session and the
 #             worktree, so `stop` is the whole of undoing it.
-# This host needs `git` and `tmux`, and `init` wants `curl` and `claude`: it
+# This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
+# ran on out of its transcript, `spawn` the mx install out of `claude plugin
+# list --json`), and `init` wants `curl` and `claude`: it
 # fetches `job` with the first where the host has none, and updates this plugin
-# with the second, saying so when that fails.
+# with the second, saying so when that fails; `spawn` updates `claude` itself.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
+#   DISPATCH_PLUGIN_DIR       the mx install a worker loads by path, passed
+#                             through to the runner, which keeps it from the
+#                             worker; unless set, the user-scope mx@MaxWolf-01
+#                             that `claude plugin list --json` names, the
+#                             install `init` updates. Set, it stands in for
+#                             that listing, which is what the checks use it
+#                             for; `dispatch` forwards none to a host.
 #   CLAUDE_CONFIG_DIR         the worker's Claude profile, this process's value
 #                             (default ~/.claude), passed through to the runner
-#   DISPATCH_RUNNER           pane script (default: run-worker.sh beside this one).
-#                             A replacement lives in this directory too. The
-#                             contract it owes: argv is <prompt> <slug> <model>
-#                             <run> [session-id]; it puts worker-prompt.md from
+#   DISPATCH_RUNNER           pane script, the one place a harness is named: a
+#                             file in this directory (default run-worker.sh,
+#                             which runs Claude Code), where `dispatch ctl`
+#                             copies the orchestrator's as runner-<slug>. A
+#                             resume without it runs the runner the run was
+#                             spawned on. The contract it owes: argv is
+#                             <prompt> <slug> <model> <run> [session-id], with
+#                             DISPATCH_EFFORT, DISPATCH_PERMISSION_MODE and
+#                             DISPATCH_PLUGIN_DIR in its environment; it
+#                             puts worker-prompt.md from
 #                             this directory into the worker's system prompt,
 #                             which is where a worker's whole contract lives;
 #                             it stops retrying once the worker has committed
@@ -98,6 +121,8 @@
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch ctl
 #                                --setup-cmd`)
+#   runner-<slug>                the orchestrator's DISPATCH_RUNNER for that
+#                                ticket, when it gave one
 #   stamp                        which version of these scripts is staged here,
 #                                written by the orchestrator (`dispatch ctl`)
 #   manifest                     one line per run: name TAB run TAB worktree TAB runner
@@ -111,8 +136,10 @@ set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 manifest=$here/manifest
-runner=${DISPATCH_RUNNER:-$here/run-worker.sh}
+runner=${DISPATCH_RUNNER:-run-worker.sh}
+case $runner in /*) ;; *) runner=$here/$runner ;; esac
 mode=${DISPATCH_PERMISSION_MODE:-auto}
+effort=high
 job_url=https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job
 
 run() { echo "+ $*" >&2; "$@"; }
@@ -172,6 +199,14 @@ state_line() { # <name> <run> <runner>
     esac
 }
 
+# The mx install `init` updates and a spawn hands its worker: the user-scope
+# one, as the JSON object `claude plugin list --json` holds for it; nothing
+# where the host has none.
+listed_mx() {
+    claude plugin list --json 2>/dev/null |
+        jq -c '[.[] | select(.id == "mx@MaxWolf-01" and .scope == "user")][0] // empty' 2>/dev/null
+}
+
 init() {
     repo=$1 base=$2
     git_dir=${3:-$HOME/repos/dispatch/$repo.git}
@@ -191,6 +226,15 @@ init() {
     # project is two repos and a worker holds a branch of each.
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     [ -d "$agent_dir" ] || run git init -q --bare "$agent_dir"
+    # A worker commits its report in the agent repo, and the hook refuses one
+    # the orchestrator's import would, at the same lines, while the worker is
+    # still there to fix it. A hook of another's is the repo owner's and stays.
+    hooks=$(git -C "$agent_dir" rev-parse --path-format=absolute --git-path hooks) || die "no git repo at $agent_dir"
+    if [ ! -e "$hooks/pre-commit" ]; then
+        run mkdir -p "$hooks" && run install -m 755 "$here/pre-commit" "$hooks/pre-commit" || die "could not install the commit hook into $hooks"
+    elif ! cmp -s "$here/pre-commit" "$hooks/pre-commit"; then
+        echo "init: $hooks/pre-commit is not the tracker's, so a worker's report is checked first at the import" >&2
+    fi
     # `job` runs the wait loop (wait_). Fetched rather than staged beside this
     # script, and from a public repo, so the host still authenticates nowhere.
     # One already here is left alone: on the orchestrator's own machine that
@@ -205,7 +249,7 @@ init() {
     # from here on. A failed update leaves the installed version, said out loud.
     { run claude plugin marketplace update MaxWolf-01 && run claude plugin update mx@MaxWolf-01; } >&2 ||
         echo "init: plugin update failed; workers run the installed version" >&2
-    version=$(claude plugin list 2>/dev/null | grep -A1 'mx@MaxWolf-01' | sed -n 's/.*Version: //p')
+    version=$(listed_mx | jq -r '.version // empty')
     echo "initialised $here  mx=${version:-?}  base=$base  git=$git_dir  agent=$agent_dir@$agent_base  worktrees=$worktrees"
 }
 
@@ -236,15 +280,34 @@ checkout() {
     fi
 }
 
+# `--effort <level>` after the positional arguments; what is left is positional.
+take_effort() {
+    positional=()
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
+            *) positional+=("$1"); shift ;;
+        esac
+    done
+}
+
 spawn() {
+    take_effort "$@"; set -- "${positional[@]}"
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
+    # Typed into a pane, a missing runner fails where nobody reads it, and the
+    # wait for its worklog below would only say that nothing started.
+    [ -f "$runner" ] || die "no runner at $runner; \`dispatch ctl\` copies DISPATCH_RUNNER here on a spawn or resume"
     current_run "$name"
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
+    # Before the checkout: a host with no mx fails here in seconds, with no
+    # worktree to unwind and without waiting on the update lock.
+    find_plugin
     [ -d "$worktree" ] || checkout
+    update_claude
     run_id=$name-$(date +%s)
 
     # The session is a shell the runner is typed into, so it outlives the
@@ -257,7 +320,7 @@ spawn() {
     # `=` everywhere a target is named: without it tmux falls back to prefix and
     # pattern matching, so a new-session that failed would type this line into
     # whichever session matched, one another worker holds included.
-    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode bash $runner $prompt $slug $model $run_id $session_id"
+    run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
     # The runner creates the log within its first seconds; its absence means the
@@ -272,7 +335,35 @@ spawn() {
     fi
 
     ( flock 9; printf '%s\t%s\t%s\t%s\n' "$name" "$run_id" "$worktree" "$runner" >> "$manifest" ) 9>>"$manifest.lock"
-    echo "spawned $name  run=$run_id"
+    echo "spawned $name  run=$run_id  model=$model  effort=$effort  claude=$claude_version  mx=${plugin_dir##*/}"
+}
+
+# A model alias names whichever model the host's `claude` resolves it to, so a
+# stale launcher runs a worker on an older model without a word, and the API
+# refuses the newest models to an old enough one. The updater cannot be left to
+# itself: a host whose sessions were all print-mode workers was seen to stay
+# versions behind a host with interactive sessions on it. One update at a time per
+# user, whose install it is, since a wave spawns its workers side by side. A
+# failed update is said, and the worker runs on the version that is here.
+update_claude() {
+    ( flock 9; run timeout 300 claude update ) 9>>"$(dirname "$here")/claude-update.lock" >&2 ||
+        echo "spawn: claude update failed; $name runs on the claude this host has" >&2
+    claude_version=$(claude --version 2>/dev/null | cut -d' ' -f1)
+    claude_version=${claude_version:-?}
+}
+
+# A worker reads none of the user's settings, so the mx plugin its contract
+# names skills from reaches it by path. Read on every spawn and resume, so a
+# round runs the version this host has now.
+find_plugin() {
+    if [ -n "${DISPATCH_PLUGIN_DIR:-}" ]; then
+        plugin_dir=$DISPATCH_PLUGIN_DIR
+        [ -d "$plugin_dir" ] || die "no mx plugin for $name: DISPATCH_PLUGIN_DIR=$plugin_dir is no directory"
+    else
+        plugin_dir=$(listed_mx | jq -r '.installPath // empty')
+        [ -d "$plugin_dir" ] ||
+            die "no mx plugin for $name: \`claude plugin list --json\` names no user-scope mx@MaxWolf-01 here"
+    fi
 }
 
 # The poll is the mechanism: a `tmux wait-for` waiter whose client dies (an
@@ -343,6 +434,7 @@ stop() {
 }
 
 resume() {
+    take_effort "$@"; set -- "${positional[@]}"
     load; names "$1"
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name to resume; spawn it"
@@ -354,6 +446,8 @@ resume() {
     fi
     session=$(sed -n 's/.*session=\([^ ]*\).*/\1/p' "$here/$run_id.status")
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
+    # The session id is the harness's own, and means nothing to another one.
+    [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
     spawn "$1" "$2" "$session"
 }
 
@@ -374,6 +468,13 @@ cleanup() {
         run tmux kill-session -t "=$name"
     else
         echo "no session $name" >&2
+    fi
+    # A runner killed with its pane never stops the scope its attempt ran in (run-worker.sh), so
+    # what that attempt left running is stopped here, for every run of this name.
+    if [ -f "$manifest" ] && command -v systemctl > /dev/null; then
+        awk -F'\t' -v n="$name" '$1 == n { print $2 }' "$manifest" | while read -r run_id; do
+            systemctl --user stop "$run_id-a*.scope" 2> /dev/null
+        done
     fi
     if [ -f "$manifest" ]; then
         ( flock 9

@@ -2,6 +2,7 @@
 name: restore-sessions
 description: Scan recent Claude Code sessions and classify unfinished work for resuming
 disable-model-invocation: true
+allowed-tools: Bash(uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_sessions.py --help)
 ---
 
 # Restore Sessions
@@ -22,7 +23,11 @@ Find and classify Claude Code sessions from a project's session directory. Produ
 uv run <skill-dir>/scripts/scan_sessions.py --days <N>
 ```
 
-Run from the project's directory, it reads that project's sessions. Its `--help` has the flags, which sessions it reads and skips, and the schema of what it prints; the classification below reads those fields.
+Run it from the project's directory. The classification below reads the fields its help names:
+
+```text
+!`uv run -q ${CLAUDE_SKILL_DIR}/scripts/scan_sessions.py --help`
+```
 
 If the user asks for "the last 100 sessions or the last 10 days, whichever is greater," run with `--days 10` first; if that returns fewer than 100, run again with `--sessions 100`.
 

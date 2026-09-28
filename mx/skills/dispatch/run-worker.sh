@@ -6,10 +6,16 @@
 #                 committed in the agent repo this pane's worktree holds at `agent`
 #   run           id of this run, unique; names <run>.{status,log} beside this script
 #   session-id    resume this conversation instead of starting a new one
-# TERM (from `dispatch-ctl stop`) ends the run: the status line then reads `exit=stopped`.
+# TERM (from `dispatch-ctl stop`) and INT (a Ctrl-C in the pane) end the run: the status line then
+# reads `exit=stopped`.
 # Env:
 #   DISPATCH_PERMISSION_MODE  claude --permission-mode for every attempt; `auto` unless the
 #                             worker host isolates workers itself (then `bypassPermissions`)
+#   DISPATCH_EFFORT           claude --effort for every attempt; `high` unless set
+#   DISPATCH_PLUGIN_DIR       the mx install the worker loads by --plugin-dir; required, and
+#                             `dispatch-ctl` resolves it on the host
+#   RUN_LOG                   where each attempt's line goes (run-log, staged beside
+#                             this script); its own default unless set
 set -u
 
 message=$1
@@ -18,6 +24,7 @@ model=$3
 run_id=$4
 resume_session=${5:-}
 permission_mode=${DISPATCH_PERMISSION_MODE:-auto}
+effort=${DISPATCH_EFFORT:-high}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt_file=$here/worker-prompt.md
@@ -27,6 +34,23 @@ if [ ! -f "$prompt_file" ]; then
         "no worker-prompt.md beside run-worker.sh" | tee "$here/$run_id.status" >&2
     exit 1
 fi
+# Every attempt runs through it, so a run nobody logged cannot happen quietly.
+run_log=$here/run-log
+if [ ! -f "$run_log" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "no run-log beside run-worker.sh" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
+# The worker reads no user settings, so the mx plugin reaches it by path or not at all, and without
+# it none of the skills its contract names exist.
+plugin=${DISPATCH_PLUGIN_DIR:-}
+if [ -z "$plugin" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "DISPATCH_PLUGIN_DIR unset, so no mx plugin to give the worker" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
+# Kept from the worker, so a `dispatch-ctl` it runs lists the host's mx for itself.
+unset DISPATCH_PLUGIN_DIR
 
 # By id, never --continue: --continue means the newest conversation in this
 # directory, which stops being this worker's the moment anything else runs
@@ -38,6 +62,9 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
+# The run every browser the worker's checks launch is tagged with, so `browsers kill` takes this
+# run's and leaves another run's on the same host.
+export MX_RUN=$run_id
 # What the worker has to say about the ticket: its closing comment and the questions its build
 # raised, committed in the agent repo, which is a repo of its own at
 # `agent` inside this worktree. The orchestrator fetches that branch and imports the report into
@@ -48,54 +75,86 @@ export DISPATCH_WORKLOG="$here/$run_id.log"
 # the worker writes anything then reads as the unfinished run it is.
 was_reported=$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)
 reported() { [ "$(git -C agent rev-parse -q --verify "HEAD:show/$slug/report.md" 2> /dev/null)" != "$was_reported" ]; }
+# The models this round's turns of the session transcript answered in, comma-separated: <model> is
+# an alias the host's claude resolves, so what ran is read off the run, not the command line. `-`
+# is a round no model answered, `?` one whose transcript or `jq` is missing. This round's, as with
+# the report: a resumed session's transcript opens with the rounds before it. `<synthetic>` marks
+# messages claude wrote itself (an API error).
+transcript() { cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$session".jsonl 2> /dev/null; }
+transcript_before=$(transcript | wc -l)
+models() {
+    local found
+    command -v jq > /dev/null && transcript > /dev/null || { echo '?'; return; }
+    found=$(transcript | tail -n "+$((transcript_before + 1))" |
+        jq -r 'select(.type == "assistant") | .message.model // empty' |
+        grep -vx '<synthetic>' | sort -u | paste -sd,)
+    echo "${found:--}"
+}
 # Opened with one line from the runner, so a log holding only that line says the worker wrote
 # nothing after starting, where a missing file would say it was never told about the log.
-printf '%s runner: started %s on %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" "$model" "$run_id" >> "$DISPATCH_WORKLOG"
+claude_version=$(claude --version 2> /dev/null | cut -d' ' -f1)
+printf '%s runner: started %s on %s at %s effort with claude %s and mx %s (%s)\n' "$(date -u +%FT%TZ)" "$slug" \
+    "$model" "$effort" "${claude_version:-?}" "$(basename "$plugin")" "$run_id" >> "$DISPATCH_WORKLOG"
 # Said once, here: without that repo the worker has nowhere to commit a report, so every attempt
 # would end in `report=no` with nothing saying why.
 git -C agent rev-parse --git-dir > /dev/null 2>&1 ||
     printf '%s runner: no agent repo at %s/agent, so no report of this run can be committed\n' \
         "$(date -u +%FT%TZ)" "$PWD" >> "$DISPATCH_WORKLOG"
 
-# The user CLAUDE.md and output style are written for a human at a terminal: they tell their
-# reader to ask and how to shape a reply, for a conversation this worker is not in.
-# worker-prompt.md replaces them. On an isolated worker host neither is set, and both lines are
-# inert.
-settings=$(cat <<EOF
-{
-  "claudeMdExcludes": ["${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"],
-  "outputStyle": "default",
-  "autoMemoryEnabled": false
-}
-EOF
-)
-
+# What the worker inherits from this host: the project's own settings and CLAUDE.md, and the mx
+# plugin its contract names skills from, which brings the plugin's hooks along. Not the user's
+# settings, CLAUDE.md or output style, written for a human at a terminal in a conversation this
+# worker is not in (worker-prompt.md stands in for them), nor their hooks and other plugins, nor
+# an MCP server, the host's connectors and the project's `.mcp.json` alike, nor auto memory.
 common=(
     -p
     --permission-mode "$permission_mode"
     --model "$model"
-    --settings "$settings"
+    --effort "$effort"
+    --setting-sources project
+    --strict-mcp-config
+    --plugin-dir "$plugin"
+    --settings '{"autoMemoryEnabled": false}'
     --append-system-prompt "$(cat "$prompt_file")"
 )
 
+# Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the
+# attempt ends: whatever the worker started and left running (a load generator whose shell was
+# killed before its `kill` line, a process that detached itself) goes with it. A host with no user
+# systemd manager runs the attempt as it is, and the worklog says those processes outlive it.
+if systemd-run --user --scope --quiet --collect -- true 2> /dev/null; then
+    scoped() { local unit=$1; shift; systemd-run --user --scope --quiet --collect --unit="$unit" -- "$@"; }
+    unscope() { systemctl --user stop "$1.scope" 2> /dev/null; }
+else
+    scoped() { shift; "$@"; }
+    unscope() { :; }
+    printf '%s runner: no user systemd manager here, so what the worker leaves running outlives it\n' \
+        "$(date -u +%FT%TZ)" >> "$DISPATCH_WORKLOG"
+fi
+
 # `dispatch-ctl stop` sends TERM to this process group: claude dies with it and returns, then
 # this runs, and the loop below ends the run instead of retrying it. The status line says
-# `exit=stopped` and carries the session id, which is what a later resume needs.
+# `exit=stopped` and carries the session id, which is what a later resume needs. INT is the same
+# event typed by hand by someone attached to the pane; untrapped it would kill this script before
+# the status line, leaving a run that reads as a crash and cannot be resumed.
 stopped=
-trap 'stopped=1' TERM
+trap 'stopped=1' TERM INT
 
 # claude -p already retries a transient API error internally (~13 requests over ~13 min) before
 # exiting nonzero, so these attempts are for what survives that: a crashed run, a dropped stream.
 max_attempts=3
 for attempt in $(seq 1 $max_attempts); do
+    unit=$run_id-a$attempt-$$
+    logged=(bash "$run_log" run --site worker --ticket "$slug" --attempt "$attempt" --)
     if [ "$attempt" -gt 1 ]; then
-        claude "${common[@]}" --resume "$session" continue
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" continue
     elif [ -n "$resume_session" ]; then
-        claude "${common[@]}" --resume "$session" "$(cat "$message")"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --resume "$session" "$(cat "$message")"
     else
-        claude "${common[@]}" --session-id "$session" < "$message"
+        scoped "$unit" "${logged[@]}" claude "${common[@]}" --session-id "$session" < "$message"
     fi
     rc=$?
+    unscope "$unit"
     [ -n "$stopped" ] && break
     [ "$rc" -eq 0 ] && break
     # The report is the worker's finished signal, so a crash after it is a crash with the work done.
@@ -112,5 +171,5 @@ done
 [ -n "$stopped" ] && rc=stopped
 # Last act: the orchestrator's wait returns on this file, and reads off it whether the worker left
 # a report to import.
-printf 'attempts=%s exit=%s report=%s session=%s\n' \
-    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" > "$here/$run_id.status"
+printf 'attempts=%s exit=%s report=%s session=%s models=%s\n' \
+    "$attempt" "$rc" "$(reported && echo yes || echo no)" "$session" "$(models)" > "$here/$run_id.status"

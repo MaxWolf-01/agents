@@ -45,7 +45,7 @@ The standards sources are the script's to gather, and the brief it writes for ea
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort`: lower than its default for a small or trivial diff. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
+`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort` and `--minutes`, the budget each reviewer paces its work to, higher for a large diff. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
 
 ### 5. Aggregate
 
@@ -55,7 +55,7 @@ Read the reports per axis and give every finding one of three dispositions:
 
 - **Fixed**: a follow-up commit carrying `Workflow-stage: review`, never an amend, so the commit's diff is the review's measurable effect.
 - **Filed**: worth acting on, too large for that commit, so it becomes a proposed ticket (`/mx:tracker`).
-- **Declined**: the finding's premise is wrong, or the fix costs more than the finding is worth, and the entry says which. It lands anchored in the `Assumptions` block of the closing comment the caller writes (`` - A7 `src/importer.py:118`: the finding, and why it stands ``; ids continue from the highest already in the ticket, which is the id rule a worker carries in its contract, [`worker-prompt.md`](../dispatch/worker-prompt.md)), so the ticket's review page projects it onto the line it concerns, which is where the user rules on it.
+- **Declined**: the finding's premise is wrong, or the fix costs more than the finding is worth, and the entry says which. It lands anchored in the `Assumptions` block of the closing comment the caller writes (`` - A7 `src/importer.py:118`: the finding, and why it stands ``; ids continue from the highest already in the ticket, which is the id rule a worker carries in its contract, [`worker-prompt.md`](../dispatch/worker-prompt.md)), so the ticket's review page projects it onto the line it concerns, and the landing shows it to the user when it is theirs to rule on (`/mx:dispatch`).
 
 Two callers hold no ticket. A bare "review this branch" anchors its declines and its index on the review page as notes. A review of a branch the caller does not own, an incoming PR, delivers every finding where the review is happening, the PR's comments or the reply: nothing there is the caller's to fix, so every finding is one of the user's calls.
 

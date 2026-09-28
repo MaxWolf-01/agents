@@ -14,6 +14,10 @@ _Avoid_: iteration, pass
 One design decision as the ticket states it, carrying a call mark that says who settled it.
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
+**Intent-side call**:
+A call on what a thing is for and its shape, which is the user's to make; a call on how it is built is an implementation call, the agent's.
+_Avoid_: product decision, design call (bare; every call is a design decision)
+
 **Call mark**:
 The provenance tag on a call: who settled it, or that nobody has yet.
 _Avoid_: spec mark, mark (bare; a row mark is one too), marker, annotation, tag, label
@@ -23,7 +27,7 @@ What can be worked now: in a grilling, the decisions nothing open still gates; o
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
-In-scope work whose question cannot yet be stated.
+In-scope work, or a whole intent, whose question cannot yet be stated.
 _Avoid_: Further Notes, Not yet specified, unknowns, TBD
 
 ### Tracker
@@ -38,12 +42,17 @@ The unit of work on the tracker: one file, or one issue.
 _Avoid_: task, item, story
 
 **Parent ticket**:
-The ticket another ticket is part of. It holds the design its children are slices of, and is done once every one of them is and its own close-out is ruled.
+The ticket another ticket is part of. It holds the design its children are slices of, and is ruled whole, with them.
 _Avoid_: parent (bare; a graph has parents too), epic, feature, spec
 
 **Child ticket**:
-A ticket that is part of another: one slice of it, built, reviewed and ruled on its own.
+A ticket that is part of another: one slice of it, built and reviewed on its own, and ruled with its parent ticket unless it is a hinge.
 _Avoid_: subtask, sub-ticket, step
+
+**Hinge**:
+A child ticket its dependents would have to be rewritten, not amended, were it wrong, so it is ruled alone.
+_In code_: `hinge: true`
+_Avoid_: checkpoint (a context checkpoint is a session's), gate (orient's gate routes an intent), milestone
 
 **Ticket context**:
 A ticket's own body with every ancestor's: the whole of what a worker or a reviewer is given.
@@ -58,8 +67,12 @@ The status of a ticket whose work is finished and waits for the user's ruling.
 _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:
-The user's answer on what a ticket built, made on its review page, and on the landing's show where there is one: accept, amend, redo or reject.
+The user's answer on what a ticket built: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
+
+**Standing yes**:
+The user's accept, given in advance, of every build that carries no call worth their time that they have not already made.
+_Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:
 A decision only the user can make, asked as part of the ticket it concerns.
@@ -124,7 +137,7 @@ The tickets one tick hands to workers together.
 _Avoid_: batch, round
 
 **Land**:
-A ticket's work is on the branch it merges into, and verified there.
+A ticket's work is on the branch the user's accept merges it into, and verified there.
 _Avoid_: merged, finished, complete
 
 **Debrief**:

@@ -18,7 +18,7 @@ Typecheck and run single test files as you go, the full suite once at the end. A
 
 Your blast radius is this worktree: everything you create, install or modify lives inside it. A missing system dependency, an absent global tool or a service that isn't running is a blocker, handled as the opening says; so is a decision the ticket leaves open that an assumption cannot carry: a design choice, a hack, a deviation from what the ticket is for.
 
-**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it, on the ticket's review page. A call in your context whose call mark gives it to the agent is an assumption too and gets an id naming that mark, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
+**A decision you make alone is an assumption**, recorded in your name; it becomes a decision when the user rules on it; an implementation call stays yours. A call in your context whose call mark gives it to the agent is an assumption too and gets an id naming that mark, so the page carries it to the user even where your build never questioned it. Write each one anchored, so the page shows it on the line it concerns:
 
 ```
 - A3 `path/file.py:118`: the call and why
@@ -30,13 +30,13 @@ Ids are permanent and continue from the highest already in the ticket; a duplica
 
 **Close into the report**: `agent/show/<slug>/report.md` is two sections in the shapes a ticket gives them (`/mx:tracker`, The ticket file) and nothing else, since a ticket takes nothing else in and the import refuses what it cannot.
 
-Under `## Comments` goes your closing comment, which the agent that dispatched you relays to the user unchanged:
+Under `## Comments` goes your closing comment, which the agent that dispatched you imports into the ticket unchanged, its first line announcing your build to the user:
 
 - One line saying what landed, what is not merged, and which of the ticket's acceptance criteria your work meets.
 - **Results only this host can produce**, where your work made any (a training run's metrics, a benchmark on this machine): committed as data with the work and named here by path. What the user is shown of your work is built after you, from your branch and these.
 - **Details, if you want them**, each entry tagged `[Dn]`: the `Assumptions` block, one anchored bullet per call in the form above, the finding index, the friction. Friction is whatever fought you, a missing feedback loop, a tooling gap, a slow or flaky suite: what you hit, what you did instead, what would have saved the time. Sorting it belongs to the agent that dispatched you, so naming it is your whole part in it.
 
-Under `## Questions` go the calls only the user can make, one `- [Dn] **headline** detail` item each: an assumption worth the user's ruling, a declined finding, a question your build raised. The board shows each under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest the ticket already carries, so `[D7]` names one thing for good.
+Under `## Questions` go the calls only the user can make, one `- [Dn] **headline** detail` item each: an intent-side call worth the user's ruling (what the thing is for, its shape), a declined finding, a question your build raised; an implementation call is yours, and stays an assumption. The board shows each under the ticket and the user answers it there, so the comment carries none of them. The tags run as one sequence across the questions and the details and never repeat: they continue from the highest the ticket already carries, so `[D7]` names one thing for good.
 
 Committing the report is the last thing you do. A round resumed on a build the user sent back finds the round before it still committed there: replace that file with this round's own closing comment and the questions this round raises, and nothing the round before it already said, since each round's report is imported into the ticket in turn and a line kept would land in it twice.
 </contract>
@@ -44,7 +44,7 @@ Committing the report is the last thing you do. A round resumed on a build the u
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/` is a git repo of its own inside this one, holding what plans it: `agent/tickets/` the tickets, none of them yours to write (conventions: the mx `tracker` skill), `agent/show/` what shows the work, `agent/research/` investigation snapshots too long for the ticket that asked for them, `agent/prototypes/` prototypes of the work in flight, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored).
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/` is a git repo of its own inside this one, holding what plans it: `agent/tickets/` the tickets, none of them yours to write (conventions: the mx `tracker` skill), `agent/show/` what shows the work, `agent/research/` investigation snapshots too long for the ticket that asked for them, `agent/prototypes/` prototypes of the work in flight, `agent/handoffs/` handoffs between sessions (`/mx:handoff`), `agent/transcripts/` (gitignored).
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
@@ -69,6 +69,8 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
 `job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. How long you expect it to take is the wrong test, because the command you thought would take a minute is the one that hangs, and a blocking Bash call on it costs you the rest of your run with nobody watching the pane. `job wait --deadline <secs>` ends the wait whatever the command is doing.
+
+A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's. A browser you launch yourself carries the same handle: `browsers --help` says which.
 
 `ast-grep` is syntax-aware search and rewrite that never matches inside strings or comments; read its `--help` before guessing at flags.
 

@@ -12,7 +12,6 @@ and tools that only read: it runs unattended, on the repo the board is rendered 
 """
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -29,14 +28,15 @@ IDLE = timedelta(hours=1)
 PING_CAP = 20  # pings one session takes before a fresh one explores from scratch: PING_CAP * CADENCE of a tracker whose statuses move every window
 
 COMMAND = "claude"
-MODEL = "claude-opus-5-5"  # what the briefing is written by, and how hard it thinks: the spec's Decisions under "The board briefing"
+RUN_LOG = Path(__file__).resolve().parent.parent / "run-log" / "run-log"  # every run goes through it, one line each in the run log
+MODEL = "opus"  # the alias, so the newest Opus writes it; how hard it thinks is the spec's Decisions under "The board briefing"
 EFFORT = "medium"
-# What the session explores with: reading the repo is the whole of its work. The list is what the
-# run allows on top of the machine's own settings, which stand whatever it says, so the three that
-# write are named as denied rather than left out.
+# What the session explores with: reading the repo is the whole of its work. The run reads none of
+# the machine's settings (ask), so the list is all it is allowed; the three that write are denied by
+# name besides.
 TOOLS = "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
 DENIED = "Write,Edit,NotebookEdit"
-RUN_LIMIT = 900  # seconds a run gets; one that has not answered by then is dropped and the next change tries again
+RUN_LIMIT = 900  # seconds a run gets, which run-log enforces; one that has not answered by then is dropped and the next change tries again
 UNCHANGED = "unchanged"  # what a ping answers when what changed leaves the briefing standing
 
 SILENT = ""  # what the last run that answered nothing said, for the page to say once (board.absences)
@@ -137,23 +137,6 @@ def available() -> bool:
     return bool(shutil.which(COMMAND))
 
 
-def settings() -> str:
-    """What the run is given instead of the user's own: no memory, their global CLAUDE.md left out,
-    and the stock output style. The user's sessions carry their memory files, their hooks and a
-    style that shapes a reply for them at a terminal; a briefing session is none of their
-    conversations and writes a column, and the repo's own CLAUDE.md is the one thing about it worth
-    reading.
-
-    Read when the run is assembled rather than when this file is imported: the config directory is
-    where the board reads transcripts from (board.TRANSCRIPTS), and a watcher outlives its start."""
-    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-    return json.dumps({
-        "autoMemoryEnabled": False,
-        "claudeMdExcludes": [str(config / "CLAUDE.md")],
-        "outputStyle": "default",  # the user's own shapes a reply for them at a terminal; this one writes a column
-    })
-
-
 def first(state: str, repo: Path, now: datetime) -> Briefing | None:
     """The briefing a fresh session writes from the tracker's state, exploring `repo` from there,
     or None where the model did not answer.
@@ -188,8 +171,8 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
 
 
 def ask(args: list[str], repo: Path) -> dict | None:
-    """One `claude -p` run in `repo`: what it answered and the session it answered in, or None where
-    it did not answer at all.
+    """One `claude -p` run in `repo`, through `run-log`: what it answered and the session it answered
+    in, or None where it did not answer at all.
 
     The board renders without the model, so every way this comes back empty is one the caller goes
     on from: no claude on the machine, no auth, no network, a run past RUN_LIMIT, an error. Each of
@@ -198,11 +181,18 @@ def ask(args: list[str], repo: Path) -> dict | None:
     global SILENT
     if not available():
         return None
+    # The run inherits nothing from the machine: no settings file, so none of the user's CLAUDE.md,
+    # output style, hooks, allowlist or plugins; no MCP server, connectors included; no skill; no
+    # memory. A briefing session is none of the user's conversations, and the repo's own CLAUDE.md is
+    # a file it reads like any other.
     try:
         done = subprocess.run(
-            [COMMAND, *args, "--model", MODEL, "--effort", EFFORT, "--output-format", "json",
-             "--allowedTools", TOOLS, "--disallowedTools", DENIED, "--settings", settings()],
-            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT,
+            [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
+             COMMAND, *args, "--model", MODEL, "--effort", EFFORT,
+             "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
+             "--settings", '{"autoMemoryEnabled": false}',
+             "--allowedTools", TOOLS, "--disallowedTools", DENIED],
+            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))

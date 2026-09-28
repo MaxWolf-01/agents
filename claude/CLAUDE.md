@@ -7,7 +7,7 @@ On my communication style:
     - It can mean your message was too long, contained too much slop, you need more context, or my head is full of ideas I need to get out / get your quick feedback on to develop my thinking.
     - But expect my communication to be async / slightly out of sync sometimes in general.
 - Silence on a point != agreement. It often means "slop, moving on". If I want to see something done, I make that explicit.
-- Don't interpret partial engagement as "time to implement".
+- Partial engagement is no yes for a ship-shaped action (the git block says which those are); that waits for an explicit one, which for a merge into the integration branch is my accept, given on the build or standing. A speculative build on a ticket branch needs no yes at all: I judge a call best in front of the concrete thing.
 - Don't ask me to do things that you could do yourself via the commandline !
 - Heads up: Should my prompts ever sound a bit weird or have seemingly out of place workds / some words or sentences don't sound quite right it might very well be because I'm using speech to text software - sometimes you have to do a little bit of interpretation. Always point out to me if you're unsure what I mean.
 - Explain your decisions clearly. I'm learning. Don't assume I know better. Assume you need to teach me (and make me actually learn and understand fundamental concepts, even when I delegate).
@@ -34,7 +34,7 @@ Common abbreviations / phrases I use -- kinda like mini-skills (triggers include
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `agent/` is a git repo of its own inside the project, which ignores it, holding what plans it: `agent/tickets/` the tickets (conventions: the mx `tracker` skill), `agent/show/` what shows the work, `agent/research/` investigation snapshots too long for the ticket that asked for them, `agent/prototypes/` prototypes of the work in flight, `agent/transcripts/` (gitignored) + `agent/handoffs/` (gitignored). `git -C agent` is how you commit there.
+Durable docs: `CONTEXT.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area; use the glossary's vocabulary in everything you write; if your output contradicts an ADR, surface it; don't silently override. Writing or editing either goes through `/mx:domain-modelling`. `agent/` is a git repo of its own inside the project, which ignores it, holding what plans it: `agent/tickets/` the tickets (conventions: the mx `tracker` skill), `agent/show/` what shows the work, `agent/research/` investigation snapshots too long for the ticket that asked for them, `agent/prototypes/` prototypes of the work in flight, `agent/handoffs/` handoffs between sessions (`/mx:handoff`), `agent/transcripts/` (gitignored). `git -C agent` is how you commit there.
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
@@ -45,7 +45,6 @@ Skills are the single source of truth for process. Never restate a skill's workf
 Build a solid mental model, think about the actual underlying problem (and figure out what that actually is) and the right abstractions.
 
 - In order to effectively solve problems, be aware you need to form a clear mental model of the system you're working with. Look at existing documentation/knowledge, and read code to understand what's there, ask questions to clarify when the intent behind the code isn't clear. DO NOT be frugal with your time or context when it comes to understanding the problem you're working on.
-- Avoid premature implementation. Don't rush to ship something just to "get it done". Take the time to understand the problem, explore alternatives, and make informed decisions. Avoid implementing solutions based on partial understanding or assumptions. Prefer following the workflow for any non-mechanical or non-trivial work, and don't skip steps.
 
 Gather sufficient context, verify your assumptions and sources.
 
@@ -54,6 +53,7 @@ Gather sufficient context, verify your assumptions and sources.
 - When developing, planning, debugging - bias toward reading the full source for better understanding (you have to read more than humans because you don't have any form of LTM). Not doing that leads to shortsighted, overconfident claims and implementations.
 - Provide evidence-backed recommendations rather than assumptions.
 
+Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
 </workflow>
 
 <git>
@@ -63,14 +63,14 @@ Gather sufficient context, verify your assumptions and sources.
 - IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
   - Never `git commit -a`/`-am`, never `git add -u`/`-A`/`.`: they sweep in every tracked file someone else modified mid-flight. Explicit file lists.
   - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
-  - Before history-rewriting (amend, rebase), check if the commit was pushed. NEVER AMEND WITHOUT CHECKING.
+  - Undo a commit with `git revert <sha>` (`-m 1` for a merge), never `git reset`: a revert adds a commit, so whatever landed on top of yours in the meantime survives. Before an amend or rebase, check the commit is unpushed and still the tip. NEVER AMEND WITHOUT CHECKING.
 
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones (reading an external repo, a throwaway experiment) go in /var/tmp so they don't clutter home.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
 
-- Commit as you go without asking. Once the user approves a batch on its review page, merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-ticket view; the detail history carries the trailers). The integration branch is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
+- Commit as you go without asking. Once the user accepts a batch, on the calls it put to them or on their standing yes (`/mx:dispatch`), merge `--no-ff` from the invocation checkout, which is already sitting on the integration branch (the first-parent log is the per-ticket view; the detail history carries the trailers). The integration branch is the branch the work branches from and merges into: usually the default branch, `dev` where that layer exists. A batch that went up as a GitHub PR **stack** (PRs based on each other, one merge box) merges on GitHub, never locally; `/mx:gh-stack` before touching a stack.
 - Merge commit subjects follow normal commit conventions: state what the branch as a whole delivered (`subagents: report delivery via named file`), no `Merge:`/`Merge branch` marker; the commit's two parents already record that it's a merge.
-- Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action (usually gated by the user reviewing the diffview). Committing and pushing work to a ticket branch is not.
+- Push freely, any branch, master included, once the work passed its review gate or is mechanical, and the push itself triggers nothing ship-shaped (CI that deploys or releases, pre-push hooks with side effects). Ship-shaped actions need the human first: releases, deploys, changes to running systems, issues/PRs on projects that aren't ours; in short, anything hard to reverse, or with real cost (time, money, a broken system) when wrong. Merging worktrees into the integration branch counts as a ship-shaped action, and the user's accept is its yes: given on the calls a batch put to them, or standing where it put none (`/mx:dispatch`). Committing and pushing work to a ticket branch is not.
 - For releases, I almost always have a Makefile workflow that automates the mechanical parts, and avoids common mistakes, and documents the flow in code itself -- use that, before doing it manually.
 - Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, CONTEXT.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>
@@ -98,7 +98,7 @@ I just use auto-mode when you need to do work on my machine, not containerized, 
 
 <tools>
 
-Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`, `gh-asset`, `job` (`/mx:tmux`).
+Installed here, each with a `--help` to read before guessing at flags: `tre` (gitignore-aware tree, for a codebase overview), `ast-grep` (syntax-aware search and rewrite that never matches inside strings or comments), `memex` (alias `mx`), `diffview`, `claude-browser`, `gh-asset`, `job` (`/mx:tmux`), `browsers` (kills only the stuck browsers this checkout launched).
 
 `memex` is how to orient in a markdown vault (the Obsidian vault above all), where grep is for exact content terms: `find` when you roughly know a note, `search` for entry points you don't know exist, `explore` the wikilink graph from there.
 

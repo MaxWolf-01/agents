@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted whenever the user states an intent that is not fully mechanical (\"I want X, maybe like this\") before implementing anything; also on any \"grill\" trigger phrase. Skip only when the request is fully specified and mechanical. The goal is a shared mental model and a default the user can just say yes to."
+description: "Grill the user about a plan, design, decision, or idea, proportionally: one question for a small ambiguity, a full interview for a large design, whose design lands in the ticket as it settles, over as many sessions as the frontier takes. Invoke unprompted on fog, an intent too unclear to draft a brief for; `/mx:orient`'s gate sends it here. Also on any \"grill\" trigger phrase. The goal is a shared mental model and a default the user can just say yes to."
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Relentless is about depth, not volume: a small unclear intent gets one round of one or two questions; the full treatment below is for a whole design.
@@ -15,7 +15,7 @@ Map the design as a **design tree**: every decision branches into the decisions 
 
 When more than one design survives that bar, deliver each with the questions that refine it, then the questions that choose between them: the trade-offs one pays and the other doesn't. That second level is where the framing of the problem gets decided explicitly, since rival designs usually embody rival readings of it. A rival whole joins only under the same bar as an option: one you would defend.
 
-**Then the questions**, only where two live options survive expert judgment. Each names the part of the design it would change, and that part carries its `(open → Qn)` mark: a question's decision is always visible in the design.
+**Then the questions**, only where two live options survive expert judgment. They lean to the intent, what the thing is for and its shape, since the agent fills in an implementation better than the user does. How far the intent reaches depends on what is grilled: a grilling of one function is about that function's trade-offs, and in a larger one some of the architecture, algorithms and data structures belong to the intent too. Each names the part of the design it would change, and that part carries its `(open → Qn)` mark: a question's decision is always visible in the design.
 
 ```
 ❓ **Q1**: **<the decision, as a question>**
@@ -54,7 +54,7 @@ The brief fixes the scope: work past it is out of scope, not fog; a part found t
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Bring the ticket current; one that several sessions wrote is read whole once first, because each session saw only its part and the parts can disagree. Then cut it into child tickets (`/mx:tracker`, SLICING.md), or build it as it stands when it is one slice. A question the design does not hinge on, one that is naturally its own work, leaves as a child ticket so the rest can be cut; one the design hinges on holds the cut.
 
-The marks stay on until the user rules. Walk the unconfirmed list with them whenever they are there: what they ratify loses its mark. What they have not ruled on travels into the child tickets as the assumptions their workers carry, anchored to the lines they shape, and the user rules on it from the review page of what it built; a mark is stripped when they do, in whichever session is holding the ticket. Capturing what was settled (glossary terms, decisions worth an ADR) goes through `/mx:domain-modelling`; the ticket references ADRs, it doesn't restate them.
+The marks stay on until the user rules. Walk the unconfirmed list with them whenever they are there: what they ratify loses its mark. What they have not ruled on travels into the child tickets as the assumptions their workers carry, anchored to the lines they shape, and the landing of what it built shows the user those on the intent side to rule on (`/mx:dispatch`); a mark is stripped when they do, in whichever session is holding the ticket. Capturing what was settled (glossary terms, decisions worth an ADR) goes through `/mx:domain-modelling`; the ticket references ADRs, it doesn't restate them.
 
 ## Across sessions
 

@@ -17,6 +17,7 @@ state (a claim is taken from the frontier, and a claimed ticket is in somebody's
 argued; this file is the cases the ticket-file move made.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -74,6 +75,7 @@ criterion.
 
 - [D1] **Assumptions**
   - A1 `lamp.txt:1`: 2700K, since the bulb box says so.
+  - A2 `agent/show/warm-preset/report.md:1`: the report itself, anchored from the worktree root.
 
 ## Questions
 
@@ -97,6 +99,19 @@ dest=${files[-1]#*:}; [[ $dest == /* ]] || dest=$REMOTE_HOME/$dest
 cp "${files[@]:0:${#files[@]}-1}" "$dest"
 """
 
+# The host's claude as a spawn meets it: it records what it was asked, starts on 2.1.243 and its
+# updater takes it to 2.1.283, or fails when CLAUDE_UPDATE_FAILS is set. Plugin commands succeed
+# and do nothing.
+FAKE_CLAUDE = """#!/bin/sh
+printf '%s\\n' "$*" >> CALLS
+case $1 in
+    --version) echo "$(cat CALLS.version 2>/dev/null || echo 2.1.243) (Claude Code)" ;;
+    update) [ -z "${CLAUDE_UPDATE_FAILS:-}" ] || { echo "update: network unreachable" >&2; exit 1; }
+            echo 2.1.283 > CALLS.version ;;
+esac
+"""
+
+
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
@@ -108,20 +123,30 @@ def git(at: Path, *args: str) -> str:
 
 
 def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_user: bool = False,
-           brief: str = "What it is, cold.") -> Path:
+           brief: str = "What it is, cold.", hinge: bool = False, blocked_by: str = "") -> Path:
     front = ["---", f"status: {status}"]
     front += [f"parent: {parent}"] if parent else []
+    front += [f"blocked-by: [{blocked_by}]"] if blocked_by else []
     front += ["needs-user: true"] if needs_user else []
+    front += ["hinge: true"] if hinge else []
     front += ["priority: 1", "size: S", "---"]
     path = root / f"{slug}.md"
     path.write_text("\n".join(front) + f"\n\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n{brief}\n")
     return path
 
 
+def tmux_dir(toy: Path) -> Path:
+    """The socket directory of this check's own tmux server. A worker's session is named after the
+    repo and the slug, the same in every check, so each check runs a server no other check or user
+    shares. Under /tmp and short, since a socket path over about a hundred bytes is refused."""
+    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy).encode()).hexdigest()[:12]}"
+
+
 @pytest.fixture
-def toy(tmp_path: Path) -> Path:
+def toy(tmp_path: Path) -> Iterator[Path]:
     """A project on `main`: a code repo, its `agent/` a repo of its own inside it that the code repo
-    ignores, and a tree of two tickets in it. Answers the code repo's root."""
+    ignores, and a tree of two tickets in it. Answers the code repo's root, and takes down the tmux
+    server its workers ran on."""
     repo = tmp_path / "lamp"
     (repo / "agent" / "tickets").mkdir(parents=True)
     for at in (repo, repo / "agent"):
@@ -139,7 +164,9 @@ def toy(tmp_path: Path) -> Path:
     ticket(root, "name-the-presets", needs_user=True, brief="Naming them is a conversation.")
     git(repo / "agent", "add", "-A")
     git(repo / "agent", "commit", "-q", "-m", "the tracker")
-    return repo
+    yield repo
+    subprocess.run(["tmux", "kill-server"], capture_output=True, env=environment(repo))
+    shutil.rmtree(tmux_dir(repo), ignore_errors=True)
 
 
 def tracked(toy: Path) -> Path:
@@ -148,20 +175,32 @@ def tracked(toy: Path) -> Path:
 
 
 def environment(toy: Path, **extra: str) -> dict[str, str]:
-    """What every command here runs in: a HOME of its own, and a `diffview` that records the
+    """What every command here runs in: a HOME of its own, a `diffview` that records the
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
-    what dispatch has to get right."""
+    what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
+    spawn hands its runner in place of the one the host's claude lists."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
         'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
     (bin_dir / "diffview").chmod(0o755)
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    # The commit hook dispatch installs runs whichever `tracker` is on PATH and passes where there is
+    # none, so every host runs the checks against this repo's own.
+    (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
+    (bin_dir / "tracker").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
+    plugin = mx(toy.parent)
+    tmux_dir(toy).mkdir(exist_ok=True)
     env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
-           "JOB_STATE_DIR": str(toy.parent / "jobs"),
-           "PATH": f"{bin_dir}:{os.environ['PATH']}", **extra}
+           "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
+           "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
     env.pop("DISPATCH_PERMISSION_MODE", None)
+    env.pop("DISPATCH_EFFORT", None)
+    env.pop("TMUX", None)  # names the server of the pane pytest runs in, which beats TMUX_TMPDIR
     return env
 
 
@@ -170,10 +209,11 @@ def run(toy: Path, *args: str, **extra: str) -> subprocess.CompletedProcess:
                           env=environment(toy, **extra), timeout=180)
 
 
-def waited(toy: Path) -> Path:
+def waited(toy: Path, state: Path | None = None) -> Path:
     """The status line the runner's last act writes, once it is there: a check that carried on
-    without it would read a worker that timed out or died as one that finished."""
-    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    without it would read a worker that timed out or died as one that finished. `state` is the
+    scratch dir, this machine's unless given."""
+    state = state or toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     for _ in range(60):
         if list(state.glob("*.status")):
             break
@@ -181,7 +221,7 @@ def waited(toy: Path) -> Path:
     left = list(state.glob("*.status"))
     assert left, "no status line 30s after the spawn: " + subprocess.run(
         ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
-        capture_output=True, text=True).stdout
+        capture_output=True, text=True, env=environment(toy)).stdout
     return left[0]
 
 
@@ -216,41 +256,59 @@ def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy:
     assert git(toy / "agent", "branch", "--show-current").strip() == "main", "on the branch it had out"
 
 
-@pytest.fixture
-def staged(toy: Path) -> Iterator[Path]:
-    """The toy with a stub runner staged in the skill copy dispatch sends to a host.
+def stage_runner(state: Path) -> None:
+    """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
+    for name in ("run-worker.sh", "worker-prompt.md"):
+        shutil.copy(SKILL / name, state / name)
+    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
 
-    A worker's tmux session is named after the repo and the slug, so every run of these checks
-    wants the same name: one left standing would have the next check's runner typed into a pane
-    whose worktree is gone. They are killed either side of the check, since a crashed one is still
-    there when the next starts."""
+
+def mx(tmp_path: Path) -> Path:
+    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
+    shaped like a real one, whose leaf the lines that name the install print."""
+    (tmp_path / "mx" / "installed").mkdir(parents=True, exist_ok=True)
+    return tmp_path / "mx" / "installed"
+
+
+@pytest.fixture
+def staged(toy: Path) -> Path:
+    """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
+    if not shutil.which("tmux"):
+        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     skill = toy.parent / "skills"
     (skill / "dispatch").mkdir(parents=True)
     (skill / "tracker").mkdir()
     for name in ("dispatch", "dispatch-ctl", "worker-prompt.md"):
         shutil.copy(SKILL / name, skill / "dispatch" / name)
-    shutil.copy(SKILL.parent / "tracker" / "tracker.py", skill / "tracker" / "tracker.py")
+    for name in ("tracker.py", "pre-commit"):
+        shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
+    (skill / "run-log").mkdir()
+    shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
-    kill_sessions()
-    yield skill / "dispatch" / "dispatch"
-    kill_sessions()
-
-
-def kill_sessions() -> None:
-    if not shutil.which("tmux"):
-        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
-    listed = subprocess.run(["tmux", "ls", "-F", "#{session_name}"], capture_output=True, text=True)
-    for session in listed.stdout.split():
-        if session.startswith("dispatch-lamp-"):  # the worker's
-            subprocess.run(["tmux", "kill-session", "-t", f"={session}"], capture_output=True)
+    return skill / "dispatch" / "dispatch"
 
 
 def spawn(toy: Path, staged: Path, slug: str, message: str, host: str = "local",
-          env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+          env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
     env = env or environment(toy)
     subprocess.run([str(staged), "prompt", slug], cwd=toy, input=message, text=True, check=True, env=env)
     return subprocess.run([str(staged), "ctl", "--host", host, "--setup-cmd", "true", "spawn", slug, "sonnet"],
-                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+                          cwd=cwd or toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
+    """A remote host `agent@far` behind the fake ssh and scp, with a `claude` whose plugin update
+    fails as a host's may: its home, and the environment a command reaches it in."""
+    remote = toy.parent / "remote"
+    remote.mkdir()
+    fakes = toy.parent / "fakes"
+    fakes.mkdir()
+    for name, body in (("ssh", FAKE_SSH), ("scp", FAKE_SCP), ("claude", "#!/bin/sh\nexit 1\n")):
+        (fakes / name).write_text(body)
+        (fakes / name).chmod(0o755)
+    env = environment(toy, REMOTE_HOME=str(remote), **extra)
+    env["PATH"] = f"{fakes}:{env['PATH']}"
+    return remote, env
 
 
 def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
@@ -265,6 +323,90 @@ def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_
     assert "## warm-preset" in written and "One preset, warm." in written
     assert "## parent ticket: lamp-ui" in written and "The whole of giving the lamp presets." in written
     assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, staged: Path, fails: bool) -> None:
+    """`worker-hosts-run-the-current-claude`: a model alias is whatever the host's claude resolves
+    it to, so the updater runs before every worker, and one that fails is said out loud while the
+    worker starts on the version the host has, which the spawn names either way."""
+    calls = toy.parent / "bin" / "claude.calls"
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "set -eu\n", f"set -eu\nprintf 'worker starts\\n' >> {calls}\n"))
+    run(toy, "claim", "warm-preset")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, **({"CLAUDE_UPDATE_FAILS": "1"} if fails else {})))
+    waited(toy)
+
+    assert said.returncode == 0, said.stderr
+    asked = calls.read_text().splitlines()
+    assert asked.index("update") < asked.index("worker starts")
+    assert f"claude={'2.1.243' if fails else '2.1.283'}" in said.stdout, said.stdout
+    assert ("claude update failed" in said.stderr) == fails, said.stderr
+
+
+def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
+    """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
+    when the orchestrator says nothing, and it reaches the runner with the permission mode."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    def logs() -> str:
+        return "".join(p.read_text() for p in state.glob("*.log"))
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    env = environment(toy)
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="Work it.\n", text=True, check=True, env=env)
+
+    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    waited(toy)
+    assert said.returncode == 0, said.stderr
+    assert "model=sonnet  effort=high" in said.stdout, said.stdout
+    assert "stub: built warm-preset at high" in logs()
+
+    said = subprocess.run([str(staged), "ctl", "spawn", "warm-preset", "sonnet", "--effort", "low"],
+                          cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    for _ in range(60):
+        if "at low" in logs():
+            break
+        time.sleep(0.5)
+    assert said.returncode == 0, said.stderr
+    assert "effort=low" in said.stdout, said.stdout
+    assert "stub: built warm-preset at low" in logs()
+
+
+def test_a_spawn_hands_the_runner_the_hosts_mx_install(toy: Path, staged: Path) -> None:
+    """`unattended-launch`: a worker reads no user settings, so the mx its contract names skills from
+    reaches it by path, and the path travels on the line the spawn types into the pane. The spawn
+    names the install it gave."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    (staged.parent / "run-worker.sh").write_text(RUNNER.replace(
+        "printf 'stub: built %s\\n' \"$slug\"", "printf 'stub: built %s with %s\\n' \"$slug\" \"${DISPATCH_PLUGIN_DIR:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    plugin = mx(toy.parent)
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    waited(toy)
+
+    assert said.returncode == 0, said.stderr
+    assert f"mx={plugin.name}" in said.stdout, said.stdout
+    assert f"stub: built warm-preset with {plugin}\n" in "".join(p.read_text() for p in state.glob("*.log"))
+
+
+def test_a_host_whose_claude_lists_no_mx_starts_no_worker(toy: Path, staged: Path) -> None:
+    """Without the plugin a worker has none of the skills its contract names, so a spawn on a host
+    whose claude lists no user-scope mx stops before the pane, once, rather than in every run."""
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
+    run(toy, "claim", "warm-preset")
+    env = environment(toy)
+    env.pop("DISPATCH_PLUGIN_DIR")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", env=env)
+
+    assert said.returncode != 0
+    assert "no mx plugin for dispatch-lamp-warm-preset" in said.stderr, said.stderr
+    assert not list(state.glob("dispatch-lamp-warm-preset-*.log")), "a worker started without the plugin"
 
 
 def test_a_ticket_the_user_is_in_the_loop_for_is_never_handed_to_a_worker(toy: Path, staged: Path) -> None:
@@ -314,7 +456,9 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "The warm preset lands, unmerged" in written and "**Warm at what temperature?**" in written
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
-    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
+    # a worker anchors from its worktree root, and the agent repo is rendered from its own root
+    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [
+        (1, "lamp.txt", 1), (2, "show/warm-preset/report.md", 1)]
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
@@ -347,6 +491,114 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert not (toy.parent / "lamp-warm-preset").exists()
     for at in (toy, agent):
         assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
+
+
+# The building stub as a tree's children run it: each commits a file of its own, so a child built on
+# a sibling's merge carries that sibling's file and adds its own beside it.
+BUILDING_ITS_OWN = BUILDING.replace(
+    "printf 'the lamp, warm\\n' > lamp.txt\ngit add lamp.txt",
+    "printf '%s\\n' \"$slug\" > \"$slug.txt\"\ngit add \"$slug.txt\"",
+)
+
+
+def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Path) -> None:
+    """`speculative-first`'s review unit through the toy: a hinge ruled alone, then two leaves, the
+    second built on the first while the first waits unruled in its parent's branch, and the
+    parent's accept writing `done` on all four. `speculative-first#P1`: nothing reaches `main`
+    before the parent's accept."""
+    tickets, agent = tracked(toy), toy / "agent"
+    ticket(tickets, "preset-format", parent="lamp-ui", hinge=True, brief="The shape every preset is stored in.")
+    ticket(tickets, "cool-preset", parent="lamp-ui", blocked_by="warm-preset", brief="One preset, cool.")
+    ticket(tickets, "warm-preset", parent="lamp-ui", blocked_by="preset-format", brief="One preset, warm.")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tree")
+    (staged.parent / "run-worker.sh").write_text(BUILDING_ITS_OWN)
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    assert run(worktree, "claim", "lamp-ui").returncode == 0
+    main = git(toy, "rev-parse", "main").strip()
+    env = environment(toy)
+    def frontier(held: bool = False) -> str:
+        """The frontier's ready lines, or with `held` its waiting ones."""
+        said = subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "frontier"], cwd=worktree,
+                              capture_output=True, text=True, env=env)
+        assert said.returncode == 0, said.stderr
+        return said.stdout.partition("waiting\n")[2 if held else 0]
+
+    def built(slug: str) -> None:
+        assert run(worktree, "claim", slug).returncode == 0
+        subprocess.run([str(staged), "prompt", slug], cwd=worktree, input=f"Work {slug}.\n", text=True, check=True, env=env)
+        spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug, "sonnet"],
+                                 cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+        assert spawned.returncode == 0, spawned.stderr
+        assert run(worktree, "wait", slug, "--deadline", "60").returncode == 0
+        assert run(worktree, "fetch", slug).returncode == 0
+        said = run(worktree, "review", slug)
+        assert said.returncode == 0, said.stderr
+        assert status_of(toy, slug) == "review"
+
+    def merged(slug: str) -> None:
+        git(worktree, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
+        git(agent, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
+        said = run(worktree, "review", slug)
+        assert said.returncode == 0, said.stderr
+
+    assert "warm-preset" not in frontier()
+    built("preset-format")
+    assert "warm-preset" not in frontier(), "a hinge in review holds its dependents"
+    assert "on preset-format (review, a hinge)" in frontier(held=True)
+    merged("preset-format")  # the user's accept of the hinge, ruled alone
+    assert status_of(toy, "preset-format") == "done"
+
+    assert "warm-preset" in frontier()
+    built("warm-preset")
+    assert "cool-preset" not in frontier(), "unmerged, the leaf holds its sibling"
+    merged("warm-preset")  # the orchestrator's read passed it, and the user has not ruled
+    assert status_of(toy, "warm-preset") == "review", "ruled with its parent, not alone"
+    assert "diff: [code@" in (tickets / "warm-preset.md").read_text(), "its ranges are final once merged"
+
+    assert "cool-preset" in frontier(), "a merged leaf in review unblocks its sibling"
+    built("cool-preset")
+    assert git(toy, "show", "ticket/cool-preset:warm-preset.txt") == "warm-preset\n", "built on the unruled sibling"
+    merged("cool-preset")
+    assert status_of(toy, "cool-preset") == "review"
+    assert git(toy, "rev-parse", "main").strip() == main, "nothing reached the branch above the parent"
+
+    early = run(toy, "accept", "lamp-ui")
+    assert early.returncode != 0 and "not merged into main" in early.stderr, early.stderr
+    subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "set", "lamp-ui", "status=review"],
+                   cwd=toy, check=True, capture_output=True, env=env)  # its close-out: the whole tree waits for the ruling
+    git(agent, "commit", "-q", "-am", "lamp-ui for review")
+    git(toy, "merge", "-q", "--no-ff", "-m", "lamp-ui: accepted whole", "lamp-ui")
+
+    # a ticket file of the tree edited and not committed: refused, and the edit kept
+    parent = tickets / "lamp-ui.md"
+    parent.write_text(parent.read_text() + "\nA note not committed yet.\n")
+    dirty = run(toy, "accept", "lamp-ui")
+    assert dirty.returncode != 0 and "uncommitted changes" in dirty.stderr, dirty.stderr
+    assert parent.read_text().endswith("A note not committed yet.\n")
+    git(agent, "checkout", "-q", "--", "tickets/lamp-ui.md")
+    # a child in review the orchestrator never merged: the tracker refuses it, and none is written
+    ticket(tickets, "dim-preset", status="review", parent="lamp-ui")
+    git(agent, "add", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset for review")
+    dim = git(toy, "commit-tree", "lamp-ui^{tree}", "-p", "lamp-ui", "-m", "dim-preset: built").strip()
+    git(toy, "branch", "ticket/dim-preset", dim)
+    before = {path.name: path.read_text() for path in tickets.glob("*.md")}
+    partial = run(toy, "accept", "lamp-ui")
+    assert partial.returncode != 0 and "dim-preset" in partial.stderr, partial.stderr
+    assert {path.name: path.read_text() for path in tickets.glob("*.md")} == before
+    assert not git(agent, "status", "--porcelain", "--", "tickets")
+    git(agent, "rm", "-q", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset dropped")
+
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in parent.read_text(), "the parent's range"
+    assert {slug: status_of(toy, slug) for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset")} == dict.fromkeys(
+        ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
+    assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")
+    assert not git(agent, "status", "--porcelain", "--", "tickets"), "one commit carries the tree"
 
 
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
@@ -385,10 +637,10 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main"
     before = set(state.glob("*.status"))
 
-    # the round the user sent back, resumed on a worker that stops before writing one of its own.
-    # Staged beside the runner it replaces, since that directory is where a run writes its log and
-    # its status line, and a resume stages nothing of its own.
-    quiet = state / "quiet-runner.sh"
+    # the round the user sent back, resumed on a worker that stops before writing one of its own,
+    # from a runner outside the scratch dir: the resume copies it in, beside the log and status
+    # line a run writes.
+    quiet = toy.parent / "quiet-runner.sh"
     quiet.write_text(RUNNER)
     resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet"],
                              cwd=toy, capture_output=True, text=True, timeout=180,
@@ -410,7 +662,11 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
 
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
-    ticket file wrote a second copy of one, and nothing of that round is imported."""
+    ticket file wrote a second copy of one, and nothing of that round is imported. That read is the
+    line for an agent repo whose commit hook is its owner's; the tracker's own hook refuses the
+    commit first (`test_tracker.py`, `test_a_ticket_branch_is_refused_the_ticket_file_it_staged`)."""
+    (toy / "agent" / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+    (toy / "agent" / ".git" / "hooks" / "pre-commit").chmod(0o755)
     (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
         "git -C agent add -A",
         'printf "\\nWhat it built, written where no worker writes.\\n" >> "agent/tickets/$slug.md"\n'
@@ -443,8 +699,7 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
     reads is whether this run wrote that file, never whether the file is there."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
@@ -467,17 +722,201 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
     )
-    (bin_dir / "claude").write_text("#!/bin/sh\n" + (committing if wrote else "") + f"exit {exits}\n")
+    (bin_dir / "claude").write_text(
+        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
     (bin_dir / "claude").chmod(0o755)
 
     done = subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
         cwd=worktree, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
     )
     assert done.returncode == 0, done.stderr
     assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
     assert "runner: started warm-preset" in (state / "run-1.log").read_text()
+
+
+@pytest.mark.parametrize("given", ["", "low"])
+def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, given: str) -> None:
+    """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs
+    at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))}
+    env.pop("DISPATCH_EFFORT", None)
+    if given:
+        env["DISPATCH_EFFORT"] = given
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+
+    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
+    assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
+    # `run-log`: the attempt left its line, in the log this HOME defaults to
+    (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
+    assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
+        ("worker", "warm-preset", 1, "opus", given or "high")
+
+
+def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path) -> None:
+    """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
+    CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
+    CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
+    names the mx install it runs."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    plugin = mx(tmp_path)
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+
+    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
+                '--settings {"autoMemoryEnabled": false}')
+    assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
+    assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
+    assert f" and mx {plugin.name} (run-1)" in (state / "run-1.log").read_text().splitlines()[0]
+
+
+def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
+    """A worker without the plugin has none of the skills its contract names, so a runner started
+    without DISPATCH_PLUGIN_DIR says so on the status line rather than start one."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    env.pop("DISPATCH_PLUGIN_DIR", None)  # whatever the shell running these checks carries
+
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env=env)
+
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith(
+        "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
+    assert not (bin_dir / "claude.calls").exists(), "claude ran"
+
+
+def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path) -> None:
+    """`browsers-a-worker-can-kill`: MX_RUN is what the browsers a worker's checks launch are
+    tagged with, so it names this run and not the one the orchestrator's shell was in."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    seen = tmp_path / "mx-run"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-7"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
+                        "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)), "MX_RUN": "the-orchestrators"})
+
+    assert seen.read_text().splitlines() == ["run-7"]
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
+    """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
+    answered, so the status line reads it off the session's transcript: the models this round's
+    assistant turns carry, none of the rounds' before it on a resumed session, and none of the
+    strings a turn merely mentions (an Agent call's `model` input) or claude's own `<synthetic>`
+    error turns. The worklog's first line names the launcher's version."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    session = "5e55-10n"
+    project = tmp_path / "profile" / "projects" / "-toy"
+    project.mkdir(parents=True)
+    if resumed:
+        (project / f"{session}.jsonl").write_text(
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-5", "content": "a round"}}) + "\n")
+    turns = [
+        {"type": "user", "message": {"role": "user", "content": "Work it."}},
+        {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+            {"type": "tool_use", "name": "Agent", "input": {"model": "sonnet", "prompt": "review"}}]}},
+        {"type": "assistant", "message": {"model": "<synthetic>", "content": "API Error"}},
+        {"type": "assistant", "message": {"model": "claude-sonnet-5", "content": "done"}},
+    ]
+    transcript = "\n".join(json.dumps(turn) for turn in turns)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(
+        '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
+        'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
+        f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
+           "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")}
+    env.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
+    subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
+         *([session] if resumed else [])],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env,
+    )
+    status = (state / "run-1.status").read_text()
+    assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
+    assert "on opus at high effort with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
+
+
+def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> None:
+    """A worker whose shell was killed before its cleanup line leaves its children behind, and a
+    child that detached itself escapes even the process group `dispatch-ctl stop` signals. The
+    runner's scope is what takes both down, on a host with a user systemd manager."""
+    probe = subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "--collect", "--", "true"],
+                           capture_output=True) if shutil.which("systemd-run") else None
+    if probe is None or probe.returncode != 0:
+        pytest.skip("no user systemd manager here, and the runner says so in the worklog instead")
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    left = tmp_path / "left.pid"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
+    (bin_dir / "claude").write_text(
+        f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
+         f"check-{tmp_path.name}"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
+    )
+    pid = left.read_text().strip()
+    for _ in range(20):
+        if not Path(f"/proc/{pid}").exists():
+            break
+        time.sleep(0.25)
+    else:
+        subprocess.run(["kill", pid])
+        pytest.fail(f"the worker's detached sleep (pid {pid}) outlived the run")
 
 
 def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
@@ -485,8 +924,7 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     `report=no` with nothing saying why."""
     state = tmp_path / "state"
     state.mkdir()
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
+    stage_runner(state)
     (tmp_path / "message.md").write_text("Work it.\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -496,10 +934,68 @@ def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) ->
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
         cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)},
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
     )
     assert "no agent repo at" in (state / "run-1.log").read_text()
     assert "report=no" in (state / "run-1.status").read_text()
+
+
+def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> None:
+    """Every attempt runs through run-log, so a staging that lacks it is said on the status line
+    rather than run unlogged."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (state / "run-log").unlink()
+    (tmp_path / "message.md").write_text("Work it.\n")
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path)})
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+
+
+def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
+    """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
+    cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
+    machine's log itself."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    theirs = remote / "logs" / "agent" / "runs.jsonl"
+    theirs.parent.mkdir(parents=True)
+    theirs.write_text('{"id": "r1", "at": "2026-09-27T10:00:00Z", "site": "worker"}\n{"id": "r2", "at": "2026-09-27T10:05:00Z", "site": "review"}\n')
+    mine = toy.parent / "home" / "logs" / "agent" / "runs.jsonl"
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "pulled 2 new run(s) from agent@far" in fetched.stdout
+    assert [json.loads(l)["id"] for l in mine.read_text().splitlines()] == ["r1", "r2"]
+
+    theirs.write_text(theirs.read_text() + '{"id": "r3", "at": "2026-09-27T10:09:00Z", "site": "worker"}\n')
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "pulled 1 new run(s)" in cleaned.stdout
+    assert [json.loads(l)["id"] for l in mine.read_text().splitlines()] == ["r1", "r2", "r3"]
+
+    # the host's log unreadable: the fetch still lands, and says the pull is to try again
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    theirs.unlink()
+    theirs.mkdir()
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
+    subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "pulled" not in fetched.stdout + fetched.stderr
 
 
 def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: Path) -> None:
@@ -559,15 +1055,7 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     the code repo's slot and no ticket branch can be cut. The agent repo is on a branch of its own
     name, as a project's is."""
     git(toy / "agent", "branch", "-m", "plans")
-    remote = toy.parent / "remote"
-    remote.mkdir()
-    fakes = toy.parent / "fakes"
-    fakes.mkdir()
-    for name, body in (("ssh", FAKE_SSH), ("scp", FAKE_SCP), ("claude", "#!/bin/sh\nexit 1\n")):
-        (fakes / name).write_text(body)
-        (fakes / name).chmod(0o755)
-    env = environment(toy, REMOTE_HOME=str(remote))
-    env["PATH"] = f"{fakes}:{env['PATH']}"
+    remote, env = fake_remote(toy)
     run(toy, "claim", "warm-preset")
 
     said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
@@ -581,6 +1069,95 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     worktree = remote / "repos" / "dispatch" / "lamp-warm-preset"
     assert git(worktree, "branch", "--show-current").strip() == "ticket/warm-preset"
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
+
+
+def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, staged: Path) -> None:
+    """`report-checked-before-commit`: a worker commits its report in the host's agent repo, and
+    that repo's commit hook refuses a report the import would."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode == 0, said.stdout + said.stderr
+    installed = remote / "repos" / "dispatch" / "lamp-agent.git" / "hooks" / "pre-commit"
+    assert installed.read_text() == (SKILL.parent / "tracker" / "pre-commit").read_text()
+    assert os.access(installed, os.X_OK)
+
+
+def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, staged: Path) -> None:
+    """On a local host the agent repo is the user's own checkout, and a hook in it stays as it was."""
+    theirs = toy / "agent" / ".git" / "hooks" / "pre-commit"
+    theirs.write_text("#!/bin/sh\nexit 0\n")
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode == 0, said.stdout + said.stderr
+    assert theirs.read_text() == "#!/bin/sh\nexit 0\n"
+    assert "is not the tracker's" in said.stderr, said.stderr
+
+
+def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
+    """`dispatch --help` names `dispatch ctl --help` as dispatch-ctl's reference, and the skill
+    renders it on load wherever the session is."""
+    first = (SKILL / "dispatch-ctl").read_text().splitlines()[1].removeprefix("# ")
+    for args in (["ctl", "--help"], ["ctl"]):
+        said = subprocess.run([str(DISPATCH), *args], cwd=tmp_path, capture_output=True, text=True)
+        assert said.returncode == 0, said.stderr
+        assert said.stdout.startswith(first), said.stdout
+
+
+def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
+    """DISPATCH_RUNNER set on the orchestrator reaches a remote host and is the one its worker runs.
+    It is renamed after the ticket whatever its own name: this one is called `manifest`, the file
+    on the host that records every run. Given relative to a subdirectory the spawn runs in, which
+    dispatch leaves for the repo's root before it reads anything."""
+    (toy / "docs").mkdir()
+    (toy.parent / "runners").mkdir()
+    (toy.parent / "runners" / "manifest").write_text(RUNNER.replace("stub: built", "replacement: built"))
+    remote, env = fake_remote(toy, DISPATCH_RUNNER="../../runners/manifest")
+    run(toy, "claim", "warm-preset")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env, cwd=toy / "docs")
+
+    assert said.returncode == 0, said.stdout + said.stderr
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    waited(toy, state)
+    (log,) = state.glob("dispatch-lamp-warm-preset-*.log")
+    assert "replacement: built warm-preset" in log.read_text()
+    record = (state / "manifest").read_text().split("\t")
+    assert record[0] == "dispatch-lamp-warm-preset", record
+    assert record[-1].strip() == f"{state}/runner-warm-preset", record
+
+
+def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path, staged: Path) -> None:
+    """A resume hands the worker its old session id, which only the harness that made it knows."""
+    replacement = toy.parent / "replacement.sh"
+    replacement.write_text(RUNNER.replace("printf 'stub: built %s\\n' \"$slug\"", "printf 'replacement: built %s at %s\\n' \"$slug\" \"${DISPATCH_EFFORT:-unset}\""))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, DISPATCH_RUNNER=str(replacement))).returncode == 0
+    state = waited(toy).parent
+    before = set(state.glob("*.log"))
+
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=toy, input="continue\n", text=True, check=True,
+                   env=environment(toy))
+    resumed = subprocess.run([str(staged), "ctl", "--host", "local", "resume", "warm-preset", "sonnet", "--effort", "low"],
+                             cwd=toy, capture_output=True, text=True, timeout=180, env=environment(toy))
+    assert resumed.returncode == 0, resumed.stderr
+    assert "effort=low" in resumed.stdout, resumed.stdout
+    (log,) = set(state.glob("*.log")) - before
+    for _ in range(60):
+        if "at low" in log.read_text():
+            break
+        time.sleep(0.5)
+    assert "replacement: built warm-preset at low" in log.read_text(), "a resume takes --effort as a spawn does"
+
+
+def test_a_runner_that_is_no_file_stops_the_spawn_before_the_host_is_touched(toy: Path, staged: Path) -> None:
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n",
+                 env=environment(toy, DISPATCH_RUNNER="no-such-runner.sh"))
+    assert said.returncode != 0
+    assert "no-such-runner.sh is not a file" in said.stderr, said.stderr
+    assert not (toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").exists()
 
 
 if __name__ == "__main__":

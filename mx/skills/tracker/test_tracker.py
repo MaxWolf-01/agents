@@ -10,7 +10,8 @@ worker contract (`mx/skills/dispatch/worker-prompt.md`: the questions, the assum
 transcribed here rather than imported, so a rule the command reads differently fails.
 
 Under "properties" at the end sit the executable Properties of
-`agent/tickets/ticket-file-contract.md`, P1 to P4 and P6; that ticket is their oracle. The corpus
+`agent/tickets/ticket-file-contract.md`, P1 to P4 and P6, and P2 and P3 of
+`agent/tickets/speculative-first.md`; those tickets are their oracle. The corpus
 beside this file is the board-orients feature converted to the one-ticket model by hand: real ticket
 files, the shapes their writers actually wrote.
 """
@@ -285,6 +286,7 @@ def test_a_tag_runs_as_one_sequence_across_the_questions_and_the_closing_comment
 @pytest.mark.parametrize("written, refused", [
     ({"kind": "build"}, "`kind` is no ticket field"),
     ({"needs-user": "maybe"}, "`needs-user` is true or false"),
+    ({"hinge": "yes please"}, "`hinge` is true or false"),
     ({"parent": "one-flow"}, "a ticket is not its own parent ticket"),
     ({"gh": "[acme/backend]"}, "a reference is `owner/repo#number`"),
     ({"diff": "[main..feature]"}, "a round lands as `code@<sha>..<sha>`"),
@@ -692,7 +694,8 @@ def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: 
     assert said.code == 1 and "already in review" in said.err, said.said
 
 
-@pytest.mark.parametrize("broken, said, refused", [
+# (the report, what is wrong with it, what the refusal says), one per rule a report is held to
+BROKEN_REPORTS = [
     ("## Comments\n\nlanded.\n\n## Findings\n\nthree.\n", "a heading a ticket takes nothing from", "`## Findings` is no part of a report"),
     ("landed.\n", "words under no heading", "this text is under no heading"),
     ("## Questions\n\n- [D3] **Warm?** Amber.\n", "no closing comment", "no `## Comments` section"),
@@ -702,7 +705,10 @@ def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: 
      "two questions under one tag", "tag D1 is already taken"),
     ("## Comments\n\n- [D1] Assumptions\n  - A1 `x.py:1`: one.\n  - A1 `y.py:2`: two.\n",
      "two assumptions under one id", "assumption A1 is already taken"),
-])
+]
+
+
+@pytest.mark.parametrize("broken, said, refused", BROKEN_REPORTS)
 def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_and_line(
     tickets: Path, repo: Path, tmp_path: Path, broken: str, said: str, refused: str
 ) -> None:
@@ -733,6 +739,94 @@ def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo
     said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
     assert said.code == 1
     assert "open \u2192 review" in said.err and "a build starts from a claim" in said.err, said.said
+
+
+# ---- the report, at the worker's commit ------------------------------------
+# The commit hook holds a staged report to what the import would refuse of it, so a worker's commit
+# of one is refused while the worker is still there to fix it. The import is the oracle: whatever it
+# refuses of a report, the check refuses at the same line.
+
+
+def worker_on(split: Path, slug: str, body: str = "") -> Path:
+    """The agent worktree a worker holds on `ticket/<slug>`, cut after the orchestrator claimed the
+    ticket, as dispatch cuts one."""
+    ticket(split / "agent" / "tickets", slug, body, status="claimed")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", f"claim {slug}")
+    worktree = split.parent / f"lamp-{slug}"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", f"ticket/{slug}")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", f"ticket/{slug}")
+    return worktree / "agent"
+
+
+def staged_report(agent: Path, slug: str, text: str) -> Path:
+    report = agent / "show" / slug / "report.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(text)
+    git(agent, "add", str(report.relative_to(agent)))
+    return report
+
+
+def refused_at(said: str, file: str) -> list[tuple[str, str]]:
+    """Every (line, message) a run refused in the file whose path ends in `file`."""
+    return re.findall(rf"\S*{re.escape(file)}:(\d+): ([^\n]*)", said)
+
+
+@pytest.mark.parametrize("broken, said, refused", BROKEN_REPORTS)
+def test_a_report_the_import_refuses_is_refused_at_the_commit_at_the_same_line(
+    split: Path, broken: str, said: str, refused: str
+) -> None:
+    agent = worker_on(split, "warm-preset")
+    report = staged_report(agent, "warm-preset", broken)
+    checked = run(agent, "check")
+    imported = run(split, "import", "warm-preset", str(report))
+    assert checked.code == 1 and imported.code == 1, said
+    assert refused in checked.out, checked.said
+    assert refused_at(checked.out, str(report)) == refused_at(imported.err, str(report)), said
+
+
+def test_a_report_whose_tags_its_ticket_already_holds_is_refused_at_the_commit_at_the_lines_they_land_on(split: Path) -> None:
+    """The import's second reading: the report is fine alone and breaks the ticket it lands in."""
+    agent = worker_on(split, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n")
+    report = staged_report(agent, "warm-preset", REPORT)
+    checked = run(agent, "check")
+    imported = run(split, "import", "warm-preset", str(report))
+    assert checked.code == 1 and "tag D3 is already taken" in checked.out, checked.said
+    assert f"{report}: this report would leave the ticket" in checked.out
+    assert refused_at(checked.out, "tickets/warm-preset.md") == refused_at(imported.err, "tickets/warm-preset.md")
+
+
+def test_the_commit_hook_refuses_a_workers_report_the_import_would_and_commits_one_it_takes(split: Path) -> None:
+    """Both acceptance criteria of `report-checked-before-commit`, through git: the worker's own
+    commit, in the agent worktree, under the hook the agent repo has."""
+    assert run(split / "agent", "hook").code == 0
+    agent = worker_on(split, "warm-preset")
+    on_path = {**os.environ, "PATH": f"{Path(tr.__file__).parents[2] / 'bin'}:{os.environ['PATH']}"}
+    commit = lambda: subprocess.run(["git", "-C", str(agent), "commit", "-m", "the report"],  # noqa: E731
+                                    capture_output=True, text=True, env=on_path)
+
+    report = staged_report(agent, "warm-preset", "## Comments\n\nlanded, as #P2 asks.\n")
+    blocked = commit()
+    assert blocked.returncode != 0
+    assert f"{report}:3: `#P2` names no ticket" in blocked.stdout + blocked.stderr, blocked.stderr
+
+    staged_report(agent, "warm-preset", REPORT)
+    landed = commit()
+    assert landed.returncode == 0, landed.stdout + landed.stderr
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == ["show/warm-preset/report.md"]
+
+
+def test_a_report_its_ticket_already_carries_is_not_read_into_it_again(tickets: Path, repo: Path) -> None:
+    """A merge of the worker's branch that stopped on a conflict is concluded by a commit, which
+    runs the hook with the report staged; by then the import has put the report in its ticket, and
+    reading it in a second time would refuse every tag it carries."""
+    ticket(tickets, "warm-preset", status="claimed")
+    report = repo / "agent" / "show" / "warm-preset" / "report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(REPORT)
+    assert run(repo, "import", "warm-preset", str(report)).code == 0
+    git(repo, "add", "-A")
+    assert run(repo, "check") == Run(0, "", "")
 
 
 # ---- the corpus ------------------------------------------------------------
@@ -878,7 +972,7 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
 # What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
 # start of a line, a `## ` heading, a `[Dn]` question, a `- A<n>` assumption, an `NN-` file name.
 SECOND_PARSER = re.compile(
-    r"\^(?:status|parent|blocked-by|needs-user|priority|size|diff|gh):"
+    r"\^(?:status|parent|blocked-by|needs-user|hinge|priority|size|diff|gh):"
     r"|\^##\\?s|\^## |\[D\\d|- A\\d|\[0-9\]\[0-9\]-|\\d\\d-"
 )
 PLUGIN = Path(tr.__file__).parents[2]
@@ -1037,6 +1131,152 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
     assert run(repo, "get", "speed-up-tests", "blocked-by").code == 1, "the edge onto a retired ticket goes with it"
     assert "M  agent/tickets/speed-up-tests.md" in git(repo, "status", "--short"), "staged with the rest"
     assert run(repo, "check", str(tickets / "speed-up-tests.md")).code == 0
+
+
+# The executable Properties of agent/tickets/speculative-first.md, P2 and P3, over one parent ticket
+# ruled whole: `one-flow`, whose branch is cut from the branch above it, and its leaf children, each
+# cut from the parent's branch and merged back into it or not. A parent's branch is named by its slug
+# alone and a leaf's `ticket/<slug>`, as `/mx:dispatch` cuts them. The branch above the parent is
+# main, or, where `one-flow` is itself a child, its own parent `whole-flow`'s branch, cut from main.
+# The commands run in the checkout of main, or of the parent's branch. Beside the tree sits another
+# feature's leaf, `other-flow-0`, in review and merged into its own parent's branch: a blocker that
+# is no sibling.
+
+
+@dataclass(frozen=True)
+class Leaf:
+    """A leaf child of `one-flow`, as far as the whole-parent rules read one."""
+
+    slug: str
+    hinge: bool
+    status: str
+    merged: bool  # its ticket branch merged into the parent's branch
+    blocked_by: tuple[str, ...] = ()
+
+
+@st.composite
+def leaves(draw: st.DrawFn, statuses: tuple[str, ...]) -> list[Leaf]:
+    """A parent's leaves, each blocked by siblings drawn before it, so the edges never close a
+    cycle, or by `other-flow-0`. A leaf has a branch once it is claimed; it is merged into the
+    parent's branch only once it passed the orchestrator's read (`review`) or was accepted (`done`).
+    A leaf is `done` under a parent still being built only as a hinge, the one child ruled alone."""
+    drawn: list[Leaf] = []
+    for n in range(draw(st.integers(min_value=1, max_value=4))):
+        status = draw(st.sampled_from(statuses))
+        merged = status == "done" or (status == "review" and draw(st.booleans()))
+        before = tuple(sorted(draw(st.sets(st.sampled_from(["other-flow-0", *(leaf.slug for leaf in drawn)])))))
+        drawn.append(Leaf(f"one-flow-{n}", status == "done" or draw(st.booleans()), status, merged, before))
+    return drawn
+
+
+def grown(repo: Path, tickets: Path, tree: list[Leaf], parent: str, up: bool, nested: bool = False,
+          where: str = "main") -> None:
+    """The tree on the tracker and in git, from an emptied tracker and main back at its first commit,
+    checked out at `where`. `up` is the parent's branch merged into the branch above it. Every commit
+    carries main's one tree, so no branch moves a file under the working tree."""
+    git(repo, "symbolic-ref", "HEAD", "refs/heads/main")
+    for ref in git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/ticket/", "refs/heads/one-flow",
+                   "refs/heads/whole-flow", "refs/heads/other-flow").split():
+        git(repo, "update-ref", "-d", ref)
+    first = git(repo, "rev-list", "--max-parents=0", "HEAD").strip()
+    git(repo, "update-ref", "refs/heads/main", first)
+    built = lambda what, *parents: git(  # noqa: E731
+        repo, "commit-tree", f"{first}^{{tree}}", *(arg for sha in parents for arg in ("-p", sha)), "-m", what
+    ).strip()
+
+    above, base = ("whole-flow", built("whole-flow: built", first)) if nested else ("main", first)
+    git(repo, "update-ref", f"refs/heads/{above}", base)
+    cut = tip = built("one-flow: built", base)
+    for leaf in (leaf for leaf in tree if leaf.status != "open"):
+        own = built(f"{leaf.slug}: built", cut)
+        git(repo, "update-ref", f"refs/heads/ticket/{leaf.slug}", own)
+        if leaf.merged:
+            tip = built(f"one-flow: {leaf.slug} merged", tip, own)
+    git(repo, "update-ref", "refs/heads/one-flow", tip)
+    if up:
+        git(repo, "update-ref", f"refs/heads/{above}", built(f"{above}: one-flow merged", base, tip))
+    git(repo, "symbolic-ref", "HEAD", f"refs/heads/{where}")
+    beside = built("other-flow-0: built", other := built("other-flow: built", first))
+    git(repo, "update-ref", "refs/heads/ticket/other-flow-0", beside)
+    git(repo, "update-ref", "refs/heads/other-flow", built("other-flow: other-flow-0 merged", other, beside))
+
+    ticket(fresh(tickets), "other-flow", status="claimed")
+    ticket(tickets, "other-flow-0", status="review", parent="other-flow")
+    if nested:
+        ticket(tickets, "whole-flow", status="claimed")
+    ticket(tickets, "one-flow", status=parent, parent="whole-flow" if nested else None)
+    for leaf in tree:
+        ticket(tickets, leaf.slug, status=leaf.status, parent="one-flow", hinge="true" if leaf.hinge else None,
+               **{"blocked-by": f"[{', '.join(leaf.blocked_by)}]" if leaf.blocked_by else None})
+
+
+def accepted(tree: list[Leaf], up: bool, nested: bool = False, where: str = "main") -> dict[str, bool]:
+    """`speculative-first#P2`'s rule, from The states: `done` is accepted exactly where the ticket's
+    tip has reached the branch its accept merges into. A hinge's is the parent's branch, which it
+    reached once merged; any other leaf's is the branch above the parent, which it reached once
+    merged into the parent's branch and that branch merged up; the parent's is the branch above.
+    The parent is done only once every child is, which its accept makes of each child `done` or
+    merged into its branch; a child in `review` not merged is one the orchestrator has not passed,
+    and it refuses the parent's accept while it stands.
+
+    `done` is written where the accept merges into, never on the branch merged. Run on the parent's
+    branch, that is no branch above it, except the one a parent that is itself a child names by
+    its own parent's slug: there only a hinge, and a leaf that has reached `whole-flow`, is done."""
+    whole = all(leaf.status == "done" or leaf.merged for leaf in tree)
+    above_known = nested or where != "one-flow"
+    return {
+        "one-flow": up and whole and where != "one-flow",
+        **{leaf.slug: leaf.merged and (leaf.hinge or (up and above_known)) for leaf in tree},
+    }
+
+
+def startable(tree: list[Leaf]) -> set[str]:
+    """`speculative-first#P3`'s rule: a blocker holds unless it is `done`, or it is a sibling in
+    `review` that is no hinge and is already merged into the parent's branch they share. Every
+    leaf of the tree shares `one-flow`; `other-flow-0` shares no parent with any of them."""
+    by_slug = {leaf.slug: leaf for leaf in tree}
+    frees = lambda one: one.status == "done" or (one.status == "review" and not one.hinge and one.merged)  # noqa: E731
+    return {leaf.slug for leaf in tree
+            if leaf.status == "open" and all(ref in by_slug and frees(by_slug[ref]) for ref in leaf.blocked_by)}
+
+
+@given(tree=leaves(("review",)), up=st.booleans(), nested=st.booleans(), where=st.sampled_from(["main", "one-flow"]))
+@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(
+    tickets: Path, repo: Path, tree: list[Leaf], up: bool, nested: bool, where: str
+) -> None:
+    """`speculative-first#P2` at the command line. Every ticket of the tree waits in review, and
+    `done` is attempted on each alone, the files put back between attempts. An accept may write
+    `done` on other tickets of the tree too, as the parent's does on its children, but only on one
+    whose tip has reached the branch its own accept merges into. The parent is a top-level ticket
+    or a child of `whole-flow`, and the command runs from main or from the parent's own branch,
+    which is where the orchestrator writes a leaf's review."""
+    grown(repo, tickets, tree, "review", up, nested, where)
+    written = {path: path.read_text() for path in tickets.glob("*.md")}
+    reaching = accepted(tree, up, nested, where)
+    case = (tree, up, nested, where)
+    for slug, reached in reaching.items():
+        said = run(repo, "set", slug, "status=done")
+        assert (said.code == 0) is reached, (slug, case, said.said)
+        assert run(repo, "get", slug, "status").out.strip() == ("done" if reached else "review"), (slug, case)
+        done = {other for other in reaching if run(repo, "get", other, "status").out.strip() == "done"}
+        assert done <= {other for other, there in reaching.items() if there}, (slug, case, done)
+        for path, text in written.items():
+            path.write_text(text)
+
+
+@given(tree=leaves(("open", "claimed", "review", "done")))
+@settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged_and_no_hinge(
+    tickets: Path, repo: Path, tree: list[Leaf]
+) -> None:
+    """`speculative-first#P3` over `tracker frontier`. The parent is being built, so it is claimed
+    and off the frontier whatever its leaves say."""
+    grown(repo, tickets, tree, "claimed", up=False)
+    said = run(repo, "frontier")
+    assert said.code == 0, said.said
+    ready, _, _ = said.out.partition("waiting\n")
+    assert {line.split()[0] for line in ready.splitlines()} == startable(tree), (tree, said.out)
 
 
 def test_retiring_is_refused_while_a_ticket_that_stays_cites_a_property_of_one_leaving(tickets: Path, repo: Path) -> None:
@@ -1343,6 +1583,39 @@ def test_one_repo_seen_from_a_worktree_is_still_one_repo(tickets: Path, repo: Pa
     assert run(repo, "get", "one-flow", "status").out == "done\n"
 
 
+def test_a_sibling_built_in_the_agent_repo_alone_frees_nothing_until_it_merges_there(split: Path) -> None:
+    """A research child builds in the agent repo only, so its code branch never moves off the
+    parent's branch and reads as merged into it; `speculative-first#P3` still holds its dependent
+    until the agent side has merged, and the parent's accept waits for it the same way."""
+    tickets, agent = split / "agent" / "tickets", split / "agent"
+    ticket(tickets, "one-flow", status="review")
+    ticket(tickets, "ask-around", status="review", parent="one-flow")
+    ticket(tickets, "map-columns", parent="one-flow", **{"blocked-by": "[ask-around]"})
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tree")
+    git(split, "branch", "one-flow")
+    git(split, "branch", "ticket/ask-around", "one-flow")
+    git(agent, "checkout", "-q", "-b", "ticket/ask-around")
+    (agent / "research").mkdir()
+    (agent / "research" / "ask-around.md").write_text("what they said\n")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the research")
+    git(agent, "checkout", "-q", "main")
+
+    def ready() -> str:
+        said = run(split, "frontier")
+        assert said.code == 0, said.said
+        return said.out.partition("waiting\n")[0]
+
+    assert "map-columns" not in ready()
+    assert "on ask-around (review)" in run(split, "frontier").out.partition("waiting\n")[2]
+    git(split, "merge", "-q", "--no-ff", "-m", "one-flow up", "one-flow")
+    assert "ask-around, map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+    git(agent, "merge", "-q", "--no-ff", "-m", "ask-around read", "ticket/ask-around")
+    assert "map-columns" in ready()
+    assert "refused: one-flow review → done: map-columns neither done" in run(split, "set", "one-flow", "status=done").err
+
+
 def test_done_follows_the_ticket_branch_of_both_repos(split: Path) -> None:
     """A round lands in two repos, and `done` is the accept of the whole of it."""
     tickets = split / "agent" / "tickets"
@@ -1433,10 +1706,10 @@ def test_every_subcommand_is_in_the_help_the_interface_is_read_from(repo: Path) 
 def test_filing_writes_every_field_it_was_given(tickets: Path, repo: Path) -> None:
     ticket(tickets, "one-flow")
     run(repo, "new", "map-columns", "--priority", "3", "--size", "XL", "--status", "open",
-        "--needs-user", "--blocked-by", "one-flow")
+        "--needs-user", "--hinge", "--blocked-by", "one-flow")
     read = json.loads(run(repo, "data", "map-columns").out)["tickets"][0]
     assert (read["status"], read["priority"], read["size"]) == ("open", 3, "XL")
-    assert read["needs-user"] is True and read["blocked-by"] == ["one-flow"]
+    assert read["needs-user"] is True and read["hinge"] is True and read["blocked-by"] == ["one-flow"]
 
 
 def test_a_list_field_is_printed_one_entry_per_line(tickets: Path, repo: Path) -> None:

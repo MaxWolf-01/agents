@@ -46,12 +46,14 @@ The exception is a radial layout. Spokes running from a ring of nodes into a sha
 
 **Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
-**Lint the render, then look at it, before showing anyone.** `render-lint figure.html --crops /tmp/lint` measures every text against its box after fonts load and lists what escapes, overlaps, crowds or a box cuts off, with a PNG per finding; a 5px overflow is invisible in a page-sized screenshot and plain in its crop. Zero fatal findings is the floor. Then the eye, for what geometry cannot judge (rhythm, weight, whether it explains the thing):
+**Lint the render, then look at it, before showing anyone.** `render-lint figure.html --crops /tmp/lint` measures every text against its box once the page has stopped moving and lists what escapes, overlaps, crowds or a box cuts off, with a PNG per finding; a 5px overflow is invisible in a page-sized screenshot and plain in its crop. Zero fatal findings is the floor, and a figure it calls unmeasurable is one that never comes to rest, which is the figure to fix rather than a finding to chase. `render-lint --help` is the reference for the kinds and the exit codes. Then the eye, for what geometry cannot judge (rhythm, weight, whether it explains the thing):
 
 ```bash
-chromium --headless --disable-gpu --hide-scrollbars --window-size=1400,900 \
+chromium --headless --mx-run="${MX_RUN:-$PWD}" --disable-gpu --hide-scrollbars --window-size=1400,900 \
   --screenshot=/abs/path/out.png /abs/path/figure.html
 ```
+
+`--mx-run` names the run the browser belongs to, so `browsers kill` takes it when it hangs.
 
 Then Read the PNG and fix what you see: overlaps, collisions, drift, dead space, a label swallowed by a box. Expect to go round two or three times. Done means you have looked at it and it both explains the thing and looks good.
 

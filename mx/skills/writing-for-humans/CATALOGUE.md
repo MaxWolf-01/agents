@@ -77,6 +77,8 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `36` `both` **Meta-commentary about the text itself.** Sentences about how it is structured or how it follows a style: "To keep this brief", "In short, as requested", "Here's a quick summary of what I did", "Hint:", "Plot twist:", "Spoiler:", "The rest of this essay explains...", "Let me walk you through...", "In this section, we'll...", "As we'll see...", "You already know this, but", "But that's another post". Delete; the reader sees the structure.
 
+- `53` `chat` **A thing to open, named but not reachable.** A reply that sends the reader to a ticket, a file, a draft or a page by its name alone ("the draft is in `model-effort-defaults`", "see the review page") leaves them to find it. Give its absolute path on this machine or its URL, one the reader can copy as it stands, or open it for them and say so.
+
 - `51` `artifact` **Unfilled placeholders.** "[Your Name]", "2025-XX-XX", "PASTE_URL_HERE": template blanks that shipped. Sweep for brackets and XX before delivering.
 
 ## Filler

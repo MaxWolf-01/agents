@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# List or kill the headless browsers one run launched, and no other run's.
+# Usage: browsers [list|kill] [run]
+#   list  (the default) one line per browser: its pid and how long it has run
+#   kill  SIGKILL each browser with everything it started, and name each one killed
+#   run   whose browsers: $MX_RUN when set, else this directory
+# A browser belongs to the run named in its `--mx-run=<run>` argument, which every browser mx
+# launches carries, and one launched by hand carries by being given it. <run> is $MX_RUN where the
+# launch saw one, which a dispatch runner sets to its run id for everything its worker starts, else
+# the directory the launch ran in. A browser with no such argument belongs to no run and is never
+# listed here.
+# Exit 0 when the run has a browser, 1 when it has none, 2 on a usage error.
+
+set -euo pipefail
+
+usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
+case ${1:-} in
+    -h|--help) usage; exit 0 ;;
+    ''|list|kill) ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+action=${1:-list}
+run=${2:-${MX_RUN:-$(pwd -P)}}
+# The browser's own process only: its executable names a Chromium, so a shell whose command line
+# mentions the same run (the one this runs in, say) is never matched.
+escaped=$(printf '%s' "$run" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+pids=$(pgrep -f -- "^[^ ]*(chrom|headless_shell)[^ ]* .*--mx-run=$escaped( |\$)" || true)
+
+if [ -z "$pids" ]; then
+    echo "no browser carries --mx-run=$run" >&2
+    exit 1
+fi
+if [ "$action" = list ]; then
+    ps -o pid=,etime= -p "${pids//$'\n'/,}"
+    exit 0
+fi
+for pid in $pids; do
+    # A launcher that detaches its browser (Playwright and Puppeteer do) makes it a group leader,
+    # and its renderers, zygotes and crash handler all go with that group. A browser that leads no
+    # group shares one with whatever launched it, so it is killed alone.
+    if [ "$(ps -o pgid= -p "$pid" | tr -d ' ')" = "$pid" ]; then
+        kill -KILL -- "-$pid" 2> /dev/null || true
+    else
+        kill -KILL "$pid" 2> /dev/null || true
+    fi
+    echo "killed $pid"
+done
