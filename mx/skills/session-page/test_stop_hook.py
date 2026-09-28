@@ -17,6 +17,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -31,8 +32,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import session_page
 import stop_hook
 import turn_review
-from session_page import PAGE
-from stop_hook import SESSIONS, decide, session_directory
+from session_page import PAGE, SESSIONS, render_session
+from stop_hook import decide
+from test_reading import messages_of
 
 # the sessions the hook leaves alone are marked in the environment, and the suite runs in one of
 # them whenever a dispatched worker verifies its branch
@@ -47,8 +49,8 @@ def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     for marker in UNATTENDED:
         monkeypatch.delenv(marker, raising=False)
     monkeypatch.setattr(turn_review, "review", lambda system, prompt: [])
-    monkeypatch.setattr(session_page, "LOG", tmp_path / "session-page.jsonl")
-    return session_page.LOG
+    monkeypatch.setattr(turn_review, "LOG", tmp_path / "session-page.jsonl")
+    return turn_review.LOG
 
 
 @pytest.fixture(autouse=True)
@@ -105,21 +107,40 @@ def git(where: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(where), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
 
 
-def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in(tmp_path: Path) -> None:
+def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in(
+    worked_example: Path, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, transcript: Path,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
     """Where the Decisions put a session's records, pinned as literals: `agent/sessions/<id>` in
     the main checkout, which holds the agent repo, from the code repo's main checkout, from a linked
-    worktree of it, which holds no `agent/`, and from inside the agent repo. A directory in no
-    project with an agent repo has none."""
+    worktree of it, which holds no `agent/`, and from inside the agent repo. The command the show
+    skill has the agent run prints that directory from each, and the hook renders the page there.
+    A directory in no project with an agent repo has none, and the command says so."""
     main, worktree = tmp_path / "ledger", tmp_path / "ledger-map-columns"
     (main / "agent" / "tickets").mkdir(parents=True)
     git(main, "init", "-q")
     git(main, "commit", "-q", "--allow-empty", "-m", "start")
     git(main, "worktree", "add", "-q", str(worktree))
     git(main / "agent", "init", "-q")
+    directory = tmp_path / "ledger/agent/sessions" / worked_example.name
+    shutil.copytree(worked_example, directory)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", worked_example.name)
+    monkeypatch.setattr(sys, "argv", ["session-page"])
     for cwd in (main, worktree, main / "agent" / "tickets"):
-        assert session_directory(cwd, "s1") == tmp_path / "ledger/agent/sessions/s1", cwd
+        monkeypatch.chdir(cwd)
+        session_page.main()
+        assert capsys.readouterr().out == f"{directory}\n", cwd
+        (directory / PAGE).unlink(missing_ok=True)
+        run(payload(directory, transcript) | {"cwd": str(cwd)})
+        assert (directory / PAGE).is_file(), cwd
     assert not (worktree / "agent").exists()
-    assert session_directory(tmp_path, "s1") is None
+    monkeypatch.chdir(tmp_path_factory.mktemp("loose"))
+    with pytest.raises(SystemExit, match="in no project with an agent repo"):
+        session_page.main()
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    with pytest.raises(SystemExit, match="no session id"):
+        session_page.main()
 
 
 # ---- properties -------------------------------------------------------------
@@ -154,6 +175,7 @@ def test_a_session_that_never_needed_a_page_writes_nothing_under_the_sessions_di
 # two rounds back, and a hook that read only the newest record would let it through. Each case is
 # what the record says and the line the hook names, None where the shape says only that something
 # is missing and not where.
+ROUND_3 = "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n"  # lines 1 to 6; the section's first item is line 9
 UNPARSEABLE = {
     "frontmatter that is not YAML": (
         "04.md", "---\ndate: 2026-09-23\nanswered: Q1: a\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 3),
@@ -166,6 +188,23 @@ UNPARSEABLE = {
     "no headline": ("04.md", "---\ndate: 2026-09-23\n---\n\n## Details\n\nThe round.\n", None),
     "a record from an earlier turn": (
         "03.md", "---\ndate: 2026-09-23\n---\n\n# Round 2\n\n## Notes\n\nA fourth section.\n", 7),
+    "a question with one option": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n", 9),
+    "a question with no pick": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review.\n  - (b) None.\n", 9),
+    "a question with two picks": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n"
+                 "  - (b) None. *my pick*\n", 9),
+    "an option letter twice": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (a) None.\n", 9),
+    "a second Why": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (b) None.\n"
+                 "  - Why: seconds.\n  - Why: again.\n", 13),
+    "a question an earlier turn asked": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
+    "a link from the filesystem root": ("04.md", f"{ROUND_3}## Links\n\n- [The round](/home/max/round.html): it\n", 9),
+    "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
+    "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
 }
 
 
@@ -373,7 +412,7 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     assert capsys.readouterr().out == ""
     assert "Round 4" in (worked_example / PAGE).read_text()
     with_write(unrecorded, "Write", record)
-    assert session_page.read_session(worked_example, unrecorded).turns[-1].messages == (SPOKEN_AFTER["message"]["content"],)
+    assert messages_of(render_session(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
 
 
 def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_one(
@@ -473,6 +512,8 @@ def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     failing: Callable[[str, str], list[dict]], worked_example: Path, transcript: Path, stale_page: str,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
+    """A failed review is the turn's review: the stop another hook continued renders without
+    calling the reviewer again."""
     monkeypatch.setattr(turn_review, "review", failing)
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
@@ -480,6 +521,10 @@ def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     assert (worked_example / PAGE).read_text() != stale_page
     (entry,) = logged(attended, "decision")
     assert (entry["session_id"], entry["decision"]) == (worked_example.name, "failed")
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    run(payload(worked_example, transcript, stop_hook_active=True))
+    assert capsys.readouterr().out == ""
+    assert [entry["decision"] for entry in logged(attended, "decision")] == ["failed", "re-entry"]
 
 
 def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed_once(
@@ -501,6 +546,87 @@ def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed
     run(payload(worked_example, unrecorded, stop_hook_active=True))
     assert capsys.readouterr().out == ""
     assert "overflow" in (worked_example / PAGE).read_text()
+
+
+# ---- which turn a record and a review belong to -----------------------------
+
+# Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time: a
+# background task finishing and a subagent handing its report back.
+TASK_DONE = {"type": "user", "origin": {"kind": "task-notification"}, "timestamp": SPOKEN_AFTER["timestamp"],
+             "message": {"role": "user", "content": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"}}
+HANDED_BACK = {"type": "user", "origin": {"kind": "peer", "from": "a1", "handback": True}, "timestamp": SPOKEN_AFTER["timestamp"],
+               "message": {"role": "user", "content": 'Another Claude session sent a message:\n<agent-message from="a1">\n'
+                                                      "[Subagent hand-back] The figure is built.\n</agent-message>"}}
+TURN_STARTS = {"a finished task": TASK_DONE, "a subagent's hand-back": HANDED_BACK}
+# A message the user queues while the turn runs, after it wrote its record at 01:36 (with_write).
+QUEUED = {"type": "attachment", "timestamp": "2026-09-23T01:37:00.000Z",
+          "attachment": {"type": "queued_command", "prompt": "And the third bank?"}}
+PIVOTAL_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank is a pivotal addition.\n"
+
+
+def appended(transcript: Path, out: Path, *entries: dict) -> Path:
+    out.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
+    return out
+
+
+@pytest.mark.parametrize("start", TURN_STARTS.values(), ids=TURN_STARTS)
+def test_a_turn_the_user_did_not_start_still_sends_an_answer_in_the_chat_back(
+    start: dict, worked_example: Path, transcript: Path, tmp_path: Path,
+) -> None:
+    """This turn runs from the prompt that started it, whoever sent it: record 04, written in the
+    turn before, is no record of a turn a finished task or a hand-back started, so its long reply
+    goes back to be moved onto 05."""
+    for record in (worked_example / "turns").iterdir():
+        os.utime(record, (BEFORE_IT, BEFORE_IT))
+    decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", start), reply=LONG), worked_example)
+    assert (decision.verb, decision.why) == ("send back", "answer in the chat")
+    assert str(worked_example / "turns" / "05.md") in decision.reason
+
+
+@pytest.mark.parametrize("start", [SPOKEN_AFTER, *TURN_STARTS.values()], ids=["the user's prompt", *TURN_STARTS])
+def test_a_record_a_later_turn_writes_is_reviewed_though_an_earlier_turns_was(
+    start: dict, worked_example: Path, transcript: Path, tmp_path: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
+) -> None:
+    """The review runs once per turn, not once per session: record 04's review, logged as its own
+    turn ended, leaves the record the next turn writes to be reviewed, whoever started that turn."""
+    attended.write_text(json.dumps({"ts": "2026-09-23T01:31:00+00:00", "session_id": worked_example.name, "decision": "clean",
+                                    "record": str(worked_example / "turns" / "04.md")}) + "\n")
+    record = worked_example / "turns" / "05.md"
+    record.write_text(PIVOTAL_05)
+    later = appended(transcript, tmp_path / "t.jsonl", start)
+    with_write(later, "Write", record)
+    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
+    run(payload(worked_example, later))
+    assert str(record) in said_back(capsys)
+
+
+def test_a_message_queued_after_the_record_was_written_leaves_it_to_be_reviewed(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A message queued mid-turn joins the turn it arrived in and starts none, so the record the
+    turn wrote before it is still this turn's."""
+    record = worked_example / "turns" / "05.md"
+    record.write_text(PIVOTAL_05)
+    with_write(unrecorded, "Write", record)
+    appended(unrecorded, unrecorded, QUEUED)
+    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
+    run(payload(worked_example, unrecorded))
+    assert str(record) in said_back(capsys)
+
+
+def test_an_old_record_the_transcript_never_writes_is_no_record_of_this_turn(
+    worked_example: Path, unrecorded: Path, tmp_path: Path,
+) -> None:
+    """Record 03, last changed before this turn began and with no Write call in the transcript, as
+    from before a /clear, is not taken for one written through the shell this turn: the long reply
+    goes back to be moved onto 05."""
+    without = tmp_path / "without-03.jsonl"
+    without.write_text("".join(line for line in unrecorded.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
+    decision = decide(payload(worked_example, without, reply=LONG), worked_example)
+    assert decision.why == "answer in the chat"
+    assert str(worked_example / "turns" / "05.md") in decision.reason and "03.md" not in decision.reason
 
 
 def test_a_turn_that_wrote_no_record_spends_no_model_call(
@@ -714,7 +840,7 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
 ) -> None:
     """The log is for diagnosis: a full disk or a read-only home still renders the page."""
     (tmp_path / "not-a-directory").write_text("")
-    monkeypatch.setattr(session_page, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
+    monkeypatch.setattr(turn_review, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert capsys.readouterr().out == ""
