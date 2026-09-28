@@ -109,7 +109,7 @@
 #            Whatever is typed into the pane while the runner runs, the pane's
 #            shell runs once the runner exits.
 #   peek     prints the last <lines> (default 100) of a worker's pane.
-#   fuzz     the repo's fuzz run, the user's to start and stop: dispatch fuzz --help
+#   fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help
 #   ps, attach and peek ask every host `worker-hosts --targets` publishes and
 #   every host this repo's runs and fuzz run name, all at once, and read
 #   every scratch dir on each, whichever repo and branch it is for. They
@@ -725,16 +725,18 @@ accept() { # <slug>
 # Usage: dispatch fuzz start [--host <host>]
 #        dispatch fuzz stop | clean | check | patch
 # The repo's fuzz run: one `make fuzz` on one worker host, against the
-# integration branch, running until it is stopped, with its Hypothesis database
-# kept beside its worktree there. Its host and the branch it fuzzes are the
-# repo's, in its git config (`dispatch.fuzz.host`, `dispatch.fuzz.branch`), so
-# every verb but the first `start` runs from any branch.
+# integration branch, with its Hypothesis database kept beside its worktree
+# there. Once the host is named, every push that moves that branch on it
+# restarts the run on the new tip, with nobody typing anything; a `local` host
+# has no such restart. The orchestrator neither starts nor stops the run: the
+# user names the host once, with the first `start`, and stops or cleans the run
+# to take the machine back. Its host and the branch it fuzzes are the repo's, in
+# its git config (`dispatch.fuzz.host`, `dispatch.fuzz.branch`), so every verb
+# but the first `start` runs from any branch.
 #   start   the first time, --host names the host, and the branch it is run on
 #           is the one fuzzed: stages the host as a spawn does, pushes that
-#           branch of both repos there, and starts the run. On a remote host,
-#           a push that moves the branch restarts the run on its new tip.
-#           Again, with no --host: the run starts there again, on the same
-#           database.
+#           branch of both repos there, and starts the run. Again, with no
+#           --host: the run starts there again, on the same database.
 #   stop    ends the run; its worktrees and database stay.
 #   clean   ends it, removes its worktrees and branches, and forgets its host,
 #           even when the host does not answer; the database stays, for the

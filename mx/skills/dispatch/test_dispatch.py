@@ -1464,7 +1464,7 @@ def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
         assert said.stdout.startswith("Usage: dispatch fuzz start")
         assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
     assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
-            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, the user's to start and stop: dispatch fuzz --help"]
+            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help"]
 
 
 def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
