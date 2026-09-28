@@ -8,7 +8,7 @@
 The directory is `agent/sessions/<session-id>/`: `session.md` and one `turns/NN.md` per turn, in
 the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
 brief and resume command, the questions no later turn answered or superseded, then the turns
-newest first, each with the user's messages it answered, read from the transcript.
+newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
 
 A record that does not parse is reported as `file:line: reason` on stderr, the exit code is 1,
 and no page is written.
@@ -26,7 +26,7 @@ import sys
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 import yaml
 from markdown_it import MarkdownIt
@@ -97,13 +97,15 @@ def read_session(directory: Path, transcript: Path) -> "Session":
     entries = read_transcript(transcript)
     written = written_at(entries, directory, turns)
     spoken = said(entries)
-    messages = pair(spoken, [written.get(t.number) for t in turns])
+    times = [written.get(t.number) for t in turns]
+    messages, peers = pair(spoken, times), bucket(sent(entries), times)
     return Session(
         id=str(front["session"]),
         repo=Path(str(front["repo"])),
         title=title,
         brief=sections.get("Brief", (0, ""))[1],
-        turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before)) for t, said_before in zip(turns, messages)),
+        turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before), sent=tuple(sent_before))
+                    for t, said_before, sent_before in zip(turns, messages, peers)),
         settled=settled,
         last_said=spoken[-1][0] if spoken else None,
     )
@@ -152,6 +154,14 @@ class Link:
 
 
 @dataclass(frozen=True)
+class Sent:
+    """A message another Claude session sent into this one."""
+
+    name: str  # the sender's `from-name`, as Claude Code labels it
+    text: str
+
+
+@dataclass(frozen=True)
 class Turn:
     """One `turns/NN.md`, with the user's messages the transcript carries for it."""
 
@@ -161,6 +171,7 @@ class Turn:
     headline: str  # the record's H1
     written: datetime | None = None  # when the transcript shows the record written, where it shows it
     messages: tuple[str, ...] = ()  # what the user said that this turn answered, whole, oldest first
+    sent: tuple[Sent, ...] = ()  # what other sessions sent in the same stretch, oldest first
     questions: tuple[Question, ...] = ()
     links: tuple[Link, ...] = ()
     details: str = ""  # the `## Details` section, as markdown
@@ -408,7 +419,12 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
 # ---- reading the transcript -------------------------------------------------
 
 # What Claude Code writes as a user entry or a queued command that the user never typed.
-NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
+NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|cross-session-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
+
+
+# How Claude Code wraps a message another session sent into this one: its attributes, its text.
+# One prompt can carry several.
+PEER = re.compile(r"<cross-session-message\b([^>]*)>\n?(.*?)(?:\n?</cross-session-message>|$)", re.S)
 
 
 def read_transcript(transcript: Path) -> list[dict]:
@@ -425,7 +441,20 @@ def read_transcript(transcript: Path) -> list[dict]:
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
     """What the user said, with when, oldest first: their own prompts and the ones they queued
     mid-turn, and none of what Claude Code writes as the user (images, task notifications, other
-    sessions' hand-backs)."""
+    sessions' hand-backs and messages)."""
+    return sorted(((when, text) for when, origin, content in prompts(entries)
+                   if origin == "human" and (text := message_text(content))), key=lambda m: m[0])
+
+
+def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
+    """What other sessions sent into this one, with when, oldest first."""
+    return sorted(((when, Sent(name(m.group(1)), m.group(2))) for when, _, content in prompts(entries)
+                   if re.match(r"\s*<cross-session-message\b", text := flat(content)) for m in PEER.finditer(text)),
+                  key=lambda s: s[0])
+
+
+def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
+    """Each user entry and queued prompt, with when, the kind of its origin and its content."""
     out = []
     for entry in entries:
         if entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary")):
@@ -436,25 +465,35 @@ def said(entries: list[dict]) -> list[tuple[datetime, str]]:
             content = entry["attachment"].get("prompt")
         else:
             continue
-        if entry.get("origin", {}).get("kind", "human") != "human":
-            continue
-        if (text := message_text(content)) and "timestamp" in entry:
-            out.append((datetime.fromisoformat(entry["timestamp"]), text))
-    return sorted(out, key=lambda m: m[0])
+        if "timestamp" in entry:
+            out.append((datetime.fromisoformat(entry["timestamp"]), entry.get("origin", {}).get("kind", "human"), content))
+    return out
 
 
-def message_text(content: object) -> str:
-    """A prompt as the user typed it: a slash command as `/name args`, pasted text unwrapped."""
+def flat(content: object) -> str:
+    """A prompt's text; none for a tool result."""
     if isinstance(content, list):
         if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
             return ""
         content = "\n\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
-    if not isinstance(content, str) or NOT_SAID.match(content):
+    return content if isinstance(content, str) else ""
+
+
+def message_text(content: object) -> str:
+    """A prompt as the user typed it: a slash command as `/name args`, pasted text unwrapped."""
+    content = flat(content)
+    if NOT_SAID.match(content):
         return ""
     if name := re.search(r"<command-name>(.*?)</command-name>", content, re.S):
         args = re.search(r"<command-args>(.*?)</command-args>", content, re.S)
         content = f"{name.group(1)} {args.group(1) if args else ''}"
     return re.sub(r"</?pasted_content\b[^>]*>", "", content).strip()
+
+
+def name(attributes: str) -> str:
+    """Who sent a cross-session message: its `from-name`, which the sender may leave out."""
+    m = re.search(r'\bfrom-name="([^"]+)"', attributes)
+    return m.group(1) if m else "another session"
 
 
 WRITES = {"Write", "Edit", "MultiEdit"}  # the tools whose call on a path writes it
@@ -478,17 +517,25 @@ def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[
 
 
 def pair(messages: list[tuple[datetime, str]], written: list[datetime | None]) -> list[list[str]]:
+    """Each record's messages, as `bucket` pairs them. Within a turn, a prompt the next one repeats
+    whole and extends, as a resubmission does, is shown as the next one."""
+    return [[m for m, later in zip(turn, turn[1:] + [""]) if not later.startswith(m)] for turn in bucket(messages, written)]
+
+
+T = TypeVar("T")
+
+
+def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -> list[list[T]]:
     """Each record's messages: the ones said before it was written and after the written record
     before it was. A record with no write time pairs none. A message said after the newest record
-    is on no turn until a later record is written. Within a turn, a prompt the next one repeats
-    whole and extends, as a resubmission does, is shown as the next one."""
-    out: list[list[str]] = [[] for _ in written]
-    for when, text in messages:
+    is on no turn until a later record is written."""
+    out: list[list[T]] = [[] for _ in written]
+    for when, message in messages:
         for i, at in enumerate(written):
             if at is not None and when <= at:
-                out[i].append(text)
+                out[i].append(message)
                 break
-    return [[m for m, later in zip(turn, turn[1:] + [""]) if not later.startswith(m)] for turn in out]
+    return out
 
 
 # ---- the page ---------------------------------------------------------------
@@ -603,28 +650,38 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
     <span class="v-meta date">{esc(t.date)}</span>
   </summary>
   <div class="turn-body">
-    {you(t)}{answers(t)}{details}{links(t.links)}{asked}
+    {you(t)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
   </div>
 </details>"""
 
 
 def you(t: Turn) -> str:
-    """The user's messages behind one click, each whole, its paragraphs and line breaks kept."""
+    """The user's messages, under "you"."""
     if t.written is None:
         return '<p class="v-meta you-none">no message of yours paired, since the transcript never writes this turn\'s record</p>'
     messages = t.messages
     if not messages:
         return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
-    words = sum(len(m.split()) for m in messages)
     count = f"{len(messages)} messages · " if len(messages) > 1 else ""
+    return message_block("said you", "you", messages, count)
+
+
+def peer(s: Sent) -> str:
+    """A message another session sent, behind one click, under that session's name."""
+    return message_block("said peer", s.name, (s.text,), "another session · ")
+
+
+def message_block(cls: str, who: str, messages: tuple[str, ...], count: str) -> str:
+    """Messages behind one click, each whole, its paragraphs and line breaks kept."""
+    words = sum(len(m.split()) for m in messages)
     parts = "".join(
         '<div class="msg">' + "".join(f"<p>{esc(p.strip()).replace(chr(10), '<br>')}</p>"
                                       for p in re.split(r"\n[ \t]*\n+", m) if p.strip()) + "</div>"
         for m in messages)
     return f"""
-<details class="you">
-  <summary><span class="v-meta who">you</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{count}{words:,} words</span></summary>
-  <div class="you-text">{parts}</div>
+<details class="{cls}">
+  <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{count}{words:,} words</span></summary>
+  <div class="said-text">{parts}</div>
 </details>"""
 
 
