@@ -63,7 +63,7 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 - IFF you are NOT in a separate checkout / your own tree created for your task, you have to always assume potential parallel work -- the user (or other agents) may push commits immediately, pull on other machines, or create files without telling you. This means:
   - Never `git commit -a`/`-am`, never `git add -u`/`-A`/`.`: they sweep in every tracked file someone else modified mid-flight. Explicit file lists.
   - Never amend without checking status first -> Explicit file lists, staging the right hunks, stopping and asking when in doubt. Don't undo/delete others' work to get your changes through.
-  - Before history-rewriting (amend, rebase), check if the commit was pushed. NEVER AMEND WITHOUT CHECKING.
+  - Undo a commit with `git revert <sha>` (`-m 1` for a merge), never `git reset`: a revert adds a commit, so whatever landed on top of yours in the meantime survives. Before an amend or rebase, check the commit is unpushed and still the tip. NEVER AMEND WITHOUT CHECKING.
 
 - Always clone from the remote/github url, never from a local path (`git clone /path/to/repo`). Ephemeral clones (reading an external repo, a throwaway experiment) go in /var/tmp so they don't clutter home.
 - Use commands like `git mv` instead of just `mv` to rename files - if the file is tracked by git.
