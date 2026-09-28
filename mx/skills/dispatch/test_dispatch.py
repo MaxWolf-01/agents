@@ -14,10 +14,12 @@ instead; `needs-user` as the one field that keeps a ticket from a worker) and `/
 state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands).
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
-argued; this file is the cases the ticket-file move made, and the repo's fuzz run
-(`fuzz-run-on-integration-branch`), whose oracles are the patch Hypothesis wrote in the ticket's
-prototype, a push into the host's bare repo, and the database directory outliving what stops and
-removes the run.
+argued; this file is the cases the ticket-file move made, and the repo's fuzz run. The fuzz checks
+answer to `agent/tickets/fuzz-run-on-integration-branch.md`: P1 a finding survives the run being
+stopped, restarted and its worktrees removed; P3 the next run reuses the corpus; P4 a finding reaches
+the repo as a committed example and the tracker as a proposed ticket; P6 the project knows nothing
+of being fuzzed. Their oracles are the patch Hypothesis wrote in that ticket's prototype, a push
+into the host's bare repo, and the database directory outliving what stops and removes the run.
 """
 
 import ast
