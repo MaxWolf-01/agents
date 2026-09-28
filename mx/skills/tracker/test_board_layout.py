@@ -41,6 +41,11 @@ was read by eye at these widths, in both schemes (02-rows' closing comment).
 
 Beside it, one browser run per width drives what render-lint cannot see: a mark's words on hover, a
 copy button's click, and the page's own answers about the scheme, the anchor and the graph.
+
+Every page load here answers the board's remote requests, its graph engine and its fonts, from
+copies kept on this machine (show/page_cache.py), so a run after the first touches no network.
+With neither the network nor a copy, the module that runs the board never runs, and the checks
+that drive it skip.
 """
 
 import json
@@ -54,13 +59,15 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
+SHOW = Path(__file__).resolve().parents[1] / "show"
+sys.path[:0] = [str(Path(__file__).parent), str(SHOW)]
 
 from board import PAGE, render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
+from page_cache import default_root
 
-RENDER_LINT = Path(__file__).resolve().parents[1] / "show" / "render_lint.py"
+RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
 NARROWEST, WIDEST = round(min(WINDOWS) / max(ZOOMS)), round(max(WINDOWS) / min(ZOOMS))
@@ -91,7 +98,7 @@ def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
     done = subprocess.run(
-        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json"],
+        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root())],
         capture_output=True, text=True,
     )
     # A run that never got as far as findings is its own failure, said here rather than left to a
@@ -186,7 +193,8 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
 PROBE = r'''
 import json, os, shutil, sys
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError, sync_playwright
+from page_cache import default_root, serve
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 width, marks = int(sys.argv[2]), sys.argv[3].split(",")
@@ -221,13 +229,24 @@ with sync_playwright() as pw:
     context = browser.new_context(viewport={"width": width, "height": 1000},
                                   permissions=["clipboard-read", "clipboard-write"])
     page = context.new_page()
+    serve(context, default_root())
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     out = {"schemes": {}, "tips": {}}
     for scheme in ("day", "night"):
-        page.goto(f"{page_url}?theme={scheme}#{ROW}", wait_until="networkidle")
+        page.goto(f"{page_url}?theme={scheme}#{ROW}")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    # the graph engine is imported by the module that runs the board, before the page loads, so by
+    # now it either failed to arrive, and nothing past this point has a script behind it, or is drawing
+    out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
+    if not out["cdn"]:
+        print(json.dumps(out))
+        sys.exit()
+    try:
+        page.wait_for_selector(".side .mermaid svg", timeout=10_000)
+    except TimeoutError:
+        pass  # counted as no graph below
     out["names"] = page.evaluate("""
       () => [...document.querySelectorAll("details.ticket")].map((row) => {
         const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
@@ -248,7 +267,6 @@ with sync_playwright() as pw:
       }
     """)
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
-    out["cdn"] = not any("mermaid" in url or "elk" in url for url in failed)
     for mark in marks:
         where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
         page.hover(where)
@@ -305,7 +323,7 @@ MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", 
 def probe(page: Path, width: int) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
-        input=PROBE, capture_output=True, text=True,
+        input=PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
@@ -332,13 +350,14 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
     render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
     seen = probe(out, width)
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
+    if not seen["cdn"]:
+        pytest.skip("no mermaid: the module that runs the board never ran")
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"
-    if seen["cdn"]:
-        assert seen["graphs"] == 1, "the graph beside the rows never painted"
-        assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
+    assert seen["graphs"] == 1, "the graph beside the rows never painted"
+    assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
     # an opened row shows each of its questions once: the list under the name goes, and the block
     # carries the same questions with a copy button on each
@@ -387,6 +406,7 @@ GRAPH_PROBE = r'''
 import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from page_cache import default_root, serve
 
 page_url = Path(sys.argv[1]).resolve().as_uri()
 ROW, NODE, NEXT = "t-map-columns", "#t-commit-import", "#t-parse-rows"
@@ -413,20 +433,23 @@ with sync_playwright() as pw:
                                  args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     context = browser.new_context(viewport={"width": 1600, "height": 950})
     page = context.new_page()
+    serve(context, default_root())
     failed = []
     page.on("requestfailed", lambda r: failed.append(r.url))
     errors = []
     page.on("pageerror", lambda e: errors.append("board: " + str(e)))
 
     # ?graph on the address, beside the row's anchor: the state the layout check measures
-    page.goto(f"{page_url}?theme=night&graph=1#{ROW}", wait_until="networkidle")
+    page.goto(f"{page_url}?theme=night&graph=1#{ROW}")
     page.evaluate("document.fonts.ready")
     out = {"cdn": not any("mermaid" in url or "elk" in url for url in failed),
            "ground": page.evaluate("getComputedStyle(document.body).backgroundColor"),
            "font": page.evaluate("getComputedStyle(document.getElementById('gname')).fontFamily"),
            "node": NODE}
-    if out["cdn"]:
-        page.wait_for_selector("#gfull .gsvg svg")
+    if not out["cdn"]:  # the board's module never ran, so nothing below has a script behind it
+        print(json.dumps(out))
+        sys.exit()
+    page.wait_for_selector("#gfull .gsvg svg")
     out["from_the_address"] = {"open": page.is_visible("#gfull"), "nodes": nodes(page, "#gfull .gsvg"),
                                "name": page.inner_text("#gfull .gname")}
     out["preview_width"] = page.evaluate(WIDE, ".side .g:not([hidden]) .mermaid svg")
@@ -528,7 +551,7 @@ with sync_playwright() as pw:
     out["window"] = window
 
     # the re-render every tracker change triggers, under a window that has to find the board again
-    page.reload(wait_until="networkidle")
+    page.reload()
     page.evaluate("document.fonts.ready")
     page.keyboard.press("Escape")
     page.wait_for_selector(f"#{ROW} > summary")
@@ -552,7 +575,7 @@ print(json.dumps(out))
 def graph_probe(page: Path) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page)],
-        input=GRAPH_PROBE, capture_output=True, text=True,
+        input=GRAPH_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
     )
     assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-3000:]}"
     return json.loads(done.stdout)
@@ -574,9 +597,9 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
     seen = graph_probe(out)
-    assert seen["errors"] == [], seen["errors"]
     if not seen["cdn"]:
-        pytest.skip("no mermaid: the graph never painted")
+        pytest.skip("no mermaid: the module that runs the board never ran")
+    assert seen["errors"] == [], seen["errors"]
     row = seen["node"].removeprefix("#")
 
     # what the layout matrix above assumes of its two ?graph pages

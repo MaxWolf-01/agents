@@ -22,12 +22,21 @@ address' fragment slides under fixed chrome is no finding, while the same chrome
 the page is one; and an opaque card drawn over a text hides it, where two texts nothing covers
 collide in plain sight.
 
+A page that loads a script from a server is measured with the script, and with --cache it is
+measured with the script after the server stops answering: a server that hangs holds a page without
+its copy unmeasurable, and one with its copy not at all. With the network cut off and no copy, the
+script's request fails rather than waits.
+
 A run launches Chromium, so these take a second or two each.
 """
 
 import json
+import os
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -103,13 +112,13 @@ TWO_SCREENS = """
 """
 
 
-def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "") -> tuple[int, list[dict]]:
+def lint(tmp_path: Path, body: str, *flags: str, crops: Path | None = None, at: str = "", env: dict | None = None) -> tuple[int, list[dict]]:
     """The tool over `body` as a page, at the address `at` appends to it. Exit code and findings."""
     page = tmp_path / "page.html"
     page.write_text(PAGE.format(body))
     run = subprocess.run(
         [str(LINT), f"{page}{at}", "--json", *flags, *(["--crops", str(crops)] if crops else [])],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=os.environ | (env or {}),
     )
     assert run.returncode in (0, 1, 2) and run.stdout, run.stderr
     return run.returncode, json.loads(run.stdout)
@@ -454,6 +463,66 @@ def test_a_scrolling_box_cuts_nothing_off(tmp_path):
     )
     assert findings == []
     assert code == 0
+
+
+
+class Remote:
+    """A server a page loads a script from, answering until told to hang."""
+
+    SCRIPT = b"""document.body.insertAdjacentHTML("beforeend", `
+      <div style="position:relative;height:60px">
+        <span style="position:absolute;left:20px;top:10px">Row label one</span>
+        <span style="position:absolute;left:20px;top:12px">Row label two</span>
+      </div>`)"""
+
+    def __init__(self) -> None:
+        self.hanging = threading.Event()
+        self.released = threading.Event()
+        remote = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if remote.hanging.is_set():
+                    remote.released.wait()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/javascript")
+                self.end_headers()
+                self.wfile.write(remote.SCRIPT)
+
+            def log_message(self, *_) -> None:
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.page = f'<script src="http://127.0.0.1:{self.server.server_port}/labels.js"></script>'
+
+
+@pytest.fixture
+def remote() -> Iterator[Remote]:
+    r = Remote()
+    threading.Thread(target=r.server.serve_forever, daemon=True).start()
+    yield r
+    r.released.set()
+    r.server.shutdown()
+
+
+def test_a_page_measured_from_its_copies_no_longer_waits_on_the_server_they_came_from(tmp_path, remote):
+    cache = tmp_path / "cache"
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache))
+    assert kinds(findings) == ["overlap"] and code == 1, "the script the server answered with never ran"
+    remote.hanging.set()
+    code, findings = lint(tmp_path, remote.page, "--patience", "2")
+    assert kinds(findings) == ["unmeasurable"] and findings[0]["text"] == "still loading after 2s"
+    code, findings = lint(tmp_path, remote.page, "--cache", str(cache), "--patience", "2")
+    assert kinds(findings) == ["overlap"] and code == 1
+
+
+def test_with_the_network_cut_off_a_page_without_its_copy_is_measured_without_the_script(tmp_path, remote):
+    remote.hanging.set()
+    code, findings = lint(tmp_path, remote.page, "--cache", str(tmp_path / "cache"), "--patience", "2",
+                          env={"MX_PAGE_CACHE_OFFLINE": "1"})
+    assert findings == [] and code == 0
 
 
 if __name__ == "__main__":
