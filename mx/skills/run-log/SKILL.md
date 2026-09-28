@@ -1,6 +1,7 @@
 ---
 name: run-log
-description: "What the workflow's model runs cost and how long they took, one line per run in ~/logs/agent/runs.jsonl. Use when choosing a model or effort for a worker or a review, when asked what a review round or a worker run cost, or when tuning which reviewers to run."
+description: "What the workflow's model runs cost and how long they took."
+disable-model-invocation: true
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/run-log --help), Bash(run-log report *), Bash(run-log report), Bash(run-log --help)
 ---
 
