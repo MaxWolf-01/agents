@@ -23,8 +23,10 @@
 #   init      what staging this host runs, once per scratch dir and again
 #             whenever the orchestrator stages a different version of these
 #             scripts: writes `config`, creates the two bare repos when missing,
-#             fetches `job` into ~/.local/bin when the host has none, updates
-#             the mx plugin and prints its version. git-dir defaults to
+#             fetches `job` into ~/.local/bin when the host has none, puts the
+#             tracker's commit hook (`pre-commit` here) in the agent repo where
+#             it has no pre-commit hook of another's, updates the mx plugin and
+#             prints its version. git-dir defaults to
 #             ~/repos/dispatch/<repo>.git, agent-dir to
 #             ~/repos/dispatch/<repo>-agent.git and worktrees-dir to
 #             ~/repos/dispatch; a local orchestrator passes its own checkouts
@@ -206,6 +208,15 @@ init() {
     # project is two repos and a worker holds a branch of each.
     [ -d "$git_dir" ] || run git init -q --bare "$git_dir"
     [ -d "$agent_dir" ] || run git init -q --bare "$agent_dir"
+    # A worker commits its report in the agent repo, and the hook refuses one
+    # the orchestrator's import would, at the same lines, while the worker is
+    # still there to fix it. A hook of another's is the repo owner's and stays.
+    hooks=$(git -C "$agent_dir" rev-parse --path-format=absolute --git-path hooks) || die "no git repo at $agent_dir"
+    if [ ! -e "$hooks/pre-commit" ]; then
+        run mkdir -p "$hooks" && run install -m 755 "$here/pre-commit" "$hooks/pre-commit" || die "could not install the commit hook into $hooks"
+    elif ! cmp -s "$here/pre-commit" "$hooks/pre-commit"; then
+        echo "init: $hooks/pre-commit is not the tracker's, so a worker's report is checked first at the import" >&2
+    fi
     # `job` runs the wait loop (wait_). Fetched rather than staged beside this
     # script, and from a public repo, so the host still authenticates nowhere.
     # One already here is left alone: on the orchestrator's own machine that

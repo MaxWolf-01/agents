@@ -14,7 +14,7 @@ the commit hook, and every read below refuses the same way, naming the file and 
 
 Examples:
 
-    tracker check                        # the staged ticket files: what the commit hook runs
+    tracker check                        # the staged ticket files and reports: what the commit hook runs
     tracker check agent/tickets/one-flow.md
     tracker root                         # where this project's ticket files are written
     tracker get map-columns status
@@ -35,12 +35,13 @@ from __future__ import annotations
 import datetime
 import difflib
 import json
+import os
 import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Annotated, Iterable, Literal, Sequence, get_args
+from typing import Annotated, Callable, Iterable, Literal, Sequence, get_args
 
 import tyro
 import yaml
@@ -72,12 +73,16 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
     """Refuse every ticket file that says something no reader can read, one `file:line: message` per
     finding, and every ticket file staged on a `ticket/<slug>` branch whatever it says, since a
     ticket file is written in the agent repo's main checkout and on no ticket branch. With no paths,
-    the staged ticket files, which is what the commit hook runs; a commit in a repo with no tracker
-    has nothing to check and is refused nothing.
+    the staged ticket files and the staged reports, which is what the commit hook runs; a commit in
+    a repo with no tracker has nothing to check and is refused nothing.
+
+    A report is `show/<slug>/report.md` beside the tracker, refused what `import` would refuse of
+    it, so a worker's commit of one is refused at the lines the import would name.
 
     Args:
         paths: the ticket files to check; they are read as the tracker their directory holds.
     """
+    reports: list[tuple[Path, str]] = []
     if paths:
         files = [path.resolve() for path in paths]
         roots = {path.parent for path in files}
@@ -92,12 +97,15 @@ def check(paths: Annotated[list[Path], tyro.conf.Positional] = []) -> int:
         files = staged_paths(tracker.root)
         if files and (built := ticket_branch_out(tracker.root)):
             raise Refused([f"{file}:1: {built} is a ticket branch, and a ticket file is written in the agent repo's main checkout, never on one" for file in files])
-    found = [refusal for path in files for refusal in refusals_of(tracker.at_path(path), tracker)]
-    for refusal in found:
-        print(refusal)
-    if refused := {refusal.path for refusal in found}:
+        reports = staged_reports(tracker.root)
+    checked = {path: refusals_of(tracker.at_path(path), tracker) for path in files}
+    checked |= {path: report_refusals(path, text, tracker, staged_text) for path, text in reports}
+    for said in checked.values():
+        for refusal in said:
+            print(refusal)
+    if refused := [path for path, said in checked.items() if said]:
         print(f"{len(refused)} file{'s' if len(refused) > 1 else ''} refused")
-    return 1 if found else 0
+    return 1 if refused else 0
 
 
 @app.command(name="root")
@@ -608,16 +616,35 @@ def import_report(
         raise Refused([f"{slug} is already in review; a report is imported once, and a second would say everything it says twice"])
     refuse_transition(ticket, "review", tracker)
 
-    was = ticket.path.read_text()
-    written = written_with(with_report(was, ticket, read_back), {"status": "review"})
-    after = read(ticket.path, written)
-    if broken := caused(ticket, after, tracker, was, written):
-        raise Refused([f"{path}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken])
+    written, broken = landed(ticket, ticket.path.read_text(), read_back, path, tracker)
+    refuse(broken)
     ticket.path.write_text(written)
     asked = len(read_back.asked)
     said = f"{asked} question{'s' if asked != 1 else ''}"
     print(f"{slug}: the report's closing comment and {said}; status: {ticket.status} → review")
     return 0
+
+
+def landed(ticket: Ticket, was: str, report: Report, path: Path, tracker: Tracker) -> tuple[str, list[Refusal | str]]:
+    """The ticket file `was` with the report in it and the `review` status the build waits in, and
+    what that file would say that no reader can read and `was` did not, at the ticket's lines, under
+    a line naming the report they came from."""
+    written = written_with(with_report(was, ticket, report), {"status": "review"})
+    broken = caused(ticket, read(ticket.path, written), tracker, was, written)
+    return written, [f"{path}: this report would leave the ticket saying what no reader can read, at the lines it lands on:", *broken] if broken else []
+
+
+def report_refusals(path: Path, text: str, tracker: Tracker, text_of: Callable[[Path], str]) -> list[Refusal | str]:
+    """What `import` would refuse of the report at `path` before it writes a word, for the ticket
+    its show directory names: what the report says that no reader can read, and then what it would
+    leave that ticket saying. The second is read only while the ticket is `claimed`, the build an
+    import takes to review; a ticket past that already carries its report, and one short of it is
+    refused by status, which is the orchestrator's to change and no fault of the report."""
+    read_back = read_report(path, text)
+    ticket = tracker.tickets.get(path.parent.name)
+    if read_back.refusals or ticket is None or ticket.status != "claimed":
+        return list(read_back.refusals)
+    return landed(ticket, text_of(ticket.path), read_back, path, tracker)[1]
 
 
 def with_report(text: str, ticket: Ticket, report: Report) -> str:
@@ -806,30 +833,24 @@ def run(cwd: Path, *args: str) -> None:
 
 # ---- the commit hook -------------------------------------------------------
 
-HOOK = """#!/bin/sh
-# Installed by `tracker hook`: a ticket file no reader can read is refused where it was written.
-if ! command -v tracker >/dev/null 2>&1; then
-    echo "pre-commit: no tracker on PATH, so the staged ticket files went unchecked" >&2
-    exit 0
-fi
-exec tracker check
-"""
-
 
 @app.command(name="hook")
 def hook() -> int:
-    """Install the pre-commit hook that runs `tracker check` over the staged ticket files, into the
-    repository the working directory is in, from any worktree of it. Prints the path it wrote.
-    Leaves a pre-commit hook this did not write standing, and says so.
+    """Install the pre-commit hook that runs `tracker check` over the staged ticket files and
+    reports, into the repository the working directory is in, from any worktree of it. Prints the
+    path it wrote. Leaves a pre-commit hook this did not write standing, and says so.
 
-    It is the agent repo that wants one, since that is where every ticket file is written.
+    It is the agent repo that wants one, since that is where every ticket file and report is
+    written. The hook is the `pre-commit` file beside this one, which dispatch also installs in a
+    worker host's agent repo.
     """
+    script = (Path(__file__).resolve().parent / "pre-commit").read_text()
     repo = Path.cwd()
     into = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-commit"
-    if into.exists() and into.read_text() != HOOK:
+    if into.exists() and into.read_text() != script:
         raise Refused([f"{into} is a pre-commit hook this did not write; add `tracker check` to it by hand"])
     into.parent.mkdir(parents=True, exist_ok=True)
-    into.write_text(HOOK)
+    into.write_text(script)
     into.chmod(0o755)
     print(into)
     return 0
@@ -1605,8 +1626,14 @@ def git(root: Path, *args: str) -> str:
 
 def tried(root: Path, *args: str) -> subprocess.CompletedProcess:
     """A git command whose failing is an answer rather than a refusal: whether a branch is there,
-    whether a tip has landed."""
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    whether a tip has landed.
+
+    Run in the repo `root` is in, whatever the environment names: git hands a hook fired in a
+    linked worktree `GIT_DIR`, which would make `root` itself the work tree's top, and the commit
+    hook would find no tracker in a worker's worktree. `GIT_INDEX_FILE` stays, since it is the
+    index the commit is made of."""
+    found = {key: value for key, value in os.environ.items() if key not in ("GIT_DIR", "GIT_WORK_TREE")}
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=found)
 
 
 def toplevel(start: Path) -> Path:
@@ -1622,6 +1649,21 @@ def staged(root: Path) -> Tracker:
     top = toplevel(root)
     listed = git(top, "ls-files", "--", str(root.relative_to(top))).splitlines()
     return tracker_of(root, {top / name: git(top, "show", f":{name}") for name in listed if name.endswith(".md")})
+
+
+def staged_text(path: Path) -> str:
+    top = toplevel(path.parent)
+    return git(top, "show", f":{path.relative_to(top)}")
+
+
+def staged_reports(root: Path) -> list[tuple[Path, str]]:
+    """The reports this commit writes, `show/<slug>/report.md` beside the tracker, each with the
+    text the index holds."""
+    top = toplevel(root)
+    show = (root.parent / "show").relative_to(top)
+    listed = git(top, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", str(show))
+    return [(top / name, git(top, "show", f":{name}")) for name in listed.splitlines()
+            if Path(name).parent.parent == show and Path(name).name == "report.md"]
 
 
 def staged_paths(root: Path) -> list[Path]:

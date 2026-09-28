@@ -46,8 +46,9 @@
 #            on, each line behind its host; one that cannot answer says so in
 #            place of its workers.
 #            The first spawn on a host stages it: the git remotes, this plugin
-#            version's dispatch-ctl, runner and worker prompt in this branch's
-#            scratch dir there, and `dispatch-ctl init`. A later spawn finds
+#            version's dispatch-ctl, runner, worker prompt and the tracker's
+#            commit hook in this branch's scratch dir there, and `dispatch-ctl
+#            init`. A later spawn finds
 #            them staged and skips that; one that finds a version other than
 #            this plugin's stages again, so no worker starts on a stale
 #            contract. Every spawn and `fuzz start` then pushes this branch of
@@ -285,7 +286,7 @@ ticket_host() { # <slug>
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
-    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log")
+    files=("$skill/dispatch-ctl" "$skill/run-worker.sh" "$skill/worker-prompt.md" "$run_log" "$skill/../tracker/pre-commit")
     stamp=$(cat "${files[@]}" | sha256sum | cut -d' ' -f1)
     # The setup command travels as a file named `setup`, which stays on the host
     # for every later spawn until another --setup-cmd replaces it.

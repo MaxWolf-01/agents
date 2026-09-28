@@ -1,0 +1,7 @@
+#!/bin/sh
+# Installed by `tracker hook`: a ticket file no reader can read is refused where it was written.
+if ! command -v tracker >/dev/null 2>&1; then
+    echo "pre-commit: no tracker on PATH, so the staged ticket files went unchecked" >&2
+    exit 0
+fi
+exec tracker check
