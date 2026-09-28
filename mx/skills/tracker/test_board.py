@@ -12,7 +12,7 @@ unclaimed; a proposed ticket is not open whatever blocks it; a build in review w
 user's ruling in its own group and unblocks nothing until the accept writes done, save a sibling
 merged into the branch of the parent ticket the two share, no hinge; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
-is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
+is linked relative to the page, as every link on it is; a reference whose file no longer exists counts as done; a graph draws only
 tickets with an edge; one tracker directory holds every ticket the board shows, a build in
 flight included; a ticket the tracker's own parser refuses is refused here, with its file and
 its line.
@@ -21,15 +21,21 @@ Under "properties" at the end sit the executable Properties of
 mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec is their oracle.
 """
 
+import functools
 import html
+import http.server
 import itertools
 import json
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
-from collections.abc import Callable
+import threading
+import urllib.parse
+import urllib.request
+from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -45,7 +51,6 @@ from board import (
     ALONE,
     STATUS_SYMBOL,
     Seen,
-    Diffviews,
     board_graph,
     changed_note,
     content_stamp,
@@ -55,7 +60,6 @@ from board import (
     render,
     render_page,
     run_out,
-    serve_diffviews,
     ticket_sessions,
     tracker_snapshot,
     tree_graph,
@@ -67,7 +71,6 @@ from demo_tracker import S1, S2, S3, S4, Demo, build as build_demo
 from demo_tracker import commit as demo_commit, git as demo_git, transcript as write_transcript
 
 TREE = "lamp-ui"  # a hyphen, so a slugged id and the raw slug can be told apart
-STUB_ADDRESS = "http://127.0.0.1:54321"
 
 
 def ticket(
@@ -118,26 +121,37 @@ def tracker(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A diffview that records its arguments and answers as the real one does on --serve."""
+def listening() -> Iterator[str]:
+    """An address something listens on, as a live diffview server does."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        yield f"http://127.0.0.1:{server.getsockname()[1]}"
+
+
+@pytest.fixture
+def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[str], Path]:
+    """A diffview that records its arguments and answers as the real one does on --serve, naming
+    the address it is given; calling it writes the stub and returns it."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    stub = bin_dir / "diffview"
-    stub.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$*" > "$0.args"\n'
-        f'echo "diffview: serving $2 at {STUB_ADDRESS}/  (exits 30 minutes after the last page closes)"\n'
-    )
-    stub.chmod(0o755)
     if git := shutil.which("git"):  # the repo the board reads what merged in, as conftest.KEPT keeps it
         (bin_dir / "git").symlink_to(git)
     monkeypatch.setenv("PATH", str(bin_dir))
+
+    def stub(address: str) -> Path:
+        script = bin_dir / "diffview"
+        script.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$0.args"\n'
+            f'echo "diffview: serving $2 at {address}/  (exits 30 minutes after the last page closes)"\n'
+        )
+        script.chmod(0o755)
+        return script
+
     return stub
 
 
 def load(root: Path, repo: Path | None = None) -> dict[str, board.Ticket]:
-    """The tracker as the board reads it, by slug."""
-    dv = Diffviews(root.parent / "diffviews", None)
-    return {t.slug: t for t in load_tickets(root, repo, dv)}
+    """The tracker as the board reads it, by slug, its links written from the tracker's directory."""
+    return {t.slug: t for t in load_tickets(root, repo, root.parent)}
 
 
 def page_of(root: Path) -> str:
@@ -396,32 +410,84 @@ def test_a_row_links_its_review_page(tracker: Path) -> None:
     (dv / "second.html").write_text("<html>")
     (dv / "quoted.html").write_text("<html>")
     page = page_of(tracker)
-    assert f'href="file://{dv / "second.html"}"' in page
-    assert f'href="file://{dv / "quoted.html"}"' in page
+    assert 'href="diffviews/second.html"' in page, "from agent/board.html, the page beside it"
+    assert 'href="diffviews/quoted.html"' in page
     assert page.count('class="rp"') == 2  # once per row (the spec's Decisions), on the name's line
 
 
-def test_a_row_links_its_review_page_on_the_address_diffview_serves(tracker: Path, stub_diffview: Path) -> None:
-    """A page opened as a file is read-only, so a review that starts from the board has to land on
-    the served one, at the address diffview names for that directory of pages."""
+def test_a_board_written_elsewhere_links_its_review_page_from_where_it_is(tracker: Path, tmp_path: Path) -> None:
     dv = tracker.parent / "diffviews"
     dv.mkdir(parents=True)
     (dv / "second.html").write_text("<html>")
-    (dv / "quoted.html").write_text("<html>")
-    diffviews = serve_diffviews(dv)
-    assert Path(f"{stub_diffview}.args").read_text().split() == ["--serve", str(dv)]
-    page = render_page("demo", load_tickets(tracker, None, diffviews), log="", stamp="s", stamp_src="s.js")
-    assert f'href="{STUB_ADDRESS}/second.html"' in page
-    assert f'href="{STUB_ADDRESS}/quoted.html"' in page
+    rows = {t.slug: t for t in load_tickets(tracker, None, tmp_path / "boards")}
+    assert rows["second"].diffview == "../repo/agent/diffviews/second.html"
 
 
-def test_a_review_page_nothing_serves_is_linked_as_the_file_it_is(tracker: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A machine without diffview has the pages but no server for them."""
-    dv = tracker.parent / "diffviews"
-    dv.mkdir(parents=True)
-    (dv / "second.html").write_text("<html>")
+# ---- opening it served ----------------------------------------------------
+
+
+def test_board_opens_the_page_at_the_address_the_server_over_the_agent_repo_answers_on(
+    tracker: Path, stub_diffview: Callable[[str], Path], listening: str,
+) -> None:
+    """One server over the whole agent repo, so the board and every page it links share it."""
+    agent = tracker.parent
+    stub = stub_diffview(listening)
+    assert board.served(agent, agent / "board.html") == f"{listening}/board.html"
+    assert Path(f"{stub}.args").read_text().split() == ["--serve", str(agent)]
+
+
+def test_board_opens_the_file_where_no_diffview_is_installed(tracker: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "no-tools"))
-    assert serve_diffviews(dv).link(dv, "second.html") == f"file://{dv / 'second.html'}"
+    assert board.served(tracker.parent, tracker.parent / "board.html") is None
+
+
+def test_board_opens_the_file_where_the_server_does_not_answer(
+    tracker: Path, stub_diffview: Callable[[str], Path],
+) -> None:
+    """diffview printed an address, and nothing listens there."""
+    stub_diffview(f"http://127.0.0.1:{free_port()}")
+    assert board.served(tracker.parent, tracker.parent / "board.html") is None
+
+
+def test_a_page_written_outside_the_agent_repo_opens_as_the_file_and_starts_no_server(
+    tracker: Path, tmp_path: Path, stub_diffview: Callable[[str], Path], listening: str,
+) -> None:
+    stub = stub_diffview(listening)
+    assert board.served(tracker.parent, tmp_path / "board.html") is None
+    assert not Path(f"{stub}.args").exists()
+
+
+def test_the_watcher_brings_back_a_server_that_exited_and_leaves_one_that_answers(
+    tracker: Path, stub_diffview: Callable[[str], Path], listening: str,
+) -> None:
+    agent, out = tracker.parent, tracker.parent / "board.html"
+    stub = stub_diffview(listening)
+    assert board.kept(agent, out, f"{listening}/board.html") == f"{listening}/board.html"
+    assert not Path(f"{stub}.args").exists(), "a server that answers is left alone"
+    gone = f"http://127.0.0.1:{free_port()}/board.html"
+    assert board.kept(agent, out, gone) == f"{listening}/board.html"
+    assert Path(f"{stub}.args").read_text().split() == ["--serve", str(agent)]
+
+
+def test_a_server_that_does_not_come_back_leaves_the_watcher_nothing_to_keep(
+    tracker: Path, stub_diffview: Callable[[str], Path],
+) -> None:
+    """What the watcher backs off on: the page's address and the one diffview names are both dead."""
+    stub_diffview(f"http://127.0.0.1:{free_port()}")
+    gone = f"http://127.0.0.1:{free_port()}/board.html"
+    assert board.kept(tracker.parent, tracker.parent / "board.html", gone) is None
+
+
+def test_every_board_carries_the_note_a_served_page_shows_when_its_server_stops_answering(tracker: Path) -> None:
+    page = page_of(tracker)
+    assert absences(page, "board-server") == 1
+    assert '<p class="absent" data-absent="board-server" hidden>' in page
+
+
+def free_port() -> int:
+    """A port nothing listens on: bound, read, and let go."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        return server.getsockname()[1]
 
 
 def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
@@ -436,6 +502,66 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     for token in read:
         assert f"--{token}: light-dark(" in page, f"the graph reads --{token}, which the page does not declare"
     assert not re.search(r":\s*\[\s*[\"']?#", classes), "a status is drawn in a literal colour, not the house ink"
+
+
+class Hrefs(HTMLParser):
+    """Every href on a page, in the order it writes them."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.found: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.found += [value for name, value in attrs if name in ("href", "xlink:href") and value]
+
+
+def hrefs(page: str) -> list[str]:
+    parser = Hrefs()
+    parser.feed(page)
+    return parser.found
+
+
+def to_files(page: str) -> list[str]:
+    """The links a page writes to a file of the tracker's: neither an anchor on the page nor another
+    site."""
+    return [ref for ref in hrefs(page) if not ref.startswith("#") and not urllib.parse.urlsplit(ref).scheme]
+
+
+def test_a_rendered_board_links_nothing_by_a_file_or_a_loopback_address(
+    transcribed: Demo, tmp_path: Path, stub_diffview: Callable[[str], Path], listening: str,
+) -> None:
+    """P5 of the dotfiles ticket agent-boards-on-phone: the board is read from a mirror on another
+    host, where a file:// link or the laptop's 127.0.0.1 is dead. A diffview answering on this
+    machine changes nothing the render writes."""
+    stub_diffview(listening)
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    written = hrefs(out.read_text())
+    assert to_files(out.read_text()), "the demo tracker's board links its review pages and artefacts"
+    assert [ref for ref in written if ref.startswith("file:") or "127.0.0.1" in ref] == []
+
+
+def test_served_from_the_agent_repo_every_link_on_the_demo_board_opens(tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The mirror serves the agent repo as a plain directory, as `python -m http.server` does: every
+    review page, artefact and session page the board links has to answer there, and as a file
+    beside the page."""
+    demo = build_demo(tmp_path / "demo")
+    monkeypatch.setattr(board, "TRANSCRIPTS", demo.transcripts)
+    agent = demo.root.parent
+    out = agent / "board.html"
+    render(demo.root, demo.repo, out)
+    linked = to_files(out.read_text())
+    assert {ref.split("/")[0] for ref in linked} >= {"diffviews", "show", "sessions"}
+    assert [ref for ref in linked if not (agent / urllib.parse.unquote(ref)).is_file()] == []
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(agent))
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        page = f"http://127.0.0.1:{server.server_address[1]}/board.html"
+        try:
+            dead = [ref for ref in linked if urllib.request.urlopen(urllib.parse.urljoin(page, ref), timeout=5).status != 200]
+        finally:
+            server.shutdown()
+    assert dead == []
 
 
 # ---- checkouts ------------------------------------------------------------
@@ -481,19 +607,6 @@ def test_the_watcher_notices_the_project_moving_under_a_tracker_that_did_not(tra
     after = tracker_snapshot(tracker, agent)
     assert after != before, "a commit in the project the board's log comes from"
     assert "the repo has moved on: " in changed_note(before, after, code)
-
-
-def test_the_watcher_notices_a_page_server_leaving_its_pages_unserved(repo: Path, tracker: Path) -> None:
-    """A page server exits a while after the last page closes, rewriting the marker it left beside
-    the pages; noticing that is what gets the next render, which is what serves them again."""
-    dv = tracker.parent / "diffviews"
-    dv.mkdir(parents=True)
-    (dv / "quoted.html").write_text("<html>")
-    marker = dv / ".serve.json"
-    marker.write_text('{"port": 54321, "pid": 1234}')  # what a live server leaves beside the pages
-    before = tracker_snapshot(tracker, repo)
-    marker.write_text('{"port": 54321}')  # the pid dropped, as a server does on its way out
-    assert tracker_snapshot(tracker, repo) != before
 
 
 # ---- what the root holds --------------------------------------------------
@@ -1181,24 +1294,20 @@ def test_a_blocked_rows_questions_carry_the_same_buttons_in_both_places(tmp_path
     assert copiers(body_of(row)) == copiers(summary_of(row)), "the two readings of the status disagree"
 
 
-def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo) -> None:
     """Every file in it as a link, and the one that runs on a button that copies the command
     running it from the repo root. Nothing in the ticket declares either: the directory is read."""
-    out = tmp_path / "board.html"
-    render(demo.root, demo.repo, out)
-    rows = rows_of(out.read_text())
-    show = demo.repo / "agent" / "show" / "map-columns"
+    rows = rows_of(render_page("demo", list(load(demo.root, demo.repo).values()), log="", stamp="s", stamp_src="s.js"))
     assert artefacts_in(rows["t-map-columns"]) == [
-        ("mapping.svg", f"file://{show / 'mapping.svg'}", ""),
-        ("walkthrough", f"file://{show / 'walkthrough'}", "agent/show/map-columns/walkthrough"),
+        ("mapping.svg", "show/map-columns/mapping.svg", ""),
+        ("walkthrough", "show/map-columns/walkthrough", "agent/show/map-columns/walkthrough"),
     ]
     assert [which for which, _, _, _ in copiers(artefacts_markup(rows["t-map-columns"]))] == ["runcopy"], (
         "the file that runs is the one artefact on a button"
     )
     # every show directory is its ticket's slug's own, beside the tracker the ticket was read from
-    alone = demo.repo / "agent" / "show" / "speed-up-tests"
     assert artefacts_in(rows["t-speed-up-tests"]) == [
-        ("timings", f"file://{alone / 'timings'}", "agent/show/speed-up-tests/timings"),
+        ("timings", "show/speed-up-tests/timings", "agent/show/speed-up-tests/timings"),
     ]
     assert "artefacts" not in labels_of(rows["t-flaky-upload-test"]), "nothing has been built on it yet"
 
@@ -1219,12 +1328,12 @@ def test_what_a_show_directory_offers_an_opened_ticket(tmp_path: Path) -> None:
     put(show / "view-list" / "layouts.svg", "<svg/>")
     rows = rows_of(page_of(root))
     assert artefacts_in(rows["t-map-columns"]) == [
-        ("render sample", f"file://{show / 'map-columns' / 'render sample'}", "'agent/show/map-columns/render sample'"),
-        ("shots/mapping.svg", f"file://{show / 'map-columns' / 'shots' / 'mapping.svg'}", ""),
-        ("walkthrough", f"file://{show / 'map-columns' / 'walkthrough'}", "agent/show/map-columns/walkthrough"),
+        ("render sample", "show/map-columns/render%20sample", "'agent/show/map-columns/render sample'"),
+        ("shots/mapping.svg", "show/map-columns/shots/mapping.svg", ""),
+        ("walkthrough", "show/map-columns/walkthrough", "agent/show/map-columns/walkthrough"),
     ]
     assert artefacts_in(rows["t-view-list"]) == [
-        ("layouts.svg", f"file://{show / 'view-list' / 'layouts.svg'}", ""),
+        ("layouts.svg", "show/view-list/layouts.svg", ""),
     ]
 
 
@@ -1240,10 +1349,10 @@ def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
     put(show / "map-columns" / "mapping.svg", "<svg/>")
     rows = rows_of(page_of(root))
     assert artefacts_in(rows["t-csv-import"]) == [
-        ("index.html", f"file://{show / 'csv-import' / 'index.html'}", ""),
+        ("index.html", "show/csv-import/index.html", ""),
     ]
     assert artefacts_in(rows["t-map-columns"]) == [
-        ("mapping.svg", f"file://{show / 'map-columns' / 'mapping.svg'}", ""),
+        ("mapping.svg", "show/map-columns/mapping.svg", ""),
     ]
 
 
@@ -1529,13 +1638,31 @@ def test_an_opened_ticket_links_the_page_of_each_session_that_has_one(worked: tu
     """The link opens the page in a new tab and says on hover what it opens; a session with no page
     shows no link, and its resume button is there all the same."""
     root, repo = worked
-    out = tmp_path / "board.html"
+    out = root.parent / "board.html"
     render(root, repo, out)
     row = rows_of(out.read_text())["t-map-columns"]
     ((title, href, tip, target),) = pages_in(row)
-    assert (title, href, target) == ("Ledger imports", f"file://{repo / 'agent' / 'sessions' / HERE / 'index.html'}", "_blank")
+    assert (title, href, target) == ("Ledger imports", f"sessions/{HERE}/index.html", "_blank")
     assert len(tip.split()) >= 4 and "page" in tip, f"the link says {tip!r} of itself"
     assert len(sessions_in(row)) == 3, "every listed session keeps its resume button"
+
+
+def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tuple[Path, Path], path_with: Callable[..., Path]) -> None:
+    """The board is served from its own agent repo, so no link it writes reaches a page kept in
+    another project's: the session is listed with its resume button and no page link."""
+    root, repo = worked
+    later = repo.parent / "the budget"
+    (later / "agent" / "tickets").mkdir(parents=True)
+    (written,) = board.TRANSCRIPTS.glob(f"*/{NEW}.jsonl")
+    append(written, json.dumps({"type": "user", "sessionId": NEW, "cwd": str(later)}) + "\n")
+    put(later / "agent" / "sessions" / NEW / "index.html", "<!doctype html>\n")
+    (moved,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NEW]
+    assert moved.page == later / "agent" / "sessions" / NEW / "index.html", "the board finds the page it leaves unlinked"
+    out = root.parent / "board.html"
+    render(root, repo, out)
+    row = rows_of(out.read_text())["t-map-columns"]
+    assert [title for title, _, _, _ in pages_in(row)] == ["Ledger imports"], "only the page this agent repo keeps"
+    assert len(sessions_in(row)) == 3
 
 
 def test_a_session_that_commits_between_two_renders_is_on_the_second(worked: tuple[Path, Path], tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -2282,7 +2409,7 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
     at = datetime.now().astimezone()
     watcher = board.Briefer(repo, out)
 
-    statuses = board.statuses(load_tickets(tracker, repo, board.Diffviews(tracker.parent / "diffviews", None)))
+    statuses = board.statuses(load_tickets(tracker, repo, tracker.parent))
     watcher.opened(tracker_snapshot(tracker, repo), statuses, at)
     watcher.tick(tracker, tracker_snapshot(tracker, repo), statuses, at)
     watcher.running.join(30)
@@ -2337,7 +2464,7 @@ def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file
     """What a fresh session starts from: the tracker as the board computes it, which is every row's
     marks, its brief, its open questions and the file the rest of it is in."""
     state = board.briefing_state(demo.root, demo.repo)
-    shown = load_tickets(demo.root, demo.repo, Diffviews(demo.root, None))
+    shown = load_tickets(demo.root, demo.repo, demo.root.parent)
     for t in shown:
         assert f"{t.slug} · {t.status} · " in state, f"{t.slug} is a row on the board and not a line of the state"
         assert str(t.path) in state, f"{t.slug} is given without the file to read the rest of it in"
@@ -2621,25 +2748,17 @@ def test_the_board_renders_without_the_model_and_says_the_absence_once(repo: Pat
     assert absences(out.read_text(), "model") == 1
 
 
-def test_the_board_renders_with_no_review_page_server_and_says_the_absence_once(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+def test_a_board_linking_a_review_page_carries_the_note_it_shows_when_opened_as_a_file(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """Whether the review pages save is a matter of how the board was opened, which only the open
+    page knows: the render writes the note hidden, once, and the page shows it as a file."""
     dv = tracker.parent / "diffviews"
     dv.mkdir(parents=True)
     (dv / "quoted.html").write_text("<html>")
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     page = out.read_text()
-    assert f'href="file://{dv / "quoted.html"}"' in page, "the pages stay linked, as the files they are"
     assert absences(page, "review-page-server") == 1
-
-
-def test_a_board_whose_review_pages_are_served_says_no_absence(tracker: Path, stub_diffview: Path) -> None:
-    dv = tracker.parent / "diffviews"
-    dv.mkdir(parents=True)
-    (dv / "quoted.html").write_text("<html>")
-    diffviews = serve_diffviews(dv)
-    page = render_page("demo", load_tickets(tracker, None, diffviews), log="", stamp="s", stamp_src="s.js")
-    assert f'href="{STUB_ADDRESS}/quoted.html"' in page
-    assert absences(page, "review-page-server") == 0
+    assert re.search(r'<p class="absent" data-absent="review-page-server" hidden>', page)
 
 
 def test_a_tracker_with_no_review_pages_rendered_says_nothing_about_the_server(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
@@ -2703,7 +2822,7 @@ def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_tic
     render(demo.root, demo.repo, out)
     beside = sorted(p.name for p in out.parent.iterdir())
     assert beside == ["board.html", "board.html.github.json", "board.html.stamp.js"]
-    rows = load_tickets(demo.root, demo.repo, Diffviews(demo.root, None))
+    rows = load_tickets(demo.root, demo.repo, demo.root.parent)
     about = [str(t.path) for t in rows] + [t.title for t in rows] + [t.brief for t in rows if t.brief]
     about += [q.tag for t in rows for q in t.questions]
     for sidecar in beside[1:]:
