@@ -33,17 +33,18 @@
 #             and the directory beside them. agent-base is the branch the agent
 #             repo's ticket branches cut from, which is the one its main
 #             checkout has out and rarely the code repo's <base>.
-#   spawn     cuts ticket/<slug> from <base> in both repos when absent, the
-#             code one into <worktrees-dir>/<repo>-<slug> and the agent one into
-#             that worktree's `agent/`, where the project keeps it; sets the
-#             code worktree up (the `setup` file's command, run as given;
-#             without that file `make install`, under `nix develop -c` where a
-#             flake.nix exists), runs `claude update`, finds the mx install
-#             the worker loads (DISPATCH_PLUGIN_DIR below), then starts the
-#             worker on prompt-<slug>.md from this directory, in a tmux session
-#             named dispatch-<repo>-<slug>. A failed update is said on stderr and
-#             the worker starts anyway; a host with no mx starts none. The
-#             `spawned` line names the claude and mx versions it starts on.
+#   spawn     finds the mx install the worker loads (DISPATCH_PLUGIN_DIR
+#             below; a host with no mx stops here), cuts ticket/<slug> from
+#             <base> in both repos when absent, the code one into
+#             <worktrees-dir>/<repo>-<slug> and the agent one into that
+#             worktree's `agent/`, where the project keeps it; sets the code
+#             worktree up (the `setup` file's command, run as given; without
+#             that file `make install`, under `nix develop -c` where a
+#             flake.nix exists), runs `claude update`, then starts the worker
+#             on prompt-<slug>.md from this directory, in a tmux session named
+#             dispatch-<repo>-<slug>. A failed update is said on stderr and the
+#             worker starts anyway. The `spawned` line names the claude and mx
+#             versions it starts on.
 #             Nothing here reads a ticket: it travels in the prompt the
 #             orchestrator writes, which is also where a ticket the user is in
 #             the loop for is kept back. A session id resumes that conversation
@@ -302,9 +303,11 @@ spawn() {
     if [ -n "$run_id" ] && [ "$(run_state "$run_id" "$run_runner")" = running ]; then
         die "$name is still running run=$run_id; a line typed into its pane now would launch a second worker when it exits"
     fi
+    # Before the checkout: a host with no mx fails here in seconds, with no
+    # worktree to unwind and without waiting on the update lock.
+    find_plugin
     [ -d "$worktree" ] || checkout
     update_claude
-    find_plugin
     run_id=$name-$(date +%s)
 
     # The session is a shell the runner is typed into, so it outlives the
