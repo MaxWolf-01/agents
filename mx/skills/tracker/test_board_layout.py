@@ -47,7 +47,8 @@ copies kept on this machine (show/page_cache.py), so a run after the first touch
 The browser checks run again with the network cut off and no copies, where the graph engine
 never arrives: there they hold every view of the graph to saying it could not load, and drive
 everything else the board does in full. A run online on a machine that has no network and no
-copies skips, since the graph it is there to check never draws.
+copies skips, since the graph it is there to check never draws. One run more loads the engine and cuts
+the network off before it draws, where every view of the graph says it could not be drawn.
 """
 
 import json
@@ -728,6 +729,100 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     doc = tmp_path / "graph-window.html"
     doc.write_text(re.sub(r"<script>.*?</script>", "", win["html"], flags=re.S))
     assert {width: f for width in (450, 900, 1600) if (f := lint([str(doc)], width))} == {}
+
+
+
+# A draw that fails after the engine loaded: the engine and what it imports come from a directory of
+# their own, with the network cut off, so the pieces mermaid fetches while it draws do not arrive.
+# The copies of those pieces are then put in, and the board draws with them from its next load on:
+# the browser keeps a failed import as failed for as long as the page lives, so nothing short of a
+# load fetches it again, and the board loads again on every change to the tracker.
+UNDRAWN_PROBE = r"""
+import json, os, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import copy_of, default_root, serve
+
+page_url, ENGINE = Path(sys.argv[1]).resolve().as_uri(), sys.argv[2].split(",")
+own, kept = Path(sys.argv[3]), default_root()
+UNDRAWN = "#gundrawn:not([hidden])"
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    # what importing the engine asks for, and nothing its drawing does
+    loader = browser.new_context()
+    page = loader.new_page()
+    serve(loader, kept)
+    asked = []
+    page.on("request", lambda r: asked.append(r.url))
+    if not page.evaluate("(urls) => Promise.all(urls.map((u) => import(u))).then(() => true, () => false)", ENGINE):
+        print(json.dumps({"cdn": False}))
+        sys.exit()
+    own.mkdir()
+    for url in asked:
+        shutil.copy(copy_of(kept, url), own)
+    loader.close()
+
+    os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    page = context.new_page()
+    serve(context, own)
+    page.goto(f"{page_url}?theme=night#t-map-columns")
+    page.wait_for_selector(UNDRAWN)
+    out = {"cdn": True, "preview": {"note": page.inner_text("#gundrawn"), "unloaded": page.is_visible("#gunloaded"),
+                       "graphs": page.evaluate("document.querySelectorAll('.side .mermaid svg').length")}}
+    page.keyboard.press("f")
+    page.wait_for_selector("#gfull .gnote:not([hidden])")
+    out["overlay"] = page.inner_text("#gfull .gnote")
+    page.keyboard.press("Escape")
+    with page.expect_popup() as popped:
+        page.keyboard.press("w")
+    win = popped.value
+    win.wait_for_selector(".gfbody .gnote:not([hidden])")
+    out["window"] = win.inner_text(".gfbody .gnote")
+    win.close()
+    # a failed draw, in the preview or at full size, leaves no error drawing of mermaid's own behind
+    out["stray"] = page.evaluate("document.querySelectorAll('body > [id^=dm], body > [id^=dgf]').length")
+
+    shutil.copytree(kept, own, dirs_exist_ok=True)
+    page.reload()
+    page.wait_for_selector(".side .g:not([hidden]) .mermaid svg", timeout=20_000)
+    out["next"] = {"graphs": page.evaluate("document.querySelectorAll('.side .g:not([hidden]) .mermaid svg').length"),
+                   "note": page.is_visible("#gundrawn")}
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The ticket's acceptance criterion: the preview and both full size views say the graph could
+    not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
+    and its drawing pieces come from this machine's copies, or from the network where it holds none."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    engine = re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+\.esm\.min\.mjs)"', out.read_text())
+    assert len(engine) == 2, f"the page names {engine} as its engine"
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), ",".join(engine), str(tmp_path / "engine-only")],
+        input=UNDRAWN_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    if not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    undrawn = "could not be drawn"
+    preview = seen["preview"]
+    assert undrawn in preview["note"] and not preview["unloaded"] and preview["graphs"] == 0, (
+        f"a draw that failed after the engine loaded leaves the preview as {preview}"
+    )
+    assert seen["stray"] == 0, "mermaid left its error drawing on the page"
+    assert undrawn in seen["overlay"], f"the overlay says {seen['overlay']!r}"
+    assert undrawn in seen["window"], f"the window of its own says {seen['window']!r}"
+    assert seen["next"] == {"graphs": 1, "note": False}, f"the board's next load, once the pieces arrive: {seen['next']}"
 
 
 if __name__ == "__main__":

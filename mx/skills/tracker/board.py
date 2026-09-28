@@ -2274,6 +2274,7 @@ ${groups}
     <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
     <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive</div>
+    <div class="gnote" id="gundrawn" hidden>the graph could not be drawn: a piece of its engine, from cdn.jsdelivr.net, did not arrive; a reload fetches it again</div>
   </div>
 </aside>
 </main>
@@ -2352,7 +2353,10 @@ ${groups}
     return loading;
   }
   const drawable = () => engine().then(() => true, () => false);
-  const unloaded = document.getElementById("gunloaded");
+  const unloaded = document.getElementById("gunloaded"), undrawable = document.getElementById("gundrawn");
+  // the engine fetches the rest of itself while it draws, so a draw can fail after the engine loaded
+  const drawOf = (id, src) => mermaid.render(id, src + "\n" + classDefs)
+    .catch((e) => console.error("the graph did not draw:", e));
 
   // What the two full size views do, shared with the window of its own, which runs its own copy
   // (board.VIEW_JS).
@@ -2390,7 +2394,7 @@ ${viewjs}
     // every long label stays on one line and clips (mermaid-js/mermaid#7794).
     // SVG labels wrap by mermaid's own measure.
     mermaid?.initialize({
-      startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
+      startOnLoad: false, suppressErrorRendering: true, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
       elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
       themeVariables: {
         fontFamily: getComputedStyle(document.body).getPropertyValue("--font-body").trim(), fontSize: "13px",
@@ -2416,10 +2420,14 @@ ${viewjs}
     for (const el of drawn ? undrawn() : []) {
       if (el.querySelector("svg")) continue;  // drawn by a call that started before this one
       el.dataset.src = el.textContent;
-      const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
-      el.innerHTML = svg;
+      const done = await drawOf("m" + Date.now() + "_" + seq++, el.dataset.src);
+      // a failed graph is left undrawn, so the next call tries it again
+      if (!done) { el.dataset.failed = ""; continue; }
+      delete el.dataset.failed;
+      el.innerHTML = done.svg;
       nodeHover(el);
     }
+    undrawable.hidden = !document.querySelector(".g:not([hidden]) .mermaid[data-failed]");
     markNode();
     paintFull();
   }
@@ -2542,10 +2550,12 @@ ${viewjs}
 
   async function svgFor(src) {
     const key = src + "@" + document.documentElement.dataset.theme;
-    if (!fullCache[key]) {
-      const { svg } = await mermaid.render("gf" + Date.now() + "_" + seq++, src + "\n" + classDefs);
+    // a failure is kept too: the window of its own asks every second, and only a reload can mend it
+    if (!(key in fullCache)) {
+      const done = await drawOf("gf" + Date.now() + "_" + seq++, src);
+      if (!done) return fullCache[key] = "";
       const box = document.createElement("div");
-      box.innerHTML = svg;
+      box.innerHTML = done.svg;
       nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
       // mermaid sizes its drawing to whatever box it is given (width="100%", capped at the size it
       // drew); full size is that size, which is the one its viewBox counts in.
@@ -2560,11 +2570,11 @@ ${viewjs}
   // The whole of what a full size view shows, drawing included, so the window of its own is sent a
   // picture rather than a source it has no mermaid to draw.
   async function viewOf(g) {
-    const draw = g.src && await drawable();
-    const note = g.src && !draw ? unloaded.textContent : g.note;
+    const draw = g.src && await drawable(), svg = draw ? await svgFor(g.src) : "";
+    const note = !g.src ? g.note : !draw ? unloaded.textContent : !svg ? undrawable.textContent : g.note;
     return {
       key: [g.name, g.mode, g.theme, g.src, note].join("|"), name: g.name, mode: g.mode,
-      theme: g.theme, note, cur: g.cur, svg: draw ? await svgFor(g.src) : "",
+      theme: g.theme, note, cur: g.cur, svg,
     };
   }
 
