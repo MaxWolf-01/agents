@@ -16,7 +16,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **priority**: the agent's reading of how soon the ticket matters to the user, never their chore to rank.
 - **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
 - **needs-user**: the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
-- **hinge**: a child ticket whose dependents would have to be rewritten, not amended, were it wrong: an interface or data shape they consume, the executable properties. The cut marks it (SLICING.md), and the user rules on it alone before anything builds on it.
+- **hinge**: a child ticket ruled alone, before anything builds on it; the cut marks it (SLICING.md, Mark the hinges).
 
 **The H1 is the ticket's short name**, the few words a board row shows; the sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `CONTEXT.md`, in this order:
 

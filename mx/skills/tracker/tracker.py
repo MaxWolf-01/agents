@@ -305,8 +305,7 @@ def new(
         blocked_by: the tickets that have to be done first, by slug.
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
-        hinge: mark a child ticket as one its dependents would have to be rewritten, not amended,
-            were it wrong, so the user rules on it alone before they start.
+        hinge: mark a child ticket as a hinge, ruled alone before anything builds on it (SLICING.md).
     """
     if not SLUG.fullmatch(slug):
         raise Refused([f"`{slug}` is no slug; a slug is lower case words joined by hyphens, and the tracker is flat"])
