@@ -11,7 +11,7 @@ A thing is understood in front of a render: someone sees what it is and what it 
 
 A session the user reads answers on its **session page**: one page per session, rendered from plain-text records each time a turn ends, with the questions waiting on the user at its top and the turns below, newest first. An answer that fits in a line is that line, in the chat, and a session that never needs more gets no page. Past a line, the answer is on the page and the chat reply is one line and the page's link, `file://` and the session directory's `index.html`. A session outside a project with an agent repo (`tracker root` refuses) answers in the chat, and so does one nobody reads live, a dispatched worker or a print-mode run, whose artefacts are its report.
 
-The records sit in `"$(dirname "$(tracker root)")/sessions/$CLAUDE_CODE_SESSION_ID/"`, outside git and the same directory from every worktree of the project. The Stop hook renders the page from them as the turn ends, and sends the turn back when a record does not parse, when the light review of its prose flags something, or when the answer went to the chat with no record written.
+The records sit in `"$(dirname "$(tracker root)")/sessions/$CLAUDE_CODE_SESSION_ID/"`, outside git and the same directory from every worktree of the project. The Stop hook renders the page from them as the turn ends, opening it in the browser the first time, and sends the turn back when a record does not parse, when the light review of its prose flags something, or when the answer went to the chat with no record written.
 
 A turn that answers with more than a line, in order:
 
