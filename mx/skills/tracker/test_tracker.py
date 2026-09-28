@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown", "markdown-it-py"]
 # ///
 """Checks for the tracker command. Run: uv run test_tracker.py
 

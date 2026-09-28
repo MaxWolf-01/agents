@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown", "markdown-it-py"]
 # ///
 """Checks for the board's reading of a tracker. Run: uv run test_board.py
 
@@ -1481,10 +1481,19 @@ def pages_in(row: str) -> list[tuple[str, str, str, str | None]]:
 def test_a_session_with_a_page_carries_it_and_one_without_carries_none(worked: tuple[Path, Path]) -> None:
     """board-links-session-pages, at the board's loader: the page is the one the session-page
     renderer writes under the directory the session ran in. The session sharing that directory
-    never needed a page, and the one whose directory dispatch removed took its page with it."""
+    never needed a page, and neither did the one whose directory dispatch removed."""
     root, repo = worked
     pages = {s.id: s.page for s in ticket_sessions(root / "map-columns.md", repo)}
     assert pages == {HERE: repo / "agent" / "sessions" / HERE / "index.html", NAMED: None, NEW: None}
+
+
+def test_a_session_whose_worktree_is_gone_carries_the_page_its_ticket_s_project_keeps(worked: tuple[Path, Path]) -> None:
+    """The page outlives the worktree dispatch removed: it sits in the agent repo of the project
+    the ticket is in, which the session's gone directory no longer names."""
+    root, repo = worked
+    put(repo / "agent" / "sessions" / NAMED / "index.html", "<!doctype html>\n<title>Wave 1</title>\n")
+    (named,) = [s for s in ticket_sessions(root / "map-columns.md", repo) if s.id == NAMED]
+    assert named.page == repo / "agent" / "sessions" / NAMED / "index.html"
 
 
 def test_a_session_that_moved_project_carries_the_page_it_wrote_in_the_later_one(worked: tuple[Path, Path]) -> None:
