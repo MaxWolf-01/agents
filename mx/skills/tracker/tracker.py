@@ -306,7 +306,7 @@ def new(
     into. Prints the path. Refuses a slug the tracker already holds.
 
     Args:
-        slug: the ticket's id, lower case words joined by hyphens, descriptive enough to know it from.
+        slug: the ticket's id, lower case words joined by hyphens; capitalised, it is the H1 filed (SKILL.md, The ticket file).
         priority: how soon it matters to the user, 1 now to 5 someday.
         size: the user's time on it: XS, S, M, L or XL.
         parent: the ticket this one is part of; absent on a top-level ticket.
@@ -956,7 +956,7 @@ def layout_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
     if re.fullmatch(r"\d\d-.*\.md", name):
         return [Refusal(ticket.path, 1, f"`{name}` carries a number; `NN` numbering is dropped, and the file is `agent/tickets/<slug>.md`")]
     if not SLUG.fullmatch(ticket.slug):
-        return [Refusal(ticket.path, 1, f"`{name}` is no slug; a slug is lower case words joined by hyphens, descriptive enough to know the ticket from")]
+        return [Refusal(ticket.path, 1, f"`{name}` is no slug; a slug is lower case words joined by hyphens")]
     if ticket.path.parent != tracker.root:
         return [Refusal(ticket.path, 1, f"`{ticket.path.parent.name}/` is a feature directory; the tracker is flat, and a feature is a top-level ticket its tickets name as their `parent`")]
     return []
