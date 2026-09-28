@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["tyro", "pyyaml", "markdown"]
+# dependencies = ["tyro", "pyyaml", "markdown", "markdown-it-py"]
 # ///
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
@@ -55,7 +55,8 @@ every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
 one with no transcript on this machine, a worker on another host, is left out,
 and each of the rest carries a button that copies the command resuming it and,
 where one has been rendered, a link to its session page, read from
-agent/sessions/<session-id>/ under the directory the session ran in. The
+agent/sessions/<session-id>/ in the agent repo of the project the session ran
+in. The
 brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
@@ -164,6 +165,9 @@ import tyro
 import briefing  # the board briefing: the session that writes it, and the cache it lives in, beside this script
 import github  # the state of the pull requests and issues the tickets name, beside this script
 import tracker  # the one parser of a ticket file, and the rules it refuses one by, beside this script
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "session-page"))
+from session_page import PAGE as SESSION_PAGE, session_directory  # noqa: E402  where a session's page lives
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
@@ -907,10 +911,11 @@ def ticket_sessions(path: Path, repo: Path | None, transcripts: Path | None = No
 
 def session_page(session: str, cwds: Sequence[str]) -> Path | None:
     """The session's page, or None where there is none: a session that never needed one, or one
-    whose directory, and the page with it, dispatch has since removed. The session-page renderer
-    writes it under the directory the session was in when its turn ended
-    (mx/skills/session-page/stop_hook.py), so the newest of those that holds one answers."""
-    pages = (Path(cwd) / "agent" / "sessions" / session / "index.html" for cwd in reversed(cwds))
+    whose directories are all gone, since a removed worktree no longer says which project it was
+    of. The session-page Stop hook writes it where `session_directory` puts it from the directory
+    the session was in when its turn ended, so the newest of those that holds one answers."""
+    directories = (session_directory(Path(cwd), session) for cwd in reversed(cwds))
+    pages = (directory / SESSION_PAGE for directory in directories if directory)
     return next((page for page in pages if page.is_file()), None)
 
 

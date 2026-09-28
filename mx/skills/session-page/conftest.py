@@ -22,13 +22,14 @@ def worked_example(tmp_path: Path) -> Path:
     """The prototype's four turns as the session directory they describe, copied so that a check
     can corrupt or perturb a record.
 
-    It sits under a repo root of its own (`tmp_path`), at the path the hook derives from a session
-    id, so the two seams read the same fixture. The records are stamped a second apart in their own
-    order, so the last turn's is the newest whatever way the hook comes to read "written this
-    turn".
+    It sits under a project of its own (`tmp_path`, whose agent repo holds a tracker), at the path
+    the hook derives from a session id, so the two seams read the same fixture. The records are
+    stamped a second apart in their own order, so the last turn's is the newest whatever way the
+    hook comes to read "written this turn".
     """
     directory = tmp_path / SESSIONS / SESSION
     shutil.copytree(FIXTURES / "session", directory)
+    (tmp_path / "agent" / "tickets").mkdir()
     written = time.time()
     for number, record in enumerate(sorted((directory / "turns").glob("[0-9][0-9].md"))):
         os.utime(record, (written + number, written + number))
