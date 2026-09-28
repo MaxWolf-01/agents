@@ -255,15 +255,47 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
     assert (worked_example / PAGE).read_text() != stale_page
 
 
-def test_a_record_written_without_a_write_call_counts_as_written(
+RECORD_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
+
+
+def with_write(transcript: Path, tool: str, record: Path) -> None:
+    """Append to the transcript the turn's `tool` call on `record`, a minute after SPOKEN_AFTER."""
+    call = {"type": "tool_use", "id": f"toolu_{tool}_{record.stem}", "name": tool, "input": {"file_path": str(record)}}
+    entry = {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": "2026-09-23T01:36:00.000Z"}
+    transcript.write_text(transcript.read_text() + json.dumps(entry) + "\n")
+
+
+def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with_write(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """A record written through the shell leaves no write call in the transcript; its modification
-    time says it was written this turn, so the long reply beside it renders."""
-    (worked_example / "turns" / "05.md").write_text("---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n")
+    """stop-hook-reads-writes-from-the-transcript-only: a record counts as written this turn only by
+    its write call in the transcript, as the page pairs messages. One written through the shell,
+    with a long reply beside it, goes back once naming that record, to be written again with Write
+    (that ticket's D1), and the turn the Stop hook continued renders; written with Write, it carries
+    the user's message."""
+    record = worked_example / "turns" / "05.md"
+    record.write_text(RECORD_05)
     run(payload(worked_example, unrecorded, reply=LONG))
+    said = said_back(capsys)
+    assert str(record) in said and "Write" in said and "06.md" not in said
+    run(payload(worked_example, unrecorded, reply=LONG, stop_hook_active=True))
     assert capsys.readouterr().out == ""
     assert "Round 4" in (worked_example / PAGE).read_text()
+    with_write(unrecorded, "Write", record)
+    assert session_page.read_session(worked_example, unrecorded).turns[-1].messages == (SPOKEN_AFTER["message"]["content"],)
+
+
+def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_one(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """stop-hook-reads-writes-from-the-transcript-only's D2: the page keeps a record's earliest write,
+    so an Edit of record 04 after the user spoke writes no record this turn, and the long reply goes
+    back to be moved onto 05."""
+    record = worked_example / "turns" / "04.md"
+    record.write_text(record.read_text() + "\n- Edited this turn to answer the question.\n")
+    with_write(unrecorded, "Edit", record)
+    run(payload(worked_example, unrecorded, reply=LONG))
+    assert str(worked_example / "turns" / "05.md") in said_back(capsys)
 
 
 # ---- the turn record's review -----------------------------------------------
@@ -369,6 +401,7 @@ def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed
     assert "05.md" in said_back(capsys)
     record = worked_example / "turns" / "05.md"
     record.write_text("---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank is a pivotal addition.\n")
+    with_write(unrecorded, "Write", record)
     monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
     run(payload(worked_example, unrecorded, stop_hook_active=True))
     assert str(record) in said_back(capsys)
@@ -474,6 +507,12 @@ def in_the_chat(example: Path, transcript: Path, fixtures: pytest.FixtureRequest
     return payload(example, fixtures.getfixturevalue("unrecorded"), reply=LONG)
 
 
+def through_the_shell(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    hook = in_the_chat(example, transcript, fixtures)
+    (example / "turns" / "05.md").write_text(RECORD_05)
+    return hook
+
+
 def found_fault(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     fixtures.getfixturevalue("monkeypatch").setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
     return payload(example, transcript)
@@ -503,6 +542,7 @@ PATHS = {
     "a session with no directory": (with_no_directory, "allow", "no session directory", True),
     "a record that does not parse": (unparsed, "send back", "record does not parse", True),
     "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
+    "a record written through the shell": (through_the_shell, "send back", "record written outside Write", True),
     "a record the review finds fault with": (found_fault, "send back", "review findings", True),
     "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
     "a record reviewed at an earlier stop": (reviewed_earlier, "render", "record reviewed this turn", True),
