@@ -109,7 +109,8 @@ Every link the page writes is relative to it, so it opens wherever the page is
 opened: served from any origin, or as a file. `board` opens the page served,
 from the diffview server over the whole agent repo (`diffview --serve
 agent/`), and while it watches it brings that server back on the same port
-whenever it exits, so an open tab keeps answering. Where no diffview is
+whenever it exits, so an open tab keeps answering; a served tab whose server
+stops answering says so at the top. Where no diffview is
 installed or its server does not answer, it opens the file. A ticket row links
 its diffview review page when one has been rendered: agent/diffviews/<slug>.html
 beside the tracker, gitignored, so the link appears only on the machine that
@@ -329,11 +330,14 @@ def watch(tickets_root: Path, repo: Path, out: Path, address: str | None) -> Non
     the tracker sits still would otherwise show as open until someone touched a ticket, a briefing
     written minutes after the change that asked for it would not show at all, and a run that
     answered nothing writes no file for anything else to notice."""
-    seen, session = Seen(), Briefer(repo, out)
+    seen, session, retry = Seen(), Briefer(repo, out), 0.0
     while True:
         try:
-            if address:
-                address = kept(tickets_root.parent, out, address)
+            if address and time.monotonic() >= retry:
+                back = kept(tickets_root.parent, out, address)
+                if back and back != address:
+                    print(f"board: the server came back at {back}; a tab open at {address} no longer follows the tracker", file=sys.stderr)
+                address, retry = back or address, 0.0 if back else time.monotonic() + SERVER_RETRY
             seen = look(seen, session, tickets_root, repo, out)
         except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
             print(f"board: {e}; retrying", file=sys.stderr)
@@ -496,8 +500,6 @@ def briefing_state(root: Path, repo: Path) -> str:
     """The tracker as the board reads it, in the words the briefing session is handed it in: the
     tickets from the agent repo, the commits and the name from the project it plans, which is the
     repo that session reads for what the tickets cannot say."""
-    # the session is given the tickets; a review page is the user's to read and its address the
-    # render's to find, so this reads them unserved
     code = project(root)
     return state_of(code.name, load_tickets(root, repo, root.parent), git_log(code))
 
@@ -852,10 +854,13 @@ def served(agent: Path, out: Path) -> str | None:
     return address
 
 
-def kept(agent: Path, out: Path, address: str) -> str:
-    """The address the open page is served at, its server brought back where it has exited: the
-    watcher's part in keeping a served tab answering."""
-    return address if answers(address) else served(agent, out) or address
+SERVER_RETRY = 60  # seconds between the watcher's tries at a server that did not come back
+
+
+def kept(agent: Path, out: Path, address: str) -> str | None:
+    """The address the open page is served at, its server brought back where it has exited, or
+    None where it did not come back: the watcher's part in keeping a served tab answering."""
+    return address if answers(address) else served(agent, out)
 
 
 def answers(address: str) -> bool:
@@ -1102,10 +1107,14 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
     return next((titles[key] for key in TITLES if key in titles), ""), tuple(cwds)
 
 
+# what a served page says once its polls have gone unanswered a while
+UNSERVED = "The server this page came from is not answering, so it stops following the tracker until it does."
+
+
 def absence_note(source: str, words: str, hidden: bool = False) -> str:
     """An optional source the render did without, said once on the page: GitHub, the model, the
-    transcripts. The review-page server is one only the open page can tell it lacks, so its note is
-    written `hidden` and the page shows it."""
+    transcripts. A server is one only the open page can tell it lacks, so the notes for the review
+    pages' and the board's own are written `hidden` and the page shows them."""
     return f'<p class="absent" data-absent="{html.escape(source)}"{" hidden" if hidden else ""}>{html.escape(words)}</p>'
 
 
@@ -1730,7 +1739,7 @@ def render_page(
         overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS,
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
         columns=row_columns(tickets, grouped),
-        absences="".join(absences(tickets, gh, said)),
+        absences="".join(absences(tickets, gh, said)) + absence_note("board-server", UNSERVED, hidden=True),
         briefing=briefing_block(said, tickets),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
@@ -1838,7 +1847,7 @@ def absences(
         said.append(absence_note(
             "review-page-server",
             "This board is open as a file, so the review pages it links open as files too and what you "
-            "write on one is not saved. `board` opens it served.",
+            "write on one is not saved. Run board to open it served.",
             hidden=True,
         ))
     if not TRANSCRIPTS.is_dir():
@@ -2905,6 +2914,8 @@ ${viewjs}
   // opened as a file, the review pages it links cannot save either, which the page says of itself
   const served = location.protocol !== "file:";
   if (!served) document.querySelector("[data-absent=review-page-server]")?.removeAttribute("hidden");
+  const gone = document.querySelector("[data-absent=board-server]");
+  let unanswered = 0;
 
   // Reload only when the renderer wrote different content. fetch() is blocked on
   // file://, but a classic script tag isn't — so poll the sidecar stamp file the
@@ -2914,15 +2925,19 @@ ${viewjs}
     s.src = document.body.dataset.stampSrc + "?" + Date.now();
     s.onload = () => {
       s.remove();
+      unanswered = 0;
+      gone.hidden = true;
       if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
       else setTimeout(poll, 5_000);
     };
     // opened as a file, no sidecar: stay current the blunt way. Served, the server is between an exit
-    // and the watcher bringing it back on this port, and a reload now would land on an error page.
+    // and the watcher bringing it back on this port, and a reload now would land on an error page;
+    // three polls unanswered say so on the page, since a tab left behind shows nothing else.
     s.onerror = () => {
       s.remove();
-      if (served) setTimeout(poll, 5_000);
-      else { saveState(); location.reload(); }
+      if (!served) { saveState(); location.reload(); return; }
+      gone.hidden = ++unanswered < 3;
+      setTimeout(poll, 5_000);
     };
     document.head.append(s);
   }

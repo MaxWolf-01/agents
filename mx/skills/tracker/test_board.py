@@ -469,6 +469,21 @@ def test_the_watcher_brings_back_a_server_that_exited_and_leaves_one_that_answer
     assert Path(f"{stub}.args").read_text().split() == ["--serve", str(agent)]
 
 
+def test_a_server_that_does_not_come_back_leaves_the_watcher_nothing_to_keep(
+    tracker: Path, stub_diffview: Callable[[str], Path],
+) -> None:
+    """What the watcher backs off on: the page's address and the one diffview names are both dead."""
+    stub_diffview(f"http://127.0.0.1:{free_port()}")
+    gone = f"http://127.0.0.1:{free_port()}/board.html"
+    assert board.kept(tracker.parent, tracker.parent / "board.html", gone) is None
+
+
+def test_every_board_carries_the_note_a_served_page_shows_when_its_server_stops_answering(tracker: Path) -> None:
+    page = page_of(tracker)
+    assert absences(page, "board-server") == 1
+    assert '<p class="absent" data-absent="board-server" hidden>' in page
+
+
 def free_port() -> int:
     """A port nothing listens on: bound, read, and let go."""
     with socket.create_server(("127.0.0.1", 0)) as server:
@@ -517,7 +532,7 @@ def test_a_rendered_board_links_nothing_by_a_file_or_a_loopback_address(
 ) -> None:
     """P5 of the dotfiles ticket agent-boards-on-phone: the board is read from a mirror on another
     host, where a file:// link or the laptop's 127.0.0.1 is dead. A diffview answering on this
-    machine is the case that used to write the second."""
+    machine changes nothing the render writes."""
     stub_diffview(listening)
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
