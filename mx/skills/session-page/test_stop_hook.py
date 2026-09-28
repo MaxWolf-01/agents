@@ -8,7 +8,8 @@ The seam is the hook at its input: the hook's JSON and the session directory in,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
 over the worked example in `fixtures/`, whose records a check corrupts one at a time.
-The prose reviewer is stubbed at `turn_review.review`, the one call that reaches a model.
+The prose reviewer is stubbed at `turn_review.review`, the one call that reaches a model, or runs
+through run-log against a stand-in `claude` first on PATH.
 """
 
 import io
@@ -373,11 +374,11 @@ def broken(system: str, prompt: str) -> list[dict]:
     raise RuntimeError("claude exited 1: overloaded")
 
 
-def slow(system: str, prompt: str) -> list[dict]:
-    raise subprocess.TimeoutExpired(["claude"], turn_review.REVIEWER_TIMEOUT_S)
+def hung(system: str, prompt: str) -> list[dict]:
+    raise subprocess.TimeoutExpired(["run-log"], turn_review.WRAPPER_TIMEOUT_S)
 
 
-@pytest.mark.parametrize("failing", [broken, slow], ids=["a failing reviewer", "a slow reviewer"])
+@pytest.mark.parametrize("failing", [broken, hung], ids=["a failing reviewer", "a hung run-log"])
 def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     failing: Callable[[str, str], list[dict]], worked_example: Path, transcript: Path, stale_page: str,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
@@ -440,25 +441,17 @@ def test_each_review_decision_is_logged_with_the_record_it_read(
 
 
 def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
-    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch,
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """The reviewer's input carries the earlier turn records and the user's messages, and no tool
     call: the transcript's Write calls and the task notifications that name a tool use carry ids
     starting `toolu_`. The record under review comes last, fenced, and the reviewer runs under
     its own system prompt, bound to the schema."""
-    argvs = []
-
-    def claude(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-        argvs.append(argv)
-        answer = {"type": "result", "result": "", "structured_output": {"findings": [finding(IN_RECORD[0])]}}
-        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(answer), stderr="")
-
-    monkeypatch.setattr(turn_review, "review", REVIEW)
-    monkeypatch.setattr(turn_review.subprocess, "run", claude)
+    claude = fake_claude(tmp_path, monkeypatch, RESULT | {"structured_output": {"findings": [finding(IN_RECORD[0])]}})
     decision = decide(payload(worked_example, transcript), worked_example)
     assert decision.verb == "send back" and IN_RECORD[0] in decision.reason
-    (argv,) = argvs
-    prompt, system = argv[-1], argv[argv.index("--system-prompt") + 1]
+    argv = (claude / "argv").read_text().split("\0")[:-1]
+    prompt, system = (claude / "stdin").read_text(), argv[argv.index("--system-prompt") + 1]
     turns = worked_example / "turns"
     for earlier in ("01.md", "02.md", "03.md"):
         assert (turns / earlier).read_text().strip() in prompt
@@ -473,6 +466,64 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
 
 
 REVIEW = turn_review.review  # the real one, which the autouse stub replaces
+
+# What claude's stream ends with, as ../run-log/test_run_log.py has it.
+RESULT = {"type": "result", "subtype": "success", "is_error": False, "session_id": "sess-1", "num_turns": 1,
+          "duration_ms": 4200, "duration_api_ms": 3900, "total_cost_usd": 0.0123,
+          "usage": {"input_tokens": 22, "output_tokens": 70, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+          "result": ""}
+
+
+def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: dict | None, then: str = "exit 0") -> Path:
+    """The real reviewer, calling a `claude` first on PATH that records its argv and stdin, streams
+    `result` as its last line, and does `then`; the run log is the check's own. Returns the
+    directory holding the argv, the stdin and `runs.jsonl`."""
+    where = tmp_path / "reviewer"
+    where.mkdir()
+    (where / "claude").write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\0" "$@" > "{where}/argv"\n'
+        f'cat > "{where}/stdin"\n'
+        + (f"echo {json.dumps(json.dumps(result))}\n" if result else "echo 'API Error: overloaded'\n")
+        + f"{then}\n")
+    (where / "claude").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("RUN_LOG", str(where / "runs.jsonl"))
+    monkeypatch.setattr(turn_review, "review", REVIEW)
+    return where
+
+
+def test_the_review_is_one_line_in_the_run_log_under_its_own_site(
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    claude = fake_claude(tmp_path, monkeypatch, RESULT | {"structured_output": {"findings": []}})
+    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
+    assert (line["site"], line["model"], line["effort"], line["cost_usd"], line["end"]) == (
+        "turn-review", "claude-opus-5-5", "low", 0.0123, "success")
+
+
+def test_a_reviewer_run_that_fails_is_still_one_line_in_the_run_log_and_the_page_renders(
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
+) -> None:
+    claude = fake_claude(tmp_path, monkeypatch, None, then="exit 1")
+    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
+    assert (line["site"], line["exit"], line["end"]) == ("turn-review", 1, "no result")
+    (entry,) = logged(attended, "decision")
+    assert (entry["decision"], entry["why"]) == ("failed", "claude exited 1: API Error: overloaded")
+
+
+def test_a_reviewer_past_its_limit_is_ended_with_its_line_written_and_the_page_renders(
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(turn_review, "REVIEWER_TIMEOUT_S", 1)
+    claude = fake_claude(tmp_path, monkeypatch, None, then="exec sleep 30")
+    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
+    assert (line["site"], line["exit"], line["end"]) == ("turn-review", "timeout", "no result")
+    (entry,) = logged(attended, "decision")
+    assert entry["decision"] == "failed" and entry["why"].startswith("claude ran past 1s")
 
 
 # ---- the hook's log ---------------------------------------------------------
