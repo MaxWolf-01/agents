@@ -16,6 +16,7 @@
 #        dispatch fetch <slug>
 #        dispatch push
 #        dispatch review <slug>
+#        dispatch accept <slug>
 #        dispatch ps
 #        dispatch attach <worker>
 #        dispatch peek <worker> [lines]
@@ -83,8 +84,17 @@
 #            board; and writes the ticket's status: `review` while either
 #            branch is unmerged, `done` with the round's two ranges in the
 #            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
-#            once both have merged. One commit either way, and none when the
-#            ticket already says so.
+#            once both have merged. A child ticket merged into its parent
+#            ticket's branch, which this is, gets its ranges and stays
+#            `review` unless it is a hinge: it is ruled with the parent, and
+#            `accept` writes its `done`. One commit either way, and none when
+#            the ticket already says so.
+#   accept   the user's accept of a parent ticket ruled whole, once its branch
+#            <slug> has merged --no-ff into this one, the branch above it:
+#            writes `done` on every child ticket of it in `review`, then on
+#            the parent with its range, `code@<sha>..<sha>`. Refuses before
+#            that merge, and writes nothing when the tracker refuses any one
+#            of them. One commit.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
 #            scratch dir whose probe failed an `unreadable` one, a
@@ -107,9 +117,14 @@
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
-# parent is the ticket tip). A build merges only once the user has ruled on its
-# review page, so until then it renders unmerged and the tracker carries the
-# ticket's status and nothing else of it.
+# parent is the ticket tip). No code merges above a parent ticket's branch
+# before the user has ruled: a hinge, and a ticket with no parent ticket's
+# branch to merge into, merge only on the accept, and until then render
+# unmerged, the tracker carrying the ticket's status and nothing else of it; any
+# other child merges into its parent's branch on the orchestrator's read, and
+# its parent's accept takes it up. The agent repo holds no parent ticket's
+# branch, so that child's agent branch merges into the branch it has out, at
+# the same read.
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -629,9 +644,16 @@ review() {
         for round in "${written[@]}"; do
             rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
         done
-        [ "$("$tracker" get "$id" status)" = done ] || fields+=("status=done")
+        # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
+        if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
+            now=review landed="$id merged into $base, for its ruling with it"
+        else
+            now=done landed="$id landed"
+        fi
+        status=$("$tracker" get "$id" status)
+        [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
         [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
-        git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$id landed"
+        git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$landed"
     elif [ "$("$tracker" get "$id" status)" != review ]; then
         run "$tracker" set "$id" status=review || exit 1
         commit_ticket "$id" "$id for review"
@@ -663,6 +685,34 @@ review() {
     notes_of "$id" > "$out.notes.json" || exit 1
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve "$diffviews"
+    run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+}
+
+# The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
+# one commit, or none of them. Before the merge up it refuses on its own; after it, `tracker`
+# refuses each ticket whose work has not reached the branch its accept merges into, and the files
+# already written are put back.
+accept() { # <slug>
+    locate
+    id=$1
+    tip=$(git -C "$repo_root" rev-parse --verify -q "refs/heads/$id") ||
+        die "no branch $id in $repo_root; accept is the parent ticket's, whose children merge into its branch"
+    is_merged code "$tip" || die "$id is not merged into $base; merge it --no-ff first, on the user's accept"
+    range=$(range_of code "$tip") || exit 1
+    read=$("$tracker" data) || exit 1
+    ruled=$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .slug')
+    paths=("$tickets/$id.md")
+    for child in $ruled; do paths+=("$tickets/$child.md"); done
+    # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
+    git -C "$agent_top" diff --quiet -- "${paths[@]}" || die "a ticket file of $id's tree has uncommitted changes; commit them first"
+    put_back() { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
+    for child in $ruled; do
+        run "$tracker" set "$child" status=done || put_back
+    done
+    fields=(status=done)
+    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
+    run "$tracker" set "$id" "${fields[@]}" || put_back
+    run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
 }
 
@@ -847,6 +897,7 @@ case $cmd in
     wait)    shift; wait_ "$@" ;;
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
+    accept)  shift; accept "$@" ;;
     ps)      ps_ ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;

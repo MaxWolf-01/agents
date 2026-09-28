@@ -11,11 +11,12 @@ The `tracker` command owns every mechanical operation on those files, read and w
 
 ## The ticket file
 
-All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s. Three of them are judgments rather than bookkeeping:
+All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s. Four of them are judgments rather than bookkeeping:
 
 - **priority**: the agent's reading of how soon the ticket matters to the user, never their chore to rank.
 - **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
 - **needs-user**: the user is in the loop for this one, so dispatch keeps it from a worker and their ruling is what lands it.
+- **hinge**: a child ticket ruled alone, before anything builds on it; the cut marks it (SLICING.md, Mark the hinges).
 
 **The H1 is the ticket's short name**, the few words a board row shows; the sentence a title would carry goes in the brief instead. Under it the body is prose the agent writes, in the vocabulary of `CONTEXT.md`, in this order:
 
@@ -54,7 +55,7 @@ A ticket's **context** is its own body and every ancestor's, so a parent ticket 
 
 Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file: every write this command makes is refused from a `ticket/<slug>` branch, which is what a worker holds either repo on, `dispatch review` refuses a ticket branch that wrote one, and the commit hook refuses one staged there. What a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`.
 
-A parent ticket is done when every child ticket is done and its own close-out is ruled: the full suite, the review one level up, harden, the debrief (`/mx:dispatch`).
+**A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, harden, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. Only a hinge is ruled alone, before its dependents start. From the parent's review page the user can still amend, redo or reject a single child.
 
 ## State
 
@@ -63,10 +64,10 @@ Which status may follow which is `tracker`'s, refused by the rule it names. What
 - **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It is on the frontier and built like an open ticket, so what waits is the ruling and not the build; its brief says what it was cut from.
 - **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already; silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
-- **review**: the work is finished and waits for the user's **ruling**, made on the ticket's review page, and on the landing's show where there is one, or as a line in chat. It unblocks nothing, so a dependent never builds on a guess.
-- **done**: the accept, and nothing less. A ticket the user is in the loop for (`needs-user`) is done on their ruling with no branch to merge, travelling the same statuses to get there.
+- **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. A child that is no hinge waits merged into its parent's branch, once the orchestrator's read passed it, and unblocks its siblings, since the parent ruled whole is where a wrong one is caught; a hinge, and any ticket outside a parent's branch, unblocks nothing, so a dependent never builds on a guess it cannot amend.
+- **done**: the user's accept, given or standing, and nothing less: the ticket's work has reached the branch the user's accept merges it into, its parent's branch for a hinge, the branch above its parent for any other child, which the parent's accept brings it to. A ticket the user is in the loop for (`needs-user`) is done on their ruling with no branch to merge, travelling the same statuses to get there.
 
-The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's CLAUDE.md, the tool's config.
+The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. What the ruling asks of the user is the calls `/mx:dispatch`'s sort finds theirs to make, each shown to them, with the review page as the drill-down. A build carrying none is accepted on their **standing yes**, with nothing put to them. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's CLAUDE.md, the tool's config.
 
 Two facts carry **provenance**: whether the user wanted the ticket at all is its status, and whose framing it carries is inline, an approach an agent sketched saying so ("options sketched by agent <date>, frame unconfirmed") while unmarked framing reads as agent-sketched. Acceptance criteria that keep the option space open ("options outside this list count") leave the session working the ticket the problem, not the menu it arrived with.
 

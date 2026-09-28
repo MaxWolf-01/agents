@@ -9,7 +9,8 @@ sources (which tickets become nodes, in which class, joined by which edges), and
 page (groups, rows, the attributes the page's script matches against the graph sources). The
 oracle is the tracker skill and the board's --help: the frontier is open, unblocked,
 unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
-user's ruling in its own group and unblocks nothing until the accept writes done; a gh reference
+user's ruling in its own group and unblocks nothing until the accept writes done, save a sibling
+merged into the branch of the parent ticket the two share, no hinge; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page
 is linked on the address diffview serves it on, and as a file where nothing serves it; a reference whose file no longer exists counts as done; a graph draws only
 tickets with an edge; one tracker directory holds every ticket the board shows, a build in
@@ -25,6 +26,7 @@ import itertools
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -71,7 +73,7 @@ STUB_ADDRESS = "http://127.0.0.1:54321"
 def ticket(
     path: Path, status: str, blocked_by: list[str] | None = None, parent: str | None = None,
     needs_user: bool = False, gh: list[str] | None = None, priority: int | None = 2,
-    size: str | None = "S", brief: str | None = None, name: str | None = None,
+    size: str | None = "S", brief: str | None = None, name: str | None = None, hinge: bool = False,
 ) -> None:
     """One ticket file the tracker's rules accept, at `path`; its slug is the file's stem."""
     lines = ["---", f"status: {status}"]
@@ -81,6 +83,8 @@ def ticket(
         lines.append(f"blocked-by: [{', '.join(blocked_by)}]")
     if needs_user:
         lines.append("needs-user: true")
+    if hinge:
+        lines.append("hinge: true")
     if gh:
         lines.append(f"gh: [{', '.join(gh)}]")
     if priority:
@@ -124,6 +128,8 @@ def stub_diffview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         f'echo "diffview: serving $2 at {STUB_ADDRESS}/  (exits 30 minutes after the last page closes)"\n'
     )
     stub.chmod(0o755)
+    if git := shutil.which("git"):  # the repo the board reads what merged in, as conftest.KEPT keeps it
+        (bin_dir / "git").symlink_to(git)
     monkeypatch.setenv("PATH", str(bin_dir))
     return stub
 
@@ -521,8 +527,8 @@ def test_an_unblocked_proposal_is_claimable_and_still_waits_for_its_ruling(track
 SIZE_WORDS = {"XS": ("15 min", "under 15 min"), "S": ("20 min", "about 20 min"), "M": ("1 h", "about an hour"),
               "L": ("half a day", "half a day"), "XL": ("several sessions", "several sessions")}
 PRIORITY_WORDS = {1: "now", 2: "next", 3: "soon", 4: "later", 5: "someday"}
-ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build"}
-MARKS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag", "qhead", "copier"}
+ASK_WORDS = {"review": "to rule on", "answer": "your answer", "session": "with you", "build": "build", "whole": "with parent"}
+MARKS = {"tree", "slug", "asks", "time", "pri", "chip", "rp", "gh", "src", "qtag", "qhead", "copier", "hinge", "kin"}
 # What a row holds that is not a mark: the boxes the marks sit in, and the prose a reader reads
 # rather than decodes, the ticket's own name among it (its hover words are the name in full, for a
 # row too narrow to show it). Everything else on a row explains itself, which is what makes the
@@ -1036,11 +1042,11 @@ def test_the_needs_me_groups_copy_button_holds_every_open_question_under_its_tic
     assert {lines[0] for lines in blocks} == {
         str(demo.root / name) for name in [
             "map-columns.md", "view-storage.md", "view-list-shape.md", "flaky-upload-test.md",
-            "pick-a-date-library.md", "retire-legacy-exporter.md", "speed-up-tests.md",
+            "pick-a-date-library.md", "retire-legacy-exporter.md", "speed-up-tests.md", "carry-balances.md",
         ]
     }
     asked = [line for lines in blocks for line in lines[1:]]
-    assert len(asked) == 11 and all(line.startswith("- [D") for line in asked)
+    assert len(asked) == 12 and all(line.startswith("- [D") for line in asked)
     assert any("Remember the mapping per bank" in line for line in asked), "a build in review asks its own"
     # the file's own markdown, so a question pastes back into the ticket as it was written
     assert "- [D3] **The mappings live in `~/.config/ledger/mappings.toml`.** Fine there, or beside the ledger file so they travel with it?" in asked
@@ -1148,7 +1154,7 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
     assert copiers(body_of(row)) == copiers(summary_of(row)), "the same button, and none on the question a ruling answered"
     # the list going is the page's style, which only a browser sees run (test_board_layout.py);
     # this is the tripwire for a run with no browser, not the check
-    assert ".ticket[open] .qs { display: none; }" in page, "nothing in the page hides an opened row's question list"
+    assert ".ticket[open] > summary .qs { display: none; }" in page, "nothing in the page hides an opened row's question list"
     three = rows["t-map-columns"]
     assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "runcopy"]
     assert [which for which, _, _, _ in copiers(summary_of(three))] == ["qcopy", "qcopy", "qcopy", "qall"]
@@ -2267,11 +2273,13 @@ def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file
     # the three above
     ticket = demo.root / "map-columns.md"
     assert (
-        f"map-columns \u00b7 review \u00b7 to rule on \u00b7 p1 now \u00b7 1 h \u00b7 Map columns once per bank \u00b7 {ticket}\n"
+        f"map-columns \u00b7 review \u00b7 to rule on \u00b7 p1 now \u00b7 1 h \u00b7 Map columns once per bank \u00b7 {ticket} \u00b7 a hinge\n"
         "  brief: You tell the importer once which column holds the date, the amount and the payee;"
         " it remembers that per bank and never asks again.\n"
         "  waits on: parse-rows\n"
     ) in state
+    # a row folded under its parent ticket's says which one
+    assert f"Carry the balances forward \u00b7 {demo.root / 'carry-balances.md'} \u00b7 folded under month-close\n" in state
     # the tickets are written out under the tree each is part of, the ones in no tree under their own
     assert "## alone\nexport-to-xlsx \u00b7 blocked \u00b7 build \u00b7 p4 later \u00b7 20 min \u00b7 Export to Excel \u00b7 " in state
 
@@ -2310,10 +2318,17 @@ def absences(page: str, source: str) -> int:
     return page.count(f'data-absent="{source}"')
 
 
+def group_body(page: str, group: str) -> str:
+    """The markup of one of the board's groups, empty where the page has no such group."""
+    if f'id="grp-{group}"' not in page:
+        return ""
+    return page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
+
+
 def rows_in(page: str, group: str) -> set[str]:
-    """The ticket rows one of the board's groups holds."""
-    body = page.split(f'id="grp-{group}"', 1)[1].split('class="grp" id="grp-', 1)[0]
-    return set(re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', body))
+    """The ticket rows one of the board's groups holds, and not the rows folded under them."""
+    rows = rows_of(group_body(page, group))
+    return {one for one in rows if not any(f'id="{one}"' in inside for inside in rows.values())}
 
 
 def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_session() -> None:
@@ -2334,12 +2349,13 @@ def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_
         assert needs_me(status, needs_user, priority, open_question) is waits, (status, needs_user, priority, open_question)
 
 
-# what the demo tracker's tickets ask of the user: the two builds in review, every ticket with a
-# question no Ruled line answers, and the two near tickets the user is in the loop for, whose
-# session is the work whether or not a question of theirs is open.
+# what the demo tracker's tickets ask of the user: the two builds in review, the parent ticket at
+# its close-out, every ticket with a question no Ruled line answers, and the two near tickets the
+# user is in the loop for, whose session is the work whether or not a question of theirs is open.
 NEEDS_ME = {
     "t-map-columns", "t-view-storage", "t-view-list-shape", "t-flaky-upload-test",
     "t-pick-a-date-library", "t-retire-legacy-exporter", "t-speed-up-tests", "t-staging-credentials",
+    "t-month-close",
 }
 
 
@@ -2351,6 +2367,151 @@ def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo
     render(demo.root, demo.repo, out)
     assert rows_in(out.read_text(), "needs") == NEEDS_ME
     assert "t-read-the-bank-formats" not in rows_in(out.read_text(), "needs"), "a worker's ticket with nothing open"
+
+
+# ---- a parent ticket ruled whole ------------------------------------------
+# speculative-first's Decisions, The board: a leaf in review under a parent not yet closed out
+# waits in its tree, not in the needs-me group; a parent at its close-out is one needs-me row with
+# its children under it; a hinge carries a row mark.
+
+def anywhere_in(page: str, group: str) -> set[str]:
+    """Every ticket row inside one of the board's groups, the rows folded under another included."""
+    return set(re.findall(r'<details class="ticket [^"]*" id="([\w-]+)"', group_body(page, group)))
+
+
+def test_a_leaf_merged_into_a_parent_still_being_built_waits_in_its_tree_not_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """duplicate-rule is in review, merged into the branch of csv-import, which is still claimed."""
+    out = tmp_path / "board.html"
+    render(demo.root, demo.repo, out)
+    page = out.read_text()
+    rows = rows_of(page)
+    assert 'id="grp-needs"' in page
+    assert "t-duplicate-rule" not in anywhere_in(page, "needs")
+    assert "t-csv-import" in rows_in(page, "claimed")
+    assert 'id="t-duplicate-rule"' in body_of(rows["t-csv-import"]), "the leaf sits under its parent's row"
+    assert {mark: text for mark, text, _ in marks_on(summary_of(rows["t-duplicate-rule"]))}["asks"] == "with parent"
+    assert "1 child ticket" in [text for mark, text, _ in marks_on(summary_of(rows["t-csv-import"])) if mark == "kin"]
+
+
+def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_under_it(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """month-close is in review with carry-balances; lock-period, its hinge, was ruled alone and is
+    done. The group counts the parent as one row, and the parent's row asks carry-balances'
+    question, which the button copying the group's questions copies with the rest."""
+    out = tmp_path / "board.html"
+    render(demo.root, demo.repo, out)
+    page = out.read_text()
+    rows = rows_of(page)
+    children = {"t-carry-balances", "t-lock-period"}
+    assert "t-month-close" in rows_in(page, "needs")
+    assert not children & {one for group in ("needs", "open", "claimed", "blocked", "proposed", "done") for one in rows_in(page, group)}
+    assert all(f'id="{one}"' in body_of(rows["t-month-close"]) for one in children)
+    assert f'<h2>needs me <span class="n">{len(NEEDS_ME)}</span>' in page, "the parent and its children count as one row"
+    assert "2 child tickets" in [text for mark, text, _ in marks_on(summary_of(rows["t-month-close"])) if mark == "kin"]
+    searched = html.unescape(re.search(r'id="t-month-close" [^>]*data-search="([^"]*)"', page).group(1))
+    assert "closing a month writes each account's balance" in searched, "a word of a folded child finds the row holding it"
+    asked = "Carry a closed month's balances, or recompute them from its transactions?"
+    assert questions_on(summary_of(rows["t-month-close"])) == [("carry-balances D1", asked)]
+    [(_, group, _, _)] = [one for one in copiers(page) if one[0] == "qgroup"]
+    assert f"{demo.root / 'carry-balances.md'}\n- [D1] **{asked}**" in group
+
+
+def test_the_fallback_counts_the_questions_a_parent_at_its_close_out_asks_for_its_children(tracker: Path) -> None:
+    """lamp-ui at its close-out, `built` under it asking one question: the sentence counts it, as
+    the parent's row asks it."""
+    ticket(tracker / f"{TREE}.md", "review", priority=1, size="L", name="Feat")
+    built = tracker / "built.md"
+    built.write_text(built.read_text() + "\n## Questions\n\n- [D1] **Keep the suite serial?** It is slow.\n")
+    said = board.fallback(list(load(tracker).values()))
+    assert said.startswith("One build to rule on and one question wanting a word wait on you."), said
+
+
+def test_a_parent_still_being_built_asks_its_own_questions_and_not_a_merged_childs(tracker: Path, repo: Path) -> None:
+    """lamp-ui is claimed and asks one question; `built`, merged into its branch, asks another,
+    which waits for the close-out. The sentence, the row and the group's button all count the
+    parent's one."""
+    ticket(tracker / f"{TREE}.md", "claimed", priority=1, size="L", name="Feat")
+    for slug, asked in ((TREE, "Split the lamp from the ui?"), ("built", "Keep the suite serial?")):
+        path = tracker / f"{slug}.md"
+        path.write_text(path.read_text() + f"\n## Questions\n\n- [D1] **{asked}** It is open.\n")
+    built_on_its_branch(repo)
+    merged_into_the_tree(repo)
+    page = page_of(tracker)
+    assert questions_on(summary_of(rows_of(page)[f"t-{TREE}"])) == [("D1", "Split the lamp from the ui?")]
+    [(_, group, said, _)] = [one for one in copiers(page) if one[0] == "qgroup"]
+    assert "Keep the suite serial?" not in group and said == "1 question", said
+    assert board.fallback(list(load(tracker).values())).startswith("One question wanting a word waits on you.")
+
+
+def test_a_rows_copy_all_names_the_file_its_questions_are_on(tracker: Path) -> None:
+    """lamp-ui at its close-out asks nothing itself; `built` under it asks two: the row's copy-all
+    button says it copied built's."""
+    ticket(tracker / f"{TREE}.md", "review", priority=1, size="L", name="Feat")
+    built = tracker / "built.md"
+    built.write_text(built.read_text() + "\n## Questions\n\n- [D1] **One?** It is open.\n- [D2] **Two?** It is open.\n")
+    [(_, text, said, _)] = [one for one in copiers(summary_of(rows_of(page_of(tracker))[f"t-{TREE}"])) if one[0] == "qall"]
+    assert text.startswith(str(built)) and said == "2 questions of built.md", said
+
+
+def test_a_hinge_carries_its_mark_on_its_row(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """map-columns, a hinge in review, is ruled alone: a needs-me row of its own; lock-period is a
+    hinge already ruled. Every other row carries no such mark."""
+    out = tmp_path / "board.html"
+    render(demo.root, demo.repo, out)
+    page = out.read_text()
+    hinged = {one for one, row in rows_of(page).items() if "hinge" in [mark for mark, _, _ in marks_on(summary_of(row))]}
+    assert hinged == {"t-map-columns", "t-lock-period"}
+    assert "t-map-columns" in rows_in(page, "needs")
+
+
+def built_on_its_branch(repo: Path) -> None:
+    """`built`'s round: lamp-ui's branch cut from main, and ticket/built one commit ahead of it."""
+    git(repo, "branch", TREE)
+    git(repo, "checkout", "-q", "-b", "ticket/built", TREE)
+    (repo / "built.txt").write_text("the build\n")
+    git(repo, "add", "built.txt")
+    git(repo, "commit", "-q", "-m", "built")
+    git(repo, "checkout", "-q", "main")
+
+
+def merged_into_the_tree(repo: Path) -> None:
+    """The orchestrator's read passing `built`: ticket/built merged --no-ff into lamp-ui's branch."""
+    git(repo, "checkout", "-q", TREE)
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge built", "ticket/built")
+    git(repo, "checkout", "-q", "main")
+
+
+def test_a_child_in_review_folds_under_its_parent_once_merged_into_its_branch_and_a_hinge_never(tracker: Path, repo: Path) -> None:
+    """The same rule at the tracker's seam, before and after the merge the orchestrator's read
+    makes: `built` is in review under lamp-ui, which is still being built."""
+    built_on_its_branch(repo)
+    assert "t-built" in rows_in(page_of(tracker), "needs"), "not merged yet: it waits for the orchestrator's read"
+    merged_into_the_tree(repo)
+    page = page_of(tracker)
+    assert "t-built" not in anywhere_in(page, "needs")
+    assert 'id="t-built"' in body_of(rows_of(page)[f"t-{TREE}"])
+    ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
+    assert "t-built" in rows_in(page_of(tracker), "needs"), "a hinge is ruled alone, merged or not"
+
+
+def test_a_sibling_merged_into_the_parents_branch_blocks_nothing_and_a_hinge_blocks_until_done(tracker: Path, repo: Path) -> None:
+    """The board's blocked is the frontier's: `after-built` waits on `built`, its sibling under
+    lamp-ui in review. It is blocked until `built` merges into lamp-ui's branch, open from then on,
+    and blocked again once `built` is a hinge, which frees nothing until the user accepts it."""
+    ticket(tracker / "after-built.md", "open", parent=TREE, blocked_by=["built"])
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "after-built")
+    built_on_its_branch(repo)
+    assert load(tracker)["after-built"].status == "blocked", "not merged yet: nothing may build on it"
+    merged_into_the_tree(repo)
+    assert load(tracker)["after-built"].status == "open"
+    assert "t-after-built" in rows_in(page_of(tracker), "open")
+    assert "in review and merged into the parent ticket's branch" in rows_of(page_of(tracker))["t-after-built"], (
+        "the chip of a blocker that frees it says so, rather than that the row still waits"
+    )
+    ticket(tracker / "built.md", "review", parent=TREE, blocked_by=["first"], hinge=True)
+    assert load(tracker)["after-built"].status == "blocked", "a hinge frees nothing before its accept"
+    ticket(tracker / "built.md", "done", parent=TREE, blocked_by=["first"], hinge=True)
+    assert load(tracker)["after-built"].status == "open", "a hinge accepted frees what waited on it"
 
 
 def test_every_session_listed_on_a_ticket_has_a_transcript_on_this_machine(demo: Demo) -> None:

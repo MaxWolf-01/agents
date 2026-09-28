@@ -123,10 +123,12 @@ def git(at: Path, *args: str) -> str:
 
 
 def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_user: bool = False,
-           brief: str = "What it is, cold.") -> Path:
+           brief: str = "What it is, cold.", hinge: bool = False, blocked_by: str = "") -> Path:
     front = ["---", f"status: {status}"]
     front += [f"parent: {parent}"] if parent else []
+    front += [f"blocked-by: [{blocked_by}]"] if blocked_by else []
     front += ["needs-user: true"] if needs_user else []
+    front += ["hinge: true"] if hinge else []
     front += ["priority: 1", "size: S", "---"]
     path = root / f"{slug}.md"
     path.write_text("\n".join(front) + f"\n\n# {slug.replace('-', ' ').capitalize()}\n\n## Brief\n\n{brief}\n")
@@ -441,6 +443,114 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert not (toy.parent / "lamp-warm-preset").exists()
     for at in (toy, agent):
         assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
+
+
+# The building stub as a tree's children run it: each commits a file of its own, so a child built on
+# a sibling's merge carries that sibling's file and adds its own beside it.
+BUILDING_ITS_OWN = BUILDING.replace(
+    "printf 'the lamp, warm\\n' > lamp.txt\ngit add lamp.txt",
+    "printf '%s\\n' \"$slug\" > \"$slug.txt\"\ngit add \"$slug.txt\"",
+)
+
+
+def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Path) -> None:
+    """`speculative-first`'s review unit through the toy: a hinge ruled alone, then two leaves, the
+    second built on the first while the first waits unruled in its parent's branch, and the
+    parent's accept writing `done` on all four. `speculative-first#P1`: nothing reaches `main`
+    before the parent's accept."""
+    tickets, agent = tracked(toy), toy / "agent"
+    ticket(tickets, "preset-format", parent="lamp-ui", hinge=True, brief="The shape every preset is stored in.")
+    ticket(tickets, "cool-preset", parent="lamp-ui", blocked_by="warm-preset", brief="One preset, cool.")
+    ticket(tickets, "warm-preset", parent="lamp-ui", blocked_by="preset-format", brief="One preset, warm.")
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", "the tree")
+    (staged.parent / "run-worker.sh").write_text(BUILDING_ITS_OWN)
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    assert run(worktree, "claim", "lamp-ui").returncode == 0
+    main = git(toy, "rev-parse", "main").strip()
+    env = environment(toy)
+    def frontier(held: bool = False) -> str:
+        """The frontier's ready lines, or with `held` its waiting ones."""
+        said = subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "frontier"], cwd=worktree,
+                              capture_output=True, text=True, env=env)
+        assert said.returncode == 0, said.stderr
+        return said.stdout.partition("waiting\n")[2 if held else 0]
+
+    def built(slug: str) -> None:
+        assert run(worktree, "claim", slug).returncode == 0
+        subprocess.run([str(staged), "prompt", slug], cwd=worktree, input=f"Work {slug}.\n", text=True, check=True, env=env)
+        spawned = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", slug, "sonnet"],
+                                 cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+        assert spawned.returncode == 0, spawned.stderr
+        assert run(worktree, "wait", slug, "--deadline", "60").returncode == 0
+        assert run(worktree, "fetch", slug).returncode == 0
+        said = run(worktree, "review", slug)
+        assert said.returncode == 0, said.stderr
+        assert status_of(toy, slug) == "review"
+
+    def merged(slug: str) -> None:
+        git(worktree, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
+        git(agent, "merge", "-q", "--no-ff", "-m", f"{slug}: merged", f"ticket/{slug}")
+        said = run(worktree, "review", slug)
+        assert said.returncode == 0, said.stderr
+
+    assert "warm-preset" not in frontier()
+    built("preset-format")
+    assert "warm-preset" not in frontier(), "a hinge in review holds its dependents"
+    assert "on preset-format (review, a hinge)" in frontier(held=True)
+    merged("preset-format")  # the user's accept of the hinge, ruled alone
+    assert status_of(toy, "preset-format") == "done"
+
+    assert "warm-preset" in frontier()
+    built("warm-preset")
+    assert "cool-preset" not in frontier(), "unmerged, the leaf holds its sibling"
+    merged("warm-preset")  # the orchestrator's read passed it, and the user has not ruled
+    assert status_of(toy, "warm-preset") == "review", "ruled with its parent, not alone"
+    assert "diff: [code@" in (tickets / "warm-preset.md").read_text(), "its ranges are final once merged"
+
+    assert "cool-preset" in frontier(), "a merged leaf in review unblocks its sibling"
+    built("cool-preset")
+    assert git(toy, "show", "ticket/cool-preset:warm-preset.txt") == "warm-preset\n", "built on the unruled sibling"
+    merged("cool-preset")
+    assert status_of(toy, "cool-preset") == "review"
+    assert git(toy, "rev-parse", "main").strip() == main, "nothing reached the branch above the parent"
+
+    early = run(toy, "accept", "lamp-ui")
+    assert early.returncode != 0 and "not merged into main" in early.stderr, early.stderr
+    subprocess.run([str(staged.parent.parent / "tracker" / "tracker.py"), "set", "lamp-ui", "status=review"],
+                   cwd=toy, check=True, capture_output=True, env=env)  # its close-out: the whole tree waits for the ruling
+    git(agent, "commit", "-q", "-am", "lamp-ui for review")
+    git(toy, "merge", "-q", "--no-ff", "-m", "lamp-ui: accepted whole", "lamp-ui")
+
+    # a ticket file of the tree edited and not committed: refused, and the edit kept
+    parent = tickets / "lamp-ui.md"
+    parent.write_text(parent.read_text() + "\nA note not committed yet.\n")
+    dirty = run(toy, "accept", "lamp-ui")
+    assert dirty.returncode != 0 and "uncommitted changes" in dirty.stderr, dirty.stderr
+    assert parent.read_text().endswith("A note not committed yet.\n")
+    git(agent, "checkout", "-q", "--", "tickets/lamp-ui.md")
+    # a child in review the orchestrator never merged: the tracker refuses it, and none is written
+    ticket(tickets, "dim-preset", status="review", parent="lamp-ui")
+    git(agent, "add", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset for review")
+    dim = git(toy, "commit-tree", "lamp-ui^{tree}", "-p", "lamp-ui", "-m", "dim-preset: built").strip()
+    git(toy, "branch", "ticket/dim-preset", dim)
+    before = {path.name: path.read_text() for path in tickets.glob("*.md")}
+    partial = run(toy, "accept", "lamp-ui")
+    assert partial.returncode != 0 and "dim-preset" in partial.stderr, partial.stderr
+    assert {path.name: path.read_text() for path in tickets.glob("*.md")} == before
+    assert not git(agent, "status", "--porcelain", "--", "tickets")
+    git(agent, "rm", "-q", "tickets/dim-preset.md")
+    git(agent, "commit", "-q", "-m", "dim-preset dropped")
+
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in parent.read_text(), "the parent's range"
+    assert {slug: status_of(toy, slug) for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset")} == dict.fromkeys(
+        ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
+    assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")
+    assert not git(agent, "status", "--porcelain", "--", "tickets"), "one commit carries the tree"
 
 
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
