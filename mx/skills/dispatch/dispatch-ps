@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# One worker host's side of `dispatch ps`: every worker in every scratch dir
+# under <root>, one row each. `dispatch` pipes it in over ssh on every call
+# rather than installing it, so a scratch dir staged by an older plugin version
+# is still read by today's script, and those are the runs most worth seeing.
+#
+# Row, tab-separated:
+#   <repo>/<base>  ticket  state  age  idle  session  pane  detail
+#     ticket   the ticket's slug, or `fuzz` for the base branch's fuzz run
+#     state    running | exited | gone, from that scratch dir's own
+#              `dispatch-ctl probe`; `unreadable`, with ticket `-`, where that
+#              probe failed
+#     age      seconds since the run was spawned
+#     idle     seconds since its worklog last changed, `-` when it has none
+#     pane     y while its tmux session is there, n once it is gone
+#     detail   a running worker's last worklog line, `(nothing written yet)`
+#              when the worklog is empty and `(no worklog)` when there is
+#              none; a finished run's status line, less its session id
+# A scratch dir with no run in its manifest and no fuzz session gives no row.
+#
+# Usage: dispatch-ps <root>   (a relative root is under $HOME)
+set -u
+
+root=${1:?usage: dispatch-ps <root>}
+case $root in /*) ;; *) root=$HOME/$root ;; esac
+now=$(date +%s)
+# One listing answers every session question below; with no tmux server it is
+# empty and every pane reads `n`, which is the truth.
+sessions=$(tmux ls -F '#{session_name} #{session_created}' 2>/dev/null)
+
+pane_of()    { awk -v n="$1" 'BEGIN { s = "n" } $1 == n { s = "y" } END { print s }' <<<"$sessions"; }
+created_of() { awk -v n="$1" '$1 == n { print $2 }' <<<"$sessions"; }
+
+for dir in "$root"/*/; do
+    dir=${dir%/}
+    [ -f "$dir/config" ] || continue
+    repo=$(sed -n 's/^repo=//p' "$dir/config" | head -1)
+    # A scratch dir staged before v1.0 is per feature, not per base branch, and
+    # its worktrees carry the feature's name after the repo's.
+    feature=$(sed -n 's/^feature=//p' "$dir/config" | head -1)
+    base=$(sed -n 's/^base=//p' "$dir/config" | head -1)
+    base=${base:-$feature}
+
+    # The scratch dir's own dispatch-ctl, the version its runners started with,
+    # is the authority on state. Its line is name, state, run id and the rest;
+    # everything else on the row is derived here. With no manifest there is no
+    # run to probe; a probe that fails over one leaves runs unread, which is a
+    # row of its own rather than a scratch dir that reads as empty.
+    probe= rc=0
+    [ -f "$dir/manifest" ] && { probe=$(bash "$dir/dispatch-ctl" probe 2>/dev/null) || rc=$?; }
+    if [ "$rc" -ne 0 ]; then
+        printf '%s/%s\t-\tunreadable\t-\t-\t-\tn\tdispatch-ctl probe failed in %s (exit %s)\n' \
+            "$repo" "$base" "$dir" "$rc"
+        probe=
+    fi
+    [ -z "$probe" ] || printf '%s\n' "$probe" |
+        awk '{ name = $1; state = $2; run = $3; sub(/^run=/, "", run)
+               $1 = $2 = $3 = ""; sub(/^ +/, "")
+               print name "\t" state "\t" run "\t" $0 }' |
+    while IFS=$'\t' read -r name state run detail; do
+        worktree=$(tac "$dir/manifest" | awk -F'\t' -v n="$name" '$1 == n { print $3; exit }')
+        ticket=${worktree##*/}
+        ticket=${ticket#"$repo-"}
+        [ -z "$feature" ] || ticket=${ticket#"$feature-"}
+        # The run id ends in the second it was spawned.
+        started=${run##*-}
+        case $started in ''|*[!0-9]*) age=- ;; *) age=$((now - started)) ;; esac
+        log=$dir/$run.log
+        if [ -f "$log" ]; then idle=$((now - $(stat -c %Y "$log"))); else idle=-; fi
+        # The session id is the resume's business, and `log:` the probe line's
+        # furniture; the column keeps what the worker or its runner said.
+        [[ $detail =~ ^(.*)\ session=[^\ ]*(.*)$ ]] && detail=${BASH_REMATCH[1]}${BASH_REMATCH[2]}
+        if [ "$state" = running ]; then
+            detail=${detail#log:}
+            detail=${detail# }
+            if [ ! -f "$log" ]; then detail="(no worklog)"
+            elif [ -z "$detail" ]; then detail="(nothing written yet)"
+            fi
+        fi
+        printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$repo" "$base" "${ticket:-?}" "$state" "$age" "$idle" "$name" "$(pane_of "$name")" "$detail"
+    done
+
+    # The fuzz run holds no manifest line and no worklog: its session is the
+    # whole of its state.
+    fuzz=fuzz-$repo-$base
+    if [ "$(pane_of "$fuzz")" = y ]; then
+        printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$repo" "$base" fuzz running "$((now - $(created_of "$fuzz")))" - "$fuzz" y "make fuzz"
+    fi
+done

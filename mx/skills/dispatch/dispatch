@@ -17,6 +17,9 @@
 #        dispatch push
 #        dispatch review <slug>
 #        dispatch accept <slug>
+#        dispatch ps
+#        dispatch attach <worker>
+#        dispatch peek <worker> [lines]
 #   <slug> is the ticket's id, and names its file in the tracker (`tracker root`).
 #   claim    flips <slug> to claimed and commits that in the agent repo's main
 #            checkout, where every ticket file is written. Refuses a ticket
@@ -92,6 +95,25 @@
 #            the parent with its range, `code@<sha>..<sha>`. Refuses before
 #            that merge, and writes nothing when the tracker refuses any one
 #            of them. One commit.
+#   ps       one row per worker on every worker host, under a header naming
+#            the columns. A host that did not answer is an `unreachable` row, a
+#            scratch dir whose probe failed an `unreadable` one, a
+#            `worker-hosts --targets` that failed an `incomplete` one, and any
+#            of them makes the exit status nonzero. For a human looking in; the
+#            orchestrator's own view is `dispatch ctl probe`.
+#   attach   opens a worker's tmux session, as the user that runs it there.
+#            A Ctrl-C in it ends the run the way `ctl stop` does, resumable.
+#            Whatever is typed into the pane while the runner runs, the pane's
+#            shell runs once the runner exits.
+#   peek     prints the last <lines> (default 100) of a worker's pane.
+#   ps, attach and peek ask every host `worker-hosts --targets` publishes and
+#   every host this repo's runs name, all at once, and read every scratch dir
+#   on each, whichever repo and branch it is for. They change nothing, so they
+#   run from any branch and any directory in a repo.
+#   <worker> is a ticket's slug, or its session's name, exactly; `fuzz` is a
+#   base branch's fuzz run. One held on two hosts, or in two repos, resolves to
+#   nothing: its candidates are listed, each with a `<host>/<slug>` or
+#   `<host>/<session>` form to type.
 #
 # A ticket branch merges into this branch with --no-ff, in each repo; that merge
 # commit is how `review` finds a ticket's range after the merge (its second
@@ -106,6 +128,9 @@
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Every scratch dir on a host sits here, relative to the home on either side,
+# since ssh and scp resolve it there; `ps` reads every one under it.
+state_root=.local/state/dispatch
 # Every read and write of a ticket file goes through the one command that parses
 # one, which runs here and nowhere else: a worker is handed its ticket's context
 # in its prompt, so no worker host holds a reader of a ticket file.
@@ -166,7 +191,7 @@ locate() {
 # user, not per project. Tickets with no parent ticket all dispatch from the
 # integration branch, so one repo's share one.
 scratch_dir() { # <host>
-    d=.local/state/dispatch/$repo-$base
+    d=$state_root/$repo-$base
     [ "$1" = local ] && d=$HOME/$d
     echo "$d"
 }
@@ -174,12 +199,27 @@ scratch_dir() { # <host>
 # A command on a worker host, or here when the host is this machine. The
 # keepalive collapses a dead connection in ~30s, so a suspended laptop's
 # `wait` fails fast and retries instead of hanging on a connection that will
-# never speak again.
-# ssh joins its arguments with spaces into one line for the remote shell, which
-# drops an empty one and splits one with a space; each is quoted for that shell.
+# never speak again. The connect timeout is for a host that is off, which `ps`
+# asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
+# the background, where a passphrase prompt would be several on one terminal.
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(printf '%q ' "$@")"; fi
+    if [ "$h" = local ]; then "$@"; else ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(remote_line "$@")"; fi
+}
+
+# ssh joins its arguments with spaces into one line for the remote login shell,
+# which drops an empty one and splits one with a space, so each is quoted for
+# that shell, which may be bash or zsh. `%q` quotes for bash; zsh also reads a
+# word that starts with `=` as the path of a command (`=ls` is `/usr/bin/ls`),
+# so that `=` is escaped too.
+remote_line() { # <command...>
+    local arg quoted line=
+    for arg; do
+        quoted=$(printf '%q' "$arg")
+        [ "${quoted#=}" = "$quoted" ] || quoted=\\$quoted
+        line+=" $quoted"
+    done
+    printf '%s' "${line# }"
 }
 
 # Through a side directory and a rename, never written in place: a worker
@@ -676,6 +716,178 @@ accept() { # <slug>
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
 }
 
+# ps, attach and peek: the hosts as a human looking in reads them. dispatch-ps
+# is the half that runs on a host.
+
+# This machine as the register names it (`self`, set by gather) is the same home
+# as `local`, and read without ssh whichever of the two names a row carries.
+via() { if [ "$1" = "$self" ]; then echo local; else echo "$1"; fi; } # <host> → what on_host takes
+
+# A command on a host of the table, against the tmux server a worker host runs
+# its workers on: the user's default one, whichever the caller sits in.
+look() { ( unset TMUX; on_host "$(via "$1")" "${@:2}" ) } # <host> <command...>
+
+# Every host the register publishes and every host this repo's runs name, once
+# each; `local` gives way to this machine's own register entry.
+fleet() { # <published>
+    { printf '%s\n' "$1"
+      common=$(git rev-parse --git-common-dir 2>/dev/null) && [ -f "$common/dispatch/runs" ] &&
+          awk -F'\t' '{ print $3 }' "$common/dispatch/runs"
+    } | grep -v '^$' | sort -u | awk -v self="$self" '
+        { host[NR] = $0; if ($0 == self) mine = 1 }
+        END { for (i = 1; i <= NR; i++) if (!(mine && host[i] == "local")) print host[i] }'
+}
+
+# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
+# front), and `missing`, what went unread.
+gather() {
+    local published= register_error= i rc
+    self=$(id -un)@$(uname -n)
+    # Asked here and not inside fleet: output captured from a function runs in a
+    # subshell, and a failure noticed there would not survive the trip back.
+    if command -v worker-hosts >/dev/null 2>&1; then
+        published=$(worker-hosts --targets) ||
+            register_error="worker-hosts --targets failed (exit $?): the hosts listed are only the ones this repo has run on"
+    fi
+    mapfile -t hosts < <(fleet "$published")
+    rows=() missing=()
+    if [ -n "$register_error" ]; then
+        missing+=(worker-hosts)
+        rows+=("worker-hosts	-	-	incomplete	-	-	-	n	$register_error")
+    fi
+    if [ ${#hosts[@]} -eq 0 ]; then
+        [ -z "$register_error" ] || die "$register_error, and it has run on none"
+        die "no worker host: \`worker-hosts --targets\` publishes none and this repo has run on none"
+    fi
+    # One round trip per host, all at once: a host that is off costs its connect
+    # timeout, and costs it alone. Global, since the trap fires after this
+    # returns; removed below as well, before an attach execs the trap away.
+    answers=$(mktemp -d) || die "no temp dir for the hosts' answers"
+    trap 'rm -rf "${answers:-}"' EXIT
+    for i in "${!hosts[@]}"; do
+        # The root travels relative, so the home it is under is the host's.
+        ( look "${hosts[$i]}" bash -s "$state_root" < "$skill/dispatch-ps" > "$answers/$i"
+          echo $? > "$answers/$i.rc" ) &
+    done
+    wait
+    for i in "${!hosts[@]}"; do
+        # A missing status is a job that never finished, not a host with nothing
+        # running.
+        rc=$(cat "$answers/$i.rc" 2>/dev/null)
+        [[ $rc =~ ^[0-9]+$ ]] || rc=255
+        if [ "$rc" -ne 0 ]; then
+            missing+=("${hosts[$i]}")
+            [ "$rc" -eq 255 ] && why="no answer from the host (ssh exit 255)" || why="dispatch-ps failed there (exit $rc)"
+            rows+=("${hosts[$i]}	-	-	unreachable	-	-	-	n	$why")
+            continue
+        fi
+        [ -s "$answers/$i" ] &&
+            mapfile -t -O "${#rows[@]}" rows < <(awk -v h="${hosts[$i]}" '{ print h "\t" $0 }' "$answers/$i")
+        # A scratch dir whose probe failed there is runs unread on a host that did
+        # answer.
+        mapfile -t -O "${#missing[@]}" missing < <(awk -F'\t' -v h="${hosts[$i]}" '$3 == "unreadable" { print h "/" $1 }' "$answers/$i")
+    done
+    rm -rf "$answers"
+}
+
+ps_() {
+    gather
+    [ ${#rows[@]} -gt 0 ] || { echo "no workers"; return 0; }
+    # Cut to the terminal's width, so a long worklog line keeps the table a
+    # table; piped anywhere else a row goes out whole.
+    cols=0
+    [ -t 1 ] && cols=$(tput cols 2>/dev/null || echo 0)
+    printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" '
+        function ago(s) {
+            if (s !~ /^[0-9]+$/) return "-"
+            if (s < 60) return s "s"
+            if (s < 3600) return int(s / 60) "m"
+            if (s < 86400) return int(s / 3600) "h"
+            return int(s / 86400) "d"
+        }
+        BEGIN { split("HOST BASE TICKET STATE AGE IDLE DETAIL", head, " ")
+                for (c = 1; c <= 7; c++) cell[0, c] = head[c] }
+        { n = NR
+          cell[n, 1] = $1; cell[n, 2] = $2; cell[n, 3] = $3; cell[n, 4] = $4
+          cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9 }
+        END {
+            for (k = 0; k <= n; k++) for (c = 1; c <= 6; c++)
+                if (length(cell[k, c]) > w[c]) w[c] = length(cell[k, c])
+            for (k = 0; k <= n; k++) {
+                line = sprintf("%-*s  %-*s  %-*s  %-*s  %*s  %*s  %s", w[1], cell[k, 1], w[2], cell[k, 2],
+                    w[3], cell[k, 3], w[4], cell[k, 4], w[5], cell[k, 5], w[6], cell[k, 6], cell[k, 7])
+                if (cols > 0) line = substr(line, 1, cols)
+                print line
+            }
+        }'
+    # A table missing a host is no clean reading, and a caller should not have
+    # to spot the row to know it.
+    [ ${#missing[@]} -eq 0 ]
+}
+
+# Sets r_host, r_base, r_ticket, r_state and r_session from the one row
+# <worker> names: a slug or a session name, bare or behind `<host>/`. Exact,
+# since a fragment that matched would make `attach` a guess.
+resolve() { # <worker>
+    [ $# -ge 1 ] || die "$cmd takes a worker: a ticket's slug, as \`dispatch ps\` lists them"
+    gather
+    local -a hits
+    # Forced to strings: awk compares two strnums as numbers, and `1` is not
+    # the ticket `01`.
+    mapfile -t hits < <(printf '%s\n' "${rows[@]}" | awk -F'\t' -v q="$1" '
+        $3 != "-" &&
+        (q "" == $3 "" || q "" == $7 "" || q "" == $1 "/" $3 || q "" == $1 "/" $7)')
+    if [ ${#hits[@]} -eq 0 ]; then
+        [ ${#missing[@]} -eq 0 ] || die "no worker called \`$1\` on the hosts that answered; ${missing[*]} did not"
+        die "no worker called \`$1\`; \`dispatch ps\` lists them"
+    fi
+    if [ ${#hits[@]} -gt 1 ]; then
+        # Each with the form that names it alone: its host and slug, or its host
+        # and session where two repos on one host hold the slug.
+        echo "dispatch: \`$1\` is ${#hits[@]} workers; name the one you mean:" >&2
+        printf '%s\n' "${hits[@]}" | awk -F'\t' -v cmd="$cmd" '
+            { h[NR] = $1; b[NR] = $2; t[NR] = $3; s[NR] = $7; seen[$1 "/" $3]++ }
+            END { for (k = 1; k <= NR; k++) {
+                      form = seen[h[k] "/" t[k]] == 1 ? h[k] "/" t[k] : h[k] "/" s[k]
+                      printf "  %s  %s  dispatch %s %s\n", h[k], b[k], cmd, form } }' >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r r_host r_base r_ticket r_state _ _ r_session r_pane _ <<<"${hits[0]}"
+    [ "$r_pane" = y ] || die "$r_ticket on $r_host is $r_state and its tmux session is gone; \`dispatch ps\` has what is left of it"
+    echo "$r_host  $r_base  $r_ticket  $r_state  $r_session" >&2
+}
+
+attach() {
+    resolve "$@"
+    if [ -n "${TMUX:-}" ]; then
+        echo "nested in your own session: detach with your prefix twice, then d" >&2
+    else
+        echo "detach with your prefix, then d" >&2
+    fi
+    if [ "$(via "$r_host")" = local ]; then
+        unset TMUX
+        exec tmux attach -t "=$r_session"
+    fi
+    exec ssh -t "$r_host" "$(remote_line tmux attach -t "=$r_session")"
+}
+
+peek() {
+    lines=${2:-100}
+    [[ $lines =~ ^[0-9]+$ ]] || die "peek takes a number of lines, not \`$lines\`"
+    resolve "$@"
+    # `=name:` is the session by its exact name, at its current window: a bare
+    # name would also take a longer one that starts the same way. The capture
+    # is the history asked for plus the whole screen, blank rows under the
+    # cursor included, so its last written <lines> are cut out of it here.
+    # Captured whole before it is cut: a session that ended since the read above,
+    # or a connection that dropped, is a failure, not an empty pane.
+    pane=$(look "$r_host" tmux capture-pane -p -J -t "=$r_session:" -S "-$lines") ||
+        die "could not read the pane of $r_session on $r_host"
+    printf '%s\n' "$pane" | awk -v n="$lines" '
+        { l[NR] = $0; if ($0 != "") last = NR }
+        END { for (i = last - n + 1 > 1 ? last - n + 1 : 1; i <= last; i++) print l[i] }'
+}
+
 cmd=${1:-}
 case $cmd in
     claim)   shift; claim "$@" ;;
@@ -686,6 +898,9 @@ case $cmd in
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
     accept)  shift; accept "$@" ;;
+    ps)      ps_ ;;
+    attach)  shift; attach "$@" ;;
+    peek)    shift; peek "$@" ;;
     -h|--help|"") sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//;$d' ;;
     *) die "unknown command: $cmd" ;;
 esac
