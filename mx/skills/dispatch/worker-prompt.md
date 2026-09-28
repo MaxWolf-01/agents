@@ -70,6 +70,8 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 
 `job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. How long you expect it to take is the wrong test, because the command you thought would take a minute is the one that hangs, and a blocking Bash call on it costs you the rest of your run with nobody watching the pane. `job wait --deadline <secs>` ends the wait whatever the command is doing.
 
+A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's. A browser you launch yourself carries the same handle: `browsers --help` says which.
+
 `ast-grep` is syntax-aware search and rewrite that never matches inside strings or comments; read its `--help` before guessing at flags.
 
 The Makefile carries the project's standard commands: read it before running tests, type checks or servers.

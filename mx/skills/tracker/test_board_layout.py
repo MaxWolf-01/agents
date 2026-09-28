@@ -181,7 +181,7 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
 # tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
 # would hide it, which is how two marks came to carry words no reader could see.
 PROBE = r'''
-import json, shutil, sys
+import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -211,7 +211,9 @@ TIP = """
 }
 """
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+    # the run it belongs to, as `browsers --help` defines it
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     # the clipboard is what a copy button is for, and a page reaches it only where it is granted
     context = browser.new_context(viewport={"width": width, "height": 1000},
                                   permissions=["clipboard-read", "clipboard-write"])
@@ -379,7 +381,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 # and the click it ends with, the switch in each view, a node clicked in each full size view, the
 # board re-rendering under the window, and the board going away.
 GRAPH_PROBE = r'''
-import json, shutil, sys
+import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -403,7 +405,9 @@ def named(frame, where, name):
     frame.wait_for_function("([w, n]) => document.querySelector(w)?.textContent === n", arg=[where, name])
 
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(executable_path=shutil.which("chromium"))
+    # the run it belongs to, as `browsers --help` defines it
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
     context = browser.new_context(viewport={"width": 1600, "height": 950})
     page = context.new_page()
     failed = []

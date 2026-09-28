@@ -62,6 +62,9 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
 # Where the worker records what it is doing and why it stopped. Unset outside dispatch, which is
 # what makes the instruction to write it conditional rather than a path every session must know.
 export DISPATCH_WORKLOG="$here/$run_id.log"
+# The run every browser the worker's checks launch is tagged with, so `browsers kill` takes this
+# run's and leaves another run's on the same host.
+export MX_RUN=$run_id
 # What the worker has to say about the ticket: its closing comment and the questions its build
 # raised, committed in the agent repo, which is a repo of its own at
 # `agent` inside this worktree. The orchestrator fetches that branch and imports the report into

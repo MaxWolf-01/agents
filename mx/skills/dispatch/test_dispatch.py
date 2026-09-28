@@ -816,6 +816,27 @@ def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
     assert not (bin_dir / "claude.calls").exists(), "claude ran"
 
 
+def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path) -> None:
+    """`browsers-a-worker-can-kill`: MX_RUN is what the browsers a worker's checks launch are
+    tagged with, so it names this run and not the one the orchestrator's shell was in."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    seen = tmp_path / "mx-run"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n')
+    (bin_dir / "claude").chmod(0o755)
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-7"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
+                        "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)), "MX_RUN": "the-orchestrators"})
+
+    assert seen.read_text().splitlines() == ["run-7"]
+
+
 @pytest.mark.parametrize("resumed", [False, True])
 def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
     """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
@@ -849,12 +870,13 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
         f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
     (bin_dir / "claude").chmod(0o755)
 
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
+           "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")}
+    env.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
     subprocess.run(
         ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
          *([session] if resumed else [])],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
-             "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")},
+        cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env,
     )
     status = (state / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
