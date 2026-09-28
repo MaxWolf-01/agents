@@ -23,7 +23,8 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from session_page import PAGE, SESSIONS, RecordError, Session, page, read_session, session_directory  # noqa: E402
+import turn_review  # noqa: E402
+from session_page import PAGE, SESSIONS, RecordError, Session, Turn, page, read_session, session_directory  # noqa: E402
 
 Verb = Literal["render", "send back", "allow"]
 
@@ -47,28 +48,20 @@ IN_THE_CHAT = (
 )
 
 
-def review(session: Session) -> list[str]:
-    """At most three findings on the prose of the record the last turn wrote, from Opus 5.5 at low
-    effort reading it against the chat rules of mx/skills/writing-for-humans/CATALOGUE.md with what
-    the reader of the page has seen: the session's earlier records and the user's messages, no tool
-    calls. The agent revises the record, and the page renders on the turn after. Lifted by
-    turn-record-review.
-    """
-    raise NotImplementedError
-
-
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to do with the turn the hook JSON describes, over the session directory.
 
     In a session that has a directory, a record that does not parse is sent back with the reason
     the reader gives, and nothing renders; a reply longer than CHAT_LINES with no record written
-    since the user last spoke is sent back to move the answer onto the page; otherwise the page
-    renders. A session with no directory, or one left alone, lets the turn end. turn-record-review
-    adds the send-back for what `review` finds in a record.
+    since the user last spoke is sent back to move the answer onto the page; a record written this
+    turn that `turn_review` finds fault with is sent back with its findings; otherwise the page
+    renders. A session with no directory, or one left alone, lets the turn end.
 
-    The answer in the chat is sent back once per turn: a turn a Stop hook already continued
-    renders, so an agent that keeps its answer in the chat is not held in a loop. A record that
-    does not parse is sent back every time, since the page never renders one.
+    The answer in the chat and the review each send the agent back once per turn: a turn a Stop hook
+    already continued renders a long reply, and a record reviewed since the user last spoke renders
+    unreviewed, so the revised record reaches the page and an agent that keeps its answer in the
+    chat is not held in a loop. A record that does not parse is sent back every time,
+    since the page never renders one.
     """
     if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
         return Decision("allow")
@@ -79,21 +72,29 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     except RecordError as e:
         return Decision("send back", f"{e}\n{UNPARSED}")
     reply = [line for line in (hook.get("last_assistant_message") or "").splitlines() if line.strip()]
-    if len(reply) > CHAT_LINES and not recorded_since_spoken(session) and not hook.get("stop_hook_active"):
+    turn = written_this_turn(session)
+    again = hook.get("stop_hook_active")
+    if len(reply) > CHAT_LINES and turn is None and not again:
         return Decision("send back", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
+    if turn is not None and turn_review.reviewed_since(session.id, session.last_said):
+        turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
+    elif turn is not None and (said := turn_review.feedback_on(session, turn)):
+        return Decision("send back", said)
     return Decision("render", page=page(session, datetime.now()))
 
 
-def recorded_since_spoken(session: Session) -> bool:
-    """Whether a record was written after the user last spoke: by the transcript's write call on
-    it, or, for one written some other way, by the file's modification time."""
+def written_this_turn(session: Session) -> Turn | None:
+    """The newest record written after the user last spoke: by the transcript's write call on it,
+    or, for one written some other way, by the file's modification time. With nothing said yet,
+    the newest record."""
     if session.last_said is None:
-        return True
-    return any(
-        (turn.written and turn.written > session.last_said)
+        return session.turns[-1] if session.turns else None
+    written = [
+        turn for turn in session.turns
+        if (turn.written and turn.written > session.last_said)
         or datetime.fromtimestamp(turn.path.stat().st_mtime, UTC) > session.last_said
-        for turn in session.turns
-    )
+    ]
+    return written[-1] if written else None
 
 
 def main() -> None:
