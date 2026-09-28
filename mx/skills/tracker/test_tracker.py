@@ -694,7 +694,8 @@ def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: 
     assert said.code == 1 and "already in review" in said.err, said.said
 
 
-@pytest.mark.parametrize("broken, said, refused", [
+# (the report, what is wrong with it, what the refusal says), one per rule a report is held to
+BROKEN_REPORTS = [
     ("## Comments\n\nlanded.\n\n## Findings\n\nthree.\n", "a heading a ticket takes nothing from", "`## Findings` is no part of a report"),
     ("landed.\n", "words under no heading", "this text is under no heading"),
     ("## Questions\n\n- [D3] **Warm?** Amber.\n", "no closing comment", "no `## Comments` section"),
@@ -704,7 +705,10 @@ def test_a_second_report_is_refused_rather_than_said_twice(tickets: Path, repo: 
      "two questions under one tag", "tag D1 is already taken"),
     ("## Comments\n\n- [D1] Assumptions\n  - A1 `x.py:1`: one.\n  - A1 `y.py:2`: two.\n",
      "two assumptions under one id", "assumption A1 is already taken"),
-])
+]
+
+
+@pytest.mark.parametrize("broken, said, refused", BROKEN_REPORTS)
 def test_a_report_saying_what_no_reader_can_read_is_refused_with_its_own_file_and_line(
     tickets: Path, repo: Path, tmp_path: Path, broken: str, said: str, refused: str
 ) -> None:
@@ -735,6 +739,94 @@ def test_importing_a_report_follows_the_trackers_transitions(tickets: Path, repo
     said = run(repo, "import", "warm-preset", str(reported(tmp_path)))
     assert said.code == 1
     assert "open \u2192 review" in said.err and "a build starts from a claim" in said.err, said.said
+
+
+# ---- the report, at the worker's commit ------------------------------------
+# The commit hook holds a staged report to what the import would refuse of it, so a worker's commit
+# of one is refused while the worker is still there to fix it. The import is the oracle: whatever it
+# refuses of a report, the check refuses at the same line.
+
+
+def worker_on(split: Path, slug: str, body: str = "") -> Path:
+    """The agent worktree a worker holds on `ticket/<slug>`, cut after the orchestrator claimed the
+    ticket, as dispatch cuts one."""
+    ticket(split / "agent" / "tickets", slug, body, status="claimed")
+    git(split / "agent", "add", "-A")
+    git(split / "agent", "commit", "-q", "-m", f"claim {slug}")
+    worktree = split.parent / f"lamp-{slug}"
+    git(split, "worktree", "add", "-q", str(worktree), "-b", f"ticket/{slug}")
+    git(split / "agent", "worktree", "add", "-q", str(worktree / "agent"), "-b", f"ticket/{slug}")
+    return worktree / "agent"
+
+
+def staged_report(agent: Path, slug: str, text: str) -> Path:
+    report = agent / "show" / slug / "report.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(text)
+    git(agent, "add", str(report.relative_to(agent)))
+    return report
+
+
+def refused_at(said: str, file: str) -> list[tuple[str, str]]:
+    """Every (line, message) a run refused in the file whose path ends in `file`."""
+    return re.findall(rf"\S*{re.escape(file)}:(\d+): ([^\n]*)", said)
+
+
+@pytest.mark.parametrize("broken, said, refused", BROKEN_REPORTS)
+def test_a_report_the_import_refuses_is_refused_at_the_commit_at_the_same_line(
+    split: Path, broken: str, said: str, refused: str
+) -> None:
+    agent = worker_on(split, "warm-preset")
+    report = staged_report(agent, "warm-preset", broken)
+    checked = run(agent, "check")
+    imported = run(split, "import", "warm-preset", str(report))
+    assert checked.code == 1 and imported.code == 1, said
+    assert refused in checked.out, checked.said
+    assert refused_at(checked.out, str(report)) == refused_at(imported.err, str(report)), said
+
+
+def test_a_report_whose_tags_its_ticket_already_holds_is_refused_at_the_commit_at_the_lines_they_land_on(split: Path) -> None:
+    """The import's second reading: the report is fine alone and breaks the ticket it lands in."""
+    agent = worker_on(split, "warm-preset", "## Questions\n\n- [D3] **Which socket?** Bayonet or screw.\n")
+    report = staged_report(agent, "warm-preset", REPORT)
+    checked = run(agent, "check")
+    imported = run(split, "import", "warm-preset", str(report))
+    assert checked.code == 1 and "tag D3 is already taken" in checked.out, checked.said
+    assert f"{report}: this report would leave the ticket" in checked.out
+    assert refused_at(checked.out, "tickets/warm-preset.md") == refused_at(imported.err, "tickets/warm-preset.md")
+
+
+def test_the_commit_hook_refuses_a_workers_report_the_import_would_and_commits_one_it_takes(split: Path) -> None:
+    """Both acceptance criteria of `report-checked-before-commit`, through git: the worker's own
+    commit, in the agent worktree, under the hook the agent repo has."""
+    assert run(split / "agent", "hook").code == 0
+    agent = worker_on(split, "warm-preset")
+    on_path = {**os.environ, "PATH": f"{Path(tr.__file__).parents[2] / 'bin'}:{os.environ['PATH']}"}
+    commit = lambda: subprocess.run(["git", "-C", str(agent), "commit", "-m", "the report"],  # noqa: E731
+                                    capture_output=True, text=True, env=on_path)
+
+    report = staged_report(agent, "warm-preset", "## Comments\n\nlanded, as #P2 asks.\n")
+    blocked = commit()
+    assert blocked.returncode != 0
+    assert f"{report}:3: `#P2` names no ticket" in blocked.stdout + blocked.stderr, blocked.stderr
+
+    staged_report(agent, "warm-preset", REPORT)
+    landed = commit()
+    assert landed.returncode == 0, landed.stdout + landed.stderr
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == ["show/warm-preset/report.md"]
+
+
+def test_a_report_its_ticket_already_carries_is_not_read_into_it_again(tickets: Path, repo: Path) -> None:
+    """A merge of the worker's branch that stopped on a conflict is concluded by a commit, which
+    runs the hook with the report staged; by then the import has put the report in its ticket, and
+    reading it in a second time would refuse every tag it carries."""
+    ticket(tickets, "warm-preset", status="claimed")
+    report = repo / "agent" / "show" / "warm-preset" / "report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(REPORT)
+    assert run(repo, "import", "warm-preset", str(report)).code == 0
+    git(repo, "add", "-A")
+    assert run(repo, "check") == Run(0, "", "")
 
 
 # ---- the corpus ------------------------------------------------------------

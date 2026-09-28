@@ -266,7 +266,8 @@ def staged(toy: Path) -> Path:
     (skill / "tracker").mkdir()
     for name in ("dispatch", "dispatch-ctl", "worker-prompt.md"):
         shutil.copy(SKILL / name, skill / "dispatch" / name)
-    shutil.copy(SKILL.parent / "tracker" / "tracker.py", skill / "tracker" / "tracker.py")
+    for name in ("tracker.py", "pre-commit"):
+        shutil.copy(SKILL.parent / "tracker" / name, skill / "tracker" / name)
     (skill / "run-log").mkdir()
     shutil.copy(SKILL.parent / "run-log" / "run-log", skill / "run-log" / "run-log")
     (skill / "dispatch" / "run-worker.sh").write_text(RUNNER)
@@ -944,6 +945,29 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     worktree = remote / "repos" / "dispatch" / "lamp-warm-preset"
     assert git(worktree, "branch", "--show-current").strip() == "ticket/warm-preset"
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
+
+
+def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, staged: Path) -> None:
+    """`report-checked-before-commit`: a worker commits its report in the host's agent repo, and
+    that repo's commit hook refuses a report the import would."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode == 0, said.stdout + said.stderr
+    installed = remote / "repos" / "dispatch" / "lamp-agent.git" / "hooks" / "pre-commit"
+    assert installed.read_text() == (SKILL.parent / "tracker" / "pre-commit").read_text()
+    assert os.access(installed, os.X_OK)
+
+
+def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, staged: Path) -> None:
+    """On a local host the agent repo is the user's own checkout, and a hook in it stays as it was."""
+    theirs = toy / "agent" / ".git" / "hooks" / "pre-commit"
+    theirs.write_text("#!/bin/sh\nexit 0\n")
+    run(toy, "claim", "warm-preset")
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode == 0, said.stdout + said.stderr
+    assert theirs.read_text() == "#!/bin/sh\nexit 0\n"
+    assert "is not the tracker's" in said.stderr, said.stderr
 
 
 def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
