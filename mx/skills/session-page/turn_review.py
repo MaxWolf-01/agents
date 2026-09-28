@@ -8,7 +8,8 @@ never sees them. It answers against a JSON schema; a finding whose quote is not 
 dropped, and at most three go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
-review is one JSON line in session_page.LOG, carrying the session id and the record as it was reviewed.
+review is one JSON line in session_page.LOG, carrying the session id and the record as it was
+reviewed.
 """
 
 import contextlib

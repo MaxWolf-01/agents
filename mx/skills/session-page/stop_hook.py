@@ -12,8 +12,8 @@ it by writing the first record.
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
-Every decision is one JSON line in `session_page.LOG`, beside the review's own: the verb, why the hook
-took that path, and the session directory it resolved.
+Every decision is one JSON line in `session_page.LOG`, beside the review's own: the verb, why the
+hook took that path, and the session directory it resolved.
 """
 
 import json
