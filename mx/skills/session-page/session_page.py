@@ -423,7 +423,8 @@ NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|cross-session-mess
 
 
 # How Claude Code wraps a message another session sent into this one: its attributes, its text.
-PEER = re.compile(r"\s*<cross-session-message\b([^>]*)>\n?(.*?)(?:\n?</cross-session-message>)?\s*$", re.S)
+# One prompt can carry several.
+PEER = re.compile(r"<cross-session-message\b([^>]*)>\n?(.*?)(?:\n?</cross-session-message>|$)", re.S)
 
 
 def read_transcript(transcript: Path) -> list[dict]:
@@ -448,7 +449,8 @@ def said(entries: list[dict]) -> list[tuple[datetime, str]]:
 def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
     """What other sessions sent into this one, with when, oldest first."""
     return sorted(((when, Sent(name(m.group(1)), m.group(2))) for when, _, content in prompts(entries)
-                   if (m := PEER.match(flat(content)))), key=lambda s: s[0])
+                   if re.match(r"\s*<cross-session-message\b", text := flat(content)) for m in PEER.finditer(text)),
+                  key=lambda s: s[0])
 
 
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
@@ -489,11 +491,9 @@ def message_text(content: object) -> str:
 
 
 def name(attributes: str) -> str:
-    """Who sent a cross-session message: its `from-name`, else its `from`, as Claude Code labels it."""
-    for key in ("from-name", "from"):
-        if m := re.search(rf'\b{key}="([^"]+)"', attributes):
-            return m.group(1)
-    return "another session"
+    """Who sent a cross-session message: its `from-name`, which the sender may leave out."""
+    m = re.search(r'\bfrom-name="([^"]+)"', attributes)
+    return m.group(1) if m else "another session"
 
 
 WRITES = {"Write", "Edit", "MultiEdit"}  # the tools whose call on a path writes it
@@ -663,12 +663,12 @@ def you(t: Turn) -> str:
     if not messages:
         return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
     count = f"{len(messages)} messages · " if len(messages) > 1 else ""
-    return message_block("you", "you", messages, count)
+    return message_block("said you", "you", messages, count)
 
 
 def peer(s: Sent) -> str:
     """A message another session sent, behind one click, under that session's name."""
-    return message_block("you peer", s.name, (s.text,), "another session · ")
+    return message_block("said peer", s.name, (s.text,), "another session · ")
 
 
 def message_block(cls: str, who: str, messages: tuple[str, ...], count: str) -> str:
@@ -681,7 +681,7 @@ def message_block(cls: str, who: str, messages: tuple[str, ...], count: str) -> 
     return f"""
 <details class="{cls}">
   <summary><span class="v-meta who">{esc(who)}</span><span class="preview">{esc(" ".join(messages[0].split()))}</span><span class="v-meta count">{count}{words:,} words</span></summary>
-  <div class="you-text">{parts}</div>
+  <div class="said-text">{parts}</div>
 </details>"""
 
 

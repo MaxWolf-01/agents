@@ -48,7 +48,7 @@ def with_calls(transcript: Path, directory: Path, out: Path, calls: list[tuple[s
 
 def messages_of(page: str) -> dict[str, list[str]]:
     """Each turn's messages from the user as the page shows them, by the two digits of its record."""
-    return {key: [html_text(m) for you in re.findall(r'<details class="you">(.*?)</details>', section, re.S)
+    return {key: [html_text(m) for you in re.findall(r'<details class="said you">(.*?)</details>', section, re.S)
                   for m in re.findall(r'<div class="msg">(.*?)</div>', you, re.S)]
             for key, section in sections_of(page).items()}
 
@@ -56,7 +56,7 @@ def messages_of(page: str) -> dict[str, list[str]]:
 def sent_of(page: str) -> dict[str, list[tuple[str, str]]]:
     """Each turn's messages from other sessions as the page shows them: who, and what."""
     return {key: [(html_text(who), html_text(text)) for who, text in re.findall(
-                r'<details class="you peer">.*?<span class="v-meta who">(.*?)</span>.*?<div class="msg">(.*?)</div>', section, re.S)]
+                r'<details class="said peer">.*?<span class="v-meta who">(.*?)</span>.*?<div class="msg">(.*?)</div>', section, re.S)]
             for key, section in sections_of(page).items()}
 
 
@@ -118,22 +118,25 @@ def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
 ) -> None:
     """session-page-pairs-only-the-users-messages: another session's message, wrapped as Claude
     Code wraps one and with no origin that says it is not the user's, delivered in turn 3 as a user
-    entry and mid-turn in turn 4 as a queued command. Each is on the turn it arrived in, under its
-    sender's `from-name`, and on no turn as the user's; the user's own messages pair as before."""
+    entry that carries two, one from a sender that gives no `from-name`, and mid-turn in turn 4 as a
+    queued command. Each is on the turn it arrived in, under its sender's `from-name`, and on no
+    turn as the user's; the user's own messages pair as before."""
     peer = ('<cross-session-message from="uds:/run/user/1000/cc-socks/2118235.sock" from-name="agents-d2"'
             ' from-mode="prompting">\n{}\n</cross-session-message>')
     entries = [
         {"type": "attachment", "timestamp": "2026-09-23T01:05:00.000Z",
          "attachment": {"type": "queued_command", "prompt": peer.format("ruled good to ship, dispatch both")}},
         {"type": "user", "timestamp": "2026-09-23T00:10:00.000Z",
-         "message": {"role": "user", "content": [{"type": "text", "text": peer.format("merged, the tree is yours")}]}},
+         "message": {"role": "user", "content": [
+             {"type": "text", "text": peer.format("merged, the tree is yours")},
+             {"type": "text", "text": '<cross-session-message from="uds:/run/user/1000/cc-socks/77.sock">\nme too\n</cross-session-message>'}]}},
     ]
     t = tmp_path / "t.jsonl"
     t.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
     page = render_session(worked_example, t, now=NOW)
     shown = messages_of(page)
     assert {key: s for key, s in sent_of(page).items() if s} == {
-        "03": [("agents-d2", "merged, the tree is yours")], "04": [("agents-d2", "ruled good to ship, dispatch both")]}
+        "03": [("agents-d2", "merged, the tree is yours"), ("another session", "me too")], "04": [("agents-d2", "ruled good to ship, dispatch both")]}
     assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
     assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
 
