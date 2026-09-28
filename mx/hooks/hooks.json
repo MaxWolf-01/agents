@@ -50,9 +50,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/writing-for-humans/chat_review.py",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/stop_hook.py",
             "timeout": 60,
-            "statusMessage": "chat-review: a reviewer is reading the reply"
+            "statusMessage": "session page: reviewing and rendering the turn"
           }
         ]
       }

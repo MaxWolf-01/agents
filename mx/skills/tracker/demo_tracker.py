@@ -17,7 +17,8 @@ question, one build stopped on two questions of which one is ruled, one ticket w
 question is ruled, one ticket with no question at all, review pages beside the tickets,
 acceptance criteria a build in review has half met, a property cited by the criterion that takes
 it on, files that run and a figure under agent/show, and four sessions on the commits: three with
-a transcript under the claude/ config directory this writes, one worker on another host with none.
+a transcript under the claude/ config directory this writes, one of those with a session page, one
+worker on another host with none.
 
 A demo tracker, not a show: the word is the sample repo the checks render, and nothing here is an
 artefact of the workflow, which a landing hands the user as a show (`/mx:show`).
@@ -83,7 +84,7 @@ def build(dest: Path) -> Demo:
     # claude/ is a CLAUDE_CONFIG_DIR of its own, so the board reads the fixture's sessions by
     # pointing at it and the demo's resume commands are the ones the fixture's transcripts answer
     demo = Demo(repo, repo / "agent" / "tickets", repo / "claude" / "projects", local_sessions(repo))
-    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nclaude/\n")
+    write(repo / ".gitignore", "agent/board.html*\nagent/diffviews/\nagent/sessions/\nclaude/\n")
     git(repo, "init", "-q", "-b", "master")
 
     csv_import(repo)
@@ -105,6 +106,7 @@ def build(dest: Path) -> Demo:
     closed_out(repo)
     stopped_on_questions(repo)
     review_pages(repo)
+    session_pages(repo)
     transcripts(demo.transcripts, demo.sessions)
     return demo
 
@@ -699,6 +701,13 @@ def review_pages(repo: Path) -> None:
     """What dispatch renders for a build waiting on a ruling; gitignored, so they are written, not committed."""
     for page in ("agent/diffviews/map-columns.html", "agent/diffviews/speed-up-tests.html"):
         write(repo / page, f"<!doctype html>\n<title>{Path(page).stem}</title>\n<p>the diff, as diffview renders it\n")
+
+
+def session_pages(repo: Path) -> None:
+    """The session page of the grilling, which ran in the ledger itself; gitignored, as every
+    session's is, so it is written, not committed. The other two sessions never needed one."""
+    write(repo / "agent/sessions" / S1 / "index.html",
+          "<!doctype html>\n<title>Grilling the CSV import</title>\n<p>the session page, as the renderer writes it\n")
 
 
 def transcripts(root: Path, sessions: dict[str, dict]) -> None:

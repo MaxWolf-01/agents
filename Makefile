@@ -18,7 +18,7 @@ check:
 JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown pytest -p no:cacheprovider -n $(JOBS)
+PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
 
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
 test:
