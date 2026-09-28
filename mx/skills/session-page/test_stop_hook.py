@@ -434,7 +434,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert "hey can you please disregard" in prompt  # one the fourth turn answered
     assert "toolu_" not in prompt
     assert "Claude Code" not in system and "**AI vocabulary.**" in system
-    assert "`turns/NN.md`, numbered on from the last record" in system, "the shape comes from the show skill"
+    assert turn_review.record_shape(turn_review.SHOW.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
 

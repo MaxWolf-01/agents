@@ -55,7 +55,7 @@ A few lines of plain markdown: what the reader needs beyond the headline and the
 ```
 
 - `date` is the day the turn ends. `answered` maps each question whose answer this turn received to the option's letter, or to the user's own words where the answer was neither option; `superseded` maps a question to the one that replaced it. A question either one names leaves the top of the page.
-- **Questions** holds only the calls the user must make, each with at least two options you would defend and your pick marked. Tags run `Q1`, `Q2`, … across the whole session. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it.
+- **Questions** holds only the calls the user must make, each with at least two options you would defend and your pick marked. Tags run `Q1`, `Q2`, … across the whole session. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it. A ticket's own question shown on the page is a line of Details citing its ticket and its `Dn`, since it clears through the ticket.
 - **Links** are the artifacts this turn made or moved, each a path from the repo root and a note on why to open it.
 - **Details** says what the reader needs beyond the headline and the links, and never retells what an artifact shows.
 - A section with nothing in it is left out. The user's own message is read from the transcript, so the record never quotes it.
