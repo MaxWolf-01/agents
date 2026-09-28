@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from test_dispatch import stage_runner
+from test_dispatch import mx, stage_runner
 
 SKILL = Path(__file__).parent
 PS = SKILL / "dispatch-ps"
@@ -560,7 +560,7 @@ def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: d
     bin_dir.mkdir()
     (bin_dir / "claude").write_text(f'#!/bin/sh\n[ "$1" = --version ] && exit 0\ntouch {started}\nsleep 30\n')
     (bin_dir / "claude").chmod(0o755)
-    env = {**tmux, "PATH": f"{bin_dir}:{tmux['PATH']}", "HOME": str(tmp_path)}
+    env = {**tmux, "PATH": f"{bin_dir}:{tmux['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))}
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", "runner", "-c", str(tmp_path),
          f"bash {state / 'run-worker.sh'} {tmp_path / 'message.md'} warm-preset opus therun; sleep 30"],
