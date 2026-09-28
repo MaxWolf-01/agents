@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py"]
 # ///
 """The Stop hook's properties. Run: uv run test_stop_hook.py
 

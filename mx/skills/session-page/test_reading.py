@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "hypothesis", "pyyaml", "markdown-it-py"]
 # ///
 """How the renderer reads what a page is made of: which of the user's messages a turn carries,
 where a record's links point, and what it refuses. Run: uv run test_reading.py

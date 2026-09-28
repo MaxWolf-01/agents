@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "hypothesis", "pyyaml", "markdown-it-py"]
 # ///
 """The session renderer's properties. Run: uv run test_session_page.py
 
