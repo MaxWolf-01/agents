@@ -186,6 +186,10 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     (bin_dir / "diffview").chmod(0o755)
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
+    # The commit hook dispatch installs runs whichever `tracker` is on PATH and passes where there is
+    # none, so every host runs the checks against this repo's own.
+    (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
+    (bin_dir / "tracker").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     tmux_dir(toy).mkdir(exist_ok=True)
     env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -615,7 +619,11 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
 
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
-    ticket file wrote a second copy of one, and nothing of that round is imported."""
+    ticket file wrote a second copy of one, and nothing of that round is imported. That read is the
+    line for an agent repo whose commit hook is its owner's; the tracker's own hook refuses the
+    commit first (`test_tracker.py`, `test_a_ticket_branch_is_refused_the_ticket_file_it_staged`)."""
+    (toy / "agent" / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+    (toy / "agent" / ".git" / "hooks" / "pre-commit").chmod(0o755)
     (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
         "git -C agent add -A",
         'printf "\\nWhat it built, written where no worker writes.\\n" >> "agent/tickets/$slug.md"\n'
