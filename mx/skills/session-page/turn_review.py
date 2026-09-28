@@ -137,7 +137,9 @@ def review(system: str, prompt: str) -> list[dict]:
         input=prompt, capture_output=True, text=True, timeout=WRAPPER_TIMEOUT_S,
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"claude exited {proc.returncode}: {proc.stderr.strip()[:300]}")
+        ended = f"ran past {REVIEWER_TIMEOUT_S}s" if proc.returncode == 124 else f"exited {proc.returncode}"
+        # run-log prints what a claude that reported no result printed, so its stdout says why
+        raise RuntimeError(f"claude {ended}: {(proc.stderr.strip() or proc.stdout.strip())[:300]}")
     final = json.loads(proc.stdout)  # claude's result object, which run-log's --json prints
     answer = (final.get("structured_output") or {}).get("findings")
     if not isinstance(answer, list):

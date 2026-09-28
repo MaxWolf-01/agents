@@ -374,11 +374,11 @@ def broken(system: str, prompt: str) -> list[dict]:
     raise RuntimeError("claude exited 1: overloaded")
 
 
-def slow(system: str, prompt: str) -> list[dict]:
-    raise subprocess.TimeoutExpired(["claude"], turn_review.REVIEWER_TIMEOUT_S)
+def hung(system: str, prompt: str) -> list[dict]:
+    raise subprocess.TimeoutExpired(["run-log"], turn_review.WRAPPER_TIMEOUT_S)
 
 
-@pytest.mark.parametrize("failing", [broken, slow], ids=["a failing reviewer", "a slow reviewer"])
+@pytest.mark.parametrize("failing", [broken, hung], ids=["a failing reviewer", "a hung run-log"])
 def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     failing: Callable[[str, str], list[dict]], worked_example: Path, transcript: Path, stale_page: str,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
@@ -511,7 +511,19 @@ def test_a_reviewer_run_that_fails_is_still_one_line_in_the_run_log_and_the_page
     (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
     assert (line["site"], line["exit"], line["end"]) == ("turn-review", 1, "no result")
     (entry,) = logged(attended, "decision")
-    assert entry["decision"] == "failed" and "exited 1" in entry["why"]
+    assert (entry["decision"], entry["why"]) == ("failed", "claude exited 1: API Error: overloaded")
+
+
+def test_a_reviewer_past_its_limit_is_ended_with_its_line_written_and_the_page_renders(
+    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(turn_review, "REVIEWER_TIMEOUT_S", 1)
+    claude = fake_claude(tmp_path, monkeypatch, None, then="exec sleep 30")
+    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
+    assert (line["site"], line["exit"], line["end"]) == ("turn-review", "timeout", "no result")
+    (entry,) = logged(attended, "decision")
+    assert entry["decision"] == "failed" and entry["why"].startswith("claude ran past 1s")
 
 
 # ---- the hook's log ---------------------------------------------------------
