@@ -2425,6 +2425,33 @@ def test_the_fallback_counts_the_questions_a_parent_at_its_close_out_asks_for_it
     assert said.startswith("One build to rule on and one question wanting a word wait on you."), said
 
 
+def test_a_parent_still_being_built_asks_its_own_questions_and_not_a_merged_childs(tracker: Path, repo: Path) -> None:
+    """lamp-ui is claimed and asks one question; `built`, merged into its branch, asks another,
+    which waits for the close-out. The sentence, the row and the group's button all count the
+    parent's one."""
+    ticket(tracker / f"{TREE}.md", "claimed", priority=1, size="L", name="Feat")
+    for slug, asked in ((TREE, "Split the lamp from the ui?"), ("built", "Keep the suite serial?")):
+        path = tracker / f"{slug}.md"
+        path.write_text(path.read_text() + f"\n## Questions\n\n- [D1] **{asked}** It is open.\n")
+    built_on_its_branch(repo)
+    merged_into_the_tree(repo)
+    page = page_of(tracker)
+    assert questions_on(summary_of(rows_of(page)[f"t-{TREE}"])) == [("D1", "Split the lamp from the ui?")]
+    [(_, group, said, _)] = [one for one in copiers(page) if one[0] == "qgroup"]
+    assert "Keep the suite serial?" not in group and said == "1 question", said
+    assert board.fallback(list(load(tracker).values())).startswith("One question wanting a word waits on you.")
+
+
+def test_a_rows_copy_all_names_the_file_its_questions_are_on(tracker: Path) -> None:
+    """lamp-ui at its close-out asks nothing itself; `built` under it asks two: the row's copy-all
+    button says it copied built's."""
+    ticket(tracker / f"{TREE}.md", "review", priority=1, size="L", name="Feat")
+    built = tracker / "built.md"
+    built.write_text(built.read_text() + "\n## Questions\n\n- [D1] **One?** It is open.\n- [D2] **Two?** It is open.\n")
+    [(_, text, said, _)] = [one for one in copiers(summary_of(rows_of(page_of(tracker))[f"t-{TREE}"])) if one[0] == "qall"]
+    assert text.startswith(str(built)) and said == "2 questions of built.md", said
+
+
 def test_a_hinge_carries_its_mark_on_its_row(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """map-columns, a hinge in review, is ruled alone: a needs-me row of its own; lock-period is a
     hinge already ruled. Every other row carries no such mark."""

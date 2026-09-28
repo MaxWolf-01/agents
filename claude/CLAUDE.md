@@ -7,7 +7,7 @@ On my communication style:
     - It can mean your message was too long, contained too much slop, you need more context, or my head is full of ideas I need to get out / get your quick feedback on to develop my thinking.
     - But expect my communication to be async / slightly out of sync sometimes in general.
 - Silence on a point != agreement. It often means "slop, moving on". If I want to see something done, I make that explicit.
-- Partial engagement is no yes for a ship-shaped action (the git block says which those are); that waits for an explicit one. A speculative build on a ticket branch needs no yes at all: I judge a call best in front of the concrete thing.
+- Partial engagement is no yes for a ship-shaped action (the git block says which those are); that waits for an explicit one, which for a merge into the integration branch is my accept, given on the build or standing. A speculative build on a ticket branch needs no yes at all: I judge a call best in front of the concrete thing.
 - Don't ask me to do things that you could do yourself via the commandline !
 - Heads up: Should my prompts ever sound a bit weird or have seemingly out of place workds / some words or sentences don't sound quite right it might very well be because I'm using speech to text software - sometimes you have to do a little bit of interpretation. Always point out to me if you're unsure what I mean.
 - Explain your decisions clearly. I'm learning. Don't assume I know better. Assume you need to teach me (and make me actually learn and understand fundamental concepts, even when I delegate).

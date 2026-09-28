@@ -50,7 +50,7 @@ A ticket that is part of another: one slice of it, built and reviewed on its own
 _Avoid_: subtask, sub-ticket, step
 
 **Hinge**:
-A child ticket its dependents would have to be rewritten, not amended, were it wrong: the one child ruled alone.
+A child ticket its dependents would have to be rewritten, not amended, were it wrong, so it is ruled alone.
 _In code_: `hinge: true`
 _Avoid_: checkpoint (a context checkpoint is a session's), gate (orient's gate routes an intent), milestone
 

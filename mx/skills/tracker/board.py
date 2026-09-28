@@ -578,8 +578,7 @@ def fallback(tickets: list["Ticket"]) -> str:
     live = [t for t in tickets if t.status != "done"]
     mine = [t for t in live if group_of(t) == "needs"]
     kids = folded_under(tickets)
-    asked = [q for t in mine for one in (with_folded(t, kids) if t.status == "review" else [t])
-             for q in shown_questions(one.status, one.questions)]
+    asked = [q for t in mine for one in ruled_with(t, kids) for q in shown_questions(one.status, one.questions)]
     waiting = {
         ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
         ("question wanting a word", "questions wanting a word"): asked,
@@ -1467,8 +1466,7 @@ def questions_block(t: Ticket, kids: dict[str, list[Ticket]]) -> str:
 
     The page's style hides the list while the row is open, where the block below and the rows
     folded under it carry the same questions, so an opened row shows each of them once."""
-    ruled_with = with_folded(t, kids) if t.status == "review" else [t]
-    asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with]
+    asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with(t, kids)]
     asked = [(one, questions) for one, questions in asked if questions]
     count = sum(len(questions) for _, questions in asked)
     if not count:
@@ -1487,7 +1485,7 @@ def questions_block(t: Ticket, kids: dict[str, list[Ticket]]) -> str:
         "qall", f"copy all {count}",
         "Click to copy every open question on this row, each under the path of the file it is on.",
         "\n\n".join(copy_text(one.path, questions) for one, questions in asked),
-        f"{count} questions of {t.path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
+        f"{count} questions of {asked[0][0].path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
     ) + "</span>"
 
 
@@ -1583,6 +1581,12 @@ def with_folded(t: Ticket, kids: dict[str, list[Ticket]]) -> list[Ticket]:
     return [t, *(one for kid in kids.get(t.slug, []) for one in with_folded(kid, kids))]
 
 
+def ruled_with(t: Ticket, kids: dict[str, list[Ticket]]) -> list[Ticket]:
+    """The tickets whose questions a row asks: a parent ticket at its close-out asks its folded
+    children's with its own, since the user rules on them together; any other row asks its own."""
+    return with_folded(t, kids) if t.status == "review" else [t]
+
+
 def hinge_tag(t: Ticket) -> str:
     return f'<span class="hinge" data-tip="{html.escape(HINGE_TIP)}">hinge</span>' if t.hinge else ""
 
@@ -1639,9 +1643,10 @@ def render_page(
     for state, sortable in ranked.items():
         rows[state].extend(row for _, row, _ in sortable)
     # a group's rows with the rows folded under them, which its columns are measured over; the
-    # needs-me group's copy button copies theirs too, since they are ruled with the row holding them
+    # needs-me group's copy button copies what each row asks (ruled_with)
     grouped = {state: [one for _, _, t in sortable for one in with_folded(t, kids)] for state, sortable in ranked.items() if sortable}
-    asking = {state: grouped[state] if state == "needs" else [t for _, _, t in sortable] for state, sortable in ranked.items() if sortable}
+    asking = {state: [one for _, _, t in sortable for one in (ruled_with(t, kids) if state == "needs" else [t])]
+              for state, sortable in ranked.items() if sortable}
     groups = "".join(
         f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
         f'<summary><h2>{label} <span class="n">{len(rows[state])}</span>{group_copy(asking.get(state, []))}</h2></summary>'
