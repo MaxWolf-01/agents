@@ -525,6 +525,9 @@ def test_a_ticket_filed_with_its_title_and_brief_reads_them_back(tickets: Path, 
     assert read_back["title"] == "Map the CSV's columns"
     assert read_back["brief"] == " ".join(brief.split()), "the brief, as data joins its lines"
     assert run(repo, "check", "agent/tickets/map-columns.md").code == 0
+    missing = run(repo, "new", "other-columns", "--priority", "2", "--size", "M", "--brief", "nowhere.md")
+    assert missing.code == 1 and "nowhere.md is no file" in missing.err
+    assert not (tickets / "other-columns.md").exists()
 
 
 def test_filing_a_ticket_under_a_parent_that_is_no_ticket_is_refused(tickets: Path, repo: Path) -> None:

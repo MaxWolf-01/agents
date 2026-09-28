@@ -327,6 +327,8 @@ def new(
     path = tracker.root / f"{slug}.md"
     if path.exists():
         raise Refused([f"{path} is already a ticket"])
+    if brief not in ("", "-") and not Path(brief).is_file():
+        raise Refused([f"{brief} is no file to read a brief from"])
     meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
             "needs-user": needs_user, "hinge": hinge, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"

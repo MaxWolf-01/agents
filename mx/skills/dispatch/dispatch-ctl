@@ -630,9 +630,11 @@ fuzz_clean() {
 
 # Every failure the database holds, replayed by the project's own suite, which
 # has Hypothesis write a patch adding each failing case to its property as an
-# `@example`. That patch, the one written since the stamp, is what this prints.
-# A suite that fails with no patch written has its tail on stderr. Exit 0 when
-# the suite passes, its own status when it fails.
+# `@example`. That patch, the one written since the stamp, is what this prints,
+# with pytest's summary of what failed on stderr: Hypothesis writes no case for
+# a property that is a method of a test class. A suite that fails with no patch
+# written has its tail on stderr. Exit 0 when the suite passes, its own status
+# when it fails.
 fuzz_check() {
     load; fuzz_names
     [ -d "$worktree" ] || die "no fuzz worktree at $worktree; \`dispatch fuzz start\` cuts one"
@@ -642,7 +644,7 @@ fuzz_check() {
     (cd "$worktree" && make test) > "$log" 2>&1 && { echo "no failure: the suite passes on everything $db holds"; return 0; }
     rc=$?
     patch=$(find "$db/patches" -name '*.patch' -newer "$stamp" 2>/dev/null | sort | tail -1)
-    if [ -n "$patch" ]; then cat "$patch"; else tail -20 "$log" >&2; fi
+    if [ -n "$patch" ]; then cat "$patch"; sed -n '/short test summary info/,$p' "$log" >&2; else tail -20 "$log" >&2; fi
     return "$rc"
 }
 

@@ -736,8 +736,9 @@ accept() { # <slug>
 #           Again, with no --host: the run starts there again, on the same
 #           database.
 #   stop    ends the run; its worktrees and database stay.
-#   clean   ends it, removes its worktrees and branches, and forgets its host;
-#           the database stays, for the next `start --host` on that host.
+#   clean   ends it, removes its worktrees and branches, and forgets its host,
+#           even when the host does not answer; the database stays, for the
+#           next `start --host` on that host.
 #   check   replays what the run has found through the project's `make test`
 #           there, and prints the patch Hypothesis writes of it, which adds
 #           each failing case to its property as an `@example`. Exit 0 when
@@ -775,8 +776,16 @@ fuzz_start() {
     [ -n "$designated" ] || { run git config dispatch.fuzz.host "$host" && run git config dispatch.fuzz.branch "$base"; }
 }
 
+# A host that cannot be reached is forgotten all the same, or a host that is
+# gone would hold the repo for good.
 fuzz_clean() {
-    run on_host "$host" bash "$scratch/dispatch-ctl" fuzz clean || exit 1
+    run on_host "$host" bash "$scratch/dispatch-ctl" fuzz clean
+    cleaned=$?
+    if [ "$cleaned" -eq 255 ] && [ "$host" != local ]; then
+        echo "dispatch: no answer from $host; its fuzz worktrees, hook and job stay there, and $repo is free for another host" >&2
+    elif [ "$cleaned" -ne 0 ]; then
+        exit 1
+    fi
     run git config --unset dispatch.fuzz.host
     run git config --unset dispatch.fuzz.branch
 }

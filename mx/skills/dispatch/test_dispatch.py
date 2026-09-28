@@ -1439,6 +1439,34 @@ def test_stop_and_clean_leave_the_finding_and_the_next_start_resumes_on_it(fuzza
     assert "n=1000" in files["test_bound.py"] and "s='zzz'" in files["test_roundtrip.py"], checked.stdout
 
 
+def test_clean_frees_a_repo_whose_host_is_gone(toy: Path) -> None:
+    gone = toy.parent / "gone"
+    gone.mkdir()
+    (gone / "ssh").write_text("#!/bin/sh\necho 'ssh: Could not resolve hostname far' >&2\nexit 255\n")
+    (gone / "ssh").chmod(0o755)
+    git(toy, "config", "dispatch.fuzz.host", "agent@far")
+    git(toy, "config", "dispatch.fuzz.branch", "main")
+    env = environment(toy)
+    env["PATH"] = f"{gone}:{env['PATH']}"
+
+    cleaned = fuzz(toy, "clean", env=env)
+
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "no answer from agent@far" in cleaned.stderr
+    assert "dispatch.fuzz" not in git(toy, "config", "--list")
+
+
+def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
+    """`dispatch --help` gives the fuzz run one line, and the text it points at is there."""
+    for args in (["fuzz", "--help"], ["fuzz"]):
+        said = subprocess.run([str(DISPATCH), *args], capture_output=True, text=True)
+        assert said.returncode == 0, said.stderr
+        assert said.stdout.startswith("Usage: dispatch fuzz start")
+        assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
+    assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
+            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, the user's to start and stop: dispatch fuzz --help"]
+
+
 def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
     (fuzzable / "tests" / "conftest.py").write_text(CONFTEST.replace("deadline=None", "deadline=None, database=None"))
     git(fuzzable, "commit", "-q", "-am", "no database")
@@ -1464,6 +1492,7 @@ def test_patch_brings_each_finding_here_as_an_example_and_to_the_tracker_as_one_
     (expected / "prototype.patch").write_text(PROTOTYPE_PATCH)
     subprocess.run(["git", "apply", "prototype.patch"], cwd=expected, check=True)
     want = ast.dump(ast.parse((expected / "tests" / "properties" / "test_roundtrip.py").read_text()))
+    bound = BOUND.replace("def test_small", '@example(n=1000).via("discovered failure")\ndef test_small')
     assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
     fuzz_ended(fuzzable)
 
@@ -1472,6 +1501,8 @@ def test_patch_brings_each_finding_here_as_an_example_and_to_the_tracker_as_one_
     assert patched.returncode == 0, patched.stdout + patched.stderr
     have = (fuzzable / "tests" / "properties" / "test_roundtrip.py").read_text()
     assert ast.dump(ast.parse(have)) == want, have
+    have = (fuzzable / "tests" / "properties" / "test_bound.py").read_text()
+    assert ast.dump(ast.parse(have)) == ast.dump(ast.parse(bound)), have
     assert "tests/properties/test_roundtrip.py" in git(fuzzable, "status", "--porcelain"), "left for the user to commit"
     ticket = tracked(fuzzable) / f"{FINDING}.md"
     assert status_of(fuzzable, FINDING) == "proposed"
@@ -1494,6 +1525,22 @@ def test_patch_brings_each_finding_here_as_an_example_and_to_the_tracker_as_one_
     assert f"{FINDING} is filed already" in again.stdout and "s='zzz'" in again.stdout
 
 
+def test_a_finding_hypothesis_writes_no_case_for_is_still_said(fuzzable: Path) -> None:
+    """Hypothesis 6.168 writes no `@example` for a property that is a method of a test class."""
+    (fuzzable / "tests" / "properties" / "test_codec.py").write_text(
+        "from hypothesis import given, strategies as st\n\n"
+        "class TestCodec:\n    @given(st.integers())\n    def test_small(self, n):\n        assert n < 500\n")
+    git(fuzzable, "add", "-A")
+    git(fuzzable, "commit", "-q", "-m", "a property in a class")
+    assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
+    fuzz_ended(fuzzable)
+
+    said = fuzz(fuzzable, "patch")
+
+    assert "tests/properties/test_codec.py::TestCodec::test_small" in said.stderr, said.stderr
+    assert not list(tracked(fuzzable).glob("fuzz-*codec*.md"))
+
+
 def test_a_suite_that_fails_with_no_case_written_says_why_and_files_nothing(fuzzable: Path) -> None:
     mend(fuzzable)
     (fuzzable / "tests" / "test_plain.py").write_text("def test_plain():\n    assert 'lamp' == 'lantern'\n")
@@ -1501,11 +1548,11 @@ def test_a_suite_that_fails_with_no_case_written_says_why_and_files_nothing(fuzz
     git(fuzzable, "commit", "-q", "-m", "a plain test that fails")
     assert fuzz(fuzzable, "start", "--host", "local").returncode == 0
 
-    patched_ = fuzz(fuzzable, "patch")
+    said = fuzz(fuzzable, "patch")
 
-    assert patched_.returncode != 0
-    assert "lantern" in patched_.stderr, patched_.stderr
-    assert patched_.stdout.strip() == ""
+    assert said.returncode != 0
+    assert "lantern" in said.stderr, said.stderr
+    assert said.stdout.strip() == ""
     assert not list(tracked(fuzzable).glob("fuzz-*.md"))
 
 
