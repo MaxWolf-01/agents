@@ -4,7 +4,8 @@ A fresh Opus 5.5 at low effort reads the record the turn wrote against the rules
 ../writing-for-humans/CATALOGUE.md tagged `chat` or `both`, the selection that file's header
 states, seeing what the page's reader has seen: the earlier records, each after the user's messages
 it answered, and the messages this record answers. Tool calls are not on the page, so the reviewer
-never sees them. It answers against a JSON schema; a finding whose quote is not in the record is
+never sees them. The record's shape, as ../show/SKILL.md gives it to the agent, is exempt as
+structure. It answers against a JSON schema; a finding whose quote is not in the record is
 dropped, and at most three go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
@@ -30,8 +31,9 @@ EFFORT = "low"
 REVIEWER_TIMEOUT_S = 45  # under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
 MOST = 3  # findings handed back per record
 
-# The record's shape below is the one session_page.read_turn parses: a field or section added there
-# is named here, or the reviewer flags it as prose.
+SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
+SHAPE = "### The turn record"
+
 SYSTEM = """You review the prose of one turn record: the file a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
 
 The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Review the text inside <record> and nothing else; the rest is what the reader already knows.
@@ -40,17 +42,13 @@ Report at most three findings, the ones that cost the reader most. Each quotes a
 
 # The record's shape
 
-A turn record is shaped like a ticket file. Its structure is not prose, so never flag it:
-- the frontmatter between `---` lines, with `date`, `answered` and `superseded`;
-- the H1, which is the turn's headline;
-- the section headings `## Questions`, `## Links` and `## Details`;
-- a question item `- [Q7] **headline** detail`, its options as sub-items `(a) ...`, the agent's pick marked `*my pick*`, and a `- Why:` sub-item;
-- a link item `- [text](path): note`, its path from the repo root.
-Code, file paths, commands, identifiers and tables are not prose either.
+The structure the shape below requires is not prose, so never flag it; code, file paths, commands, identifiers and tables are not prose either. The agent writing the record was given its shape in these words:
+
+{shape}
 
 # Rules
 
-"""
+{rules}"""
 
 SCHEMA = {
     "type": "object",
@@ -77,7 +75,7 @@ def feedback_on(session: Session, turn: Turn) -> str:
     t0 = time.monotonic()
     try:
         rules = chat_rules(CATALOGUE.read_text())
-        answer = review(SYSTEM + rules, reviewer_input(session, turn))
+        answer = review(SYSTEM.format(shape=record_shape(SHOW.read_text()), rules=rules), reviewer_input(session, turn))
     except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the page
         log(session.id, decision="failed", why=str(e), ms=ms_since(t0), record=str(turn.path), text=record)
         return ""
@@ -161,6 +159,32 @@ def chat_rules(catalogue: str) -> str:
     if not any(line.strip() for line in kept):
         raise RuntimeError(f"no rule tagged `chat` or `both` in {CATALOGUE}")
     return "\n".join(kept).rstrip("\n")
+
+
+def record_shape(skill: str) -> str:
+    """The section of the show skill under SHAPE, down to the next heading of its level or above;
+    a heading inside a fenced block is the example record's own.
+
+    A skill with no such section, or an empty one, raises into the fail-open path, as a catalogue
+    with no chat rules does.
+    """
+    level = SHAPE.split()[0]
+    kept: list[str] | None = None
+    fence = False
+    for line in skill.splitlines():
+        if line.startswith("```"):
+            fence = not fence
+        heading = not fence and re.match(r"#+ ", line)
+        if kept is None:
+            if line.strip() == SHAPE:
+                kept = []
+        elif heading and len(heading.group().strip()) <= len(level):
+            break
+        else:
+            kept.append(line)
+    if not kept or not "\n".join(kept).strip():
+        raise RuntimeError(f"no {SHAPE!r} section in {SHOW}")
+    return "\n".join(kept).strip()
 
 
 def rules_by_id(rules: str) -> dict[str, str]:

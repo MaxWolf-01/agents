@@ -467,6 +467,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert "hey can you please disregard" in prompt  # one the fourth turn answered
     assert "toolu_" not in prompt
     assert "Claude Code" not in system and "**AI vocabulary.**" in system
+    assert turn_review.record_shape(turn_review.SHOW.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
 
@@ -625,6 +626,67 @@ def test_a_catalogue_with_no_chat_rules_lets_the_page_render(
     monkeypatch.setattr(turn_review, "CATALOGUE", catalogue)
     monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
     assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+
+
+SKILL_FIXTURE = """## The session page
+
+Prose before the shape.
+
+### The turn record
+
+The shape's prose.
+
+```markdown
+---
+date: 2026-09-28
+---
+
+# A headline inside the example
+
+## Details
+
+The example's own section.
+```
+
+- A rule about the record.
+
+## Who builds it
+
+After the shape.
+"""
+
+
+def test_the_shape_runs_to_the_next_heading_past_the_example_records_own() -> None:
+    shape = turn_review.record_shape(SKILL_FIXTURE)
+    assert shape.startswith("The shape's prose.") and shape.endswith("- A rule about the record.")
+    assert "# A headline inside the example" in shape and "## Details" in shape
+    assert "Prose before" not in shape and "After the shape" not in shape
+
+
+def test_the_turn_record_the_show_skill_gives_the_agent_parses(tmp_path: Path) -> None:
+    """The oracle is the renderer's own reader: the example record the agent is shown is a record
+    it accepts, and it uses every part a record can hold, so the skill and the parser cannot drift
+    apart unnoticed."""
+    shape = turn_review.record_shape(turn_review.SHOW.read_text())
+    example = re.search(r"```markdown\n(.*?)```", shape, re.S).group(1)
+    record = tmp_path / "07.md"
+    record.write_text(example)
+    turn = session_page.read_turn(record)
+    assert turn.headline and turn.details and turn.links and turn.answered and turn.superseded
+    (question,) = turn.questions
+    assert len(question.options) >= 2 and sum(o.picked for o in question.options) == 1 and question.why
+
+
+def test_a_show_skill_with_no_turn_record_section_lets_the_page_render(
+    worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attended: Path,
+) -> None:
+    skill = tmp_path / "SKILL.md"
+    skill.write_text(SKILL_FIXTURE.replace("### The turn record", "### Another section"))
+    monkeypatch.setattr(turn_review, "SHOW", skill)
+    monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
+    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
+    (entry,) = logged(attended, "decision")
+    assert entry["decision"] == "failed" and "The turn record" in entry["why"]
 
 
 if __name__ == "__main__":

@@ -1,11 +1,64 @@
 ---
 name: show
-description: "Show, don't tell: build the artifact that makes a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when an explanation is ballooning in prose, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
+description: "Show, don't tell: a session's answers on its session page, and the artifacts that make a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use whenever an answer needs more than a line, when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show
 
-A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, build what the table names for the thing's shape, look at it yourself, put it in front of the reader.
+A thing is understood in front of a render: someone sees what it is and what it does, whether they are ruling on it, grilling it, reviewing it, or learning how it works. Pick the cells of the grid the reader's question needs, have what the table names for the thing's shape built, look at it, put it in front of the reader on the session page.
+
+## The session page
+
+A session the user reads answers on its **session page**: one page per session, rendered from plain-text records each time a turn ends, with the questions waiting on the user at its top and the turns below, newest first. An answer that fits in a line is that line, in the chat, and a session that never needs more gets no page. Past a line, the answer is on the page and the chat reply is one line and the page's link, `file://` and the session directory's `index.html`. A session outside a project with an agent repo (`tracker root` refuses) answers in the chat, and so does one nobody reads live, a dispatched worker or a print-mode run, whose artefacts are its report.
+
+The records sit in `"$(dirname "$(tracker root)")/sessions/$CLAUDE_CODE_SESSION_ID/"`, outside git and the same directory from every worktree of the project. The Stop hook renders the page from them as the turn ends, and sends the turn back when a record does not parse, when the light review of its prose flags something, or when the answer went to the chat with no record written.
+
+A turn that answers with more than a line, in order:
+
+1. **Its artifacts**, each built by a subagent or a fork (Who builds it, below), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
+2. **The session record**, on the first such turn: `session.md`, with frontmatter `session` (the id) and `repo` (the directory the session was started in, which the page's resume command changes into), an H1 naming what the session is about, and a `## Brief` of a few sentences. The brief is rewritten when the session's scope moves.
+3. **The turn record**, below.
+4. **The chat reply**: one line and the page's link.
+
+A question still open when the session ends goes into the ticket it concerns as one of its questions (`/mx:tracker`), or into a proposed ticket where no ticket holds it, since every question on the board belongs to a ticket. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
+
+### The turn record
+
+`turns/NN.md`, numbered on from the last record, shaped like a ticket file and written once: a later turn never edits it, and a question clears through the frontmatter of the turn that received its answer.
+
+```markdown
+---
+date: 2026-09-28
+answered:
+  Q3: a
+  Q4: keep both, the user's own words where the answer was neither option
+superseded:
+  Q5: Q7
+---
+
+# The turn's headline: what it answers, in one line
+
+## Questions
+
+- [Q7] **The decision, as a question** the part of the design it would change
+  - (a) The option recommended *my pick*
+  - (b) The other option
+  - Why: the argument for the pick, and what it costs
+
+## Links
+
+- [What the artifact shows](agent/show/<slug>/figure.html): why to open it
+
+## Details
+
+A few lines of plain markdown: what the reader needs beyond the headline and the links.
+```
+
+- `date` is the day the turn ends. `answered` maps each question whose answer this turn received to the option's letter, or to the user's own words where the answer was neither option; `superseded` maps a question to the one that replaced it. A question either one names leaves the top of the page.
+- **Questions** holds only the calls the user must make, each with at least two options you would defend and your pick marked. Tags run `Q1`, `Q2`, … across the whole session. A call the user need not make is a line of Details, or a call mark in the ticket it shapes, and nothing asks the user to acknowledge it. A ticket's own question shown on the page is a line of Details citing its ticket and its `Dn`, since it clears through the ticket.
+- **Links** are the artifacts this turn made or moved, each a path from the repo root and a note on why to open it.
+- **Details** says what the reader needs beyond the headline and the links, and never retells what an artifact shows.
+- A section with nothing in it is left out. The user's own message is read from the transcript, so the record never quotes it.
 
 ## What a reader can be shown
 
@@ -89,11 +142,13 @@ How a row's medium gets made. An open set, not a menu; combining media is normal
 - Anything opened in a browser wears the house style (`/mx:house-style`: tokens, type, parts, and the scheme toggle) unless the artifact has a reason to look otherwise, and ships both color schemes; the reader's system setting is the default, not a constraint. Look at both before presenting.
 - A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.
 - Look at your own render before presenting: Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
-- Present it opened (`claude-browser` where it exists, else `xdg-open`), with one line on what it shows and the absolute path.
+- Present it as a link in the turn record that asked for it (The session page). Where there is no page, open it (`claude-browser` where it exists, else `xdg-open`) and give one line on what it shows and its absolute path.
 
-## A heavy artifact goes to a fresh agent
+## Who builds it
 
-An artifact with a build loop (a manim video, a multi-section explainer, anything needing render and debug cycles) is built by a fresh agent from a brief: the artifact, its output path, and the sources on disk to read. A fork of this session (invoke `mx:fork`) is the exception, taken when the conversation itself is the source the artifact needs and no file carries it.
+Every artifact is built by a subagent or a fork, never by the session answering the user, so its render and debug loop stays out of that session's context. A subagent works from a brief: the artifact, its output path, and the sources on disk to read. A fork of the session (invoke `mx:fork`) is taken when the conversation itself is the source the artifact needs and no file carries it.
+
+The builder's done is the artifact seen and its prose reviewed: it looks at its own render (Produce and present), then runs one `/mx:writing-for-humans` pass over the artifact's text and fixes what the pass finds, and only then hands back the path.
 
 ## Promotion
 
