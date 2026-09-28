@@ -58,8 +58,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     renders. A session with no directory, or one left alone, lets the turn end.
 
     The answer in the chat and the review each send the agent back once per turn: a turn a Stop hook
-    already continued renders, so the revised record reaches the page and an agent that keeps its
-    answer in the chat is not held in a loop. A record that does not parse is sent back every time,
+    already continued renders a long reply, and a record reviewed since the user last spoke renders
+    unreviewed, so the revised record reaches the page and an agent that keeps its answer in the
+    chat is not held in a loop. A record that does not parse is sent back every time,
     since the page never renders one.
     """
     if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
@@ -75,10 +76,10 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     again = hook.get("stop_hook_active")
     if len(reply) > CHAT_LINES and turn is None and not again:
         return Decision("send back", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
-    if turn is not None and again:
+    if turn is not None and turn_review.reviewed_since(session.id, session.last_said):
         turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
-    elif turn is not None and (found := turn_review.findings(session, turn)):
-        return Decision("send back", turn_review.feedback(turn, found))
+    elif turn is not None and (said := turn_review.feedback_on(session, turn)):
+        return Decision("send back", said)
     return Decision("render", page=page(session, datetime.now()))
 
 

@@ -349,7 +349,27 @@ def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     assert capsys.readouterr().out == ""
     assert (worked_example / PAGE).read_text() != stale_page
     (entry,) = [json.loads(line) for line in attended.read_text().splitlines()]
-    assert entry["session_id"] == worked_example.name and entry["why"].startswith("reviewer failed")
+    assert (entry["session_id"], entry["decision"]) == (worked_example.name, "failed")
+
+
+def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed_once(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review runs once per turn whichever send-back continued it: the record the agent moves
+    its answer into is reviewed at the stop the first send-back continued, and its revision renders."""
+    run(payload(worked_example, unrecorded, reply=LONG))
+    assert "05.md" in said_back(capsys)
+    record = worked_example / "turns" / "05.md"
+    record.write_text("---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank is a pivotal addition.\n")
+    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
+    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    assert str(record) in said_back(capsys)
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(record.read_text().replace("a pivotal addition", "the ledger's overflow"))
+    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    assert capsys.readouterr().out == ""
+    assert "overflow" in (worked_example / PAGE).read_text()
 
 
 def test_a_turn_that_wrote_no_record_spends_no_model_call(

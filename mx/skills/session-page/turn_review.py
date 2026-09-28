@@ -15,6 +15,7 @@ import json
 import re
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from session_page import Session, Turn
@@ -27,6 +28,8 @@ EFFORT = "low"
 REVIEWER_TIMEOUT_S = 45  # under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
 MOST = 3  # findings handed back per record
 
+# The record's shape below is the one session_page.read_turn parses: a field or section added there
+# is named here, or the reviewer flags it as prose.
 SYSTEM = """You review the prose of one turn record: the file a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
 
 The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Review the text inside <record> and nothing else; the rest is what the reader already knows.
@@ -64,21 +67,46 @@ SCHEMA = {
 }
 
 
-def findings(session: Session, turn: Turn) -> list[dict]:
-    """What the reviewer found in `turn`'s record that quotes it, at most MOST, logged."""
+def feedback_on(session: Session, turn: Turn) -> str:
+    """What the agent is sent back with for `turn`'s record: the reviewer's findings that quote
+    it, at most MOST, and the text of each rule they cite; empty where none holds. Logged either
+    way."""
     record = turn.path.read_text()
     t0 = time.monotonic()
     try:
         rules = chat_rules(CATALOGUE.read_text())
         answer = review(SYSTEM + rules, reviewer_input(session, turn))
     except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the page
-        log(session.id, decision="clean", why=f"reviewer failed: {e}", ms=ms_since(t0), record=str(turn.path), text=record)
-        return []
-    kept = [f for f in answer if isinstance(f, dict) and str(f.get("quote") or "").strip() and str(f["quote"]).strip() in record]
-    dropped = [f for f in answer if f not in kept]
-    log(session.id, decision="feedback" if kept else "clean", findings=kept[:MOST], dropped=dropped, ms=ms_since(t0),
-        record=str(turn.path), text=record)
-    return kept[:MOST]
+        log(session.id, decision="failed", why=str(e), ms=ms_since(t0), record=str(turn.path), text=record)
+        return ""
+    quoting = [f for f in answer if isinstance(f, dict) and str(f.get("quote") or "").strip() and str(f["quote"]).strip() in record]
+    kept = quoting[:MOST]
+    log(session.id, decision="feedback" if kept else "clean", findings=kept, dropped=[f for f in answer if f not in quoting],
+        ms=ms_since(t0), record=str(turn.path), text=record)
+    return feedback(turn, kept, rules_by_id(rules)) if kept else ""
+
+
+def reviewed_since(session_id: str, when: datetime | None) -> bool:
+    """Whether LOG has a review of this session after `when`, which is what holds the review to
+    once per turn whichever send-back continued it. A line cut short by a concurrent write is
+    skipped."""
+    if not LOG.exists():
+        return False
+    with LOG.open() as f:
+        for line in f:
+            if session_id not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (entry.get("session_id") == session_id and entry.get("decision") in REVIEWED
+                    and (when is None or datetime.fromisoformat(entry["ts"]) > when)):
+                return True
+    return False
+
+
+REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
 
 
 def reviewer_input(session: Session, turn: Turn) -> str:
@@ -144,14 +172,9 @@ def rules_by_id(rules: str) -> dict[str, str]:
     }
 
 
-def feedback(turn: Turn, found: list[dict]) -> str:
-    """What the agent reads: each finding under the id of the rule it cites, then the text of
-    each cited rule, once."""
+def feedback(turn: Turn, found: list[dict], rules: dict[str, str]) -> str:
+    """Each finding under the id of the rule it cites, then the text of each cited rule, once."""
     ids = [str(f.get("rule")).strip("` ") for f in found]
-    try:
-        rules = rules_by_id(chat_rules(CATALOGUE.read_text()))
-    except RuntimeError:
-        rules = {}
     flagged = [f'- rule {i}: "{f["quote"]}"' + (f' ({f["note"]})' if f.get("note") else "") for i, f in zip(ids, found)]
     cited = [rules[i] for i in dict.fromkeys(ids) if i in rules]
     return "\n".join([
@@ -166,7 +189,7 @@ def feedback(turn: Turn, found: list[dict]) -> str:
 def log(session_id: str | None, **entry: object) -> None:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a") as f:
-        f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "session_id": session_id, **entry}) + "\n")
+        f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
 
 
 def ms_since(t0: float) -> int:
