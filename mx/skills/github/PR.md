@@ -21,3 +21,14 @@ Headings are available, not owed.
 ## Publishing
 
 After max's yes, the title and file he saw become the PR's: `gh pr create --title <title> --body-file <file>` for a new PR, `gh pr edit <n> --title <title> --body-file <file>` for one that exists, each PR `gh stack submit` opened included.
+
+## Closing out a review
+
+A review is closed out when every thread it opened is resolved and its body is hidden as resolved, so the timeline shows only what is still open. A reply to a thread is published text and goes through the gate; resolving and hiding publish nothing and need no yes. The body is the review's top-level comment, Copilot's "review overview" above all; reviews with an empty body, which is what a thread reply creates, have nothing to hide. The node ids (`PRR_…`) come from `gh pr view <n> --json reviews --jq '.reviews[] | {id, author: .author.login, body: (.body | length)}'`, and one call hides one:
+
+```console
+gh api graphql -f id=<PRR_…> -f query='mutation($id: ID!) {
+    minimizeComment(input: {subjectId: $id, classifier: RESOLVED}) { minimizedComment { isMinimized } } }'
+```
+
+`unminimizeComment` with the same `subjectId` shows it again.
