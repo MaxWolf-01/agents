@@ -126,3 +126,4 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `43` `both` **False agency.** Human verbs given to inanimate things, which is how a sentence avoids naming the actor. "A complaint becomes a fix" becomes "the team fixed it that week". "The decision emerges" becomes "the lead decides". "The culture shifts" becomes "people change what they do". "The data tells us" becomes "we read the data and concluded". Name the actor and put them at the front.
 
+- `44` `artifact` **Narrator-from-a-distance.** "Nobody designed this.", "This happens because...", "People tend to...": a narrator generalizing from outside the case at hand. State the fact about this case: "People tend to skip the tests" becomes "Most PRs in this repo skip the tests".
