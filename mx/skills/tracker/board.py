@@ -2273,7 +2273,7 @@ ${groups}
   <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
     <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
-    <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine comes from cdn.jsdelivr.net, which did not answer</div>
+    <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive</div>
   </div>
 </aside>
 </main>
@@ -2341,12 +2341,14 @@ ${groups}
                   "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs"];
   let mermaid = null, loading = null;
   function engine() {
-    loading ??= Promise.all(ENGINE.map((url) => import(url))).then(([m, elk]) => {
+    if (loading) return loading;
+    loading = Promise.all(ENGINE.map((url) => import(url))).then(([m, elk]) => {
       mermaid = m.default;
       mermaid.registerLayoutLoaders(elk.default);
       setupMermaid();
       return mermaid;
     });
+    loading.catch((e) => console.error("the graph engine did not load:", e));
     return loading;
   }
   const drawable = () => engine().then(() => true, () => false);
@@ -2406,11 +2408,12 @@ ${viewjs}
     // Only the graph on show renders; the others wait for their turn.
     // What is drawn already, or restored from the svg cache, is left as it is; the composed graph
     // with every tree hidden has no source, and its note shows instead.
-    const todo = [...document.querySelectorAll(".g:not([hidden]) .mermaid")]
+    const undrawn = () => [...document.querySelectorAll(".g:not([hidden]) .mermaid")]
       .filter((el) => !el.querySelector("svg") && el.textContent.trim());
-    const drawn = !todo.length || await drawable();
-    unloaded.hidden = drawn;
-    for (const el of drawn ? todo : []) {
+    const drawn = !undrawn().length || await drawable();
+    // asked again after the wait, which can outlast the cursor's stay on the graph that started it
+    unloaded.hidden = drawn || !undrawn().length;
+    for (const el of drawn ? undrawn() : []) {
       if (el.querySelector("svg")) continue;  // drawn by a call that started before this one
       el.dataset.src = el.textContent;
       const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);

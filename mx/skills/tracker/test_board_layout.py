@@ -44,8 +44,10 @@ copy button's click, and the page's own answers about the scheme, the anchor and
 
 Every page load here answers the board's remote requests, its graph engine and its fonts, from
 copies kept on this machine (show/page_cache.py), so a run after the first touches no network.
-With neither the network nor a copy, the graph engine never arrives: the checks then hold the
-graph panel to saying so, and drive everything else the board does in full.
+The browser checks run again with the network cut off and no copies, where the graph engine
+never arrives: there they hold every view of the graph to saying it could not load, and drive
+everything else the board does in full. A run online on a machine that has no network and no
+copies skips, since the graph it is there to check never draws.
 """
 
 import json
@@ -329,18 +331,29 @@ MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", 
          f"#{FOLDED} .q:first-child .qhead", f"#{FOLDED} .q:first-child .qcopy")
 
 
-def probe(page: Path, width: int) -> dict:
+def cut_off(offline: bool, tmp_path: Path) -> dict[str, str]:
+    """The environment a probe runs in: this machine's copies and its network, or neither. uv keeps
+    the cache it runs the probe from, which would otherwise move with the copies."""
+    env = os.environ | {"PYTHONPATH": str(SHOW)}
+    if not offline:
+        return env
+    uv_cache = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
+    return env | {"MX_PAGE_CACHE_OFFLINE": "1", "XDG_CACHE_HOME": str(tmp_path / "no-copies"), "UV_CACHE_DIR": uv_cache}
+
+
+def probe(page: Path, width: int, env: dict[str, str]) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
-        input=PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        input=PROBE, capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
 
 
-# the row beside the graph panel, the row on its own, and the row reflowed
-@pytest.mark.parametrize("width", [1500, 1100, 920])
-def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
+# the row beside the graph panel, the row on its own, and the row reflowed; and the first of them
+# with no graph engine to draw with
+@pytest.mark.parametrize(("width", "offline"), [(1500, False), (1100, False), (920, False), (1500, True)])
+def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, offline: bool, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
     shows what it copies": that the words the markup carries (test_board.py) reach the reader. A
     mark whose box hides its overflow hides its own tooltip, and one anchored to the wrong side
@@ -357,13 +370,16 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
-    seen = probe(out, width)
+    seen = probe(out, width, cut_off(offline, tmp_path))
+    if not offline and not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"
-    if seen["cdn"]:
+    if not offline:
         assert seen["graphs"] == 1, "the graph beside the rows never painted"
         assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
         assert not seen["unloaded"], f"the graph drew, and the panel says {seen['unloaded']!r} as well"
@@ -602,16 +618,17 @@ print(json.dumps(out))
 '''
 
 
-def graph_probe(page: Path) -> dict:
+def graph_probe(page: Path, env: dict[str, str]) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page)],
-        input=GRAPH_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        input=GRAPH_PROBE, capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-3000:]}"
     return json.loads(done.stdout)
 
 
-def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("offline", [False, True])
+def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, offline: bool, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criteria, which are all about what a browser does: the whole
     tracker's graph readable at full size in the overlay, a node clicked in the overlay and in the
     window bringing the board to that ticket's row, and the switch working in both.
@@ -626,9 +643,12 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
-    seen = graph_probe(out)
+    seen = graph_probe(out, cut_off(offline, tmp_path))
     assert seen["errors"] == [], seen["errors"]
-    drawn = seen["cdn"]
+    if not offline and not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
+    drawn = not offline
     row = seen["node"].removeprefix("#")
     # where the engine never arrived, every view that would draw says so instead
     unloaded = "could not load"
