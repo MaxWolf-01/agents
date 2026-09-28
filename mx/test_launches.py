@@ -158,7 +158,7 @@ def test_the_launches_read_include_every_one_mx_is_known_to_make() -> None:
     would pass the check above by finding nothing."""
     read = {launch.path.relative_to(MX).as_posix() for launch in mx_launches()}
     assert read >= {"skills/code-review/review", "skills/dispatch/run-worker.sh", "skills/tracker/briefing.py",
-                    "skills/github/change_summary.py", "skills/writing-for-humans/chat_review.py",
+                    "skills/github/change_summary.py", "skills/session-page/turn_review.py",
                     "skills/fork/CLI.md"}, read
 
 
