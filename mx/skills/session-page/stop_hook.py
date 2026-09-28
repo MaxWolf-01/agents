@@ -159,21 +159,27 @@ def open_in_browser(page: Path) -> str:
 
 
 def exclude_sessions(sessions: Path) -> str:
-    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it, and
-    say what came of that. The line is anchored at its path from the repo root, so it matches that
-    directory and no other of the same name. Outside git, or where git fails, nothing is written."""
+    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it or
+    the repo tracks files under it, and say what came of that. A repo that tracks session records
+    means to, and an exclude line would leave every later session's out of a broad `git add`. The
+    line is anchored at its path from the repo root, so it matches that directory and no other of
+    the same name. Outside git, or where git fails, nothing is written."""
 
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", "-C", str(sessions.parent), *args], capture_output=True, text=True)
 
+    found = git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude", "--show-prefix")
+    if found.returncode != 0:
+        if "not a git repository" in found.stderr:
+            return "not in a git repository"
+        return f"git rev-parse failed: {found.stderr.strip()}"
+    if git("ls-files", "--", f"{sessions.name}/").stdout:
+        return "tracked, so not excluded"
     checked = git("check-ignore", "-q", f"{sessions.name}/")
     if checked.returncode == 0:
         return "already ignored"
     if checked.returncode != 1:
         return f"git check-ignore failed: {checked.stderr.strip()}"
-    found = git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude", "--show-prefix")
-    if found.returncode != 0:
-        return f"git rev-parse failed: {found.stderr.strip()}"
     exclude, prefix = (found.stdout.splitlines() + [""])[:2]
     line = f"/{prefix}{sessions.name}/"
     try:

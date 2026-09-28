@@ -294,8 +294,8 @@ def exclude_file(repo: Path) -> Path:
 def test_an_agent_repo_that_does_not_ignore_sessions_shows_none_of_them_after_the_first_render(
     worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """agent-repos-exclude-sessions: the first render adds the line to the clone's exclude file,
-    and a later render adds no second one."""
+    """The oracle is the ticket agent/tickets/agent-repos-exclude-sessions.md: the first render adds
+    the line to the clone's exclude file, and a later render adds no second one."""
     agent = worked_example.parents[1]
     git(agent, "init")
     (agent / ".gitignore").write_text("transcripts/\n")
@@ -319,11 +319,36 @@ def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
 ) -> None:
     agent = worked_example.parents[1]
     git(agent, "init")
+    (agent / where).parent.mkdir(parents=True, exist_ok=True)
     (agent / where).write_text("reviews/\nsessions/\n")
-    before = exclude_file(agent).read_text()
+    before = exclude_file(agent).read_text() if exclude_file(agent).exists() else None
     run(payload(worked_example, transcript))
-    assert exclude_file(agent).read_text() == before
+    assert (exclude_file(agent).read_text() if exclude_file(agent).exists() else None) == before
     assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["already ignored"]
+
+
+def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    """A repo that commits its session records keeps committing them: a later session's directory
+    still shows in its status."""
+    agent = worked_example.parents[1]
+    git(agent, "init")
+    git(agent, "add", "sessions")
+    git(agent, "commit", "-m", "session records")
+    (worked_example.parent / "a-later-session").mkdir()
+    (worked_example.parent / "a-later-session" / "session.md").write_text("")
+    run(payload(worked_example, transcript))
+    assert [line for line in status(agent) if "sessions/" in line] == ["?? sessions/a-later-session/session.md", f"?? sessions/{worked_example.name}/index.html"]
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["tracked, so not excluded"]
+
+
+def test_an_agent_repo_outside_git_is_rendered_and_logged_as_such(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    run(payload(worked_example, transcript))
+    assert (worked_example / PAGE).exists()
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["not in a git repository"]
 
 
 def test_an_agent_directory_the_code_repo_tracks_excludes_its_own_sessions_and_no_other(
