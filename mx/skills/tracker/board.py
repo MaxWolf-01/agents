@@ -2353,7 +2353,7 @@ ${groups}
     return loading;
   }
   const drawable = () => engine().then(() => true, () => false);
-  const unloaded = document.getElementById("gunloaded"), undrew = document.getElementById("gundrawn");
+  const unloaded = document.getElementById("gunloaded"), undrawable = document.getElementById("gundrawn");
   // the engine fetches the rest of itself while it draws, so a draw can fail after the engine loaded
   const drawOf = (id, src) => mermaid.render(id, src + "\n" + classDefs)
     .catch((e) => console.error("the graph did not draw:", e));
@@ -2421,11 +2421,13 @@ ${viewjs}
       if (el.querySelector("svg")) continue;  // drawn by a call that started before this one
       el.dataset.src = el.textContent;
       const done = await drawOf("m" + Date.now() + "_" + seq++, el.dataset.src);
-      if (!done) continue;  // left undrawn, so the next call tries it again
+      // a failed graph is left undrawn, so the next call tries it again
+      if (!done) { el.dataset.failed = ""; continue; }
+      delete el.dataset.failed;
       el.innerHTML = done.svg;
       nodeHover(el);
     }
-    undrew.hidden = !drawn || !undrawn().length;
+    undrawable.hidden = !document.querySelector(".g:not([hidden]) .mermaid[data-failed]");
     markNode();
     paintFull();
   }
@@ -2548,9 +2550,10 @@ ${viewjs}
 
   async function svgFor(src) {
     const key = src + "@" + document.documentElement.dataset.theme;
-    if (!fullCache[key]) {
+    // a failure is kept too: the window of its own asks every second, and only a reload can mend it
+    if (!(key in fullCache)) {
       const done = await drawOf("gf" + Date.now() + "_" + seq++, src);
-      if (!done) return "";
+      if (!done) return fullCache[key] = "";
       const box = document.createElement("div");
       box.innerHTML = done.svg;
       nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
@@ -2568,7 +2571,7 @@ ${viewjs}
   // picture rather than a source it has no mermaid to draw.
   async function viewOf(g) {
     const draw = g.src && await drawable(), svg = draw ? await svgFor(g.src) : "";
-    const note = !g.src ? g.note : !draw ? unloaded.textContent : !svg ? undrew.textContent : g.note;
+    const note = !g.src ? g.note : !draw ? unloaded.textContent : !svg ? undrawable.textContent : g.note;
     return {
       key: [g.name, g.mode, g.theme, g.src, note].join("|"), name: g.name, mode: g.mode,
       theme: g.theme, note, cur: g.cur, svg,

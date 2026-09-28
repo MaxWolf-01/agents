@@ -738,10 +738,10 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
 # the browser keeps a failed import as failed for as long as the page lives, so nothing short of a
 # load fetches it again, and the board loads again on every change to the tracker.
 UNDRAWN_PROBE = r"""
-import hashlib, json, os, shutil, sys
+import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from page_cache import default_root, serve
+from page_cache import copy_of, default_root, serve
 
 page_url, ENGINE = Path(sys.argv[1]).resolve().as_uri(), sys.argv[2].split(",")
 own, kept = Path(sys.argv[3]), default_root()
@@ -761,7 +761,7 @@ with sync_playwright() as pw:
         sys.exit()
     own.mkdir()
     for url in asked:
-        shutil.copy(kept / hashlib.sha256(url.encode()).hexdigest(), own)
+        shutil.copy(copy_of(kept, url), own)
     loader.close()
 
     os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"

@@ -80,7 +80,7 @@ def answer(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
 
 def settle(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
     request, rid = paused["request"], paused["requestId"]
-    copy = root / hashlib.sha256(request["url"].encode()).hexdigest()
+    copy = copy_of(root, request["url"])
     if "responseStatusCode" in paused:  # the response to a GET this let through
         status = paused["responseStatusCode"]
         headers = [h for h in paused.get("responseHeaders", []) if h["name"].lower() not in DROPPED]
@@ -100,6 +100,11 @@ def settle(cdp: CDPSession, paused: dict, root: Path, offline: bool) -> None:
         cdp.send("Fetch.failRequest", {"requestId": rid, "errorReason": "InternetDisconnected"})
     else:
         cdp.send("Fetch.continueRequest", {"requestId": rid, "interceptResponse": request["method"] == "GET"})
+
+
+def copy_of(root: Path, url: str) -> Path:
+    """Where `root` keeps its copy of `url`."""
+    return root / hashlib.sha256(url.encode()).hexdigest()
 
 
 def fulfil(cdp: CDPSession, rid: str, status: int, headers: list[dict], body: bytes) -> None:
