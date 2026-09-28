@@ -44,8 +44,11 @@ copy button's click, and the page's own answers about the scheme, the anchor and
 
 Every page load here answers the board's remote requests, its graph engine and its fonts, from
 copies kept on this machine (show/page_cache.py), so a run after the first touches no network.
-With neither the network nor a copy, the module that runs the board never runs, and the checks
-that drive it skip.
+The browser checks run again with the network cut off and no copies, where the graph engine
+never arrives: there they hold every view of the graph to saying it could not load, and drive
+everything else the board does in full. A run online on a machine that has no network and no
+copies skips, since the graph it is there to check never draws. One run more loads the engine and cuts
+the network off before it draws, where every view of the graph says it could not be drawn.
 """
 
 import json
@@ -184,6 +187,15 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
     )
 
 
+# Whether the graph engine arrived, read off the requests that failed rather than off the page: one
+# of its two imports failing is the network's answer, save an abort, which is a navigation leaving
+# the page that asked and says nothing about the network. The chunks mermaid fetches while it draws
+# are not the engine.
+ENGINE = r'''
+def cdn(failed):
+    return not any(url.endswith(".esm.min.mjs") and why != "net::ERR_ABORTED" for url, why in failed)
+'''
+
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
 # opened a row, whether the graph beside it came back, whether the briefing is set as prose and says
 # what it is, and what each mark shows on hover, a copy button's account of what it copies among
@@ -191,7 +203,7 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
 # scrolls cuts a tooltip drawn inside it, and that column is the one box on the page that scrolls. A pseudo-element has no rect of its own, so a
 # tooltip's box is its host's plus the offsets the element resolves; `clipped` is the ancestor that
 # would hide it, which is how two marks came to carry words no reader could see.
-PROBE = r'''
+PROBE = ENGINE + r'''
 import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import TimeoutError, sync_playwright
@@ -232,24 +244,19 @@ with sync_playwright() as pw:
     page = context.new_page()
     serve(context, default_root())
     failed = []
-    page.on("requestfailed", lambda r: failed.append(r.url))
+    page.on("requestfailed", lambda r: failed.append((r.url, r.failure)))
     out = {"schemes": {}, "tips": {}}
     for scheme in ("day", "night"):
         page.goto(f"{page_url}?theme={scheme}#{ROW}")
         page.evaluate("document.fonts.ready")
         out["schemes"][scheme] = page.evaluate("getComputedStyle(document.body).backgroundColor")
-    # the graph engine is imported by the module that runs the board, before the page loads, so by
-    # now it either failed to arrive, and nothing past this point has a script behind it, or is
-    # drawing. Only the two imports count: the chunks mermaid fetches while it draws are what the
-    # second load aborts.
-    out["cdn"] = not any(url.endswith(".esm.min.mjs") for url in failed)
-    if not out["cdn"]:
-        print(json.dumps(out))
-        sys.exit()
+    # the row the anchor opened asks for its graph, which is when the engine is fetched: by the end
+    # of the wait it has drawn, or the panel says it could not load
     try:
-        page.wait_for_selector(".side .mermaid svg", timeout=10_000)
+        page.wait_for_selector(".side .mermaid svg, #gunloaded:not([hidden])", timeout=10_000)
     except TimeoutError:
         pass  # counted as no graph below
+    out["cdn"] = cdn(failed)
     out["names"] = page.evaluate("""
       () => [...document.querySelectorAll("details.ticket")].map((row) => {
         const clip = row.querySelector(":scope > summary .title .clip"), name = clip.getBoundingClientRect()
@@ -270,6 +277,7 @@ with sync_playwright() as pw:
       }
     """)
     out["graphs"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
+    out["unloaded"] = page.is_visible("#gunloaded") and page.inner_text("#gunloaded")
     for mark in marks:
         where = mark if mark.startswith("#") else f"#{ROW} .{mark}"
         page.hover(where)
@@ -305,6 +313,7 @@ with sync_playwright() as pw:
     page.click("#scheme")
     page.wait_for_timeout(2500)
     out["graphs_after_switch"] = page.evaluate("document.querySelectorAll('.side .mermaid svg').length")
+    out["unloaded_after_switch"] = page.is_visible("#gunloaded")
     out["scheme_after_switch"] = page.evaluate("document.documentElement.dataset.theme")
     browser.close()
 print(json.dumps(out))
@@ -323,18 +332,29 @@ MARKS = ("tree", "slug", "asks", "title", "hinge", "time", "pri", "chip", "rp", 
          f"#{FOLDED} .q:first-child .qhead", f"#{FOLDED} .q:first-child .qcopy")
 
 
-def probe(page: Path, width: int) -> dict:
+def cut_off(offline: bool, tmp_path: Path) -> dict[str, str]:
+    """The environment a probe runs in: this machine's copies and its network, or neither. uv keeps
+    the cache it runs the probe from, which would otherwise move with the copies."""
+    env = os.environ | {"PYTHONPATH": str(SHOW)}
+    if not offline:
+        return env
+    uv_cache = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
+    return env | {"MX_PAGE_CACHE_OFFLINE": "1", "XDG_CACHE_HOME": str(tmp_path / "no-copies"), "UV_CACHE_DIR": uv_cache}
+
+
+def probe(page: Path, width: int, env: dict[str, str]) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page), str(width), ",".join(MARKS), f"{OPENED},{FOLDED}"],
-        input=PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        input=PROBE, capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
 
 
-# the row beside the graph panel, the row on its own, and the row reflowed
-@pytest.mark.parametrize("width", [1500, 1100, 920])
-def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, path_with: Callable[..., Path]) -> None:
+# the row beside the graph panel, the row on its own, and the row reflowed; and the first of them
+# with no graph engine to draw with
+@pytest.mark.parametrize(("width", "offline"), [(1500, False), (1100, False), (920, False), (1500, True)])
+def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, offline: bool, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
     shows what it copies": that the words the markup carries (test_board.py) reach the reader. A
     mark whose box hides its overflow hides its own tooltip, and one anchored to the wrong side
@@ -351,16 +371,24 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)  # no briefing: the board's own count
-    seen = probe(out, width)
+    seen = probe(out, width, cut_off(offline, tmp_path))
+    if not offline and not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
     assert seen["schemes"]["day"] != seen["schemes"]["night"], f"?theme= pinned neither scheme: {seen['schemes']}"
-    if not seen["cdn"]:
-        pytest.skip("no mermaid: the module that runs the board never ran")
     assert seen["opened"] == 1, "the anchor opened no row, so the layout check measures the folded page twice"
     said = seen["briefing"]
     assert said["wraps"] and said["over"] <= 0, f"the briefing is set as a row's mark rather than as prose: {said}"
     assert said["says"], "the briefing's own mark says nothing about what it is"
-    assert seen["graphs"] == 1, "the graph beside the rows never painted"
-    assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
+    if not offline:
+        assert seen["graphs"] == 1, "the graph beside the rows never painted"
+        assert seen["graphs_after_switch"] == 1, "the scheme switch left the graph panel empty"
+        assert not seen["unloaded"], f"the graph drew, and the panel says {seen['unloaded']!r} as well"
+    else:
+        assert seen["unloaded"] and "could not load" in seen["unloaded"], (
+            f"with no graph engine the graph panel says {seen['unloaded']!r} rather than that the graph could not load"
+        )
+        assert seen["unloaded_after_switch"], "the scheme switch dropped the note that the graph could not load"
     assert seen["scheme_after_switch"] != seen["scheme_before_switch"], "the switch did not change the scheme"
     # an opened row shows each of its questions once: the list under the name goes, and the block
     # carries the same questions with a copy button on each
@@ -405,7 +433,7 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 # board: the two keys, Escape's order, a click on the preview and on a node in it, a drag that pans
 # and the click it ends with, the switch in each view, a node clicked in each full size view, the
 # board re-rendering under the window, and the board going away.
-GRAPH_PROBE = r'''
+GRAPH_PROBE = ENGINE + r'''
 import json, os, shutil, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -438,58 +466,64 @@ with sync_playwright() as pw:
     page = context.new_page()
     serve(context, default_root())
     failed = []
-    page.on("requestfailed", lambda r: failed.append(r.url))
+    page.on("requestfailed", lambda r: failed.append((r.url, r.failure)))
     errors = []
     page.on("pageerror", lambda e: errors.append("board: " + str(e)))
 
-    # ?graph on the address, beside the row's anchor: the state the layout check measures
+    # ?graph on the address, beside the row's anchor: the state the layout check measures. The
+    # overlay paints once the drawing is done, or once the engine has failed to arrive, and every
+    # step past this one that needs a drawing runs only where it arrived.
     page.goto(f"{page_url}?theme=night&graph=1#{ROW}")
     page.evaluate("document.fonts.ready")
-    out = {"cdn": not any(url.endswith(".esm.min.mjs") for url in failed),
+    page.wait_for_selector("#gfull .gsvg svg, #gfull .gnote:not([hidden])")
+    out = {"cdn": cdn(failed),
            "ground": page.evaluate("getComputedStyle(document.body).backgroundColor"),
            "font": page.evaluate("getComputedStyle(document.getElementById('gname')).fontFamily"),
            "node": NODE}
-    if not out["cdn"]:  # the board's module never ran, so nothing below has a script behind it
-        out["errors"] = errors
-        print(json.dumps(out))
-        sys.exit()
-    page.wait_for_selector("#gfull .gsvg svg")
+    drawn = out["cdn"]
+    PAINTED = ".gsvg svg" if drawn else ".gnote:not([hidden])"
     out["from_the_address"] = {"open": page.is_visible("#gfull"), "nodes": nodes(page, "#gfull .gsvg"),
-                               "name": page.inner_text("#gfull .gname")}
-    out["preview_width"] = page.evaluate(WIDE, ".side .g:not([hidden]) .mermaid svg")
+                               "name": page.inner_text("#gfull .gname"), "note": page.inner_text("#gfull .gnote")}
+    if drawn:
+        out["preview_width"] = page.evaluate(WIDE, ".side .g:not([hidden]) .mermaid svg")
 
     # the whole tracker at full size, dragged to pan, then a node
     page.click("#gfull [data-gmode=all]")
     named(page, "#gfull .gname", "whole tracker")
-    page.wait_for_selector("#gfull .gsvg g.node.cur")
-    over = {"name": page.inner_text("#gfull .gname"), "width": page.evaluate(WIDE, "#gfull .gsvg svg"),
-            "nodes": nodes(page, "#gfull .gsvg"), "overflow": page.evaluate(OVER, "#gfull .gfbody"),
-            "marked": page.eval_on_selector_all("#gfull .gsvg g.node.cur", "els => els.map((n) => n.id)"),
-            "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
-            "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
-            "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
-    # narrowed first, so the drag has something to move whatever the fixture's
-    # labels are as wide as: the check is that a drag pans, not that this
-    # tracker's graph happens to overflow the window this probe opens in
-    page.set_viewport_size({"width": 700, "height": 950})
-    page.wait_for_function("document.querySelector('#gfull .gfbody').scrollWidth > document.querySelector('#gfull .gfbody').clientWidth")
-    over["overflow"] = page.evaluate(OVER, "#gfull .gfbody")
-    box = page.evaluate("() => { const b = document.querySelector('#gfull .gfbody').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height} }")
-    page.mouse.move(box["x"] + box["w"] * 0.8, box["y"] + box["h"] * 0.5)
-    page.mouse.down()
-    page.mouse.move(box["x"] + 3, box["y"] + box["h"] * 0.5, steps=12)  # out over the backdrop
-    page.mouse.up()
-    over["panned"] = page.evaluate("document.querySelector('#gfull .gfbody').scrollLeft")
-    over["open_after_pan"] = page.is_visible("#gfull")
-    over["grabbing"] = page.evaluate("document.querySelector('#gfull .gfbody').classList.contains('panning')")
-    click_node(page, "#gfull .gsvg", NODE)
-    over["open_after_node"] = page.is_visible("#gfull")
-    over["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+    over = {"name": page.inner_text("#gfull .gname"), "note": page.inner_text("#gfull .gnote")}
+    if drawn:
+        page.wait_for_selector("#gfull .gsvg g.node.cur")
+        over |= {"width": page.evaluate(WIDE, "#gfull .gsvg svg"),
+                 "nodes": nodes(page, "#gfull .gsvg"), "overflow": page.evaluate(OVER, "#gfull .gfbody"),
+                 "marked": page.eval_on_selector_all("#gfull .gsvg g.node.cur", "els => els.map((n) => n.id)"),
+                 "titles": page.eval_on_selector_all("#gfull .gsvg g.node title", "els => els.length"),
+                 "viewbox": page.evaluate("() => { const v = document.querySelector('#gfull .gsvg svg').viewBox.baseVal; return [v.width, v.height] }"),
+                 "drawn": page.evaluate("() => { const b = document.querySelector('#gfull .gsvg svg').getBoundingClientRect(); return [b.width, b.height] }")}
+        # narrowed first, so the drag has something to move whatever the fixture's
+        # labels are as wide as: the check is that a drag pans, not that this
+        # tracker's graph happens to overflow the window this probe opens in
+        page.set_viewport_size({"width": 700, "height": 950})
+        page.wait_for_function("document.querySelector('#gfull .gfbody').scrollWidth > document.querySelector('#gfull .gfbody').clientWidth")
+        over["overflow"] = page.evaluate(OVER, "#gfull .gfbody")
+        box = page.evaluate("() => { const b = document.querySelector('#gfull .gfbody').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height} }")
+        page.mouse.move(box["x"] + box["w"] * 0.8, box["y"] + box["h"] * 0.5)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 3, box["y"] + box["h"] * 0.5, steps=12)  # out over the backdrop
+        page.mouse.up()
+        over["panned"] = page.evaluate("document.querySelector('#gfull .gfbody').scrollLeft")
+        over["open_after_pan"] = page.is_visible("#gfull")
+        over["grabbing"] = page.evaluate("document.querySelector('#gfull .gfbody').classList.contains('panning')")
+        click_node(page, "#gfull .gsvg", NODE)
+        over["open_after_node"] = page.is_visible("#gfull")
+        over["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+    else:
+        page.click("#gclose")
+        over["open_after_close"] = page.is_visible("#gfull")
     out["overlay"] = over
 
     # the two keys, and Escape taking the overlay before the open row
     page.keyboard.press("f")
-    page.wait_for_selector("#gfull .gsvg svg")
+    page.wait_for_selector("#gfull " + PAINTED)
     keys = {"f_opened": page.is_visible("#gfull")}
     page.keyboard.press("Escape")
     keys["esc_closed"] = not page.is_visible("#gfull")
@@ -497,15 +531,16 @@ with sync_playwright() as pw:
     out["keys"] = keys
 
     # the preview: a click opens the full size view, a click on a node in it goes to that row
-    page.click(".side .g:not([hidden]) .mermaid", position={"x": 3, "y": 3})
-    page.wait_for_selector("#gfull .gsvg svg")
+    page.click(".side .g:not([hidden]) .mermaid" if drawn else "#gunloaded", position={"x": 3, "y": 3})
+    page.wait_for_selector("#gfull " + PAINTED)
     preview = {"click_opened": page.is_visible("#gfull")}
     page.keyboard.press("Escape")
-    click_node(page, ".side .g:not([hidden]) .mermaid", NEXT)
-    # a preview node is a link, so the board follows it through the address rather than at once
-    page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
-    preview["node_opened"] = page.is_visible("#gfull")
-    preview["node_cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+    if drawn:
+        click_node(page, ".side .g:not([hidden]) .mermaid", NEXT)
+        # a preview node is a link, so the board follows it through the address rather than at once
+        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
+        preview["node_opened"] = page.is_visible("#gfull")
+        preview["node_cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
     out["preview"] = preview
 
     # the window of its own, opened with the other key
@@ -514,43 +549,46 @@ with sync_playwright() as pw:
     win = popped.value
     win.on("pageerror", lambda e: errors.append("window: " + str(e)))
     win.set_viewport_size({"width": 900, "height": 620})
-    win.wait_for_selector(".gfbody g.node.cur")
+    win.wait_for_selector(".gfbody g.node.cur" if drawn else ".gfbody " + PAINTED)
     window = {"title": win.title(), "scheme": win.evaluate("document.documentElement.dataset.theme"),
               "ground": win.evaluate("getComputedStyle(document.body).backgroundColor"),
               "font": win.evaluate("getComputedStyle(document.querySelector('.gname')).fontFamily"),
-              "name": win.inner_text(".gname"), "width": win.evaluate(WIDE, ".gfbody svg"),
-              "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
-              "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
-              "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
+              "name": win.inner_text(".gname"), "note": win.inner_text(".gfbody .gnote")}
+    if drawn:
+        window |= {"width": win.evaluate(WIDE, ".gfbody svg"),
+                   "nodes": nodes(win, ".gfbody"), "overflow": win.evaluate(OVER, ".gfbody"),
+                   "titles": win.eval_on_selector_all(".gfbody g.node title", "els => els.length"),
+                   "marked": win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")}
     win.click("[data-gmode=tree]")  # the board is on the whole tracker, so this is a change in both
     named(win, ".gname", "csv-import")
     window["switched"] = win.inner_text(".gname")
     window["board_name"] = page.inner_text("#gname")
-    click_node(win, ".gfbody", NODE)
-    page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
-    window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
-    window["still_open"] = not win.is_closed()
-    # The window follows the board's cursor without redrawing: the cursor moves to another row of
-    # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
-    # a different graph, and a standalone ticket's tree has none at all, which leaves the window
-    # showing its note and no mark for this to wait on.
-    drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
-    steps, slug = page.evaluate("""
-      () => {
-        const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
-        const at = shown.findIndex((r) => r.classList.contains("kcur"))
-        const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
-        return [next - at, shown[next]?.dataset.slug]
-      }
-    """)
-    assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
-    for _ in range(steps):
-        page.keyboard.press("j")
-    page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
-    node = "T_f_" + slug.replace("-", "_")
-    win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
-    window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
-    window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
+    if drawn:
+        click_node(win, ".gfbody", NODE)
+        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NODE[1:]}'")
+        window["cursor"] = page.evaluate("document.querySelector('.ticket.kcur')?.id")
+        window["still_open"] = not win.is_closed()
+        # The window follows the board's cursor without redrawing: the cursor moves to another row of
+        # the tree on show, so the graph is one the new row has a node in. A row of any other tree is
+        # a different graph, and a standalone ticket's tree has none at all, which leaves the window
+        # showing its note and no mark for this to wait on.
+        drawing = win.evaluate("document.querySelector('.gfbody .gsvg svg').id")
+        steps, slug = page.evaluate("""
+          () => {
+            const shown = [...document.querySelectorAll(".ticket")].filter((r) => r.checkVisibility())
+            const at = shown.findIndex((r) => r.classList.contains("kcur"))
+            const next = shown.findIndex((r, i) => i > at && r.dataset.tree === shown[at].dataset.tree)
+            return [next - at, shown[next]?.dataset.slug]
+          }
+        """)
+        assert slug, "no row of the cursor's own tree below it, so j leaves the graph on show"
+        for _ in range(steps):
+            page.keyboard.press("j")
+        page.wait_for_function("(id) => document.querySelector('.ticket.kcur')?.id === id", arg=f"t-{slug}")
+        node = "T_f_" + slug.replace("-", "_")
+        win.wait_for_selector(f'.gfbody g.node.cur[id*="-{node}-"]')
+        window["follows_cursor"] = win.eval_on_selector_all(".gfbody g.node.cur", "els => els.length")
+        window["same_drawing"] = win.evaluate("document.querySelector('.gfbody .gsvg svg').id") == drawing
     window["html"] = win.evaluate("document.documentElement.outerHTML")
     out["window"] = window
 
@@ -560,11 +598,16 @@ with sync_playwright() as pw:
     page.keyboard.press("Escape")
     page.wait_for_selector(f"#{ROW} > summary")
     page.click(f"#{ROW} > summary")
-    win.wait_for_selector(".gfbody g.node.cur")
-    click_node(win, ".gfbody", NEXT)
-    page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
+    if drawn:
+        win.wait_for_selector(".gfbody g.node.cur")
+        click_node(win, ".gfbody", NEXT)
+        page.wait_for_function(f"document.querySelector('.ticket.kcur')?.id === '{NEXT[1:]}'")
+    else:
+        win.click("[data-gmode=all]")
+        named(page, "#gname", "whole tracker")
     out["after_reload"] = {"orphan": win.evaluate("document.documentElement.dataset.orphan"),
-                           "cursor": page.evaluate("document.querySelector('.ticket.kcur')?.id")}
+                           "cursor": page.evaluate("document.querySelector('.ticket.kcur')?.id"),
+                           "board_name": page.inner_text("#gname")}
 
     # the board gone: a window that says so rather than one that looks live
     page.close()
@@ -576,16 +619,17 @@ print(json.dumps(out))
 '''
 
 
-def graph_probe(page: Path) -> dict:
+def graph_probe(page: Path, env: dict[str, str]) -> dict:
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(page)],
-        input=GRAPH_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+        input=GRAPH_PROBE, capture_output=True, text=True, env=env,
     )
     assert done.returncode == 0, f"graph probe: {done.stderr.strip()[-3000:]}"
     return json.loads(done.stdout)
 
 
-def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+@pytest.mark.parametrize("offline", [False, True])
+def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, offline: bool, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criteria, which are all about what a browser does: the whole
     tracker's graph readable at full size in the overlay, a node clicked in the overlay and in the
     window bringing the board to that ticket's row, and the switch working in both.
@@ -600,37 +644,44 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
-    seen = graph_probe(out)
+    seen = graph_probe(out, cut_off(offline, tmp_path))
     assert seen["errors"] == [], seen["errors"]
-    if not seen["cdn"]:
-        pytest.skip("no mermaid: the module that runs the board never ran")
+    if not offline and not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    assert seen["cdn"] is not offline, "with the network cut off and no copies, the graph engine arrived all the same"
+    drawn = not offline
     row = seen["node"].removeprefix("#")
+    # where the engine never arrived, every view that would draw says so instead
+    unloaded = "could not load"
 
     # what the layout matrix above assumes of its two ?graph pages
     came = seen["from_the_address"]
-    assert came["open"] and came["nodes"] >= 5 and came["name"] == "csv-import", (
-        f"?graph did not open the overlay on the row's own graph: {came}"
-    )
+    assert came["open"] and came["name"] == "csv-import", f"?graph did not open the overlay on the row's own graph: {came}"
+    assert came["nodes"] >= 5 if drawn else unloaded in came["note"], f"?graph opened the overlay on {came}"
 
     over = seen["overlay"]
     assert over["name"] == "whole tracker", f"the overlay's switch left it on {over['name']!r}"
-    assert over["nodes"] >= 8, f"the whole tracker's graph drew {over['nodes']} nodes"
-    assert all(abs(a - b) < 1 for a, b in zip(over["drawn"], over["viewbox"], strict=True)), (
-        f"the overlay draws {over['drawn']} of a graph mermaid measured for {over['viewbox']}"
-    )
-    assert over["width"] > 2 * seen["preview_width"], (
-        f"the overlay draws the graph {over['width']}px wide, against {seen['preview_width']}px in the preview"
-    )
-    assert over["titles"] == over["nodes"], "a node at full size does not carry its full title"
-    assert len(over["marked"]) == 1, f"the cursor's row is marked on {len(over['marked'])} nodes"
-    assert over["overflow"] > 0 and over["panned"] > 0, (
-        f"a drag across the box moved it {over['panned']}px of {over['overflow']}px of graph past its edge"
-    )
-    assert over["open_after_pan"] and not over["grabbing"], (
-        "a drag that ended on the backdrop closed the overlay or left it under the grabbing cursor"
-    )
-    assert not over["open_after_node"], "the click left the overlay over the board"
-    assert over["cursor"] == row, f"the click left the board on {over['cursor']!r}"
+    if drawn:
+        assert over["nodes"] >= 8, f"the whole tracker's graph drew {over['nodes']} nodes"
+        assert all(abs(a - b) < 1 for a, b in zip(over["drawn"], over["viewbox"], strict=True)), (
+            f"the overlay draws {over['drawn']} of a graph mermaid measured for {over['viewbox']}"
+        )
+        assert over["width"] > 2 * seen["preview_width"], (
+            f"the overlay draws the graph {over['width']}px wide, against {seen['preview_width']}px in the preview"
+        )
+        assert over["titles"] == over["nodes"], "a node at full size does not carry its full title"
+        assert len(over["marked"]) == 1, f"the cursor's row is marked on {len(over['marked'])} nodes"
+        assert over["overflow"] > 0 and over["panned"] > 0, (
+            f"a drag across the box moved it {over['panned']}px of {over['overflow']}px of graph past its edge"
+        )
+        assert over["open_after_pan"] and not over["grabbing"], (
+            "a drag that ended on the backdrop closed the overlay or left it under the grabbing cursor"
+        )
+        assert not over["open_after_node"], "the click left the overlay over the board"
+        assert over["cursor"] == row, f"the click left the board on {over['cursor']!r}"
+    else:
+        assert unloaded in over["note"], f"the whole tracker's overlay says {over['note']!r}"
+        assert not over["open_after_close"], "the close button left the overlay over the board"
 
     keys = seen["keys"]
     assert keys["f_opened"] and keys["esc_closed"], f"f and Escape: {keys}"
@@ -638,8 +689,9 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
 
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
-    assert not preview["node_opened"], "a node clicked in the preview opened the overlay instead of going to its row"
-    assert preview["node_cursor"] == "t-parse-rows", f"the preview's node left the board on {preview['node_cursor']!r}"
+    if drawn:
+        assert not preview["node_opened"], "a node clicked in the preview opened the overlay instead of going to its row"
+        assert preview["node_cursor"] == "t-parse-rows", f"the preview's node left the board on {preview['node_cursor']!r}"
 
     win = seen["window"]
     assert win["title"].endswith("dependencies"), win["title"]
@@ -647,31 +699,130 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
         f"the window is not in the board's scheme: {win['scheme']}, {win['ground']}"
     )
     assert win["font"] == seen["font"], f"the window letters its head in {win['font']}, the board in {seen['font']}"
-    assert win["width"] > 2 * seen["preview_width"], f"the window draws the graph {win['width']}px wide"
-    assert win["titles"] == win["nodes"], "a node in the window does not carry its full title"
-    assert win["marked"] == 1 and win["follows_cursor"] == 1, (
-        "the window does not mark the row the board's cursor is on, or stopped following it"
-    )
-    assert win["same_drawing"], "the window redrew the graph to follow a cursor move inside it"
-    assert win["overflow"] > 0, "the window's graph fits its box, so nothing there is scrolled or panned"
     assert win["switched"] == "csv-import" and win["board_name"] == "csv-import", (
         f"the switch in the window left it on {win['switched']!r} and the board on {win['board_name']!r}"
     )
-    assert win["cursor"] == row, f"the click in the window left the board on {win['cursor']!r}"
-    assert win["still_open"], "the click closed the window instead of moving the board behind it"
+    if drawn:
+        assert win["width"] > 2 * seen["preview_width"], f"the window draws the graph {win['width']}px wide"
+        assert win["titles"] == win["nodes"], "a node in the window does not carry its full title"
+        assert win["marked"] == 1 and win["follows_cursor"] == 1, (
+            "the window does not mark the row the board's cursor is on, or stopped following it"
+        )
+        assert win["same_drawing"], "the window redrew the graph to follow a cursor move inside it"
+        assert win["overflow"] > 0, "the window's graph fits its box, so nothing there is scrolled or panned"
+        assert win["cursor"] == row, f"the click in the window left the board on {win['cursor']!r}"
+        assert win["still_open"], "the click closed the window instead of moving the board behind it"
+    else:
+        assert unloaded in win["note"], f"the window says {win['note']!r}"
 
     # the board reloads on every tracker change, which is where a window holding the board itself
     # would go quiet: it finds the board again and goes on driving it
     after = seen["after_reload"]
-    assert after["orphan"] == "" and after["cursor"] == "t-parse-rows", (
-        f"the window lost the board across its re-render: {after}"
-    )
+    assert after["orphan"] == "", f"the window lost the board across its re-render: {after}"
+    if drawn:
+        assert after["cursor"] == "t-parse-rows", f"a node clicked in the window after the re-render left the board on {after['cursor']!r}"
+    else:
+        assert after["board_name"] == "whole tracker", f"the switch in the window after the re-render left the board on {after['board_name']!r}"
     assert "gone" in seen["orphan_says"], f"a window whose board closed says {seen['orphan_says']!r}"
 
     # the window is a rendered page of the board's, so the no-overlap Property is its business too
     doc = tmp_path / "graph-window.html"
     doc.write_text(re.sub(r"<script>.*?</script>", "", win["html"], flags=re.S))
     assert {width: f for width in (450, 900, 1600) if (f := lint([str(doc)], width))} == {}
+
+
+
+# A draw that fails after the engine loaded: the engine and what it imports come from a directory of
+# their own, with the network cut off, so the pieces mermaid fetches while it draws do not arrive.
+# The copies of those pieces are then put in, and the board draws with them from its next load on:
+# the browser keeps a failed import as failed for as long as the page lives, so nothing short of a
+# load fetches it again, and the board loads again on every change to the tracker.
+UNDRAWN_PROBE = r"""
+import json, os, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import copy_of, default_root, serve
+
+page_url, ENGINE = Path(sys.argv[1]).resolve().as_uri(), sys.argv[2].split(",")
+own, kept = Path(sys.argv[3]), default_root()
+UNDRAWN = "#gundrawn:not([hidden])"
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    # what importing the engine asks for, and nothing its drawing does
+    loader = browser.new_context()
+    page = loader.new_page()
+    serve(loader, kept)
+    asked = []
+    page.on("request", lambda r: asked.append(r.url))
+    if not page.evaluate("(urls) => Promise.all(urls.map((u) => import(u))).then(() => true, () => false)", ENGINE):
+        print(json.dumps({"cdn": False}))
+        sys.exit()
+    own.mkdir()
+    for url in asked:
+        shutil.copy(copy_of(kept, url), own)
+    loader.close()
+
+    os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    page = context.new_page()
+    serve(context, own)
+    page.goto(f"{page_url}?theme=night#t-map-columns")
+    page.wait_for_selector(UNDRAWN)
+    out = {"cdn": True, "preview": {"note": page.inner_text("#gundrawn"), "unloaded": page.is_visible("#gunloaded"),
+                       "graphs": page.evaluate("document.querySelectorAll('.side .mermaid svg').length")}}
+    page.keyboard.press("f")
+    page.wait_for_selector("#gfull .gnote:not([hidden])")
+    out["overlay"] = page.inner_text("#gfull .gnote")
+    page.keyboard.press("Escape")
+    with page.expect_popup() as popped:
+        page.keyboard.press("w")
+    win = popped.value
+    win.wait_for_selector(".gfbody .gnote:not([hidden])")
+    out["window"] = win.inner_text(".gfbody .gnote")
+    win.close()
+    # a failed draw, in the preview or at full size, leaves no error drawing of mermaid's own behind
+    out["stray"] = page.evaluate("document.querySelectorAll('body > [id^=dm], body > [id^=dgf]').length")
+
+    shutil.copytree(kept, own, dirs_exist_ok=True)
+    page.reload()
+    page.wait_for_selector(".side .g:not([hidden]) .mermaid svg", timeout=20_000)
+    out["next"] = {"graphs": page.evaluate("document.querySelectorAll('.side .g:not([hidden]) .mermaid svg').length"),
+                   "note": page.is_visible("#gundrawn")}
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
+    """The ticket's acceptance criterion: the preview and both full size views say the graph could
+    not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
+    and its drawing pieces come from this machine's copies, or from the network where it holds none."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    engine = re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+\.esm\.min\.mjs)"', out.read_text())
+    assert len(engine) == 2, f"the page names {engine} as its engine"
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), ",".join(engine), str(tmp_path / "engine-only")],
+        input=UNDRAWN_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    if not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    undrawn = "could not be drawn"
+    preview = seen["preview"]
+    assert undrawn in preview["note"] and not preview["unloaded"] and preview["graphs"] == 0, (
+        f"a draw that failed after the engine loaded leaves the preview as {preview}"
+    )
+    assert seen["stray"] == 0, "mermaid left its error drawing on the page"
+    assert undrawn in seen["overlay"], f"the overlay says {seen['overlay']!r}"
+    assert undrawn in seen["window"], f"the window of its own says {seen['window']!r}"
+    assert seen["next"] == {"graphs": 1, "note": False}, f"the board's next load, once the pieces arrive: {seen['next']}"
 
 
 if __name__ == "__main__":

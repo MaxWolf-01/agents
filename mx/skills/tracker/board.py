@@ -2303,6 +2303,8 @@ ${groups}
   <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
     <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
+    <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive</div>
+    <div class="gnote" id="gundrawn" hidden>the graph could not be drawn: a piece of its engine, from cdn.jsdelivr.net, did not arrive; a reload fetches it again</div>
   </div>
 </aside>
 </main>
@@ -2330,9 +2332,9 @@ ${groups}
 <div id="toast" role="status"></div>
 
 <script>
-  // Synchronous state restore, before first paint. The module below waits on the
-  // mermaid import; doing any of this there makes every reload visibly collapse
-  // the groups and drop expanded tickets for a beat.
+  // Synchronous state restore, before first paint. The module below runs once the page has
+  // parsed; doing any of this there makes every reload visibly collapse the groups and drop
+  // expanded tickets for a beat.
   (() => {
     let saved = null, cache = {};
     try {
@@ -2364,9 +2366,27 @@ ${groups}
 </script>
 
 <script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-  import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs";
-  mermaid.registerLayoutLoaders(elkLayouts);
+  // The graph engine and its layout come from the CDN the first time a graph is drawn, so a board
+  // with no way to the CDN loses its graph and nothing else. A failed load is not retried.
+  const ENGINE = ["https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs",
+                  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs"];
+  let mermaid = null, loading = null;
+  function engine() {
+    if (loading) return loading;
+    loading = Promise.all(ENGINE.map((url) => import(url))).then(([m, elk]) => {
+      mermaid = m.default;
+      mermaid.registerLayoutLoaders(elk.default);
+      setupMermaid();
+      return mermaid;
+    });
+    loading.catch((e) => console.error("the graph engine did not load:", e));
+    return loading;
+  }
+  const drawable = () => engine().then(() => true, () => false);
+  const unloaded = document.getElementById("gunloaded"), undrawable = document.getElementById("gundrawn");
+  // the engine fetches the rest of itself while it draws, so a draw can fail after the engine loaded
+  const drawOf = (id, src) => mermaid.render(id, src + "\n" + classDefs)
+    .catch((e) => console.error("the graph did not draw:", e));
 
   // What the two full size views do, shared with the window of its own, which runs its own copy
   // (board.VIEW_JS).
@@ -2403,8 +2423,8 @@ ${viewjs}
     // and at some device scale factors (1.75 and 2.225, though not 1.25 or 2), so
     // every long label stays on one line and clips (mermaid-js/mermaid#7794).
     // SVG labels wrap by mermaid's own measure.
-    mermaid.initialize({
-      startOnLoad: false, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
+    mermaid?.initialize({
+      startOnLoad: false, suppressErrorRendering: true, layout: "elk", securityLevel: "loose", theme: "base", htmlLabels: false,
       elk: { mergeEdges: false }, flowchart: { htmlLabels: false },
       themeVariables: {
         fontFamily: getComputedStyle(document.body).getPropertyValue("--font-body").trim(), fontSize: "13px",
@@ -2420,14 +2440,24 @@ ${viewjs}
     // mermaid.render (string -> svg), never mermaid.run: run's in-DOM processing
     // contaminates across the page's many diagrams, render is hermetic per call.
     // Only the graph on show renders; the others wait for their turn.
-    for (const el of document.querySelectorAll(".g:not([hidden]) .mermaid")) {
-      if (el.querySelector("svg")) continue;  // already rendered, or restored from the svg cache
+    // What is drawn already, or restored from the svg cache, is left as it is; the composed graph
+    // with every tree hidden has no source, and its note shows instead.
+    const undrawn = () => [...document.querySelectorAll(".g:not([hidden]) .mermaid")]
+      .filter((el) => !el.querySelector("svg") && el.textContent.trim());
+    const drawn = !undrawn().length || await drawable();
+    // asked again after the wait, which can outlast the cursor's stay on the graph that started it
+    unloaded.hidden = drawn || !undrawn().length;
+    for (const el of drawn ? undrawn() : []) {
+      if (el.querySelector("svg")) continue;  // drawn by a call that started before this one
       el.dataset.src = el.textContent;
-      if (!el.dataset.src.trim()) continue;  // the composed graph with every tree hidden: its note shows instead
-      const { svg } = await mermaid.render("m" + Date.now() + "_" + seq++, el.dataset.src + "\n" + classDefs);
-      el.innerHTML = svg;
+      const done = await drawOf("m" + Date.now() + "_" + seq++, el.dataset.src);
+      // a failed graph is left undrawn, so the next call tries it again
+      if (!done) { el.dataset.failed = ""; continue; }
+      delete el.dataset.failed;
+      el.innerHTML = done.svg;
       nodeHover(el);
     }
+    undrawable.hidden = !document.querySelector(".g:not([hidden]) .mermaid[data-failed]");
     markNode();
     paintFull();
   }
@@ -2550,10 +2580,12 @@ ${viewjs}
 
   async function svgFor(src) {
     const key = src + "@" + document.documentElement.dataset.theme;
-    if (!fullCache[key]) {
-      const { svg } = await mermaid.render("gf" + Date.now() + "_" + seq++, src + "\n" + classDefs);
+    // a failure is kept too: the window of its own asks every second, and only a reload can mend it
+    if (!(key in fullCache)) {
+      const done = await drawOf("gf" + Date.now() + "_" + seq++, src);
+      if (!done) return fullCache[key] = "";
       const box = document.createElement("div");
-      box.innerHTML = svg;
+      box.innerHTML = done.svg;
       nodeHover(box);  // the titles are markup, so they travel to the window of its own with it
       // mermaid sizes its drawing to whatever box it is given (width="100%", capped at the size it
       // drew); full size is that size, which is the one its viewBox counts in.
@@ -2568,9 +2600,11 @@ ${viewjs}
   // The whole of what a full size view shows, drawing included, so the window of its own is sent a
   // picture rather than a source it has no mermaid to draw.
   async function viewOf(g) {
+    const draw = g.src && await drawable(), svg = draw ? await svgFor(g.src) : "";
+    const note = !g.src ? g.note : !draw ? unloaded.textContent : !svg ? undrawable.textContent : g.note;
     return {
-      key: [g.name, g.mode, g.theme, g.src, g.note].join("|"), name: g.name, mode: g.mode,
-      theme: g.theme, note: g.note, cur: g.cur, svg: g.src ? await svgFor(g.src) : "",
+      key: [g.name, g.mode, g.theme, g.src, note].join("|"), name: g.name, mode: g.mode,
+      theme: g.theme, note, cur: g.cur, svg,
     };
   }
 
