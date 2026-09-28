@@ -56,8 +56,7 @@ one with no transcript on this machine, a worker on another host, is left out,
 and each of the rest carries a button that copies the command resuming it and,
 where one has been rendered, a link to its session page, read from
 agent/sessions/<session-id>/ in the agent repo of the project the session ran
-in. The
-brief is not repeated there: it is on the row.
+in. The brief is not repeated there: it is on the row.
 
 The page wears the house style in both schemes: it follows the system's, the
 switch in the top bar pins one, and ?theme=day|night on the address pins one for
@@ -914,7 +913,7 @@ def session_page(session: str, cwds: Sequence[str]) -> Path | None:
     whose directories are all gone, since a removed worktree no longer says which project it was
     of. The session-page Stop hook writes it where `session_directory` puts it from the directory
     the session was in when its turn ended, so the newest of those that holds one answers."""
-    directories = (session_directory(Path(cwd), session) for cwd in reversed(cwds))
+    directories = (session_directory(Path(cwd), session) for cwd in reversed(cwds) if Path(cwd).is_dir())
     pages = (directory / SESSION_PAGE for directory in directories if directory)
     return next((page for page in pages if page.is_file()), None)
 

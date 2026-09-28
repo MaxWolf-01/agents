@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -79,9 +79,21 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     except RecordError as e:
         return Decision("send back", f"{e}\n{UNPARSED}")
     reply = [line for line in (hook.get("last_assistant_message") or "").splitlines() if line.strip()]
-    if len(reply) > CHAT_LINES and session.unanswered and not hook.get("stop_hook_active"):
+    if len(reply) > CHAT_LINES and not recorded_since_spoken(session) and not hook.get("stop_hook_active"):
         return Decision("send back", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     return Decision("render", page=page(session, datetime.now()))
+
+
+def recorded_since_spoken(session: Session) -> bool:
+    """Whether a record was written after the user last spoke: by the transcript's write call on
+    it, or, for one written some other way, by the file's modification time."""
+    if session.last_said is None:
+        return True
+    return any(
+        (turn.written and turn.written > session.last_said)
+        or datetime.fromtimestamp(turn.path.stat().st_mtime, UTC) > session.last_said
+        for turn in session.turns
+    )
 
 
 def main() -> None:
