@@ -442,42 +442,70 @@ REVIEW = turn_review.review  # the real one, which the autouse stub replaces
 
 # ---- the hook's log ---------------------------------------------------------
 
-def elsewhere(worked_example: Path, transcript: Path, loose: Path) -> dict:
-    """A turn of a session run in a directory that is in no project."""
-    return payload(worked_example, transcript) | {"cwd": str(loose)}
+# Each arrangement takes the worked example, its transcript and the check's fixtures, and returns
+# the hook JSON of a turn that takes one path.
+
+def worker(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setenv("DISPATCH_WORKLOG", "/w/log")
+    return payload(example, transcript)
 
 
-def reviewed_this_turn(worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+def print_mode(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setenv("CLAUDE_CODE_SESSION_ATTENDED", "0")
+    return payload(example, transcript)
+
+
+def in_no_project(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    loose = fixtures.getfixturevalue("tmp_path_factory").mktemp("loose")
+    return payload(example, transcript) | {"cwd": str(loose)}
+
+
+def with_no_directory(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example.parent / "8e0f1c22-0000-0000-0000-000000000000", transcript)
+
+
+def unparsed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    (example / "turns" / "04.md").write_text("no frontmatter\n")
+    return payload(example, transcript)
+
+
+def in_the_chat(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, fixtures.getfixturevalue("unrecorded"), reply=LONG)
+
+
+def found_fault(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    fixtures.getfixturevalue("monkeypatch").setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
+    return payload(example, transcript)
+
+
+def no_record(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, fixtures.getfixturevalue("unrecorded"))
+
+
+def reviewed_earlier(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     """The stop after the review sent the record back."""
-    monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
-    stop_hook.decide(payload(worked_example, transcript), worked_example)
-    return payload(worked_example, transcript, stop_hook_active=True)
+    found_fault(example, transcript, fixtures)
+    decide(payload(example, transcript), example)
+    return payload(example, transcript, stop_hook_active=True)
+
+
+def found_nothing(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, transcript)
 
 
 # Each path the hook takes, and the line it logs for it: the verb, why, and whether it resolved a
 # session directory. The four that let a turn end are the ones that look the same from outside.
 PATHS = {
-    "a dispatched worker": (lambda w, t, f: f("monkeypatch").setenv("DISPATCH_WORKLOG", "/w/log") or payload(w, t),
-                            "allow", "dispatched worker", True),
-    "a print-mode session": (lambda w, t, f: f("monkeypatch").setenv("CLAUDE_CODE_SESSION_ATTENDED", "0") or payload(w, t),
-                             "allow", "print-mode session", True),
-    "a directory in no project": (lambda w, t, f: elsewhere(w, t, f("tmp_path_factory").mktemp("loose")),
-                                  "allow", "no project with an agent repo", False),
-    "a session with no directory": (lambda w, t, f: payload(w.parent / "8e0f1c22", t),
-                                    "allow", "no session directory", True),
-    "a record that does not parse": (lambda w, t, f: (w / "turns" / "04.md").write_text("no frontmatter\n") and payload(w, t),
-                                     "send back", "record does not parse", True),
-    "an answer in the chat": (lambda w, t, f: payload(w, f("unrecorded"), reply=LONG),
-                              "send back", "answer in the chat", True),
-    "a record the review finds fault with": (
-        lambda w, t, f: f("monkeypatch").setattr(turn_review, "review", reviewer(finding(IN_RECORD[0]))) or payload(w, t),
-        "send back", "review findings", True),
-    "a turn that wrote no record": (lambda w, t, f: payload(w, f("unrecorded")),
-                                    "render", "no record written this turn", True),
-    "a record reviewed at an earlier stop": (lambda w, t, f: reviewed_this_turn(w, t, f("monkeypatch")),
-                                             "render", "record reviewed this turn", True),
-    "a record the review finds nothing in": (lambda w, t, f: payload(w, t),
-                                             "render", "review found nothing", True),
+    "a dispatched worker": (worker, "allow", "dispatched worker", True),
+    "a print-mode session": (print_mode, "allow", "print-mode session", True),
+    "a directory in no project": (in_no_project, "allow", "no project with an agent repo", False),
+    "a session with no directory": (with_no_directory, "allow", "no session directory", True),
+    "a record that does not parse": (unparsed, "send back", "record does not parse", True),
+    "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
+    "a record the review finds fault with": (found_fault, "send back", "review findings", True),
+    "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
+    "a record reviewed at an earlier stop": (reviewed_earlier, "render", "record reviewed this turn", True),
+    "a record the review finds nothing in": (found_nothing, "render", "review found nothing", True),
 }
 
 
@@ -488,13 +516,26 @@ def test_every_decision_is_one_line_in_the_reviews_log(
 ) -> None:
     """stop-hook-logs-its-decisions: the verb, why the hook took that path, and the session
     directory it resolved, in the log the review writes to."""
-    hook = arrange(worked_example, transcript, request.getfixturevalue)
+    hook = arrange(worked_example, transcript, request)
     before = len(logged(attended, "verb"))
     run(hook)
     capsys.readouterr()
     entries = logged(attended, "verb")[before:]
     directory = str(Path(hook["cwd"]) / SESSIONS / hook["session_id"]) if resolved else None
     assert entries == [{"ts": entries[0]["ts"], "session_id": hook["session_id"], "verb": verb, "why": why, "directory": directory}]
+
+
+def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
+    worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The log is for diagnosis: a full disk or a read-only home still renders the page."""
+    (tmp_path / "not-a-directory").write_text("")
+    monkeypatch.setattr(turn_review, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
+    (worked_example / PAGE).write_text(stale_page)
+    run(payload(worked_example, transcript))
+    assert capsys.readouterr().out == ""
+    assert (worked_example / PAGE).read_text() != stale_page
 
 
 # ---- the catalogue's chat rules ---------------------------------------------

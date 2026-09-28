@@ -11,6 +11,7 @@ Fails open: a reviewer that errors, times out or answers off the schema finds no
 review is one JSON line in LOG, carrying the session id and the record as it was reviewed.
 """
 
+import contextlib
 import json
 import re
 import subprocess
@@ -187,9 +188,11 @@ def feedback(turn: Turn, found: list[dict], rules: dict[str, str]) -> str:
 
 
 def log(session_id: str | None, **entry: object) -> None:
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a") as f:
-        f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
+    """Fails open: a log that cannot be written never holds up the turn it describes."""
+    with contextlib.suppress(OSError):
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a") as f:
+            f.write(json.dumps({"ts": datetime.now(UTC).isoformat(timespec="seconds"), "session_id": session_id, **entry}) + "\n")
 
 
 def ms_since(t0: float) -> int:
