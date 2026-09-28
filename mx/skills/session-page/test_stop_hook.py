@@ -63,14 +63,11 @@ def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return where / "opened"
 
 
-def opened(record: Path, expected: int) -> list[str]:
-    """What the stand-in browser has opened, once it has opened `expected` pages or two seconds
-    have passed: the hook starts it and does not wait on it."""
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        lines = record.read_text().splitlines() if record.exists() else []
-        if expected and len(lines) >= expected:
-            return lines
+def opened(record: Path) -> list[str]:
+    """What the stand-in browser has opened, once it has opened anything or five seconds have
+    passed: the hook starts it and does not wait on it."""
+    deadline = time.monotonic() + 5
+    while not record.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
     return record.read_text().splitlines() if record.exists() else []
 
@@ -210,39 +207,42 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
 
 
 def test_the_render_that_writes_the_page_first_opens_it_and_no_later_one_does(
-    worked_example: Path, transcript: Path, browser: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+    worked_example: Path, transcript: Path, browser: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], attended: Path,
 ) -> None:
     """stop-hook-opens-the-page-on-its-first-render: the first render opens the page with
     `claude-browser`; later turns rewrite the same file and leave the open tab to a manual reload."""
-    run(payload(worked_example, transcript))
-    assert opened(browser, 1) == [str(worked_example / PAGE)]
-    run(payload(worked_example, transcript))
-    run(payload(worked_example, transcript))
+    for _ in range(3):
+        run(payload(worked_example, transcript))
     assert capsys.readouterr().out == ""
-    assert opened(browser, 2) == [str(worked_example / PAGE)]
+    assert [entry["page"] for entry in logged(attended, "opened")] == [str(worked_example / PAGE)]
+    assert opened(browser) == [str(worked_example / PAGE)]
 
 
 def test_a_page_already_there_is_rendered_and_not_opened(
-    worked_example: Path, transcript: Path, stale_page: str, browser: Path, run: Callable[[dict], None],
+    worked_example: Path, transcript: Path, stale_page: str, run: Callable[[dict], None], attended: Path,
 ) -> None:
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert (worked_example / PAGE).read_text() != stale_page
-    assert opened(browser, 0) == []
+    assert logged(attended, "opened") == []
 
 
+# Each is the stand-in's script, None for none, and what the log says came of the open.
 NO_BROWSER = {
-    "a host with no claude-browser": None,
-    "a claude-browser that fails": "#!/usr/bin/env bash\nexit 1\n",
-    "a claude-browser that cannot start": "#!/nowhere/interpreter\n",
+    "a host with no claude-browser": (None, "no claude-browser on PATH"),
+    "a claude-browser that hangs and then fails": ("#!/usr/bin/env bash\nsleep 30\nexit 1\n", "started "),
+    "a claude-browser that cannot start": ("#!/nowhere/interpreter\n", " did not start: "),
 }
 
 
-@pytest.mark.parametrize("script", NO_BROWSER.values(), ids=NO_BROWSER)
+@pytest.mark.parametrize("script, said", NO_BROWSER.values(), ids=NO_BROWSER)
 def test_a_host_that_cannot_open_the_page_still_renders_it_and_ends_the_turn(
-    script: str | None, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    script: str | None, said: str, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, attended: Path,
 ) -> None:
+    """The turn ends on the hook's own time, whatever the opener does after it starts, and the log
+    says which of these it was."""
     where = tmp_path / "host"
     where.mkdir()
     if script:
@@ -250,9 +250,12 @@ def test_a_host_that_cannot_open_the_page_still_renders_it_and_ends_the_turn(
         (where / "claude-browser").chmod(0o755)
     rest = [d for d in os.environ["PATH"].split(os.pathsep) if not (Path(d) / "claude-browser").exists()]
     monkeypatch.setenv("PATH", os.pathsep.join([str(where), *rest]))
+    started = time.monotonic()
     run(payload(worked_example, transcript))
+    assert time.monotonic() - started < 10
     assert capsys.readouterr().out == ""
     assert "Round 3" in (worked_example / PAGE).read_text()
+    assert said in logged(attended, "opened")[0]["opened"]
 
 
 # ---- the sessions it leaves alone, and the answer in the chat ---------------
@@ -277,14 +280,14 @@ def test_a_session_nobody_reads_the_page_of_is_left_alone(
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
 def test_a_session_nobody_reads_the_page_of_never_has_it_opened(
-    marker: str, value: str, worked_example: Path, transcript: Path, browser: Path,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+    marker: str, value: str, worked_example: Path, transcript: Path,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
     """Its records would render a first page, and the hook neither writes it nor opens it."""
     monkeypatch.setenv(marker, value)
     run(payload(worked_example, transcript))
     assert not (worked_example / PAGE).exists()
-    assert opened(browser, 0) == []
+    assert logged(attended, "opened") == []
 
 
 # The worked example's transcript ends with record 4's Write call, after the last prompt: that
