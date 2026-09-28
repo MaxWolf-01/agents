@@ -82,12 +82,17 @@ for dir in "$root"/*/; do
             "$repo" "$base" "${ticket:-?}" "$state" "$age" "$idle" "$name" "$(pane_of "$name")" "$detail"
     done
 
-    # The repo's fuzz run is a `job`, read from the files `job` keeps for it.
-    # Its idle is how long its database has gone unwritten, which is what tells
-    # a run whose workers died without a word from one that is fuzzing.
+    # The repo's fuzz run is a `job`, read from the state files `job --help`
+    # documents, since this script runs where `job` may not be on PATH. Its row
+    # is the scratch dir's whose worktree the job runs in: a database outlives
+    # its run, so one left by an earlier integration branch is no run. Its idle
+    # is how long the examples in its database have gone unwritten, which is
+    # what tells a run whose workers died without a word from one that is
+    # fuzzing; the patches a `fuzz check` writes beside them are no activity.
     db=$dir/fuzz.hypothesis
     job=${JOB_STATE_DIR:-$HOME/.local/state/jobs}/fuzz-$repo
-    if [ -d "$db" ] && [ -f "$job/meta" ]; then
+    worktree=$(sed -n 's/^worktrees=//p' "$dir/config" | head -1)/$repo-$base-fuzz
+    if [ -d "$db" ] && [ -f "$job/meta" ] && [ "$(sed -n 's/^cwd=//p' "$job/meta")" = "$worktree" ]; then
         pid=$(sed -n 's/^pid=//p' "$job/meta")
         started=$(date -d "$(sed -n 's/^started=//p' "$job/meta")" +%s 2>/dev/null)
         if [ -f "$job/status" ]; then
@@ -98,7 +103,8 @@ for dir in "$root"/*/; do
         else
             state=gone detail="(runner dead without a status line)"
         fi
-        active=$(find "$db" -printf '%T@\n' | sort -n | tail -1)
+        active=$(find "$db" -mindepth 1 -path "$db/patches" -prune -o -printf '%T@\n' | sort -n | tail -1)
+        active=${active:-$(stat -c %Y "$db")}
         printf '%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$base" fuzz "$state" \
             "$((now - ${started:-$now}))" "$((now - ${active%.*}))" "job-fuzz-$repo" "$(pane_of "job-fuzz-$repo")" "$detail"
     fi

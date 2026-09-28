@@ -74,23 +74,25 @@
 #             branch, <base>; `dispatch fuzz` is what calls these.
 #             start: cuts fuzz/<base> from <base> in both repos into
 #             <worktrees-dir>/<repo>-<base>-fuzz and its `agent/` (set up as a
-#             ticket worktree is) or resets the ones there to <base>, links
-#             `fuzz.hypothesis` in this directory into it as `.hypothesis`,
-#             hooks the code repo's bare repo (a remote host's alone), and runs
-#             `make fuzz` there as the `job` fuzz-<repo>. Refuses a project
-#             whose conftest.py sets a Hypothesis database, and a run already
-#             running.
+#             ticket worktree is) or resets the ones there to <base> and sets
+#             them up again, links `fuzz.hypothesis` in this directory into
+#             it as `.hypothesis`, hooks the code repo's bare repo (a remote
+#             host's alone), and runs `make fuzz` there as the `job`
+#             fuzz-<repo>. Refuses a project whose conftest.py sets a
+#             Hypothesis database, and a run already running.
 #             restart: what the hook runs when a push moves <base>: ends the
-#             job, resets both worktrees to the tips pushed, runs it again.
+#             job, resets both worktrees to the tips pushed and sets them up
+#             again, runs it again.
 #             stop: unhooks and ends the job; worktrees and database stay.
 #             clean: unhooks, ends and forgets the job, removes both worktrees
 #             and both branches; the database stays.
 #             check: runs `make test` in the worktree, which replays every
-#             failure the database holds, and prints `FAILED <node id>` for
-#             each failure with its failing test case indented under it, then
-#             `patch: <path>` where Hypothesis wrote the patch adding them as
-#             `@example`s. Exit 0 when the suite passes, its own status when
-#             it fails.
+#             failure the database holds, and prints a line `FAILED <node id>`
+#             per failure, each line of its failing test case under it behind
+#             four spaces, then `patch: <path>` where Hypothesis wrote the
+#             patch adding every case as an `@example`. A failing suite with
+#             no failure to read out has its tail on stderr. Exit 0 when the
+#             suite passes, its own status when it fails.
 #             Nothing here removes the database; that is the user's, by hand.
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
@@ -165,6 +167,12 @@ run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch-ctl: $1" >&2; exit 1; }
 
 cfg() { sed -n "s/^$1=//p" "$here/config" | head -1; }
+
+# `init` fetches `job` to ~/.local/bin where the host has none on PATH.
+job_bin() {
+    job=$(command -v job || echo "$HOME/.local/bin/job")
+    [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
+}
 
 load() {
     [ -f "$here/config" ] || die "no config in $here; run: dispatch-ctl init <repo> <base>"
@@ -277,6 +285,15 @@ checkout() {
     # Inside the code worktree, where every checkout of the project keeps it, so
     # the paths a worker reads and writes are the ones its ticket names.
     run git -C "$agent_dir" worktree add "$agent_worktree" -b "$branch" "$agent_base" || exit 1
+    if ! set_up; then
+        # Unwound, so the next spawn builds again instead of finding a worktree
+        # and starting a worker in a tree that was never set up.
+        remove_worktrees
+        die "setup command failed in $worktree; the log above is its tail"
+    fi
+}
+
+set_up() {
     # The setup command is what makes a worktree reproducible on any host: the
     # project's own, as its docs give it, or its `make install`. A project with
     # neither gets a ticket, not an environment improvised here.
@@ -290,13 +307,9 @@ checkout() {
         die "no setup command for $worktree (no \`setup\` file here, no flake.nix, no make install); the project needs one before it can be dispatched"
     fi
     echo "+ (cd $worktree && $setup) > $here/$name.install.log 2>&1" >&2
-    if ! (cd "$worktree" && bash -c "$setup") > "$here/$name.install.log" 2>&1; then
-        tail -20 "$here/$name.install.log" >&2
-        # Unwound, so the next spawn builds again instead of finding a worktree
-        # and starting a worker in a tree that was never set up.
-        remove_worktrees
-        die "setup command failed in $worktree; the log above is its tail"
-    fi
+    (cd "$worktree" && bash -c "$setup") > "$here/$name.install.log" 2>&1 && return 0
+    tail -20 "$here/$name.install.log" >&2
+    return 1
 }
 
 # `--effort <level>` after the positional arguments; what is left is positional.
@@ -403,8 +416,7 @@ wait_() {
         state_line "$name" "$run_id" "$run_runner"
         return 1
     fi
-    job=$(command -v job || echo "$HOME/.local/bin/job")
-    [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
+    job_bin
     "$job" wait --status "$here/$run_id.status" --log "$here/$run_id.log" \
         ${pid:+--pid "$pid"} --interval 10 "$@" >/dev/null
     rc=$?
@@ -529,9 +541,10 @@ fuzz_names() {
     worktree=$worktrees/$repo-$base-fuzz
     agent_worktree=$worktree/agent
     db=$here/fuzz.hypothesis
-    hook=$git_dir/hooks/post-receive
-    job=$(command -v job || echo "$HOME/.local/bin/job")
-    [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
+    # A local host's repo is the user's own checkout, whose hooks are theirs.
+    hook=
+    [ "$(git -C "$git_dir" rev-parse --is-bare-repository)" != true ] || hook=$git_dir/hooks/post-receive
+    job_bin
 }
 
 # running, done or gone as `job` reads the run; nothing when there is no job.
@@ -564,17 +577,18 @@ fuzz_link() {
     run ln -sfn "$db" "$worktree/.hypothesis"
 }
 
+# A new tip can bring a new dependency, so the tree is set up again on it.
 fuzz_reset() {
     run git -C "$worktree" reset -q --hard "$base" || exit 1
     run git -C "$agent_worktree" reset -q --hard "$agent_base" || exit 1
+    set_up || die "setup command failed in $worktree; the log above is its tail"
 }
 
 # The integration branch reaches this host by push alone, so a push that moves
 # it is the restart's one trigger. `dispatch` pushes the agent repo first, so
-# the code repo's push, the hooked one, finds both tips current. A local host's
-# repo is the user's own checkout, whose hooks are theirs, and gets none.
+# the code repo's push, the hooked one, finds both tips current.
 hook_install() {
-    [ "$(git -C "$git_dir" rev-parse --is-bare-repository)" = true ] || return 0
+    [ -n "$hook" ] || return 0
     echo "+ write $hook" >&2
     { echo '#!/usr/bin/env bash'
       echo '# The fuzz run'"'"'s: `dispatch-ctl fuzz start` writes it, `fuzz stop` and `fuzz clean` remove it.'
@@ -586,7 +600,7 @@ hook_install() {
     } > "$hook" && chmod +x "$hook"
 }
 
-hook_remove() { [ ! -f "$hook" ] || run rm "$hook"; }
+hook_remove() { [ -z "$hook" ] || [ ! -f "$hook" ] || run rm "$hook"; }
 
 fuzz_start() {
     load; fuzz_names
@@ -645,16 +659,14 @@ fuzz_check() {
     if [ -n "$found" ]; then
         printf '%s\n' "$found" | sed "s|^patch: |patch: $worktree/|"
     else
-        tail -20 "$log"
+        tail -20 "$log" >&2
     fi
     return "$rc"
 }
 
-# pytest's output, read down to one `FAILED <node id>` line per failure, each
-# failing test case under its node id indented by four, and `patch: <path>`
-# where Hypothesis wrote one. A failure section is titled by the test's name
-# alone, so it meets its node id in the short summary, in the order both list
-# them.
+# pytest's output, read down to what `fuzz check` prints. A failure section is
+# titled by the test's name alone, so it meets its node id in the short
+# summary, in the order both list them.
 findings() {
     awk '
         /^_+ [^_ ].* _+$/ { t = $0; sub(/^_+ /, "", t); sub(/ _+$/, "", t); title[++n] = t; next }

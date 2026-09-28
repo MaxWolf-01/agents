@@ -93,7 +93,7 @@ Frontier empty and every child ticket `done` or merged into the branch you hold 
 
    Then stop the loop.
 
-A repo's fuzz run is the user's to start and stop (`dispatch fuzz`): it fuzzes the integration branch whatever lands on it, and no step of a ticket's flow waits on it or touches it.
+A repo's fuzz run is the user's to start and stop (`dispatch fuzz`).
 
 Frontier empty with tickets left, every one needing the user, a build in `review`, or blocked on one of those → the work waits on the human: report which questions and rulings, and stop the loop; the answers reopen it.
 
