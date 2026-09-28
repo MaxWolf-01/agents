@@ -13,10 +13,10 @@ Browser zoom scales the layout, so a window of W pixels at zoom Z lays the page 
 pixels, which is what render-lint's --width takes: the Property states a range of layout widths,
 that quotient over the corners of its grid. What is measured inside the range is both edges of
 every band the board's own `@media` rules cut it into, read off the stylesheet board.py renders the
-page with, so a new breakpoint brings its two widths here with no edit. Each width, and each set of
-pages at it, is a check of its own, for the suite's processes to share out. What that gives up is a collision that exists
-only mid-band, which takes a box whose size does not track the window's: `.body` at 46rem, `main`
-and `.absences` at 110rem, and `.side` at 40vh of height are the ones the board has.
+page with, so a new breakpoint brings its two widths here with no edit. What that gives up is a
+collision that exists only mid-band, which takes a box whose size does not track the window's:
+`.body` at 46rem, `main` and `.absences` at 110rem, and `.side` at 40vh of height are the ones the
+board has.
 
 A page that ignores `?theme=` would be measured twice in the same scheme, so the scheme switch the
 house style prescribes is the check's precondition rather than a second check.
@@ -27,7 +27,8 @@ graph beside it, both schemes with the graph at full size over the board, which 
 the address opens, and both schemes with a row folded under its parent ticket's opened through its
 anchor, which opens the parent's row too and lays out the rows folded under it.
 A board nobody has clicked has no graph and no open body, so without the anchors most of what the
-Property covers is never laid out.
+Property covers is never laid out. Each width, and each set of pages at it, is a check of its own,
+for the suite's processes to share out.
 
 Beside the width matrix, the same widths over a board with a defect put back into it: a clean run
 means nothing until the same widths have been shown reporting a defect.
@@ -43,7 +44,6 @@ copy button's click, and the page's own answers about the scheme, the anchor and
 """
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -126,6 +126,7 @@ VIEWS = {"board": ("", f"#{OPENED}", f"&graph=1#{OPENED}"), "kin": (f"#{KIN}",)}
 
 def test_a_breakpoint_added_to_the_board_brings_its_two_widths() -> None:
     added = PAGE.template.replace("<style>", "<style>\n  @media (min-width: 1700px) { main { gap: 0 } }", 1)
+    assert len(WIDTHS) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {WIDTHS}"
     assert band_edges(added) == sorted([*WIDTHS, 1699, 1700])
 
 
@@ -146,7 +147,6 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
     out = tmp_path / "board.html"
     Briefing(SAID, WRITTEN, "abc-123", WRITTEN, WRITTEN, 2).write(cache_path(out))
     render(transcribed.root, transcribed.repo, out)
-    assert len(WIDTHS) > 2, f"no breakpoint of the board's own falls in {NARROWEST}px..{WIDEST}px: {WIDTHS}"
     assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
     pages = [f"{out}?theme={scheme}{anchor}" for scheme in SCHEMES for anchor in VIEWS[view]]
     assert not (found := lint(pages, width)), named({width: found})
@@ -167,6 +167,7 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
+    assert band_edges(out.read_text()) == WIDTHS, "the rendered board cuts bands its stylesheet does not"
     broken = tmp_path / "broken.html"
     broken.write_text(out.read_text().replace("</head>", f"{DEFECT}</head>", 1))
     found = lint([f"{broken}?theme=day"], width)
