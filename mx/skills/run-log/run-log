@@ -10,7 +10,7 @@
 #           --output-format stream-json` added, prints what the model answered,
 #           exits with claude's status, and appends one line to the log. --site
 #           names the call site (worker, review, briefing, change-summary,
-#           chat-review); the repo is read off the working directory's git
+#           turn-review); the repo is read off the working directory's git
 #           dir, the model and effort off the command line, the rest off what
 #           claude reported. --range is the commit range a review ran over.
 #           --timeout ends the run after that many seconds as TERM does, so

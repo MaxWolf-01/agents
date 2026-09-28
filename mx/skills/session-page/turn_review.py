@@ -26,9 +26,13 @@ from session_page import Session, Turn
 
 HERE = Path(__file__).resolve().parent
 CATALOGUE = HERE.parent / "writing-for-humans" / "CATALOGUE.md"
+RUN_LOG = HERE.parent / "run-log" / "run-log"  # every model run goes through it, one line each in the run log
 MODEL = "claude-opus-5-5"
 EFFORT = "low"
-REVIEWER_TIMEOUT_S = 45  # under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
+# run-log's limit on the model call, and the caller's on run-log, which leaves it time to write its
+# line; both under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
+REVIEWER_TIMEOUT_S = 45
+WRAPPER_TIMEOUT_S = 55
 MOST = 3  # findings handed back per record
 
 SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
@@ -127,15 +131,14 @@ def review(system: str, prompt: str) -> list[dict]:
     hooks or MCP servers, and `system` in place of Claude Code's own system prompt, under which
     the model answers the text instead of reviewing it."""
     proc = subprocess.run(
-        ["claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config",
-         "--model", MODEL, "--effort", EFFORT, "--system-prompt", system, "--json-schema", json.dumps(SCHEMA),
-         "--output-format", "json", prompt],
-        capture_output=True, text=True, timeout=REVIEWER_TIMEOUT_S,
+        [str(RUN_LOG), "run", "--site", "turn-review", "--json", "--timeout", str(REVIEWER_TIMEOUT_S), "--",
+         "claude", "-p", "--tools", "", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config",
+         "--model", MODEL, "--effort", EFFORT, "--system-prompt", system, "--json-schema", json.dumps(SCHEMA)],
+        input=prompt, capture_output=True, text=True, timeout=WRAPPER_TIMEOUT_S,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"claude exited {proc.returncode}: {proc.stderr.strip()[:300]}")
-    out = json.loads(proc.stdout)
-    final = next(m for m in out if m.get("type") == "result") if isinstance(out, list) else out
+    final = json.loads(proc.stdout)  # claude's result object, which run-log's --json prints
     answer = (final.get("structured_output") or {}).get("findings")
     if not isinstance(answer, list):
         raise RuntimeError(f"no findings in reviewer output: {proc.stdout[:300]}")
