@@ -279,6 +279,93 @@ def test_a_page_already_there_is_rendered_and_not_opened(
     assert logged(attended, "opened") == []
 
 
+# ---- the sessions directory kept out of the agent repo's status -------------
+
+
+def status(where: Path) -> list[str]:
+    return subprocess.run(["git", "-C", str(where), "status", "--porcelain", "--untracked-files=all"],
+                          capture_output=True, text=True, check=True).stdout.splitlines()
+
+
+def exclude_file(repo: Path) -> Path:
+    return repo / ".git" / "info" / "exclude"
+
+
+def test_an_agent_repo_that_does_not_ignore_sessions_shows_none_of_them_after_the_first_render(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    """The oracle is the ticket agent/tickets/agent-repos-exclude-sessions.md: the first render adds
+    the line to the clone's exclude file, and a later render adds no second one."""
+    agent = worked_example.parents[1]
+    git(agent, "init")
+    (agent / ".gitignore").write_text("transcripts/\n")
+    assert any("sessions/" in line for line in status(agent))
+    for _ in range(2):
+        run(payload(worked_example, transcript))
+    assert [line for line in status(agent) if "sessions/" in line] == []
+    assert exclude_file(agent).read_text().count("/sessions/") == 1
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == [f"added /sessions/ to {exclude_file(agent)}"]
+
+
+ALREADY_IGNORED = {
+    "by its .gitignore": (".gitignore", "sessions/"),
+    "by its exclude file": (".git/info/exclude", "sessions/"),
+    "by a pattern over what it holds": (".gitignore", "sessions/*"),
+}
+
+
+@pytest.mark.parametrize("where, pattern", ALREADY_IGNORED.values(), ids=ALREADY_IGNORED)
+def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
+    where: str, pattern: str, worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    agent = worked_example.parents[1]
+    git(agent, "init")
+    (agent / where).parent.mkdir(parents=True, exist_ok=True)
+    (agent / where).write_text(f"reviews/\n{pattern}\n")
+    before = exclude_file(agent).read_text() if exclude_file(agent).exists() else None
+    run(payload(worked_example, transcript))
+    assert (exclude_file(agent).read_text() if exclude_file(agent).exists() else None) == before
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["already ignored"]
+
+
+def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    """A repo that commits its session records keeps committing them: a later session's directory
+    still shows in its status."""
+    agent = worked_example.parents[1]
+    git(agent, "init")
+    git(agent, "add", "sessions")
+    git(agent, "commit", "-m", "session records")
+    (worked_example.parent / "a-later-session").mkdir()
+    (worked_example.parent / "a-later-session" / "session.md").write_text("")
+    run(payload(worked_example, transcript))
+    assert [line for line in status(agent) if "sessions/" in line] == ["?? sessions/a-later-session/session.md", f"?? sessions/{worked_example.name}/index.html"]
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["tracked, so not excluded"]
+
+
+def test_an_agent_repo_outside_git_is_rendered_and_logged_as_such(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+) -> None:
+    run(payload(worked_example, transcript))
+    assert (worked_example / PAGE).exists()
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["not in a git repository"]
+
+
+def test_an_agent_directory_the_code_repo_tracks_excludes_its_own_sessions_and_no_other(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None],
+) -> None:
+    """The line is anchored at the agent directory's path in the repo, so a `sessions/` elsewhere in
+    the code repo still shows."""
+    project = worked_example.parents[2]
+    git(project, "init")
+    (project / "src" / "sessions").mkdir(parents=True)
+    (project / "src" / "sessions" / "a.py").write_text("")
+    run(payload(worked_example, transcript))
+    assert exclude_file(project).read_text().splitlines()[-1] == "/agent/sessions/"
+    assert [line for line in status(project) if "sessions/" in line] == ["?? src/sessions/a.py"]
+
+
 # Each is the stand-in's script, None for none, and what the log says came of the open.
 NO_BROWSER = {
     "a host with no claude-browser": (None, "no claude-browser on PATH"),
