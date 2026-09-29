@@ -47,7 +47,7 @@ The scan is done when every candidate carries:
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
 - **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. Don't list every theoretical refactor an ADR forbids.
 
-and one **top recommendation**: which candidate you'd tackle first and why.
+and the candidates are ranked, the one you'd tackle first on top.
 
 **Use CONTEXT.md vocabulary for the domain, and the `/mx:codebase-design` vocabulary for the architecture.** If `CONTEXT.md` defines "Order," talk about "the Order intake module", not "the FooBarHandler," and not "the Order service."
 
