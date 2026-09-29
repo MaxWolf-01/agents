@@ -17,6 +17,10 @@ The render that writes a session's page for the first time opens it with `claude
 the host has one; later renders rewrite the same file, and the open tab is reloaded by hand. That
 open is a line of the log too, saying what came of it.
 
+The agent ends a turn whose answer is on the page without a reply, so a render whose turn wrote a
+record shows the user one line of the hook's own under it, as a `systemMessage`: the questions
+waiting on them and the page's link.
+
 Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
 """
@@ -34,7 +38,7 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import PAGE, RecordError, Session, Turn, page, read_session, session_directory  # noqa: E402
+from session_page import PAGE, RecordError, Session, Turn, open_questions, page, read_session, session_directory  # noqa: E402
 
 Verb = Literal["render", "send back", "allow"]
 
@@ -47,6 +51,7 @@ class Decision:
     why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     page: str = ""  # the session page, where the verb is render
+    shown: str = ""  # the line the user sees under the turn, where a render's turn wrote a record
 
 
 # The longest chat reply a session that has a page ends a turn with and writes no record.
@@ -55,11 +60,11 @@ CHAT_LINES = 3
 UNPARSED = "Fix the record; the session page renders once every record parses."
 IN_THE_CHAT = (
     "This session has a page, and this turn wrote no record for it, so the answer went to the chat. "
-    "Move it onto the page as {record}, then reply with one line and the page's link: {page}"
+    "Move it onto the page as {record}, then end the turn without a reply: the hook shows the user the page's link."
 )
 OUTSIDE_WRITE = (
     "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
-    "Write it again with Write, then reply with one line and the page's link: {page}"
+    "Write it again with Write, then end the turn without a reply: the hook shows the user the page's link."
 )
 
 
@@ -76,7 +81,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
     - A record written this turn that `turn_review` finds fault with is sent back with its findings.
-    - Otherwise the page renders.
+    - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
+      the user sees under the turn (`shown`), since the agent ends such a turn without a reply.
 
     The answer in the chat and the review each send the agent back once per turn. A turn a Stop hook
     already continued renders a long reply, so an agent that keeps its answer in the chat is not
@@ -104,10 +110,17 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
     if turn_review.reviewed_since(session.id, session.began):
         turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
-        return Decision("render", "record reviewed this turn", page=page(session, datetime.now()))
+        return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
     if said := turn_review.feedback_on(session, turn):
         return Decision("send back", "review findings", said)
-    return Decision("render", "review found nothing", page=page(session, datetime.now()))
+    return Decision("render", "review found nothing", page=page(session, datetime.now()), shown=shown(session, directory))
+
+
+def shown(session: Session, directory: Path) -> str:
+    """The line under a turn whose answer is on the page: what waits on the user there, and the link."""
+    waiting = [q.tag for _, q in open_questions(session)]
+    ask = f"waiting on you: {' '.join(waiting)}" if waiting else "nothing waiting on you"
+    return f"session page · {ask} · {(directory / PAGE).as_uri()}"
 
 
 def written_this_turn(session: Session) -> Turn | None:
@@ -153,6 +166,8 @@ def main() -> None:
         (directory / PAGE).write_text(decision.page)
         if first:
             turn_review.log(hook["session_id"], opened=open_in_browser(directory / PAGE), page=str(directory / PAGE))
+        if decision.shown:
+            print(json.dumps({"systemMessage": decision.shown}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
 
