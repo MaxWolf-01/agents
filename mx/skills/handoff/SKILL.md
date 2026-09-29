@@ -18,7 +18,7 @@ A handoff requires a **purpose**: what the next session should do. The purpose s
 
 ## What it carries
 
-Complete on these six even at the cost of length; everything else short:
+Complete on these seven even at the cost of length; everything else short:
 
 1. **Asked, decided, ruled out.** Every request, decision, rejection, preference and boundary, stated exactly, with the user's reason where they gave one. The user's words stay close to verbatim; a decision you proposed and they never confirmed is marked as your proposal.
 2. **Options set aside.** Every approach raised, tried or dropped, and why.
@@ -26,6 +26,7 @@ Complete on these six even at the cost of length; everything else short:
 4. **Where things stand.** What is done, landed, merged, pushed; what sits on which branch or worktree, unmerged.
 5. **What is open.** Questions waiting on the user, work promised, jobs still running, the next step.
 6. **What is hard to reconstruct.** Names, numbers, paths, commands, exact wording, measurements: kept exactly.
+7. **Peers.** Every session this one exchanged messages with: its name, its role, and what it expects from this session. A session's name stops working when the session ends, so the next session's first act after reading the file is to message each peer its own new name.
 
 Your own explanations and reasoning condense to what they concluded. What already lives in an artefact (a ticket, an ADR, research, a commit, a diff) is a pointer to that artefact by path, never a copy of what it says.
 
