@@ -26,7 +26,7 @@ Complete on these seven even at the cost of length; everything else short:
 4. **Where things stand.** What is done, landed, merged, pushed; what sits on which branch or worktree, unmerged.
 5. **What is open.** Questions waiting on the user, work promised, jobs still running, the next step.
 6. **What is hard to reconstruct.** Names, numbers, paths, commands, exact wording, measurements: kept exactly.
-7. **Peers.** Every session this one exchanged messages with: its name, its role, and what it expects from this session. A session's name stops working when the session ends, so the next session's first act after reading the file is to message each peer its own new name.
+7. **Peers.** Every session this one exchanged messages with: its name, its role, and what it expects from this session. It also records this session's own name. `/clear` keeps that name and a new process gets a new one, so a next session answering to a different name messages each peer that name as its first act after reading the file.
 
 Your own explanations and reasoning condense to what they concluded. What already lives in an artefact (a ticket, an ADR, research, a commit, a diff) is a pointer to that artefact by path, never a copy of what it says.
 
