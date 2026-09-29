@@ -85,7 +85,7 @@ def run(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict], None]:
     return call
 
 
-def payload(directory: Path, transcript: Path, reply: str = "One line, and the page's link.", **rest: object) -> dict:
+def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) -> dict:
     """The Stop hook JSON for a turn of the session whose directory is `directory`."""
     return {
         "session_id": directory.name,
@@ -101,6 +101,17 @@ def logged(log: Path, key: str) -> list[dict]:
     """The log's lines that carry `key`: `decision` the review's, `verb` the hook's."""
     lines = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
     return [entry for entry in lines if key in entry]
+
+
+def shown(capsys: pytest.CaptureFixture) -> str:
+    """The line the hook showed the user as the turn ended, empty where it showed none. A turn the
+    hook sent back fails the check."""
+    out = capsys.readouterr().out
+    if not out:
+        return ""
+    said = json.loads(out)
+    assert "hookSpecificOutput" not in said, f"the turn was sent back: {said}"
+    return said["systemMessage"]
 
 
 def git(where: Path, *args: str) -> None:
@@ -134,6 +145,7 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
         (directory / PAGE).unlink(missing_ok=True)
         run(payload(directory, transcript) | {"cwd": str(cwd)})
         assert (directory / PAGE).is_file(), cwd
+        assert shown(capsys).endswith((directory / PAGE).as_uri()), cwd
     assert not (worktree / "agent").exists()
     monkeypatch.chdir(tmp_path_factory.mktemp("loose"))
     with pytest.raises(SystemExit, match="in no project with an agent repo"):
@@ -253,7 +265,7 @@ def test_the_render_that_writes_the_page_first_opens_it_and_no_later_one_does(
     `claude-browser`; later turns rewrite the same file and leave the open tab to a manual reload."""
     for _ in range(3):
         run(payload(worked_example, transcript))
-    assert capsys.readouterr().out == ""
+        assert shown(capsys)
     assert [entry["page"] for entry in logged(attended, "opened")] == [str(worked_example / PAGE)]
     assert opened(browser) == [str(worked_example / PAGE)]
 
@@ -292,7 +304,7 @@ def test_a_host_that_cannot_open_the_page_still_renders_it_and_ends_the_turn(
     started = time.monotonic()
     run(payload(worked_example, transcript))
     assert time.monotonic() - started < 10
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert "Round 3" in (worked_example / PAGE).read_text()
     assert said in logged(attended, "opened")[0]["opened"]
 
@@ -354,14 +366,14 @@ def test_an_answer_in_the_chat_with_no_record_is_sent_back_to_the_page(
     worked_example: Path, unrecorded: Path, stale_page: str, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
     """session-page's Decision on the Stop hook: in a session that has a page, a reply longer than
-    three lines with no record written this turn goes back, naming the record it belongs in and the
-    page the reply links, and the page waits for that record."""
+    three lines with no record written this turn goes back, naming the record it belongs in, and the
+    page waits for that record."""
     hook = payload(worked_example, unrecorded, reply=FOUR_LINES)
     assert decide(hook, worked_example).verb == "send back"
     (worked_example / PAGE).write_text(stale_page)
     run(hook)
     said = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert str(worked_example / "turns" / "05.md") in said and (worked_example / PAGE).as_uri() in said
+    assert str(worked_example / "turns" / "05.md") in said
     assert (worked_example / PAGE).read_text() == stale_page
 
 
@@ -381,8 +393,47 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
     turn = request.getfixturevalue("unrecorded") if answered_in_chat else transcript
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, turn, reply=reply, stop_hook_active=again))
-    assert capsys.readouterr().out == ""
+    shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
+
+
+# ---- the line under the turn ------------------------------------------------
+
+ANSWERS_Q7 = "---\ndate: 2026-09-23\nanswered:\n  Q7: a\n---\n\n# Round 4\n\n## Details\n\nThe light review it is.\n"
+
+
+def test_a_turn_that_wrote_a_record_ends_on_the_hooks_line_naming_what_waits(
+    worked_example: Path, transcript: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """stop-hook-prints-the-page-link#P1: the worked example's record 04 leaves Q7 open, and a record
+    05 answering it leaves nothing; either way the line ends on the page's link."""
+    link = (worked_example / PAGE).as_uri()
+    run(payload(worked_example, transcript))
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
+    record = worked_example / "turns" / "05.md"
+    record.write_text(ANSWERS_Q7)
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys) == f"session page · nothing waiting on you · {link}"
+
+
+UNRECORDED = {
+    "a one-line answer": ("Yes, the second bank.", False),
+    "three lines": (THREE_LINES, False),
+    "a long answer sent back once already": (LONG, True),
+}
+
+
+@pytest.mark.parametrize("reply, again", UNRECORDED.values(), ids=UNRECORDED)
+def test_a_turn_that_wrote_no_record_gets_no_line(
+    reply: str, again: bool, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None],
+) -> None:
+    """stop-hook-prints-the-page-link#P2: its answer is in the chat, so the page's link would point
+    at nothing new."""
+    run(payload(worked_example, unrecorded, reply=reply, stop_hook_active=again))
+    assert shown(capsys) == ""
+    assert (worked_example / PAGE).is_file()
 
 
 RECORD_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
@@ -469,7 +520,7 @@ def test_a_record_with_findings_goes_back_with_at_most_three_and_the_page_waits(
 
     monkeypatch.setattr(turn_review, "review", unreachable)
     run(payload(worked_example, transcript, stop_hook_active=True))
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
 
 
@@ -495,7 +546,7 @@ def test_a_finding_quoting_text_absent_from_the_record_is_dropped(
         assert all(f'"{quote}"' in said for quote in kept) and NOT_IN_RECORD not in said
         assert (worked_example / PAGE).read_text() == stale_page
     else:
-        assert out == ""
+        assert "hookSpecificOutput" not in out
         assert (worked_example / PAGE).read_text() != stale_page
 
 
@@ -517,13 +568,13 @@ def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
     monkeypatch.setattr(turn_review, "review", failing)
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
     (entry,) = logged(attended, "decision")
     assert (entry["session_id"], entry["decision"]) == (worked_example.name, "failed")
     monkeypatch.setattr(turn_review, "review", unreachable)
     run(payload(worked_example, transcript, stop_hook_active=True))
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert [entry["decision"] for entry in logged(attended, "decision")] == ["failed", "re-entry"]
 
 
@@ -544,7 +595,7 @@ def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed
     monkeypatch.setattr(turn_review, "review", unreachable)
     record.write_text(record.read_text().replace("a pivotal addition", "the ledger's overflow"))
     run(payload(worked_example, unrecorded, stop_hook_active=True))
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert "overflow" in (worked_example / PAGE).read_text()
 
 
@@ -843,7 +894,7 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     monkeypatch.setattr(turn_review, "LOG", tmp_path / "not-a-directory" / "log.jsonl")
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
-    assert capsys.readouterr().out == ""
+    assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
 
 

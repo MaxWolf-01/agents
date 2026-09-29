@@ -9,7 +9,7 @@ A thing is understood in front of a render: someone sees what it is and what it 
 
 ## The session page
 
-A session the user reads answers on its **session page**: one page per session, rendered from plain-text records each time a turn ends, with the questions waiting on the user at its top and the turns below, newest first. An answer that fits in a line is that line, in the chat, and a session that never needs more gets no page. Past a line, the answer is on the page and the chat reply is one line and the page's link, `file://` and the session directory's `index.html`. A session outside a project with an agent repo (`session-page` refuses) answers in the chat, and so does one nobody reads live, a dispatched worker or a print-mode run, whose artifacts are its report.
+A session the user reads answers on its **session page**: one page per session, rendered from plain-text records each time a turn ends, with the questions waiting on the user at its top and the turns below, newest first. An answer that fits in a line is that line, in the chat, and a session that never needs more gets no page. Past a line, the answer is on the page and the chat gets no reply from the agent: the Stop hook shows the user one line under the turn, the questions waiting on them and the page's link. A session outside a project with an agent repo (`session-page` refuses) answers in the chat, and so does one nobody reads live, a dispatched worker or a print-mode run, whose artifacts are its report.
 
 The records sit in the directory `session-page` prints, outside git and the same from every worktree of the project. As the turn ends the page renders from them, opening in the browser the first time, and the turn is sent back instead when a record does not parse, when the light review of its prose flags something, or when the answer went to the chat with no record written.
 
@@ -18,7 +18,7 @@ A turn that answers with more than a line, in order:
 1. **Its artifacts**, each built by a subagent or a fork (Who builds it, below), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
 2. **The session record**, on the first such turn: `session.md`, with frontmatter `session` (the id) and `repo` (the directory the session was started in, which the page's resume command changes into), an H1 naming what the session is about, and a `## Brief` of a few sentences. The brief is rewritten when the session's scope moves.
 3. **The turn record**, below.
-4. **The chat reply**: one line and the page's link.
+4. **No chat reply**: the turn ends on the record's Write call. Any line of your own summarises the page, and the user would read it instead of the page.
 
 A question still open when the session ends leaves the page for a ticket, since every question on the board belongs to a ticket: a grilling's as the child tickets `/mx:grilling` files, any other as one of the questions of the ticket it concerns (`/mx:tracker`), or a proposed ticket where no ticket holds it. A question is tagged where it lives: `Qn` on the session page, `Dn` in a ticket.
 

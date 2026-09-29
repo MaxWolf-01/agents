@@ -579,9 +579,14 @@ KEYS = [
 ]
 
 
+def open_questions(session: Session) -> list[tuple[Turn, Question]]:
+    """The questions no later turn answered or superseded, with the turn that asked each, oldest first."""
+    return [(t, q) for t in session.turns for q in t.questions if q.tag not in session.settled]
+
+
 def page(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
-    waiting = [(t, q) for t in session.turns for q in t.questions if q.tag not in session.settled]
+    waiting = open_questions(session)
     dates = sorted({t.date for t in session.turns})
     span = dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
     turns = len(session.turns)
