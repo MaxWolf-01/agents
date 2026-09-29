@@ -308,19 +308,20 @@ def test_an_agent_repo_that_does_not_ignore_sessions_shows_none_of_them_after_th
 
 
 ALREADY_IGNORED = {
-    "by its .gitignore": ".gitignore",
-    "by its exclude file": ".git/info/exclude",
+    "by its .gitignore": (".gitignore", "sessions/"),
+    "by its exclude file": (".git/info/exclude", "sessions/"),
+    "by a pattern over what it holds": (".gitignore", "sessions/*"),
 }
 
 
-@pytest.mark.parametrize("where", ALREADY_IGNORED.values(), ids=ALREADY_IGNORED)
+@pytest.mark.parametrize("where, pattern", ALREADY_IGNORED.values(), ids=ALREADY_IGNORED)
 def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
-    where: str, worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
+    where: str, pattern: str, worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
 ) -> None:
     agent = worked_example.parents[1]
     git(agent, "init")
     (agent / where).parent.mkdir(parents=True, exist_ok=True)
-    (agent / where).write_text("reviews/\nsessions/\n")
+    (agent / where).write_text(f"reviews/\n{pattern}\n")
     before = exclude_file(agent).read_text() if exclude_file(agent).exists() else None
     run(payload(worked_example, transcript))
     assert (exclude_file(agent).read_text() if exclude_file(agent).exists() else None) == before
