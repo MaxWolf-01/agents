@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -20,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import hv_store  # noqa: E402
 
-LIFTED_BY_STORE = pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by hypervisor-store")
 SLOW = settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 DEFAULT_BUDGET = 256  # the parent's view budget
 STAMPED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(\s|$)")
@@ -90,7 +88,6 @@ def lengths(budget: int) -> st.SearchStrategy[int]:
     return st.one_of(st.integers(0, 3 * budget), st.sampled_from(sorted(e for e in edges if 0 <= e <= 3 * budget)))
 
 
-@LIFTED_BY_STORE
 @settings(SLOW, max_examples=40)
 @given(st.data())
 def test_the_view_never_exceeds_its_budget(data: st.DataObject) -> None:
@@ -162,7 +159,6 @@ def entries(store: str, logged: int) -> dict[str, str]:
     return {key: out for key, (_, out) in seen.items()}
 
 
-@LIFTED_BY_STORE
 @settings(SLOW, max_examples=30)
 @given(st.lists(entry, min_size=1, max_size=12), st.lists(command, max_size=25))
 def test_no_command_changes_an_earlier_entry(first: list[str], commands: list[tuple[tuple, str]]) -> None:
