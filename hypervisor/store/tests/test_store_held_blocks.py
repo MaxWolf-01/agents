@@ -1,12 +1,18 @@
 """lifelong-hypervisor#P2 and #P3 over what the store took on after its first checks: compressions
 written in any order, some held until the blocks before them land, and appends carrying a gist."""
 
+import sys
 import tempfile
 from collections.abc import Callable
+from pathlib import Path
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from test_store_properties import COVERS, DEFAULT_BUDGET, SLOW, STAMPED, command, entries, entry, kept, lengths, run, summary, text, view
+
+# The generators and helpers of the first checks, which sit in properties/.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "properties"))
+
+from test_store_properties import COVERS, DEFAULT_BUDGET, SLOW, STAMPED, command, entries, entry, kept, lengths, run, summary, text, view  # noqa: E402
 
 
 def answer_due_in(order: Callable[[list[str]], list[str]], store: str, most: int | None = None) -> None:
