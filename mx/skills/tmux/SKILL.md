@@ -12,11 +12,13 @@ How long you expect it to take is the wrong test. The command you thought would 
 
 ## Anything you will wait on: `job`
 
+`job --help` is the manual. Where the block below shows its command line rather than what it prints, run that line yourself.
+
 ```text
 !`job --help || echo "job is not installed on this machine. Make sure it is accessible: install https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job into a directory on PATH, executable, then load this skill again."`
 ```
 
-Run `job wait` as a background task of your session, so its exit wakes you. A foreground call is cut off by the tool's own timeout, whatever `--deadline` says.
+Run `job wait` as a background task of your session, so its exit wakes you; a foreground call is cut off by the tool's own timeout, whatever `--deadline` says. Where nothing run in the background can wake you, wait in the foreground with a `--deadline` inside any timeout the tool has, and wait again until the job has ended: a wait that ends leaves the job running.
 
 ## A pane you drive yourself
 
@@ -26,7 +28,7 @@ A REPL, a wizard, a sudo prompt, an app you poke at while watching it. Nothing h
 - Kill only what you created: `tmux kill-session -t <name>`. Never `kill-server`; that server holds the user's shells, editors and every other agent. A throwaway server for a test gets its own socket, `tmux -L <label> ...`, and dies with `tmux -L <label> kill-server`. Inside a pane `$TMUX` already names the socket and beats `TMUX_TMPDIR`.
 - Send: `tmux send-keys -t <session> -l 'command'`, then `tmux send-keys -t <session> Enter`.
 - Read: `tmux capture-pane -p -J -t <session> -S -50`, where `-J` joins wrapped lines.
-- Poll before you type. `bin/tmux-wait-for-text` waits for a prompt to appear; racing it sends input into nothing.
+- Poll before you type: `timeout 30 sh -c 'until tmux capture-pane -p -J -t <session> | grep -qF -- "<prompt>"; do sleep 0.5; done'` returns once the prompt is on screen and exits 124 when it never came. Racing it sends input into nothing.
 
 ## Remote
 
