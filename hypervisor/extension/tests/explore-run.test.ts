@@ -120,7 +120,7 @@ test("the run stops when its budget of steps or of tokens runs out, and prints t
 });
 
 test("the command line asks for a budget of whole steps or tokens above 0", () => {
-	assert.deepEqual(budgetOf({ steps: "30" }), { steps: 30, tokens: undefined });
+	assert.deepEqual(budgetOf({ steps: "30" }), { steps: 30 });
 	assert.deepEqual(budgetOf({ tokens: "500000" }), { tokens: 500000 });
 	assert.deepEqual(budgetOf({ steps: "2", tokens: "9" }), { steps: 2, tokens: 9 });
 	for (const values of [{}, { steps: "0" }, { steps: "abc" }, { tokens: "1.5" }, { steps: "3", tokens: "-1" }]) assert.equal(typeof budgetOf(values), "string", JSON.stringify(values));

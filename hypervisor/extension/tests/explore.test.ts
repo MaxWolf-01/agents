@@ -122,11 +122,18 @@ test("read pages through a long file, and names a binary one without its bytes",
 });
 
 test("the hypervisor's store, which holds its pi's credentials, is denied like the roots", async () => {
-	const store = path.join(home, ".local/share/hypervisor");
-	mkdirSync(path.join(store, "pi"), { recursive: true });
-	writeFileSync(path.join(store, "pi/auth.json"), SECRET);
-	const [read, grep] = ["read", "grep"].map((name) => exploreTools({ home, store }).find((tool) => tool.name === name)!);
-	await assert.rejects(read.execute("check", { path: "~/.local/share/hypervisor/pi/auth.json" } as never, undefined, undefined, {} as never), /denied/);
-	const found = await grep.execute("check", { path: "~/.local", pattern: "c4n4ry" } as never, undefined, undefined, {} as never);
-	assert.doesNotMatch(JSON.stringify(found), /c4n4ry/);
+	const own = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-explore-store-")));
+	try {
+		const store = path.join(own, ".local/share/hypervisor");
+		mkdirSync(path.join(store, "pi"), { recursive: true });
+		writeFileSync(path.join(store, "pi/auth.json"), SECRET);
+		writeFileSync(path.join(own, ".local/share/open.md"), "e05c");
+		const [read, grep] = ["read", "grep"].map((name) => exploreTools({ home: own, store }).find((tool) => tool.name === name)!);
+		await assert.rejects(read.execute("check", { path: "~/.local/share/hypervisor/pi/auth.json" } as never, undefined, undefined, {} as never), /denied/);
+		const found = JSON.stringify(await grep.execute("check", { path: "~/.local", pattern: "c4n4ry|e05c" } as never, undefined, undefined, {} as never));
+		assert.match(found, /share\/open\.md:1: e05c/);
+		assert.doesNotMatch(found, /c4n4ry/);
+	} finally {
+		rmSync(own, { recursive: true, force: true });
+	}
 });

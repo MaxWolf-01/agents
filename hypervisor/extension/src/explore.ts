@@ -155,7 +155,7 @@ async function places({ home, store }: ExploreConfig) {
 			const real = await realpath(absolute).catch((error: NodeJS.ErrnoException) => {
 				throw new Error(`${spelled}: ${error.code === "ENOENT" ? "no such file or directory" : error.code}`);
 			});
-			if (this.denied(real)) throw new Error(`${spelled}: denied, it is under a key, credential or browser directory`);
+			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles or the hypervisor's own store`);
 			return real;
 		},
 		/** A resolved path as the model reads it: under `~/` when it is in home. */

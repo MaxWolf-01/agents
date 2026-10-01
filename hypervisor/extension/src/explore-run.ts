@@ -13,10 +13,11 @@ import { fromEnvironment } from "./index.ts";
 
 const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
 const EXTENSION = path.resolve(import.meta.dirname, "index.ts");
+const MODEL = "anthropic/claude-opus-5-5";
 const GOAL = "Gather what makes you the best assistant, coordinator of coding agents, secretary, collaborator and companion to max.";
 export const USAGE =
 	"usage: explore-run.ts [--steps N] [--tokens N] [--model provider/id]\n" +
-	"A budget of steps, of tokens, or both, checked before each step: a step once started runs to its finding. The model defaults to anthropic/claude-opus-5-5.";
+	"A budget of steps, of tokens, or both, checked before each step: a step once started runs to its finding. The model defaults to " + MODEL + ".";
 
 /** A budget of steps, of tokens, or both. */
 export type Budget = { steps: number; tokens?: number } | { steps?: number; tokens: number };
@@ -70,7 +71,7 @@ export function budgetOf(values: { steps?: string; tokens?: string }): Budget | 
 	const steps = number(values.steps);
 	const tokens = number(values.tokens);
 	if ([steps, tokens].some((n) => n !== undefined && !(Number.isInteger(n) && n > 0))) return "a budget is a whole number above 0";
-	if (steps !== undefined) return { steps, tokens };
+	if (steps !== undefined) return tokens === undefined ? { steps } : { steps, tokens };
 	if (tokens !== undefined) return { tokens };
 	return "a budget of steps, tokens, or both";
 }
@@ -163,7 +164,7 @@ function shown(t: Tokens): string {
 }
 
 if (import.meta.main) {
-	const { values } = parseArgs({ options: { steps: { type: "string" }, tokens: { type: "string" }, model: { type: "string", default: "anthropic/claude-opus-5-5" } } });
+	const { values } = parseArgs({ options: { steps: { type: "string" }, tokens: { type: "string" }, model: { type: "string", default: MODEL } } });
 	const budget = budgetOf(values);
 	if (typeof budget === "string") {
 		console.error(`${budget}\n${USAGE}`);
