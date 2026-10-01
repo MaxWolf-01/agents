@@ -69,8 +69,8 @@ RAW_MAX = 16  # blocks up to this many memories compress from the raw log
 # offset -- no scanning, no index file to keep in sync. Position IS identity:
 # memory i lives at i*LOG_REC of LOG.txt, and block [k*s,(k+1)*s) lives at
 # k*TREE_REC of TREE/<s>. Padding costs ~2x on disk and buys O(1) everywhere.
-# Vendored from github.com/VictorTaelin/OptMem at 1fb164c, widened from 320/288
-# so a record holds the hypervisor's 512-byte entries.
+# Vendored from github.com/VictorTaelin/OptMem at 1fb164c. Local change: these
+# widths (upstream 320 and 288), so a record holds a 512-byte entry.
 LOG_REC = 576
 TREE_REC = 544
 

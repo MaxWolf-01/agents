@@ -61,10 +61,10 @@ def main(argv: list[str]) -> int:
             raise Refused(f"No store at {args.dir}. `init` creates one.")
         COMMANDS[type(args.command)](args.dir, args.command)
     except Refused as refusal:
-        print(refusal, file=sys.stderr)
+        print(f"hv_store: {refusal}", file=sys.stderr)
         return 1
     except OSError as error:
-        print(f"{error.filename or args.dir}: {error.strerror or error}", file=sys.stderr)
+        print(f"hv_store: {error.filename or args.dir}: {error.strerror or error}", file=sys.stderr)
         return 1
     return 0
 
@@ -111,7 +111,8 @@ class Zoom:
 
 @dataclass
 class Recall:
-    """Print the entries whose view line or whole text matches, newest last, ignoring case."""
+    """Print the entries whose view line or whole text matches, newest last, ignoring case. Past
+    20,000 bytes of matches, only the newest are printed, then a line saying how many matched."""
 
     regex: Annotated[str, tyro.conf.Positional]
     """A Python regular expression."""
@@ -127,7 +128,9 @@ class Raw:
 
 @dataclass
 class Due:
-    """Print the compressions ready to write, one LO-HI per line. They may be written in any order."""
+    """Print the compressions ready to write, one LO-HI per line, at most one per level of the tree.
+    They may be written in any order; the next block of a level is listed once the one before it is
+    written."""
 
 
 @dataclass
@@ -175,21 +178,24 @@ def init(d: Path, _: Init) -> None:
 
 def append(d: Path, _: Append) -> None:
     text, whole = as_entry(stdin())
-    print(f"#{log(d, [(now().strftime(STAMP), text, whole)])}")
+    print(f"#{log_entries(d, [(now().strftime(STAMP), text, whole)])}")
 
 
 def import_(d: Path, _: Import) -> None:
     last = memo.log_get(d, memo.log_len(d) - 1)[1] if memo.log_len(d) else ""
     items = []
-    for n, line in enumerate(stdin().split("\n"), 1):
-        if not line.strip():
+    for n, row in enumerate(stdin().split("\n"), 1):
+        if not row.strip():
             continue
-        stamp, _, text = line.partition(" ")
-        stamp = stamp + "T00:00" if re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp) else stamp
+        stamp, _, text = row.partition(" ")
+        stamp = stamp + "T00:00" if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", stamp) else stamp
         try:
+            # strptime alone takes `2026-9-1T0:0`, whose string order is not its time order.
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}", stamp):
+                raise ValueError
             datetime.datetime.strptime(stamp, STAMP)
         except ValueError:
-            raise Refused(f"line {n}: expected `YYYY-MM-DD[THH:MM] TEXT`, got: {line}") from None
+            raise Refused(f"line {n}: expected `YYYY-MM-DD[THH:MM] TEXT`, got: {row}") from None
         if stamp < last:
             raise Refused(f"line {n}: {stamp} precedes the entry before it, stamped {last}.")
         if not text.strip():
@@ -198,7 +204,7 @@ def import_(d: Path, _: Import) -> None:
         last = stamp
     if not items:
         raise Refused("No entries on stdin.")
-    first = log(d, items)
+    first = log_entries(d, items)
     print(f"Imported {len(items)} entries, #{first} to #{first + len(items) - 1}.")
 
 
@@ -214,18 +220,18 @@ def view(d: Path, cmd: View) -> None:
         raise Refused(f"The view needs compressions not written yet: {' '.join(missing)}. `due` lists what can be written.")
     print(header(d, T, now()))
     for lo, hi in blocks:
-        print(line(d, lo, hi))
+        print(view_line(d, lo, hi))
 
 
 def zoom(d: Path, cmd: Zoom) -> None:
-    lo, hi = block(cmd.block)
+    lo, hi = parse_block(cmd.block)
     T = memo.log_len(d)
     if lo >= T:
-        raise Refused(f"#{lo} is not logged yet: the log holds {T} entries.")
+        raise Refused(f"#{lo} is not logged yet; the log holds {T} entries.")
     mid = (lo + hi) // 2
     for a, b in ((lo, mid), (mid, hi)):
         if a < T:
-            print(line(d, a, b))
+            print(view_line(d, a, b))
 
 
 def recall(d: Path, cmd: Recall) -> None:
@@ -234,7 +240,7 @@ def recall(d: Path, cmd: Recall) -> None:
     except re.error as error:
         raise Refused(f"Bad regex: {error}") from None
     kept = sidecars(d)
-    # Only the newest matches that fit one harness's output are held: a vague regex matches the whole log.
+    # A vague regex matches the whole log, so only the newest matches that fit memo's part size are held.
     hits, out, size = 0, deque(), 0
     for i, stamp, text in memo.log_scan(d):
         found = f"{stamp} #{i} {text}"
@@ -253,27 +259,27 @@ def recall(d: Path, cmd: Recall) -> None:
 
 def raw(d: Path, cmd: Raw) -> None:
     if not 0 <= cmd.id < memo.log_len(d):
-        raise Refused(f"No entry #{cmd.id}: the log holds {memo.log_len(d)} entries.")
+        raise Refused(f"No entry #{cmd.id}; the log holds {memo.log_len(d)} entries.")
     print(whole_text(d, cmd.id))
 
 
 def due(d: Path, _: Due) -> None:
-    for lo, hi in ready(d):
+    for lo, hi in due_blocks(d):
         print(f"{lo}-{hi - 1}")
 
 
 def compress(d: Path, cmd: Compress) -> None:
-    lo, hi = block(cmd.block)
+    lo, hi = parse_block(cmd.block)
     text = stdin().strip()
     if len(text.splitlines()) != 1:
         raise Refused("A compression is one line of text.")
     if len(text.encode()) > ENTRY:
         raise Refused(f"Too long: {len(text.encode())} bytes, limit {ENTRY}.")
-    if (lo, hi) not in ready(d):
+    if (lo, hi) not in due_blocks(d):
         if memo.tree_get(d, lo, hi) is not None:
             raise Refused(f"{cmd.block} is already written.")
         if hi > memo.log_len(d):
-            raise Refused(f"{cmd.block} is not all logged yet: the log holds {memo.log_len(d)} entries.")
+            raise Refused(f"{cmd.block} is not all logged yet; the log holds {memo.log_len(d)} entries.")
         raise Refused(f"{cmd.block} is not due yet. `due` lists what can be written.")
     if not memo.tree_put(d, lo, hi, text):
         raise Refused(f"{cmd.block} was written meanwhile.")
@@ -311,7 +317,7 @@ def clip(text: str, limit: int) -> str:
     return b[: limit - len("…".encode())].decode(errors="ignore").rstrip() + "…"
 
 
-def log(d: Path, items: list[tuple[str, str, str | None]]) -> int:
+def log_entries(d: Path, items: list[tuple[str, str, str | None]]) -> int:
     """Append (stamp, text, whole) entries and return the first one's number. A whole text lands in
     RAW/<number> before its entry is logged, so a reader never sees the entry without it."""
     with locked(d):
@@ -324,13 +330,15 @@ def log(d: Path, items: list[tuple[str, str, str | None]]) -> int:
             else:
                 (staged := side.with_suffix(".new")).write_bytes(whole.encode())
                 staged.replace(side)
-        assert memo.log_append(d, [(stamp, text) for stamp, text, _ in items]) == first
+        logged = memo.log_append(d, [(stamp, text) for stamp, text, _ in items])
+    if logged != first:
+        raise RuntimeError(f"memo logged #{logged} where the store expected #{first}")
     return first
 
 
 @contextlib.contextmanager
 def locked(d: Path):
-    """The store's own lock, around memo's: an entry's number is fixed before memo takes its lock."""
+    """The store's own lock, taken before memo's, so an entry's number is fixed before memo logs it."""
     with open(d / ".hv.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
@@ -359,7 +367,7 @@ def now() -> datetime.datetime:
 # ---------------------------------------------------------------- the view
 
 
-def line(d: Path, lo: int, hi: int) -> str:
+def view_line(d: Path, lo: int, hi: int) -> str:
     """The view line of entry `lo`, or of block [lo, hi)."""
     if hi - lo == 1:
         i, stamp, text = memo.log_get(d, lo)
@@ -391,20 +399,22 @@ def span(minutes: int) -> str:
     return " ".join(f"{n} {name}" + "s" * (n != 1) for n, name in counts[lead : lead + 2] if n)
 
 
-def block(text: str) -> tuple[int, int]:
+def parse_block(text: str) -> tuple[int, int]:
     """Parse LO-HI, inclusive at both ends, into [lo, hi), refusing a range that is not a block."""
-    m = re.fullmatch(r"([0-9]+)-([0-9]+)", text)
-    lo, hi = (int(m[1]), int(m[2]) + 1) if m else (0, 0)
+    refusal = Refused(f"{text} is not a block, an aligned power-of-two range LO-HI like 16-31.")
+    if not (m := re.fullmatch(r"([0-9]+)-([0-9]+)", text)):
+        raise refusal
+    lo, hi = int(m[1]), int(m[2]) + 1
     n = hi - lo
     if n < 2 or n & (n - 1) or lo % n:
-        raise Refused(f"{text} is not a block: an aligned power-of-two range LO-HI, like 16-31.")
+        raise refusal
     return lo, hi
 
 
-def ready(d: Path) -> list[tuple[int, int]]:
-    """Per level, the next block to write, once all its entries are logged and its inputs written:
-    the entries themselves for a block of up to RAW_MAX, its two halves above that. memo writes a
-    level in order, so this is what can be written in any order."""
+def due_blocks(d: Path) -> list[tuple[int, int]]:
+    """Per level, the next block to write, once all its entries are logged and its inputs are
+    written. A block of up to RAW_MAX entries compresses the entries themselves, a bigger one its two
+    halves. memo writes a level in order, so these blocks can be written in any order."""
     T, out, size = memo.log_len(d), [], 2
     while size <= T:
         lo = memo.count(memo.tree_path(d, size), memo.TREE_REC) * size

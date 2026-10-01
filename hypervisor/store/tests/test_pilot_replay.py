@@ -12,7 +12,9 @@ from test_store import run
 
 PILOT = Path(os.environ.get("HV_PILOT_OUT", "/var/tmp/optmem-replay/out"))
 
-pytestmark = pytest.mark.skipif(not (PILOT / "naps.jsonl").exists(), reason=f"no pilot output at {PILOT}; set HV_PILOT_OUT")
+pytestmark = pytest.mark.skipif(
+    not all((PILOT / f).exists() for f in ("entries.txt", "naps.jsonl", "view.txt")), reason=f"no pilot output at {PILOT}; set HV_PILOT_OUT"
+)
 
 
 def test_the_pilots_entries_give_the_pilots_view_with_every_line_stamped(tmp_path: Path) -> None:

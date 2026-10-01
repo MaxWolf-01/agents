@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Vendored from github.com/VictorTaelin/OptMem at 1fb164c. Local changes: the record widths are read
+# from memo's LOG_REC and TREE_REC (upstream writes 320 and 288), and the nothing-on-PATH check keeps
+# the interpreter's directory on PATH.
 """OptMem invariants, checked against a synthetic life of 5000 memories.
 
 Uses a fake compressor (join + truncate) so the run is deterministic and free.

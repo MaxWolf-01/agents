@@ -23,10 +23,13 @@ import hv_store  # noqa: E402
 
 def run(store: Path, *args: object, stdin: str = "") -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
-    given = io.TextIOWrapper(io.BytesIO(stdin.encode()), encoding="utf-8", newline="\n")
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), mock.patch("sys.stdin", given):
+    piped = io.TextIOWrapper(io.BytesIO(stdin.encode()), encoding="utf-8", newline="\n")
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), mock.patch("sys.stdin", piped):
         code = hv_store.main(["--dir", str(store), *map(str, args)])
     return code, out.getvalue(), err.getvalue()
+
+
+AT = datetime.datetime(2026, 10, 1, 14, 7)
 
 
 @pytest.fixture
@@ -57,17 +60,18 @@ long_texts = st.builds(lambda head, tail: f"  {head}\n{'é' * 300}\r\n{tail}\t",
 def test_a_text_over_512_bytes_is_stored_whole_in_the_sidecar_and_read_back_whole(text: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = Path(tmp) / "store"
-        run(store, "init")
-        run(store, "append", stdin="before")
-        assert run(store, "append", stdin=text + "\n") == (0, "#1\n", "")
-        run(store, "append", stdin="after")
+        assert run(store, "init")[0] == 0
+        with mock.patch.object(hv_store, "now", return_value=AT):
+            assert run(store, "append", stdin="before")[0] == 0
+            assert run(store, "append", stdin=text + "\n") == (0, "#1\n", "")
+            assert run(store, "append", stdin="after")[0] == 0
         assert (store / "RAW" / "1").read_bytes() == text.encode()
         assert run(store, "raw", 1)[1] == text + "\n"
         _, view, _ = run(store, "view")
         entry = view.split("\n")[2]
-        assert entry.startswith(f"{entry.split()[0]} #1 ") and entry.endswith(f"[raw: {len(text.encode())} bytes]")
+        assert entry.startswith("2026-10-01T14:07 #1 ") and entry.endswith(f"[raw: {len(text.encode())} bytes]")
         assert len(entry.split(" ", 2)[2].encode()) <= 512
-        assert view.split("\n")[3].endswith(" #2 after")
+        assert view.split("\n")[3] == "2026-10-01T14:07 #2 after"
 
 
 def test_a_line_an_entry_holds_as_it_is_has_no_sidecar(store: Path) -> None:
@@ -78,11 +82,44 @@ def test_a_line_an_entry_holds_as_it_is_has_no_sidecar(store: Path) -> None:
     assert not any((store / "RAW").iterdir())
 
 
+@pytest.mark.parametrize("text", ["  indented", "trailing tab\t", "\u2028"])
+def test_a_short_line_with_whitespace_at_its_ends_reads_back_whole(store: Path, text: str) -> None:
+    assert run(store, "append", stdin=text)[0] == 0
+    assert run(store, "raw", 0)[1] == text + "\n"
+
+
+def test_a_sidecar_left_by_a_run_that_died_does_not_shadow_the_next_entry(store: Path) -> None:
+    # A sidecar written before its entry was logged, by a run killed in between.
+    (store / "RAW" / "1").write_text("the dead run's text")
+    run(store, "append", stdin="first")
+    run(store, "append", stdin="second")
+    assert run(store, "raw", 1)[1] == "second\n"
+    assert run(store, "recall", "dead run")[1] == ""
+
+
+def test_stdin_that_is_not_utf8_is_refused(store: Path) -> None:
+    piped = io.TextIOWrapper(io.BytesIO(b"caf\xe9"), encoding="latin-1")
+    with contextlib.redirect_stderr(io.StringIO()) as err, mock.patch("sys.stdin", piped):
+        assert hv_store.main(["--dir", str(store), "append"]) == 1
+    assert "UTF-8" in err.getvalue() and run(store, "view")[1].count("\n") == 1
+
+
 def test_recall_searches_the_whole_text_of_a_sidecar_entry(store: Path) -> None:
     run(store, "append", stdin="x" * 600 + " needle")
     run(store, "append", stdin="hay")
     code, out, _ = run(store, "recall", "NEEDLE")
     assert code == 0 and out.count("\n") == 1 and " #0 " in out
+
+
+def test_recall_past_its_cap_keeps_the_newest_matches_and_says_how_many_matched(store: Path) -> None:
+    run(store, "import", stdin="".join(f"2026-01-01 match {i} {'x' * 480}\n" for i in range(60)))
+    code, out, _ = run(store, "recall", "match")
+    printed = out.removesuffix("\n").split("\n")
+    assert code == 0 and printed[-1].startswith("(the newest ") and " of 60 matches" in printed[-1]
+    kept = int(printed[-1].split()[2])
+    assert 0 < kept < 60 and len(printed) == kept + 1
+    assert [line.split()[1] for line in printed[:-1]] == [f"#{i}" for i in range(60 - kept, 60)]
+    assert len(out.encode()) < 20_000 + 600
 
 
 # ---------------------------------------------------------------- import
@@ -95,12 +132,20 @@ def test_import_keeps_the_given_stamps_and_stamps_a_bare_date_at_midnight(store:
     assert lines == ["2026-01-11T00:00 #0 first", "2026-01-11T09:30 #1 second", "2026-02-01T00:00 #2 third"]
 
 
+def test_import_puts_a_line_over_512_bytes_in_the_sidecar(store: Path) -> None:
+    text = "ä" * 300
+    assert run(store, "import", stdin=f"2026-01-01 {text}\n")[0] == 0
+    assert run(store, "raw", 0)[1] == text + "\n"
+    assert run(store, "view")[1].split("\n")[1].endswith("[raw: 600 bytes]")
+
+
 @pytest.mark.parametrize(
     "lines",
     [
         "2026-01-12 ok\n2026-01-11 earlier than the line before",
         "2026-01-12 ok\n2026-13-01 not a date",
         "2026-01-12 ok\n12:00 no date",
+        "2026-01-12 ok\n2026-1-13T0:0 not zero-padded",
         "2026-01-12 ok\n2026-01-12   ",
     ],
 )
@@ -110,7 +155,7 @@ def test_import_refuses_the_whole_input_over_one_bad_line(store: Path, lines: st
 
 
 def test_import_refuses_a_stamp_before_the_last_entry(store: Path) -> None:
-    run(store, "import", stdin="2026-03-01 later")
+    assert run(store, "import", stdin="2026-03-01 later")[0] == 0
     assert run(store, "import", stdin="2026-02-01 earlier")[0] == 1
 
 
@@ -128,7 +173,7 @@ def test_import_refuses_a_stamp_before_the_last_entry(store: Path) -> None:
     ],
 )
 def test_the_header_says_the_time_and_how_long_since_the_last_entry(store: Path, at: datetime.datetime, said: str) -> None:
-    run(store, "import", stdin="2026-09-10T08:00 the entry")
+    assert run(store, "import", stdin="2026-09-10T08:00 the entry")[0] == 0
     with mock.patch.object(hv_store, "now", return_value=at):
         assert run(store, "view")[1].split("\n")[0] == said
 
@@ -159,6 +204,11 @@ def test_what_due_lists_lands_in_any_order(n: int, rnd) -> None:
             run(store, "append", stdin=f"entry {i}")
         written: list[str] = []
         while blocks := run(store, "due")[1].split():
+            for block in blocks:
+                lo, hi = map(int, block.split("-"))
+                if hi - lo + 1 > 16:  # compressed from its two halves, which have to be written
+                    mid = (lo + hi + 1) // 2
+                    assert {f"{lo}-{mid - 1}", f"{mid}-{hi}"} <= set(written), f"{block} listed before its halves"
             rnd.shuffle(blocks)
             for block in blocks:
                 code, _, err = run(store, "compress", block, stdin=f"summary of {block}")
@@ -176,6 +226,41 @@ def test_the_view_is_refused_while_a_compression_it_needs_is_outstanding(store: 
     answer_due(store)
     code, out, _ = run(store, "view", "--budget", 4)
     assert code == 0 and [line.split()[1] for line in out.split("\n")[1:-1]] == ["#0-3", "#4-7", "#8", "#9"]
+
+
+def test_a_view_line_carries_its_first_entrys_minute(store: Path) -> None:
+    assert run(store, "import", stdin="".join(f"2026-01-01T00:0{i} entry {i}\n" for i in range(6)))[0] == 0
+    answer_due(store)
+    lines = run(store, "view", "--budget", 3)[1].split("\n")[1:-1]
+    assert lines == ["2026-01-01T00:00 #0-3 summary of 0-3", "2026-01-01T00:04 #4 entry 4", "2026-01-01T00:05 #5 entry 5"]
+    assert run(store, "zoom", "0-3")[1] == "2026-01-01T00:00 #0-1 summary of 0-1\n2026-01-01T00:02 #2-3 summary of 2-3\n"
+
+
+def test_zoom_names_a_half_not_compressed_and_leaves_out_one_not_logged(store: Path) -> None:
+    assert run(store, "import", stdin="2026-01-01T00:00 a\n2026-01-01T00:01 b\n2026-01-01T00:02 c\n")[0] == 0
+    assert run(store, "zoom", "0-3")[1] == "2026-01-01T00:00 #0-1 (not compressed yet)\n2026-01-01T00:02 #2-3 (not compressed yet)\n"
+    assert run(store, "compress", "0-1", stdin="a and b")[0] == 0
+    assert run(store, "zoom", "0-3")[1].split("\n")[0] == "2026-01-01T00:00 #0-1 a and b"
+    assert run(store, "zoom", "0-7")[1] == "2026-01-01T00:00 #0-3 (not compressed yet)\n"
+    code, out, err = run(store, "zoom", "8-15")
+    assert (code, out) == (1, "") and "holds 3 entries" in err
+
+
+@pytest.mark.parametrize("budget", [0, 1, 2])
+def test_a_budget_the_log_cannot_be_tiled_in_is_refused(store: Path, budget: int) -> None:
+    for i in range(7):  # 4 + 2 + 1: no fewer than three lines
+        run(store, "append", stdin=f"entry {i}")
+    answer_due(store)
+    assert run(store, "view", "--budget", budget)[:2] == (1, "")
+    assert len(run(store, "view", "--budget", 3)[1].split("\n")) == 1 + 3 + 1
+
+
+@pytest.mark.parametrize("summary", ["y" * 512, "ü" * 256])
+def test_a_compression_of_512_bytes_is_written_whole(store: Path, summary: str) -> None:
+    run(store, "append", stdin="a")
+    run(store, "append", stdin="b")
+    assert run(store, "compress", "0-1", stdin=summary)[0] == 0
+    assert run(store, "view", "--budget", 1)[1].split("\n")[1].endswith(f" #0-1 {summary}")
 
 
 @pytest.mark.parametrize(
@@ -211,7 +296,7 @@ def test_init_leaves_a_store_as_it_is(store: Path) -> None:
 
 
 def test_the_script_runs_as_a_process(store: Path) -> None:
-    """The extension runs it through uv, outside this process."""
+    """The pi extension (hypervisor/extension) runs it as a process of its own."""
     done = subprocess.run(
         [sys.executable, HERE.parent / "hv_store.py", "--dir", store, "append"],
         input=b"from a process\r\nwith a CR\n",
