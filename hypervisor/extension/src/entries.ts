@@ -1,5 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
+/** What a run was: a turn of max's, or a step of explore mode. */
+export type Kind = "turn" | "step";
+
 /** One entry of a finished turn. A text an entry cannot hold names itself in `whose`, and a fork writes its gist. */
 export interface Entry {
 	text: string;
@@ -12,10 +15,16 @@ export const ENTRY = 512;
 /**
  * A turn's messages as entries, in order: each message max sent, each text of the agent's, and each tool call with its
  * result. A tool call's result is data the store clips to its head; what max and the agent said gets a gist.
+ *
+ * An explore step is a turn the harness started, so its message is not max's and is not logged; the step's last text
+ * is its finding, and the texts before it are not logged either.
  */
-export function entriesOf(messages: AgentMessage[]): Entry[] {
+export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[] {
+	const step = kind === "step";
 	const results = new Map(messages.flatMap((m) => (m.role === "toolResult" ? [[m.toolCallId, m] as const] : [])));
+	const finding = step ? messages.findLast((m) => m.role === "assistant" && saidIn(m).trim()) : undefined;
 	return messages.flatMap((message): Entry[] => {
+		if (step && message.role === "user") return [];
 		if (message.role === "user") {
 			const words = textOf(message.content);
 			return [said(`max: ${words}`, `max's message that begins "${head(words.trim())}"`)];
@@ -23,8 +32,10 @@ export function entriesOf(messages: AgentMessage[]): Entry[] {
 		if (message.role !== "assistant") return [];
 		const words = saidIn(message);
 		const calls = message.content.flatMap((part) => (part.type === "toolCall" ? [part] : []));
+		const [voice, what] = step ? ["finding", "finding"] : ["me", "message"];
+		const kept = words.trim() && (!step || message === finding);
 		return [
-			...(words.trim() ? [said(`me: ${words}`, `your message that begins "${head(words.trim())}"`)] : []),
+			...(kept ? [said(`${voice}: ${words}`, `your ${what} that begins "${head(words.trim())}"`)] : []),
 			...calls.map((call) => {
 				const result = results.get(call.id);
 				const answer = result ? `${result.isError ? "error: " : ""}${textOf(result.content)}` : "(no result)";

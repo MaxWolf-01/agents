@@ -5,6 +5,9 @@
 # pi keeps its own settings, sessions and credentials for the hypervisor apart from any other pi on this machine, in
 # $HV_STORE/pi. On the first start, sign in there with /login (Anthropic), or start it with ANTHROPIC_OAUTH_TOKEN set
 # to a token from `claude setup-token`, which needs no refreshing.
+#
+# `hv explore` runs explore mode here in the foreground instead, over the same store and credentials; it takes the
+# options of `extension/src/explore-run.ts`, which prints them.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -13,6 +16,11 @@ store=${HV_STORE:-$HOME/.local/share/hypervisor}
 
 [[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
 mkdir -p "$store/pi"
+
+if [[ ${1:-} == explore ]]; then
+	shift
+	HV_STORE=$store PI_CODING_AGENT_DIR=$store/pi exec node "$extension/src/explore-run.ts" "$@"
+fi
 
 env=(-e "HV_STORE=$store" -e "PI_CODING_AGENT_DIR=$store/pi")
 [[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && env+=(-e "ANTHROPIC_OAUTH_TOKEN=$ANTHROPIC_OAUTH_TOKEN")
