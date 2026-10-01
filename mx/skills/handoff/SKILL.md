@@ -46,10 +46,8 @@ purpose: continuation | fork
 ---
 ```
 
-The file is the deliverable, so the chat gets its absolute path and the pickup line, not a summary of it:
-
+For a continuation from the current live session, the user only needs to `/clear`, then send any message. In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. Give the user the following line verbatim, so they also have the option to continue from a fresh `claude` started any other way (or if you split the handoff into N successors, N such lines): 
 ```
 Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
 ```
 
-For a continuation, tell the user the two steps once they have read the file: `/clear`, then any message (`go` will do). In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. A fresh `claude` started any other way is given the line by the user.
