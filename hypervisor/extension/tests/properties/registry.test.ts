@@ -8,7 +8,6 @@ import path from "node:path";
 import { after, test } from "node:test";
 import fc from "fast-check";
 import { watchEffects } from "./effects.ts";
-import { isStub } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
 import { harnessProblems, strings, toolProblems } from "./rules.ts";
 import { execute, load, standIn, within } from "./stand-in.ts";
@@ -22,13 +21,14 @@ after(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 const { hypervisor } = await import("../../src/index.ts");
-const { exploreTools } = await import("../../src/explore.ts");
 
 /** How long a tool or handler runs before the check moves on; what it does after that is stray. */
 const LIMIT = 1000;
 const MEMORY = ["zoom", "recall", "raw"];
 /** The parent's closed set of tools. */
 const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
+/** The explorer's read tools, which join the set under `--explore`. */
+const EXPLORE = ["read", "ls", "find", "grep", "memex"];
 /** Strings that do harm wherever a tool hands them to a shell or uses them as a path. */
 const HOSTILE = fc.oneof(
 	fc.string(),
@@ -44,25 +44,17 @@ async function loaded(flipped: boolean) {
 	return { ...extension, atLoad };
 }
 
-/** The explorer's tools are allowed by name too; before its slice lands there are none. */
-function explorerToolNames(): string[] {
-	try {
-		return exploreTools({ home }).map((tool) => tool.name);
-	} catch (error) {
-		if (isStub(error)) return [];
-		throw error;
-	}
-}
-
 // Within the closed set rather than equal to it: the memory tools land first (hypervisor-view-swap), the session
-// tools after (hypervisor-orchestrators), and the check has to hold at each step.
+// tools after (hypervisor-orchestrators), and the check has to hold at each step. The explorer's tools have landed,
+// so under `--explore` (`flipped`) they are exactly the tools active beyond the parent's.
 test("lifelong-hypervisor#P4: the extension's tools are within the closed set, and none of pi's own stays active", async () => {
-	const allowed = new Set([...CONVERSE, ...explorerToolNames()]);
+	const allowed = new Set([...CONVERSE, ...EXPLORE]);
 	for (const flipped of [false, true]) {
 		const { tools, active } = await loaded(flipped);
 		assert.deepEqual([...tools.keys()].filter((name) => !allowed.has(name)), [], "tools outside the closed set");
 		assert.deepEqual(active.filter((name) => !tools.has(name)), [], "pi's own tools still active");
 		if (!flipped) assert.deepEqual(MEMORY.filter((name) => !tools.has(name)), [], "memory tools missing");
+		else assert.deepEqual(active.filter((name) => !CONVERSE.includes(name)).sort(), [...EXPLORE].sort(), "the explorer's tools under --explore");
 	}
 });
 
