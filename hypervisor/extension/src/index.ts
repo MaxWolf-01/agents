@@ -90,7 +90,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			const finished = sent && ctx.model ? { payload: sent, answer, model: ctx.model, models: ctx.modelRegistry, sessionId: ctx.sessionManager.getSessionId() } : undefined;
 			// A run that fails hands over its failure alone, without the message that started it.
 			const asked = !event.messages.some((m) => m.role === "user") && prompt ? [{ role: "user" as const, content: prompt, timestamp: start ?? Date.now() }] : [];
-			mind.finish([...asked, ...event.messages], finished, exploring());
+			mind.finish([...asked, ...event.messages], finished, exploring() ? "step" : "turn");
 			view = prompt = start = sent = undefined;
 		});
 		pi.on("session_shutdown", async () => {

@@ -4,10 +4,13 @@ import { open, readdir, readlink, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Config } from "./index.ts";
+import { answer } from "./tools.ts";
 
 /**
  * The denied roots under home, as ruled under `hypervisor-property-checks` D5: keys, credential stores, browser
- * profiles and caches. `/proc` is denied too, since a process's environment there can hold a token.
+ * profiles and caches. `/proc` is denied too, since a process's environment there can hold a token, and so is the
+ * hypervisor's store, which holds its own pi's credentials.
  */
 const DENIED = [
 	".ssh",
@@ -39,20 +42,20 @@ const PASSED = new Set([".git", "node_modules"]);
 const VISITS = 20_000;
 const READ_LINES = 2000;
 const READ_BYTES = 50_000;
-/** Files larger than this are read only up to it, and a search skips them. */
+/** Files larger than this are read only up to it. */
 const FILE_BYTES = 5_000_000;
+/** A search skips files larger than this. */
 const GREP_FILE_BYTES = 1_000_000;
 const MATCHES = 100;
 const FOUND = 200;
 const LISTED = 500;
 const LINE_CHARS = 200;
 
-export interface ExploreConfig {
-	/** The home directory the explorer reads; a relative path the model sends starts here. */
-	home: string;
-	/** The memex program, `memex` on `PATH` unless named. */
-	memex?: string;
-}
+export type ExploreConfig = Pick<Config, "home"> &
+	Partial<Pick<Config, "store">> & {
+		/** The memex program, `memex` on `PATH` unless named. */
+		memex?: string;
+	};
 
 /**
  * The explorer's read tools. A tool takes what it reads as `path`: absolute, under `~/`, or relative to `home`. It
@@ -60,8 +63,6 @@ export interface ExploreConfig {
  * those roots. memex's results pass through the same judgment.
  */
 export function exploreTools(config: ExploreConfig): ToolDefinition[] {
-	const where = places(config.home);
-	const answer = (text: string) => ({ content: [{ type: "text" as const, text: text.trimEnd() || "(nothing)" }], details: undefined });
 	const pathParam = Type.String({ description: "Absolute, under ~/, or relative to home." });
 	return [
 		defineTool({
@@ -73,21 +74,27 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 				offset: Type.Optional(Type.Integer({ description: "The first line to read, from 1." })),
 				limit: Type.Optional(Type.Integer({ description: `How many lines to read, at most ${READ_LINES}.` })),
 			}),
-			execute: async (_id, { path: spelled, offset, limit }) => answer(await readText(await where.open(spelled), offset, limit)),
+			execute: async (_id, { path: spelled, offset, limit }) => answer(await readText(await (await places(config)).open(spelled), offset, limit)),
 		}),
 		defineTool({
 			name: "ls",
 			label: "List",
 			description: "List a directory: a directory ends in /, a symlink shows where it points, and a denied path says so and is not opened.",
 			parameters: Type.Object({ path: pathParam }),
-			execute: async (_id, { path: spelled }) => answer(await list(where, await where.open(spelled))),
+			execute: async (_id, { path: spelled }) => {
+				const where = await places(config);
+				return answer(await list(where, await where.open(spelled)));
+			},
 		}),
 		defineTool({
 			name: "find",
 			label: "Find",
 			description: `Find files and directories under a path whose name, or path from there when the pattern holds a /, matches a glob such as *.md or projects/**/README.md. Passes over ${[...PASSED].join(" and ")}; prints ${FOUND} at most.`,
 			parameters: Type.Object({ path: pathParam, pattern: Type.String({ description: "A glob." }) }),
-			execute: async (_id, { path: spelled, pattern }, signal) => answer(await find(where, await where.open(spelled), pattern, signal)),
+			execute: async (_id, { path: spelled, pattern }, signal) => {
+				const where = await places(config);
+				return answer(await find(where, await where.open(spelled), pattern, signal));
+			},
 		}),
 		defineTool({
 			name: "grep",
@@ -98,7 +105,10 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 				pattern: Type.String({ description: "A regular expression." }),
 				glob: Type.Optional(Type.String({ description: "Only files whose name matches this glob, such as *.md." })),
 			}),
-			execute: async (_id, { path: spelled, pattern, glob }, signal) => answer(await grep(where, await where.open(spelled), new RegExp(pattern, "i"), glob, signal)),
+			execute: async (_id, { path: spelled, pattern, glob }, signal) => {
+				const where = await places(config);
+				return answer(await grep(where, await where.open(spelled), new RegExp(pattern, "i"), glob, signal));
+			},
 		}),
 		defineTool({
 			name: "memex",
@@ -112,28 +122,29 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 				limit: Type.Optional(Type.Integer({ description: "How many notes, at most 50." })),
 			}),
 			execute: async (_id, { command, query, vault, limit }, signal) =>
-				answer(await memex(config.memex ?? "memex", where, { command, query, vault, limit }, signal)),
+				answer(await memex(config.memex ?? "memex", await places(config), { command, query, vault, limit }, signal)),
 		}),
 	] as ToolDefinition[];
 }
 
-type Places = ReturnType<typeof places>;
+type Places = Awaited<ReturnType<typeof places>>;
 
-/** Where a path the model sent leads, and whether the explorer may go there. */
-function places(home: string) {
-	/** The denied roots as spelled and as they resolve, for a root that is a symlink or lies below one. */
-	async function roots(): Promise<string[]> {
-		const spelled = [...DENIED.map((root) => path.join(home, root)), ...DENIED_ANYWHERE];
-		const resolved = await Promise.all(spelled.map((root) => realpath(root).catch(() => root)));
-		return [...new Set([...spelled, ...resolved])];
-	}
-	const inside = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
+const inside = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
+
+/**
+ * Where a path the model sent leads, and whether the explorer may go there. The denied roots are resolved once per
+ * tool call, kept both as spelled and as they resolve, for a root that is a symlink or lies below one.
+ */
+async function places({ home, store }: ExploreConfig) {
+	const spelled = [...DENIED.map((root) => path.join(home, root)), ...DENIED_ANYWHERE, ...(store ? [store] : [])];
+	const resolved = await Promise.all(spelled.map((root) => realpath(root).catch(() => root)));
+	const roots = [...new Set([...spelled, ...resolved])];
 
 	return {
 		home,
 		/** Whether a resolved path lies in a denied root. */
-		async denied(real: string): Promise<boolean> {
-			return (await roots()).some((root) => inside(real, root));
+		denied(real: string): boolean {
+			return roots.some((root) => inside(real, root));
 		},
 		/**
 		 * The resolved path `spelled` leads to. The kernel resolves it as spelled, so a `..` after a symlink leaves
@@ -144,7 +155,7 @@ function places(home: string) {
 			const real = await realpath(absolute).catch((error: NodeJS.ErrnoException) => {
 				throw new Error(`${spelled}: ${error.code === "ENOENT" ? "no such file or directory" : error.code}`);
 			});
-			if (await this.denied(real)) throw new Error(`${spelled}: denied, it is under a key, credential or browser directory`);
+			if (this.denied(real)) throw new Error(`${spelled}: denied, it is under a key, credential or browser directory`);
 			return real;
 		},
 		/** A resolved path as the model reads it: under `~/` when it is in home. */
@@ -196,9 +207,9 @@ async function listed(where: Places, dir: string, entry: Dirent): Promise<string
 	if (entry.isSymbolicLink()) {
 		const real = await realpath(at).catch(() => undefined);
 		if (real === undefined) return `${entry.name}@ → (broken)`;
-		return (await where.denied(real)) ? `${entry.name}@ → (denied)` : `${entry.name}@ → ${await readlink(at)}`;
+		return where.denied(real) ? `${entry.name}@ → (denied)` : `${entry.name}@ → ${await readlink(at)}`;
 	}
-	if (await where.denied(at)) return `${entry.name} (denied)`;
+	if (where.denied(at)) return `${entry.name} (denied)`;
 	return entry.isDirectory() ? `${entry.name}/` : entry.name;
 }
 
@@ -226,10 +237,10 @@ async function* walk(where: Places, root: string, signal?: AbortSignal): AsyncGe
 			const at = path.join(dir, entry.name);
 			if (entry.isSymbolicLink()) {
 				const real = await realpath(at).catch(() => undefined);
-				if (real === undefined || (await where.denied(real))) continue;
+				if (real === undefined || where.denied(real)) continue;
 				const info = await stat(real).catch(() => undefined);
 				if (info?.isFile()) yield { at, real, dir: false };
-			} else if (!(await where.denied(at))) {
+			} else if (!where.denied(at)) {
 				if (entry.isDirectory()) {
 					yield { at, real: at, dir: true };
 					if (!PASSED.has(entry.name)) stack.push(at);
@@ -349,12 +360,12 @@ function vaultRoots(listing: string): Map<string, string[]> {
  */
 async function notePath(where: Places, roots: string[], line: string): Promise<string | undefined> {
 	const candidates = path.isAbsolute(line) ? [line] : roots.map((root) => `${root}/${line}`);
-	let open: string | undefined;
+	let note: string | undefined;
 	for (const candidate of candidates) {
 		const real = await realpath(candidate).catch(() => undefined);
 		if (real === undefined || !(await stat(real)).isFile()) continue;
-		if (await where.denied(real)) return undefined;
-		open ??= real;
+		if (where.denied(real)) return undefined;
+		note ??= real;
 	}
-	return open === undefined ? undefined : where.shown(open);
+	return note === undefined ? undefined : where.shown(note);
 }

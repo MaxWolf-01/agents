@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { entriesOf, head } from "./entries.ts";
+import { entriesOf, head, type Kind } from "./entries.ts";
 import { type Call, compressionAsk, type Finished, fork, gistAsk } from "./forks.ts";
 import { Refused, type Store } from "./store.ts";
 
@@ -51,8 +51,8 @@ export function memory(store: Store, journal: Journal) {
 		}
 	}
 
-	async function log(messages: AgentMessage[], finished: Finished | undefined, step: boolean) {
-		const entries = entriesOf(messages, step);
+	async function log(messages: AgentMessage[], finished: Finished | undefined, kind: Kind) {
+		const entries = entriesOf(messages, kind);
 		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", head(e.text), finished, gistAsk(e.whose)) : undefined)));
 		for (const [i, entry] of entries.entries()) {
 			try {
@@ -85,8 +85,8 @@ export function memory(store: Store, journal: Journal) {
 
 	return {
 		/** Logs a finished run's messages, a turn or an explore step, and writes the compressions that become due; returns at once. */
-		finish(messages: AgentMessage[], finished: Finished | undefined, step = false) {
-			logged = logged.then(() => log(messages, finished, step)).catch(() => {});
+		finish(messages: AgentMessage[], finished: Finished | undefined, kind: Kind = "turn") {
+			logged = logged.then(() => log(messages, finished, kind)).catch(() => {});
 			written = Promise.all([written, logged])
 				.then(() => compress(finished))
 				.catch(() => {})

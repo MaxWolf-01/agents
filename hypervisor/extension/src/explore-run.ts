@@ -1,4 +1,4 @@
-// Explore mode's harness: `node src/explore-run.ts --steps N --tokens N [--model provider/id]`.
+// Explore mode's harness, `node src/explore-run.ts` with the options `USAGE` names.
 //
 // It runs pi with the hypervisor's extension in explore mode over RPC, one step per prompt, and starts the next step,
 // with the goal and the budget left, until the budget in steps or tokens runs out. It prints each step's tokens and
@@ -14,11 +14,12 @@ import { fromEnvironment } from "./index.ts";
 const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
 const EXTENSION = path.resolve(import.meta.dirname, "index.ts");
 const GOAL = "Gather what makes you the best assistant, coordinator of coding agents, secretary, collaborator and companion to max.";
+export const USAGE =
+	"usage: explore-run.ts [--steps N] [--tokens N] [--model provider/id]\n" +
+	"A budget of steps, of tokens, or both, checked before each step: a step once started runs to its finding. The model defaults to anthropic/claude-opus-5-5.";
 
-export interface Budget {
-	steps?: number;
-	tokens?: number;
-}
+/** A budget of steps, of tokens, or both. */
+export type Budget = { steps: number; tokens?: number } | { steps?: number; tokens: number };
 
 /** Tokens as the provider reports them; a run's total counts each kind, cache reads included. */
 export interface Tokens {
@@ -28,14 +29,51 @@ export interface Tokens {
 	cacheWrite: number;
 }
 
-const none = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-const total = (t: Tokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
-const plus = (a: Tokens, b: Partial<Tokens>): Tokens => ({
-	input: a.input + (b.input ?? 0),
-	output: a.output + (b.output ?? 0),
-	cacheRead: a.cacheRead + (b.cacheRead ?? 0),
-	cacheWrite: a.cacheWrite + (b.cacheWrite ?? 0),
-});
+/** Runs explore mode to the end of its budget; resolves with the exit code, 1 when a step failed. */
+export async function explore(budget: Budget, model: string): Promise<number> {
+	const config = fromEnvironment();
+	const forks = path.join(config.store, "forks.jsonl");
+	const before = forkTokens(forks, 0).lines;
+	const pi = spawn(
+		process.execPath,
+		[PI, "--mode", "rpc", "--no-session", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--explore", "--model", model],
+		{ cwd: config.home, stdio: ["pipe", "pipe", "inherit"] },
+	);
+	pi.stdout!.setEncoding("utf8");
+	const closed = new Promise((resolve) => pi.on("close", resolve));
+	let steps = none();
+	let taken = 0;
+	let code = 0;
+	for (;;) {
+		// Forks still running for the step before are not in forks.jsonl yet; the closing count has them all.
+		const used = total(steps) + total(forkTokens(forks, before).tokens);
+		if (!allows(budget, taken + 1, used)) break;
+		const done = await step(pi, stepMessage(taken + 1, budget, used));
+		steps = plus(steps, done.tokens);
+		console.log(`step ${++taken}: ${total(done.tokens)} tokens. ${done.error ? `It failed: ${done.error}` : `Finding: ${done.finding}`}`);
+		if (done.error) {
+			code = 1;
+			break;
+		}
+	}
+	console.log("Waiting for the last steps' compressions to be written.");
+	pi.stdin!.end();
+	await closed;
+	const forked = forkTokens(forks, before).tokens;
+	console.log(`Used ${shown(plus(steps, forked))} tokens in ${taken} ${taken === 1 ? "step" : "steps"}: ${shown(steps)} by the steps, ${shown(forked)} by the forks.`);
+	return code;
+}
+
+/** The budget the command line asks for, or why it asks for none. */
+export function budgetOf(values: { steps?: string; tokens?: string }): Budget | string {
+	const number = (value: string | undefined) => (value === undefined ? undefined : Number(value));
+	const steps = number(values.steps);
+	const tokens = number(values.tokens);
+	if ([steps, tokens].some((n) => n !== undefined && !(Number.isInteger(n) && n > 0))) return "a budget is a whole number above 0";
+	if (steps !== undefined) return { steps, tokens };
+	if (tokens !== undefined) return { tokens };
+	return "a budget of steps, tokens, or both";
+}
 
 /** What the harness says to start step `n`, with what is left of the budget once the run has used `used` tokens. */
 export function stepMessage(n: number, budget: Budget, used: number): string {
@@ -63,15 +101,21 @@ function step(pi: ChildProcess, message: string): Promise<Step> {
 	return new Promise((resolve, reject) => {
 		const done: Step = { tokens: none(), finding: "" };
 		let buffer = "";
-		const gone = () => reject(new Error("pi exited during the step"));
-		const read = (chunk: Buffer) => {
-			buffer += chunk.toString();
+		const stop = () => {
+			pi.stdout!.off("data", read);
+			pi.off("close", gone);
+		};
+		const gone = () => {
+			stop();
+			reject(new Error("pi exited during the step"));
+		};
+		const read = (chunk: string) => {
+			buffer += chunk;
 			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
 				const record = JSON.parse(buffer.slice(0, at));
 				buffer = buffer.slice(at + 1);
 				if (record.type === "response" && !record.success) {
-					pi.stdout!.off("data", read);
-					pi.off("close", gone);
+					stop();
 					reject(new Error(record.error));
 				}
 				if (record.type === "message_end" && record.message.role === "assistant") {
@@ -82,8 +126,7 @@ function step(pi: ChildProcess, message: string): Promise<Step> {
 					done.error = reply.stopReason === "error" || reply.stopReason === "aborted" ? (reply.errorMessage ?? reply.stopReason) : undefined;
 				}
 				if (record.type === "agent_settled") {
-					pi.stdout!.off("data", read);
-					pi.off("close", gone);
+					stop();
 					resolve(done);
 				}
 			}
@@ -94,60 +137,36 @@ function step(pi: ChildProcess, message: string): Promise<Step> {
 	});
 }
 
-/** The tokens of the forks logged in `forks.jsonl` after its first `skip` lines. */
+/** The tokens of the forks logged in `forks.jsonl` after its first `skip` lines; a store with no fork yet has none. */
 function forkTokens(file: string, skip: number): { lines: number; tokens: Tokens } {
-	let lines: string[];
+	let lines: string[] = [];
 	try {
 		lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
-	} catch {
-		lines = [];
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
-	const calls = lines.slice(skip).flatMap((line) => (JSON.parse(line).calls ?? []) as { usage: Tokens }[]);
+	const calls = lines.slice(skip).flatMap((line) => JSON.parse(line).calls as { usage: Tokens }[]);
 	return { lines: lines.length, tokens: calls.reduce((sum, call) => plus(sum, call.usage), none()) };
 }
+
+const none = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+const total = (t: Tokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
+const plus = (a: Tokens, b: Partial<Tokens>): Tokens => ({
+	input: a.input + (b.input ?? 0),
+	output: a.output + (b.output ?? 0),
+	cacheRead: a.cacheRead + (b.cacheRead ?? 0),
+	cacheWrite: a.cacheWrite + (b.cacheWrite ?? 0),
+});
 
 function shown(t: Tokens): string {
 	return `${total(t)} (input ${t.input}, output ${t.output}, cache read ${t.cacheRead}, cache write ${t.cacheWrite})`;
 }
 
-/** Runs explore mode to the end of its budget; resolves with the exit code. */
-export async function explore(budget: Budget, model: string, print = console.log): Promise<number> {
-	const config = fromEnvironment();
-	const forks = path.join(config.store, "forks.jsonl");
-	const before = forkTokens(forks, 0).lines;
-	const pi = spawn(
-		process.execPath,
-		[PI, "--mode", "rpc", "--no-session", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--explore", "--model", model],
-		{ cwd: config.home, stdio: ["pipe", "pipe", "inherit"] },
-	);
-	const closed = new Promise((resolve) => pi.on("close", resolve));
-	let steps = none();
-	let taken = 0;
-	let code = 0;
-	for (;;) {
-		const used = total(steps) + total(forkTokens(forks, before).tokens);
-		if (!allows(budget, taken + 1, used)) break;
-		const done = await step(pi, stepMessage(taken + 1, budget, used));
-		steps = plus(steps, done.tokens);
-		print(`step ${++taken}: ${total(done.tokens)} tokens. ${done.error ? `It failed: ${done.error}` : `Finding: ${done.finding}`}`);
-		if (done.error) {
-			code = 1;
-			break;
-		}
-	}
-	print("Waiting for the last steps' compressions to be written.");
-	pi.stdin!.end();
-	await closed;
-	const forked = forkTokens(forks, before).tokens;
-	print(`Used ${shown(plus(steps, forked))} tokens in ${taken} ${taken === 1 ? "step" : "steps"}: ${shown(steps)} by the steps, ${shown(forked)} by the forks.`);
-	return code;
-}
-
 if (import.meta.main) {
 	const { values } = parseArgs({ options: { steps: { type: "string" }, tokens: { type: "string" }, model: { type: "string", default: "anthropic/claude-opus-5-5" } } });
-	const budget: Budget = { steps: values.steps === undefined ? undefined : Number(values.steps), tokens: values.tokens === undefined ? undefined : Number(values.tokens) };
-	if ((budget.steps === undefined && budget.tokens === undefined) || [budget.steps, budget.tokens].some((v) => v !== undefined && !(v > 0))) {
-		console.error("usage: explore-run.ts [--steps N] [--tokens N] [--model provider/id]: a budget of steps, tokens, or both");
+	const budget = budgetOf(values);
+	if (typeof budget === "string") {
+		console.error(`${budget}\n${USAGE}`);
 		process.exit(2);
 	}
 	process.exit(await explore(budget, values.model));

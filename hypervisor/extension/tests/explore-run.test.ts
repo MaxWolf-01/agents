@@ -8,11 +8,14 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { budgetOf } from "../src/explore-run.ts";
 import { type Request, standInAnthropic, textOf, USAGE } from "./stand-in-anthropic.ts";
 
 const RUN = path.resolve(import.meta.dirname, "../src/explore-run.ts");
 const PER_CALL = USAGE.input_tokens + USAGE.output_tokens + USAGE.cache_read_input_tokens + USAGE.cache_creation_input_tokens;
 const STEPS = 3;
+/** A budget of tokens the steps-budget run never reaches, so its messages say what is left of it. */
+const AMPLE = 10_000_000;
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-explore-run-")));
 const home = path.join(dir, "home");
@@ -66,7 +69,7 @@ before(async () => {
 	anthropic = await standInAnthropic(answer);
 	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
-	bySteps = await explore("steps", "--steps", String(STEPS));
+	bySteps = await explore("steps", "--steps", String(STEPS), "--tokens", String(AMPLE));
 	// A step makes three calls: under one step's tokens, the budget allows the first step and no second.
 	byTokens = await explore("tokens", "--tokens", String(2 * PER_CALL));
 });
@@ -90,6 +93,9 @@ test("each step starts with the goal and the budget left, and remembers the step
 	const [first, second, third] = [1, 2, 3].map((n) => steps.get("steps")!.filter((r) => stepOf(r) === n)[0]);
 	assert.match(textOf(first.messages[1]), /Your goal: Gather what makes you the best assistant.*2 more steps after this one/);
 	assert.match(textOf(third.messages[1]), /0 more steps after this one/);
+	// What step 1 used, and whatever its forks had logged by then: a whole number of calls, three at least.
+	const left = Number(/after this one, (\d+) tokens\./.exec(textOf(second.messages[1]))?.[1]);
+	assert.ok((AMPLE - left) % PER_CALL === 0 && AMPLE - left >= 3 * PER_CALL, `${AMPLE - left} tokens used before step 2`);
 	assert.match(textOf(second.messages[0]), /^<view>\n[\s\S]*finding: finding-1:/);
 	assert.doesNotMatch(textOf(second.messages[0]), /Explore step 1/);
 });
@@ -111,4 +117,11 @@ test("the run stops when its budget of steps or of tokens runs out, and prints t
 		const used = new RegExp(`^Used ${run.requests * PER_CALL} \\(.*\\) tokens in ${taken} steps?: ${taken * 3 * PER_CALL} \\(`, "m");
 		assert.match(run.out, used);
 	}
+});
+
+test("the command line asks for a budget of whole steps or tokens above 0", () => {
+	assert.deepEqual(budgetOf({ steps: "30" }), { steps: 30, tokens: undefined });
+	assert.deepEqual(budgetOf({ tokens: "500000" }), { tokens: 500000 });
+	assert.deepEqual(budgetOf({ steps: "2", tokens: "9" }), { steps: 2, tokens: 9 });
+	for (const values of [{}, { steps: "0" }, { steps: "abc" }, { tokens: "1.5" }, { steps: "3", tokens: "-1" }]) assert.equal(typeof budgetOf(values), "string", JSON.stringify(values));
 });

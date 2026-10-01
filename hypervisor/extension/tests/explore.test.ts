@@ -3,7 +3,7 @@
 // memex's command line that answers with notes from a denied root, their text, and notes that are open.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -21,9 +21,15 @@ after(() => {
 const files: Record<string, string> = {
 	"notes/today.md": "# today\nopen note e05c",
 	"notes/deep/plan.md": "the plan e05c",
+	"notes/shared.md": "an open note named like a denied one",
+	"notes/.git/hit.md": "e05c",
+	"notes/node_modules/hit.md": "e05c",
+	"notes/long.txt": Array.from({ length: 2500 }, (_, i) => `line ${i + 1}`).join("\n"),
+	"notes/blob.bin": "e05c\0\0\0",
 	".ssh/id_ed25519": SECRET,
 	".ssh/notes.md": SECRET,
 	[`.password-store/${HIDDEN}.md`]: SECRET,
+	".password-store/shared.md": SECRET,
 };
 for (const [file, text] of Object.entries(files)) {
 	mkdirSync(path.dirname(path.join(home, file)), { recursive: true });
@@ -34,7 +40,8 @@ symlinkSync("../.ssh/notes.md", path.join(home, "notes/linked.md"));
 /**
  * The stand-in prints what memex prints: `vault:list` the vaults and their directories, and a search or a find each
  * vault's notes by their path from its root. A vault `keys` sits on ~/.ssh; `notes` names one note through a symlink
- * into it and one by `..` out of its root, and quotes a denied note's text as `--full` would.
+ * into it, one by `..` out of its root, and one under both an open root and a denied one, and quotes a denied note's
+ * text as `--full` would. Each call's arguments go to `argv`, one line a call.
  */
 const said: Record<string, string> = {
 	"vault:list": `keys (model: none)\n  ${home}/.ssh\nnotes\n  ${home}/notes\n  ${home}/.password-store\n`,
@@ -48,6 +55,7 @@ const said: Record<string, string> = {
 		"  linked.md",
 		"  ../.ssh/id_ed25519",
 		`  ${HIDDEN}.md`,
+		"  shared.md",
 		"  deep/plan.md",
 		"",
 		"--- linked.md [notes] ---",
@@ -58,7 +66,8 @@ const said: Record<string, string> = {
 };
 said.find = said.search;
 const memex = path.join(bin, "memex");
-writeFileSync(memex, `#!/bin/sh\ncase "$1" in\n${Object.entries(said).map(([command, out]) => `${command}) cat <<'EOF'\n${out}\nEOF\n;;`).join("\n")}\nesac\n`);
+const argv = path.join(bin, "argv");
+writeFileSync(memex, `#!/bin/sh\nprintf '%s|' "$@" >> ${argv}; echo >> ${argv}\ncase "$1" in\n${Object.entries(said).map(([command, out]) => `${command}) cat <<'EOF'\n${out}\nEOF\n;;`).join("\n")}\nesac\n`);
 chmodSync(memex, 0o755);
 
 const tools = new Map(exploreTools({ home, memex }).map((tool) => [tool.name, tool]));
@@ -83,8 +92,41 @@ test("hypervisor-property-checks D6: memex's notes from a denied root, and their
 		for (const vault of [undefined, "notes", "keys"]) {
 			const out = await run("memex", { command, query: "anything", ...(vault ? { vault } : {}) });
 			assert.ok(!out.includes(SECRET) && !out.includes(HIDDEN), `${command} ${vault}: ${out}`);
-			assert.ok(!/id_ed25519|notes\.md|linked/.test(out), `${command} ${vault}: a denied note's path\n${out}`);
+			assert.ok(!/id_ed25519|notes\.md|linked|shared/.test(out), `${command} ${vault}: a denied note's path\n${out}`);
 			if (vault !== "keys") assert.match(out, /^notes\n {2}~\/notes\/today\.md\n {2}~\/notes\/deep\/plan\.md/, `${command} ${vault}: the open notes under their vault, as read takes them`);
 		}
 	}
+});
+
+test("memex is asked with the model's query after `--`, so a query that looks like an option stays the query", async () => {
+	writeFileSync(argv, "");
+	await run("memex", { command: "search", query: "--full", vault: "notes", limit: 3 });
+	await run("memex", { command: "find", query: "anything", limit: 500 });
+	assert.deepEqual(readFileSync(argv, "utf8").trim().split("\n"), ["vault:list|", "search|--limit=3|--vault=notes|--|--full|", "vault:list|", "find|--limit=50|--|anything|"]);
+});
+
+test("a search passes over .git and node_modules, and a pattern with a / matches the path from where it starts", async () => {
+	assert.doesNotMatch(await run("grep", { path: "notes", pattern: "e05c" }), /hit\.md/);
+	assert.doesNotMatch(await run("find", { path: "~", pattern: "hit.md" }), /hit\.md/);
+	assert.equal(await run("find", { path: "notes", pattern: "deep/*.md" }), "deep/plan.md");
+	assert.equal(await run("find", { path: "~", pattern: "deep/*.md" }), "(nothing)");
+});
+
+test("read pages through a long file, and names a binary one without its bytes", async () => {
+	const head = await run("read", { path: "notes/long.txt" });
+	assert.ok(head.startsWith("line 1\nline 2\n"));
+	assert.ok(head.endsWith("line 2000\n(lines 1-2000 of 2500; offset 2001 reads on)"), head.slice(-80));
+	assert.equal(await run("read", { path: "notes/long.txt", offset: 2001, limit: 3 }), "line 2001\nline 2002\nline 2003\n(lines 2001-2003 of 2500; offset 2004 reads on)");
+	assert.equal(await run("read", { path: "notes/long.txt", offset: 2499 }), "line 2499\nline 2500");
+	assert.equal(await run("read", { path: "notes/blob.bin" }), "(a binary file, 7 bytes)");
+});
+
+test("the hypervisor's store, which holds its pi's credentials, is denied like the roots", async () => {
+	const store = path.join(home, ".local/share/hypervisor");
+	mkdirSync(path.join(store, "pi"), { recursive: true });
+	writeFileSync(path.join(store, "pi/auth.json"), SECRET);
+	const [read, grep] = ["read", "grep"].map((name) => exploreTools({ home, store }).find((tool) => tool.name === name)!);
+	await assert.rejects(read.execute("check", { path: "~/.local/share/hypervisor/pi/auth.json" } as never, undefined, undefined, {} as never), /denied/);
+	const found = await grep.execute("check", { path: "~/.local", pattern: "c4n4ry" } as never, undefined, undefined, {} as never);
+	assert.doesNotMatch(JSON.stringify(found), /c4n4ry/);
 });

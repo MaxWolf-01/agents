@@ -6,8 +6,8 @@
 # $HV_STORE/pi. On the first start, sign in there with /login (Anthropic), or start it with ANTHROPIC_OAUTH_TOKEN set
 # to a token from `claude setup-token`, which needs no refreshing.
 #
-# `hv explore --steps N --tokens N` runs explore mode here in the foreground instead, over the same store and
-# credentials, until either budget runs out (`src/explore-run.ts`).
+# `hv explore` runs explore mode here in the foreground instead, over the same store and credentials; it takes the
+# options of `extension/src/explore-run.ts`, which prints them.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
