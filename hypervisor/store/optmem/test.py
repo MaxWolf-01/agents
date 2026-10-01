@@ -166,7 +166,9 @@ check(woke.returncode == 0 and "You are awake." in woke.stdout,
 # Every command the tool prints must RUN on the machine it printed it on.
 # `curl | sh` puts nothing on PATH, so a bare `memo nap ...` would not: the
 # whole loop (note -> merge prompt -> nap) dies on `command not found`.
-bare = dict(fresh, PATH="/usr/bin:/bin")
+# The interpreter's own directory joins it: a host without python3 in /usr/bin
+# (NixOS) cannot run the shebang otherwise, and memo's directory stays off PATH.
+bare = dict(fresh, PATH="/usr/bin:/bin:" + os.path.dirname(sys.executable))
 subprocess.run(memo + ["note", "the first thing that happened"], env=bare,
                capture_output=True)
 asked = subprocess.run(memo + ["note", "the second thing that happened"],
@@ -282,9 +284,9 @@ check(run("wake", str(len(parts) + 1)).returncode == 1, "a nonexistent part shou
 logsz = os.path.getsize(os.path.join(d, "LOG.txt"))
 run("note", "one more thing happened today")
 check(os.path.getsize(os.path.join(d, "LOG.txt")) > logsz, "note did not append")
-check(logsz % 320 == 0, "LOG.txt is not a whole number of records")
+check(logsz % cli.LOG_REC == 0, "LOG.txt is not a whole number of records")
 for f in os.listdir(os.path.join(d, "TREE")):
-    check(os.path.getsize(os.path.join(d, "TREE", f)) % 288 == 0,
+    check(os.path.getsize(os.path.join(d, "TREE", f)) % cli.TREE_REC == 0,
           "TREE/%s is not a whole number of records" % f)
 
 # a nap when nothing is pending writes nothing and says so
@@ -417,7 +419,7 @@ check(run("wake").returncode == 0, "wake refuses at the very end")
 
 # a part is rendered as of T, so a note landing mid-wake cannot shift a
 # boundary and silently drop a line
-T0 = os.path.getsize(os.path.join(d, "LOG.txt")) // 320
+T0 = os.path.getsize(os.path.join(d, "LOG.txt")) // cli.LOG_REC
 before = run("wake", "1", str(T0))
 check(before.returncode == 0, "as-of-T wake failed: " + before.stdout + before.stderr)
 run("note", "a note that lands between two wake calls")
@@ -458,7 +460,7 @@ procs = [subprocess.Popen(memo + ["note", "parallel note %d" % i], env=env2,
 for p in procs:
     p.wait()
 with open(os.path.join(d2, "LOG.txt"), "rb") as f:
-    recs = [f.read(320) for _ in range(P)]
+    recs = [f.read(cli.LOG_REC) for _ in range(P)]
 ids = [r.decode().split()[0] for r in recs if r.strip()]
 check(len(ids) == P, "%d of %d parallel notes survived" % (len(ids), P))
 check(len(set(ids)) == P, "parallel notes collided on an id: %s" % sorted(ids))
@@ -472,7 +474,7 @@ with open(os.path.join(d2, "LOG.txt"), "ab") as f:
 r = run("note", "the memory right after a torn write", store=d2)
 check(r.returncode == 0, "note failed after a torn write: " + r.stderr)
 sz = os.path.getsize(os.path.join(d2, "LOG.txt"))
-check(sz % 320 == 0, "LOG.txt left misaligned after a torn write: %d" % sz)
+check(sz % cli.LOG_REC == 0, "LOG.txt left misaligned after a torn write: %d" % sz)
 check("Saved as #%d" % P in r.stdout, "torn record was counted as a memory")
 r = run("recall", "right after a torn write", store=d2)
 check("#%d " % P in r.stdout, "the memory after a torn write reads wrong")
@@ -499,7 +501,7 @@ for bid, s in (("0-1", "one"), ("2-3", "two"), ("0-3", "all")):
 with open(os.path.join(d3, "config"), "w") as f:
     f.write("WAKE_LINES = 2\n")
 with open(os.path.join(d3, "TREE", "2"), "r+b") as f:
-    f.write(b" " * 287 + b"\n")
+    f.write(b" " * (cli.TREE_REC - 1) + b"\n")
 r = run("wake", store=d3)
 check(r.returncode == 1 and "forget 0-1" in r.stderr
       and "None" not in r.stdout,
@@ -534,7 +536,7 @@ while True:
         break
     run("nap", nap_id(r.stdout), "settled", store=d4)
 with open(os.path.join(d4, "TREE", "16"), "r+b") as f:
-    f.write(b" " * 287 + b"\n")
+    f.write(b" " * (cli.TREE_REC - 1) + b"\n")
 r = run("nap", store=d4)
 check(r.returncode == 1 and "forget 0-15" in r.stderr,
       "a blank half summary must point at forget: " + r.stdout + r.stderr)
