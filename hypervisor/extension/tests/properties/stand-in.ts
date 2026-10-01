@@ -2,7 +2,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import { isStub } from "./lifted-by.ts";
 
 /** pi's own tools, the first four active unless an extension changes the set. */
-export const PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const PI_ACTIVE = PI_TOOLS.slice(0, 4);
 
 type Handler = (event: unknown, context: unknown) => unknown;

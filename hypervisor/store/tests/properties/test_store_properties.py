@@ -41,7 +41,9 @@ def run(store: str, *args: object, stdin: str = "") -> tuple[int, str]:
     that escapes `main` is a process dying with status 1, except the stub's, which the expected
     failures wait for."""
     out = io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()), mock.patch("sys.stdin", io.StringIO(stdin)):
+    # Text over bytes, as a process's stdin is, so a store may read either.
+    given = io.TextIOWrapper(io.BytesIO(stdin.encode()), encoding="utf-8", newline="\n")
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()), mock.patch("sys.stdin", given):
         try:
             code = hv_store.main(["--dir", store, *map(str, args)])
         except SystemExit as exit:
@@ -180,6 +182,11 @@ def test_no_command_changes_an_earlier_entry(first: list[str], commands: list[tu
                 assert code == 0, f"append refused {stdin!r}"
                 logged += 1
             after = entries(store, logged)
-            changed = [key for key in before if not after[key].startswith(before[key]) or (key.startswith("raw") and after[key] != before[key])]
+            changed = [key for key in before if not kept(key, before[key], after[key])]
             assert not changed, f"`{' '.join(map(str, args))}` changed {changed}"
             before = after
+
+
+def kept(key: str, before: str, after: str) -> bool:
+    """An entry read whole reads the same; a pair may only gain its second entry."""
+    return after == before if key.startswith("raw") else after.startswith(before)

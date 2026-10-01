@@ -85,9 +85,10 @@ function spliced(segments: string[], detours: [number, string][]): string {
 const intoDenied = fc
 	.tuple(
 		fc.oneof(
-			fc.constantFrom(...DENIED).map((root) => [root]),
+			fc.constantFrom(...DENIED).map((root) => root.split("/")),
 			// Each leads into a denied directory. The kernel walks `..` from where a link points, not from the link,
 			// so the last is ~/.ssh and not ~/notes/.ssh.
+			fc.constantFrom(...DENIED).map((root) => ["notes", "up", ...root.split("/")]),
 			fc.constantFrom<string[]>(["notes", "to-work"], ["notes", "chain"], ["notes", "to-ssh"], ["notes", "up", "work"], ["notes", "up", ".config", "gh"], ["notes", "to-work", "..", ".ssh"]),
 		),
 		tail,

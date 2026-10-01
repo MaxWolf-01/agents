@@ -58,6 +58,7 @@ test("lifelong-hypervisor#P1: a request carries the view and the current turn, a
 			const sent = swapContext(messages, rendered);
 
 			assert.deepEqual(messages, given, "the swap changed the session's messages");
+			// With the view's message free of the history (below), this is what keeps every earlier message out.
 			assert.deepEqual(sent.slice(1), now, "the current turn, whole and in order, follows the view");
 			assert.ok(textOf(sent[0]).includes(rendered), "the first message holds the view");
 			// The view's message is the view's alone: another history with the same view yields the same one.

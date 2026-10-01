@@ -10,7 +10,7 @@ import fc from "fast-check";
 import { watchEffects } from "./effects.ts";
 import { isStub, liftedBy } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
-import { harnessProblems, launchProblems, strings } from "./rules.ts";
+import { harnessProblems, strings, toolProblems } from "./rules.ts";
 import { execute, load, standIn, within } from "./stand-in.ts";
 
 const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
@@ -30,7 +30,7 @@ const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
 /** Strings that do harm wherever a tool hands them to a shell or uses them as a path. */
 const HOSTILE = fc.oneof(
 	fc.string(),
-	fc.constantFrom("; touch pwned", "$(touch pwned)", "`touch pwned`", "x\nrm -rf ~", "../../../../tmp/pwned", "/tmp/pwned", "-rf", "--help"),
+	fc.constantFrom("; touch pwned", "$(touch pwned)", "`touch pwned`", "x\nrm -rf ~", "../../../../tmp/pwned", "/tmp/pwned", "-rf", "--help", "#(touch pwned)"),
 );
 
 /** The extension loaded, with what loading it did. */
@@ -76,14 +76,14 @@ test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, 
 			await fc.assert(
 				fc.asyncProperty(paramsFor(tool.parameters, HOSTILE), async (params) => {
 					const seen = await effects.during(() => execute(tool, params, extension.context, 1000));
-					const given = strings(params);
-					const problems = [...harnessProblems(seen, store), ...seen.launches.flatMap((launch) => launchProblems(launch, given))];
-					assert.deepEqual(problems, [], `${tool.name} ${JSON.stringify(params)}`);
+					assert.deepEqual(toolProblems(seen, store, strings(params)), [], `${tool.name} ${JSON.stringify(params)}`);
 				}),
 				{ numRuns: 25 },
 			);
 		}
 	}
+	// The last run's tool may still be going: wait out its time before reading what came after it.
+	await new Promise((settle) => setTimeout(settle, 1100));
 	assert.deepEqual(effects.stray, { launches: [], writes: [] }, "effects after a tool's or handler's time ran out");
 });
 
@@ -112,8 +112,11 @@ test("lifelong-hypervisor#P1: a request leaves the extension with its system pro
 	await fc.assert(
 		fc.asyncProperty(payload, async (sent) => {
 			let request = structuredClone(sent);
-			for (const handler of handlers.get("before_provider_request") ?? []) request = ((await handler({ type: "before_provider_request", payload: request }, context)) as typeof request) ?? request;
+			const seen = await effects.during(async () => {
+				for (const handler of handlers.get("before_provider_request") ?? []) request = ((await handler({ type: "before_provider_request", payload: request }, context)) as typeof request) ?? request;
+			});
 			assert.deepEqual(promptAndTools(request), promptAndTools(sent));
+			assert.deepEqual(harnessProblems(seen, store), []);
 		}),
 	);
 });
