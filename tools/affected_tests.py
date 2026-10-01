@@ -5,9 +5,9 @@ A change is every file that differs between the working tree and its merge-base 
 and every file those name in turn: a Python import of a module beside the importer, or a quoted
 string or a word ending in a file extension that is some file's name under mx/ or the hypervisor's
 store. A name several files share resolves to the one beside the naming file when there is one,
-else to all of them, so an ambiguous name runs more tests, never fewer. A change outside mx/skills/
-other than prose (this script, the Makefile, mx/bin, mx/hooks) reaches every test. The hypervisor's
-extension is a TypeScript package: a change anywhere in it reaches all of its tests.
+else to all of them, so an ambiguous name runs more tests, never fewer. A change to what runs the
+tests or wraps what they test (`reaches_every_test`) reaches every test. The hypervisor's extension
+is a TypeScript package: a change anywhere in it reaches all of its tests.
 
 Prints one test path per line, nothing when no test is reached.
 """

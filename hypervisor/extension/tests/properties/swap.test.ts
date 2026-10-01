@@ -3,7 +3,6 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isDeepStrictEqual } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import fc from "fast-check";
 import { swapContext } from "../../src/swap.ts";
@@ -19,7 +18,7 @@ const user = fc
 const call = fc.record({
 	type: fc.constant("toolCall"),
 	id: fc.uuid(),
-	name: fc.constantFrom("zoom", "recall", "raw", "spawn", "tell", "look", "delegate"),
+	name: fc.string({ minLength: 1, maxLength: 10 }),
 	arguments: fc.dictionary(fc.string({ maxLength: 8 }), fc.oneof(text, fc.integer()), { noNullPrototype: true }),
 }, { noNullPrototype: true });
 // One model response that calls tools, then each call's result.
@@ -61,7 +60,6 @@ test("lifelong-hypervisor#P1: a request carries the view and the current turn, a
 			assert.deepEqual(messages, given, "the swap changed the session's messages");
 			assert.deepEqual(sent.slice(1), now, "the current turn, whole and in order, follows the view");
 			assert.ok(textOf(sent[0]).includes(rendered), "the first message holds the view");
-			for (const message of before) assert.ok(!sent.some((s) => isDeepStrictEqual(s, message)), "a message from an earlier turn was sent");
 			// The view's message is the view's alone: another history with the same view yields the same one.
 			const elsewhere = swapContext([...other.before, ...other.now], rendered);
 			assert.deepEqual(withoutTimestamp(elsewhere[0]), withoutTimestamp(sent[0]), "the view's message carries something of the history");

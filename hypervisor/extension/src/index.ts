@@ -2,8 +2,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { NotImplemented } from "./not-implemented.ts";
 
 export interface Config {
-	/** The store's directory, the one place the hypervisor's own tools write. */
+	/** The store's directory, the one place the extension and its tools write. */
 	store: string;
+	/** The home directory of the machine the explorer reads; a relative path the model sends starts here. */
 	home: string;
 }
 

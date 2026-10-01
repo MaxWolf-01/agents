@@ -1,6 +1,7 @@
 // lifelong-hypervisor#P5 at the explorer's read tools, over a fixture home: every denied root holds a secret in its
-// files' content and in a file's name, and the open part of home holds symlinks into the denied roots. Paths into a
-// denied root are generated in every spelling that reaches it, and searches and listings sweep the parts around them.
+// files' content and in a file's name, and symlinks lead into the denied roots from the open part of home and from
+// outside it. Paths into a denied root are generated in every spelling that reaches it, and searches and listings
+// sweep the parts around them.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -10,8 +11,9 @@ import { after, test } from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import fc from "fast-check";
 import { exploreTools } from "../../src/explore.ts";
-import { isStub, liftedBy } from "./lifted-by.ts";
+import { liftedBy } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
+import { execute, standIn } from "./stand-in.ts";
 
 const SECRET = "c4n4ry-content-7f3a91";
 const HIDDEN = "c4n4ry-name-52bd07";
@@ -47,7 +49,11 @@ const LINKS: Record<string, string> = {
 };
 
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-explore-")));
-after(() => rmSync(home, { recursive: true, force: true }));
+const outside = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-outside-")));
+after(() => {
+	rmSync(home, { recursive: true, force: true });
+	rmSync(outside, { recursive: true, force: true });
+});
 for (const root of DENIED) {
 	const at = path.join(home, root);
 	mkdirSync(FILES.has(root) ? path.dirname(at) : path.join(at, "deep"), { recursive: true });
@@ -60,74 +66,72 @@ for (const file of READABLE) {
 }
 for (const [link, target] of Object.entries(LINKS)) symlinkSync(target, path.join(home, link));
 symlinkSync(path.join(home, ".ssh"), path.join(home, "notes/to-ssh"));
+symlinkSync(path.join(home, ".gnupg"), path.join(outside, "gpg"));
 
-/** A place under a denied root, named from home, directly or through one of the symlinks. */
-const denied = fc.oneof(
-	fc.constantFrom(...DENIED).chain((root) => (FILES.has(root) ? fc.constant(root) : fc.constantFrom(root, `${root}/notes.txt`, `${root}/deep`, `${root}/deep/inner.txt`, `${root}/missing.txt`))),
-	fc.constantFrom(
-		"notes/to-work",
-		"notes/to-work/notes.txt",
-		"notes/chain/deep/inner.txt",
-		"notes/key",
-		"notes/to-ssh/notes.txt",
-		"notes/up/work/notes.txt",
-		"notes/up/.config/gh",
-		"workshop/creds",
-		// The kernel walks `..` from where the link points, not from the link: this is ~/.ssh, not ~/notes/.ssh.
-		"notes/to-work/../.ssh/notes.txt",
-	),
-);
-/** Places around the denied roots that a search or a listing would pass through. */
+const name = fc.stringMatching(/^[a-z][a-z0-9_-]{0,7}$/);
+/** Below a denied directory: a file it holds, a directory, or a name that is not there, any number of levels down. */
+const tail = fc.array(fc.oneof(fc.constantFrom("notes.txt", "deep", "inner.txt"), name), { maxLength: 3 });
+/** A detour that comes back where it left: `x/..`, `x/y/../..`, or `.`. */
+const detour = fc.oneof(fc.constant("."), fc.array(name, { minLength: 1, maxLength: 2 }).map((names) => [...names, ...names.map(() => "..")].join("/")));
+
+/** Segments joined, with a detour spliced in at each place `detours` names. */
+function spliced(segments: string[], detours: [number, string][]): string {
+	const out = [...segments];
+	for (const [at, d] of detours) out.splice(at % (out.length + 1), 0, d);
+	return out.join("/");
+}
+
+/** A path into a denied root, from home: the root itself, below it, or through a symlink to it, with detours. */
+const intoDenied = fc
+	.tuple(
+		fc.oneof(
+			fc.constantFrom(...DENIED).map((root) => [root]),
+			// Each leads into a denied directory. The kernel walks `..` from where a link points, not from the link,
+			// so the last is ~/.ssh and not ~/notes/.ssh.
+			fc.constantFrom<string[]>(["notes", "to-work"], ["notes", "chain"], ["notes", "to-ssh"], ["notes", "up", "work"], ["notes", "up", ".config", "gh"], ["notes", "to-work", "..", ".ssh"]),
+		),
+		tail,
+		fc.array(fc.tuple(fc.nat(), detour), { maxLength: 2 }),
+	)
+	.map(([route, below, detours]) => spliced(FILES.has(route.join("/")) ? route : [...route, ...below], detours));
+/** Links straight to a denied file. */
+const toDeniedFile = fc.constantFrom("notes/key", "workshop/creds");
+/** Places around the denied roots that a search or a listing passes through. */
 const around = fc.constantFrom("", "notes", "notes/up", ".config", ".claude", "workshop", ".local");
 
-/** The spellings a path can take: absolute, under `~/`, relative to home, with detours, through /proc. */
+/** The spellings of a path from home that name the place itself: absolute, under `~/`, relative, doubled slashes, /proc. */
 function spellings(rel: string): fc.Arbitrary<string> {
-	const plain = rel === "" ? "." : rel;
-	return fc.constantFrom(
-		path.join(home, rel),
-		`~/${rel}`,
-		plain,
-		`workshop/../${plain}`,
-		`./notes/./../${plain}`,
-		`${home}//${rel.replaceAll("/", "//")}`,
-		`${home}/${rel}/`,
-		`/proc/self/root${home}/${rel}`,
-	);
+	return fc.constantFrom(path.join(home, rel), `~/${rel}`, rel === "" ? "." : rel, `${home}//${rel.replaceAll("/", "//")}`, `/proc/self/root${home}/${rel}`);
 }
+/** Those, and spellings a tool may reject outright: a trailing slash, a URL. */
+const anySpelling = (rel: string) => fc.oneof(spellings(rel), fc.constantFrom(`${home}/${rel}/`, `file://${home}/${rel}`));
+/** A path into a denied root from outside home, through a symlink there. */
+const fromOutside = fc.tuple(tail, fc.constantFrom(`${outside}/gpg`, `/proc/self/root${outside}/gpg`)).map(([below, link]) => [link, ...below].join("/"));
 
 /** Search patterns that match the secret's file or text without spelling the secret itself. */
 const searches = fc.constantFrom("c4n4ry", "7f3a9[0-9]", "52bd0", ".", "*", "**/*", "**", "");
 
-async function outcome(tool: ToolDefinition, params: unknown): Promise<{ threw: boolean; said: string }> {
-	let timer: NodeJS.Timeout | undefined;
-	const late = new Promise<never>((_, fail) => {
-		timer = setTimeout(() => fail(new Error(`${tool.name} did not finish in 5s`)), 5000);
-	});
-	try {
-		const result = await Promise.race([tool.execute("p5", params as never, undefined, undefined, { cwd: home } as never), late]);
-		return { threw: false, said: JSON.stringify(result) };
-	} catch (error) {
-		if (isStub(error) || (error instanceof Error && error.message.endsWith("did not finish in 5s"))) throw error;
-		return { threw: true, said: error instanceof Error ? `${error.message}\n${error.stack}` : String(error) };
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
+const target = fc.oneof(
+	fc.oneof(intoDenied, toDeniedFile).chain(anySpelling).map((spelled) => ({ spelled, denied: true })),
+	fromOutside.map((spelled) => ({ spelled, denied: true })),
+	around.chain(anySpelling).map((spelled) => ({ spelled, denied: false })),
+);
+/** A tool, and arguments that point every string at the target or search with it; `path` always names the target. */
 const attack = (tools: ToolDefinition[]) =>
-	fc.constantFrom(...tools).chain((tool) =>
-		fc.oneof(denied.map((rel) => ({ rel, refused: true })), around.map((rel) => ({ rel, refused: false }))).chain(({ rel, refused }) =>
-			spellings(rel).chain((spelled) => paramsFor(tool.parameters as never, searches, { path: fc.constant(spelled) }).map((params) => ({ tool, params, refused }))),
-		),
+	fc.tuple(fc.constantFrom(...tools), target).chain(([tool, { spelled, denied }]) =>
+		paramsFor(tool.parameters, fc.oneof(searches, fc.constant(spelled)), { path: fc.constant(spelled) }).map((params) => ({ tool, params, denied })),
 	);
+
+const context = standIn({ cwd: home });
 
 test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, however the path is spelled", liftedBy("hypervisor-explore-mode"), async () => {
 	const tools = exploreTools({ home });
 	await fc.assert(
-		fc.asyncProperty(attack(tools), async ({ tool, params, refused }) => {
-			const { threw, said } = await outcome(tool, params);
+		fc.asyncProperty(attack(tools), async ({ tool, params, denied }) => {
+			const { end, said } = await execute(tool, params, context, 5000);
+			assert.notEqual(end, "late", `${tool.name} ${JSON.stringify(params)} did not finish in 5s`);
 			assert.ok(!said.includes(SECRET) && !said.includes(HIDDEN), `${tool.name} ${JSON.stringify(params)} read a denied file:\n${said}`);
-			if (refused && "path" in params) assert.ok(threw, `${tool.name} did not refuse ${JSON.stringify(params)}`);
+			if (denied && "path" in params) assert.equal(end, "threw", `${tool.name} did not refuse ${JSON.stringify(params)}`);
 		}),
 		{ numRuns: 300 },
 	);
@@ -135,10 +139,10 @@ test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, ho
 
 // Refusing everything would satisfy the property above; the explorer has to read the open part of home.
 test("lifelong-hypervisor#P5: a file outside the denied roots reads back through the read tools", liftedBy("hypervisor-explore-mode"), async () => {
-	const tools = exploreTools({ home }).filter((tool) => (tool.parameters as { properties?: object }).properties && "path" in (tool.parameters as { properties: object }).properties);
+	const tools = exploreTools({ home }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
 	await fc.assert(
 		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/up/workshop/plan.md").chain(spellings), async (spelled) => {
-			const reads = await Promise.all(tools.map((tool) => outcome(tool, minimal(tool, spelled))));
+			const reads = await Promise.all(tools.map((tool) => execute(tool, minimal(tool, spelled), context, 5000)));
 			assert.ok(reads.some(({ said }) => said.includes(OPEN)), `no read tool read ${spelled}`);
 		}),
 	);
@@ -148,5 +152,5 @@ test("lifelong-hypervisor#P5: a file outside the denied roots reads back through
 function minimal(tool: ToolDefinition, spelled: string): Record<string, unknown> {
 	const schema = tool.parameters as { properties: Record<string, { type?: string }>; required?: string[] };
 	const plain: Record<string, unknown> = { string: "e05c", number: 1, integer: 1, boolean: false };
-	return Object.fromEntries((schema.required ?? []).map((name) => [name, name === "path" ? spelled : plain[schema.properties[name]?.type ?? "string"]]).concat([["path", spelled]]));
+	return Object.fromEntries((schema.required ?? []).map((key) => [key, plain[schema.properties[key]?.type ?? "string"]]).concat([["path", spelled]]));
 }

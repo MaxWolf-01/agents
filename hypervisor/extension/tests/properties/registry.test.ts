@@ -1,83 +1,45 @@
-// lifelong-hypervisor#P4 at the tool registry: the extension is loaded into a stand-in for pi, and every tool it
-// registers is run with generated arguments while its processes and file writes are watched.
+// lifelong-hypervisor#P4 at the tool registry, and the half of #P1 the extension's provider hook could break: the
+// extension is loaded into a stand-in for pi, and its tools and handlers run while its processes and writes are watched.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import fc from "fast-check";
-import { under, watchEffects } from "./effects.ts";
+import { watchEffects } from "./effects.ts";
 import { isStub, liftedBy } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
+import { harnessProblems, launchProblems, strings } from "./rules.ts";
+import { execute, load, standIn, within } from "./stand-in.ts";
 
 const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
+const effects = watchEffects(store);
 after(() => {
+	effects.stop();
 	rmSync(store, { recursive: true, force: true });
 	rmSync(home, { recursive: true, force: true });
 });
-const effects = watchEffects(store);
 const { hypervisor } = await import("../../src/index.ts");
 const { exploreTools } = await import("../../src/explore.ts");
 
-/** The parent's closed set: spawn, tell, look and delegate, and the memory tools. */
-const CONVERSE = ["spawn", "tell", "look", "delegate", "zoom", "recall", "raw"];
 const MEMORY = ["zoom", "recall", "raw"];
-/** pi's own tools, the first four active unless an extension changes the set. */
-const PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const PI_ACTIVE = PI_TOOLS.slice(0, 4);
-/** The programs a tool may start: tmux and claude for sessions, uv for the store, memex for the explorer. */
-const PROGRAMS = new Set(["tmux", "claude", "uv", "memex"]);
+/** The parent's closed set of tools. */
+const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
 /** Strings that do harm wherever a tool hands them to a shell or uses them as a path. */
 const HOSTILE = fc.oneof(
 	fc.string(),
 	fc.constantFrom("; touch pwned", "$(touch pwned)", "`touch pwned`", "x\nrm -rf ~", "../../../../tmp/pwned", "/tmp/pwned", "-rf", "--help"),
 );
 
-// Answers anything a tool or handler asks of its context, and awaits as nothing.
-const inert: any = new Proxy(() => {}, { get: (_, key) => (key === "then" ? undefined : inert), apply: () => undefined });
-const context = new Proxy({ cwd: home, hasUI: false } as Record<PropertyKey, unknown>, { get: (target, key) => (key in target ? target[key] : inert) });
-
-/** The extension loaded as pi loads it, through to session start; `flipped` sets every boolean flag it registers. */
-async function load(flipped: boolean) {
-	const tools = new Map<string, ToolDefinition>();
-	const flags = new Map<string, { type: string; default?: unknown }>();
-	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
-	let active = [...PI_ACTIVE];
-	const api: Record<string, unknown> = {
-		registerTool(tool: ToolDefinition) {
-			tools.set(tool.name, tool);
-			const exposure = tool.exposure ?? "direct";
-			if ((tool.defaultActive ?? (exposure === "direct" || exposure === "model-only")) && !active.includes(tool.name)) active.push(tool.name);
-		},
-		setActiveTools(names: string[]) {
-			active = names.filter((name) => tools.has(name) || PI_TOOLS.includes(name));
-		},
-		getActiveTools: () => [...active],
-		on(event: string, handler: (event: unknown, ctx: unknown) => unknown) {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-			return () => {};
-		},
-		registerFlag(name: string, options: { type: string; default?: unknown }) {
-			flags.set(name, options);
-		},
-		getFlag(name: string) {
-			const flag = flags.get(name);
-			return flipped && flag?.type === "boolean" ? !flag.default : flag?.default;
-		},
-		// pi's exec starts its program without a shell; it is watched as a process like any other.
-		exec: async (command: string, args: string[]) => {
-			const { execFile } = await import("node:child_process");
-			execFile(command, args, () => {});
-			return { stdout: "", stderr: "", code: 0, killed: false };
-		},
-	};
-	const pi = new Proxy(api, { get: (target, key) => (key in target ? target[key as string] : inert) }) as unknown as ExtensionAPI;
-	hypervisor({ store, home })(pi);
-	for (const handler of handlers.get("session_start") ?? []) await handler({ type: "session_start", reason: "startup" }, context);
-	return { tools, active };
+/** The extension loaded, with what loading it did. */
+async function loaded(flipped: boolean) {
+	let extension!: Awaited<ReturnType<typeof load>>;
+	const atLoad = await effects.during(async () => {
+		extension = await load(hypervisor({ store, home }), home, flipped);
+	});
+	return { ...extension, atLoad };
 }
 
 /** The explorer's tools are allowed by name too; before its slice lands there are none. */
@@ -90,10 +52,12 @@ function explorerToolNames(): string[] {
 	}
 }
 
-test("lifelong-hypervisor#P4: the extension's tools are the closed set, and none of pi's own stays active", liftedBy("hypervisor-view-swap"), async () => {
+// Within the closed set rather than equal to it: the memory tools land first (hypervisor-view-swap), the session
+// tools after (hypervisor-orchestrators), and the check has to hold at each step.
+test("lifelong-hypervisor#P4: the extension's tools are within the closed set, and none of pi's own stays active", liftedBy("hypervisor-view-swap"), async () => {
 	const allowed = new Set([...CONVERSE, ...explorerToolNames()]);
 	for (const flipped of [false, true]) {
-		const { tools, active } = await load(flipped);
+		const { tools, active } = await loaded(flipped);
 		assert.deepEqual([...tools.keys()].filter((name) => !allowed.has(name)), [], "tools outside the closed set");
 		assert.deepEqual(active.filter((name) => !tools.has(name)), [], "pi's own tools still active");
 		if (!flipped) assert.deepEqual(MEMORY.filter((name) => !tools.has(name)), [], "memory tools missing");
@@ -102,38 +66,54 @@ test("lifelong-hypervisor#P4: the extension's tools are the closed set, and none
 
 test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, whatever its arguments", liftedBy("hypervisor-view-swap"), async () => {
 	for (const flipped of [false, true]) {
-		const { tools } = await load(flipped);
-		for (const tool of tools.values()) {
+		const extension = await loaded(flipped);
+		assert.deepEqual(harnessProblems(extension.atLoad, store), [], "loading the extension");
+		for (const [event, handlers] of extension.handlers) {
+			const seen = await effects.during(() => Promise.all(handlers.map((handler) => within(1000, async () => handler(standIn({ type: event }), extension.context)))));
+			assert.deepEqual(harnessProblems(seen, store), [], `its ${event} handler`);
+		}
+		for (const tool of extension.tools.values()) {
 			await fc.assert(
-				fc.asyncProperty(paramsFor(tool.parameters as never, HOSTILE), async (params) => {
-					const seen = await effects.during(() => settled(tool, params));
-					for (const { program, args, shell } of seen.launches) {
-						const command = [program, ...args].join(" ");
-						assert.equal(shell, false, `${tool.name} ran a shell: ${command}`);
-						assert.ok(PROGRAMS.has(path.basename(program)), `${tool.name} started ${command}`);
-						// Typing into a pane is max's own channel (the parent's Tell), and a pane runs what it is typed.
-						if (path.basename(program) === "tmux") assert.ok(!args.some((a) => /^send(-keys)?$/.test(a)), `${tool.name} typed into a pane: ${command}`);
-					}
-					for (const file of seen.writes) assert.ok(file !== "fd" && under(file, store), `${tool.name} wrote ${file}`);
+				fc.asyncProperty(paramsFor(tool.parameters, HOSTILE), async (params) => {
+					const seen = await effects.during(() => execute(tool, params, extension.context, 1000));
+					const given = strings(params);
+					const problems = [...harnessProblems(seen, store), ...seen.launches.flatMap((launch) => launchProblems(launch, given))];
+					assert.deepEqual(problems, [], `${tool.name} ${JSON.stringify(params)}`);
 				}),
 				{ numRuns: 25 },
 			);
 		}
 	}
+	assert.deepEqual(effects.stray, { launches: [], writes: [] }, "effects after a tool's or handler's time ran out");
 });
 
-/** Runs a tool to its end, or for a second at most; its errors are its own business here. */
-async function settled(tool: ToolDefinition, params: unknown) {
-	const stop = new AbortController();
-	const timer = setTimeout(() => stop.abort(), 1000);
-	try {
-		await Promise.race([
-			tool.execute("p4", params as never, stop.signal, undefined, context as never),
-			new Promise((settle) => stop.signal.addEventListener("abort", settle)),
-		]);
-	} catch (error) {
-		if (isStub(error)) throw error;
-	} finally {
-		clearTimeout(timer);
-	}
+type Block = { type: string; text?: string; cache_control?: unknown };
+const block = fc.record({ type: fc.constant("text"), text: fc.string({ maxLength: 30 }) }, { noNullPrototype: true });
+// A request as the Anthropic provider sends it, which is what the provider hook sees.
+const payload = fc.record(
+	{
+		model: fc.constant("claude-opus-5-5"),
+		max_tokens: fc.constant(32000),
+		system: fc.array(block, { minLength: 1, maxLength: 3 }),
+		tools: fc.array(fc.record({ name: fc.string({ minLength: 1, maxLength: 12 }), description: fc.string({ maxLength: 30 }), input_schema: fc.constant({ type: "object", properties: {} }) }, { noNullPrototype: true }), { maxLength: 5 }),
+		messages: fc.array(fc.record({ role: fc.constantFrom("user", "assistant"), content: fc.array(block, { minLength: 1, maxLength: 2 }) }, { noNullPrototype: true }), { minLength: 1, maxLength: 4 }),
+	},
+	{ noNullPrototype: true },
+);
+
+/** A request's system prompt and tools, without the cache breakpoints a hook may place in them. */
+function promptAndTools(request: { system: Block[]; tools: object[] }) {
+	const bare = (o: object) => Object.fromEntries(Object.entries(o).filter(([key]) => key !== "cache_control"));
+	return { system: request.system.map(bare), tools: request.tools.map(bare) };
 }
+
+test("lifelong-hypervisor#P1: a request leaves the extension with its system prompt and tools", liftedBy("hypervisor-view-swap"), async () => {
+	const { handlers, context } = await loaded(false);
+	await fc.assert(
+		fc.asyncProperty(payload, async (sent) => {
+			let request = structuredClone(sent);
+			for (const handler of handlers.get("before_provider_request") ?? []) request = ((await handler({ type: "before_provider_request", payload: request }, context)) as typeof request) ?? request;
+			assert.deepEqual(promptAndTools(request), promptAndTools(sent));
+		}),
+	);
+});

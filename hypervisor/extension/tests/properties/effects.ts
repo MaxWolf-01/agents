@@ -8,7 +8,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-/** A process a tool started: the program, its arguments, and whether a shell ran it. */
+/** A process started: the program, its arguments, and whether a shell ran it. */
 export interface Launch {
 	program: string;
 	args: string[];
@@ -22,58 +22,53 @@ export interface Seen {
 }
 
 /**
- * Watches the processes and file writes of this node process. Outside `during` everything passes through. Inside it,
- * a process is recorded and never started, and a write is recorded and carried out only under `writable`.
+ * Watches the processes and file writes of this node process from the moment it is installed until `stop`. A process
+ * is recorded and never started; a write is recorded and carried out only under `writable`. What happens inside
+ * `during` is returned by it; anything else, such as a tool still running after its time ran out, is `stray`.
  * Install it before importing the code it watches, so a binding taken at load is the watched one.
  */
 export function watchEffects(writable: string) {
-	let seen: Seen | undefined;
+	let watching = true;
+	const stray: Seen = { launches: [], writes: [] };
+	let seen = stray;
 
-	const launch = (program: string, args: unknown, shell: unknown) => {
-		seen?.launches.push({ program, args: Array.isArray(args) ? args.map(String) : [], shell: Boolean(shell) });
+	const launch = (program: unknown, args: unknown, shell: unknown) => {
+		seen.launches.push({ program: String(program), args: Array.isArray(args) ? args.map(String) : [], shell: Boolean(shell) });
 	};
 	const options = (args: unknown[]) => args.find((a): a is { shell?: unknown } => typeof a === "object" && a !== null && !Array.isArray(a));
-	const callback = (args: unknown[]) => args.findLast((a): a is (...r: unknown[]) => void => typeof a === "function");
-
-	const processes: Record<string, (original: (...a: any[]) => any) => (...a: any[]) => any> = {
-		spawn: () => (file, ...rest) => (launch(file, rest[0], options(rest)?.shell), fakeChild()),
-		execFile: () => {
-			const run = (file: string, ...rest: unknown[]) => {
-				launch(file, rest[0], options(rest)?.shell);
-				const done = callback(rest);
-				if (done) setImmediate(() => done(null, "", ""));
-				return fakeChild();
-			};
-			return Object.assign(run, {
-				[promisify.custom]: (file: string, ...rest: unknown[]) => (launch(file, rest[0], options(rest)?.shell), Promise.resolve({ stdout: "", stderr: "" })),
-			});
-		},
-		exec: () => {
-			const run = (command: string, ...rest: unknown[]) => {
-				launch(command, [], true);
-				const done = callback(rest);
-				if (done) setImmediate(() => done(null, "", ""));
-				return fakeChild();
-			};
-			return Object.assign(run, { [promisify.custom]: (command: string) => (launch(command, [], true), Promise.resolve({ stdout: "", stderr: "" })) });
-		},
-		spawnSync: () => (file, ...rest) => (launch(file, rest[0], options(rest)?.shell), { pid: 0, status: 0, signal: null, stdout: "", stderr: "", output: [null, "", ""] }),
-		execFileSync: () => (file, ...rest) => (launch(file, rest[0], options(rest)?.shell), ""),
-		execSync: () => (command) => (launch(command, [], true), ""),
-		fork: () => (module, ...rest) => (launch(process.execPath, [module, ...(Array.isArray(rest[0]) ? rest[0] : [])], false), fakeChild()),
+	// The launch each child_process function makes from its arguments; exec and execSync always go through a shell.
+	const launches: Record<string, (args: unknown[]) => void> = {
+		spawn: ([file, argv, ...rest]) => launch(file, argv, options([argv, ...rest])?.shell),
+		spawnSync: ([file, argv, ...rest]) => launch(file, argv, options([argv, ...rest])?.shell),
+		execFile: ([file, argv, ...rest]) => launch(file, argv, options([argv, ...rest])?.shell),
+		execFileSync: ([file, argv, ...rest]) => launch(file, argv, options([argv, ...rest])?.shell),
+		exec: ([command]) => launch(command, [], true),
+		execSync: ([command]) => launch(command, [], true),
+		fork: ([module, argv]) => launch(process.execPath, [module, ...(Array.isArray(argv) ? argv : [])], false),
 	};
-	for (const [name, fake] of Object.entries(processes)) {
+	const results: Record<string, (args: unknown[]) => unknown> = {
+		spawn: () => fakeChild(),
+		fork: () => fakeChild(),
+		execFile: (args) => answer(args),
+		exec: (args) => answer(args),
+		spawnSync: () => ({ pid: 0, status: 0, signal: null, stdout: "", stderr: "", output: [null, "", ""] }),
+		execFileSync: () => "",
+		execSync: () => "",
+	};
+	for (const [name, record] of Object.entries(launches)) {
 		const original = (childProcess as any)[name];
-		const watched = fake(original);
-		const wrapper = function (this: unknown, ...args: unknown[]) {
-			return seen ? watched(...args) : original.apply(this, args);
+		const watched: any = function (this: unknown, ...args: unknown[]) {
+			if (!watching) return original.apply(this, args);
+			record(args);
+			return results[name](args);
 		};
-		const promised = (watched as any)[promisify.custom];
-		if (promised) {
-			const passed = original[promisify.custom];
-			(wrapper as any)[promisify.custom] = (...args: unknown[]) => (seen ? promised(...args) : passed(...args));
-		}
-		(childProcess as any)[name] = wrapper;
+		if (original[promisify.custom])
+			watched[promisify.custom] = (...args: unknown[]) => {
+				if (!watching) return original[promisify.custom](...args);
+				record(args);
+				return Promise.resolve({ stdout: "", stderr: "" });
+			};
+		(childProcess as any)[name] = watched;
 	}
 
 	// Each write and the arguments that name what it changes: a rename changes both of its paths.
@@ -101,7 +96,7 @@ export function watchEffects(writable: string) {
 		const original = target[name];
 		if (typeof original !== "function") return;
 		target[name] = function (this: unknown, ...args: unknown[]) {
-			if (seen) {
+			if (watching) {
 				const paths = targets(args).map(resolved);
 				seen.writes.push(...paths);
 				const outside = paths.find((p) => p === "fd" || !under(p, writable));
@@ -118,7 +113,7 @@ export function watchEffects(writable: string) {
 	syncBuiltinESMExports();
 
 	return {
-		/** Runs `work` with the effects recorded, and returns what it did, including what its last callbacks did. */
+		/** Runs `work`, and returns what it did, including what its last callbacks did. */
 		async during(work: () => Promise<unknown>): Promise<Seen> {
 			const now: Seen = { launches: [], writes: [] };
 			seen = now;
@@ -126,9 +121,13 @@ export function watchEffects(writable: string) {
 				await work();
 				await new Promise((settle) => setImmediate(settle));
 			} finally {
-				seen = undefined;
+				seen = stray;
 			}
 			return now;
+		},
+		stray,
+		stop() {
+			watching = false;
 		},
 	};
 }
@@ -145,8 +144,16 @@ function resolved(target: unknown): string {
 }
 
 function writing(flags: unknown): boolean {
-	if (typeof flags === "number") return (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND)) !== 0;
+	const { O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND } = fs.constants;
+	if (typeof flags === "number") return (flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND)) !== 0;
 	return typeof flags === "string" && /[wa+]/.test(flags);
+}
+
+/** What a callback-style launch answers: no output, at once, and a child that has already exited. */
+function answer(args: unknown[]) {
+	const done = args.findLast((a): a is (...r: unknown[]) => void => typeof a === "function");
+	if (done) setImmediate(() => done(null, "", ""));
+	return fakeChild();
 }
 
 /** A child process that exits 0 at once with no output, for a launch that is recorded and never run. */
