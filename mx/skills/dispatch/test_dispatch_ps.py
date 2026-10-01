@@ -350,10 +350,32 @@ def elsewhere(slug: str, base: str = "agents/master", detail: str = "on the othe
 def test_the_table_names_its_columns_and_the_worker(home: Path, tmux: dict[str, str]):
     out = dispatch(tmux, home, "ps")
     assert out.returncode == 0, out.stderr
-    header, row = out.stdout.splitlines()
+    header, row, gap, tally = out.stdout.splitlines()
     assert header.split() == ["HOST", "BASE", "TICKET", "STATE", "AGE", "IDLE", "DETAIL"]
     assert row.split()[:4] == ["local", "agents/master", "hypofuzz-default", "exited"]
     assert re.fullmatch(r"\d+s", row.split()[4]), "spawned seconds ago"
+    assert (gap, tally) == ("", "1 exited")
+    assert "\x1b[" not in out.stdout, "no color into a pipe unless asked"
+
+
+def test_under_watch_the_table_is_cut_to_its_width_and_painted_when_asked(home: Path, tmux: dict[str, str]):
+    """`watch` runs ps with no terminal and the width in COLUMNS, and shows color only with
+    `watch -c` and `ps --color`. A running worker silent for a quarter hour is painted apart from
+    one that is not."""
+    far = {"agent@far": (elsewhere("quiet-one")[0].replace("\t5\t", "\t1000\t") + "\n"
+                         + elsewhere("busy-one", detail="x" * 200)[0], 0)}
+    cut = dispatch({**tmux, "COLUMNS": "90"}, home, "ps", hosts="local agent@far", answers=far)
+    assert cut.returncode == 0, cut.stderr
+    assert max(map(len, cut.stdout.splitlines())) == 90
+    assert cut.stdout.splitlines()[-1] == "2 running  1 exited"
+
+    painted = dispatch({**tmux, "COLUMNS": "90"}, home, "ps", "--color", hosts="local agent@far", answers=far)
+    lines = {line.split()[2]: line for line in painted.stdout.splitlines() if "-one" in line}
+    assert "\x1b[1;32mrunning" in lines["busy-one"]
+    assert "\x1b[33m" in lines["quiet-one"] and "\x1b[33m" not in lines["busy-one"]
+    assert max(len(re.sub(r"\x1b\[[0-9;]*m", "", line)) for line in painted.stdout.splitlines()) == 90
+
+    assert "\x1b[" not in dispatch({**tmux, "NO_COLOR": "1"}, home, "ps", "--color", hosts="local agent@far", answers=far).stdout
 
 
 def test_the_hosts_are_the_registers_and_the_repos_runs_from_anywhere_in_it(home: Path, tmux: dict[str, str]):
@@ -505,7 +527,7 @@ def test_this_machine_is_one_host_under_both_its_names(home: Path, tmux: dict[st
 
     out = dispatch(tmux, home, "ps", hosts=SELF, answers={SELF: elsewhere("reached-by-ssh")})
     assert out.returncode == 0, out.stderr
-    (_, row) = out.stdout.splitlines()
+    (_, row, _, _) = out.stdout.splitlines()
     assert row.split()[:3] == [SELF, "agents/master", "hypofuzz-default"]
     assert ssh_calls(home) == []
 

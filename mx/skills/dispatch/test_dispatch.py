@@ -1347,7 +1347,7 @@ def ps_rows(toy: Path, env: dict[str, str] | None = None) -> list[list[str]]:
     listed = subprocess.run([str(DISPATCH), "ps"], cwd=toy, capture_output=True, text=True,
                             env=env or environment(toy), timeout=120)
     assert listed.returncode == 0, listed.stderr
-    return [row.split() for row in listed.stdout.splitlines()[1:]]
+    return [row.split() for row in listed.stdout.splitlines()[1:-2]]  # less the header and the tally
 
 
 def test_a_fuzz_run_is_one_job_on_the_host_it_designates_with_its_database_beside_the_worktree(
