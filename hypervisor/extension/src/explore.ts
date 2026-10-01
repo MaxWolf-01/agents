@@ -9,7 +9,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
  * The denied roots under home, as ruled under `hypervisor-property-checks` D5: keys, credential stores, browser
  * profiles and caches. `/proc` is denied too, since a process's environment there can hold a token.
  */
-export const DENIED = [
+const DENIED = [
 	".ssh",
 	".gnupg",
 	".password-store",
