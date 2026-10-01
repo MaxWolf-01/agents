@@ -24,6 +24,8 @@ after(() => {
 const { hypervisor } = await import("../../src/index.ts");
 const { exploreTools } = await import("../../src/explore.ts");
 
+/** How long a tool or handler runs before the check moves on; what it does after that is stray. */
+const LIMIT = 1000;
 const MEMORY = ["zoom", "recall", "raw"];
 /** The parent's closed set of tools. */
 const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
@@ -69,21 +71,22 @@ test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, 
 		const extension = await loaded(flipped);
 		assert.deepEqual(harnessProblems(extension.atLoad, store), [], "loading the extension");
 		for (const [event, handlers] of extension.handlers) {
-			const seen = await effects.during(() => Promise.all(handlers.map((handler) => within(1000, async () => handler(standIn({ type: event }), extension.context)))));
+			const seen = await effects.during(() => Promise.all(handlers.map((handler) => within(LIMIT, async () => handler(standIn({ type: event }), extension.context)))));
 			assert.deepEqual(harnessProblems(seen, store), [], `its ${event} handler`);
 		}
 		for (const tool of extension.tools.values()) {
 			await fc.assert(
 				fc.asyncProperty(paramsFor(tool.parameters, HOSTILE), async (params) => {
-					const seen = await effects.during(() => execute(tool, params, extension.context, 1000));
+					const seen = await effects.during(() => execute(tool, params, extension.context, LIMIT));
 					assert.deepEqual(toolProblems(seen, store, strings(params)), [], `${tool.name} ${JSON.stringify(params)}`);
 				}),
 				{ numRuns: 25 },
 			);
 		}
 	}
-	// The last run's tool may still be going: wait out its time before reading what came after it.
-	await new Promise((settle) => setTimeout(settle, 1100));
+	// The last run's tool may still be going: give it as long again before reading what came after the limits. A
+	// tool still running past that reaches no assertion.
+	await new Promise((settle) => setTimeout(settle, LIMIT));
 	assert.deepEqual(effects.stray, { launches: [], writes: [] }, "effects after a tool's or handler's time ran out");
 });
 

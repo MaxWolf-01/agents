@@ -13,8 +13,9 @@ const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish
 const STORE = path.resolve(import.meta.dirname, "../../../store/hv_store.py");
 
 /**
- * What the extension may not do, loading or handling an event: write outside the store, run a shell, or ask tmux,
- * claude or uv for what a tool may not. It may start other programs: a handler is the harness, not the model's tool.
+ * What the extension may not do, loading or handling an event: write outside the store, run one of the shells and
+ * runners above, or ask tmux, claude or uv for what a tool may not. Any other program a handler starts is its slice's
+ * review to read: a handler is the harness, not the model's tool.
  */
 export function harnessProblems(seen: Seen, store: string): string[] {
 	const ours = (l: Launch) => PROGRAMS.has(path.basename(l.program));
@@ -86,7 +87,7 @@ const TMUX: Record<string, string> = {
 	killw: "t",
 };
 // The ones that start a program in a pane. tmux runs a command given as one argument through `sh -c`, and one given
-// as several directly.
+// as several directly; one plain word is the same either way.
 const STARTS = new Set(["new-session", "new", "new-window", "neww"]);
 
 function tmuxProblems(args: string[], given: string[]): string[] {
@@ -95,19 +96,16 @@ function tmuxProblems(args: string[], given: string[]): string[] {
 	const problems: string[] = [];
 	for (const [name, ...rest] of commands(global.rest)) {
 		if (!name) continue;
-		if (!(name in TMUX)) {
+		if (!Object.hasOwn(TMUX, name)) {
 			problems.push(`tmux ${name} is not among the commands a tool may run`);
 			continue;
 		}
 		const command = STARTS.has(name) ? afterOptions(rest, TMUX[name]).rest : [];
 		// tmux reads a command's arguments as formats, all but the program it starts, and runs a `#(...)` in a
 		// format through a shell; `##` is a literal `#`.
-		for (const arg of rest.slice(0, rest.length - command.length))
-			if (arg.replaceAll("##", "").includes("#(") && given.some((text) => text.includes("#(") && arg.includes(text))) problems.push(`tmux expands the model's ${arg} through a shell`);
-		if (!STARTS.has(name)) continue;
-		if (command.length === 1 && given.some((text) => command[0].includes(text))) problems.push(`tmux ${name} hands the model's text to a shell: ${command[0]}`);
-		const words = command.length === 1 ? command[0].trim().split(/\s+/) : command;
-		if (words[0]) problems.push(...launchProblems({ program: words[0], args: words.slice(1), shell: false }, given));
+		for (const arg of rest.slice(0, rest.length - command.length)) if (arg.replaceAll("##", "").includes("#(")) problems.push(`tmux runs the format ${arg} through a shell`);
+		if (command.length === 1 && /[^\w./-]/.test(command[0])) problems.push(`tmux ${name} runs ${command[0]} through sh -c`);
+		else if (command.length) problems.push(...launchProblems({ program: command[0], args: command.slice(1), shell: false }, given));
 	}
 	return problems;
 }
@@ -152,7 +150,10 @@ function claudeProblems(args: string[]): string[] {
 
 const UV_VALUED = new Set(["--with", "--with-editable", "--with-requirements", "--python", "-p", "--project", "--directory", "--env-file", "--extra", "--group", "--index", "--default-index", "--package", "--cache-dir", "--config-file"]);
 
-/** uv starts the store and nothing else, `uv run [options] <the store's hv_store.py> ...`, and no option of it comes from the model. */
+/**
+ * uv starts the store and nothing else, `uv run [options] <the store's hv_store.py, absolute> ...`, and no option of it
+ * comes from the model.
+ */
 function uvProblems(args: string[], given: string[]): string[] {
 	if (args[0] !== "run") return [`uv ${args.join(" ")}: only the store runs through uv`];
 	let i = 1;
