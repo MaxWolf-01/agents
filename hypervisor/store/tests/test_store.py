@@ -5,6 +5,7 @@ import contextlib
 import datetime
 import io
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -70,7 +71,8 @@ def test_a_text_over_512_bytes_is_stored_whole_in_the_sidecar_and_read_back_whol
         _, view, _ = run(store, "view")
         entry = view.split("\n")[2]
         assert entry.startswith("2026-10-01T14:07 #1 ") and entry.endswith(f"[raw: {len(text.encode())} bytes]")
-        assert len(entry.split(" ", 2)[2].encode()) <= 512
+        # The gist holds 512 bytes; its marker sits outside them, as the stamp does.
+        assert len(entry.split(" ", 2)[2].removesuffix(f" [raw: {len(text.encode())} bytes]").encode()) <= 512
         assert view.split("\n")[3] == "2026-10-01T14:07 #2 after"
 
 
@@ -120,6 +122,30 @@ def test_recall_past_its_cap_keeps_the_newest_matches_and_says_how_many_matched(
     assert 0 < kept < 60 and len(printed) == kept + 1
     assert [line.split()[1] for line in printed[:-1]] == [f"#{i}" for i in range(60 - kept, 60)]
     assert len(out.encode()) < 20_000 + 600
+
+
+# ---------------------------------------------------------------- the gist
+
+
+@pytest.mark.parametrize("gist", ["the fork's gist", "g" * 512])
+def test_a_given_gist_is_logged_in_place_of_a_text_the_entry_cannot_hold(store: Path, gist: str) -> None:
+    text = "a final answer\n" + "x" * 600
+    with mock.patch.object(hv_store, "now", return_value=AT):
+        assert run(store, "append", "--gist", gist, stdin=text)[:2] == (0, "#0\n")
+    assert run(store, "view")[1].split("\n")[1] == f"2026-10-01T14:07 #0 {gist} [raw: {len(text.encode())} bytes]"
+    assert run(store, "raw", 0)[1] == text + "\n"
+
+
+def test_a_gist_is_unused_when_the_entry_holds_the_text_itself(store: Path) -> None:
+    assert run(store, "append", "--gist", "a gist", stdin="short enough")[0] == 0
+    assert run(store, "zoom", "0-1")[1].endswith(" #0 short enough\n")
+
+
+@pytest.mark.parametrize(("gist", "why"), [("two\nlines", "one line"), ("g" * 513, "Too long"), ("ü" * 257, "Too long")])
+def test_a_gist_a_line_cannot_hold_is_refused_and_nothing_is_logged(store: Path, gist: str, why: str) -> None:
+    code, _, err = run(store, "append", "--gist", gist, stdin="x" * 600)
+    assert code == 1 and why in err
+    assert run(store, "view")[1].count("\n") == 1
 
 
 # ---------------------------------------------------------------- import
@@ -216,6 +242,48 @@ def test_what_due_lists_lands_in_any_order(n: int, rnd) -> None:
                 written.append(block)
         # Every complete aligned block, from the definition, is written once.
         assert sorted(written) == sorted(f"{k * s}-{(k + 1) * s - 1}" for s in (2**e for e in range(1, 8)) for k in range(n // s))
+
+
+def test_a_burst_leaves_its_whole_backlog_due_in_one_round_and_written_in_parallel(store: Path) -> None:
+    """A turn that logs a burst of tool calls: every block its entries complete, up to RAW_MAX, is
+    due at once, and the forks write them concurrently, each its own process, in no set order."""
+    for i in range(16):
+        run(store, "append", stdin=f"tool call {i}")
+    blocks = run(store, "due")[1].split()
+    assert sorted(blocks) == sorted(f"{k * s}-{(k + 1) * s - 1}" for s in (2, 4, 8, 16) for k in range(16 // s))
+    random.Random(16).shuffle(blocks)
+    forks = [
+        subprocess.Popen([sys.executable, HERE.parent / "hv_store.py", "--dir", store, "compress", block], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        for block in blocks
+    ]
+    for block, fork in zip(blocks, forks):
+        _, err = fork.communicate(f"summary of {block}".encode(), timeout=120)
+        assert fork.returncode == 0, err
+    assert run(store, "due")[1] == ""
+    for block in blocks:
+        lo, hi = map(int, block.split("-"))
+        if hi > lo + 1:
+            mid = (lo + hi + 1) // 2
+            assert [line.split(" ", 2)[2] for line in run(store, "zoom", block)[1].splitlines()] == [
+                f"summary of {lo}-{mid - 1}" if mid - lo > 1 else f"tool call {lo}",
+                f"summary of {mid}-{hi}" if mid - lo > 1 else f"tool call {hi}",
+            ]
+    assert run(store, "view", "--budget", 1)[1].split("\n")[1].endswith(" #0-15 summary of 0-15")
+
+
+def test_a_block_written_early_is_read_before_the_blocks_ahead_of_it_land(store: Path) -> None:
+    for i in range(8):
+        run(store, "append", stdin=f"entry {i}")
+    assert run(store, "compress", "4-5", stdin="early")[0] == 0
+    assert "4-5" not in run(store, "due")[1].split()
+    assert run(store, "zoom", "4-7")[1].split("\n")[0].endswith(" #4-5 early")
+    assert run(store, "compress", "4-5", stdin="again")[2].endswith("already written.\n")
+    for block in ("2-3", "0-1"):  # 0-1 lands last, and moves the blocks held behind it into the tree
+        assert run(store, "compress", block, stdin=f"{block} text")[0] == 0
+    assert run(store, "compress", "6-7", stdin="6-7 text")[0] == 0
+    assert [line.split(" ", 2)[2] for line in run(store, "zoom", "0-7")[1].splitlines()] == ["(not compressed yet)", "(not compressed yet)"]
+    assert [line.split(" ", 2)[2] for line in run(store, "zoom", "4-7")[1].splitlines()] == ["early", "6-7 text"]
+    assert not any((store / "AHEAD").iterdir()), "a block left held once the blocks before it landed"
 
 
 def test_the_view_is_refused_while_a_compression_it_needs_is_outstanding(store: Path) -> None:
