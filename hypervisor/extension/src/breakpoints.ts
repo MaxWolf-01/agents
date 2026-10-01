@@ -29,9 +29,8 @@ export function placeBreakpoints(payload: unknown): unknown {
 
 /**
  * Where the view's lines are likeliest to match the next turn's: after the last line of a block of at least 128
- * entries, and of at least 32. A view of single entries only grows at its end, so all of it holds. Measured over
- * generated logs of 300 to 15,000 entries at 4 to 16 entries a turn, these keep 10 to 19% of the view's lines cached
- * from one turn to the next; the best possible split keeps 27 to 41%.
+ * entries, and of at least 32. A view of single entries only grows at its end, so all of it holds. Past the budget,
+ * the cover is recomputed for every log length, so much of the view moves from one turn to the next wherever it is split.
  */
 export function stableEnds(lines: string[]): number[] {
 	const sizes = lines.map((line) => {

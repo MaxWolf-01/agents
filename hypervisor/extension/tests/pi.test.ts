@@ -13,6 +13,7 @@ const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi
 const EXTENSION = path.resolve(import.meta.dirname, "../src/index.ts");
 const TURNS = 10;
 const LONG = `turn-3-marker ${"a long message that no entry holds as it is. ".repeat(20)}`;
+const LONG_ANSWER = `a long answer to turn 7: ${"more than an entry holds. ".repeat(30)}`;
 /** What max says in each turn: one carries a text too long for an entry, one asks for a tool. */
 const said = (n: number) => (n === 3 ? LONG : n === 5 ? `turn-5-marker please zoom into 0-1` : `turn-${n}-marker hello`);
 
@@ -26,10 +27,10 @@ function answer(request: Request): Reply {
 	const last = textOf(request.messages.at(-1)!);
 	const block = /Write the compression of entries #(\S+)/.exec(last);
 	if (block) return { text: `compressed ${block[1]}` };
-	if (last.includes("is too long for one entry")) return { text: "turn-3-marker: max sent a long message, its gist" };
+	if (last.includes("is too long for one entry")) return { text: last.includes("Max's message") ? "turn-3-marker: max sent a long message, its gist" : "the gist of a long answer" };
 	sent.push({ turn, request });
 	if (last.includes("please zoom")) return { tool: "zoom", input: { block: "0-1" } };
-	return { text: `noted turn ${turn}` };
+	return { text: turn === 7 ? LONG_ANSWER : `noted turn ${turn}` };
 }
 
 before(async () => {
@@ -110,23 +111,24 @@ test("the system prompt is the hypervisor's", () => {
 	for (const { request } of sent) assert.ok(request.system?.some((b) => b.text === prompt.trim() || b.text === prompt));
 });
 
-test("a fork sends the turn's last request as it went, with its ask after it", () => {
+test("a fork sends the turn's last request as it went, then the turn's answer and its ask", () => {
 	const forks = anthropic.requests.filter((r) => /Write the compression|is too long for one entry/.test(textOf(r.messages.at(-1)!)));
 	assert.ok(forks.length > 0);
 	for (const fork of forks) {
-		const parent = sent.filter(({ request }) => JSON.stringify(request.messages.slice(0, -1)) === JSON.stringify(fork.messages.slice(0, -1)));
-		assert.ok(parent.length, "a request whose messages the fork's begin with");
-		const { request } = parent.at(-1)!;
-		const [mine, theirs] = [fork.messages.at(-1)!.content, request.messages.at(-1)!.content] as Request["messages"][number]["content"][];
-		assert.deepEqual(Array.isArray(mine) && mine.slice(0, -1), theirs, "the last message as sent, the ask added at its end");
+		const parent = sent.filter(({ request }) => JSON.stringify(request.messages) === JSON.stringify(fork.messages.slice(0, -2)));
+		assert.equal(parent.length, 1, "the request whose messages the fork's begin with");
+		const { request, turn } = parent[0];
+		assert.deepEqual(fork.messages.at(-2), { role: "assistant", content: [{ type: "text", text: turn === 7 ? LONG_ANSWER : `noted turn ${turn}` }] });
 		assert.deepEqual({ ...fork, messages: [] }, { ...request, messages: [] }, "system prompt, tools and options as sent");
 	}
+	assert.ok(forks.some((f) => textOf(f.messages.at(-2)!) === LONG_ANSWER && textOf(f.messages.at(-1)!).includes("is too long")), "the long answer's gist is asked with the answer before it");
 });
 
 test("the log holds every turn: the long message by its gist, with its whole text kept raw", () => {
 	const log = readFileSync(path.join(store, "log", "LOG.txt"), "utf8");
 	for (let n = 1; n <= TURNS; n++) assert.ok(log.includes(`turn-${n}-marker`), `turn ${n}`);
 	assert.ok(log.includes("turn-3-marker: max sent a long message, its gist [raw:"));
+	assert.ok(log.includes("the gist of a long answer [raw:"));
 });
 
 test("each fork's calls are logged with the tokens they read from cache and wrote", () => {

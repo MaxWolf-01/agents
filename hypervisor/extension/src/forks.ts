@@ -1,11 +1,15 @@
 import type { Api, AssistantMessage, Model, Usage } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { ENTRY } from "./entries.ts";
 
-const ENTRY = 512;
+/** How long one call of a fork may take before it counts as failed. */
+const PATIENCE = 5 * 60_000;
 
-/** A finished turn as a fork continues it: the last request the turn sent, and what sends another. */
+/** A finished turn as a fork continues it: the last request the turn sent, its answer to that, and what sends another. */
 export interface Finished {
 	payload: Payload;
+	/** The text of the reply to `payload`, when the turn ended on one. */
+	answer?: string;
 	model: Model<Api>;
 	models: Pick<ModelRegistry, "complete">;
 	sessionId?: string;
@@ -29,15 +33,16 @@ export function gistAsk(whose: string): string {
 }
 
 /**
- * The line a fork of the finished turn writes for `ask`. The fork sends the turn's last request as it went, with the
- * ask added at its end, so everything before the ask is read from the cache that request wrote. A reply that is no
+ * The line a fork of the finished turn writes for `ask`. The fork sends the turn's last request as it went, then the
+ * turn's answer and the ask, so everything before them is read from the cache that request wrote. A reply that is no
  * line of at most 512 bytes is asked for again once; `calls` holds every call, the failed ones too.
  */
 export async function fork(finished: Finished, ask: string, calls: Call[] = []): Promise<{ line: string; calls: Call[] }> {
 	for (const attempt of [ask, `${ask}\n\nYour last reply was not one line of at most ${ENTRY} bytes. Reply with that line alone.`]) {
 		const started = Date.now();
 		const reply: AssistantMessage = await finished.models.complete(finished.model, { messages: [] }, {
-			onPayload: () => withAsk(finished.payload, attempt),
+			onPayload: () => withAsk(finished, attempt),
+			signal: AbortSignal.timeout(PATIENCE),
 			...(finished.sessionId ? { sessionId: finished.sessionId } : {}),
 		});
 		const { input, output, cacheRead, cacheWrite } = reply.usage;
@@ -49,12 +54,13 @@ export async function fork(finished: Finished, ask: string, calls: Call[] = []):
 	throw new Error(`no line of at most ${ENTRY} bytes in two replies`);
 }
 
-/** The request with `ask` as a last text of its last user message, or as a user message of its own after an answer. */
-function withAsk(payload: Payload, ask: string): Payload {
+/** The request followed by the answer and `ask`, or, for a turn that ended on no answer, with `ask` its last text. */
+function withAsk({ payload, answer }: Finished, ask: string): Payload {
 	const messages = [...payload.messages];
 	const last = messages.at(-1);
 	const text = { type: "text", text: ask };
-	if (last?.role === "user") messages[messages.length - 1] = { ...last, content: [...(typeof last.content === "string" ? [{ type: "text", text: last.content }] : last.content), text] };
+	if (answer) messages.push({ role: "assistant", content: [{ type: "text", text: answer }] }, { role: "user", content: [text] });
+	else if (last?.role === "user") messages[messages.length - 1] = { ...last, content: [...(typeof last.content === "string" ? [{ type: "text", text: last.content }] : last.content), text] };
 	else messages.push({ role: "user", content: [text] });
 	return { ...payload, messages };
 }

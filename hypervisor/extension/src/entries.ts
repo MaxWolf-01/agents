@@ -6,7 +6,8 @@ export interface Entry {
 	whose?: string;
 }
 
-const ENTRY = 512;
+/** Bytes of text one entry holds, as the store's `--help` says. */
+export const ENTRY = 512;
 
 /**
  * A turn's messages as entries, in order: each message max sent, each text of the agent's, and each tool call with its
@@ -15,7 +16,10 @@ const ENTRY = 512;
 export function entriesOf(messages: AgentMessage[]): Entry[] {
 	const results = new Map(messages.flatMap((m) => (m.role === "toolResult" ? [[m.toolCallId, m] as const] : [])));
 	return messages.flatMap((message): Entry[] => {
-		if (message.role === "user") return [said(`max: ${textOf(message.content)}`, "max's message that opened this turn")];
+		if (message.role === "user") {
+			const words = textOf(message.content);
+			return [said(`max: ${words}`, `max's message that begins "${words.trim().slice(0, 80)}"`)];
+		}
 		if (message.role !== "assistant") return [];
 		const words = textOf(message.content.filter((part) => part.type === "text"));
 		const calls = message.content.flatMap((part) => (part.type === "toolCall" ? [part] : []));

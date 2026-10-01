@@ -17,8 +17,11 @@ mkdir -p "$store/pi"
 env=(-e "HV_STORE=$store" -e "PI_CODING_AGENT_DIR=$store/pi")
 [[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && env+=(-e "ANTHROPIC_OAUTH_TOKEN=$ANTHROPIC_OAUTH_TOKEN")
 
-exec tmux new-session -A -s hypervisor -c "$HOME" "${env[@]}" \
-	node "$extension/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
-	--continue --model anthropic/claude-opus-5-5 \
-	--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
-	-e "$extension/src/index.ts"
+if ! tmux has-session -t =hypervisor 2>/dev/null; then
+	tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" \
+		node "$extension/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
+		--continue --model anthropic/claude-opus-5-5 \
+		--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
+		-e "$extension/src/index.ts"
+fi
+if [[ -n ${TMUX:-} ]]; then exec tmux switch-client -t =hypervisor; else exec tmux attach -t =hypervisor; fi

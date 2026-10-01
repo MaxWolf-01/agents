@@ -14,25 +14,39 @@ export interface ForkRecord {
 	error?: string;
 }
 
+/** A turn the log could not take, from the entry where it stopped. */
+export interface LostRecord {
+	at: string;
+	error: string;
+	entries: string[];
+}
+
+export interface Journal {
+	fork(record: ForkRecord): Promise<void>;
+	lost(record: LostRecord): Promise<void>;
+}
+
 /**
- * The log and the view across turns. A finished turn is logged, then its due compressions are written, all of one
- * round in parallel; turns are taken one after another. The view waits for the turn before it to be logged, and for
- * a compression only while the store refuses to render without it.
+ * The log and the view across turns. A finished turn is logged once the turn before it is, and its due compressions
+ * are then written, all of one round in parallel, one round after another across turns. The view waits for the turns
+ * handed over to be logged, and for a compression only while the store refuses to render without it.
  */
-export function memory(store: Store, record: (fork: ForkRecord) => Promise<void>) {
+export function memory(store: Store, journal: Journal) {
 	let logged: Promise<void> = Promise.resolve();
 	let written: Promise<void> = Promise.resolve();
 	const progress = signal();
+	/** Turns lost since the last view, which the next view says. */
+	const lost: string[] = [];
 
 	async function forked(kind: ForkRecord["kind"], of: string, finished: Finished, ask: string): Promise<string | undefined> {
 		const calls: Call[] = [];
 		const at = new Date().toISOString();
 		try {
 			const { line } = await fork(finished, ask, calls);
-			await record({ at, kind, of, calls, line });
+			await journal.fork({ at, kind, of, calls, line });
 			return line;
 		} catch (error) {
-			await record({ at, kind, of, calls, error: String(error) });
+			await journal.fork({ at, kind, of, calls, error: String(error) });
 			return undefined;
 		}
 	}
@@ -40,7 +54,16 @@ export function memory(store: Store, record: (fork: ForkRecord) => Promise<void>
 	async function log(messages: AgentMessage[], finished: Finished | undefined) {
 		const entries = entriesOf(messages);
 		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", e.text.slice(0, 80), finished, gistAsk(e.whose)) : undefined)));
-		for (const [i, entry] of entries.entries()) await store.append(entry.text, gists[i]);
+		for (const [i, entry] of entries.entries()) {
+			try {
+				await store.append(entry.text, gists[i]);
+			} catch (error) {
+				const at = new Date().toISOString();
+				lost.push(`(not logged: the turn ending ${at.slice(0, 16)}, from its entry "${entry.text.slice(0, 80)}" on: ${error})`);
+				await journal.lost({ at, error: String(error), entries: entries.slice(i).map((e) => e.text) });
+				return;
+			}
+		}
 	}
 
 	/** Every compression `due` lists, round after round, until none is due or a round writes none. */
@@ -63,21 +86,27 @@ export function memory(store: Store, record: (fork: ForkRecord) => Promise<void>
 	return {
 		/** Logs a finished run's messages and writes the compressions that become due; returns at once. */
 		finish(messages: AgentMessage[], finished: Finished | undefined) {
-			logged = written.then(() => log(messages, finished));
-			written = logged.then(() => compress(finished)).catch(() => {}).finally(() => progress.fire());
-			logged = logged.catch(() => {});
+			logged = logged.then(() => log(messages, finished)).catch(() => {});
+			written = Promise.all([written, logged])
+				.then(() => compress(finished))
+				.catch(() => {})
+				.finally(() => progress.fire());
 		},
-		/** The view to wake to, its header last; the store's refusal in its place when what it needs cannot be written. */
+		/**
+		 * The view to wake to, its header last, after a line for each turn lost since the last view; the store's refusal
+		 * in its place when what it needs cannot be written.
+		 */
 		async view(): Promise<string> {
 			await logged;
+			const notes = lost.splice(0);
 			for (;;) {
 				const waited = Promise.race([written.then(() => "done"), progress.next]);
 				try {
 					const [header, ...lines] = (await store.view()).trimEnd().split("\n");
-					return [...lines, header].join("\n");
+					return [...lines, ...notes, header].join("\n");
 				} catch (error) {
 					if (!(error instanceof Refused)) throw error;
-					if ((await waited) === "done") return `(no view: ${error.message})`;
+					if ((await waited) === "done") return [`(no view: ${error.message})`, ...notes].join("\n");
 				}
 			}
 		},
