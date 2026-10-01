@@ -73,13 +73,13 @@ def test_no_command_changes_an_earlier_entry_with_gists_and_held_blocks(first: l
         logged = len(first)
         before = entries(store, logged)
         for args, stdin in commands:
-            if args[0] == "compress" and args[1].startswith("<due"):  # `<due>` is the first, `<due N>` the Nth
+            if len(args) == 2 and args[0] == "compress" and str(args[1]).startswith("<due"):  # `<due>` is the first, `<due N>` the Nth
                 due = run(store, "due")[1].split()
                 args = ("compress", due[int(args[1][5:-1] or 0) % len(due)]) if due else ("due",)
             code, _ = run(store, *args, stdin=stdin)
             if args == ("append",):
                 assert code == 0, f"append refused {stdin!r}"
-            if args[0] == "append" and code == 0:
+            if args[:1] == ("append",) and code == 0:
                 logged += 1
             after = entries(store, logged)
             changed = [key for key in before if not kept(key, before[key], after[key])]
