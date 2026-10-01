@@ -1,8 +1,10 @@
 // lifelong-hypervisor#P5 at the explorer's read tools, over a fixture home: every denied root holds a secret in its
 // files' content and in a file's name, and symlinks lead into the denied roots from the open part of home and from
-// outside it. A process holds the secret in its environment, under /proc. Paths into a denied root are generated in
-// every spelling that reaches it, and searches and listings sweep the parts around them. memex runs as a stand-in that
-// names, among the notes it finds, the path it was asked for and notes in denied roots, and quotes the secret.
+// outside it. A process holds the secret in its environment, under /proc; procfs gives its files a size of 0, which
+// the read tools read as empty, so what closes /proc is the check that a path there is refused, not the secret. Paths
+// into a denied root are generated in every spelling that reaches it, and searches and listings sweep the parts around
+// them. memex runs as a stand-in that names, among the notes it finds, the path it was asked for and notes in denied
+// roots, and quotes the secret.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
