@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { placeBreakpoints } from "./breakpoints.ts";
+import { saidIn } from "./entries.ts";
 import type { Finished } from "./forks.ts";
 import { memory } from "./memory.ts";
 import { store as openStore } from "./store.ts";
@@ -77,7 +78,8 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		pi.on("agent_end", async (event, ctx) => {
 			if (!Array.isArray(event.messages)) return;
 			const last = event.messages.at(-1);
-			const answer = last?.role === "assistant" && last.stopReason !== "error" && last.stopReason !== "aborted" ? last.content.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n") : "";
+			const answered = last?.role === "assistant" && last.stopReason !== "error" && last.stopReason !== "aborted";
+			const answer = answered ? saidIn(last) : "";
 			const finished = sent && ctx.model ? { payload: sent, answer, model: ctx.model, models: ctx.modelRegistry, sessionId: ctx.sessionManager.getSessionId() } : undefined;
 			// A run that fails hands over its failure alone, without the message that started it.
 			const asked = !event.messages.some((m) => m.role === "user") && prompt ? [{ role: "user" as const, content: prompt, timestamp: start ?? Date.now() }] : [];

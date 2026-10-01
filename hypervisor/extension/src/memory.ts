@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { entriesOf } from "./entries.ts";
+import { entriesOf, head } from "./entries.ts";
 import { type Call, compressionAsk, type Finished, fork, gistAsk } from "./forks.ts";
 import { Refused, type Store } from "./store.ts";
 
@@ -53,13 +53,13 @@ export function memory(store: Store, journal: Journal) {
 
 	async function log(messages: AgentMessage[], finished: Finished | undefined) {
 		const entries = entriesOf(messages);
-		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", e.text.slice(0, 80), finished, gistAsk(e.whose)) : undefined)));
+		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", head(e.text), finished, gistAsk(e.whose)) : undefined)));
 		for (const [i, entry] of entries.entries()) {
 			try {
 				await store.append(entry.text, gists[i]);
 			} catch (error) {
 				const at = new Date().toISOString();
-				lost.push(`(not logged: the turn ending ${at.slice(0, 16)}, from its entry "${entry.text.slice(0, 80)}" on: ${error})`);
+				lost.push(`(not logged: the turn ending ${at.slice(0, 16)}, from its entry "${head(entry.text)}" on: ${error})`);
 				await journal.lost({ at, error: String(error), entries: entries.slice(i).map((e) => e.text) });
 				return;
 			}
@@ -93,8 +93,8 @@ export function memory(store: Store, journal: Journal) {
 				.finally(() => progress.fire());
 		},
 		/**
-		 * The view to wake to, its header last, after a line for each turn lost since the last view; the store's refusal
-		 * in its place when what it needs cannot be written.
+		 * The view to wake to, its header last, after a line for each turn lost since the last view, which the budget
+		 * does not count; the store's refusal in its place when what it needs cannot be written.
 		 */
 		async view(): Promise<string> {
 			await logged;
@@ -105,7 +105,10 @@ export function memory(store: Store, journal: Journal) {
 					const [header, ...lines] = (await store.view()).trimEnd().split("\n");
 					return [...lines, ...notes, header].join("\n");
 				} catch (error) {
-					if (!(error instanceof Refused)) throw error;
+					if (!(error instanceof Refused)) {
+						lost.unshift(...notes);
+						throw error;
+					}
 					if ((await waited) === "done") return [`(no view: ${error.message})`, ...notes].join("\n");
 				}
 			}

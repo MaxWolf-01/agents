@@ -29,8 +29,8 @@ export function placeBreakpoints(payload: unknown): unknown {
 
 /**
  * Where the view's lines are likeliest to match the next turn's: after the last line of a block of at least 128
- * entries, and of at least 32. A view of single entries only grows at its end, so all of it holds. Past the budget,
- * the cover is recomputed for every log length, so much of the view moves from one turn to the next wherever it is split.
+ * entries, and of at least 32. A view of single entries only grows at its end, so all of it holds; past the budget,
+ * the store's cover is recomputed for every log length.
  */
 export function stableEnds(lines: string[]): number[] {
 	const sizes = lines.map((line) => {

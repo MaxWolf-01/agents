@@ -14,7 +14,7 @@ const EXTENSION = path.resolve(import.meta.dirname, "../src/index.ts");
 const TURNS = 10;
 const LONG = `turn-3-marker ${"a long message that no entry holds as it is. ".repeat(20)}`;
 const LONG_ANSWER = `a long answer to turn 7: ${"more than an entry holds. ".repeat(30)}`;
-/** What max says in each turn: one carries a text too long for an entry, one asks for a tool. */
+/** What max says in each turn: one carries a text too long for an entry, one asks for a tool and is steered meanwhile. */
 const said = (n: number) => (n === 3 ? LONG : n === 5 ? `turn-5-marker please zoom into 0-1` : `turn-${n}-marker hello`);
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-pi-")));
@@ -29,7 +29,7 @@ function answer(request: Request): Reply {
 	if (block) return { text: `compressed ${block[1]}` };
 	if (last.includes("is too long for one entry")) return { text: last.includes("Max's message") ? "turn-3-marker: max sent a long message, its gist" : "the gist of a long answer" };
 	sent.push({ turn, request });
-	if (last.includes("please zoom")) return { tool: "zoom", input: { block: "0-1" } };
+	if (last.includes("please zoom")) return { tool: "zoom", input: { block: "0-1" }, delay: 1000 };
 	return { text: turn === 7 ? LONG_ANSWER : `noted turn ${turn}` };
 }
 
@@ -44,7 +44,7 @@ before(async () => {
 		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
 		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store }, stdio: ["pipe", "pipe", "inherit"] },
 	);
-	for (turn = 1; turn <= TURNS; turn++) await prompt(pi, said(turn));
+	for (turn = 1; turn <= TURNS; turn++) await prompt(pi, said(turn), turn === 5 ? "turn-5-steer" : undefined);
 	pi.stdin!.end();
 	await new Promise((resolve) => pi.on("close", resolve));
 });
@@ -53,8 +53,9 @@ after(async () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-/** Sends one prompt and resolves once pi has settled. */
-function prompt(pi: ChildProcess, message: string): Promise<void> {
+/** Sends one prompt, and `steer` while its first reply is on the way, and resolves once pi has settled. */
+function prompt(pi: ChildProcess, message: string, steer?: string): Promise<void> {
+	if (steer) setTimeout(() => pi.stdin!.write(`${JSON.stringify({ type: "steer", message: steer })}\n`), 300);
 	return new Promise((resolve, reject) => {
 		let buffer = "";
 		const read = (chunk: Buffer) => {
@@ -90,6 +91,13 @@ test("lifelong-hypervisor#P1: every request carries the view, which holds the ea
 	}
 });
 
+test("a message max sends while a turn runs joins that turn, which keeps its earlier messages", () => {
+	const steered = sent.filter(({ request }) => request.messages.slice(1).some((m) => textOf(m).includes("turn-5-steer")));
+	assert.equal(steered.length, 1);
+	const text = steered[0].request.messages.slice(1).map((m) => textOf(m)).join("\n");
+	assert.match(text, /turn-5-marker please zoom[\s\S]*#0 max: turn-1-marker hello[\s\S]*turn-5-steer/);
+});
+
 test("a request carries at most four cache breakpoints, some of them inside the view", () => {
 	for (const { request } of sent) {
 		const blocks = [...(request.system ?? []), ...(request.tools ?? []), ...request.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : []))];
@@ -101,7 +109,7 @@ test("a request carries at most four cache breakpoints, some of them inside the 
 
 test("the memory tools are the whole tool set, and zoom answers from the store", () => {
 	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["raw", "recall", "zoom"]);
-	const results = sent.flatMap(({ request }) => (request.messages.at(-1)!.content as { type: string }[]).filter((b) => b.type === "tool_result"));
+	const results = sent.flatMap(({ request }) => request.messages.flatMap((m) => (m.content as { type: string }[]).filter((b) => b.type === "tool_result")));
 	assert.equal(results.length, 1);
 	assert.match(JSON.stringify(results[0]), /#0 max: turn-1-marker hello.*#1 me: noted turn 1/);
 });

@@ -18,13 +18,13 @@ export function entriesOf(messages: AgentMessage[]): Entry[] {
 	return messages.flatMap((message): Entry[] => {
 		if (message.role === "user") {
 			const words = textOf(message.content);
-			return [said(`max: ${words}`, `max's message that begins "${words.trim().slice(0, 80)}"`)];
+			return [said(`max: ${words}`, `max's message that begins "${head(words.trim())}"`)];
 		}
 		if (message.role !== "assistant") return [];
-		const words = textOf(message.content.filter((part) => part.type === "text"));
+		const words = saidIn(message);
 		const calls = message.content.flatMap((part) => (part.type === "toolCall" ? [part] : []));
 		return [
-			...(words.trim() ? [said(`me: ${words}`, `your message that begins "${words.trim().slice(0, 80)}"`)] : []),
+			...(words.trim() ? [said(`me: ${words}`, `your message that begins "${head(words.trim())}"`)] : []),
 			...calls.map((call) => {
 				const result = results.get(call.id);
 				const answer = result ? `${result.isError ? "error: " : ""}${textOf(result.content)}` : "(no result)";
@@ -37,6 +37,16 @@ export function entriesOf(messages: AgentMessage[]): Entry[] {
 /** Whether an entry holds `text` as it is, as the store judges it: one line of at most 512 bytes, no space at its ends. */
 export function fits(text: string): boolean {
 	return text.length > 0 && text === text.trim() && !/[\n\r]/.test(text) && Buffer.byteLength(text) <= ENTRY;
+}
+
+/** The text an assistant message says, without its thinking and tool calls. */
+export function saidIn(message: { content: readonly { type: string; text?: string }[] }): string {
+	return textOf(message.content.filter((part) => part.type === "text"));
+}
+
+/** The first `n` characters of `text`, cut between code points so no half of a surrogate pair is left. */
+export function head(text: string, n = 80): string {
+	return Array.from(text).slice(0, n).join("");
 }
 
 function said(text: string, whose: string): Entry {

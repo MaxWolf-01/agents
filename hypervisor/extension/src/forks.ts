@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Model, Usage } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { ENTRY } from "./entries.ts";
+import { ENTRY, saidIn } from "./entries.ts";
 
 /** How long one call of a fork may take before it counts as failed. */
 const PATIENCE = 5 * 60_000;
@@ -48,7 +48,7 @@ export async function fork(finished: Finished, ask: string, calls: Call[] = []):
 		const { input, output, cacheRead, cacheWrite } = reply.usage;
 		calls.push({ ms: Date.now() - started, usage: { input, output, cacheRead, cacheWrite } });
 		if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? `the fork's call ended: ${reply.stopReason}`);
-		const line = reply.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(" ").split(/\s+/).join(" ").trim();
+		const line = saidIn(reply).split(/\s+/).join(" ").trim();
 		if (line && Buffer.byteLength(line) <= ENTRY) return { line, calls };
 	}
 	throw new Error(`no line of at most ${ENTRY} bytes in two replies`);
