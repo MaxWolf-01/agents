@@ -4,6 +4,7 @@ the one the pilot rendered. The pilot's output is not in the repo; HV_PILOT_OUT 
 
 import json
 import os
+import random
 import re
 from pathlib import Path
 
@@ -23,8 +24,10 @@ def test_the_pilots_entries_give_the_pilots_view_with_every_line_stamped(tmp_pat
     code, _, err = run(store, "import", stdin=(PILOT / "entries.txt").read_text())
     assert code == 0, err
     naps = {"%d-%d" % tuple(n["block"]): n["line"] for n in map(json.loads, (PILOT / "naps.jsonl").read_text().splitlines())}
+    # Each round in a shuffled order, as forks finish, so blocks are held before they reach the tree.
+    rnd = random.Random(1371)
     while blocks := run(store, "due")[1].split():
-        for block in blocks:
+        for block in rnd.sample(blocks, len(blocks)):
             # The pilot's clip let two compressions run to 515 bytes, which the store refuses as a
             # fork's would be; neither block is one its view shows.
             if run(store, "compress", block, stdin=naps[block])[0] != 0:

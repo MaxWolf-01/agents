@@ -19,8 +19,9 @@ minute in one token, then names what it covers, `#ID` for one entry or `#LO-HI` 
   2026-10-01T14:07 #16-31 <the block's compression>
 
 The trailing newline of a text on stdin ends its last line and is not part of it. An entry holds
-one line of at most 512 bytes. A text it cannot hold as it is is logged as a one-line gist followed
-by `[raw: N bytes]`, and `raw` prints the whole text.
+one line of at most 512 bytes. A text the entry cannot hold as it is gets a one-line gist of at most
+512 bytes followed by `[raw: N bytes]`, which sits outside the 512 as the stamp does, and `raw` prints
+the whole text.
 """
 
 import contextlib
@@ -48,7 +49,7 @@ def _vendored_memo():
 
 memo = _vendored_memo()
 
-ENTRY = 512  # bytes of text in one entry or one compression
+ENTRY = 512  # bytes of text in one entry, one gist or one compression
 STAMP = "%Y-%m-%dT%H:%M"
 
 
@@ -174,7 +175,7 @@ class Cli:
 
 def init(d: Path, _: Init) -> None:
     fresh = not d.exists()
-    for sub in ("TREE", "RAW"):
+    for sub in ("TREE", "RAW", "HELD"):
         (d / sub).mkdir(parents=True, exist_ok=True)
     open(memo.log_path(d), "a").close()
     print(f"Created {d}." if fresh else f"Found {d}: {memo.log_len(d)} entries.")
@@ -219,7 +220,7 @@ def view(d: Path, cmd: View) -> None:
     blocks = memo.cover(T, cmd.budget)
     if len(blocks) > cmd.budget:
         raise Refused(f"{T} entries take at least {len(blocks)} lines, over the budget of {cmd.budget}.")
-    missing = [f"{lo}-{hi - 1}" for lo, hi in blocks if hi - lo > 1 and summary(d, lo, hi) is None]
+    missing = [f"{lo}-{hi - 1}" for lo, hi in blocks if hi - lo > 1 and read_compression(d, lo, hi) is None]
     if missing:
         raise Refused(f"The view needs compressions not written yet: {' '.join(missing)}. `due` lists what can be written.")
     print(header(d, T, now()))
@@ -277,7 +278,7 @@ def compress(d: Path, cmd: Compress) -> None:
     text = one_line(stdin(), "A compression")
     with locked(d):
         if (lo, hi) not in due_blocks(d):
-            if summary(d, lo, hi) is not None:
+            if read_compression(d, lo, hi) is not None:
                 raise Refused(f"{cmd.block} is already written.")
             if hi > memo.log_len(d):
                 raise Refused(f"{cmd.block} is not all logged yet; the log holds {memo.log_len(d)} entries.")
@@ -302,10 +303,9 @@ COMMANDS = {
 
 
 def as_entry(text: str, gist: str = "") -> tuple[str, str | None]:
-    """The text an entry holds, and the whole text when the entry cannot hold it as it is, as one
-    line with no surrounding whitespace (a record drops it) of at most ENTRY bytes. The gist logged in
-    its place, given or clipped, is at most ENTRY bytes, and its `[raw: N bytes]` sits outside them,
-    as the stamp does."""
+    """The text an entry holds, and the whole text when that is not the text itself. An entry holds
+    a text as it is when the text is one line of at most ENTRY bytes with no whitespace at its ends,
+    which a record drops. Otherwise it holds the gist, given or clipped, and the marker."""
     if text and text == text.strip() and len(text.splitlines()) == 1 and len(text.encode()) <= ENTRY:
         return text, None
     gist = gist or clip(" ".join(text.split()), ENTRY)
@@ -313,12 +313,12 @@ def as_entry(text: str, gist: str = "") -> tuple[str, str | None]:
 
 
 def one_line(text: str, what: str) -> str:
-    """A gist or a compression, refused unless it is one line of at most ENTRY bytes."""
+    """The text stripped, refused unless it is one line of at most ENTRY bytes."""
     text = text.strip()
     if len(text.splitlines()) != 1:
         raise Refused(f"{what} is one line of text.")
     if len(text.encode()) > ENTRY:
-        raise Refused(f"Too long: {len(text.encode())} bytes, limit {ENTRY}.")
+        raise Refused(f"{what} is too long: {len(text.encode())} bytes, limit {ENTRY}.")
     return text
 
 
@@ -340,8 +340,7 @@ def log_entries(d: Path, items: list[tuple[str, str, str | None]]) -> int:
                 # Left by a run that died between its sidecar and its entry.
                 side.unlink(missing_ok=True)
             else:
-                (staged := side.with_suffix(".new")).write_bytes(whole.encode())
-                staged.replace(side)
+                write_atomically(side, whole)
         logged = memo.log_append(d, [(stamp, text) for stamp, text, _ in items])
     if logged != first:
         raise RuntimeError(f"memo logged #{logged} where the store expected #{first}")
@@ -354,6 +353,11 @@ def locked(d: Path):
     with open(d / ".hv.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
+
+
+def write_atomically(path: Path, text: str) -> None:
+    (staged := path.with_suffix(".new")).write_bytes(text.encode())
+    staged.replace(path)
 
 
 def sidecars(d: Path) -> set[int]:
@@ -384,7 +388,7 @@ def view_line(d: Path, lo: int, hi: int) -> str:
     if hi - lo == 1:
         i, stamp, text = memo.log_get(d, lo)
         return f"{stamp} #{i} {text}"
-    text = summary(d, lo, hi) if hi <= memo.log_len(d) else None
+    text = read_compression(d, lo, hi) if hi <= memo.log_len(d) else None
     return f"{memo.log_get(d, lo)[1]} #{lo}-{hi - 1} {text or '(not compressed yet)'}"
 
 
@@ -423,6 +427,9 @@ def parse_block(text: str) -> tuple[int, int]:
     return lo, hi
 
 
+# ---------------------------------------------------------------- compressions
+
+
 def due_blocks(d: Path) -> list[tuple[int, int]]:
     """Every block not written yet whose entries are all logged and whose inputs are written. A block
     of up to RAW_MAX entries compresses the entries themselves, a bigger one its two halves."""
@@ -430,44 +437,37 @@ def due_blocks(d: Path) -> list[tuple[int, int]]:
     while size <= T:
         for k in range(memo.count(memo.tree_path(d, size), memo.TREE_REC), T // size):
             lo, mid, hi = k * size, k * size + size // 2, (k + 1) * size
-            if summary(d, lo, hi) is None and (size <= memo.RAW_MAX or (summary(d, lo, mid) and summary(d, mid, hi))):
+            inputs = size <= memo.RAW_MAX or (read_compression(d, lo, mid) and read_compression(d, mid, hi))
+            if inputs and read_compression(d, lo, hi) is None:
                 out.append((lo, hi))
         size *= 2
     return out
 
 
-# ---------------------------------------------------------------- compressions
-
-
-def summary(d: Path, lo: int, hi: int) -> str | None:
-    """The compression of block [lo, hi), held ahead of its level's order or in memo's tree. The held
-    copy is read first: a block moving into the tree leaves AHEAD/ only once the tree has it."""
+def read_compression(d: Path, lo: int, hi: int) -> str | None:
+    """The compression of block [lo, hi), held or in memo's tree. The held copy is read first,
+    since a block moving into the tree leaves HELD/ only once the tree has it."""
     with contextlib.suppress(FileNotFoundError):
-        return ahead(d, lo, hi).read_bytes().decode()
+        return held_path(d, lo, hi).read_bytes().decode()
     return memo.tree_get(d, lo, hi)
 
 
-def ahead(d: Path, lo: int, hi: int) -> Path:
-    return d / "AHEAD" / f"{lo}-{hi - 1}"
+def held_path(d: Path, lo: int, hi: int) -> Path:
+    return d / "HELD" / f"{lo}-{hi - 1}"
 
 
 def write_compression(d: Path, lo: int, hi: int, text: str) -> None:
-    """memo writes a level in order, so a block that comes early is held in AHEAD/ until the blocks
-    before it are written, then moved into the tree. Callers hold the store's lock."""
+    """memo writes a level in order, so a block is held in HELD/ first, then every held block at the
+    front of its level moves into the tree. A block that comes early waits there for the blocks
+    before it, and a move a crash cut short resumes at the next write to the level. Callers hold the
+    store's lock."""
     size = hi - lo
-    if memo.count(memo.tree_path(d, size), memo.TREE_REC) != lo // size:
-        ahead(d, lo, hi).parent.mkdir(exist_ok=True)
-        (staged := ahead(d, lo, hi).with_suffix(".new")).write_bytes(text.encode())
-        staged.replace(ahead(d, lo, hi))
-        return
-    while True:
-        if not memo.tree_put(d, lo, hi, text):
-            raise RuntimeError(f"memo refused #{lo}-{hi - 1} at the end of its level")
-        ahead(d, lo, hi).unlink(missing_ok=True)
-        lo, hi = hi, hi + size
-        if not ahead(d, lo, hi).exists():
-            return
-        text = ahead(d, lo, hi).read_bytes().decode()
+    write_atomically(held_path(d, lo, hi), text)
+    level = memo.tree_path(d, size)
+    while (held := held_path(d, (k := memo.count(level, memo.TREE_REC)) * size, (k + 1) * size)).exists():
+        if not memo.tree_put(d, k * size, (k + 1) * size, held.read_bytes().decode()):
+            raise RuntimeError(f"memo refused #{k * size}-{(k + 1) * size - 1} at the end of its level")
+        held.unlink()
 
 
 if __name__ == "__main__":

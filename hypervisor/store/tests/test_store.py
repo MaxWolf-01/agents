@@ -141,10 +141,16 @@ def test_a_gist_is_unused_when_the_entry_holds_the_text_itself(store: Path) -> N
     assert run(store, "zoom", "0-1")[1].endswith(" #0 short enough\n")
 
 
-@pytest.mark.parametrize(("gist", "why"), [("two\nlines", "one line"), ("g" * 513, "Too long"), ("ü" * 257, "Too long")])
-def test_a_gist_a_line_cannot_hold_is_refused_and_nothing_is_logged(store: Path, gist: str, why: str) -> None:
-    code, _, err = run(store, "append", "--gist", gist, stdin="x" * 600)
-    assert code == 1 and why in err
+def test_a_gist_is_stripped_as_a_compression_is(store: Path) -> None:
+    assert run(store, "append", "--gist", "  padded\t", stdin="x" * 600)[0] == 0
+    assert run(store, "zoom", "0-1")[1].endswith(" #0 padded [raw: 600 bytes]\n")
+
+
+@pytest.mark.parametrize("text", ["x" * 600, "short enough"])
+@pytest.mark.parametrize(("gist", "why"), [("two\nlines", "one line"), ("   ", "one line"), ("g" * 513, "too long"), ("ü" * 257, "too long")])
+def test_a_gist_a_line_cannot_hold_is_refused_and_nothing_is_logged(store: Path, text: str, gist: str, why: str) -> None:
+    code, _, err = run(store, "append", "--gist", gist, stdin=text)
+    assert code == 1 and f"A gist is {why}" in err
     assert run(store, "view")[1].count("\n") == 1
 
 
@@ -244,46 +250,73 @@ def test_what_due_lists_lands_in_any_order(n: int, rnd) -> None:
         assert sorted(written) == sorted(f"{k * s}-{(k + 1) * s - 1}" for s in (2**e for e in range(1, 8)) for k in range(n // s))
 
 
-def test_a_burst_leaves_its_whole_backlog_due_in_one_round_and_written_in_parallel(store: Path) -> None:
+def test_a_burst_leaves_its_whole_backlog_due_in_one_round_and_written_in_parallel(store: Path, tmp_path: Path) -> None:
     """A turn that logs a burst of tool calls: every block its entries complete, up to RAW_MAX, is
-    due at once, and the forks write them concurrently, each its own process, in no set order."""
-    for i in range(16):
-        run(store, "append", stdin=f"tool call {i}")
-    blocks = run(store, "due")[1].split()
-    assert sorted(blocks) == sorted(f"{k * s}-{(k + 1) * s - 1}" for s in (2, 4, 8, 16) for k in range(16 // s))
-    random.Random(16).shuffle(blocks)
-    forks = [
-        subprocess.Popen([sys.executable, HERE.parent / "hv_store.py", "--dir", store, "compress", block], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        for block in blocks
-    ]
-    for block, fork in zip(blocks, forks):
-        _, err = fork.communicate(f"summary of {block}".encode(), timeout=120)
-        assert fork.returncode == 0, err
-    assert run(store, "due")[1] == ""
+    due at once, and the forks write all of it concurrently, each its own process, in no set order."""
+    rnd = random.Random(16)
+    for burst in range(4):
+        for i in range(16 * burst, 16 * burst + 16):
+            run(store, "append", stdin=f"tool call {i}")
+        blocks = run(store, "due")[1].split()
+        assert set(blocks) >= {f"{16 * burst + k * s}-{16 * burst + (k + 1) * s - 1}" for s in (2, 4, 8, 16) for k in range(16 // s)}
+        while blocks:
+            write_in_parallel(store, tmp_path, rnd.sample(blocks, len(blocks)))
+            blocks = run(store, "due")[1].split()
+    # memo's own tree, the ticket's oracle, holds every block of the 64 entries: none is left held.
+    for s in (2, 4, 8, 16, 32, 64):
+        for lo in range(0, 64, s):
+            assert hv_store.memo.tree_get(store, lo, lo + s) == f"summary of {lo}-{lo + s - 1}"
+    assert run(store, "view", "--budget", 1)[1].split("\n")[1].endswith(" #0-63 summary of 0-63")
+
+
+def write_in_parallel(store: Path, tmp_path: Path, blocks: list[str]) -> None:
+    """One process per block, all started before any is waited on, each reading its compression
+    from a file so none waits on another's stdin."""
+    forks = []
     for block in blocks:
-        lo, hi = map(int, block.split("-"))
-        if hi > lo + 1:
-            mid = (lo + hi + 1) // 2
-            assert [line.split(" ", 2)[2] for line in run(store, "zoom", block)[1].splitlines()] == [
-                f"summary of {lo}-{mid - 1}" if mid - lo > 1 else f"tool call {lo}",
-                f"summary of {mid}-{hi}" if mid - lo > 1 else f"tool call {hi}",
-            ]
-    assert run(store, "view", "--budget", 1)[1].split("\n")[1].endswith(" #0-15 summary of 0-15")
+        (given := tmp_path / f"{block}.txt").write_text(f"summary of {block}")
+        with open(given, "rb") as stdin:
+            forks.append(subprocess.Popen([sys.executable, HERE.parent / "hv_store.py", "--dir", store, "compress", block], stdin=stdin, stderr=subprocess.PIPE))
+    for fork in forks:
+        _, err = fork.communicate(timeout=120)
+        assert fork.returncode == 0, err
 
 
-def test_a_block_written_early_is_read_before_the_blocks_ahead_of_it_land(store: Path) -> None:
+def test_a_block_written_early_is_read_before_the_blocks_before_it_land(store: Path) -> None:
     for i in range(8):
         run(store, "append", stdin=f"entry {i}")
     assert run(store, "compress", "4-5", stdin="early")[0] == 0
     assert "4-5" not in run(store, "due")[1].split()
     assert run(store, "zoom", "4-7")[1].split("\n")[0].endswith(" #4-5 early")
     assert run(store, "compress", "4-5", stdin="again")[2].endswith("already written.\n")
+    for block in ("0-3", "6-7"):
+        assert run(store, "compress", block, stdin=f"{block} text")[0] == 0
+    # The view of 8 entries in 3 lines is 0-3, 4-5, 6-7: two of them held, 0-1 and 2-3 not written.
+    assert [line.split(" ", 2)[2] for line in run(store, "view", "--budget", 3)[1].splitlines()[1:]] == ["0-3 text", "early", "6-7 text"]
     for block in ("2-3", "0-1"):  # 0-1 lands last, and moves the blocks held behind it into the tree
         assert run(store, "compress", block, stdin=f"{block} text")[0] == 0
-    assert run(store, "compress", "6-7", stdin="6-7 text")[0] == 0
-    assert [line.split(" ", 2)[2] for line in run(store, "zoom", "0-7")[1].splitlines()] == ["(not compressed yet)", "(not compressed yet)"]
+    assert [line.split(" ", 2)[2] for line in run(store, "zoom", "0-7")[1].splitlines()] == ["0-3 text", "(not compressed yet)"]
     assert [line.split(" ", 2)[2] for line in run(store, "zoom", "4-7")[1].splitlines()] == ["early", "6-7 text"]
-    assert not any((store / "AHEAD").iterdir()), "a block left held once the blocks before it landed"
+    tree = [hv_store.memo.tree_get(store, lo, lo + 2) for lo in range(0, 8, 2)]
+    assert tree == ["0-1 text", "2-3 text", "early", "6-7 text"], "a block left held once the blocks before it landed"
+
+
+def test_a_move_into_the_tree_cut_short_resumes_at_the_next_write_to_its_level(store: Path) -> None:
+    for i in range(8):
+        run(store, "append", stdin=f"entry {i}")
+    assert run(store, "compress", "2-3", stdin="2-3 text")[0] == 0
+    # A run killed after holding 0-1 and before moving it: the level's front stays held.
+    hv_store.held_path(store, 0, 2).write_text("0-1 text")
+    assert run(store, "compress", "4-5", stdin="4-5 text")[0] == 0
+    assert [hv_store.memo.tree_get(store, lo, lo + 2) for lo in range(0, 6, 2)] == ["0-1 text", "2-3 text", "4-5 text"]
+    assert run(store, "due")[1].split() == ["6-7", "0-3", "4-7", "0-7"]
+
+
+def test_a_block_whose_halves_are_not_written_is_not_due(store: Path) -> None:
+    for i in range(32):
+        run(store, "append", stdin=f"entry {i}")
+    code, _, err = run(store, "compress", "0-31", stdin="too soon")
+    assert code == 1 and "not due yet" in err
 
 
 def test_the_view_is_refused_while_a_compression_it_needs_is_outstanding(store: Path) -> None:
@@ -339,7 +372,7 @@ def test_a_compression_of_512_bytes_is_written_whole(store: Path, summary: str) 
         ("2-5", "fine", "not a block"),
         ("4-5", "two\nlines", "one line"),
         ("4-5", "   ", "one line"),
-        ("4-5", "x" * 513, "Too long"),
+        ("4-5", "x" * 513, "too long"),
     ],
 )
 def test_compress_refuses_what_due_would_not_list_and_text_a_line_cannot_hold(store: Path, block: str, summary: str, why: str) -> None:
