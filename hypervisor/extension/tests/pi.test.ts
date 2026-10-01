@@ -22,6 +22,8 @@ const store = path.join(dir, "store");
 let anthropic: Awaited<ReturnType<typeof standInAnthropic>>;
 const sent: { turn: number; request: Request }[] = [];
 let turn = 0;
+/** Sends the steering message, once the request it is to arrive during is on its way. */
+let steer: (() => void) | undefined;
 
 function answer(request: Request): Reply {
 	const last = textOf(request.messages.at(-1)!);
@@ -29,7 +31,11 @@ function answer(request: Request): Reply {
 	if (block) return { text: `compressed ${block[1]}` };
 	if (last.includes("is too long for one entry")) return { text: last.includes("Max's message") ? "turn-3-marker: max sent a long message, its gist" : "the gist of a long answer" };
 	sent.push({ turn, request });
-	if (last.includes("please zoom")) return { tool: "zoom", input: { block: "0-1" }, delay: 1000 };
+	if (last.includes("please zoom")) {
+		steer?.();
+		steer = undefined;
+		return { tool: "zoom", input: { block: "0-1" }, delay: 1000 };
+	}
 	return { text: turn === 7 ? LONG_ANSWER : `noted turn ${turn}` };
 }
 
@@ -53,9 +59,9 @@ after(async () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-/** Sends one prompt, and `steer` while its first reply is on the way, and resolves once pi has settled. */
-function prompt(pi: ChildProcess, message: string, steer?: string): Promise<void> {
-	if (steer) setTimeout(() => pi.stdin!.write(`${JSON.stringify({ type: "steer", message: steer })}\n`), 300);
+/** Sends one prompt, and `steering` while its first reply is on the way, and resolves once pi has settled. */
+function prompt(pi: ChildProcess, message: string, steering?: string): Promise<void> {
+	if (steering) steer = () => pi.stdin!.write(`${JSON.stringify({ type: "steer", message: steering })}\n`);
 	return new Promise((resolve, reject) => {
 		let buffer = "";
 		const read = (chunk: Buffer) => {
