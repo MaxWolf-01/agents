@@ -139,6 +139,15 @@ class Due:
 
 
 @dataclass
+class Body:
+    """Print what a block's compression is written from: its entries as view lines, or, for a block
+    of more than 16 entries, its two halves' compressions."""
+
+    block: Annotated[str, tyro.conf.Positional]
+    """LO-HI, inclusive at both ends."""
+
+
+@dataclass
 class Compress:
     """Write the line on stdin, at most 512 bytes, as the compression of a block `due` lists."""
 
@@ -159,6 +168,7 @@ Command = (
     | _named(Recall, "recall")
     | _named(Raw, "raw")
     | _named(Due, "due")
+    | _named(Body, "body")
     | _named(Compress, "compress")
 )
 
@@ -273,6 +283,20 @@ def due(d: Path, _: Due) -> None:
         print(f"{lo}-{hi - 1}")
 
 
+def body(d: Path, cmd: Body) -> None:
+    lo, hi = parse_block(cmd.block)
+    if hi > memo.log_len(d):
+        raise Refused(f"{cmd.block} is not all logged yet; the log holds {memo.log_len(d)} entries.")
+    if hi - lo <= memo.RAW_MAX:
+        parts = [(i, i + 1) for i in range(lo, hi)]
+    else:
+        parts = [(lo, (lo + hi) // 2), ((lo + hi) // 2, hi)]
+        if missing := [f"{a}-{b - 1}" for a, b in parts if read_compression(d, a, b) is None]:
+            raise Refused(f"{cmd.block} is written from {' and '.join(missing)}, not compressed yet.")
+    for a, b in parts:
+        print(view_line(d, a, b))
+
+
 def compress(d: Path, cmd: Compress) -> None:
     lo, hi = parse_block(cmd.block)
     text = one_line(stdin(), "A compression")
@@ -295,6 +319,7 @@ COMMANDS = {
     Recall: recall,
     Raw: raw,
     Due: due,
+    Body: body,
     Compress: compress,
 }
 

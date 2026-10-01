@@ -6,7 +6,6 @@ import { test } from "node:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import fc from "fast-check";
 import { swapContext } from "../../src/swap.ts";
-import { liftedBy } from "./lifted-by.ts";
 
 const text = fc.string({ maxLength: 30 });
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -50,7 +49,7 @@ function withoutTimestamp(message: AgentMessage) {
 	return rest;
 }
 
-test("lifelong-hypervisor#P1: a request carries the view and the current turn, and no message from an earlier turn", liftedBy("hypervisor-view-swap"), () => {
+test("lifelong-hypervisor#P1: a request carries the view and the current turn, and no message from an earlier turn", () => {
 	fc.assert(
 		fc.property(history, history, view, ({ before, now }, other, rendered) => {
 			const messages = [...before, ...now];

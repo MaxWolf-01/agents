@@ -8,7 +8,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 import fc from "fast-check";
 import { watchEffects } from "./effects.ts";
-import { isStub, liftedBy } from "./lifted-by.ts";
+import { isStub } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
 import { harnessProblems, strings, toolProblems } from "./rules.ts";
 import { execute, load, standIn, within } from "./stand-in.ts";
@@ -56,7 +56,7 @@ function explorerToolNames(): string[] {
 
 // Within the closed set rather than equal to it: the memory tools land first (hypervisor-view-swap), the session
 // tools after (hypervisor-orchestrators), and the check has to hold at each step.
-test("lifelong-hypervisor#P4: the extension's tools are within the closed set, and none of pi's own stays active", liftedBy("hypervisor-view-swap"), async () => {
+test("lifelong-hypervisor#P4: the extension's tools are within the closed set, and none of pi's own stays active", async () => {
 	const allowed = new Set([...CONVERSE, ...explorerToolNames()]);
 	for (const flipped of [false, true]) {
 		const { tools, active } = await loaded(flipped);
@@ -66,7 +66,7 @@ test("lifelong-hypervisor#P4: the extension's tools are within the closed set, a
 	}
 });
 
-test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, whatever its arguments", liftedBy("hypervisor-view-swap"), async () => {
+test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, whatever its arguments", async () => {
 	for (const flipped of [false, true]) {
 		const extension = await loaded(flipped);
 		assert.deepEqual(harnessProblems(extension.atLoad, store), [], "loading the extension");
@@ -110,7 +110,7 @@ function promptAndTools(request: { system: Block[]; tools: object[] }) {
 	return { system: request.system.map(bare), tools: request.tools.map(bare) };
 }
 
-test("lifelong-hypervisor#P1: a request leaves the extension with its system prompt and tools", liftedBy("hypervisor-view-swap"), async () => {
+test("lifelong-hypervisor#P1: a request leaves the extension with its system prompt and tools", async () => {
 	const { handlers, context } = await loaded(false);
 	await fc.assert(
 		fc.asyncProperty(payload, async (sent) => {

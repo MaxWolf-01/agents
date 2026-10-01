@@ -347,6 +347,18 @@ def test_zoom_names_a_half_not_compressed_and_leaves_out_one_not_logged(store: P
     assert (code, out) == (1, "") and "holds 3 entries" in err
 
 
+def test_body_of_a_small_block_is_its_entries_and_of_a_big_one_its_halves(store: Path) -> None:
+    assert run(store, "import", stdin="".join(f"2026-01-01T00:{i:02} entry {i}\n" for i in range(32)))[0] == 0
+    assert run(store, "body", "2-3")[1] == "2026-01-01T00:02 #2 entry 2\n2026-01-01T00:03 #3 entry 3\n"
+    assert run(store, "body", "16-31")[1].split("\n")[:-1] == [f"2026-01-01T00:{i:02} #{i} entry {i}" for i in range(16, 32)]
+    code, out, err = run(store, "body", "0-31")
+    assert (code, out) == (1, "") and "0-15 and 16-31" in err
+    answer_due(store)
+    assert run(store, "body", "0-31")[1] == "2026-01-01T00:00 #0-15 summary of 0-15\n2026-01-01T00:16 #16-31 summary of 16-31\n"
+    code, out, err = run(store, "body", "32-33")
+    assert (code, out) == (1, "") and "not all logged" in err
+
+
 @pytest.mark.parametrize("budget", [0, 1, 2])
 def test_a_budget_the_log_cannot_be_tiled_in_is_refused(store: Path, budget: int) -> None:
     for i in range(7):  # 4 + 2 + 1: no fewer than three lines
