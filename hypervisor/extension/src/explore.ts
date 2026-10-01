@@ -4,7 +4,7 @@ import { NotImplemented } from "./not-implemented.ts";
 
 /**
  * The explorer's read tools. A tool takes what it reads as `path`: absolute, under `~/`, or relative to `home`. It
- * throws on a path under a denied root (`~/work`, secrets, keys, credential stores, browser profiles), judged once
+ * throws on a path under a denied root (keys, secrets and credential stores, browser profiles), judged once
  * `..` and symlinks are resolved, and a search or listing passes over those roots.
  */
 export function exploreTools(_config: Pick<Config, "home">): ToolDefinition[] {

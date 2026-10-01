@@ -19,9 +19,8 @@ const SECRET = "c4n4ry-content-7f3a91";
 const HIDDEN = "c4n4ry-name-52bd07";
 const OPEN = "open-content-e05c";
 
-/** A root of each kind the parent denies: `~/work`, keys, secrets and credential stores, browser profiles. */
+/** The roots denied: keys, secrets and credential stores, browser profiles. `~/work` and `~/.dotfiles/secrets` are readable. */
 const DENIED = [
-	"work",
 	".ssh",
 	".gnupg",
 	".password-store",
@@ -34,14 +33,33 @@ const DENIED = [
 	".mozilla",
 	".config/google-chrome",
 	".config/chromium",
+	".config/BraveSoftware",
+	".cache/chromium",
+	".config/rclone",
+	".config/sops",
+	".docker",
+	".pi/agent/auth.json",
+	".codex/auth.json",
+	".dotfiles/secrets/creds",
 ];
-const FILES = new Set([".netrc", ".git-credentials", ".claude/.credentials.json"]);
+const FILES = new Set([".netrc", ".git-credentials", ".claude/.credentials.json", ".pi/agent/auth.json", ".codex/auth.json"]);
 /** Open files, some beside a denied root or named like one, so a check by prefix refuses them. */
-const READABLE = ["workshop/plan.md", "notes/today.md", ".config/nvim/init.lua", ".claude/settings.json"];
+const READABLE = [
+	"workshop/plan.md",
+	"notes/today.md",
+	"work/notes.md",
+	".config/nvim/init.lua",
+	".claude/settings.json",
+	".pi/agent/settings.json",
+	".codex/config.toml",
+	".dotfiles/secrets/readme.md",
+	".dotfiles/secrets/creds-old.md",
+];
 /** Symlinks in the open part of home, from the link to its target. */
 const LINKS: Record<string, string> = {
 	"notes/to-work": "../work",
-	"notes/chain": "to-work",
+	"notes/to-docker": "../.docker",
+	"notes/chain": "to-docker",
 	"notes/key": "../.ssh/notes.txt",
 	"notes/up": "..",
 	"workshop/creds": "../.claude/.credentials.json",
@@ -89,7 +107,7 @@ const intoDenied = fc
 			fc.constantFrom(...DENIED).map((root) => ["notes", "up", ...root.split("/")]),
 			// Each leads into a denied directory. The kernel walks `..` from where a link points, not from the link,
 			// so the last is ~/.ssh and not ~/notes/.ssh.
-			fc.constantFrom<string[]>(["notes", "to-work"], ["notes", "chain"], ["notes", "to-ssh"], ["notes", "to-work", "..", ".ssh"]),
+			fc.constantFrom<string[]>(["notes", "to-docker"], ["notes", "chain"], ["notes", "to-ssh"], ["notes", "to-docker", "..", ".ssh"]),
 		),
 		tail,
 		fc.array(fc.tuple(fc.nat(), detour), { maxLength: 2 }),
@@ -98,7 +116,7 @@ const intoDenied = fc
 /** Links straight to a denied file. */
 const toDeniedFile = fc.constantFrom("notes/key", "workshop/creds");
 /** Places around the denied roots that a search or a listing passes through. */
-const around = fc.constantFrom("", "notes", "notes/up", ".config", ".claude", "workshop", ".local");
+const around = fc.constantFrom("", "notes", "notes/up", ".config", ".claude", "workshop", "work", ".local", ".cache", ".pi/agent", ".codex", ".dotfiles/secrets");
 
 /** The spellings of a path from home that name the place itself: absolute, under `~/`, relative, doubled slashes, /proc. */
 function spellings(rel: string): fc.Arbitrary<string> {
@@ -142,7 +160,7 @@ test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, ho
 test("lifelong-hypervisor#P5: a file outside the denied roots reads back through the read tools", liftedBy("hypervisor-explore-mode"), async () => {
 	const tools = exploreTools({ home }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
 	await fc.assert(
-		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/up/workshop/plan.md").chain(spellings), async (spelled) => {
+		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/to-work/notes.md", "notes/up/.dotfiles/secrets/readme.md").chain(spellings), async (spelled) => {
 			const reads = await Promise.all(tools.map((tool) => execute(tool, minimal(tool, spelled), context, 5000)));
 			assert.ok(reads.some(({ said }) => said.includes(OPEN)), `no read tool read ${spelled}`);
 		}),
