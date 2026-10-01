@@ -91,13 +91,20 @@
 #            ticket's branch, which this is, gets its ranges and stays
 #            `review` unless it is a hinge: it is ruled with the parent, and
 #            `accept` writes its `done`. One commit either way, and none when
-#            the ticket already says so.
+#            the ticket already says so. A `done` retires the ticket's run
+#            (below).
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
 #            the parent with its range, `code@<sha>..<sha>`. Refuses before
 #            that merge, and writes nothing when the tracker refuses any one
-#            of them. One commit.
+#            of them. One commit; then retires every child's run.
+#   A ticket that is done has nothing left to resume, so the `done` retires
+#   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
+#   both ticket/<slug> branches here. A retirement that fails is said, with
+#   the command that tries again, and the exit status is nonzero; the
+#   `done` stands. `ctl cleanup` stays for a build that is not landing: a
+#   redo, a reject, a session that cannot be recovered.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
 #            scratch dir whose probe failed an `unreadable` one, a
@@ -600,6 +607,7 @@ review() {
         die "no branch $branch in $agent_top; fetch it from the worker host first"
     code_range=$(range_of code "$code_tip") || exit 1
     agent_range=$(range_of agent "$agent_tip") || exit 1
+    retiring=
     written=()
     [ -n "$code_range" ] && written+=("code@$code_range")
     [ -n "$agent_range" ] && written+=("agent@$agent_range")
@@ -654,7 +662,7 @@ review() {
         if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
             now=review landed="$id merged into $base, for its ruling with it"
         else
-            now=done landed="$id landed"
+            now=done landed="$id landed" retiring=1
         fi
         status=$("$tracker" get "$id" status)
         [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
@@ -692,6 +700,26 @@ review() {
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve "$diffviews"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
+    [ -z "$retiring" ] || retire "$id"
+}
+
+# What a done ticket's run left, on its host and here. The run is found under $base, the branch it
+# was spawned from, which `accept` sets to the parent's for each child.
+retire() { # <slug>
+    local h top
+    h=$(host_of "$1")
+    if [ -n "$h" ]; then
+        run on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" cleanup "$1" ||
+            { echo "dispatch: $1 is done, and its cleanup on $h failed; \`dispatch ctl cleanup $1\` from $base tries again" >&2; return 1; }
+        pull_runs "$h"
+        forget_run "$1"
+    fi
+    # A local host's cleanup has deleted these already: they were the branches its worktrees held.
+    for top in "$repo_root" "$agent_top"; do
+        git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1" > /dev/null || continue
+        run git -C "$top" branch -q -d "ticket/$1" || return 1
+    done
 }
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
@@ -720,6 +748,11 @@ accept() { # <slug>
     run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
+    # retired by its own `review`, so only the children in review come up here.
+    rc=0
+    for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
+    return $rc
 }
 
 # Usage: dispatch fuzz start [--host <host>]

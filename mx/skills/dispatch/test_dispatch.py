@@ -491,13 +491,13 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert [line for line in handed
             if line.startswith(f"{toy}@{cut['code']}..{tip['code']} {agent}@{cut['agent']}..{tip['agent']} ")], handed
 
-    # the cleanup the accept runs: both worktrees and both branches go, the agent one first
-    cleaned = subprocess.run([str(staged), "ctl", "--host", "local", "cleanup", "warm-preset"],
-                             cwd=toy, capture_output=True, text=True, env=environment(toy), timeout=180)
-    assert cleaned.returncode == 0, cleaned.stderr
+    # the `done` retires the run: both worktrees and both branches go, and so does the record of it
     assert not (toy.parent / "lamp-warm-preset").exists()
     for at in (toy, agent):
-        assert "ticket/warm-preset" not in git(at, "branch", "--list", "ticket/warm-preset")
+        assert not git(at, "branch", "--list", "ticket/warm-preset")
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True,
+                            env=environment(toy), timeout=180)
+    assert "no run recorded" in probed.stderr, probed.stderr
 
 
 # The building stub as a tree's children run it: each commits a file of its own, so a child built on
@@ -556,12 +556,14 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
     assert "on preset-format (review, a hinge)" in frontier(held=True)
     merged("preset-format")  # the user's accept of the hinge, ruled alone
     assert status_of(toy, "preset-format") == "done"
+    assert not (toy.parent / "lamp-preset-format").exists(), "a hinge's `done` retires its run"
 
     assert "warm-preset" in frontier()
     built("warm-preset")
     assert "cool-preset" not in frontier(), "unmerged, the leaf holds its sibling"
     merged("warm-preset")  # the orchestrator's read passed it, and the user has not ruled
     assert status_of(toy, "warm-preset") == "review", "ruled with its parent, not alone"
+    assert (toy.parent / "lamp-warm-preset").exists(), "kept for a resume until the ruling"
     assert "diff: [code@" in (tickets / "warm-preset.md").read_text(), "its ranges are final once merged"
 
     assert "cool-preset" in frontier(), "a merged leaf in review unblocks its sibling"
@@ -606,6 +608,10 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
         ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
     assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")
     assert not git(agent, "status", "--porcelain", "--", "tickets"), "one commit carries the tree"
+    for slug in ("warm-preset", "cool-preset"):
+        assert not (toy.parent / f"lamp-{slug}").exists(), f"the accept retires {slug}'s run"
+        for at in (toy, agent):
+            assert not git(at, "branch", "--list", f"ticket/{slug}")
 
 
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
@@ -994,6 +1000,37 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     assert fetched.returncode == 0, fetched.stderr
     assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:
+    """A done ticket has nothing left to resume: its `done` takes the host's worktrees and branches,
+    the run record, and the fetched branches here. A host that does not answer leaves the `done`
+    standing and says what tries again; the next `review` does."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING)
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    def review(env: dict[str, str]) -> subprocess.CompletedProcess:
+        return subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, env=env, timeout=180).returncode == 0
+    assert review(env).returncode == 0
+    for top in (toy, toy / "agent"):
+        git(top, "merge", "-q", "--no-ff", "-m", "warm-preset: landed", "ticket/warm-preset")
+
+    gone = review({**env, "REMOTE_HOME": str(toy.parent / "nowhere")})
+    assert gone.returncode != 0
+    assert "warm-preset is done, and its cleanup on agent@far failed; `dispatch ctl cleanup warm-preset` from main tries again" in gone.stderr, gone.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert git(toy, "branch", "--list", "ticket/warm-preset"), "kept until the host is clean"
+
+    again = review(env)
+    assert again.returncode == 0, again.stderr
+    assert not (remote / "repos" / "dispatch" / "lamp-warm-preset").exists()
+    for top in (remote / "repos" / "dispatch" / "lamp.git", toy, toy / "agent"):
+        assert not git(top, "branch", "--list", "ticket/warm-preset"), top
+    probed = subprocess.run([str(staged), "ctl", "probe"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert "no run recorded" in probed.stderr, probed.stderr
 
 
 def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
