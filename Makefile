@@ -20,14 +20,23 @@ JOBS ?= auto
 BASE ?= master
 PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with libcst --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
 
+EXTENSION := hypervisor/extension
+
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
 test:
 	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
+	py=$$(echo "$$tests" | grep '\.py$$'); ts=$$(echo "$$tests" | grep '\.ts$$'); \
 	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
-	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; $(PYTEST) $$tests; fi
+	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; \
+	{ [ -z "$$py" ] || $(PYTEST) $$py; } && { [ -z "$$ts" ] || { $(MAKE) -s $(EXTENSION)/node_modules && node --test $$ts; }; }; fi
 
-test-all:
-	$(PYTEST) mx/
+test-all: $(EXTENSION)/node_modules
+	$(PYTEST) mx/ hypervisor/store
+	node --test "$(EXTENSION)/tests/**/*.test.ts"
+
+$(EXTENSION)/node_modules: $(EXTENSION)/package-lock.json
+	cd $(EXTENSION) && npm ci --no-audit --no-fund
+	@touch $@
 
 version:
 	@jq -r .version $(PLUGIN)

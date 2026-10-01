@@ -3,10 +3,11 @@
 A change is every file that differs between the working tree and its merge-base with $BASE
 (default master), committed or not, untracked included. A test file reaches every file it names,
 and every file those name in turn: a Python import of a module beside the importer, or a quoted
-string or a word ending in a file extension that is some file's name under mx/. A name several
-files share resolves to the one beside the naming file when there is one, else to all of them, so
-an ambiguous name runs more tests, never fewer. A change outside mx/skills/ other than prose
-(this script, the Makefile, mx/bin, mx/hooks) reaches every test.
+string or a word ending in a file extension that is some file's name under mx/ or the hypervisor's
+store. A name several files share resolves to the one beside the naming file when there is one,
+else to all of them, so an ambiguous name runs more tests, never fewer. A change outside mx/skills/
+other than prose (this script, the Makefile, mx/bin, mx/hooks) reaches every test. The hypervisor's
+extension is a TypeScript package: a change anywhere in it reaches all of its tests.
 
 Prints one test path per line, nothing when no test is reached.
 """
@@ -20,6 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MX = ROOT / "mx"
+STORE = ROOT / "hypervisor" / "store"
+EXTENSION = ROOT / "hypervisor" / "extension"
 # A path joined in Python (`SKILL / "dispatch"`) or written in a path (`$skill/../tracker/`), and a
 # word with a file suffix: the forms a file names another file in, and not the forms a plain word
 # ("review", a status) takes.
@@ -87,15 +90,18 @@ def reaches_every_test(path: Path) -> bool:
 
 def main() -> None:
     changes = changed(os.environ.get("BASE", "master"))
-    tests = sorted(MX.rglob("test_*.py"))
+    tests = sorted(t for tree in (MX, STORE) for t in tree.rglob("test_*.py"))
+    extension_tests = sorted(EXTENSION.glob("tests/**/*.test.ts"))
     if any(reaches_every_test(c) for c in changes):
-        hit = tests
+        hit = tests + extension_tests
     else:
         by_name: dict[str, list[Path]] = defaultdict(list)
-        for f in MX.rglob("*"):
+        for f in (f for tree in (MX, STORE) for f in tree.rglob("*")):
             if f.is_file() and "__pycache__" not in f.parts:
                 by_name[f.name].append(f)
         hit = [t for t in tests if reach(t, by_name) & changes]
+        if any(c.is_relative_to(EXTENSION) and "node_modules" not in c.parts for c in changes):
+            hit += extension_tests
     for t in hit:
         print(t.relative_to(ROOT))
 
