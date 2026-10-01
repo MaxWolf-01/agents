@@ -19,7 +19,10 @@ const SECRET = "c4n4ry-content-7f3a91";
 const HIDDEN = "c4n4ry-name-52bd07";
 const OPEN = "open-content-e05c";
 
-/** The roots denied: keys, secrets and credential stores, browser profiles. `~/work` and `~/.dotfiles/secrets` are readable. */
+/**
+ * The denied roots: keys, credential stores, browser profiles and caches. `~/work` is readable, and so is
+ * `~/.dotfiles/secrets` but for the store at `creds`.
+ */
 const DENIED = [
 	".ssh",
 	".gnupg",
