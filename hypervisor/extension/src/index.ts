@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { placeBreakpoints } from "./breakpoints.ts";
 import { saidIn } from "./entries.ts";
+import { exploreTools } from "./explore.ts";
 import type { Finished } from "./forks.ts";
 import { memory } from "./memory.ts";
 import { store as openStore } from "./store.ts";
@@ -20,10 +21,13 @@ export interface Config {
 }
 
 const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
+const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta.url));
 
 /**
  * The hypervisor as a pi extension. It registers the hypervisor's tools and makes them the whole active set, so none
- * of pi's own tools (`bash`, `edit`, `write`, an unguarded `read`) stays active.
+ * of pi's own tools (`bash`, `edit`, `write`, an unguarded `read`) stays active. With `--explore`, each run is one
+ * explore step: the explorer's read tools join the set, the system prompt gains explore mode's, and the step is logged
+ * as its tool calls and its finding.
  *
  * Under `config.store`: `log/`, the store's own directory; `requests.jsonl`, a line for each request sent, what it
  * carried in brief; `forks.jsonl`, a line for each fork, with the tokens each of its calls read from cache and wrote;
@@ -40,7 +44,10 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		const requests = jsonl("requests.jsonl");
 		const mind = memory(store, { fork: jsonl("forks.jsonl"), lost: jsonl("lost.jsonl") });
 		const tools = memoryTools(store);
-		for (const tool of tools) pi.registerTool(tool);
+		const reading = exploreTools(config);
+		for (const tool of [...tools, ...reading]) pi.registerTool(tool);
+		pi.registerFlag("explore", { type: "boolean", default: false, description: "Run each prompt as one step of exploring max's machine." });
+		const exploring = () => pi.getFlag("explore") === true;
 
 		/** The view of the run in flight, rendered once as it starts, so its requests share one prefix. */
 		let view: string | undefined;
@@ -51,13 +58,13 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		let sent: Finished["payload"] | undefined;
 
 		pi.on("session_start", async () => {
-			pi.setActiveTools(tools.map((tool) => tool.name));
+			pi.setActiveTools([...tools, ...(exploring() ? reading : [])].map((tool) => tool.name));
 			await store.init();
 		});
 		pi.on("before_agent_start", async (event) => {
 			view = await mind.view();
 			prompt = typeof event.prompt === "string" ? event.prompt : undefined;
-			return { systemPrompt: system };
+			return { systemPrompt: exploring() ? `${system.trimEnd()}\n\n${readFileSync(EXPLORE_PROMPT, "utf8")}` : system };
 		});
 		pi.on("context", async (event) => {
 			if (!Array.isArray(event.messages)) return undefined;
@@ -83,7 +90,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			const finished = sent && ctx.model ? { payload: sent, answer, model: ctx.model, models: ctx.modelRegistry, sessionId: ctx.sessionManager.getSessionId() } : undefined;
 			// A run that fails hands over its failure alone, without the message that started it.
 			const asked = !event.messages.some((m) => m.role === "user") && prompt ? [{ role: "user" as const, content: prompt, timestamp: start ?? Date.now() }] : [];
-			mind.finish([...asked, ...event.messages], finished);
+			mind.finish([...asked, ...event.messages], finished, exploring());
 			view = prompt = start = sent = undefined;
 		});
 		pi.on("session_shutdown", async () => {
@@ -102,5 +109,10 @@ function brief(payload: Finished["payload"]) {
 	};
 }
 
-/** The extension as pi loads it (`pi -e`): the store under `$HV_STORE`, or `~/.local/share/hypervisor`. */
-export default hypervisor({ store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home: homedir() });
+/** The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`, or home. */
+export function fromEnvironment(): Config {
+	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home: process.env.HV_HOME ?? homedir() };
+}
+
+/** The extension as pi loads it (`pi -e`). */
+export default hypervisor(fromEnvironment());

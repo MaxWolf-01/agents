@@ -51,8 +51,8 @@ export function memory(store: Store, journal: Journal) {
 		}
 	}
 
-	async function log(messages: AgentMessage[], finished: Finished | undefined) {
-		const entries = entriesOf(messages);
+	async function log(messages: AgentMessage[], finished: Finished | undefined, step: boolean) {
+		const entries = entriesOf(messages, step);
 		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", head(e.text), finished, gistAsk(e.whose)) : undefined)));
 		for (const [i, entry] of entries.entries()) {
 			try {
@@ -84,9 +84,9 @@ export function memory(store: Store, journal: Journal) {
 	}
 
 	return {
-		/** Logs a finished run's messages and writes the compressions that become due; returns at once. */
-		finish(messages: AgentMessage[], finished: Finished | undefined) {
-			logged = logged.then(() => log(messages, finished)).catch(() => {});
+		/** Logs a finished run's messages, a turn or an explore step, and writes the compressions that become due; returns at once. */
+		finish(messages: AgentMessage[], finished: Finished | undefined, step = false) {
+			logged = logged.then(() => log(messages, finished, step)).catch(() => {});
 			written = Promise.all([written, logged])
 				.then(() => compress(finished))
 				.catch(() => {})
