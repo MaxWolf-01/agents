@@ -36,7 +36,8 @@ summary = st.one_of(text, multiline, long_text)
 
 def run(store: str, *args: object, stdin: str = "") -> tuple[int, str]:
     """One command line, as its caller sees it: the exit status and what it printed. An exception
-    that escapes `main` is a process dying with status 1."""
+    that escapes `main` is a process dying with status 1, except the stub's, which the expected
+    failures wait for."""
     out = io.StringIO()
     # Text over bytes, as a process's stdin is, so a store may read either.
     given = io.TextIOWrapper(io.BytesIO(stdin.encode()), encoding="utf-8", newline="\n")
@@ -45,6 +46,8 @@ def run(store: str, *args: object, stdin: str = "") -> tuple[int, str]:
             code = hv_store.main(["--dir", store, *map(str, args)])
         except SystemExit as exit:
             code = exit.code if isinstance(exit.code, int) else (exit.code is not None)
+        except NotImplementedError:
+            raise
         except Exception:
             code = 1
     return code or 0, out.getvalue()
