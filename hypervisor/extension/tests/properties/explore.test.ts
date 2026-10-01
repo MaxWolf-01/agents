@@ -11,7 +11,6 @@ import { after, test } from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import fc from "fast-check";
 import { exploreTools } from "../../src/explore.ts";
-import { liftedBy } from "./lifted-by.ts";
 import { paramsFor } from "./params.ts";
 import { execute, standIn } from "./stand-in.ts";
 
@@ -146,7 +145,7 @@ const attack = (tools: ToolDefinition[]) =>
 
 const context = standIn({ cwd: home });
 
-test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, however the path is spelled", liftedBy("hypervisor-explore-mode"), async () => {
+test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, however the path is spelled", async () => {
 	const tools = exploreTools({ home });
 	await fc.assert(
 		fc.asyncProperty(attack(tools), async ({ tool, params, denied }) => {
@@ -160,7 +159,7 @@ test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, ho
 });
 
 // Refusing everything would satisfy the property above; the explorer has to read the open part of home.
-test("lifelong-hypervisor#P5: a file outside the denied roots reads back through the read tools", liftedBy("hypervisor-explore-mode"), async () => {
+test("lifelong-hypervisor#P5: a file outside the denied roots reads back through the read tools", async () => {
 	const tools = exploreTools({ home }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
 	await fc.assert(
 		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/to-work/notes.md", "notes/up/.dotfiles/secrets/readme.md").chain(spellings), async (spelled) => {
