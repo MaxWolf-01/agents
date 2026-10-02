@@ -701,10 +701,13 @@ review() {
         printf '%s\n' "$rounds" | grep -qxF "$round" || specs+=("$repo_root@${round#code@}")
     done
 
+    out=$diffviews/$id
     if [ ${#specs[@]} -eq 0 ]; then
+        # A page an older dispatch rendered over the agent range would stay linked from the board.
+        # diffview's state file beside it keeps the user's comments, so it stays.
+        rm -f "$out.html" "$out.notes.json"
         echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
     else
-        out=$diffviews/$id
         mkdir -p "$(dirname "$out")"
         # The tracker's own copy, which the import above has brought the worker's
         # closing comment and its assumptions into.

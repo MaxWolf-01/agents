@@ -1161,13 +1161,16 @@ def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> No
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
     waited(toy)
     assert not git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split()
+    stale = toy / "agent" / "diffviews" / "warm-preset.html"  # a page an older dispatch rendered over the report
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text("the report as a changed file\n")
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     assert "gets no review page" in said.stderr, said.stderr
     assert status_of(toy, "warm-preset") == "review"
-    assert not (toy / "agent" / "diffviews" / "warm-preset.html").exists()
+    assert not stale.exists()
     assert not (toy.parent / "bin" / "diffview.args").exists()
 
 
