@@ -187,8 +187,11 @@ def test_only_the_newest_run_of_a_ticket_shows(tmp_path: Path, tmux: dict[str, s
 def test_every_scratch_dir_on_the_host_is_read(tmp_path: Path, tmux: dict[str, str]):
     spawned(scratch(tmp_path, "agents", "master"), "hypofuzz-default")
     spawned(scratch(tmp_path, "jarvis", "discord-threads"), "thread-registry")
+    spawned(scratch(tmp_path, ".dotfiles", "master"), "dns-filter-toggle")
 
-    assert sorted(row[0] for row in rows(tmp_path, tmux)) == ["agents/master", "jarvis/discord-threads"]
+    assert sorted(row[:2] for row in rows(tmp_path, tmux)) == [
+        [".dotfiles/master", "dns-filter-toggle"], ["agents/master", "hypofuzz-default"],
+        ["jarvis/discord-threads", "thread-registry"]]
 
 
 def test_a_scratch_dir_that_never_spawned_gives_no_row(tmp_path: Path, tmux: dict[str, str]):
