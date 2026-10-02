@@ -1,6 +1,6 @@
 
 /* The session page, on the house tokens read in before it. */
-:root { --size-body: 18px; --leading-body: 1.6; --page: 58rem; --rail: 3.25rem; --measure: 40rem; }
+:root { --size-body: 18px; --leading-body: 1.65; --rail: 3.25rem; --measure: 44rem; --page: calc(var(--measure) + var(--rail) + 4rem); }
 
 code { font-size: 0.84em; background: var(--ground-2); padding: 0.08em 0.32em; border-radius: 3px; }
 kbd { display: inline-block; min-width: 1.35em; box-sizing: border-box; padding: 0 0.3em; border: 1px solid var(--edge); border-radius: 3px; background: var(--ground-2); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); text-align: center; }
@@ -39,7 +39,8 @@ p, h1, h2, h3 { margin: 0; }
 .intro { padding: 3.25rem 0 3rem; }
 .intro .v-title { max-width: 22em; }
 .intro > .v-meta { margin-top: 0.75rem; }
-.brief { margin-top: 1.5rem; font-size: 1.1em; line-height: 1.58; color: var(--muted); }
+.brief { margin-top: 1.5rem; color: var(--muted); }
+.brief > * { max-width: none; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1.75rem; }
 #resume.copied { border-color: var(--accent); color: var(--accent); }
 
@@ -53,7 +54,7 @@ p, h1, h2, h3 { margin: 0; }
 /* a question waiting on the user */
 .q { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); padding: 0.25rem 0 0; }
 .q + .q { margin-top: 2.25rem; }
-.q-main { max-width: 46rem; }
+.q-main { max-width: var(--measure); }
 .q-detail { margin-top: 0.35rem; }
 .opts { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
 .opts li { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); }
@@ -62,7 +63,7 @@ p, h1, h2, h3 { margin: 0; }
 .tag { font: 400 0.75rem/1 var(--font-mono); color: var(--muted); margin-left: 0.6rem; white-space: nowrap; }
 .opts .pick .tag:not(.you) { color: var(--body); }
 .tag.you { color: var(--accent); }
-.why { margin-top: 0.8rem; color: var(--muted); max-width: 44rem; }
+.why { margin-top: 0.8rem; color: var(--muted); max-width: var(--measure); }
 .why .v-meta, .free .v-meta { margin-right: 0.35rem; }
 .asked-in { margin-top: 0.75rem; }
 .asked-in a { text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
@@ -78,7 +79,7 @@ p, h1, h2, h3 { margin: 0; }
 .turn[open] > summary .hl { font-weight: 600; color: var(--strong); }
 .turn > summary:hover .hl { color: var(--accent); }
 .turn > summary .date { white-space: nowrap; }
-.turn-body { padding: 0 0 2.5rem var(--rail); display: grid; gap: 1.5rem; }
+.turn-body { padding: 0 0 2.5rem var(--rail); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
 
 .said > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: baseline; padding: 0.45rem 0.8rem; margin-left: -0.8rem; border-radius: var(--radius); transition: background-color 150ms; }
 .said > summary::-webkit-details-marker { display: none; }
@@ -95,7 +96,7 @@ p, h1, h2, h3 { margin: 0; }
 .answers a { color: var(--body); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
 .answers a:hover { color: var(--accent); }
 
-.links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; max-width: 44rem; }
+.links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; max-width: var(--measure); }
 .links li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: baseline; }
 .links .n { justify-self: start; }
 .link-main { display: flex; flex-wrap: wrap; column-gap: 0.6rem; align-items: baseline; }
@@ -103,7 +104,7 @@ p, h1, h2, h3 { margin: 0; }
 .links a.link:hover { text-decoration-color: var(--accent); }
 .links .desc { flex-basis: 100%; color: var(--muted); }
 
-.asked { display: grid; gap: 1.1rem; padding-top: 1.25rem; border-top: 1px solid color-mix(in srgb, var(--edge) 60%, transparent); max-width: 46rem; }
+.asked { display: grid; gap: 1.1rem; padding-top: 1.25rem; border-top: 1px solid color-mix(in srgb, var(--edge) 60%, transparent); max-width: var(--measure); }
 .aq { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); scroll-margin-top: 1.5rem; }
 .aq .k { color: var(--muted); padding-top: 0.08rem; }
 .aq-h { font-weight: 600; color: var(--strong); }

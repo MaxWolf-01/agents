@@ -28,7 +28,7 @@
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --size-body: 19px;
   --leading-body: 1.62;
-  --measure: 38rem;
+  --measure: 43rem;
   --page: 62rem;
   --radius: 6px;
 }
@@ -136,8 +136,15 @@
 
   /* Running text, styled by tag: prose arrives as markup and should not need
      a class per paragraph. */
-  .prose {
+  .prose > * {
     max-width: var(--measure);
+  }
+
+  /* A table or a code block takes the width of the column the prose sits in
+     rather than the measure: squeezed to the measure, its cells wrap. */
+  .prose > table,
+  .prose > pre {
+    max-width: 100%;
   }
 
   .prose > * + * {
@@ -194,6 +201,41 @@
 
   .prose li::marker {
     color: var(--muted);
+  }
+
+  /* Block display lets a table too wide for a narrow window scroll inside
+     itself instead of widening the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .prose th,
+  .prose td {
+    padding: 0.45rem 1.75rem 0.45rem 0;
+    text-align: left;
+    vertical-align: baseline;
+  }
+
+  .prose th:last-child,
+  .prose td:last-child {
+    padding-right: 0;
+  }
+
+  .prose th {
+    font: 400 0.8125rem / 1.5 var(--font-mono);
+    color: var(--muted);
+    border-bottom: 1px solid var(--muted);
+  }
+
+  .prose td {
+    border-bottom: 1px solid var(--edge);
+  }
+
+  .prose tr:last-child td {
+    border-bottom: 0;
   }
 
   .prose blockquote {
