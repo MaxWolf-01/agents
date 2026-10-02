@@ -68,8 +68,10 @@
 #             its transcript answered in), or `gone` (runner dead, no status
 #             line: a killed pane, a rebooted host).
 #   log       the current run's status line and the tail of its worklog
-#   cleanup   kills the pane and whatever its runs left running, forgets the
-#             run, removes both worktrees and both branches
+#   cleanup   kills the pane and whatever its runs left running, the `job`s
+#             the worker started included (each whose cwd is in its worktree,
+#             under this process's JOB_STATE_DIR), forgets the run, removes
+#             both worktrees and both branches
 #   fuzz      the repo's fuzz run's host side, for `dispatch fuzz` and its hook
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
@@ -489,8 +491,21 @@ cleanup() {
           mv "$manifest.tmp" "$manifest"
         ) 9>>"$manifest.lock"
     fi
+    # A subshell, so a host with no `job` says so and still loses its worktrees.
+    ( remove_jobs )
     remove_worktrees
     echo "cleaned $name"
+}
+
+# The `job`s a worker started for its builds and test runs, which it rarely
+# removes itself: each one whose cwd is the worktree or under it, running or not.
+remove_jobs() {
+    for dir in "${JOB_STATE_DIR:-$HOME/.local/state/jobs}"/*/; do
+        cwd=$(sed -n 's/^cwd=//p' "$dir/meta" 2>/dev/null | head -1)
+        case $cwd in
+            "$worktree"|"$worktree"/*) job_bin; run "$job" rm "$(basename "$dir")" ;;
+        esac
+    done
 }
 
 # --force: the setup command left untracked files (node_modules, .venv) that a

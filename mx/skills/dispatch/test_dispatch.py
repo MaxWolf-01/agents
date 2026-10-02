@@ -1052,6 +1052,39 @@ def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(
     assert runs_typed() == {"dispatch-.lamp-warm-preset": 1}
 
 
+def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_others(toy: Path, staged: Path) -> None:
+    """Workers rarely `job rm` their builds and test runs, so the cleanup does: every job whose cwd
+    is the ticket's worktree or under it, running or done. A sibling worktree whose name extends
+    the slug, the fuzz run's worktree and anything outside the worktrees keep theirs."""
+    job = shutil.which("job")
+    if not job:
+        pytest.skip("no `job` here, and a worker's jobs are what this cleans up")
+    env = environment(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    worktree = toy.parent / "lamp-warm-preset"
+    places = {"warm-build": worktree, "warm-suite": worktree / "sub", "warm-more": toy.parent / "lamp-warm-preset-more",
+              "fuzz-lamp": toy.parent / "lamp-main-fuzz", "elsewhere": toy}
+    for name, cwd in places.items():
+        cwd.mkdir(exist_ok=True)
+        command = ["true"] if name == "warm-suite" else ["sleep", "600"]
+        started = subprocess.run([job, "run", name, "--cwd", str(cwd), "--", *command],
+                                 capture_output=True, text=True, env=env, timeout=30)
+        assert started.returncode == 0, started.stderr
+    assert subprocess.run([job, "wait", "warm-suite", "--deadline", "20"], capture_output=True, env=env, timeout=30).returncode == 0
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy,
+                             capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert {"removed warm-build", "removed warm-suite"} <= set(cleaned.stdout.splitlines()), cleaned.stdout
+    left = sorted(p.name for p in (toy.parent / "jobs").iterdir())
+    assert left == ["elsewhere", "fuzz-lamp", "warm-more"]
+    sessions = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
+                              capture_output=True, text=True, env=env).stdout.split()
+    assert sorted(s for s in sessions if s.startswith("job-")) == ["job-elsewhere", "job-fuzz-lamp", "job-warm-more"]
+
+
 def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:
     """A done ticket has nothing left to resume: its `done` takes the host's worktrees and branches,
     the run record, and the fetched branches here. A host that does not answer leaves the `done`
