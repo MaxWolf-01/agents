@@ -62,8 +62,8 @@ CHAT_LINES = 3
 # How every send-back asks the turn to end, the show skill's chat recap; the hook shows the page's
 # link under it.
 RECAP = (
-    "end the turn on its chat recap, at most three lines: what the page holds now, what comes next, "
-    "and what waits on the user, each open question named by what it decides"
+    "end the turn on its chat recap: three short lines at most, one each for what the page holds now, "
+    "what comes next, and what waits on the user, each open question named by what it decides"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 IN_THE_CHAT = (
