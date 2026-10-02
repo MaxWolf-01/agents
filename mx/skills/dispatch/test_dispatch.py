@@ -1040,6 +1040,7 @@ def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(
         said = spawn(dotted, staged, "warm-preset", "Work it.\n")
         assert said.returncode == 0, said.stderr
         waited(dotted, state)
+    assert "+ tmux new-session" not in said.stderr, said.stderr
     assert runs_typed() == {"dispatch-.lamp-warm-preset": 2}, "the respawn typed into the session the spawn made"
 
     cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=dotted,
