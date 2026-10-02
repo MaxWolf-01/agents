@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import session_page
 import stop_hook
 import turn_review
-from conftest import BEFORE_IT, SPOKEN_AFTER
+from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
 from session_page import PAGE, SESSIONS, render_session
 from stop_hook import decide
 from test_reading import messages_of
@@ -537,12 +537,8 @@ def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_
 # ---- no review at the turn's end --------------------------------------------
 
 
-def unreachable(system: str, prompt: str) -> list[dict]:
-    raise AssertionError("the reviewer was called at the turn's end")
-
-
 REVIEWED_04 = {"ts": "2026-09-23T01:31:00+00:00", "decision": "feedback", "findings": [], "record": "04.md"}
-TURNS_WITH_A_RECORD = {"a record the write hook reviewed": True, "a record never reviewed": False}
+TURNS_WITH_A_RECORD = {"a record the write hook reviewed": True, "a record not reviewed this turn": False}
 
 
 @pytest.mark.parametrize("reviewed", TURNS_WITH_A_RECORD.values(), ids=TURNS_WITH_A_RECORD)
@@ -560,7 +556,7 @@ def test_the_turns_end_runs_no_review(
     run(payload(worked_example, transcript, reply="Round 3 is on the page.\nQ7, what reviews a turn's prose, waits on you."))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
-    assert logged(attended, "verb")[-1]["why"] == ("record reviewed this turn" if reviewed else "record never reviewed")
+    assert logged(attended, "verb")[-1]["why"] == ("record reviewed this turn" if reviewed else "record not reviewed this turn")
 
 
 def test_the_records_as_the_turn_ended_are_logged_beside_their_review(
@@ -697,7 +693,7 @@ def reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -
     return payload(example, transcript)
 
 
-def never_reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+def not_reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     return payload(example, transcript)
 
 
@@ -713,7 +709,7 @@ PATHS = {
     "a record written through the shell": (through_the_shell, "send back", "record written outside Write", True),
     "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
     "a record reviewed when it was written": (reviewed, "render", "record reviewed this turn", True),
-    "a record never reviewed": (never_reviewed, "render", "record never reviewed", True),
+    "a record not reviewed this turn": (not_reviewed, "render", "record not reviewed this turn", True),
 }
 
 
@@ -747,6 +743,14 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
     run(arrange(worked_example, transcript, request))
     said = said_back(capsys)
     assert stop_hook.RECAP in said and "without a reply" not in said
+
+
+def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
+    """turns-end-on-their-recap#P4, in its own words: at most three lines, what the page holds now,
+    what comes next and what waits on the user, each open question named by what it decides."""
+    for part in ("3 short lines at most", "what the page holds now", "what comes next", "what waits on the user",
+                 "named by what it decides"):
+        assert part in stop_hook.RECAP
 
 
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(

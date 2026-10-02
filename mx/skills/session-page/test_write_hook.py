@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py"]
 # ///
 """The write hook's properties. Run: uv run test_write_hook.py
 
@@ -8,8 +8,7 @@ The seam is the hook at its input: the PostToolUse JSON of a write and the sessi
 its decision out, with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/turns-end-on-their-recap.md, its Properties P1 and P2, and session-page's Decisions on
 the review, over the worked example in `fixtures/`. The transcript the hook reads lacks the call it
-is given, as Claude Code's does while the hook runs. The prose reviewer is stubbed as
-test_stop_hook.py stubs it.
+is given, as Claude Code's does while the hook runs. The prose reviewer is stubbed by conftest.py.
 """
 
 import io
@@ -26,12 +25,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 
 import session_page
+import stop_hook
 import turn_review
 import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
-from conftest import SPOKEN_AFTER
-from test_stop_hook import TURN_STARTS, UNPARSEABLE, appended, logged, with_write
+from conftest import SPOKEN_AFTER, UNATTENDED, unreachable
+from test_stop_hook import LEFT_ALONE, LONG, TURN_STARTS, UNPARSEABLE, appended, logged, with_write
+from test_stop_hook import payload as stopped
+from test_turn_review import CATALOGUE_FIXTURE, SKILL_FIXTURE
 from write_hook import decide
 
 # Passages of the worked example's record 4, the one its turn wrote, as a reviewer would quote them.
@@ -89,10 +91,6 @@ def finding(quote: str, rule: str = "7") -> dict:
 
 def reviewer(*found: dict) -> Callable[[str, str], list[dict]]:
     return lambda system, prompt: list(found)
-
-
-def unreachable(system: str, prompt: str) -> list[dict]:
-    raise AssertionError("the reviewer was called on a write that should not spend a model call")
 
 
 # ---- P1: the review runs on the record's Write, before the turn ends --------
@@ -177,27 +175,61 @@ def test_a_record_a_later_turn_writes_is_reviewed_though_an_earlier_turns_was(
     assert str(record) in run(wrote(record, appended(transcript, tmp_path / "t.jsonl", start)))
 
 
-WRITES_NOT_REVIEWED = {
-    "an edit of the record this turn wrote": ("05.md", "Edit"),
-    "a write of the session record": ("session.md", "Write"),
-    "a write of an earlier turn's record": ("04.md", "Write"),
+WRITES_IN_A_TURN_WITH_NO_RECORD = {
+    "a write of the session record": "session.md",
+    "a write of an earlier turn's record": "turns/04.md",
 }
 
 
-@pytest.mark.parametrize("name, tool", WRITES_NOT_REVIEWED.values(), ids=WRITES_NOT_REVIEWED)
-def test_a_write_that_is_not_the_turns_record_on_its_write_is_parsed_and_never_reviewed(
-    name: str, tool: str, worked_example: Path, unrecorded: Path, run: Callable[[dict], str],
+@pytest.mark.parametrize("name", WRITES_IN_A_TURN_WITH_NO_RECORD.values(), ids=WRITES_IN_A_TURN_WITH_NO_RECORD)
+def test_a_write_in_a_turn_that_has_written_no_record_is_parsed_and_never_reviewed(
+    name: str, worked_example: Path, unrecorded: Path, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    """turns-end-on-their-recap#P1 names the record's Write: the session record is reviewed with
-    the turn's record, and record 04, the turn before's, was reviewed in that turn."""
+    """The session record is reviewed with the turn's record, and record 04, the turn before's,
+    was reviewed in that turn: the page keeps a record's earliest write."""
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    assert run(wrote(worked_example / name, unrecorded)) == ""
+    assert [entry["why"] for entry in logged(attended, "verb")] == ["records parse"]
+
+
+def test_a_record_whose_write_did_not_parse_is_reviewed_once_the_edit_that_fixes_it_lands(
+    worked_example: Path, unrecorded: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch, attended: Path,
+) -> None:
+    """turns-end-on-their-recap#P1 and P2: a parse error on the record's Write only delays its
+    review, to the first write after which the records parse, and the edit after the findings is
+    not reviewed again."""
+    record = worked_example / "turns" / "05.md"
+    record.write_text(PIVOTAL_05.replace("date:", "day:"))
+    assert run(wrote(record, unrecorded)).startswith(f"{record}")
+    with_write(unrecorded, "Write", record)
+    record.write_text(PIVOTAL_05)
+    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
+    assert str(record) in run(wrote(record, unrecorded, "Edit"))
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(PIVOTAL_05.replace("a pivotal addition", "the ledger's overflow"))
+    assert run(wrote(record, unrecorded, "Edit")) == ""
+    assert [e["decision"] for e in logged(attended, "decision")] == ["feedback"]
+
+
+def test_the_record_an_answer_in_the_chat_is_moved_into_is_reviewed_on_its_write(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], str],
+    monkeypatch: pytest.MonkeyPatch, attended: Path,
+) -> None:
+    """The Stop hook sends a long answer back to the page; the record the agent then writes in the
+    continued turn is reviewed on its write, and the next stop renders it as reviewed."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, reply=LONG))))
+    stop_hook.main()
+    assert "05.md" in json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     record = worked_example / "turns" / "05.md"
     record.write_text(PIVOTAL_05)
-    if name == "05.md":
-        with_write(unrecorded, "Write", record)
-    monkeypatch.setattr(turn_review, "review", unreachable)
-    assert run(wrote(worked_example / ("turns" if name != "session.md" else "") / name, unrecorded, tool)) == ""
-    assert [entry["why"] for entry in logged(attended, "verb")] == ["records parse"]
+    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
+    assert str(record) in run(wrote(record, unrecorded))
+    with_write(unrecorded, "Write", record)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, stop_hook_active=True))))
+    stop_hook.main()
+    assert "systemMessage" in json.loads(capsys.readouterr().out)
+    assert logged(attended, "verb")[-1]["why"] == "record reviewed this turn"
 
 
 TITLE = "Leading words for showing, and the session page"  # the worked example's session.md H1
@@ -260,7 +292,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
 # ---- P2: a write that breaks the records goes back at once ------------------
 
 
-@pytest.mark.parametrize("tool", ["Write", "Edit"])
+@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit"])
 @pytest.mark.parametrize("name, text, line", UNPARSEABLE.values(), ids=UNPARSEABLE)
 def test_a_write_that_leaves_the_records_unparseable_is_answered_with_the_readers_error(
     name: str, text: str, line: int | None, tool: str, worked_example: Path, writing: Path, stale_page: str,
@@ -273,7 +305,7 @@ def test_a_write_that_leaves_the_records_unparseable_is_answered_with_the_reader
     record.write_text(text)
     said = run(wrote(record, writing, tool))
     assert said.startswith(f"{record}:{line}: " if line else f"{record}: ")
-    assert RECAP in said
+    assert "carry on" in said and RECAP in said, "the turn goes on, and still ends on its recap"
 
 
 def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
@@ -306,8 +338,9 @@ def test_a_write_outside_the_sessions_directory_is_let_through_unlogged(
     worked_example: Path, writing: Path, tmp_path: Path, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    """The hook runs on every file edit of every session: a file elsewhere in the project, or a
-    record of another session, is no business of this one, broken records or not."""
+    """The hook runs on every file edit of every session: a file elsewhere in the project, a record
+    of another session, or a file in this session's directory that is no record of it, is no
+    business of this one, broken records or not."""
     (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
     code = worked_example.parents[2] / "src" / "ledger.py"
@@ -316,12 +349,12 @@ def test_a_write_outside_the_sessions_directory_is_let_through_unlogged(
     other = worked_example.parent / "8e0f1c22-0000-0000-0000-000000000000" / "turns" / "01.md"
     other.parent.mkdir(parents=True)
     other.write_text("no frontmatter\n")
-    for path in (code, other):
+    inside = worked_example / "drafts" / "notes.md"
+    inside.parent.mkdir()
+    inside.write_text("")
+    for path in (code, other, inside):
         assert run(wrote(worked_example / "turns" / "04.md", writing) | {"tool_input": {"file_path": str(path)}}) == ""
-    assert not attended.exists()
-
-
-LEFT_ALONE = {"a dispatched worker": ("DISPATCH_WORKLOG", "/w/log"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
+    assert [entry["why"] for entry in logged(attended, "verb")] == ["no record of this session"], "only the path in its directory is read past the path"
 
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
@@ -352,7 +385,7 @@ def test_each_decision_on_a_record_is_one_line_in_the_session_pages_log(
     assert (review["decision"], review["findings"], review["dropped"]) == ("feedback", [finding(IN_RECORD[0])], [finding(NOT_IN_RECORD)])
     assert review["record"] == str(record) and review["text"] == record.read_text()
     assert [(e["verb"], e["why"], e["tool"], e["path"]) for e in logged(attended, "verb")] == [
-        ("send back", "review findings", "Write", str(record)), ("allow", "records parse", "Edit", str(record))]
+        ("send back", "review findings", "Write", str(record)), ("allow", "record reviewed this turn", "Edit", str(record))]
 
 
 # ---- the reviewer's run -----------------------------------------------------
@@ -418,54 +451,29 @@ def test_a_reviewer_past_its_limit_is_ended_with_its_line_written_and_the_record
     assert entry["decision"] == "failed" and entry["why"].startswith("claude ran past 1s")
 
 
+def test_the_plugin_runs_the_hook_after_every_tool_that_writes_a_file_and_waits_out_the_review() -> None:
+    """The hooks.json entry is what puts P1 and P2 in a session: its matcher takes each tool whose
+    call the page counts as a write, and its timeout outlasts the reviewer's own limit, so a slow
+    review fails open inside the hook rather than being cut off."""
+    hooks = json.loads((Path(__file__).parents[2] / "hooks" / "hooks.json").read_text())["hooks"]["PostToolUse"]
+    (entry,) = [e for e in hooks if any(h["command"].endswith("/skills/session-page/write_hook.py") for h in e["hooks"])]
+    assert all(re.fullmatch(entry["matcher"], tool) for tool in session_page.WRITES)
+    assert entry["hooks"][0]["timeout"] > turn_review.WRAPPER_TIMEOUT_S
+
+
 def test_the_hook_as_claude_code_runs_it_answers_a_broken_record(worked_example: Path, writing: Path, tmp_path: Path) -> None:
     """The script itself, in a process of its own with the hook JSON on stdin, which is where its
     deferred imports run."""
     record = worked_example / "turns" / "04.md"
     record.write_text("no frontmatter\n")
     hook = Path(__file__).parent / "write_hook.py"
-    env = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")} | {"HOME": str(tmp_path)}
+    env = {k: v for k, v in os.environ.items() if k not in UNATTENDED} | {"HOME": str(tmp_path)}
     done = subprocess.run([sys.executable, hook], input=json.dumps(wrote(record, writing)), capture_output=True, text=True, env=env, timeout=60)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"].startswith(f"{record}:")
 
 
-# ---- the catalogue's chat rules ---------------------------------------------
-
-CATALOGUE_FIXTURE = """# Tells
-
-Prose about the tags.
-
-## Content
-
-- `3` `both` **A rule.** Its first line.
-  Before: "indented continuation". After: "rides with its rule".
-
-- `51` `artifact` **A rule for files only.** Dropped.
-
-## Style
-
-- `13` `chat` **A rule for replies.** Kept.
-"""
-
-SELECTED = """- `3` `both` **A rule.** Its first line.
-  Before: "indented continuation". After: "rides with its rule".
-
-- `13` `chat` **A rule for replies.** Kept."""
-
-
-def test_the_rules_selected_are_the_ones_the_catalogue_documents() -> None:
-    """The oracle is the awk command CATALOGUE.md's header publishes as its format contract, run
-    on the real catalogue: a catalogue whose bullets stop matching fails here rather than turning
-    every record clean."""
-    catalogue = turn_review.CATALOGUE
-    program = re.search(r"awk '(.+?)' CATALOGUE\.md", catalogue.read_text()).group(1)
-    awk = subprocess.run(["awk", program, catalogue], capture_output=True, text=True, check=True)
-    assert turn_review.chat_rules(catalogue.read_text()) == awk.stdout.rstrip("\n")
-
-
-def test_selected_rule_blocks_come_whole() -> None:
-    assert turn_review.chat_rules(CATALOGUE_FIXTURE) == SELECTED
+# ---- a broken source of the review's rules ---------------------------------
 
 
 def test_a_catalogue_with_no_chat_rules_lets_the_record_through(
@@ -476,55 +484,6 @@ def test_a_catalogue_with_no_chat_rules_lets_the_record_through(
     monkeypatch.setattr(turn_review, "CATALOGUE", catalogue)
     monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
     assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
-
-
-SKILL_FIXTURE = """## The session page
-
-Prose before the shape.
-
-### The turn record
-
-The shape's prose.
-
-```markdown
----
-date: 2026-09-28
----
-
-# A headline inside the example
-
-## Details
-
-The example's own section.
-```
-
-- A rule about the record.
-
-## Who builds it
-
-After the shape.
-"""
-
-
-def test_the_shape_runs_to_the_next_heading_past_the_example_records_own() -> None:
-    shape = turn_review.record_shape(SKILL_FIXTURE)
-    assert shape.startswith("The shape's prose.") and shape.endswith("- A rule about the record.")
-    assert "# A headline inside the example" in shape and "## Details" in shape
-    assert "Prose before" not in shape and "After the shape" not in shape
-
-
-def test_the_turn_record_the_show_skill_gives_the_agent_parses(tmp_path: Path) -> None:
-    """The oracle is the renderer's own reader: the example record the agent is shown is a record
-    it accepts, and it uses every part a record can hold, so the skill and the parser cannot drift
-    apart unnoticed."""
-    shape = turn_review.record_shape(turn_review.SHOW.read_text())
-    example = re.search(r"```markdown\n(.*?)```", shape, re.S).group(1)
-    record = tmp_path / "07.md"
-    record.write_text(example)
-    turn = session_page.read_turn(record)
-    assert turn.headline and turn.details and turn.links and turn.answered and turn.superseded
-    (question,) = turn.questions
-    assert len(question.options) >= 2 and sum(o.picked for o in question.options) == 1 and question.why
 
 
 def test_a_show_skill_with_no_turn_record_section_lets_the_record_through(

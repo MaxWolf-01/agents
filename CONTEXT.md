@@ -167,5 +167,5 @@ The stretch of a context window within which reasoning stays sharp; the limit is
 _Avoid_: context budget, token budget
 
 **Session page**:
-The one page a session's answers live on, the questions waiting on the user at its top; the chat reply only recaps it.
+The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log

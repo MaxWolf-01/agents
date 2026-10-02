@@ -36,6 +36,12 @@ def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return turn_review.LOG
 
 
+def unreachable(system: str, prompt: str) -> list[dict]:
+    """A reviewer stand-in for a check where no model call may be made. It fails the check through
+    `pytest.fail`, which the review's fail-open handler does not catch."""
+    pytest.fail("the reviewer was called where no model call may be made")
+
+
 @pytest.fixture
 def worked_example(tmp_path: Path) -> Path:
     """The prototype's four turns as the session directory they describe, copied so that a check

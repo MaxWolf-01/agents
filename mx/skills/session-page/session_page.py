@@ -119,6 +119,23 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     )
 
 
+def left_alone() -> str:
+    """Why nobody reads this session's page, where nobody does: a dispatched worker or a print-mode
+    session. Empty for a session someone is sitting at."""
+    if os.environ.get("DISPATCH_WORKLOG"):
+        return "dispatched worker"
+    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        return "print-mode session"
+    return ""
+
+
+def written_this_turn(session: "Session") -> "Turn | None":
+    """The newest record the transcript writes after this turn began, by the write time the page
+    pairs messages by. With no turn begun yet, the newest record the transcript writes."""
+    written = [t for t in session.turns if t.written and (session.began is None or t.written > session.began)]
+    return written[-1] if written else None
+
+
 class RecordError(Exception):
     """A record the renderer cannot read, at the line it gave up on where the reason has one. The
     hooks send the agent back with `str(e)`."""

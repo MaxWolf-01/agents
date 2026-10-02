@@ -28,7 +28,6 @@ hook took that path, and the session directory it resolved.
 """
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -40,7 +39,9 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import PAGE, RecordError, Session, Turn, open_questions, page, read_session, session_directory  # noqa: E402
+from session_page import (  # noqa: E402
+    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, session_directory, written_this_turn,
+)
 
 Verb = Literal["render", "send back", "allow"]
 
@@ -59,10 +60,10 @@ class Decision:
 # The longest chat reply a session that has a page ends a turn with and writes no record.
 CHAT_LINES = 3
 
-# How every send-back asks the turn to end, the show skill's chat recap; the hook shows the page's
-# link under it.
+# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap, no
+# longer than the reply that needs no record. The hook shows the page's link under it.
 RECAP = (
-    "end the turn on its chat recap: three short lines at most, one each for what the page holds now, "
+    f"end the turn on its chat recap: {CHAT_LINES} short lines at most, one each for what the page holds now, "
     "what comes next, and what waits on the user, each open question named by what it decides"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
@@ -117,19 +118,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
     if not turn_review.reviewed_since(session.id, session.began):
-        return Decision("render", "record never reviewed", page=page(session, datetime.now()), shown=shown(session, directory))
+        return Decision("render", "record not reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
-
-
-def left_alone() -> str:
-    """Why nobody reads this session's page, where nobody does: a dispatched worker or a print-mode
-    session. Empty for a session someone is sitting at."""
-    if os.environ.get("DISPATCH_WORKLOG"):
-        return "dispatched worker"
-    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
-        return "print-mode session"
-    return ""
 
 
 def shown(session: Session, directory: Path) -> str:
@@ -137,13 +128,6 @@ def shown(session: Session, directory: Path) -> str:
     waiting = [q.tag for _, q in open_questions(session)]
     ask = f"waiting on you: {' '.join(waiting)}" if waiting else "nothing waiting on you"
     return f"session page · {ask} · {(directory / PAGE).as_uri()}"
-
-
-def written_this_turn(session: Session) -> Turn | None:
-    """The newest record the transcript writes after this turn began, by the write time the page
-    pairs messages by. With no turn begun yet, the newest record the transcript writes."""
-    written = [t for t in session.turns if t.written and (session.began is None or t.written > session.began)]
-    return written[-1] if written else None
 
 
 def written_outside_write(session: Session) -> Turn | None:
