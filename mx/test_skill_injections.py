@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 
 SKILLS = Path(__file__).resolve().parent / "skills"
-INJECTION = re.compile(r"^!`(.+)`\s*$", re.M)
+INJECTION = re.compile(r"(?<![\w`])!`([^`\n]+)`")
 BASH_RULE = re.compile(r"Bash\(([^)]*)\)")
 OPERATORS = re.compile(r"\|\||&&|;|\|")
 
@@ -54,6 +54,8 @@ def test_the_matcher_reads_rules_as_claude_code_does():
     assert not covers("job --help", "job --help --all")
     assert not approved('job --help || echo "missing"', ["job --help"])
     assert approved('job --help || echo "missing"', ["job --help", "echo *"])
+    assert INJECTION.findall("- Branch: !`git branch --show-current` today") == ["git branch --show-current"]
+    assert INJECTION.findall("written as ``!`cmd` `` in a code span") == []
 
 
 def test_every_injected_command_is_in_its_skills_allowed_tools():
