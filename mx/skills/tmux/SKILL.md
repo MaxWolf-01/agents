@@ -1,7 +1,6 @@
 ---
 name: tmux
 description: "Run commands in tmux whenever they might not come back on their own or need eyes on them: builds, test suites, training runs, servers, anything over the network, anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
-allowed-tools: Bash(job --help)
 ---
 
 # tmux
@@ -12,11 +11,7 @@ How long you expect it to take is the wrong test. The command you thought would 
 
 ## Anything you will wait on: `job`
 
-`job --help` is the manual. Where the block below shows its command line rather than what it prints, run that line yourself.
-
-```text
-!`job --help || echo "job is not installed on this machine. Make sure it is accessible: install https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job into a directory on PATH, executable, then load this skill again."`
-```
+`job --help` is the manual: run it before your first job. Where `job` is not found, install https://raw.githubusercontent.com/MaxWolf-01/dotfiles/master/bin/job into a directory on PATH, executable.
 
 Run `job wait` as a background task of your session, so its exit wakes you; a foreground call is cut off by the tool's own timeout, whatever `--deadline` says. Where nothing run in the background can wake you, wait in the foreground with a `--deadline` inside any timeout the tool has, and wait again until the job has ended: a wait that ends leaves the job running.
 
