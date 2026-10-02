@@ -11,8 +11,8 @@ check:
 	@jq -r '.hooks[][].hooks[].command' $(HOOKS) | tr -d '"' | sed 's|$${CLAUDE_PLUGIN_ROOT}|mx|' | cut -d' ' -f1 | \
 	  while read -r c; do [ -x "$$c" ] || { echo "$(HOOKS): $$c is not an executable file"; exit 1; }; done
 	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
-	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest pytest -q -p no:cacheprovider --tb=short mx/test_launches.py
-	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits"
+	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pyyaml pytest -q -p no:cacheprovider --tb=short mx/test_launches.py mx/test_skill_injections.py
+	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits, every skill approves its own ! lines"
 
 # One test process per core; JOBS=1 runs them one after another.
 JOBS ?= auto
