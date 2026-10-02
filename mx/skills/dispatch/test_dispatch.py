@@ -477,9 +477,8 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     assert "The warm preset lands, unmerged" in written and "**Warm at what temperature?**" in written
     assert "warm-preset for review" in git(agent, "log", "-1", "--format=%s")
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())
-    # a worker anchors from its worktree root, and the agent repo is rendered from its own root
-    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [
-        (1, "lamp.txt", 1), (2, "show/warm-preset/report.md", 1)]
+    # the page shows code alone, so an assumption anchored on the report stays on the ticket
+    assert [(one["id"], one["path"], one["line"]) for one in notes["notes"]] == [(1, "lamp.txt", 1)]
 
     # the ruling, before the merge: the question is in the tracker's copy from the import
     ruled = subprocess.run([str(tracker), "rule", "warm-preset", "D2", "2700K"], cwd=toy,
@@ -500,10 +499,10 @@ def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, stag
     got = subprocess.run([str(tracker), "get", "warm-preset", "diff"], cwd=toy, capture_output=True, text=True)
     assert got.stdout.split() == [f"code@{cut['code']}..{tip['code']}", f"agent@{cut['agent']}..{tip['agent']}"], got.stdout
 
-    # one page, both repos' ranges on it, each rendered from the repo it names
+    # one page, over the code range alone: the report reaches the user through the ticket
     handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
-    assert [line for line in handed
-            if line.startswith(f"{toy}@{cut['code']}..{tip['code']} {agent}@{cut['agent']}..{tip['agent']} ")], handed
+    pages = [line for line in handed if not line.startswith("--serve")]
+    assert pages and all(line.startswith(f"{toy}@{cut['code']}..{tip['code']} --notes ") for line in pages), handed
 
     # the `done` retires the run: both worktrees and both branches go, and so does the record of it
     assert not (toy.parent / "lamp-warm-preset").exists()
@@ -1151,6 +1150,28 @@ def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> No
     assert said.returncode == 0, said.stderr
     assert "built nothing to review" in said.stderr, said.stderr
     assert status_of(toy, "warm-preset") == "claimed"
+
+
+def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> None:
+    """A research ticket's round: the agent branch carries the report and nothing in the code repo
+    moved, so there is no diff of code to show and `review` says so rather than rendering one."""
+    (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
+        "printf 'the lamp, warm\\n' > lamp.txt\ngit add lamp.txt\ngit commit -q -m \"$slug: the warm preset\"\n", ""))
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+    assert not git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split()
+    stale = toy / "agent" / "diffviews" / "warm-preset.html"  # a page an older dispatch rendered over the report
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text("the report as a changed file\n")
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "gets no review page" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    assert not stale.exists()
+    assert not (toy.parent / "bin" / "diffview.args").exists()
 
 
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
