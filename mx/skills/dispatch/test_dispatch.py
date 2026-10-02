@@ -1024,32 +1024,30 @@ def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(
     state = dotted.parent / "home" / ".local" / "state" / "dispatch" / ".lamp-main"
     env = environment(dotted)
 
-    def runs_typed() -> dict[str, int]:
-        """How many runs each live session had typed into it, by session name. The shell wraps a
-        long line it echoes, which `-J` does not join."""
-        names = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
-                               capture_output=True, text=True, env=env).stdout.split()
-        return {name: subprocess.run(["tmux", "capture-pane", "-p", "-J", "-t", f"={name}:", "-S", "-"],
-                                     capture_output=True, text=True, env=env).stdout.replace("\n", "").count("run-worker.sh")
-                for name in names}
+    def sessions() -> list[str]:
+        """The live sessions' names. A pane's text is no witness: under load the shell echoes a
+        typed line once more as it redraws it."""
+        return subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
+                              capture_output=True, text=True, env=env).stdout.split()
 
     run(dotted, "claim", "warm-preset")
     for _ in range(2):
         said = spawn(dotted, staged, "warm-preset", "Work it.\n")
         assert said.returncode == 0, said.stderr
         waited(dotted, state)
-    assert "+ tmux new-session" not in said.stderr, said.stderr
-    assert runs_typed() == {"dispatch-.lamp-warm-preset": 2}, "the respawn typed into the session the spawn made"
+    assert "+ tmux new-session" not in said.stderr, "the respawn found the session the spawn made: " + said.stderr
+    assert sessions() == ["dispatch-.lamp-warm-preset"]
 
     cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=dotted,
                              capture_output=True, text=True, env=env, timeout=180)
     assert cleaned.returncode == 0, cleaned.stderr
     assert "no session" not in cleaned.stderr, cleaned.stderr
-    assert runs_typed() == {}
+    assert sessions() == []
 
     said = spawn(dotted, staged, "warm-preset", "Work it.\n")
     assert said.returncode == 0, said.stderr
-    assert runs_typed() == {"dispatch-.lamp-warm-preset": 1}
+    assert "+ tmux new-session" in said.stderr, "the spawn after a cleanup starts a fresh session: " + said.stderr
+    assert sessions() == ["dispatch-.lamp-warm-preset"]
 
 
 def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_others(toy: Path, staged: Path) -> None:
