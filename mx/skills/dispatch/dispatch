@@ -110,7 +110,7 @@
 #            scratch dir whose probe failed an `unreadable` one, a
 #            `worker-hosts --targets` that failed an `incomplete` one, and any
 #            of them makes the exit status nonzero. A count per state closes
-#            it. In color on a terminal, or with --color, which `watch` needs
+#            it, running and exited always there, zero or not. In color on a terminal, or with --color, which `watch` needs
 #            (`watch -c dispatch ps --color`); NO_COLOR turns it off. In color a
 #            running worker's IDLE turns yellow at 15 minutes. For a human
 #            looking in; the orchestrator's own view is `dispatch ctl probe`.
@@ -1017,7 +1017,8 @@ ps_() {
         # Every state but these two is something that did not get read.
         function hue(state) { return state == "running" ? "1;32" : state == "exited" ? "" : "1;31" }
         BEGIN { split("HOST BASE TICKET STATE AGE IDLE DETAIL", head, " ")
-                for (c = 1; c <= 7; c++) cell[0, c] = head[c] }
+                for (c = 1; c <= 7; c++) cell[0, c] = head[c]
+                order["running"] = 1; order["exited"] = 2; states = 2 }
         { n = NR
           cell[n, 1] = $1; cell[n, 2] = $2; cell[n, 3] = $3; cell[n, 4] = $4
           cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9
@@ -1042,11 +1043,12 @@ ps_() {
                 print paint(pad[1] "  " pad[2] "  " pad[3] "  ", quiet) paint(pad[4], hue(state)) "  " \
                       paint(pad[5], quiet) "  " paint(pad[6], stale[k] ? "33" : quiet) "  " paint(detail, quiet)
             }
-            # One count per state, in the order they first appear.
+            # Running and exited always first, zero or not, so a refresh under
+            # watch keeps each number where it was; the rest as they appear.
             for (s in order) by[order[s]] = s
             tally = ""
             for (i = 1; i <= states; i++)
-                tally = tally (i > 1 ? "  " : "") paint(count[by[i]] " " by[i], hue(by[i]))
+                tally = tally (i > 1 ? "  " : "") paint(count[by[i]] + 0 " " by[i], count[by[i]] ? hue(by[i]) : "2")
             print ""
             print tally
         }'
