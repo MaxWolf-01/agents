@@ -870,8 +870,8 @@ with sync_playwright() as pw:
     tab.on("pageerror", lambda e: errors.append(str(e)))
     tab.goto(f"{page_url}?theme=day#t-map-columns")
     tab.wait_for_selector("#gunloaded:not([hidden]), #gundrawn:not([hidden]), .side .mermaid svg")
-    out = {"cdn": True, "pinned": pinned, "unloaded": tab.is_visible("#gunloaded") and tab.inner_text("#gunloaded"),
-           "undrawn": tab.is_visible("#gundrawn"), "graphs": tab.eval_on_selector_all(".mermaid svg", "els => els.length")}
+    out = {"cdn": True, "pinned": pinned, "graphs": tab.eval_on_selector_all(".mermaid svg", "els => els.length"),
+           "notes": [tab.inner_text(n) for n in ("#gunloaded", "#gundrawn") if tab.is_visible(n)]}
     # the rest of the board: the open row folds, and the scheme switches
     tab.click("#t-map-columns > summary")
     tab.keyboard.press("t")
@@ -882,12 +882,14 @@ print(json.dumps(out))
 """
 
 
-@pytest.mark.parametrize("changed", ["/mermaid.min.js", "/chunk-SP2CHFBE.mjs"])
-def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str) -> None:
+@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), ("/chunk-SP2CHFBE.mjs", "could not load"),
+                                               ("/render-FL5BWEWF.mjs", "could not be drawn")])
+def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:
     """The ticket's acceptance criterion: a file whose bytes differ from its pinned hash is refused,
     the graph does not draw, the board says so the way it says the engine did not load, and the rest
-    of the board works. mermaid is pinned by its script's own hash, the layout's chunk only through
-    the import map."""
+    of the board works. mermaid is pinned by its script's own hash, the layout's chunks only through
+    the import map; the layout fetches its render chunk only once it draws, so that one is refused
+    as a piece the draw did not get."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -902,8 +904,9 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     if not seen["cdn"]:
         pytest.skip("no network and no copy of the graph engine")
     assert all(re.search(r"@\d+\.\d+\.\d+/", url) for url in seen["pinned"]), f"a script not at an exact version: {seen['pinned']}"
-    assert seen["unloaded"] and "could not load" in seen["unloaded"], f"the panel says {seen['unloaded']!r}"
-    assert seen["graphs"] == 0 and not seen["undrawn"], f"a changed engine drew {seen['graphs']} graphs"
+    [said] = seen["notes"] or [""]
+    assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
+    assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
 
 if __name__ == "__main__":
