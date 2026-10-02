@@ -90,8 +90,10 @@ def render_session(directory: Path, transcript: Path, now: datetime | None = Non
     return page(read_session(directory, transcript), now or datetime.now())
 
 
-def read_session(directory: Path, transcript: Path) -> "Session":
-    """The session `directory` holds, with each turn's messages read from `transcript`.
+def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = ()) -> "Session":
+    """The session `directory` holds, with each turn's messages read from `transcript`. `pending`
+    is entries the transcript does not hold yet, read as though it ended on them: Claude Code writes
+    a tool call there only after the call's PostToolUse hooks have run.
 
     Raises RecordError where a record does not parse.
     """
@@ -99,7 +101,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
         directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"})
     turns = read_turns(directory / "turns")
     settled = settle(turns)
-    entries = read_transcript(transcript)
+    entries = read_transcript(transcript) + list(pending)
     written = written_at(entries, directory, turns)
     spoken = said(entries)
     times = [written.get(t.number) for t in turns]
@@ -119,7 +121,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
 
 class RecordError(Exception):
     """A record the renderer cannot read, at the line it gave up on where the reason has one. The
-    Stop hook sends the agent back with `str(e)`."""
+    hooks send the agent back with `str(e)`."""
 
     def __init__(self, path: Path, line: int | None, reason: str) -> None:
         super().__init__(f"{path}{f':{line}' if line is not None else ''}: {reason}")
