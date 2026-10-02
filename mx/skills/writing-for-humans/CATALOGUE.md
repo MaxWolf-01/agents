@@ -48,6 +48,9 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
 
 - `17` `both` **Title case headings.** Use sentence case.
 
+- `54` `both` **Headline titles.** A title or headline that reads like a news headline: it reports what the work did instead of naming what it is about ("two builds to land, one ticket grilled", "C2's build lands"), wraps a hook and a reveal around a colon ("What Jarvis knows after a clear: the memory block"), puts counts, bare ids or an unexplained "the" where names belong ("two builds", "C4", "the stage checks"), or turns figurative ("one way into max's life data"). Name the subject and the things in it, in words a cold reader would search for. A "subject: what about it" title is fine when both halves name things.
+  Before: "The session page's follow-ups: two builds to land, one ticket grilled". After: "Session page: sessions/ hidden from git status, links per checkout, when records are committed".
+
 - `18` `both` **Decorative emojis.** Remove from headings and bullets. A marker that a documented format gives a fixed meaning is not decoration.
 
 - `19` `both` **Curly quotes.** Replace with straight quotes.

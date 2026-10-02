@@ -16,7 +16,7 @@ The records sit in the directory `session-page` prints, outside git and the same
 A turn that answers with more than a line, in order:
 
 1. **Its artifacts**, each built by a subagent or a fork (Who builds it, below), since the session writes no HTML. The turn waits for them, so every link its record carries points at a page that exists.
-2. **The session record**, on the first such turn: `session.md`, with frontmatter `session` (the id) and `repo` (the directory the session was started in, which the page's resume command changes into), an H1 naming what the session is about, and a `## Brief` of a few sentences. The brief is rewritten when the session's scope moves.
+2. **The session record**, on the first such turn: `session.md`, with frontmatter `session` (the id) and `repo` (the directory the session was started in, which the page's resume command changes into), an H1 that names the session's subject the way an email subject line does (the area of the project and the things worked on, by name), and a `## Brief` of a few sentences. Both are rewritten when the session's scope moves, and a turn that rewrites them has them reviewed with its record.
 3. **The turn record**, below.
 4. **No chat reply**: the turn ends on the record's Write call. Any line of your own summarises the page, and the user would read it instead of the page.
 

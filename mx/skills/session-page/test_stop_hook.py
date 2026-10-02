@@ -819,6 +819,39 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
 
 
+TITLE = "Leading words for showing, and the session page"  # the worked example's session.md H1
+
+
+@pytest.mark.parametrize("rewritten", [True, False], ids=["session.md written this turn", "session.md left as it was"])
+def test_a_turn_that_rewrites_the_session_record_has_it_reviewed_with_its_own(
+    rewritten: bool, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
+) -> None:
+    """The session's title heads its page, so a turn that writes session.md has it reviewed, fenced
+    before the turn's record, and a finding on its title goes back naming it. A turn that leaves it
+    as it was has only its record reviewed, and the same finding drops."""
+    record = worked_example / "turns" / "05.md"
+    record.write_text(PIVOTAL_05)
+    with_write(unrecorded, "Write", record)
+    if rewritten:
+        with_write(unrecorded, "Edit", worked_example / "session.md")
+    prompts = []
+    monkeypatch.setattr(turn_review, "review", lambda system, prompt: prompts.append(prompt) or [finding(TITLE, "54")])
+    run(payload(worked_example, unrecorded))
+    out = capsys.readouterr().out
+    (prompt,) = prompts
+    session_record = f"<record>\n{(worked_example / 'session.md').read_text().strip()}\n</record>"
+    assert prompt.endswith(f"{session_record}\n<record>\n{record.read_text().strip()}\n</record>") == rewritten
+    (entry,) = logged(attended, "decision")
+    assert ("session_record" in entry) == rewritten
+    if rewritten:
+        said = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        assert str(worked_example / "session.md") in said and f'"{TITLE}"' in said
+        assert "**Headline titles.**" in said
+    else:
+        assert "hookSpecificOutput" not in out and entry["dropped"] == [finding(TITLE, "54")]
+
+
 REVIEW = turn_review.review  # the real one, which the autouse stub replaces
 
 # What claude's stream ends with, as ../run-log/test_run_log.py has it.
