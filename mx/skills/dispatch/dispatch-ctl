@@ -491,7 +491,8 @@ cleanup() {
           mv "$manifest.tmp" "$manifest"
         ) 9>>"$manifest.lock"
     fi
-    remove_jobs
+    # A subshell, so a host with no `job` says so and still loses its worktrees.
+    ( remove_jobs )
     remove_worktrees
     echo "cleaned $name"
 }
