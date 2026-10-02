@@ -81,10 +81,11 @@
 #            agent/show/<slug>/report.md into the ticket, once per report;
 #            refuses an agent branch that wrote a ticket file, whatever else it
 #            left; projects the
-#            ticket's assumptions into the review page's notes; renders
-#            agent/diffviews/<slug>.html in the agent repo, over both ranges,
-#            since a round is one diff per repo; serves it; re-renders the
-#            board; and writes the ticket's status: `review` while either
+#            ticket's assumptions anchored in code into the review page's
+#            notes; renders agent/diffviews/<slug>.html in the agent repo,
+#            over the ticket's code ranges alone, and serves it, or says the
+#            ticket gets no page when no round of it carries code; re-renders
+#            the board; and writes the ticket's status: `review` while either
 #            branch is unmerged, `done` with the round's two ranges in the
 #            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
 #            once both have merged. A child ticket merged into its parent
@@ -577,8 +578,9 @@ range_of() { # code|agent <tip>
 # the writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
 # A worker anchors from its worktree root, where the agent repo sits at
-# `agent/`; the page renders that repo from its own root, and the code repo
-# ignores `agent/`, so the prefix names the agent repo and nothing else.
+# `agent/`, which the code repo ignores; the page renders the code repo alone,
+# so an assumption anchored under `agent/` has no file there and stays on the
+# ticket.
 notes_of() { # <slug>
     # Its own status, taken before the pipe: a refusal prints to stderr and writes
     # nothing, and jq over an empty input exits 0, so a pipeline would answer that
@@ -586,7 +588,8 @@ notes_of() { # <slug>
     read=$("$tracker" data "$1") || return 1
     printf '%s\n' "$read" | jq '{
         notes: [ .tickets[0].assumptions[]
-                 | {id, path: (.path | sub("^agent/"; "")), text}
+                 | select(.path | startswith("agent/") | not)
+                 | {id, path, text}
                    + (if .line == null then {} else {line} end) ],
         resolved: .tickets[0].resolved,
     }'
@@ -676,32 +679,39 @@ review() {
         commit_ticket "$id" "$id for review"
     fi
 
-    # One section per round per repo: the rounds the ticket carries, then this
+    # One section per round of code: the rounds the ticket carries, then this
     # round's while it is unmerged (a proposal waiting for its ruling, or a
     # resumed worker's next round fetched before its merge). Read after the
-    # write above, so the round that just landed is in the list once.
+    # write above, so the round that just landed is in the list once. The
+    # agent ranges stay off the page: what an agent branch carries, the report
+    # and the artefacts, reaches the user as itself, through the board.
     rounds=$(rounds_of "$id")
     specs=()
     while read -r r; do
-        [ -n "$r" ] || continue
-        # A range names the repo it was built in; one that names neither is a
-        # round from before this ticket's tracker had two repos, and belongs to
-        # the code one.
-        at=${r%%@*}
-        [ "$at" != "$r" ] || at=code
-        specs+=("$(repo_at "$at")@${r##*@}")
+        # A range that names no repo is a round from before this ticket's
+        # tracker had two repos, and belongs to the code one.
+        case $r in
+            code@*) specs+=("$repo_root@${r#code@}") ;;
+            *@* | '') ;;
+            *) specs+=("$repo_root@$r") ;;
+        esac
     done <<< "$rounds"
     for round in "${written[@]}"; do
-        printf '%s\n' "$rounds" | grep -qxF "$round" || specs+=("$(repo_at "${round%%@*}")@${round#*@}")
+        [[ $round == code@* ]] || continue
+        printf '%s\n' "$rounds" | grep -qxF "$round" || specs+=("$repo_root@${round#code@}")
     done
 
-    out=$diffviews/$id
-    mkdir -p "$(dirname "$out")"
-    # The tracker's own copy, which the import above has brought the worker's
-    # closing comment and its assumptions into.
-    notes_of "$id" > "$out.notes.json" || exit 1
-    run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
-    run diffview --serve "$diffviews"
+    if [ ${#specs[@]} -eq 0 ]; then
+        echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
+    else
+        out=$diffviews/$id
+        mkdir -p "$(dirname "$out")"
+        # The tracker's own copy, which the import above has brought the worker's
+        # closing comment and its assumptions into.
+        notes_of "$id" > "$out.notes.json" || exit 1
+        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
+        run diffview --serve "$diffviews"
+    fi
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     [ -z "$retiring" ] || retire "$id"
