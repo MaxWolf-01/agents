@@ -1,28 +1,25 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py"]
 # ///
 """The Stop hook's properties. Run: uv run test_stop_hook.py
 
 The seam is the hook at its input: the hook's JSON and the session directory in, its decision out,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
-over the worked example in `fixtures/`, whose records a check corrupts one at a time.
-The prose reviewer is stubbed at `turn_review.review`, the one call that reaches a model, or runs
-through run-log against a stand-in `claude` first on PATH. The browser is a stand-in
-`claude-browser` first on PATH that records what it was asked to open.
+and turns-end-on-their-recap's P3, over the worked example in `fixtures/`, whose records a check
+corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
+The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open.
 """
 
 import io
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -32,26 +29,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import session_page
 import stop_hook
 import turn_review
+from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
 from session_page import PAGE, SESSIONS, render_session
 from stop_hook import decide
 from test_reading import messages_of
-
-# the sessions the hook leaves alone are marked in the environment, and the suite runs in one of
-# them whenever a dispatched worker verifies its branch
-UNATTENDED = ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")
-
-
-@pytest.fixture(autouse=True)
-def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Every check here is a turn of a session someone is sitting at, whose record the prose
-    reviewer finds nothing in unless the check says otherwise: no check spends a model call. The
-    log is the check's own, and handed back."""
-    for marker in UNATTENDED:
-        monkeypatch.delenv(marker, raising=False)
-    monkeypatch.setattr(turn_review, "review", lambda system, prompt: [])
-    monkeypatch.setattr(turn_review, "LOG", tmp_path / "session-page.jsonl")
-    return turn_review.LOG
-
 
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -112,6 +93,10 @@ def shown(capsys: pytest.CaptureFixture) -> str:
     said = json.loads(out)
     assert "hookSpecificOutput" not in said, f"the turn was sent back: {said}"
     return said["systemMessage"]
+
+
+def said_back(capsys: pytest.CaptureFixture) -> str:
+    return json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
 
 
 def git(where: Path, *args: str) -> None:
@@ -428,25 +413,8 @@ def test_a_session_nobody_reads_the_page_of_never_has_it_opened(
     assert logged(attended, "opened") == []
 
 
-# The worked example's transcript ends with record 4's Write call, after the last prompt: that
-# turn wrote its record. A prompt after it, with the records last touched before it, is a turn
-# that wrote none.
-SPOKEN_AFTER = {"type": "user", "message": {"role": "user", "content": "And the ledger's second bank?"},
-                "timestamp": "2026-09-23T01:35:00.000Z"}
-BEFORE_IT = datetime(2026, 9, 23, 1, 31, tzinfo=UTC).timestamp()
 FOUR_LINES = "\n".join(LONG.splitlines()[:4])
 THREE_LINES = "\n\n".join(LONG.splitlines()[:3])
-
-
-@pytest.fixture
-def unrecorded(worked_example: Path, transcript: Path, tmp_path: Path) -> Path:
-    """The worked example's transcript with a prompt after its newest record, which this turn
-    answered without writing one."""
-    for record in (worked_example / "turns").iterdir():
-        os.utime(record, (BEFORE_IT, BEFORE_IT))
-    spoken = tmp_path / "spoken.jsonl"
-    spoken.write_text(transcript.read_text() + json.dumps(SPOKEN_AFTER) + "\n")
-    return spoken
 
 
 def test_an_answer_in_the_chat_with_no_record_is_sent_back_to_the_page(
@@ -566,127 +534,54 @@ def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_
     assert str(worked_example / "turns" / "05.md") in said_back(capsys)
 
 
-# ---- the turn record's review -----------------------------------------------
-
-# Passages of the worked example's record 4, the one its turn wrote, as a reviewer would quote them.
-IN_RECORD = ["The session page only holds things", "There is no markup of its own to learn.",
-             "costs seconds", "The chat reply is one line and the link"]
-NOT_IN_RECORD = "The session page is a pivotal tapestry of links."
+# ---- no review at the turn's end --------------------------------------------
 
 
-def finding(quote: str, rule: str = "7") -> dict:
-    return {"rule": rule, "quote": quote, "note": "a note on it"}
+REVIEWED_04 = {"ts": "2026-09-23T01:31:00+00:00", "decision": "feedback", "findings": [], "record": "04.md"}
+TURNS_WITH_A_RECORD = {"a record the write hook reviewed": True, "a record not reviewed this turn": False}
 
 
-def said_back(capsys: pytest.CaptureFixture) -> str:
-    return json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-
-
-def reviewer(*found: dict) -> Callable[[str, str], list[dict]]:
-    return lambda system, prompt: list(found)
-
-
-def unreachable(system: str, prompt: str) -> list[dict]:
-    raise AssertionError("the reviewer was called on a turn that should not spend a model call")
-
-
-def test_a_record_with_findings_goes_back_with_at_most_three_and_the_page_waits(
-    worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("reviewed", TURNS_WITH_A_RECORD.values(), ids=TURNS_WITH_A_RECORD)
+def test_the_turns_end_runs_no_review(
+    reviewed: bool, worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    """session-page's Decision on Review: the findings go back to the agent, which revises the
-    record, and the page renders at the stop after, where no second review runs."""
-    monkeypatch.setattr(turn_review, "review", reviewer(*map(finding, IN_RECORD)))
-    (worked_example / PAGE).write_text(stale_page)
-    run(payload(worked_example, transcript))
-    said = said_back(capsys)
-    assert str(worked_example / "turns" / "04.md") in said
-    assert [quote for quote in IN_RECORD if f'"{quote}"' in said] == IN_RECORD[:3]
-    assert "**AI vocabulary.**" in said, "a cited rule comes with its text"
-    assert (worked_example / PAGE).read_text() == stale_page
-
+    """turns-end-on-their-recap#P3: the review ran when the record was written, or not at all, and a
+    turn that wrote a record renders with the hook's line under the recap either way. The log says
+    which of the two it was."""
+    if reviewed:
+        attended.write_text(json.dumps(REVIEWED_04 | {"session_id": worked_example.name}) + "\n")
     monkeypatch.setattr(turn_review, "review", unreachable)
-    run(payload(worked_example, transcript, stop_hook_active=True))
+    (worked_example / PAGE).write_text(stale_page)
+    run(payload(worked_example, transcript, reply="Round 3 is on the page.\nQ7, what reviews a turn's prose, waits on you."))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
+    assert logged(attended, "verb")[-1]["why"] == ("record reviewed this turn" if reviewed else "record not reviewed this turn")
 
 
-FOUND = {
-    "one quote in the record and one not": ([finding(NOT_IN_RECORD), finding(IN_RECORD[0])], [IN_RECORD[0]]),
-    "only quotes not in the record": ([finding(NOT_IN_RECORD), finding("")], []),
-}
-
-
-@pytest.mark.parametrize("found, kept", FOUND.values(), ids=FOUND)
-def test_a_finding_quoting_text_absent_from_the_record_is_dropped(
-    found: list[dict], kept: list[str], worked_example: Path, transcript: Path, stale_page: str,
-    capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+def test_the_records_as_the_turn_ended_are_logged_beside_their_review(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """A dropped finding never reaches the agent, and a record whose findings all drop renders.
-    An empty quote is in every record, and quotes nothing."""
-    monkeypatch.setattr(turn_review, "review", reviewer(*found))
-    (worked_example / PAGE).write_text(stale_page)
-    run(payload(worked_example, transcript))
-    out = capsys.readouterr().out
-    if kept:
-        said = json.loads(out)["hookSpecificOutput"]["additionalContext"]
-        assert all(f'"{quote}"' in said for quote in kept) and NOT_IN_RECORD not in said
-        assert (worked_example / PAGE).read_text() == stale_page
-    else:
-        assert "hookSpecificOutput" not in out
-        assert (worked_example / PAGE).read_text() != stale_page
-
-
-def broken(system: str, prompt: str) -> list[dict]:
-    raise RuntimeError("claude exited 1: overloaded")
-
-
-def hung(system: str, prompt: str) -> list[dict]:
-    raise subprocess.TimeoutExpired(["run-log"], turn_review.WRAPPER_TIMEOUT_S)
-
-
-@pytest.mark.parametrize("failing", [broken, hung], ids=["a failing reviewer", "a hung run-log"])
-def test_a_reviewer_that_fails_lets_the_page_render_and_logs_why(
-    failing: Callable[[str, str], list[dict]], worked_example: Path, transcript: Path, stale_page: str,
-    capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    """A failed review is the turn's review: the stop another hook continued renders without
-    calling the reviewer again."""
-    monkeypatch.setattr(turn_review, "review", failing)
-    (worked_example / PAGE).write_text(stale_page)
-    run(payload(worked_example, transcript))
-    assert shown(capsys)
-    assert (worked_example / PAGE).read_text() != stale_page
-    (entry,) = logged(attended, "decision")
-    assert (entry["session_id"], entry["decision"]) == (worked_example.name, "failed")
-    monkeypatch.setattr(turn_review, "review", unreachable)
-    run(payload(worked_example, transcript, stop_hook_active=True))
-    assert shown(capsys)
-    assert [entry["decision"] for entry in logged(attended, "decision")] == ["failed", "re-entry"]
-
-
-def test_a_record_written_after_the_answer_in_the_chat_was_sent_back_is_reviewed_once(
-    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The review runs once per turn whichever send-back continued it: the record the agent moves
-    its answer into is reviewed at the stop the first send-back continued, and its revision renders."""
-    run(payload(worked_example, unrecorded, reply=LONG))
-    assert "05.md" in said_back(capsys)
+    """The review's line, from the record's Write, and the turn's end line after the agent revised
+    the record and the session record, paired by session id, show which flagged passages the agent
+    kept."""
     record = worked_example / "turns" / "05.md"
-    record.write_text("---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank is a pivotal addition.\n")
+    record.write_text(RECORD_05)
     with_write(unrecorded, "Write", record)
-    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
-    run(payload(worked_example, unrecorded, stop_hook_active=True))
-    assert str(record) in said_back(capsys)
-    monkeypatch.setattr(turn_review, "review", unreachable)
-    record.write_text(record.read_text().replace("a pivotal addition", "the ledger's overflow"))
-    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    call = {"type": "tool_use", "id": "toolu_Edit_session", "name": "Edit", "input": {"file_path": str(worked_example / "session.md")}}
+    appended(unrecorded, unrecorded, {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": "2026-09-23T01:35:30.000Z"})
+    attended.write_text(json.dumps({"ts": "2026-09-23T01:36:01+00:00", "session_id": worked_example.name, "decision": "feedback",
+                                    "record": str(record), "text": RECORD_05}) + "\n")
+    revised = RECORD_05.replace("The second bank.", "The second bank, revised.")
+    record.write_text(revised)
+    run(payload(worked_example, unrecorded))
     assert shown(capsys)
-    assert "overflow" in (worked_example / PAGE).read_text()
+    assert logged(attended, "decision")[-1] | {"ts": ""} == {
+        "ts": "", "session_id": worked_example.name, "decision": "turn end", "record": str(record), "text": revised,
+        "session_record": (worked_example / "session.md").read_text()}
 
 
-# ---- which turn a record and a review belong to -----------------------------
+# ---- which turn a record belongs to ------------------------------------------
 
 # Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time: a
 # background task finishing and a subagent handing its report back.
@@ -699,7 +594,8 @@ TURN_STARTS = {"a finished task": TASK_DONE, "a subagent's hand-back": HANDED_BA
 # A message the user queues while the turn runs, after it wrote its record at 01:36 (with_write).
 QUEUED = {"type": "attachment", "timestamp": "2026-09-23T01:37:00.000Z",
           "attachment": {"type": "queued_command", "prompt": "And the third bank?"}}
-PIVOTAL_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank is a pivotal addition.\n"
+
+
 
 
 def appended(transcript: Path, out: Path, *entries: dict) -> Path:
@@ -721,37 +617,18 @@ def test_a_turn_the_user_did_not_start_still_sends_an_answer_in_the_chat_back(
     assert str(worked_example / "turns" / "05.md") in decision.reason
 
 
-@pytest.mark.parametrize("start", [SPOKEN_AFTER, *TURN_STARTS.values()], ids=["the user's prompt", *TURN_STARTS])
-def test_a_record_a_later_turn_writes_is_reviewed_though_an_earlier_turns_was(
-    start: dict, worked_example: Path, transcript: Path, tmp_path: Path, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    """The review runs once per turn, not once per session: record 04's review, logged as its own
-    turn ended, leaves the record the next turn writes to be reviewed, whoever started that turn."""
-    attended.write_text(json.dumps({"ts": "2026-09-23T01:31:00+00:00", "session_id": worked_example.name, "decision": "clean",
-                                    "record": str(worked_example / "turns" / "04.md")}) + "\n")
-    record = worked_example / "turns" / "05.md"
-    record.write_text(PIVOTAL_05)
-    later = appended(transcript, tmp_path / "t.jsonl", start)
-    with_write(later, "Write", record)
-    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
-    run(payload(worked_example, later))
-    assert str(record) in said_back(capsys)
-
-
-def test_a_message_queued_after_the_record_was_written_leaves_it_to_be_reviewed(
+def test_a_message_queued_after_the_record_was_written_leaves_it_this_turns(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A message queued mid-turn joins the turn it arrived in and starts none, so the record the
-    turn wrote before it is still this turn's."""
+    turn wrote before it is still this turn's: the long reply beside it is not sent back, and the
+    turn ends on the hook's line."""
     record = worked_example / "turns" / "05.md"
-    record.write_text(PIVOTAL_05)
+    record.write_text(RECORD_05)
     with_write(unrecorded, "Write", record)
     appended(unrecorded, unrecorded, QUEUED)
-    monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
-    run(payload(worked_example, unrecorded))
-    assert str(record) in said_back(capsys)
+    run(payload(worked_example, unrecorded, reply=LONG))
+    assert shown(capsys)
 
 
 def test_an_old_record_the_transcript_never_writes_is_no_record_of_this_turn(
@@ -765,168 +642,6 @@ def test_an_old_record_the_transcript_never_writes_is_no_record_of_this_turn(
     decision = decide(payload(worked_example, without, reply=LONG), worked_example)
     assert decision.why == "answer in the chat"
     assert str(worked_example / "turns" / "05.md") in decision.reason and "03.md" not in decision.reason
-
-
-def test_a_turn_that_wrote_no_record_spends_no_model_call(
-    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-    monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    monkeypatch.setattr(turn_review, "review", unreachable)
-    run(payload(worked_example, unrecorded))
-    assert capsys.readouterr().out == ""
-    assert logged(attended, "decision") == []
-
-
-def test_each_review_decision_is_logged_with_the_record_it_read(
-    worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-    monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    """The draft's review and the revision that follows it, paired by session id, show which
-    flagged passages the agent kept."""
-    record = worked_example / "turns" / "04.md"
-    monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0]), finding(NOT_IN_RECORD)))
-    run(payload(worked_example, transcript))
-    run(payload(worked_example, transcript, stop_hook_active=True))
-    capsys.readouterr()
-    draft, revision = logged(attended, "decision")
-    assert (draft["decision"], draft["findings"], draft["dropped"]) == ("feedback", [finding(IN_RECORD[0])], [finding(NOT_IN_RECORD)])
-    assert revision["decision"] == "re-entry"
-    assert {draft["record"], revision["record"]} == {str(record)} and draft["text"] == record.read_text()
-
-
-def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
-    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-) -> None:
-    """The reviewer's input carries the earlier turn records and the user's messages, and no tool
-    call: the transcript's Write calls and the task notifications that name a tool use carry ids
-    starting `toolu_`. The record under review comes last, fenced, and the reviewer runs under
-    its own system prompt, bound to the schema."""
-    claude = fake_claude(tmp_path, monkeypatch, RESULT | {"structured_output": {"findings": [finding(IN_RECORD[0])]}})
-    decision = decide(payload(worked_example, transcript), worked_example)
-    assert decision.verb == "send back" and IN_RECORD[0] in decision.reason
-    argv = (claude / "argv").read_text().split("\0")[:-1]
-    prompt, system = (claude / "stdin").read_text(), argv[argv.index("--system-prompt") + 1]
-    turns = worked_example / "turns"
-    for earlier in ("01.md", "02.md", "03.md"):
-        assert (turns / earlier).read_text().strip() in prompt
-    assert prompt.endswith(f"<record>\n{(turns / '04.md').read_text().strip()}\n</record>")
-    assert "i feel like we need like a leading word" in prompt  # the first prompt
-    assert "hey can you please disregard" in prompt  # one the fourth turn answered
-    assert "toolu_" not in prompt
-    assert "Claude Code" not in system and "**AI vocabulary.**" in system
-    assert turn_review.record_shape(turn_review.SHOW.read_text()) in system
-    assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
-    assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
-
-
-TITLE = "Leading words for showing, and the session page"  # the worked example's session.md H1
-
-
-# When a turn wrote session.md, if any did: this one, after SPOKEN_AFTER began it (with_write's
-# time), or the one before.
-SESSION_WRITES = {"session.md written this turn": "2026-09-23T01:36:00.000Z",
-                  "session.md written in an earlier turn": "2026-09-23T01:34:00.000Z",
-                  "session.md never written": None}
-
-
-@pytest.mark.parametrize("written", SESSION_WRITES.values(), ids=SESSION_WRITES)
-def test_a_turn_that_rewrites_the_session_record_has_it_reviewed_with_its_own(
-    written: str | None, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
-    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    """The session's title heads its page, so a turn that writes session.md has it reviewed, fenced
-    before the turn's record, and a finding on its title goes back naming it; the re-entry that
-    follows logs the session record as revised. A turn that leaves it as it was has only its record
-    reviewed, and the same finding drops."""
-    record = worked_example / "turns" / "05.md"
-    record.write_text(PIVOTAL_05)
-    if written:
-        call = {"type": "tool_use", "id": "toolu_Edit_session", "name": "Edit", "input": {"file_path": str(worked_example / "session.md")}}
-        appended(unrecorded, unrecorded, {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": written})
-    with_write(unrecorded, "Write", record)
-    rewritten = written == SESSION_WRITES["session.md written this turn"]
-    prompts = []
-    monkeypatch.setattr(turn_review, "review", lambda system, prompt: prompts.append(prompt) or [finding(TITLE, "54")])
-    run(payload(worked_example, unrecorded))
-    out = capsys.readouterr().out
-    (prompt,) = prompts
-    session_record = f"<record>\n{(worked_example / 'session.md').read_text().strip()}\n</record>"
-    assert prompt.endswith(f"{session_record}\n<record>\n{record.read_text().strip()}\n</record>") == rewritten
-    (entry,) = logged(attended, "decision")
-    assert ("session_record" in entry) == rewritten
-    if not rewritten:
-        assert "hookSpecificOutput" not in out and entry["dropped"] == [finding(TITLE, "54")]
-        return
-    said = json.loads(out)["hookSpecificOutput"]["additionalContext"]
-    assert str(worked_example / "session.md") in said and f'"{TITLE}"' in said
-    assert "**Headline titles.**" in said
-    plain = (worked_example / "session.md").read_text().replace(TITLE, "Leading words for the show skill; the session page")
-    (worked_example / "session.md").write_text(plain)
-    run(payload(worked_example, unrecorded, stop_hook_active=True))
-    assert shown(capsys)
-    assert logged(attended, "decision")[-1] | {"ts": ""} == {"ts": "", "session_id": worked_example.name, "decision": "re-entry",
-                                                             "record": str(record), "text": PIVOTAL_05, "session_record": plain}
-
-
-REVIEW = turn_review.review  # the real one, which the autouse stub replaces
-
-# What claude's stream ends with, as ../run-log/test_run_log.py has it.
-RESULT = {"type": "result", "subtype": "success", "is_error": False, "session_id": "sess-1", "num_turns": 1,
-          "duration_ms": 4200, "duration_api_ms": 3900, "total_cost_usd": 0.0123,
-          "usage": {"input_tokens": 22, "output_tokens": 70, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
-          "result": ""}
-
-
-def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: dict | None, then: str = "exit 0") -> Path:
-    """The real reviewer, calling a `claude` first on PATH that records its argv and stdin, streams
-    `result` as its last line, and does `then`; the run log is the check's own. Returns the
-    directory holding the argv, the stdin and `runs.jsonl`."""
-    where = tmp_path / "reviewer"
-    where.mkdir()
-    (where / "claude").write_text(
-        "#!/usr/bin/env bash\n"
-        f'printf "%s\\0" "$@" > "{where}/argv"\n'
-        f'cat > "{where}/stdin"\n'
-        + (f"echo {json.dumps(json.dumps(result))}\n" if result else "echo 'API Error: overloaded'\n")
-        + f"{then}\n")
-    (where / "claude").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("RUN_LOG", str(where / "runs.jsonl"))
-    monkeypatch.setattr(turn_review, "review", REVIEW)
-    return where
-
-
-def test_the_review_is_one_line_in_the_run_log_under_its_own_site(
-    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-) -> None:
-    claude = fake_claude(tmp_path, monkeypatch, RESULT | {"structured_output": {"findings": []}})
-    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
-    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
-    assert (line["site"], line["model"], line["effort"], line["cost_usd"], line["end"]) == (
-        "turn-review", "claude-opus-5-5", "low", 0.0123, "success")
-
-
-def test_a_reviewer_run_that_fails_is_still_one_line_in_the_run_log_and_the_page_renders(
-    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
-) -> None:
-    claude = fake_claude(tmp_path, monkeypatch, None, then="exit 1")
-    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
-    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
-    assert (line["site"], line["exit"], line["end"]) == ("turn-review", 1, "no result")
-    (entry,) = logged(attended, "decision")
-    assert (entry["decision"], entry["why"]) == ("failed", "claude exited 1: API Error: overloaded")
-
-
-def test_a_reviewer_past_its_limit_is_ended_with_its_line_written_and_the_page_renders(
-    worked_example: Path, transcript: Path, monkeypatch: pytest.MonkeyPatch, attended: Path, tmp_path: Path,
-) -> None:
-    monkeypatch.setattr(turn_review, "REVIEWER_TIMEOUT_S", 1)
-    claude = fake_claude(tmp_path, monkeypatch, None, then="exec sleep 30")
-    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
-    (line,) = map(json.loads, (claude / "runs.jsonl").read_text().splitlines())
-    assert (line["site"], line["exit"], line["end"]) == ("turn-review", "timeout", "no result")
-    (entry,) = logged(attended, "decision")
-    assert entry["decision"] == "failed" and entry["why"].startswith("claude ran past 1s")
 
 
 # ---- the hook's log ---------------------------------------------------------
@@ -968,23 +683,17 @@ def through_the_shell(example: Path, transcript: Path, fixtures: pytest.FixtureR
     return hook
 
 
-def found_fault(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
-    fixtures.getfixturevalue("monkeypatch").setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
-    return payload(example, transcript)
-
-
 def no_record(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     return payload(example, fixtures.getfixturevalue("unrecorded"))
 
 
-def reviewed_earlier(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
-    """The stop after the review sent the record back."""
-    found_fault(example, transcript, fixtures)
-    decide(payload(example, transcript), example)
-    return payload(example, transcript, stop_hook_active=True)
+def reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    """The record's Write had it reviewed, as the write hook logs it."""
+    fixtures.getfixturevalue("attended").write_text(json.dumps(REVIEWED_04 | {"session_id": example.name}) + "\n")
+    return payload(example, transcript)
 
 
-def found_nothing(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+def not_reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     return payload(example, transcript)
 
 
@@ -998,10 +707,9 @@ PATHS = {
     "a record that does not parse": (unparsed, "send back", "record does not parse", True),
     "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
     "a record written through the shell": (through_the_shell, "send back", "record written outside Write", True),
-    "a record the review finds fault with": (found_fault, "send back", "review findings", True),
     "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
-    "a record reviewed at an earlier stop": (reviewed_earlier, "render", "record reviewed this turn", True),
-    "a record the review finds nothing in": (found_nothing, "render", "review found nothing", True),
+    "a record reviewed when it was written": (reviewed, "render", "record reviewed this turn", True),
+    "a record not reviewed this turn": (not_reviewed, "render", "record not reviewed this turn", True),
 }
 
 
@@ -1021,6 +729,30 @@ def test_every_decision_is_one_line_in_the_session_pages_log(
     assert entries == [{"ts": entries[0]["ts"], "session_id": hook["session_id"], "verb": verb, "why": why, "directory": directory}]
 
 
+SENT_BACK_AT_THE_END = {"a record that does not parse": unparsed, "an answer in the chat": in_the_chat,
+                        "a record written through the shell": through_the_shell}
+
+
+@pytest.mark.parametrize("arrange", SENT_BACK_AT_THE_END.values(), ids=SENT_BACK_AT_THE_END)
+def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
+    arrange: Callable, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], request: pytest.FixtureRequest,
+) -> None:
+    """turns-end-on-their-recap#P3 and P4: the records the write hook never saw are still checked
+    at the turn's end, and the send-back asks the turn to end on its recap."""
+    run(arrange(worked_example, transcript, request))
+    said = said_back(capsys)
+    assert stop_hook.RECAP in said and "without a reply" not in said
+
+
+def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
+    """turns-end-on-their-recap#P4, in its own words: at most three lines, what the page holds now,
+    what comes next and what waits on the user, each open question named by what it decides."""
+    for part in ("3 short lines at most", "what the page holds now", "what comes next", "what waits on the user",
+                 "named by what it decides"):
+        assert part in stop_hook.RECAP
+
+
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
@@ -1032,115 +764,6 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     run(payload(worked_example, transcript))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
-
-
-# ---- the catalogue's chat rules ---------------------------------------------
-
-CATALOGUE_FIXTURE = """# Tells
-
-Prose about the tags.
-
-## Content
-
-- `3` `both` **A rule.** Its first line.
-  Before: "indented continuation". After: "rides with its rule".
-
-- `51` `artifact` **A rule for files only.** Dropped.
-
-## Style
-
-- `13` `chat` **A rule for replies.** Kept.
-"""
-
-SELECTED = """- `3` `both` **A rule.** Its first line.
-  Before: "indented continuation". After: "rides with its rule".
-
-- `13` `chat` **A rule for replies.** Kept."""
-
-
-def test_the_rules_selected_are_the_ones_the_catalogue_documents() -> None:
-    """The oracle is the awk command CATALOGUE.md's header publishes as its format contract, run
-    on the real catalogue: a catalogue whose bullets stop matching fails here rather than turning
-    every record clean."""
-    catalogue = turn_review.CATALOGUE
-    program = re.search(r"awk '(.+?)' CATALOGUE\.md", catalogue.read_text()).group(1)
-    awk = subprocess.run(["awk", program, catalogue], capture_output=True, text=True, check=True)
-    assert turn_review.chat_rules(catalogue.read_text()) == awk.stdout.rstrip("\n")
-
-
-def test_selected_rule_blocks_come_whole() -> None:
-    assert turn_review.chat_rules(CATALOGUE_FIXTURE) == SELECTED
-
-
-def test_a_catalogue_with_no_chat_rules_lets_the_page_render(
-    worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    catalogue = tmp_path / "CATALOGUE.md"
-    catalogue.write_text(CATALOGUE_FIXTURE.replace("`both`", "`artifact`").replace("`chat`", "`artifact`"))
-    monkeypatch.setattr(turn_review, "CATALOGUE", catalogue)
-    monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
-    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
-
-
-SKILL_FIXTURE = """## The session page
-
-Prose before the shape.
-
-### The turn record
-
-The shape's prose.
-
-```markdown
----
-date: 2026-09-28
----
-
-# A headline inside the example
-
-## Details
-
-The example's own section.
-```
-
-- A rule about the record.
-
-## Who builds it
-
-After the shape.
-"""
-
-
-def test_the_shape_runs_to_the_next_heading_past_the_example_records_own() -> None:
-    shape = turn_review.record_shape(SKILL_FIXTURE)
-    assert shape.startswith("The shape's prose.") and shape.endswith("- A rule about the record.")
-    assert "# A headline inside the example" in shape and "## Details" in shape
-    assert "Prose before" not in shape and "After the shape" not in shape
-
-
-def test_the_turn_record_the_show_skill_gives_the_agent_parses(tmp_path: Path) -> None:
-    """The oracle is the renderer's own reader: the example record the agent is shown is a record
-    it accepts, and it uses every part a record can hold, so the skill and the parser cannot drift
-    apart unnoticed."""
-    shape = turn_review.record_shape(turn_review.SHOW.read_text())
-    example = re.search(r"```markdown\n(.*?)```", shape, re.S).group(1)
-    record = tmp_path / "07.md"
-    record.write_text(example)
-    turn = session_page.read_turn(record)
-    assert turn.headline and turn.details and turn.links and turn.answered and turn.superseded
-    (question,) = turn.questions
-    assert len(question.options) >= 2 and sum(o.picked for o in question.options) == 1 and question.why
-
-
-def test_a_show_skill_with_no_turn_record_section_lets_the_page_render(
-    worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attended: Path,
-) -> None:
-    skill = tmp_path / "SKILL.md"
-    skill.write_text(SKILL_FIXTURE.replace("### The turn record", "### Another section"))
-    monkeypatch.setattr(turn_review, "SHOW", skill)
-    monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
-    assert decide(payload(worked_example, transcript), worked_example).verb == "render"
-    (entry,) = logged(attended, "decision")
-    assert entry["decision"] == "failed" and "The turn record" in entry["why"]
 
 
 if __name__ == "__main__":

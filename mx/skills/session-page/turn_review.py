@@ -1,4 +1,4 @@
-"""The light review a turn record's prose gets before the session page renders it.
+"""The light review a turn record's prose gets when the agent writes it, while the turn still runs.
 
 A fresh model, MODEL at EFFORT, reads the records the turn wrote against the rules of
 ../writing-for-humans/CATALOGUE.md tagged `chat` or `both`, the selection that file's header
@@ -11,7 +11,7 @@ finding whose quote is in no record under review is dropped, and at most MOST go
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
 review is one JSON line in LOG, carrying the session id and the record as it was
-reviewed; the Stop hook logs its own decisions there too.
+reviewed; the hooks log their own decisions there too.
 """
 
 import contextlib
@@ -30,12 +30,12 @@ RUN_LOG = HERE.parent / "run-log" / "run-log"  # every model run goes through it
 MODEL = "claude-opus-5-5"
 EFFORT = "low"
 # run-log's limit on the model call, and the caller's on run-log, which leaves it time to write its
-# line; both under the hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
+# line; both under the write hook's 60 in ../../hooks/hooks.json, so a slow reviewer fails open
 REVIEWER_TIMEOUT_S = 45
 WRAPPER_TIMEOUT_S = 55
 MOST = 3  # findings handed back per record
 REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
-LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisions and the Stop hook's, one JSON line each
+LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisions and the hooks', one JSON line each
 
 SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
 SHAPE = "### The turn record"
@@ -229,7 +229,7 @@ def feedback(records: list[Path], found: list[dict], rules: dict[str, str]) -> s
         *flagged,
         *(["", "The rules they cite:", *cited] if cited else []),
         "",
-        "Revise a passage where its finding holds and keep it where the finding does not; the page renders when the turn ends again.",
+        "Revise a passage where its finding holds and keep it where the finding does not.",
     ])
 
 

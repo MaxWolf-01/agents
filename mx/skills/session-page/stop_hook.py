@@ -6,9 +6,9 @@
 """Stop hook: what the end of a turn does to the session page.
 
 It reads the Stop hook JSON on stdin; `decide` answers with a Verb over the session's own
-directory, running the turn review and logging a re-entry on the way, and `main` applies it. A
-session with no directory never gets one from here: the agent creates it by writing the first
-record.
+directory, and `main` applies it. A session with no directory never gets one from here: the agent
+creates it by writing the first record. The prose review of the turn's record ran when the agent
+wrote it (write_hook.py), so it is over by the time the turn ends.
 
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
@@ -19,16 +19,15 @@ same render keeps `sessions/` out of the agent repo's `git status`, through that
 `.git/info/exclude`, where nothing ignores it yet. Each is a line of the log too, saying what came
 of it.
 
-The agent ends a turn whose answer is on the page without a reply, so a render whose turn wrote a
-record shows the user one line of the hook's own under it, as a `systemMessage`: the questions
-waiting on them and the page's link.
+The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
+whose turn wrote a record shows the user one line of the hook's own under it, as a `systemMessage`:
+the questions waiting on them and the page's link.
 
 Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
 """
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -40,7 +39,9 @@ from typing import Literal
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
-from session_page import PAGE, RecordError, Session, Turn, open_questions, page, read_session, session_directory  # noqa: E402
+from session_page import (  # noqa: E402
+    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, session_directory, written_this_turn,
+)
 
 Verb = Literal["render", "send back", "allow"]
 
@@ -59,14 +60,20 @@ class Decision:
 # The longest chat reply a session that has a page ends a turn with and writes no record.
 CHAT_LINES = 3
 
-UNPARSED = "Fix the record; the session page renders once every record parses."
+# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap, no
+# longer than the reply that needs no record. The hook shows the page's link under it.
+RECAP = (
+    f"end the turn on its chat recap: {CHAT_LINES} short lines at most, one each for what the page holds now, "
+    "what comes next, and what waits on the user, each open question named by what it decides"
+)
+UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 IN_THE_CHAT = (
     "This session has a page, and this turn wrote no record for it, so the answer went to the chat. "
-    "Move it onto the page as {record}, then end the turn without a reply: the hook shows the user the page's link."
+    f"Move it onto the page as {{record}}, then {RECAP}."
 )
 OUTSIDE_WRITE = (
     "This turn wrote {record} without the Write tool, so the page pairs the user's message with no turn. "
-    "Write it again with Write, then end the turn without a reply: the hook shows the user the page's link."
+    f"Write it again with Write, then {RECAP}."
 )
 
 
@@ -78,21 +85,21 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     directory:
 
     - A record that does not parse is sent back with the reason the reader gives, every time, and
-      nothing renders.
+      nothing renders. The write hook catches one written with a tool; this catches one written
+      through the shell.
     - A reply longer than CHAT_LINES with no record written this turn is sent back to move the
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
-    - A record written this turn that `turn_review` finds fault with is sent back with its findings.
     - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
-      the user sees under the turn (`shown`), since the agent ends such a turn without a reply.
+      the user sees under the agent's recap (`shown`), and where that record was reviewed, the
+      records as the turn ended are logged beside the review, so the log pairs a draft with its
+      revision.
 
-    The answer in the chat and the review each send the agent back once per turn. A turn a Stop hook
-    already continued renders a long reply, so an agent that keeps its answer in the chat is not
-    held in a loop. A record reviewed this turn renders unreviewed, so the revised record reaches
-    the page.
+    The answer in the chat sends the agent back once per turn: a turn a Stop hook already continued
+    renders a long reply, so an agent that keeps its answer in the chat is not held in a loop.
     """
-    if os.environ.get("DISPATCH_WORKLOG") or os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
-        return Decision("allow", "dispatched worker" if os.environ.get("DISPATCH_WORKLOG") else "print-mode session")
+    if unread := left_alone():
+        return Decision("allow", unread)
     if directory is None:
         return Decision("allow", "no project with an agent repo")
     if not directory.is_dir():
@@ -110,12 +117,10 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
-    if turn_review.reviewed_since(session.id, session.began):
-        turn_review.log(session.id, decision="re-entry", **turn_review.as_read(session, turn))
-        return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
-    if said := turn_review.feedback_on(session, turn):
-        return Decision("send back", "review findings", said)
-    return Decision("render", "review found nothing", page=page(session, datetime.now()), shown=shown(session, directory))
+    if not turn_review.reviewed_since(session.id, session.began):
+        return Decision("render", "record not reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
+    turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
+    return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
 
 
 def shown(session: Session, directory: Path) -> str:
@@ -123,13 +128,6 @@ def shown(session: Session, directory: Path) -> str:
     waiting = [q.tag for _, q in open_questions(session)]
     ask = f"waiting on you: {' '.join(waiting)}" if waiting else "nothing waiting on you"
     return f"session page · {ask} · {(directory / PAGE).as_uri()}"
-
-
-def written_this_turn(session: Session) -> Turn | None:
-    """The newest record the transcript writes after this turn began, by the write time the page
-    pairs messages by. With no turn begun yet, the newest record the transcript writes."""
-    written = [t for t in session.turns if t.written and (session.began is None or t.written > session.began)]
-    return written[-1] if written else None
 
 
 def written_outside_write(session: Session) -> Turn | None:

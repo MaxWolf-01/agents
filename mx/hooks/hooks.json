@@ -11,6 +11,18 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/write_hook.py",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -52,7 +64,7 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/stop_hook.py",
             "timeout": 60,
-            "statusMessage": "session page: reviewing and rendering the turn"
+            "statusMessage": "session page: rendering the turn"
           }
         ]
       }

@@ -90,8 +90,10 @@ def render_session(directory: Path, transcript: Path, now: datetime | None = Non
     return page(read_session(directory, transcript), now or datetime.now())
 
 
-def read_session(directory: Path, transcript: Path) -> "Session":
-    """The session `directory` holds, with each turn's messages read from `transcript`.
+def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = ()) -> "Session":
+    """The session `directory` holds, with each turn's messages read from `transcript`. `pending`
+    is entries the transcript does not hold yet, read as though it ended on them: Claude Code writes
+    a tool call there only after the call's PostToolUse hooks have run.
 
     Raises RecordError where a record does not parse.
     """
@@ -99,7 +101,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
         directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"})
     turns = read_turns(directory / "turns")
     settled = settle(turns)
-    entries = read_transcript(transcript)
+    entries = read_transcript(transcript) + list(pending)
     written = written_at(entries, directory, turns)
     spoken = said(entries)
     times = [written.get(t.number) for t in turns]
@@ -117,12 +119,34 @@ def read_session(directory: Path, transcript: Path) -> "Session":
     )
 
 
+def left_alone() -> str:
+    """Why nobody reads this session's page, where nobody does: a dispatched worker or a print-mode
+    session. Empty for a session someone is sitting at."""
+    if os.environ.get("DISPATCH_WORKLOG"):
+        return "dispatched worker"
+    if os.environ.get("CLAUDE_CODE_SESSION_ATTENDED") == "0":
+        return "print-mode session"
+    return ""
+
+
+def written_this_turn(session: "Session") -> "Turn | None":
+    """The newest record the transcript writes after this turn began, by the write time the page
+    pairs messages by. With no turn begun yet, the newest record the transcript writes."""
+    written = [t for t in session.turns if t.written and (session.began is None or t.written > session.began)]
+    return written[-1] if written else None
+
+
 class RecordError(Exception):
     """A record the renderer cannot read, at the line it gave up on where the reason has one. The
-    Stop hook sends the agent back with `str(e)`."""
+    hooks send the agent back with `str(e)`."""
 
     def __init__(self, path: Path, line: int | None, reason: str) -> None:
         super().__init__(f"{path}{f':{line}' if line is not None else ''}: {reason}")
+
+
+class NoTurnRecords(RecordError):
+    """A session directory whose `turns/` holds no record yet, as one does between the first paged
+    turn's write of `session.md` and its turn record. Raised once `session.md` has parsed."""
 
 
 # ---- what a session's directory holds ---------------------------------------
@@ -223,7 +247,7 @@ TAG = re.compile(r"Q\d+")
 def read_turns(turns: Path) -> list[Turn]:
     records = sorted((p for p in turns.glob("*.md") if re.fullmatch(r"\d+\.md", p.name)), key=lambda p: int(p.stem))
     if not records:
-        raise RecordError(turns, None, "no turn records (turns/NN.md)")
+        raise NoTurnRecords(turns, None, "no turn records (turns/NN.md)")
     return [read_turn(path) for path in records]
 
 
