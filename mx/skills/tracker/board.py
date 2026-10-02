@@ -1971,6 +1971,13 @@ PAGE = Template(r"""<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script type="importmap">
+{"integrity": {
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs": "sha384-jRiiF1w1VWw/d5z0PehRZHC1QDOp+TVK/H3SwW6Qo6MtRnL8vhUhULXiSlTPdon8",
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/chunk-SP2CHFBE.mjs": "sha384-4u/55YQqYu4r82l3QSG2BuK71vzbS71A5BaqSgNzcAI4q0Vr/wW1QxkYuOYxHoZa",
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/render-FL5BWEWF.mjs": "sha384-DoJTmnhQU1ewA9UachML3hZSop7xxdV0NF13R5p0p9zoN+3tooz7aU96jWu/UyIA"
+}}
+</script>
 <script>
   // The scheme before first paint: ?theme= pins it, for a screenshot or a layout check; else the
   // switch's last answer, else the system's.
@@ -2342,7 +2349,7 @@ ${groups}
   <div class="gbody" id="gbody" title="a preview: a click anywhere but a node opens the graph at full size, over the board">
     <div class="g" data-tree=""><div class="gnote">open a row or move onto one (j / k)</div></div>
     ${graphs}
-    <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive</div>
+    <div class="gnote" id="gunloaded" hidden>the graph could not load: its engine, from cdn.jsdelivr.net, did not arrive, or arrived other than its pinned copy</div>
     <div class="gnote" id="gundrawn" hidden>the graph could not be drawn: a piece of its engine, from cdn.jsdelivr.net, did not arrive; a reload fetches it again</div>
   </div>
 </aside>
@@ -2406,14 +2413,26 @@ ${groups}
 
 <script type="module">
   // The graph engine and its layout come from the CDN the first time a graph is drawn, so a board
-  // with no way to the CDN loses its graph and nothing else. A failed load is not retried.
-  const ENGINE = ["https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs",
-                  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs"];
+  // with no way to the CDN loses its graph and nothing else. A failed load is not retried. Every
+  // file is pinned by hash, the layout's chunks through the import map in the head, since any page
+  // the hub serves can read what the hub serves: a file changed at the CDN is refused, and the
+  // board says the engine did not arrive. mermaid comes as its one-file classic build, which needs
+  // one pin where its module build would need one per chunk.
+  const MERMAID = ["https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
+                   "sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2"];
+  const ELK = "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs";
+  const classic = ([src, integrity]) => new Promise((loaded, failed) => {
+    const s = Object.assign(document.createElement("script"), { src, integrity, crossOrigin: "anonymous" });
+    // the classic build draws every .mermaid on the page at window load unless told not to
+    s.onload = () => { globalThis.mermaid.startOnLoad = false; loaded(globalThis.mermaid); };
+    s.onerror = () => failed(new Error("refused or missing: " + src));
+    document.head.append(s);
+  });
   let mermaid = null, loading = null;
   function engine() {
     if (loading) return loading;
-    loading = Promise.all(ENGINE.map((url) => import(url))).then(([m, elk]) => {
-      mermaid = m.default;
+    loading = Promise.all([classic(MERMAID), import(ELK)]).then(([m, elk]) => {
+      mermaid = m;
       mermaid.registerLayoutLoaders(elk.default);
       setupMermaid();
       return mermaid;
