@@ -1,6 +1,6 @@
 
 /* The session page, on the house tokens read in before it. */
-:root { --size-body: 18px; --leading-body: 1.65; --page: 58rem; --rail: 3.25rem; --measure: 44rem; }
+:root { --size-body: 18px; --leading-body: 1.65; --rail: 3.25rem; --measure: 44rem; --page: calc(var(--measure) + var(--rail) + 4rem); }
 
 code { font-size: 0.84em; background: var(--ground-2); padding: 0.08em 0.32em; border-radius: 3px; }
 kbd { display: inline-block; min-width: 1.35em; box-sizing: border-box; padding: 0 0.3em; border: 1px solid var(--edge); border-radius: 3px; background: var(--ground-2); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); text-align: center; }
@@ -40,6 +40,7 @@ p, h1, h2, h3 { margin: 0; }
 .intro .v-title { max-width: 22em; }
 .intro > .v-meta { margin-top: 0.75rem; }
 .brief { margin-top: 1.5rem; color: var(--muted); }
+.brief > * { max-width: none; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1.75rem; }
 #resume.copied { border-color: var(--accent); color: var(--accent); }
 
