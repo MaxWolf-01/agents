@@ -154,7 +154,17 @@ def toy(tmp_path: Path) -> Iterator[Path]:
     """A project on `main`: a code repo, its `agent/` a repo of its own inside it that the code repo
     ignores, and a tree of two tickets in it. Answers the code repo's root, and takes down the tmux
     server its workers ran on."""
-    repo = tmp_path / "lamp"
+    yield from project(tmp_path / "lamp")
+
+
+@pytest.fixture
+def dotted(tmp_path: Path) -> Iterator[Path]:
+    """The toy under a name with a dot in it, as the dotfiles repo has."""
+    yield from project(tmp_path / ".lamp")
+
+
+def project(repo: Path) -> Iterator[Path]:
+    tmp_path = repo.parent
     (repo / "agent" / "tickets").mkdir(parents=True)
     for at in (repo, repo / "agent"):
         git(tmp_path, "init", "-q", "-b", "main", str(at))
@@ -227,7 +237,7 @@ def waited(toy: Path, state: Path | None = None) -> Path:
         time.sleep(0.5)
     left = list(state.glob("*.status"))
     assert left, "no status line 30s after the spawn: " + subprocess.run(
-        ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
+        ["tmux", "capture-pane", "-p", "-J", "-t", f"=dispatch-{toy.name}-warm-preset:"],
         capture_output=True, text=True, env=environment(toy)).stdout
     return left[0]
 
@@ -280,6 +290,10 @@ def mx(tmp_path: Path) -> Path:
 @pytest.fixture
 def staged(toy: Path) -> Path:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
+    return skill_copy(toy)
+
+
+def skill_copy(toy: Path) -> Path:
     if not shutil.which("tmux"):
         pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     skill = toy.parent / "skills"
@@ -1000,6 +1014,42 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     assert fetched.returncode == 0, fetched.stderr
     assert "could not be pulled; run-log pull agent@far tries again" in fetched.stderr
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+
+
+def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(dotted: Path) -> None:
+    """tmux reads a `.` in a target as the window separator, so `.lamp`'s worker session is named
+    whole only with a `:` after it: a respawn reuses it, a cleanup kills it, and the spawn after
+    that starts in a fresh one."""
+    staged = skill_copy(dotted)
+    state = dotted.parent / "home" / ".local" / "state" / "dispatch" / ".lamp-main"
+    env = environment(dotted)
+
+    def runs_typed() -> dict[str, int]:
+        """How many runs each live session had typed into it, by session name. The shell wraps a
+        long line it echoes, which `-J` does not join."""
+        names = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
+                               capture_output=True, text=True, env=env).stdout.split()
+        return {name: subprocess.run(["tmux", "capture-pane", "-p", "-J", "-t", f"={name}:", "-S", "-"],
+                                     capture_output=True, text=True, env=env).stdout.replace("\n", "").count("run-worker.sh")
+                for name in names}
+
+    run(dotted, "claim", "warm-preset")
+    for _ in range(2):
+        said = spawn(dotted, staged, "warm-preset", "Work it.\n")
+        assert said.returncode == 0, said.stderr
+        waited(dotted, state)
+    assert "+ tmux new-session" not in said.stderr, said.stderr
+    assert runs_typed() == {"dispatch-.lamp-warm-preset": 2}, "the respawn typed into the session the spawn made"
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=dotted,
+                             capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert "no session" not in cleaned.stderr, cleaned.stderr
+    assert runs_typed() == {}
+
+    said = spawn(dotted, staged, "warm-preset", "Work it.\n")
+    assert said.returncode == 0, said.stderr
+    assert runs_typed() == {"dispatch-.lamp-warm-preset": 1}
 
 
 def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:

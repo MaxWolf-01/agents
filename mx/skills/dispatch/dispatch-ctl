@@ -318,14 +318,16 @@ spawn() {
 
     # The session is a shell the runner is typed into, so it outlives the
     # worker and holds its scrollback.
-    tmux has-session -t "=$name" 2>/dev/null || run tmux new-session -d -s "$name" -c "$worktree"
+    tmux has-session -t "=$name:" 2>/dev/null || run tmux new-session -d -s "$name" -c "$worktree"
     # A pane's environment is the tmux server's, from whenever that started,
     # not this process's: whatever the worker must inherit from here goes on
     # the typed line. The profile is set either way, so a server that started
     # under another profile cannot hand the worker that one.
     # `=` everywhere a target is named: without it tmux falls back to prefix and
     # pattern matching, so a new-session that failed would type this line into
-    # whichever session matched, one another worker holds included.
+    # whichever session matched, one another worker holds included. The
+    # trailing `:` ends the session name, which tmux otherwise splits at a `.`
+    # (a repo named `.dotfiles`) as the window separator.
     run tmux send-keys -t "=$name:" -l "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} DISPATCH_PERMISSION_MODE=$mode DISPATCH_EFFORT=$effort DISPATCH_PLUGIN_DIR=$plugin_dir bash $runner $prompt $slug $model $run_id $session_id"
     run tmux send-keys -t "=$name:" Enter
 
@@ -435,7 +437,7 @@ stop() {
         [ -f "$here/$run_id.status" ] && { echo "stopped $name  $(cat "$here/$run_id.status")"; return; }
         sleep 0.5
     done
-    die "$name has not written its status line 30s after TERM; \`tmux attach -t $name\` shows what it is doing"
+    die "$name has not written its status line 30s after TERM; \`tmux attach -t '=$name:'\` shows what it is doing"
 }
 
 resume() {
@@ -469,8 +471,8 @@ log() {
 
 cleanup() {
     load; names "$1"
-    if tmux has-session -t "=$name" 2>/dev/null; then
-        run tmux kill-session -t "=$name"
+    if tmux has-session -t "=$name:" 2>/dev/null; then
+        run tmux kill-session -t "=$name:"
     else
         echo "no session $name" >&2
     fi

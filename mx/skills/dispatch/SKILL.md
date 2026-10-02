@@ -114,7 +114,7 @@ The committed report as the *last* act is what says the run left something to re
 ## Intervening and observing
 
 - **Guidance**: `dispatch ctl stop <slug>` when a worker needs to hear something now (the branch moved under it, the user changed a ruling); write the guidance with `dispatch prompt`; `dispatch ctl resume <slug> <model>`; arm a watcher on it. A resume restores the worker's whole conversation, so it holds its own commits, edits and stopping point in far more detail than your reading of its scrollback gives you, and it can read anything in the repo for itself. What it lacks is a reason to look. Guidance is an instruction to act on something that shifted while it was stopped ("the branch moved: rebase onto it"); when nothing did, `continue` is the entire message. Recapping the worker's own state to it overwrites better knowledge with worse.
-- **Observe**: `tmux capture-pane -p -J -t <session> -S -100` on the host (the probe names the session); the human attaches with `tmux attach -t <session>`, over ssh with `-t`.
+- **Observe**: `tmux capture-pane -p -J -t '=<session>:' -S -100` on the host (the probe names the session; the `:` keeps a `.` in a repo's name from reading as a window); the human attaches with `tmux attach -t '=<session>:'`, over ssh with `-t`.
 - **After an orchestrator restart** (your session crashed, or a new one took over): watchers were background tasks of *your* session and died with it, while the workers kept running. `dispatch ctl probe`, then arm a watcher per `running` worker; the same two steps when a watcher fails on an unreachable host. Nothing else needs reconstructing: claims live in ticket frontmatter, work and reports on ticket branches, runs in the host's manifest.
 
 ## The scripts

@@ -562,7 +562,7 @@ def test_attach_to_a_remote_worker_is_ssh_with_a_terminal(home: Path, tmux: dict
     out = dispatch(tmux, home, "attach", "far-away", hosts="local agent@far",
                    answers={"agent@far": elsewhere("far-away")})
     assert out.returncode == 0, out.stderr
-    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t \\=dispatch-agents-far-away", \
+    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t \\=dispatch-agents-far-away:", \
         "the line on_host builds, its leading `=` escaped for a zsh login shell"
     assert (home / "bin" / "ssh.calls").read_text().count("\n") == 2, "one read, then the attach"
 
@@ -613,7 +613,7 @@ def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
     assert "said on far" in peeked.stdout
     attached = dispatched("attach", "hypofuzz-default")
     assert attached.returncode == 0, attached.stderr
-    assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default"
+    assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default:"
 
 
 def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: dict[str, str]):
@@ -629,7 +629,7 @@ def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: 
 
     out = dispatch({**tmux, "TMUX": "/tmp/somebodys-socket,1,0"}, home, "attach", "hypofuzz-default")
     assert out.returncode == 0, out.stderr
-    assert (home / "attached").read_text().strip() == "TMUX=unset attach -t =dispatch-agents-hypofuzz-default"
+    assert (home / "attached").read_text().strip() == "TMUX=unset attach -t =dispatch-agents-hypofuzz-default:"
     assert "prefix twice" in out.stderr
 
 
