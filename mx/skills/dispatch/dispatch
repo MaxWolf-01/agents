@@ -17,7 +17,7 @@
 #        dispatch push
 #        dispatch review <slug>
 #        dispatch accept <slug>
-#        dispatch ps
+#        dispatch ps [--color]
 #        dispatch attach <worker>
 #        dispatch peek <worker> [lines]
 #        dispatch fuzz <verb>
@@ -91,19 +91,29 @@
 #            ticket's branch, which this is, gets its ranges and stays
 #            `review` unless it is a hinge: it is ruled with the parent, and
 #            `accept` writes its `done`. One commit either way, and none when
-#            the ticket already says so.
+#            the ticket already says so. A `done` retires the ticket's run
+#            (below).
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
 #            the parent with its range, `code@<sha>..<sha>`. Refuses before
 #            that merge, and writes nothing when the tracker refuses any one
-#            of them. One commit.
+#            of them. One commit; then retires every child's run.
+#   A ticket that is done has nothing left to resume, so the `done` retires
+#   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
+#   both ticket/<slug> branches here. A retirement that fails is said, with
+#   the command that tries again, and the exit status is nonzero; the
+#   `done` stands. `ctl cleanup` stays for a build that is not landing: a
+#   redo, a reject, a session that cannot be recovered.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
 #            scratch dir whose probe failed an `unreadable` one, a
 #            `worker-hosts --targets` that failed an `incomplete` one, and any
-#            of them makes the exit status nonzero. For a human looking in; the
-#            orchestrator's own view is `dispatch ctl probe`.
+#            of them makes the exit status nonzero. A count per state closes
+#            it. In color on a terminal, or with --color, which `watch` needs
+#            (`watch -c dispatch ps --color`); NO_COLOR turns it off. In color a
+#            running worker's IDLE turns yellow at 15 minutes. For a human
+#            looking in; the orchestrator's own view is `dispatch ctl probe`.
 #   attach   opens a worker's tmux session, as the user that runs it there.
 #            A Ctrl-C in it ends the run the way `ctl stop` does, resumable.
 #            Whatever is typed into the pane while the runner runs, the pane's
@@ -600,6 +610,7 @@ review() {
         die "no branch $branch in $agent_top; fetch it from the worker host first"
     code_range=$(range_of code "$code_tip") || exit 1
     agent_range=$(range_of agent "$agent_tip") || exit 1
+    retiring=
     written=()
     [ -n "$code_range" ] && written+=("code@$code_range")
     [ -n "$agent_range" ] && written+=("agent@$agent_range")
@@ -654,7 +665,7 @@ review() {
         if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
             now=review landed="$id merged into $base, for its ruling with it"
         else
-            now=done landed="$id landed"
+            now=done landed="$id landed" retiring=1
         fi
         status=$("$tracker" get "$id" status)
         [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
@@ -692,6 +703,26 @@ review() {
     run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
     run diffview --serve "$diffviews"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
+    [ -z "$retiring" ] || retire "$id"
+}
+
+# What a done ticket's run left, on its host and here. The run is found under $base, the branch it
+# was spawned from, which `accept` sets to the parent's for each child.
+retire() { # <slug>
+    local h top
+    h=$(host_of "$1")
+    if [ -n "$h" ]; then
+        run on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" cleanup "$1" ||
+            { echo "dispatch: $1 is done, and its cleanup on $h failed; \`dispatch ctl cleanup $1\` from $base tries again" >&2; return 1; }
+        pull_runs "$h"
+        forget_run "$1"
+    fi
+    # A local host's cleanup has deleted these already: they were the branches its worktrees held.
+    for top in "$repo_root" "$agent_top"; do
+        git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1" > /dev/null || continue
+        run git -C "$top" branch -q -d "ticket/$1" || return 1
+    done
 }
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
@@ -720,6 +751,11 @@ accept() { # <slug>
     run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
+    # retired by its own `review`, so only the children in review come up here.
+    rc=0
+    for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
+    return $rc
 }
 
 # Usage: dispatch fuzz start [--host <host>]
@@ -950,13 +986,26 @@ gather() {
 }
 
 ps_() {
+    color=
+    [ -t 1 ] && color=1
+    case ${1:-} in
+        --color) color=1 ;;
+        "")      ;;
+        *)       die "ps takes --color and nothing else" ;;
+    esac
+    [ -z "${NO_COLOR:-}" ] || color=
     gather
     [ ${#rows[@]} -gt 0 ] || { echo "no workers"; return 0; }
     # Cut to the terminal's width, so a long worklog line keeps the table a
-    # table; piped anywhere else a row goes out whole.
+    # table. `watch` runs this with no terminal and the width in COLUMNS, which
+    # a shell does not export; piped anywhere else a row goes out whole.
     cols=0
-    [ -t 1 ] && cols=$(tput cols 2>/dev/null || echo 0)
-    printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" '
+    if [ -t 1 ]; then
+        cols=$(tput cols 2>/dev/null || echo 0)
+    elif [[ ${COLUMNS:-} =~ ^[0-9]+$ ]]; then
+        cols=$COLUMNS
+    fi
+    printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" -v color="$color" '
         function ago(s) {
             if (s !~ /^[0-9]+$/) return "-"
             if (s < 60) return s "s"
@@ -964,20 +1013,42 @@ ps_() {
             if (s < 86400) return int(s / 3600) "h"
             return int(s / 86400) "d"
         }
+        function paint(text, code) { return color && code != "" ? "\033[" code "m" text "\033[0m" : text }
+        # Every state but these two is something that did not get read.
+        function hue(state) { return state == "running" ? "1;32" : state == "exited" ? "" : "1;31" }
         BEGIN { split("HOST BASE TICKET STATE AGE IDLE DETAIL", head, " ")
                 for (c = 1; c <= 7; c++) cell[0, c] = head[c] }
         { n = NR
           cell[n, 1] = $1; cell[n, 2] = $2; cell[n, 3] = $3; cell[n, 4] = $4
-          cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9 }
+          cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9
+          # A running worker whose worklog has been silent this long is worth a peek.
+          stale[n] = $4 == "running" && $6 ~ /^[0-9]+$/ && $6 >= 900
+          count[$4]++; if (!(($4) in order)) order[$4] = ++states }
         END {
             for (k = 0; k <= n; k++) for (c = 1; c <= 6; c++)
                 if (length(cell[k, c]) > w[c]) w[c] = length(cell[k, c])
             for (k = 0; k <= n; k++) {
-                line = sprintf("%-*s  %-*s  %-*s  %-*s  %*s  %*s  %s", w[1], cell[k, 1], w[2], cell[k, 2],
-                    w[3], cell[k, 3], w[4], cell[k, 4], w[5], cell[k, 5], w[6], cell[k, 6], cell[k, 7])
-                if (cols > 0) line = substr(line, 1, cols)
-                print line
+                # Padded and cut as plain text, then painted, so an escape
+                # sequence counts for no width.
+                for (c = 1; c <= 6; c++) pad[c] = sprintf(c >= 5 ? "%*s" : "%-*s", w[c], cell[k, c])
+                plain = pad[1] "  " pad[2] "  " pad[3] "  " pad[4] "  " pad[5] "  " pad[6] "  "
+                detail = cell[k, 7]
+                if (cols > 0 && length(plain) >= cols) { print substr(plain, 1, cols); continue }
+                if (cols > 0) detail = substr(detail, 1, cols - length(plain))
+                if (k == 0) { print paint(plain detail, "1"); continue }
+                state = cell[k, 4]
+                # A finished run steps back, so the live ones and the broken ones stand out.
+                quiet = state == "exited" ? "2" : ""
+                print paint(pad[1] "  " pad[2] "  " pad[3] "  ", quiet) paint(pad[4], hue(state)) "  " \
+                      paint(pad[5], quiet) "  " paint(pad[6], stale[k] ? "33" : quiet) "  " paint(detail, quiet)
             }
+            # One count per state, in the order they first appear.
+            for (s in order) by[order[s]] = s
+            tally = ""
+            for (i = 1; i <= states; i++)
+                tally = tally (i > 1 ? "  " : "") paint(count[by[i]] " " by[i], hue(by[i]))
+            print ""
+            print tally
         }'
     # A table missing a host is no clean reading, and a caller should not have
     # to spot the row to know it.
@@ -1057,7 +1128,7 @@ case $cmd in
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
     accept)  shift; accept "$@" ;;
-    ps)      ps_ ;;
+    ps)      shift; ps_ "$@" ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;
     fuzz)    shift; fuzz "$@" ;;
