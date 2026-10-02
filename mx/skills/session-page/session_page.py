@@ -127,6 +127,11 @@ class RecordError(Exception):
         super().__init__(f"{path}{f':{line}' if line is not None else ''}: {reason}")
 
 
+class NoTurnRecords(RecordError):
+    """A session directory whose `turns/` holds no record yet, as one does between the first paged
+    turn's write of `session.md` and its turn record. Raised once `session.md` has parsed."""
+
+
 # ---- what a session's directory holds ---------------------------------------
 
 
@@ -225,7 +230,7 @@ TAG = re.compile(r"Q\d+")
 def read_turns(turns: Path) -> list[Turn]:
     records = sorted((p for p in turns.glob("*.md") if re.fullmatch(r"\d+\.md", p.name)), key=lambda p: int(p.stem))
     if not records:
-        raise RecordError(turns, None, "no turn records (turns/NN.md)")
+        raise NoTurnRecords(turns, None, "no turn records (turns/NN.md)")
     return [read_turn(path) for path in records]
 
 

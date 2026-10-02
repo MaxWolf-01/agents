@@ -11,7 +11,7 @@ context. The agent fixes the record before it writes its recap, so the turn ends
 not on the fix.
 
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
-  every time.
+  every time. A session whose first turn record is still to come is not unparseable for that.
 - The turn record a turn first writes with Write gets the turn's prose review (`turn_review`), and
   its findings are sent back. The review runs once per turn: an edit after the findings, or a
   record written later in the turn, is parsed and not reviewed again.
@@ -43,7 +43,7 @@ def decide(hook: dict, directory: Path | None) -> "Decision":
     """What to tell the agent after the write the hook JSON describes, over the session directory.
     The verb is "send back" with a reason for the agent, or "allow" with none."""
     import turn_review
-    from session_page import RecordError, read_session
+    from session_page import NoTurnRecords, RecordError, read_session
     from stop_hook import RECAP, UNPARSED, Decision, left_alone, written_this_turn
 
     if unread := left_alone():
@@ -57,6 +57,8 @@ def decide(hook: dict, directory: Path | None) -> "Decision":
             "message": {"content": [{"type": "tool_use", "name": hook["tool_name"], "input": hook["tool_input"]}]}}
     try:
         session = read_session(directory, Path(hook["transcript_path"]), pending=(call,))
+    except NoTurnRecords:
+        return Decision("allow", "no turn record yet")
     except RecordError as e:
         return Decision("send back", "record does not parse", f"{e}\n{UNPARSED}")
     turn = written_this_turn(session)

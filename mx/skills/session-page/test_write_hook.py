@@ -284,6 +284,21 @@ def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
     assert run(wrote(session, writing, "Edit")).startswith(f"{session}")
 
 
+@pytest.mark.parametrize("broken", [False, True], ids=["a session record that parses", "one that does not"])
+def test_the_first_paged_turns_session_record_is_parsed_before_any_turn_record_exists(
+    broken: bool, worked_example: Path, writing: Path, run: Callable[[dict], str],
+) -> None:
+    """The show skill has the first paged turn write session.md before its turn record, so a
+    session with no turn record yet is one still being written: only session.md is answered for."""
+    for record in (worked_example / "turns").iterdir():
+        record.unlink()
+    session = worked_example / "session.md"
+    if broken:
+        session.write_text(session.read_text().replace("repo:", "repository:"))
+    said = run(wrote(session, writing))
+    assert said.startswith(f"{session}") if broken else said == ""
+
+
 # ---- what it leaves alone ---------------------------------------------------
 
 
