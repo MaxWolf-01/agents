@@ -23,10 +23,10 @@
 #   init      what staging this host runs, once per scratch dir and again
 #             whenever the orchestrator stages a different version of these
 #             scripts: writes `config`, creates the two bare repos when missing,
-#             fetches `job` into ~/.local/bin when the host has none, puts the
-#             tracker's commit hook (`pre-commit` here) in the agent repo where
-#             it has no pre-commit hook of another's, updates the mx plugin and
-#             prints its version. git-dir defaults to
+#             fetches `job` into ~/.local/bin unless one elsewhere is on
+#             PATH, puts the tracker's commit hook (`pre-commit` here) in the
+#             agent repo where it has no pre-commit hook of another's, updates
+#             the mx plugin and prints its version. git-dir defaults to
 #             ~/repos/dispatch/<repo>.git, agent-dir to
 #             ~/repos/dispatch/<repo>-agent.git and worktrees-dir to
 #             ~/repos/dispatch; a local orchestrator passes its own checkouts
@@ -75,9 +75,10 @@
 #   fuzz      the repo's fuzz run's host side, for `dispatch fuzz` and its hook
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
-# list --json`), and `init` wants `curl` and `claude`: it
-# fetches `job` with the first where the host has none, and updates this plugin
-# with the second, saying so when that fails; `spawn` updates `claude` itself.
+# list --json`), and `init` wants `curl` and `claude`: it fetches `job` with the
+# first unless a `job` other than its own copy is on PATH, and updates this
+# plugin with the second, saying so when that fails; `spawn` updates `claude`
+# itself.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
@@ -144,9 +145,12 @@ die() { echo "dispatch-ctl: $1" >&2; exit 1; }
 
 cfg() { sed -n "s/^$1=//p" "$here/config" | head -1; }
 
-# `init` fetches `job` to ~/.local/bin where the host has none on PATH.
+# The `job` this script runs: the first on PATH, else the copy `init` fetches,
+# which is also the one `init` keeps current.
+fetched_job=$HOME/.local/bin/job
+job_bin_path() { job=$(command -v job || echo "$fetched_job"); }
 job_bin() {
-    job=$(command -v job || echo "$HOME/.local/bin/job")
+    job_bin_path
     [ -x "$job" ] || die "no \`job\` on this host; \`dispatch-ctl init\` installs it"
 }
 
@@ -240,12 +244,22 @@ init() {
     fi
     # `job` runs the wait loop (wait_). Fetched rather than staged beside this
     # script, and from a public repo, so the host still authenticates nowhere.
-    # One already here is left alone: on the orchestrator's own machine that
-    # file is managed by home-manager and its directory is read-only.
-    if ! command -v job >/dev/null; then
-        mkdir -p "$HOME/.local/bin"
-        run curl -fsSL "$job_url" -o "$HOME/.local/bin/job" || die "could not fetch job from $job_url; dispatch-ctl wait runs its loop"
-        chmod +x "$HOME/.local/bin/job"
+    # The copy fetched here is fetched again on every init, since a copy never
+    # refreshed keeps modes `job` has since dropped. A `job` anywhere else is
+    # left alone: on the orchestrator's own machine home-manager manages it, in
+    # a read-only directory. Compared as files, since PATH may spell the copy's
+    # directory otherwise than HOME does. Each fetch lands in a file of its own
+    # and replaces the copy only once whole, so neither a failed fetch nor two
+    # inits at once leave the loop without a working copy.
+    job_bin_path
+    if [ "$job" -ef "$fetched_job" ] || [ "$job" = "$fetched_job" ]; then
+        run mkdir -p "$(dirname "$fetched_job")"
+        part=$(mktemp "$fetched_job.XXXXXX")
+        if ! { run curl -fsSL "$job_url" -o "$part" && run chmod 755 "$part" && run mv "$part" "$fetched_job"; }; then
+            rm -f "$part"
+            [ -x "$fetched_job" ] || die "could not fetch job from $job_url; dispatch-ctl wait runs its loop"
+            echo "init: could not fetch job from $job_url; dispatch-ctl wait runs its loop on the copy already at $fetched_job" >&2
+        fi
     fi
     # A running worker keeps the version directory it started with (old
     # versions stay in the plugin cache), so this changes only workers started

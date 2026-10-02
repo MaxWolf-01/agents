@@ -1219,6 +1219,70 @@ def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, stage
     assert "is not the tracker's" in said.stderr, said.stderr
 
 
+STALE_JOB = "#!/bin/sh\necho stale\n"
+CURRENT_JOB = "#!/bin/sh\necho current\n"
+
+
+def init_with_job(toy: Path, job_dir: Path, fetch_fails: bool = False, on_path: str = "") -> subprocess.CompletedProcess:
+    """`dispatch-ctl init` on a host whose first `job` on PATH is a stale one in `job_dir`, behind a
+    `curl` that serves CURRENT_JOB, or fails as an unreachable network does. `on_path` is how PATH
+    spells `job_dir`, itself unless given."""
+    scratch = toy.parent / "scratch"
+    scratch.mkdir()
+    shutil.copy(SKILL / "dispatch-ctl", scratch / "dispatch-ctl")
+    shutil.copy(SKILL.parent / "tracker" / "pre-commit", scratch / "pre-commit")
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "job").write_text(STALE_JOB)
+    (job_dir / "job").chmod(0o755)
+    fakes = toy.parent / "fakes"
+    fakes.mkdir()
+    served = toy.parent / "served-job"
+    served.write_text(CURRENT_JOB)
+    curl = "exit 22" if fetch_fails else f'while [ "$1" != -o ]; do shift; done; cp "{served}" "$2"'
+    (fakes / "curl").write_text(f"#!/bin/sh\n{curl}\n")
+    (fakes / "curl").chmod(0o755)
+    env = environment(toy)
+    env["PATH"] = f"{on_path or job_dir}:{fakes}:{env['PATH']}"
+    repos = toy.parent / "repos"
+    return subprocess.run(["bash", str(scratch / "dispatch-ctl"), "init", "lamp", "main", str(repos / "lamp.git"),
+                           str(repos), str(repos / "lamp-agent.git"), "main"],
+                          capture_output=True, text=True, env=env, timeout=60)
+
+
+@pytest.mark.parametrize("spelling", ["as HOME spells it", "through a symlink"])
+def test_init_brings_the_job_it_fetched_current(toy: Path, spelling: str) -> None:
+    """`dispatch-init-refreshes-fetched-job`: a host whose `job` is the copy at ~/.local/bin/job
+    has the current one after `init`, however PATH spells that directory."""
+    fetched = toy.parent / "home" / ".local" / "bin"
+    on_path = {"as HOME spells it": "", "through a symlink": str(toy.parent / "linked-bin")}[spelling]
+    if spelling == "through a symlink":
+        (toy.parent / "linked-bin").symlink_to(fetched)
+    said = init_with_job(toy, fetched, on_path=on_path)
+    assert said.returncode == 0, said.stderr
+    assert (fetched / "job").read_text() == CURRENT_JOB
+    assert os.access(fetched / "job", os.X_OK)
+
+
+def test_init_leaves_a_job_elsewhere_on_path_alone(toy: Path) -> None:
+    """`dispatch-init-refreshes-fetched-job`: home-manager's `job` on the orchestrator's machine is
+    not dispatch's to replace."""
+    elsewhere = toy.parent / "nix-profile" / "bin"
+    said = init_with_job(toy, elsewhere)
+    assert said.returncode == 0, said.stderr
+    assert (elsewhere / "job").read_text() == STALE_JOB
+    assert not (toy.parent / "home" / ".local" / "bin" / "job").exists()
+
+
+def test_init_that_cannot_fetch_job_keeps_the_copy_it_has_and_says_so(toy: Path) -> None:
+    """`dispatch-init-refreshes-fetched-job`: the copy a failed fetch leaves still runs the wait loop."""
+    fetched = toy.parent / "home" / ".local" / "bin"
+    said = init_with_job(toy, fetched, fetch_fails=True)
+    assert said.returncode == 0, said.stderr
+    assert (fetched / "job").read_text() == STALE_JOB
+    assert "could not fetch job" in said.stderr, said.stderr
+    assert sorted(p.name for p in fetched.iterdir()) == ["job"]
+
+
 def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
     """`dispatch --help` names `dispatch ctl --help` as dispatch-ctl's reference, and the skill
     renders it on load wherever the session is."""
