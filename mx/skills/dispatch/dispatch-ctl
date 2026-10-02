@@ -498,11 +498,10 @@ cleanup() {
 }
 
 # The `job`s a worker started for its builds and test runs, which it rarely
-# removes itself: each one whose cwd is the worktree or under it, running or
-# not. A staged job carries its cwd in `staged` until Enter writes `meta`.
+# removes itself: each one whose cwd is the worktree or under it, running or not.
 remove_jobs() {
     for dir in "${JOB_STATE_DIR:-$HOME/.local/state/jobs}"/*/; do
-        cwd=$(sed -n 's/^cwd=//p' "$dir/meta" "$dir/staged" 2>/dev/null | head -1)
+        cwd=$(sed -n 's/^cwd=//p' "$dir/meta" 2>/dev/null | head -1)
         case $cwd in
             "$worktree"|"$worktree"/*) job_bin; run "$job" rm "$(basename "$dir")" ;;
         esac
