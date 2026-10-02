@@ -75,9 +75,10 @@
 #   fuzz      the repo's fuzz run's host side, for `dispatch fuzz` and its hook
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
-# list --json`), and `init` wants `curl` and `claude`: it
-# fetches `job` with the first where the host has none, and updates this plugin
-# with the second, saying so when that fails; `spawn` updates `claude` itself.
+# list --json`), and `init` wants `curl` and `claude`: it fetches `job` with the
+# first unless a `job` other than its own copy is on PATH, and updates this
+# plugin with the second, saying so when that fails; `spawn` updates `claude`
+# itself.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  passed through to the runner (default auto)
@@ -246,13 +247,16 @@ init() {
     # The copy fetched here is fetched again on every init, since a copy never
     # refreshed keeps modes `job` has since dropped. A `job` anywhere else is
     # left alone: on the orchestrator's own machine home-manager manages it, in
-    # a read-only directory. The fetch replaces the copy only once it is whole,
-    # so a failed one leaves the old copy to run the loop.
+    # a read-only directory. Compared as files, since PATH may spell the copy's
+    # directory otherwise than HOME does. Each fetch lands in a file of its own
+    # and replaces the copy only once whole, so neither a failed fetch nor two
+    # inits at once leave the loop without a working copy.
     job_bin_path
-    if [ "$job" = "$fetched_job" ]; then
-        mkdir -p "$(dirname "$fetched_job")"
-        if ! { run curl -fsSL "$job_url" -o "$fetched_job.part" && chmod +x "$fetched_job.part" && mv "$fetched_job.part" "$fetched_job"; }; then
-            rm -f "$fetched_job.part"
+    if [ "$job" -ef "$fetched_job" ] || [ "$job" = "$fetched_job" ]; then
+        run mkdir -p "$(dirname "$fetched_job")"
+        part=$(mktemp "$fetched_job.XXXXXX")
+        if ! { run curl -fsSL "$job_url" -o "$part" && run chmod 755 "$part" && run mv "$part" "$fetched_job"; }; then
+            rm -f "$part"
             [ -x "$fetched_job" ] || die "could not fetch job from $job_url; dispatch-ctl wait runs its loop"
             echo "init: could not fetch job from $job_url; dispatch-ctl wait runs its loop on the copy already at $fetched_job" >&2
         fi
