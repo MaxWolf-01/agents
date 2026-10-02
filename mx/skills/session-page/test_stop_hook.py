@@ -822,19 +822,29 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
 TITLE = "Leading words for showing, and the session page"  # the worked example's session.md H1
 
 
-@pytest.mark.parametrize("rewritten", [True, False], ids=["session.md written this turn", "session.md left as it was"])
+# When a turn wrote session.md, if any did: this one, after SPOKEN_AFTER began it (with_write's
+# time), or the one before.
+SESSION_WRITES = {"session.md written this turn": "2026-09-23T01:36:00.000Z",
+                  "session.md written in an earlier turn": "2026-09-23T01:34:00.000Z",
+                  "session.md never written": None}
+
+
+@pytest.mark.parametrize("written", SESSION_WRITES.values(), ids=SESSION_WRITES)
 def test_a_turn_that_rewrites_the_session_record_has_it_reviewed_with_its_own(
-    rewritten: bool, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
+    written: str | None, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
     """The session's title heads its page, so a turn that writes session.md has it reviewed, fenced
-    before the turn's record, and a finding on its title goes back naming it. A turn that leaves it
-    as it was has only its record reviewed, and the same finding drops."""
+    before the turn's record, and a finding on its title goes back naming it; the re-entry that
+    follows logs the session record as revised. A turn that leaves it as it was has only its record
+    reviewed, and the same finding drops."""
     record = worked_example / "turns" / "05.md"
     record.write_text(PIVOTAL_05)
+    if written:
+        call = {"type": "tool_use", "id": "toolu_Edit_session", "name": "Edit", "input": {"file_path": str(worked_example / "session.md")}}
+        appended(unrecorded, unrecorded, {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": written})
     with_write(unrecorded, "Write", record)
-    if rewritten:
-        with_write(unrecorded, "Edit", worked_example / "session.md")
+    rewritten = written == SESSION_WRITES["session.md written this turn"]
     prompts = []
     monkeypatch.setattr(turn_review, "review", lambda system, prompt: prompts.append(prompt) or [finding(TITLE, "54")])
     run(payload(worked_example, unrecorded))
@@ -844,12 +854,18 @@ def test_a_turn_that_rewrites_the_session_record_has_it_reviewed_with_its_own(
     assert prompt.endswith(f"{session_record}\n<record>\n{record.read_text().strip()}\n</record>") == rewritten
     (entry,) = logged(attended, "decision")
     assert ("session_record" in entry) == rewritten
-    if rewritten:
-        said = json.loads(out)["hookSpecificOutput"]["additionalContext"]
-        assert str(worked_example / "session.md") in said and f'"{TITLE}"' in said
-        assert "**Headline titles.**" in said
-    else:
+    if not rewritten:
         assert "hookSpecificOutput" not in out and entry["dropped"] == [finding(TITLE, "54")]
+        return
+    said = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert str(worked_example / "session.md") in said and f'"{TITLE}"' in said
+    assert "**Headline titles.**" in said
+    plain = (worked_example / "session.md").read_text().replace(TITLE, "Leading words for the show skill; the session page")
+    (worked_example / "session.md").write_text(plain)
+    run(payload(worked_example, unrecorded, stop_hook_active=True))
+    assert shown(capsys)
+    assert logged(attended, "decision")[-1] | {"ts": ""} == {"ts": "", "session_id": worked_example.name, "decision": "re-entry",
+                                                             "record": str(record), "text": PIVOTAL_05, "session_record": plain}
 
 
 REVIEW = turn_review.review  # the real one, which the autouse stub replaces

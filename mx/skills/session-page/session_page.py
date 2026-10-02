@@ -212,7 +212,7 @@ class Session:
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
-    described: datetime | None = None  # when the transcript last shows session.md written, where it shows it
+    described: datetime | None = None  # when the transcript last shows session.md written
 
 
 # ---- reading the records ----------------------------------------------------

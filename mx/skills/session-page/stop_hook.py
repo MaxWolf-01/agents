@@ -111,7 +111,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
     if turn_review.reviewed_since(session.id, session.began):
-        turn_review.log(session.id, decision="re-entry", record=str(turn.path), text=turn.path.read_text())
+        turn_review.log(session.id, decision="re-entry", **turn_review.as_read(session, turn))
         return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
     if said := turn_review.feedback_on(session, turn):
         return Decision("send back", "review findings", said)
