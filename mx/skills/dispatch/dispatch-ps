@@ -32,6 +32,8 @@ sessions=$(tmux ls -F '#{session_name}' 2>/dev/null)
 
 pane_of() { awk -v n="$1" 'BEGIN { s = "n" } $1 == n { s = "y" } END { print s }' <<<"$sessions"; }
 
+# A repo named `.dotfiles` stages `.dotfiles-<base>`, which a plain glob skips.
+shopt -s dotglob
 for dir in "$root"/*/; do
     dir=${dir%/}
     [ -f "$dir/config" ] || continue
