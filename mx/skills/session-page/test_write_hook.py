@@ -334,7 +334,7 @@ def test_the_first_paged_turns_session_record_is_parsed_before_any_turn_record_e
 # ---- what it leaves alone ---------------------------------------------------
 
 
-def test_a_write_outside_the_sessions_directory_is_let_through_unlogged(
+def test_a_write_that_is_no_record_of_this_session_is_let_through(
     worked_example: Path, writing: Path, tmp_path: Path, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
