@@ -357,7 +357,7 @@ def test_the_table_names_its_columns_and_the_worker(home: Path, tmux: dict[str, 
     assert header.split() == ["HOST", "BASE", "TICKET", "STATE", "AGE", "IDLE", "DETAIL"]
     assert row.split()[:4] == ["local", "agents/master", "hypofuzz-default", "exited"]
     assert re.fullmatch(r"\d+s", row.split()[4]), "spawned seconds ago"
-    assert (gap, tally) == ("", "1 exited")
+    assert (gap, tally) == ("", "0 running  1 exited"), "running and exited hold their places at zero"
     assert "\x1b[" not in out.stdout, "no color into a pipe unless asked"
 
 
@@ -467,6 +467,7 @@ def test_a_host_that_does_not_answer_is_a_row_and_a_nonzero_exit(home: Path, tmu
     (row,) = [line for line in out.stdout.splitlines() if line.startswith("agent@off")]
     assert "unreachable" in row and why in row
     assert "hypofuzz-default" in out.stdout, "the host that did answer is still read"
+    assert out.stdout.splitlines()[-1] == "0 running  1 exited  1 unreachable", "the rest after them, as they appear"
 
 
 def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: dict[str, str]):
