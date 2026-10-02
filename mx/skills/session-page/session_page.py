@@ -20,6 +20,7 @@ import re
 import shlex
 import sys
 from collections.abc import Iterator
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -87,7 +88,11 @@ def render_session(directory: Path, transcript: Path, now: datetime | None = Non
     `now` is the clock the page is rendered against, the machine's by default; a check pins it so
     that two renders of the same records compare.
     """
-    return page(read_session(directory, transcript), now or datetime.now())
+    root = ROOT.set(directory.parents[len(SESSIONS.parts)])
+    try:
+        return page(read_session(directory, transcript), now or datetime.now())
+    finally:
+        ROOT.reset(root)
 
 
 def read_session(directory: Path, transcript: Path) -> "Session":
@@ -576,6 +581,7 @@ def bucket(messages: list[tuple[datetime, T]], written: list[datetime | None]) -
 # ---- the page ---------------------------------------------------------------
 
 UP = "../" * (len(SESSIONS.parts) + 1)  # from the page to the repo root
+ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 
 KEYS = [
     ("j k", "next, previous block"),
@@ -741,7 +747,7 @@ def links(items: tuple[Link, ...]) -> str:
         key = f'<kbd class="n">{i}</kbd>' if i <= 9 else '<span class="n"></span>'
         note = f'<span class="desc v-small">{inline(link.note)}</span>' if link.note else ""
         rows.append(f'<li>{key}<span class="link-main"><a class="link" href="{esc(href(link.path))}" target="_blank" rel="noopener">'
-                    f'{inline(link.text)}</a>{note}</span></li>')
+                    f'{inline(link.text, paths=False)}</a>{note}</span></li>')
     return f'<ol class="links">{"".join(rows)}</ol>'
 
 
@@ -789,13 +795,15 @@ THEME = """
 
 def block(text: str) -> str:
     """A record's markdown as HTML: CommonMark with tables, raw HTML shown as text, links resolved
-    from the repo root and opening in a new tab."""
+    from the repo root and opening in a new tab, and a code span naming a path on this machine
+    made a link to it."""
     return MARKDOWN.render(text)
 
 
-def inline(text: str) -> str:
-    """Markdown as one line of HTML: a headline carries code and emphasis, never a block."""
-    return MARKDOWN.renderInline(text)
+def inline(text: str, paths: bool = True) -> str:
+    """Markdown as one line of HTML: a headline carries code and emphasis, never a block. Text
+    that will sit inside a link of its own passes `paths=False`, since a link cannot hold one."""
+    return MARKDOWN.renderInline(text, {"paths": paths})
 
 
 def link_open(self, tokens, idx, options, env) -> str:
@@ -808,13 +816,39 @@ def link_open(self, tokens, idx, options, env) -> str:
     return self.renderToken(tokens, idx, options, env)
 
 
+def code_inline(self, tokens, idx, options, env) -> str:
+    code = CODE_INLINE(tokens, idx, options, env)
+    in_link = sum((t.type == "link_open") - (t.type == "link_close") for t in tokens[:idx]) > 0
+    target = None if in_link or not env.get("paths", True) else path_target(tokens[idx].content)
+    return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
+
+
 MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
+CODE_INLINE = MARKDOWN.renderer.rules["code_inline"]
 MARKDOWN.add_render_rule("link_open", link_open)
+MARKDOWN.add_render_rule("code_inline", code_inline)
 
 
 def href(path: str) -> str:
     """A link from the page: a path from the repo root climbs to it; a URL stays as it is."""
     return path if re.match(r"[a-z][a-z0-9+.-]*:", path, re.I) else UP + path
+
+
+def path_target(text: str) -> str | None:
+    """The link for a code span whose text is a path that exists on this machine: absolute, under
+    `~`, or from the repo root, a trailing `:line` or `:line:column` dropped. None for anything
+    else, so a command, a name or a path on another host stays code. A bare word is never a path,
+    even where the repo root holds a directory of that name."""
+    root = ROOT.get()
+    path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
+    if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
+        return None
+    local = Path(path).expanduser()
+    try:
+        found = (local if local.is_absolute() else root / local).exists()
+    except OSError:  # a name too long for the filesystem
+        return None
+    return (local.as_uri() if local.is_absolute() else href(path)) if found else None
 
 
 def esc(s: str) -> str:

@@ -310,6 +310,36 @@ def test_a_message_reaches_one_turns_section_and_no_other(
     assert len(moved) == 1
 
 
+def test_a_code_span_naming_a_file_on_this_machine_opens_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path a record writes as code is a link the user clicks rather than text they copy: from
+    the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a bare
+    word, a command, and code already inside a link stay code."""
+    root, home = tmp_path / "repo", tmp_path / "home"
+    (root / "mx").mkdir(parents=True)
+    (root / "mx" / "tool.py").write_text("")
+    home.mkdir()
+    (home / "notes.md").write_text("")
+    elsewhere = tmp_path / "review.html"
+    elsewhere.write_text("")
+    monkeypatch.setenv("HOME", str(home))
+    directory, transcript = write_session(root / "agent" / "sessions" / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
+    (directory / "turns" / "01.md").write_text(
+        "---\ndate: 2026-09-21\n---\n\n# Paths\n\n## Links\n\n- [The `mx/tool.py` listing](mx/tool.py): the code\n\n"
+        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `claude -p mx/tool.py` "
+        "and [`mx/tool.py`](mx/tool.py).\n"
+    )
+    section = sections_of(render_session(directory, transcript, now=NOW))["01"]
+    linked = re.findall(r'<a class="path" href="([^"]+)"[^>]*><code>([^<]*)</code></a>', section)
+    assert linked == [
+        ("../../../mx/tool.py", "mx/tool.py:12"),
+        (elsewhere.as_uri(), str(elsewhere)),
+        ((home / "notes.md").as_uri(), "~/notes.md"),
+    ]
+    assert section.count('class="path"') == 3, "a code span inside a link of its own was linked again"
+
+
 # What the user said in each of the worked example's four turns, the last of them queued mid-turn,
 # and what Claude Code wrote as the user around them: images, task notifications and another
 # session's hand-back, which are nobody's message.
