@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -112,6 +113,7 @@ def read_session(directory: Path, transcript: Path) -> "Session":
                     for t, said_before, sent_before in zip(turns, messages, peers)),
         settled=settled,
         began=turn_start(entries),
+        described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
     )
 
 
@@ -210,6 +212,7 @@ class Session:
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
+    described: datetime | None = None  # when the transcript last shows session.md written
 
 
 # ---- reading the records ----------------------------------------------------
@@ -524,16 +527,23 @@ def written_at(entries: list[dict], directory: Path, turns: list[Turn]) -> dict[
     wrote its path. A later edit, as a send-back asks for, or a read leaves the time where it was."""
     written: dict[int, datetime] = {}
     names = {t.path.name: t.number for t in turns}
+    for at, target in writes(entries):
+        if target.parts[-3:-1] == (directory.name, "turns") and target.name in names:
+            number = names[target.name]
+            written[number] = min(at, written.get(number, at))
+    return written
+
+
+def writes(entries: list[dict]) -> Iterator[tuple[datetime, Path]]:
+    """Each tool call in the transcript that writes a file, with when, and the path it wrote."""
     for entry in entries:
         if entry.get("type") != "assistant" or "timestamp" not in entry:
             continue
         for block in entry.get("message", {}).get("content") or []:
-            writes = isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in WRITES
-            target = writes and (block.get("input") or {}).get("file_path")
-            if isinstance(target, str) and Path(target).parts[-3:-1] == (directory.name, "turns") and Path(target).name in names:
-                number, at = names[Path(target).name], datetime.fromisoformat(entry["timestamp"])
-                written[number] = min(at, written.get(number, at))
-    return written
+            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in WRITES:
+                target = (block.get("input") or {}).get("file_path")
+                if isinstance(target, str):
+                    yield datetime.fromisoformat(entry["timestamp"]), Path(target)
 
 
 def pair(messages: list[tuple[datetime, str]], written: list[datetime | None]) -> list[list[str]]:

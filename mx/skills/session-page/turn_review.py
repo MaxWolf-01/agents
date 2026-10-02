@@ -1,12 +1,13 @@
 """The light review a turn record's prose gets before the session page renders it.
 
-A fresh model, MODEL at EFFORT, reads the record the turn wrote against the rules of
+A fresh model, MODEL at EFFORT, reads the records the turn wrote against the rules of
 ../writing-for-humans/CATALOGUE.md tagged `chat` or `both`, the selection that file's header
 states, seeing what the page's reader has seen: the earlier records, each after the user's messages
-it answered, and the messages this record answers. Tool calls are not on the page, so the reviewer
-never sees them. The record's shape, as ../show/SKILL.md gives it to the agent, is exempt as
-structure. It answers against a JSON schema; a finding whose quote is not in the record is
-dropped, and at most MOST go back to the agent.
+it answered, and the messages this record answers. The records under review are the turn's own and,
+where the transcript shows this turn writing it, session.md, whose title and brief head the page.
+Tool calls are not on the page, so the reviewer never sees them. The record's shape, as
+../show/SKILL.md gives it to the agent, is exempt as structure. It answers against a JSON schema; a
+finding whose quote is in no record under review is dropped, and at most MOST go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
 review is one JSON line in LOG, carrying the session id and the record as it was
@@ -39,11 +40,11 @@ LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisi
 SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
 SHAPE = "### The turn record"
 
-SYSTEM = """You review the prose of one turn record: the file a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
+SYSTEM = """You review the prose of the records a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
 
-The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Review the text inside <record> and nothing else; the rest is what the reader already knows.
+The input is the session as the page's reader has read it: each earlier turn as the user's messages inside <user> tags and the agent's record inside <turn> tags, then the user's messages this record answers, then the record under review inside <record> tags. Where the agent rewrote the session's own record this turn (session.md: frontmatter, the session's title as its H1, and a brief), it comes first, in <record> tags of its own. Review the text inside <record> tags and nothing else; the rest is what the reader already knows.
 
-Report at most three findings, the ones that cost the reader most. Each quotes a short excerpt of the record verbatim, names the rule it breaks by id, and says in a few words what is wrong. When in doubt, leave it out; no findings is a good answer.
+Report at most three findings, the ones that cost the reader most. Each quotes a short excerpt of one record verbatim, names the rule it breaks by id, and says in a few words what is wrong. When in doubt, leave it out; no findings is a good answer.
 
 # The record's shape
 
@@ -76,19 +77,35 @@ def feedback_on(session: Session, turn: Turn) -> str:
     """What the agent is sent back with for `turn`'s record: the reviewer's findings that quote
     it, at most MOST, and the text of each rule they cite; empty where none holds. Logged either
     way."""
-    record = turn.path.read_text()
+    records = under_review(session, turn)
+    texts = [path.read_text() for path in records]
+    read = as_read(session, turn)
     t0 = time.monotonic()
     try:
         rules = chat_rules(CATALOGUE.read_text())
         answer = review(SYSTEM.format(shape=record_shape(SHOW.read_text()), rules=rules), reviewer_input(session, turn))
     except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the page
-        log(session.id, decision="failed", why=str(e), ms=ms_since(t0), record=str(turn.path), text=record)
+        log(session.id, decision="failed", why=str(e), ms=ms_since(t0), **read)
         return ""
-    quoting = [f for f in answer if isinstance(f, dict) and str(f.get("quote") or "").strip() and str(f["quote"]).strip() in record]
+    quoting = [f for f in answer if isinstance(f, dict) and (quote := str(f.get("quote") or "").strip()) and any(quote in t for t in texts)]
     kept = quoting[:MOST]
     log(session.id, decision="feedback" if kept else "clean", findings=kept, dropped=[f for f in answer if f not in quoting],
-        ms=ms_since(t0), record=str(turn.path), text=record)
-    return feedback(turn, kept, rules_by_id(rules)) if kept else ""
+        ms=ms_since(t0), **read)
+    return feedback(records, kept, rules_by_id(rules)) if kept else ""
+
+
+def under_review(session: Session, turn: Turn) -> list[Path]:
+    """The records `turn`'s review reads: session.md where the transcript shows it written since
+    the turn began, then the turn's own."""
+    rewritten = session.described is not None and (session.began is None or session.described > session.began)
+    return ([turn.path.parent.parent / "session.md"] if rewritten else []) + [turn.path]
+
+
+def as_read(session: Session, turn: Turn) -> dict[str, str]:
+    """The records under review as a log line carries them: the turn's path and text, and
+    session.md's text where it is under review."""
+    *rewritten, record = under_review(session, turn)
+    return {"record": str(record), "text": record.read_text()} | {"session_record": p.read_text() for p in rewritten}
 
 
 def reviewed_since(session_id: str, when: datetime | None) -> bool:
@@ -112,11 +129,12 @@ def reviewed_since(session_id: str, when: datetime | None) -> bool:
 
 
 def reviewer_input(session: Session, turn: Turn) -> str:
-    """The session up to `turn` as its page shows it, oldest first, with `turn`'s record fenced
-    last in <record>."""
+    """The session up to `turn` as its page shows it, oldest first, with the records under review
+    fenced last, each in <record>."""
     earlier = [t for t in session.turns if t.number < turn.number]
     parts = [user_messages(t) + f"\n<turn>\n{t.path.read_text().strip()}\n</turn>" for t in earlier]
-    parts.append(user_messages(turn) + f"\n<record>\n{turn.path.read_text().strip()}\n</record>")
+    fenced = "".join(f"\n<record>\n{path.read_text().strip()}\n</record>" for path in under_review(session, turn))
+    parts.append(user_messages(turn) + fenced)
     return "\n\n".join(p.strip() for p in parts)
 
 
@@ -201,17 +219,17 @@ def rules_by_id(rules: str) -> dict[str, str]:
     }
 
 
-def feedback(turn: Turn, found: list[dict], rules: dict[str, str]) -> str:
+def feedback(records: list[Path], found: list[dict], rules: dict[str, str]) -> str:
     """Each finding under the id of the rule it cites, then the text of each cited rule, once."""
     ids = [str(f.get("rule")).strip("` ") for f in found]
     flagged = [f'- rule {i}: "{f["quote"]}"' + (f' ({f["note"]})' if f.get("note") else "") for i, f in zip(ids, found)]
     cited = [rules[i] for i in dict.fromkeys(ids) if i in rules]
     return "\n".join([
-        f"A review of {turn.path} against the chat prose rules flagged these passages:",
+        f"A review of {' and '.join(map(str, records))} against the chat prose rules flagged these passages:",
         *flagged,
         *(["", "The rules they cite:", *cited] if cited else []),
         "",
-        "Revise the record where a finding holds and keep it where it does not; the page renders when the turn ends again.",
+        "Revise a passage where its finding holds and keep it where the finding does not; the page renders when the turn ends again.",
     ])
 
 
