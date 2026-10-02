@@ -237,7 +237,7 @@ def waited(toy: Path, state: Path | None = None) -> Path:
         time.sleep(0.5)
     left = list(state.glob("*.status"))
     assert left, "no status line 30s after the spawn: " + subprocess.run(
-        ["tmux", "capture-pane", "-p", "-J", "-t", "=dispatch-lamp-warm-preset"],
+        ["tmux", "capture-pane", "-p", "-J", "-t", f"=dispatch-{toy.name}-warm-preset:"],
         capture_output=True, text=True, env=environment(toy)).stdout
     return left[0]
 
@@ -290,12 +290,12 @@ def mx(tmp_path: Path) -> Path:
 @pytest.fixture
 def staged(toy: Path) -> Path:
     """The toy with a stub runner staged in the skill copy dispatch sends to a host."""
-    if not shutil.which("tmux"):
-        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     return skill_copy(toy)
 
 
 def skill_copy(toy: Path) -> Path:
+    if not shutil.which("tmux"):
+        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     skill = toy.parent / "skills"
     (skill / "dispatch").mkdir(parents=True)
     (skill / "tracker").mkdir()
@@ -1020,8 +1020,6 @@ def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(
     """tmux reads a `.` in a target as the window separator, so `.lamp`'s worker session is named
     whole only with a `:` after it: a respawn reuses it, a cleanup kills it, and the spawn after
     that starts in a fresh one."""
-    if not shutil.which("tmux"):
-        pytest.skip("no tmux here, and a spawn types its runner into a tmux pane")
     staged = skill_copy(dotted)
     state = dotted.parent / "home" / ".local" / "state" / "dispatch" / ".lamp-main"
     env = environment(dotted)

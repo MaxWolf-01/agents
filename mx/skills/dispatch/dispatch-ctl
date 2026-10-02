@@ -437,7 +437,7 @@ stop() {
         [ -f "$here/$run_id.status" ] && { echo "stopped $name  $(cat "$here/$run_id.status")"; return; }
         sleep 0.5
     done
-    die "$name has not written its status line 30s after TERM; \`tmux attach -t =$name:\` shows what it is doing"
+    die "$name has not written its status line 30s after TERM; \`tmux attach -t '=$name:'\` shows what it is doing"
 }
 
 resume() {
