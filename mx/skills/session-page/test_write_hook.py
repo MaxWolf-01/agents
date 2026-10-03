@@ -331,6 +331,26 @@ def test_the_first_paged_turns_session_record_is_parsed_before_any_turn_record_e
     assert said.startswith(f"{session}") if broken else said == ""
 
 
+def test_a_turn_record_pointing_at_another_part_of_the_page_in_words_goes_back_until_it_links_it(
+    worked_example: Path, writing: Path, run: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question at the top sits far from the turn whose Details it means, so a record links the
+    part it points at. The send-back names the line and costs no model call; the same words in
+    code, or in an older record no turn edits any more, pass."""
+    older, record = worked_example / "turns" / "03.md", worked_example / "turns" / "04.md"
+    older.write_text(older.read_text().rstrip("\n") + "\n\nThe two commands are listed under Details.\n")
+    text = record.read_text().rstrip("\n")
+    monkeypatch.setattr(turn_review, "review", unreachable)
+    record.write_text(text + "\n\nThe four ways out are under Details.\n")
+    said = run(wrote(record, writing))
+    assert said.startswith(f"{record}:{text.count(chr(10)) + 3}: 'under Details' ")
+    assert "(#t07)" in said and RECAP in said
+
+    monkeypatch.setattr(turn_review, "review", reviewer())
+    record.write_text(text + "\n\nThe four ways out are in [turn 03](#t03); `see below` is code.\n")
+    assert run(wrote(record, writing, "Edit")) == ""
+
+
 # ---- what it leaves alone ---------------------------------------------------
 
 

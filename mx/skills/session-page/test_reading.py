@@ -225,6 +225,27 @@ def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: P
     assert landed == re.findall(r"\]\(([^)]+)\)", "".join(p.read_text() for p in records))
 
 
+def test_a_link_to_an_artifact_in_another_repo_is_its_absolute_path(
+    worked_example: Path, transcript: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An artifact another repo holds is linked by its absolute path, or its path under `~`, which
+    reads the same wherever the session directory sits; a path that climbs out of the repo root
+    does not."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    record = worked_example / "turns" / "05.md"
+    record.write_text(
+        "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Links\n\n"
+        "- [The mail design](/srv/jarvis/agent/show/mail/index.html): the figures\n"
+        "- [The tree](~/jarvis/agent/show/tree.html): the other one\n")
+    section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
+    assert re.findall(r'<a class="link" href="([^"]+)"', section) == [
+        "file:///srv/jarvis/agent/show/mail/index.html", (home / "jarvis/agent/show/tree.html").as_uri()]
+    record.write_text("---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Links\n\n- [Up](../elsewhere.html): out\n")
+    with pytest.raises(RecordError, match=re.escape("../elsewhere.html is neither a path from the repo root")):
+        render_session(worked_example, transcript, now=NOW)
+
+
 def test_a_record_shows_what_it_says_and_marks_up_nothing_of_its_own(worked_example: Path, transcript: Path) -> None:
     """An answer of `no` is the word, a list straight under a sentence is a list, and HTML in the
     prose is text: the page's structure is the renderer's alone."""

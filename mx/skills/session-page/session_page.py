@@ -184,7 +184,7 @@ class Link:
     its own."""
 
     text: str
-    path: str  # from the repo root, which the renderer resolves
+    path: str  # from the repo root, which the renderer resolves, or absolute for one outside the repo
     note: str
 
 
@@ -282,6 +282,26 @@ def read_turn(path: Path) -> Turn:
         details=sections.get("Details", (0, ""))[1],
         **tables,
     )
+
+
+# A pointer at another part of the page in words: a question at the top sits far from the turn
+# whose Details it means, so the reader needs a link there.
+CROSS_REFERENCE = re.compile(r"\b(?:see|under|in) (?:the )?(?:Details|Links|Questions)\b|\bsee (?:below|above)\b")
+
+
+def check_references(path: Path) -> None:
+    """A record's prose points at another part of the page by linking it; code and the
+    frontmatter, which holds the user's own words, are not prose. Checked as a record is written,
+    never as the page renders, since a record is never edited and older ones predate the check."""
+    lines = path.read_text().split("\n")
+    body = lines.index("---", 1) + 1 if "---" in lines[1:] else 0
+    fence = False
+    for n, line in enumerate(lines[body:], start=body + 1):
+        if line.startswith("```"):
+            fence = not fence
+        elif not fence and (m := CROSS_REFERENCE.search(re.sub(r"`[^`]*`", "", line))):
+            raise RecordError(path, n, f"{m.group()!r} points at another part of the page in words; link it instead: "
+                                       "[text](#t07) opens turn 07, [text](#q3) shows question Q3")
 
 
 def read_record(
@@ -414,19 +434,20 @@ LINK_ITEM = re.compile(r"- \[(.+?)\]\(([^()\s]+)\)(?::\s*(.*))?\s*")
 
 
 def read_links(path: Path, start: int, text: str) -> tuple[Link, ...]:
-    """`- [text](path): note` items, the path from the repo root; an indented line continues the note."""
+    """`- [text](path): note` items, the path from the repo root or absolute; an indented line
+    continues the note."""
     links: list[list[str]] = []
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
             continue
         if m := LINK_ITEM.fullmatch(line):
-            if m.group(2).startswith("/") or m.group(2).startswith("../"):
-                raise RecordError(path, n, f"{m.group(2)} is not a path from the repo root, like agent/show/<work>/page.html")
+            if m.group(2).startswith("../"):
+                raise RecordError(path, n, f"{m.group(2)} is neither a path from the repo root, like agent/show/<work>/page.html, nor an absolute one")
             links.append([m.group(1), m.group(2), m.group(3) or ""])
         elif line.startswith(" ") and links:
             links[-1][2] = f"{links[-1][2]} {line.strip()}".strip()
         else:
-            raise RecordError(path, n, "a link is `- [text](path from the repo root): note`")
+            raise RecordError(path, n, "a link is `- [text](path from the repo root, or absolute): note`")
     return tuple(Link(*link) for link in links)
 
 
@@ -854,8 +875,12 @@ MARKDOWN.add_render_rule("code_inline", code_inline)
 
 
 def href(path: str) -> str:
-    """A link from the page: a path from the repo root climbs to it; a URL stays as it is."""
-    return path if re.match(r"[a-z][a-z0-9+.-]*:", path, re.I) else UP + path
+    """A link from the page: a path from the repo root climbs to it, an absolute or `~` path is
+    its file URL, and a URL stays as it is."""
+    if re.match(r"[a-z][a-z0-9+.-]*:", path, re.I):
+        return path
+    local = Path(path).expanduser()
+    return local.as_uri() if local.is_absolute() else UP + path
 
 
 def path_target(text: str) -> str | None:
@@ -872,7 +897,7 @@ def path_target(text: str) -> str | None:
         found = (local if local.is_absolute() else root / local).exists()
     except OSError:  # a name too long for the filesystem
         return None
-    return (local.as_uri() if local.is_absolute() else href(path)) if found else None
+    return href(path) if found else None
 
 
 def esc(s: str) -> str:

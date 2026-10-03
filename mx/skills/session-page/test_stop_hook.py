@@ -199,7 +199,6 @@ UNPARSEABLE = {
                  "  - Why: seconds.\n  - Why: again.\n", 13),
     "a question an earlier turn asked": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
-    "a link from the filesystem root": ("04.md", f"{ROUND_3}## Links\n\n- [The round](/home/max/round.html): it\n", 9),
     "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
     "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
 }
