@@ -113,6 +113,21 @@ test("a request carries at most four cache breakpoints, some of them inside the 
 	assert.ok(view.some((b) => b.cache_control), "the view of a log of single entries is cached whole");
 });
 
+test("below the budget, each turn's first request closes a breakpoint on all the view lines of the turn before", () => {
+	type Block = { text?: string; cache_control?: unknown };
+	const closed = (request: Request) => {
+		const blocks = request.messages[0].content as Block[];
+		return blocks.flatMap((b, i) => (b.cache_control ? [blocks.slice(0, i + 1).map((x) => x.text).join("")] : []));
+	};
+	const viewLines = (request: Request) => (request.messages[0].content as Block[]).map((b) => b.text).join("").replace(/now [^\n]*\n<\/view>$/, "");
+	const firsts = Array.from({ length: TURNS }, (_, i) => sent.find(({ turn }) => turn === i + 1)!.request);
+	for (const [i, request] of firsts.entries().drop(1)) {
+		assert.equal((request.messages[0].content as Block[]).length, viewLines(request).split("\n").length, `turn ${i + 1}: a block per line, the header, and the closing tag`);
+		// The first turn woke to an empty log, a view of no lines.
+		if (i > 1) assert.ok(closed(request).includes(viewLines(firsts[i - 1])), `turn ${i + 1}: the view lines of turn ${i}`);
+	}
+});
+
 test("the memory tools are the whole tool set, and zoom answers from the store", () => {
 	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["raw", "recall", "zoom"]);
 	const results = sent.flatMap(({ request }) => request.messages.flatMap((m) => (m.content as { type: string }[]).filter((b) => b.type === "tool_result")));

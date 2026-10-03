@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { placeBreakpoints } from "./breakpoints.ts";
+import { AHEAD, placeBreakpoints, remember, viewEnds, type Written } from "./breakpoints.ts";
 import { saidIn } from "./entries.ts";
 import { exploreTools } from "./explore.ts";
 import type { Finished } from "./forks.ts";
@@ -51,6 +51,16 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 
 		/** The view of the run in flight, rendered once as it starts, so its requests share one prefix. */
 		let view: string | undefined;
+		/** After how many of the view's lines its breakpoints go, kept past the run for the requests that warm its cache. */
+		let ends: number[] = [];
+		/** The view's prefixes the requests sent wrote to the cache, while their entries live. */
+		let written: Written[] = [];
+		const render = async () => {
+			const rendered = await mind.view();
+			const stays = await store.stays(AHEAD).catch(() => []);
+			ends = viewEnds(rendered.split("\n"), stays, written, Date.now());
+			return rendered;
+		};
 		/** What max sent to start the run in flight, and when its first request saw it. */
 		let prompt: string | undefined;
 		let start: number | undefined;
@@ -62,20 +72,21 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			await store.init();
 		});
 		pi.on("before_agent_start", async (event) => {
-			view = await mind.view();
+			view = await render();
 			prompt = typeof event.prompt === "string" ? event.prompt : undefined;
 			return { systemPrompt: exploring() ? `${system.trimEnd()}\n\n${readFileSync(EXPLORE_PROMPT, "utf8")}` : system };
 		});
 		pi.on("context", async (event) => {
 			if (!Array.isArray(event.messages)) return undefined;
-			view ??= await mind.view();
+			view ??= await render();
 			start ??= event.messages.findLast((m) => m.role === "user")?.timestamp;
 			const at = event.messages.findIndex((m) => m.role === "user" && m.timestamp === start);
 			return { messages: swapContext(event.messages, view, at < 0 ? undefined : at) };
 		});
 		pi.on("before_provider_request", async (event) => {
-			const placed = placeBreakpoints(event.payload);
+			const placed = placeBreakpoints(event.payload, ends);
 			if (placed === undefined) return undefined;
+			written = remember(written, placed, Date.now());
 			// pi's cache warming re-sends the last request for one token; a fork continues the run's own.
 			const warm = (placed as { max_tokens?: number }).max_tokens === 1;
 			if (!warm) sent = placed as Finished["payload"];
@@ -99,13 +110,35 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	};
 }
 
-/** A request in brief: each message's role and the head of each of its blocks, with the blocks a breakpoint closes marked. */
+/**
+ * A request in brief: each message's role and the head of each of its blocks, with the blocks a breakpoint closes
+ * marked. Text blocks that follow a text block, neither closed by a breakpoint, are counted rather than shown: the
+ * view is a block per line.
+ */
 function brief(payload: Finished["payload"]) {
-	const head = (block: { type: string; text?: string; cache_control?: unknown }) =>
-		`${block.cache_control ? "[cached] " : ""}${block.type === "text" ? JSON.stringify((block.text ?? "").slice(0, 120)) : block.type}`;
+	type Block = { type: string; text?: string; cache_control?: unknown };
+	const head = (block: Block) => `${block.cache_control ? "[cached] " : ""}${block.type === "text" ? JSON.stringify((block.text ?? "").slice(0, 120)) : block.type}`;
+	const plain = (block: Block | undefined) => block?.type === "text" && !block.cache_control;
+	const heads = (content: Block[]) => {
+		const out: string[] = [];
+		let more = 0;
+		const counted = () => {
+			if (more) out.push(`+${more} text blocks`);
+			more = 0;
+		};
+		for (const [i, block] of content.entries()) {
+			if (plain(block) && plain(content[i - 1])) more++;
+			else {
+				counted();
+				out.push(head(block));
+			}
+		}
+		counted();
+		return out;
+	};
 	return {
 		at: new Date().toISOString(),
-		messages: payload.messages.map((m) => ({ role: m.role, blocks: typeof m.content === "string" ? [JSON.stringify(m.content.slice(0, 120))] : m.content.map(head) })),
+		messages: payload.messages.map((m) => ({ role: m.role, blocks: typeof m.content === "string" ? [JSON.stringify(m.content.slice(0, 120))] : heads(m.content) })),
 	};
 }
 

@@ -50,6 +50,7 @@ def _vendored_memo():
 memo = _vendored_memo()
 
 ENTRY = 512  # bytes of text in one entry, one gist or one compression
+BUDGET = 256  # view lines
 STAMP = "%Y-%m-%dT%H:%M"
 
 
@@ -102,8 +103,20 @@ class View:
     """Print a header line with the current time and the time since the last entry, then the view.
     Refused while a compression the view needs is not written yet."""
 
-    budget: int = 256
+    budget: int = BUDGET
     """The most view lines to print."""
+
+
+@dataclass
+class Stays:
+    """Print, for each number of entries from 1 to AHEAD, how many of the view's lines, counted from
+    its first, the view starts with again once that many more entries are logged."""
+
+    ahead: int
+    """The most entries to look ahead."""
+
+    budget: int = BUDGET
+    """The view's budget, as `view` takes it."""
 
 
 @dataclass
@@ -164,6 +177,7 @@ Command = (
     | _named(Append, "append")
     | _named(Import, "import")
     | _named(View, "view")
+    | _named(Stays, "stays")
     | _named(Zoom, "zoom")
     | _named(Recall, "recall")
     | _named(Raw, "raw")
@@ -236,6 +250,14 @@ def view(d: Path, cmd: View) -> None:
     print(header(d, T, now()))
     for lo, hi in blocks:
         print(view_line(d, lo, hi))
+
+
+def stays(d: Path, cmd: Stays) -> None:
+    T = memo.log_len(d)
+    lines = memo.cover(T, cmd.budget)
+    for k in range(1, cmd.ahead + 1):
+        later = memo.cover(T + k, cmd.budget)
+        print(next((i for i, (a, b) in enumerate(zip(lines, later)) if a != b), min(len(lines), len(later))))
 
 
 def zoom(d: Path, cmd: Zoom) -> None:
@@ -315,6 +337,7 @@ COMMANDS = {
     Append: append,
     Import: import_,
     View: view,
+    Stays: stays,
     Zoom: zoom,
     Recall: recall,
     Raw: raw,

@@ -329,6 +329,28 @@ def test_the_view_is_refused_while_a_compression_it_needs_is_outstanding(store: 
     assert code == 0 and [line.split()[1] for line in out.split("\n")[1:-1]] == ["#0-3", "#4-7", "#8", "#9"]
 
 
+@settings(max_examples=40, deadline=None)
+@given(st.integers(0, 60), st.integers(5, 12), st.integers(1, 6))
+def test_stays_says_how_many_lines_the_view_starts_with_once_more_entries_are_logged(logged: int, budget: int, ahead: int) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = Path(tmp) / "store"
+        run(store, "init")
+        log = lambda n, at: n and run(store, "import", stdin="".join(f"2026-01-01T00:00 entry {at + i}\n" for i in range(n)))
+        log(logged, 0)
+        answer_due(store)
+        view = lambda: run(store, "view", "--budget", budget)[1].split("\n")[1:-1]
+        before = view()
+        code, out, _ = run(store, "stays", "--ahead", ahead, "--budget", budget)
+        assert code == 0
+        said = list(map(int, out.split()))
+        for k in range(1, ahead + 1):
+            log(1, logged + k - 1)
+            answer_due(store)
+            after = view()
+            same = next((i for i, (a, b) in enumerate(zip(before, after)) if a != b), min(len(before), len(after)))
+            assert said[k - 1] == same, f"after {k} more entries"
+
+
 def test_a_view_line_carries_its_first_entrys_minute(store: Path) -> None:
     assert run(store, "import", stdin="".join(f"2026-01-01T00:0{i} entry {i}\n" for i in range(6)))[0] == 0
     answer_due(store)
