@@ -21,7 +21,8 @@ export const ENTRY = 512;
 
 /**
  * A turn's messages as entries, in order: each message max sent, each event the harness handed over, each text of the
- * agent's, and each tool call with its result. A tool call's result is data the store clips to its head; what max and the agent said gets a gist.
+ * agent's, and each tool call with its result. A tool call's result is data the store clips to its head; what max, an
+ * event and the agent said gets a gist.
  *
  * An explore step is a turn the harness started, so its message is not max's and is not logged; the step's last text
  * is its finding, and the texts before it are not logged either.

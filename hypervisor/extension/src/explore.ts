@@ -1,10 +1,11 @@
-import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
 import { open, readdir, readlink, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Config } from "./index.ts";
+import { absolute, inside, shown } from "./paths.ts";
+import { run } from "./run.ts";
 import { answer } from "./tools.ts";
 
 /**
@@ -129,8 +130,6 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 
 type Places = Awaited<ReturnType<typeof places>>;
 
-const inside = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
-
 /**
  * Where a path the model sent leads, and whether the explorer may go there. The denied roots are resolved once per
  * tool call, kept both as spelled and as they resolve, for a root that is a symlink or lies below one.
@@ -151,17 +150,13 @@ async function places({ home, store }: ExploreConfig) {
 		 * from where the link points; a denied place throws, and so does one that is not there.
 		 */
 		async open(spelled: string): Promise<string> {
-			const absolute = spelled === "~" ? home : spelled.startsWith("~/") ? `${home}/${spelled.slice(2)}` : spelled.startsWith("/") ? spelled : `${home}/${spelled}`;
-			const real = await realpath(absolute).catch((error: NodeJS.ErrnoException) => {
+			const real = await realpath(absolute(home, spelled)).catch((error: NodeJS.ErrnoException) => {
 				throw new Error(`${spelled}: ${error.code === "ENOENT" ? "no such file or directory" : error.code}`);
 			});
 			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles or the hypervisor's own store`);
 			return real;
 		},
-		/** A resolved path as the model reads it: under `~/` when it is in home. */
-		shown(real: string): string {
-			return inside(real, home) ? `~${real.slice(home.length)}` : real;
-		},
+		shown: (real: string) => shown(home, real),
 	};
 }
 
@@ -316,15 +311,10 @@ interface MemexAsk {
  * such as a note's text, is dropped, so no text from a denied root reaches the model.
  */
 async function memex(program: string, where: Places, ask: MemexAsk, signal?: AbortSignal): Promise<string> {
-	const run = (args: string[]) =>
-		new Promise<string>((resolve, reject) =>
-			execFile(program, args, { cwd: where.home, signal, timeout: 300_000, maxBuffer: 10_000_000 }, (error, stdout, stderr) =>
-				error ? reject(new Error(`memex ${args[0]}: ${String(stderr).trim() || error.message}`)) : resolve(String(stdout)),
-			),
-		);
-	const vaults = vaultRoots(await run(["vault:list"]));
+	const memex = (args: string[]) => run(program, args, { cwd: where.home, signal, timeout: 300_000 });
+	const vaults = vaultRoots(await memex(["vault:list"]));
 	const limit = Math.min(Math.max(1, ask.limit ?? (ask.command === "search" ? 5 : 10)), 50);
-	const said = await run([ask.command, `--limit=${limit}`, ...(ask.vault === undefined ? [] : [`--vault=${ask.vault}`]), "--", ask.query]);
+	const said = await memex([ask.command, `--limit=${limit}`, ...(ask.vault === undefined ? [] : [`--vault=${ask.vault}`]), "--", ask.query]);
 
 	const found = new Map<string, string[]>();
 	let vault = ask.vault;

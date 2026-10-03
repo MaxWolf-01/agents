@@ -22,19 +22,23 @@ export async function post(store: string, told: Told): Promise<void> {
 	await rename(path.join(dir, `.${name}`), path.join(dir, `${name}.json`));
 }
 
-/** Takes every message in the store's inbox out of it, oldest first. A file that does not parse is dropped. */
-export async function take(store: string): Promise<Told[]> {
+/**
+ * Hands every message in the store's inbox to `use`, oldest first, and removes them once it has taken them. A file
+ * that does not parse is removed with them; when `use` throws, every message stays for the next take.
+ */
+export async function take(store: string, use: (told: Told[]) => void): Promise<void> {
 	const dir = path.join(store, INBOX);
-	const names = (await readdir(dir).catch(() => [])).filter((name) => name.endsWith(".json")).sort();
-	const taken: Told[] = [];
-	for (const name of names) {
-		const file = path.join(dir, name);
-		const text = await readFile(file, "utf8").catch(() => undefined);
-		await rm(file, { force: true });
-		try {
-			const told = JSON.parse(text ?? "");
-			if (typeof told.text === "string") taken.push({ at: String(told.at), from: String(told.from), text: told.text });
-		} catch {}
+	const files = (await readdir(dir).catch(() => [])).filter((name) => name.endsWith(".json")).sort().map((name) => path.join(dir, name));
+	const read = await Promise.all(files.map((file) => readFile(file, "utf8").then(parsed, () => undefined)));
+	use(read.filter((told) => told !== undefined));
+	await Promise.all(files.map((file) => rm(file, { force: true })));
+}
+
+function parsed(text: string): Told | undefined {
+	try {
+		const told = JSON.parse(text);
+		return typeof told.text === "string" ? { at: String(told.at), from: String(told.from), text: told.text } : undefined;
+	} catch {
+		return undefined;
 	}
-	return taken;
 }

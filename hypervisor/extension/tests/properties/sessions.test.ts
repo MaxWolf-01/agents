@@ -31,16 +31,20 @@ const DIRS = fc.constantFrom("", "~", home, "repo with spaces; and $(x)", "~/rep
 
 test("lifelong-hypervisor#P4: the session tools run no shell, start nothing but tmux and claude in auto mode, and write only the store", async () => {
 	const context = standIn({ cwd: home, hasUI: false });
-	for (const tool of sessionTools({ home, claude: path.join(home, ".claude"), store })) {
+	let opened = 0;
+	for (const tool of sessionTools({ home, store })) {
 		await fc.assert(
 			fc.asyncProperty(paramsFor(tool.parameters, HOSTILE, { dir: DIRS }), async (params) => {
 				const seen = await effects.during(() => execute(tool, params, context, 1000));
 				assert.deepEqual(toolProblems(seen, store, strings(params)), [], `${tool.name} ${JSON.stringify(params)}`);
-				if (tool.name === "spawn" && seen.launches.some((l) => l.args[0] === "new-session" || l.args[0] === "new-window"))
+				if (tool.name === "spawn" && seen.launches.some((l) => l.args[0] === "new-session" || l.args[0] === "new-window")) {
+					opened++;
 					assert.ok(seen.launches.some((l) => l.program === "tmux" && l.args.includes("claude")), "a window spawn opens runs claude");
+				}
 			}),
 			{ numRuns: 200 },
 		);
 	}
+	assert.ok(opened >= 20, `spawn opened a window in ${opened} runs of 200, too few to judge what it starts`);
 	assert.deepEqual(effects.stray, { launches: [], writes: [] });
 });

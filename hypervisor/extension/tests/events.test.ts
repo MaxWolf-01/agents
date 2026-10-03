@@ -1,6 +1,6 @@
 // The extension in a real pi, run over RPC against a stand-in for the Anthropic endpoint: what a spawned session's
 // turn ending and an orchestrator's `hv tell` do while max says nothing. The spawned session is this test's own
-// process, entered in a stand-in registry as running in a pane spawn opened.
+// process, entered in a stand-in registry and recorded as the claude a spawned window runs.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -25,7 +25,7 @@ let run = "";
 
 /** Enters this process in the registry as the session in pane %42, in `status`. */
 function registered(status: string) {
-	writeFileSync(entry, JSON.stringify({ pid: process.pid, name: "orch-42", cwd: dir, status, startedAt: Date.now(), tmux: "agents:@7.%42" }));
+	writeFileSync(entry, JSON.stringify({ pid: process.pid, name: "orch-42", cwd: dir, status, tmux: "agents:@7.%42" }));
 }
 
 before(async () => {
@@ -41,19 +41,18 @@ before(async () => {
 	mkdirSync(store, { recursive: true });
 	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
-	appendFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), pane: "%42", window: "agents:board-fix", dir })}\n`);
+	appendFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), pane: "%42", pid: process.pid, window: "agents:board-fix", dir })}\n`);
 	registered("busy");
 	const pi = spawn(
 		process.execPath,
 		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
-		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir, CLAUDE_CONFIG_DIR: claude }, stdio: ["pipe", "pipe", "inherit"] },
+		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir }, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	const settled = settling(pi.stdout!);
 	run = "max";
 	pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: "max-marker start board-fix" })}\n`);
+	// The watch's first look, as pi starts, learns the session busy; a later one sees its turn end.
 	await settled.next();
-	// The watch's first look learns the session busy; the next one sees its turn end.
-	await new Promise((settle) => setTimeout(settle, 4000));
 	run = "idle";
 	registered("idle");
 	await settled.next();
@@ -68,27 +67,25 @@ after(async () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-/** Resolves `next()` at each `agent_settled` pi reports, failing after 20 s without one. */
+/** `next()` resolves at the next `agent_settled` pi reports, one already reported included; it fails after 20 s without one. */
 function settling(stdout: NodeJS.ReadableStream) {
 	let buffer = "";
-	let waiting: (() => void) | undefined;
+	let settled = 0;
+	let taken = 0;
 	stdout.on("data", (chunk: Buffer) => {
 		buffer += chunk.toString();
 		for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
 			const record = JSON.parse(buffer.slice(0, at));
 			buffer = buffer.slice(at + 1);
-			if (record.type === "agent_settled") waiting?.();
+			if (record.type === "agent_settled") settled++;
 		}
 	});
 	return {
-		next: () =>
-			new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(() => reject(new Error(`no turn settled within 20 s (run ${run})`)), 20_000);
-				waiting = () => {
-					clearTimeout(timer);
-					resolve();
-				};
-			}),
+		async next() {
+			for (const start = Date.now(); settled === taken; await new Promise((settle) => setTimeout(settle, 50)))
+				if (Date.now() - start > 20_000) throw new Error(`no turn settled within 20 s (run ${run})`);
+			taken++;
+		},
 	};
 }
 

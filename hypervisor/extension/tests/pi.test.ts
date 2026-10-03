@@ -48,7 +48,7 @@ before(async () => {
 	const pi = spawn(
 		process.execPath,
 		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
-		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir, CLAUDE_CONFIG_DIR: path.join(dir, ".claude") }, stdio: ["pipe", "pipe", "inherit"] },
+		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir }, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	for (turn = 1; turn <= TURNS; turn++) await prompt(pi, said(turn), turn === 5 ? "turn-5-steer" : undefined);
 	pi.stdin!.end();

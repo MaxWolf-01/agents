@@ -1,14 +1,13 @@
-import { execFile } from "node:child_process";
-import { appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { absolute, shown } from "./paths.ts";
+import { run } from "./run.ts";
 
-/** Where the session tools find things: max's home, Claude Code's config directory, and the hypervisor's store. */
-export interface Places {
+/** Where the session tools find things: max's home, whose `.claude*` directories list the live sessions, and the store. */
+export interface SessionConfig {
 	home: string;
-	/** Claude Code's config directory, whose `sessions/` lists every live session on this machine. */
-	claude: string;
 	store: string;
 }
 
@@ -19,7 +18,6 @@ export interface Session {
 	cwd: string;
 	/** `busy`, `idle`, or whatever else Claude Code writes there. */
 	status: string;
-	startedAt: number;
 	/** The inbox socket, where a cross-session message is delivered. */
 	socket?: string;
 	/** The tmux pane, as `%N`. */
@@ -28,10 +26,11 @@ export interface Session {
 	window?: string;
 }
 
-/** A window spawn opened, as `spawned.jsonl` in the store keeps it. */
+/** A window spawn opened, as `spawned.jsonl` in the store keeps it, with the pid of the claude it runs. */
 export interface Spawned {
 	at: string;
 	pane: string;
+	pid: number;
 	window: string;
 	dir: string;
 }
@@ -43,82 +42,100 @@ const SPAWNED = "spawned.jsonl";
 const DELEGATE_MS = 15 * 60_000;
 /** How many lines of a pane `look` shows. */
 const PANE_LINES = 50;
-
-/** The line every orchestrator's brief and every message the hypervisor tells ends with. */
-export const REPORT_BACK = `To report back to the hypervisor, the agent that keeps track of max's sessions, run \`${HV} tell "<what happened, and where max should look>"\`: when you finish, and when you need max.`;
 const BRIEFLY = "Your answer goes back to the hypervisor, an agent that coordinates max's sessions and pays for every word it reads: answer with what it asked for and nothing else, as briefly as the answer allows.";
 
 /**
  * Opens a tmux window named `name` in the tmux session of the repo at `dir`, running interactive Claude Code in auto
  * mode with `brief` as its first prompt. The repo's tmux session is started if it does not run yet.
  */
-export async function spawn(places: Places, { dir, name, brief }: { dir: string; name: string; brief: string }): Promise<string> {
-	const where = await directory(places.home, dir);
+export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: string; name: string; brief: string }): Promise<string> {
+	const where = await directory(config.home, dir);
 	const window = slug(name);
 	const group = slug(path.basename(where));
 	if (!window) throw new Error(`"${name}" leaves no window name; use letters, digits, - or _`);
 	if (!brief.trim()) throw new Error("the brief is empty");
-	const claude = ["claude", "--permission-mode", "auto", "--name", window, "--", `${brief.trim()}\n\n${REPORT_BACK}`];
+	const claude = ["claude", "--permission-mode", "auto", "--name", window, "--", `${brief.trim()}\n\n${reportBack(config.store)}`];
 	const running = await run("tmux", ["has-session", "-t", `=${group}`]).then(
 		() => true,
 		() => false,
 	);
 	if (running && (await run("tmux", ["list-windows", "-t", `=${group}`, "-F", "#{window_name}"])).split("\n").includes(window))
 		throw new Error(`${group}:${window} exists already; look at it, or give the new one another name`);
-	const at = ["-n", window, "-c", where, "-P", "-F", "#{pane_id}"];
+	// The window runs claude itself, not a shell that starts it, so the pane's process is the session's.
+	const at = ["-n", window, "-c", where, "-P", "-F", "#{pane_id} #{pane_pid}"];
 	const opened = running ? ["new-window", "-d", "-t", `=${group}:`, ...at] : ["new-session", "-d", "-s", group, ...at];
-	const pane = (await run("tmux", [...opened, ...claude])).trim();
-	const spawned: Spawned = { at: new Date().toISOString(), pane, window: `${group}:${window}`, dir: where };
-	await mkdir(places.store, { recursive: true });
-	await appendFile(path.join(places.store, SPAWNED), `${JSON.stringify(spawned)}\n`);
+	const [pane, pid] = (await run("tmux", [...opened, ...claude])).trim().split(" ");
+	const spawned: Spawned = { at: new Date().toISOString(), pane, pid: Number(pid), window: `${group}:${window}`, dir: where };
+	await mkdir(config.store, { recursive: true });
+	await appendFile(path.join(config.store, SPAWNED), `${JSON.stringify(spawned)}\n`);
 	return `Started ${spawned.window} in ${where}. max steps in with: tmux switch-client -t ${pane || `=${group}:${window}`}`;
 }
 
 /** Sends `message` to a session's inbox socket, as a cross-session message from the hypervisor. */
-export async function tell(places: Places, { session, message }: { session: string; message: string }): Promise<string> {
+export async function tell(config: SessionConfig, { session, message }: { session: string; message: string }): Promise<string> {
 	if (!message.trim()) throw new Error("the message is empty");
-	const target = find(await sessions(places), session);
+	const target = find(await sessions(config.home), session);
 	if (!target.socket) throw new Error(`${label(target)} has no inbox socket, so it cannot be messaged`);
-	await deliver(target.socket, frame(`${message.trim()}\n\n${REPORT_BACK}`));
+	await deliver(target.socket, frame(`${message.trim()}\n\n${reportBack(config.store)}`));
 	return `Sent to ${label(target)}.`;
 }
 
-/** Every session `claude agents` lists, a line each; or one session's state and the tail of its pane. */
-export async function look(places: Places, { session }: { session?: string }): Promise<string> {
-	const live = await sessions(places);
+/**
+ * Without a session, a line for each session `claude agents` lists, then for each live one it does not, such as a
+ * session of another Claude Code config directory. With one, its state and the tail of its pane.
+ */
+export async function look(config: SessionConfig, { session }: { session?: string }): Promise<string> {
+	const live = await sessions(config.home);
 	if (session === undefined) {
-		const spawned = new Set((await spawnedWindows(places.store)).map((s) => s.pane));
+		const spawned = new Set((await spawnedWindows(config.store)).map((s) => s.pid));
 		const agents = JSON.parse((await run("claude", ["agents", "--json"])).trim() || "[]") as Agent[];
-		return agents.map((agent) => listed(agent, live.find((s) => s.pid === agent.pid), spawned, places.home)).join("\n");
+		const rest = live.filter((s) => !agents.some((agent) => agent.pid === s.pid));
+		const line = (fields: (string | undefined)[], pid?: number) => fields.map((f) => f ?? "?").join(" · ") + (pid !== undefined && spawned.has(pid) ? " · spawned by you" : "");
+		const where = (s: Session | undefined) => s?.window ?? (s ? "no tmux" : "background");
+		return [
+			// An interactive session's state is its `status`, a background one's its `state`.
+			...agents.map((a) => line([a.name ?? a.id, a.status ?? a.state, a.cwd && shown(config.home, a.cwd), where(live.find((s) => s.pid === a.pid))], a.pid)),
+			...rest.map((s) => line([s.name, s.status, shown(config.home, s.cwd), where(s)], s.pid)),
+		].join("\n");
 	}
 	const target = find(live, session);
-	const head = `${label(target)} · ${target.status} · ${tilde(target.cwd, places.home)}`;
+	const head = `${label(target)} · ${target.status} · ${shown(config.home, target.cwd)}`;
 	if (!target.pane) return `${head}\n(no tmux pane)`;
 	const pane = await run("tmux", ["capture-pane", "-p", "-J", "-t", target.pane, "-S", `-${PANE_LINES}`]);
 	return `${head}\n${pane.replace(/\n{3,}/g, "\n\n").trimEnd()}`;
 }
 
 /** Runs `task` in a one-shot Claude Code session in auto mode, in `dir` or max's home, and returns its answer. */
-export async function delegate(places: Places, { task, dir }: { task: string; dir?: string }, signal?: AbortSignal): Promise<string> {
+export async function delegate(config: SessionConfig, { task, dir }: { task: string; dir?: string }, signal?: AbortSignal): Promise<string> {
 	if (!task.trim()) throw new Error("the task is empty");
-	const cwd = dir === undefined ? places.home : await directory(places.home, dir);
+	const cwd = dir === undefined ? config.home : await directory(config.home, dir);
 	const stop = AbortSignal.any([AbortSignal.timeout(DELEGATE_MS), ...(signal ? [signal] : [])]);
 	return run("claude", ["-p", "--permission-mode", "auto", "--output-format", "text", "--", `${task.trim()}\n\n${BRIEFLY}`], { cwd, signal: stop });
 }
 
-/** The live sessions in Claude Code's registry, each with its tmux window where tmux lists its pane. */
-export async function sessions(places: Pick<Places, "claude">): Promise<Session[]> {
-	const [entries, windows] = await Promise.all([registry(path.join(places.claude, "sessions")), panes()]);
+/**
+ * The line every orchestrator's brief and every message the hypervisor tells ends with: how to report back, to the
+ * inbox of the store this hypervisor watches.
+ */
+export function reportBack(store: string): string {
+	return `To report back to the hypervisor, the agent that keeps track of max's sessions, run \`HV_STORE=${quoted(store)} ${quoted(HV)} tell "<what happened, and where max should look>"\`: when you finish, and when you need max.`;
+}
+
+/** The live sessions, each with its tmux window where tmux lists its pane. */
+export async function sessions(home: string): Promise<Session[]> {
+	const [entries, windows] = await Promise.all([registry(home), panes()]);
 	return entries.map((entry) => ({ ...entry, ...(entry.pane && windows.has(entry.pane) ? { window: windows.get(entry.pane) } : {}) }));
 }
 
 /**
- * The live sessions Claude Code's registry lists, read from its files alone. An entry whose process is gone is left
- * out: a session that crashed leaves its file behind.
+ * The live sessions the registry of every Claude Code config directory in `home` lists (`.claude`, and any
+ * `.claude-<profile>`), read from its files alone. An entry whose process is gone is left out: a session that crashed
+ * leaves its file behind.
  */
-export async function registry(dir: string): Promise<Session[]> {
-	const files = (await readdir(dir).catch(() => [])).filter((file) => /^\d+\.json$/.test(file));
-	const read = await Promise.all(files.map((file) => readFile(path.join(dir, file), "utf8").then(entry, () => undefined)));
+export async function registry(home: string): Promise<Session[]> {
+	const configs = (await readdir(home).catch(() => [])).filter((name) => name === ".claude" || name.startsWith(".claude-"));
+	const files = (await Promise.all(configs.map(async (config) => (await readdir(path.join(home, config, "sessions")).catch(() => [])).filter((file) => /^\d+\.json$/.test(file)).map((file) => path.join(home, config, "sessions", file))))).flat();
+	const read = await Promise.all(files.map((file) => readFile(file, "utf8").then(entry, () => undefined)));
 	return read.filter((s): s is Session => s !== undefined && alive(s.pid));
 }
 
@@ -165,46 +182,41 @@ export function slug(text: string): string {
 	return text.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^[-_]+|-+$/g, "");
 }
 
-interface Agent {
-	pid?: number;
-	id?: string;
-	name?: string;
-	cwd?: string;
-	kind?: string;
-	status?: string;
-	state?: string;
-}
-
-function listed(agent: Agent, session: Session | undefined, spawned: Set<string>, home: string): string {
-	const where = session?.window ?? (session ? "no tmux" : "background");
-	const mine = session?.pane && spawned.has(session.pane) ? " · spawned by you" : "";
-	return [agent.name ?? agent.id ?? "?", agent.status ?? agent.state ?? "?", tilde(agent.cwd ?? "?", home), where].join(" · ") + mine;
-}
-
-function entry(text: string): Session | undefined {
-	try {
-		const e = JSON.parse(text);
-		if (typeof e.pid !== "number") return undefined;
-		return {
-			pid: e.pid,
-			name: String(e.name ?? e.pid),
-			cwd: String(e.cwd ?? ""),
-			status: String(e.status ?? "unknown"),
-			startedAt: Number(e.startedAt ?? 0),
-			...(typeof e.messagingSocketPath === "string" ? { socket: e.messagingSocketPath } : {}),
-			...(typeof e.tmux === "string" && /%\d+$/.test(e.tmux) ? { pane: e.tmux.slice(e.tmux.lastIndexOf("%")) } : {}),
-		};
-	} catch {
-		return undefined;
-	}
-}
-
-function alive(pid: number): boolean {
+/** Whether a process runs. */
+export function alive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+/** A session as `claude agents --json` prints it: an interactive one with its pid and `status`, a background one with its id and `state`. */
+interface Agent {
+	pid?: number;
+	id?: string;
+	name?: string;
+	cwd?: string;
+	status?: string;
+	state?: string;
+}
+
+/** A registry entry as a session, or `undefined` when it lacks what one needs. */
+function entry(text: string): Session | undefined {
+	try {
+		const e = JSON.parse(text);
+		if (typeof e.pid !== "number" || typeof e.name !== "string" || typeof e.cwd !== "string" || typeof e.status !== "string") return undefined;
+		return {
+			pid: e.pid,
+			name: e.name,
+			cwd: e.cwd,
+			status: e.status,
+			...(typeof e.messagingSocketPath === "string" ? { socket: e.messagingSocketPath } : {}),
+			...(typeof e.tmux === "string" && /%\d+$/.test(e.tmux) ? { pane: e.tmux.slice(e.tmux.lastIndexOf("%")) } : {}),
+		};
+	} catch {
+		return undefined;
 	}
 }
 
@@ -214,20 +226,17 @@ async function panes(): Promise<Map<string, string>> {
 	return new Map(out.split("\n").flatMap((line) => (line.includes("\t") ? [line.split("\t", 2) as [string, string]] : [])));
 }
 
-/**
- * A directory the model named, absolute, under `~/`, or relative to max's home. One with a `#` in its path is refused,
- * since tmux reads its start directory as a format.
- */
+/** A directory the model named, resolved. One with a `#` in its path is refused, since tmux reads its start directory as a format. */
 async function directory(home: string, dir: string): Promise<string> {
-	const where = path.resolve(home, dir.replace(/^~(?=\/|$)/, home));
+	const where = await realpath(absolute(home, dir)).catch(() => undefined);
+	if (!where || !(await stat(where)).isDirectory()) throw new Error(`${dir} is not a directory`);
 	if (where.includes("#")) throw new Error(`${where}: a directory with # in its path cannot start a tmux window`);
-	const found = await stat(where).catch(() => undefined);
-	if (!found?.isDirectory()) throw new Error(`${where} is not a directory`);
 	return where;
 }
 
-function tilde(dir: string, home: string): string {
-	return dir === home || dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir;
+/** `text` as one word of a POSIX shell command. */
+function quoted(text: string): string {
+	return /^[\w./-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
 function deliver(socket: string, line: string): Promise<void> {
@@ -237,15 +246,5 @@ function deliver(socket: string, line: string): Promise<void> {
 		connection.on("error", reject);
 		connection.on("close", (failed) => (failed ? undefined : resolve()));
 		connection.end(line);
-	});
-}
-
-/** Runs `program` without a shell and returns what it printed; a failure carries what it said on stderr. */
-function run(program: string, args: string[], options: { cwd?: string; signal?: AbortSignal } = {}): Promise<string> {
-	return new Promise((resolve, reject) => {
-		execFile(program, args, { ...options, encoding: "utf8", maxBuffer: 16 << 20 }, (error, stdout, stderr) => {
-			if (error) reject(new Error(`${program} ${args[0]}: ${String(stderr).trim() || error.message}`));
-			else resolve(String(stdout));
-		});
 	});
 }

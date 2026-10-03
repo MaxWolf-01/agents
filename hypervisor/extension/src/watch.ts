@@ -1,5 +1,5 @@
 import { take } from "./inbox.ts";
-import { registry, type Spawned, spawnedWindows } from "./sessions.ts";
+import { alive, registry, type Session, type Spawned, spawnedWindows } from "./sessions.ts";
 
 /** A watched session's state at one look: its status, and the window it is known by. */
 export interface Seen {
@@ -7,8 +7,38 @@ export interface Seen {
 	window: string;
 }
 
-/** How long before its window was opened a session may have started and still count as the one spawned there. */
-const SLACK_MS = 5000;
+/**
+ * Looks at the spawned sessions and the inbox once at the start and every `ms` after, and hands `deliver` the events
+ * since the last look, if any. The first look only learns the sessions' states. A look that fails goes to `failed`, and the next one
+ * starts from the states the last good one saw. Reads files alone: the registry, and the store's own.
+ */
+export function watch({ home, store }: { home: string; store: string }, ms: number, deliver: (events: string[]) => void, failed: (error: unknown) => void) {
+	let seen: Map<number, Seen> | undefined;
+	let looking = false;
+	const look = async () => {
+		if (looking) return;
+		looking = true;
+		try {
+			const now = watched(await registry(home), await spawnedWindows(store));
+			// A registry file caught mid-write reads as no session; only a process that is gone has ended.
+			for (const [pid, was] of seen ?? []) if (!now.has(pid) && alive(pid)) now.set(pid, was);
+			const changed = seen ? changes(seen, now) : [];
+			await take(store, (told) => {
+				const events = [...changed, ...told.map((t) => `${t.from} (hv tell): ${t.text}`)];
+				if (events.length) deliver(events);
+			});
+			seen = now;
+		} catch (error) {
+			failed(error);
+		} finally {
+			looking = false;
+		}
+	};
+	const timer = setInterval(() => void look(), ms);
+	timer.unref();
+	void look();
+	return { look, stop: () => clearInterval(timer) };
+}
 
 /**
  * What changed between two looks at the watched sessions, an event each: a session that was busy and is not any more
@@ -22,39 +52,12 @@ export function changes(before: Map<number, Seen>, now: Map<number, Seen>): stri
 	});
 }
 
-/**
- * The spawned sessions as the registry lists them, by pid. A session counts as spawned when its pane is one spawn
- * opened, and it started no earlier than that window: tmux reuses a pane's number once its server restarts.
- */
-export function watched(live: { pid: number; pane?: string; status: string; startedAt: number }[], spawned: Spawned[]): Map<number, Seen> {
+/** The spawned sessions as the registry lists them, by pid: the claude processes spawn's windows were opened running. */
+export function watched(live: Pick<Session, "pid" | "status">[], spawned: Spawned[]): Map<number, Seen> {
 	return new Map(
 		live.flatMap((s) => {
-			const window = spawned.findLast((w) => w.pane === s.pane && s.startedAt >= Date.parse(w.at) - SLACK_MS);
+			const window = spawned.find((w) => w.pid === s.pid);
 			return window ? [[s.pid, { status: s.status, window: window.window }] as const] : [];
 		}),
 	);
-}
-
-/**
- * Looks at the spawned sessions and the inbox every `ms`, and hands `deliver` the events since the last look, if any.
- * The first look only learns the sessions' states. Reads files alone: the registry, and the store's own.
- */
-export function watch({ claude, store }: { claude: string; store: string }, ms: number, deliver: (events: string[]) => void) {
-	let seen: Map<number, Seen> | undefined;
-	let looking = false;
-	const look = async () => {
-		if (looking) return;
-		looking = true;
-		try {
-			const now = watched(await registry(`${claude}/sessions`), await spawnedWindows(store));
-			const events = [...(seen ? changes(seen, now) : []), ...(await take(store)).map((t) => `${t.from} (hv tell): ${t.text}`)];
-			seen = now;
-			if (events.length) deliver(events);
-		} finally {
-			looking = false;
-		}
-	};
-	const timer = setInterval(() => void look().catch(() => {}), ms);
-	timer.unref();
-	return { look, stop: () => clearInterval(timer) };
 }

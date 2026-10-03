@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { delegate, look, type Places, spawn, tell } from "./sessions.ts";
+import { delegate, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Store } from "./store.ts";
 
 /** A tool's answer: the text it printed, or `(nothing)`. */
@@ -34,7 +34,7 @@ export function memoryTools(store: Store): ToolDefinition[] {
 }
 
 /** The session tools: each starts, messages, reads or delegates to a Claude Code session, never acting itself. */
-export function sessionTools(places: Places): ToolDefinition[] {
+export function sessionTools(config: SessionConfig): ToolDefinition[] {
 	const session = Type.String({ description: "A session as look lists it: its tmux window (repo:window, or the window alone), its name, or its pid." });
 	const dir = (what: string) => Type.String({ description: `${what}, absolute, under ~/, or relative to max's home.` });
 	return [
@@ -48,21 +48,21 @@ export function sessionTools(places: Places): ToolDefinition[] {
 				name: Type.String({ description: "The window's name: the ticket's slug, or a few words for the activity." }),
 				brief: Type.String({ description: "The orchestrator's first prompt: what max wants done, in his words where you have them." }),
 			}),
-			execute: async (_id, params) => answer(await spawn(places, params)),
+			execute: async (_id, params) => answer(await spawn(config, params)),
 		}),
 		defineTool({
 			name: "tell",
 			label: "Tell",
-			description: "Send a session a message. It arrives as a message from another session, never as max's.",
+			description: "Send a session a message. It arrives as a cross-session message from the hypervisor.",
 			parameters: Type.Object({ session, message: Type.String({ description: "The message, as the session should read it." }) }),
-			execute: async (_id, params) => answer(await tell(places, params)),
+			execute: async (_id, params) => answer(await tell(config, params)),
 		}),
 		defineTool({
 			name: "look",
 			label: "Look",
 			description: "Without a session: every Claude Code session on this machine, with its state and tmux window. With one: its state and the end of its pane.",
 			parameters: Type.Object({ session: Type.Optional(session) }),
-			execute: async (_id, params) => answer(await look(places, params)),
+			execute: async (_id, params) => answer(await look(config, params)),
 		}),
 		defineTool({
 			name: "delegate",
@@ -73,7 +73,7 @@ export function sessionTools(places: Places): ToolDefinition[] {
 				task: Type.String({ description: "What to do or find out, and what to answer with." }),
 				dir: Type.Optional(dir("Where it runs, max's home if not given")),
 			}),
-			execute: async (_id, params, signal) => answer(await delegate(places, params, signal)),
+			execute: async (_id, params, signal) => answer(await delegate(config, params, signal)),
 		}),
 	] as ToolDefinition[];
 }

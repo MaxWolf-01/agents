@@ -18,10 +18,11 @@ import { watch } from "./watch.ts";
 export interface Config {
 	/** The store's directory, the one place the extension and its tools write. */
 	store: string;
-	/** The home directory of the machine the explorer reads; a relative path the model sends starts here. */
+	/**
+	 * max's home: the explorer reads under it, a relative path the model sends starts there, and its `.claude*`
+	 * directories list the live Claude Code sessions.
+	 */
 	home: string;
-	/** Claude Code's config directory, whose `sessions/` lists the live sessions; `.claude` under `home` if not given. */
-	claude?: string;
 }
 
 const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
@@ -40,7 +41,8 @@ const WATCH_MS = 3000;
  * Under `config.store`: `log/`, the store's own directory; `requests.jsonl`, a line for each request sent, what it
  * carried in brief, with the error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork,
  * with the tokens each of its calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not
- * take; `spawned.jsonl`, a line for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken.
+ * take; `spawned.jsonl`, a line for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken;
+ * `watch.jsonl`, a line for each look of the watch that failed.
  */
 export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	return (pi) => {
@@ -51,10 +53,10 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			await appendFile(path.join(config.store, name), `${JSON.stringify(line)}\n`);
 		};
 		const requests = jsonl("requests.jsonl");
+		const watchLog = jsonl("watch.jsonl");
 		const mind = memory(store, { fork: jsonl("forks.jsonl"), lost: jsonl("lost.jsonl") });
 		const tools = memoryTools(store);
-		const places = { home: config.home, claude: config.claude ?? path.join(config.home, ".claude"), store: config.store };
-		const steering = sessionTools(places);
+		const steering = sessionTools(config);
 		const reading = exploreTools(config);
 		for (const tool of [...tools, ...steering, ...reading]) pi.registerTool(tool);
 		pi.registerFlag("explore", { type: "boolean", default: false, description: "Run each prompt as one step of exploring max's machine." });
@@ -90,7 +92,13 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		pi.on("session_start", async () => {
 			pi.setActiveTools([...tools, ...(exploring() ? reading : steering)].map((tool) => tool.name));
 			await store.init();
-			if (!exploring()) watching ??= watch(places, WATCH_MS, (events) => pi.sendUserMessage(eventMessage(events), { deliverAs: "followUp" }));
+			if (!exploring())
+				watching ??= watch(
+					config,
+					WATCH_MS,
+					(events) => pi.sendUserMessage(eventMessage(events), { deliverAs: "followUp" }),
+					(error) => void watchLog({ at: new Date().toISOString(), error: String(error) }).catch(() => {}),
+				);
 		});
 		pi.on("before_agent_start", async (event) => {
 			view = await render();
@@ -165,13 +173,9 @@ function brief(payload: Finished["payload"]) {
 	};
 }
 
-/**
- * The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`,
- * or home; Claude Code's config directory `$CLAUDE_CONFIG_DIR`, or `.claude` in that home.
- */
+/** The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`, or home. */
 export function fromEnvironment(): Config {
-	const home = process.env.HV_HOME ?? homedir();
-	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home, claude: process.env.CLAUDE_CONFIG_DIR ?? path.join(home, ".claude") };
+	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home: process.env.HV_HOME ?? homedir() };
 }
 
 /** The extension as pi loads it (`pi -e`). */
