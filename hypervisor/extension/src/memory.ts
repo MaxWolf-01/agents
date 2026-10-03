@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { entriesOf, head, type Kind } from "./entries.ts";
+import { ENTRY, entriesOf, head, type Kind, spoken } from "./entries.ts";
 import { type Call, compressionAsk, type Finished, fork, gistAsk } from "./forks.ts";
 import { Refused, type Store } from "./store.ts";
 
@@ -38,11 +38,11 @@ export function memory(store: Store, journal: Journal) {
 	/** Turns lost since the last view, which the next view says. */
 	const lost: string[] = [];
 
-	async function forked(kind: ForkRecord["kind"], of: string, finished: Finished, ask: string): Promise<string | undefined> {
+	async function forked(kind: ForkRecord["kind"], of: string, finished: Finished, ask: string, logged?: (line: string) => string): Promise<string | undefined> {
 		const calls: Call[] = [];
 		const at = new Date().toISOString();
 		try {
-			const { line } = await fork(finished, ask, calls);
+			const { line } = await fork(finished, ask, calls, logged);
 			await journal.fork({ at, kind, of, calls, line });
 			return line;
 		} catch (error) {
@@ -53,7 +53,15 @@ export function memory(store: Store, journal: Journal) {
 
 	async function log(messages: AgentMessage[], finished: Finished | undefined, kind: Kind) {
 		const entries = entriesOf(messages, kind);
-		const gists = await Promise.all(entries.map((e) => (e.whose && finished ? forked("gist", head(e.text), finished, gistAsk(e.whose)) : undefined)));
+		const gists = await Promise.all(
+			entries.map(async (e) => {
+				if (!e.gist || !finished) return undefined;
+				const { speaker, whose } = e.gist;
+				// The speaker is logged before the gist, inside the entry's bytes.
+				const room = ENTRY - Buffer.byteLength(spoken(speaker, ""));
+				return forked("gist", head(e.text), finished, gistAsk(whose, room), (line) => spoken(speaker, line));
+			}),
+		);
 		for (const [i, entry] of entries.entries()) {
 			try {
 				await store.append(entry.text, gists[i]);

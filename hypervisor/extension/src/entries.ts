@@ -3,10 +3,16 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 /** What a run was: a turn of max's, or a step of explore mode. */
 export type Kind = "turn" | "step";
 
-/** One entry of a finished turn. A text an entry cannot hold names itself in `whose`, and a fork writes its gist. */
+/** One entry of a finished turn. A text an entry cannot hold carries `gist`: what a fork needs to write its gist. */
 export interface Entry {
 	text: string;
-	whose?: string;
+	gist?: Speech;
+}
+
+/** Who said a text, and how a fork's ask names it. */
+export interface Speech {
+	speaker: string;
+	whose: string;
 }
 
 /** Bytes of text one entry holds, as the store's `--help` says. */
@@ -27,7 +33,7 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 		if (step && message.role === "user") return [];
 		if (message.role === "user") {
 			const words = textOf(message.content);
-			return [said(`max: ${words}`, `max's message that begins "${head(words.trim())}"`)];
+			return [said("max", words, `max's message that begins "${head(words.trim())}"`)];
 		}
 		if (message.role !== "assistant") return [];
 		const words = saidIn(message);
@@ -35,7 +41,7 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 		const [voice, what] = step ? ["finding", "finding"] : ["me", "message"];
 		const kept = words.trim() && (!step || message === finding);
 		return [
-			...(kept ? [said(`${voice}: ${words}`, `your ${what} that begins "${head(words.trim())}"`)] : []),
+			...(kept ? [said(voice, words, `your ${what} that begins "${head(words.trim())}"`)] : []),
 			...calls.map((call) => {
 				const result = results.get(call.id);
 				const answer = result ? `${result.isError ? "error: " : ""}${textOf(result.content)}` : "(no result)";
@@ -60,8 +66,15 @@ export function head(text: string, n = 80): string {
 	return Array.from(text).slice(0, n).join("");
 }
 
-function said(text: string, whose: string): Entry {
-	return fits(text) ? { text } : { text, whose };
+/** A line as an entry logs it: after its speaker, as an entry that fits reads, once though the line already names it. */
+export function spoken(speaker: string, line: string): string {
+	const prefix = `${speaker}: `;
+	return prefix + (line.toLowerCase().startsWith(prefix.toLowerCase()) ? line.slice(prefix.length) : line);
+}
+
+function said(speaker: string, words: string, whose: string): Entry {
+	const text = spoken(speaker, words);
+	return fits(text) ? { text } : { text, gist: { speaker, whose } };
 }
 
 function textOf(content: string | readonly { type: string; text?: string }[]): string {

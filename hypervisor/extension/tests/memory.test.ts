@@ -36,16 +36,18 @@ function standInStore(needed: string[], refused = "") {
 	return { store: store as unknown as Store, calls };
 }
 
-/** A turn whose forks answer after `ms`, or fail. */
-function finished(ms: number, fail = false): Finished {
+/** A turn whose forks answer after `ms` with what `reply` makes of the ask, or fail. */
+function finished(ms: number, fail = false, reply: (ask: string) => string = () => "the line"): Finished {
 	const usage = { input: 1, output: 1, cacheRead: 9, cacheWrite: 0, totalTokens: 11, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 	return {
 		payload: { messages: [{ role: "user", content: [{ type: "text", text: "<view>\n</view>" }] }] },
 		model: {} as Finished["model"],
 		models: {
-			complete: async () => {
+			complete: async (_model, _context, options) => {
 				await new Promise((settle) => setTimeout(settle, ms));
-				return { role: "assistant", content: [{ type: "text", text: "the line" }], usage, stopReason: fail ? "error" : "stop", errorMessage: "overloaded" } as never;
+				const sent = (await options?.onPayload?.({}, {} as never)) as { messages: { content: { text: string }[] }[] } | undefined;
+				const text = reply(sent?.messages.at(-1)?.content.at(-1)?.text ?? "");
+				return { role: "assistant", content: [{ type: "text", text }], usage, stopReason: fail ? "error" : "stop", errorMessage: "overloaded" } as never;
 			},
 		},
 	};
@@ -106,4 +108,28 @@ test("a turn the log could not take is journaled, and the next view says so once
 	assert.match(await mind.view(), /\(not logged: the turn ending .*, from its entry "me: nothing yet" on: Refused: No store at \/gone.*\)\nnow /);
 	assert.deepEqual(kept.lost.map((l) => l.entries), [["me: nothing yet"]]);
 	assert.doesNotMatch(await mind.view(), /not logged/);
+});
+
+// What the live run on max's subscription logged before this held: `#1 Noted for later: …`, the speaker gone.
+test("a gisted entry is logged after its speaker, as an entry that fits is, and once though the gist names it", async () => {
+	const long = (marker: string) => `${marker} ${"and more that no entry holds. ".repeat(30)}`;
+	// Each long text opens with a marker its ask quotes; the gist naming its speaker fills the entry to the byte.
+	const gists: Record<string, string> = { alpha: `max: ${"a".repeat(507)}`, bravo: "Noted for later: the plan", charlie: "Read the vault's index" };
+	const asks: Record<string, string> = {};
+	const gist = (ask: string) => {
+		const marker = Object.keys(gists).find((m) => ask.includes(`"${m} `))!;
+		asks[marker] = ask;
+		return gists[marker];
+	};
+	const { store, calls } = standInStore([]);
+	const mind = memory(store, journal().journal);
+	const said = (text: string, timestamp: number) => ({ role: "assistant", content: [{ type: "text", text }], stopReason: "stop", timestamp }) as AgentMessage;
+	mind.finish([{ role: "user", content: long("alpha"), timestamp: 1 } as AgentMessage, said(long("bravo"), 2)], finished(0, false, gist));
+	mind.finish([{ role: "user", content: "explore", timestamp: 3 } as AgentMessage, said(long("charlie"), 4)], finished(0, false, gist), "step");
+	await mind.settled();
+	assert.deepEqual(
+		calls.map((c) => c.replace(/^append /, "")),
+		[`max: ${"a".repeat(507)}`, "me: Noted for later: the plan", "finding: Read the vault's index"],
+	);
+	for (const [marker, speaker] of [["alpha", "max: "], ["bravo", "me: "], ["charlie", "finding: "]]) assert.match(asks[marker], new RegExp(`at most ${512 - speaker.length} bytes`));
 });
