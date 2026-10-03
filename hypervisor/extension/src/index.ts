@@ -6,33 +6,41 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AHEAD, placeBreakpoints, remember, viewEnds, type Written } from "./breakpoints.ts";
 import { saidIn } from "./entries.ts";
+import { eventMessage } from "./events.ts";
 import { exploreTools } from "./explore.ts";
 import type { Finished } from "./forks.ts";
 import { memory } from "./memory.ts";
 import { store as openStore } from "./store.ts";
 import { swapContext } from "./swap.ts";
-import { memoryTools } from "./tools.ts";
+import { memoryTools, sessionTools } from "./tools.ts";
+import { watch } from "./watch.ts";
 
 export interface Config {
 	/** The store's directory, the one place the extension and its tools write. */
 	store: string;
 	/** The home directory of the machine the explorer reads; a relative path the model sends starts here. */
 	home: string;
+	/** Claude Code's config directory, whose `sessions/` lists the live sessions; `.claude` under `home` if not given. */
+	claude?: string;
 }
 
 const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
 const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta.url));
+/** How often the spawned sessions and the inbox are looked at. */
+const WATCH_MS = 3000;
 
 /**
  * The hypervisor as a pi extension. It registers the hypervisor's tools and makes them the whole active set, so none
  * of pi's own tools (`bash`, `edit`, `write`, an unguarded `read`) stays active. With `--explore`, each run is one
- * explore step: the explorer's read tools join the set, the system prompt gains explore mode's, and the step is logged
- * as its tool calls and its finding.
+ * explore step: the explorer's read tools take the session tools' place, the system prompt gains explore mode's, and
+ * the step is logged as its tool calls and its finding. Outside explore mode, what the spawned sessions do and what
+ * orchestrators leave with `hv tell` reach the agent as `<event>` messages, which start a turn of their own when none
+ * runs.
  *
  * Under `config.store`: `log/`, the store's own directory; `requests.jsonl`, a line for each request sent, what it
  * carried in brief, with the error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork,
  * with the tokens each of its calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not
- * take.
+ * take; `spawned.jsonl`, a line for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken.
  */
 export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	return (pi) => {
@@ -45,8 +53,10 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		const requests = jsonl("requests.jsonl");
 		const mind = memory(store, { fork: jsonl("forks.jsonl"), lost: jsonl("lost.jsonl") });
 		const tools = memoryTools(store);
+		const places = { home: config.home, claude: config.claude ?? path.join(config.home, ".claude"), store: config.store };
+		const steering = sessionTools(places);
 		const reading = exploreTools(config);
-		for (const tool of [...tools, ...reading]) pi.registerTool(tool);
+		for (const tool of [...tools, ...steering, ...reading]) pi.registerTool(tool);
 		pi.registerFlag("explore", { type: "boolean", default: false, description: "Run each prompt as one step of exploring max's machine." });
 		const exploring = () => pi.getFlag("explore") === true;
 
@@ -75,9 +85,12 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		/** The last request the run in flight sent, the one its forks continue. */
 		let sent: Finished["payload"] | undefined;
 
+		let watching: ReturnType<typeof watch> | undefined;
+
 		pi.on("session_start", async () => {
-			pi.setActiveTools([...tools, ...(exploring() ? reading : [])].map((tool) => tool.name));
+			pi.setActiveTools([...tools, ...(exploring() ? reading : steering)].map((tool) => tool.name));
 			await store.init();
+			if (!exploring()) watching ??= watch(places, WATCH_MS, (events) => pi.sendUserMessage(eventMessage(events), { deliverAs: "followUp" }));
 		});
 		pi.on("before_agent_start", async (event) => {
 			view = await render();
@@ -113,6 +126,8 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			view = prompt = start = sent = undefined;
 		});
 		pi.on("session_shutdown", async () => {
+			watching?.stop();
+			watching = undefined;
 			await mind.settled();
 		});
 	};
@@ -150,9 +165,13 @@ function brief(payload: Finished["payload"]) {
 	};
 }
 
-/** The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`, or home. */
+/**
+ * The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`,
+ * or home; Claude Code's config directory `$CLAUDE_CONFIG_DIR`, or `.claude` in that home.
+ */
 export function fromEnvironment(): Config {
-	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home: process.env.HV_HOME ?? homedir() };
+	const home = process.env.HV_HOME ?? homedir();
+	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home, claude: process.env.CLAUDE_CONFIG_DIR ?? path.join(home, ".claude") };
 }
 
 /** The extension as pi loads it (`pi -e`). */

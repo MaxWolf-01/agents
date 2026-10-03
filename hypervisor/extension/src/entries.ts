@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { eventsIn } from "./events.ts";
 
 /** What a run was: a turn of max's, or a step of explore mode. */
 export type Kind = "turn" | "step";
@@ -19,8 +20,8 @@ export interface Speech {
 export const ENTRY = 512;
 
 /**
- * A turn's messages as entries, in order: each message max sent, each text of the agent's, and each tool call with its
- * result. A tool call's result is data the store clips to its head; what max and the agent said gets a gist.
+ * A turn's messages as entries, in order: each message max sent, each event the harness handed over, each text of the
+ * agent's, and each tool call with its result. A tool call's result is data the store clips to its head; what max and the agent said gets a gist.
  *
  * An explore step is a turn the harness started, so its message is not max's and is not logged; the step's last text
  * is its finding, and the texts before it are not logged either.
@@ -33,6 +34,8 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 		if (step && message.role === "user") return [];
 		if (message.role === "user") {
 			const words = textOf(message.content);
+			const events = eventsIn(words);
+			if (events) return events.map((event) => said("event", event, `the event that begins "${head(event.trim())}"`));
 			return [said("max", words, `max's message that begins "${head(words.trim())}"`)];
 		}
 		if (message.role !== "assistant") return [];

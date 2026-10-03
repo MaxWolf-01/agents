@@ -48,7 +48,7 @@ before(async () => {
 	const pi = spawn(
 		process.execPath,
 		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
-		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store }, stdio: ["pipe", "pipe", "inherit"] },
+		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir, CLAUDE_CONFIG_DIR: path.join(dir, ".claude") }, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	for (turn = 1; turn <= TURNS; turn++) await prompt(pi, said(turn), turn === 5 ? "turn-5-steer" : undefined);
 	pi.stdin!.end();
@@ -128,8 +128,8 @@ test("below the budget, each turn's first request closes a breakpoint on all the
 	}
 });
 
-test("the memory tools are the whole tool set, and zoom answers from the store", () => {
-	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["raw", "recall", "zoom"]);
+test("the memory and session tools are the whole tool set, and zoom answers from the store", () => {
+	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["delegate", "look", "raw", "recall", "spawn", "tell", "zoom"]);
 	const results = sent.flatMap(({ request }) => request.messages.flatMap((m) => (m.content as { type: string }[]).filter((b) => b.type === "tool_result")));
 	assert.equal(results.length, 1);
 	assert.match(JSON.stringify(results[0]), /#0 max: turn-1-marker hello.*#1 me: noted turn 1/);
