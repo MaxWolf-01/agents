@@ -8,11 +8,18 @@
 #
 # `hv explore` runs explore mode here in the foreground instead, over the same store and credentials; it takes the
 # options of `extension/src/explore-run.ts`, which prints them.
+#
+# `hv tell <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 extension=$here/extension
 store=${HV_STORE:-$HOME/.local/share/hypervisor}
+
+if [[ ${1:-} == tell ]]; then
+	shift
+	HV_STORE=$store exec node "$extension/src/hv-tell.ts" "$@"
+fi
 
 [[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
 mkdir -p "$store/pi"
