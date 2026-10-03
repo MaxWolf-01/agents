@@ -36,6 +36,11 @@ PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
+# The column beside the turns that lists every artefact of the session, and the attribute each link
+# to an artefact carries: the path it resolves to on this machine, or its URL. A hub showing the
+# page finds the links it marks as open, minimized or seen by that attribute.
+COLUMN = "artefacts"
+ARTEFACT = "data-artefact"
 
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"

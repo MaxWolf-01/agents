@@ -32,7 +32,7 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_page import PAGE, QUESTIONS, render_session
+from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
@@ -206,6 +206,12 @@ def test_the_page_is_read_by_the_values_its_module_names() -> None:
     assert (PAGE, QUESTIONS) == ("index.html", "open-questions")
 
 
+def test_the_hub_finds_an_artefact_by_the_attribute_its_ticket_names() -> None:
+    """The column's side of the hub's contract: dotfiles' `minimize-and-restore` marks a link by
+    this attribute and looks for the column by this id, so a rename breaks the hub, not this suite."""
+    assert (ARTEFACT, COLUMN) == ("data-artefact", "artefacts")
+
+
 def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
     """The ids the checks find a turn and a question by are the ones the page's own links jump to,
     and each names one part: an anchor that breaks, or a part shown twice, fails here."""
@@ -362,6 +368,143 @@ def test_the_page_carries_what_the_user_said_and_none_of_what_claude_code_said_f
     page = render_session(worked_example, transcript, now=NOW)
     assert [said for said in SAID if said not in page] == []
     assert [noise for noise in NOT_SAID if noise in page] == []
+
+
+# ---- the artefact column ----------------------------------------------------
+
+
+def artefacts(fragment: str) -> list[tuple[str, str]]:
+    """Each link to an artefact in a fragment of the page, in order: its text and the path the hub
+    finds it by."""
+    found: list[tuple[str, str]] = []
+    inside: list[str] | None = None
+
+    class Reader(HTMLParser):
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            nonlocal inside
+            if tag == "a" and (target := dict(attrs).get(ARTEFACT)) is not None:
+                found.append(("", target))
+                inside = []
+
+        def handle_data(self, data: str) -> None:
+            if inside is not None:
+                inside.append(data)
+
+        def handle_endtag(self, tag: str) -> None:
+            nonlocal inside
+            if tag == "a" and inside is not None:
+                found[-1] = (" ".join("".join(inside).split()), found[-1][1])
+                inside = None
+
+    Reader().feed(fragment)
+    return found
+
+
+def column_of(page: str) -> dict[str, list[tuple[str, str]]]:
+    """The artefact column, read: each turn's group by the two digits of its record, in the order
+    the column shows them, and its artefacts."""
+    column = elements(page, COLUMN).get(COLUMN)
+    assert column is not None, f"the page has no element with id {COLUMN!r}"
+    groups = elements(column, r"a\d+")
+    order = re.findall(r'\bid="a(\d+)"', column)
+    return {key: artefacts(groups[f"a{key}"]) for key in order}
+
+
+def chips_of(page: str) -> dict[str, list[tuple[str, str]]]:
+    """The artefacts each turn's summary line carries, which is what a collapsed turn shows."""
+    return {key: artefacts(re.search(r"<summary.*?</summary>", section, re.S).group())
+            for key, section in sections_of(page).items()}
+
+
+def with_links(record_text: str, items: list[str]) -> str:
+    """A record with `items` added under its `## Links`, the section opened where it has none."""
+    added = "".join(f"{item}\n" for item in items)
+    if "\n## Links\n" in record_text:
+        return record_text.replace("\n## Links\n\n", f"\n## Links\n\n{added}", 1)
+    return record_text.replace("\n## Details\n", f"\n## Links\n\n{added}\n## Details\n", 1)
+
+
+# The worked example's artefacts, newest turn first, by the text and path its records give them.
+SHOWN = {
+    "04": [("How the pages fit together", "agent/show/session-page/round-3/pages.html"),
+           ("The spec page", "agent/show/session-page/round-3/spec.html")],
+    "03": [("Round 2 as a hand-built session page", "agent/show/session-page/round-2/index.html")],
+    "02": [("The grid, the session page sketch and Q1 to Q3", "agent/show/session-page/round-1/index.html")],
+}
+# Links a turn record may carry to ticket files, here and in another repo, which are no artefact.
+TICKET_LINKS = [
+    "- [The ticket this round grills](agent/tickets/session-page.md): its Decisions",
+    "- [The hub's ticket](/home/max/.dotfiles/agent/tickets/one-hub-tab.md#decisions): what it decided",
+]
+
+
+@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
+def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
+    worked_example: Path, transcript: Path
+) -> None:
+    """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
+    whose record links it, newest turn first, a turn with none left out, each carrying the path it
+    resolves to on this machine; and a ticket file the newest turn links is not listed."""
+    root = worked_example.parents[2]
+    shown = {key: [(text, str(root / path)) for text, path in items] for key, items in SHOWN.items()}
+    assert column_of(render_session(worked_example, transcript, now=NOW)) == shown
+    newest = worked_example / "turns" / "04.md"
+    newest.write_text(with_links(newest.read_text(), TICKET_LINKS))
+    assert column_of(render_session(worked_example, transcript, now=NOW)) == shown
+
+
+@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
+def test_a_collapsed_turn_shows_its_artefacts_on_its_summary_line(worked_example: Path, transcript: Path) -> None:
+    """A collapsed turn shows its artefacts as chips: its summary line, which is all of it a
+    collapsed turn shows, carries the column's group for it."""
+    page = render_session(worked_example, transcript, now=NOW)
+    assert chips_of(page) == column_of(page) | {"01": []}
+
+
+# What a drawn turn links, and the path the hub finds each by from the repo root `root` and the
+# home `home`; None for a ticket file, which the column never lists. Near misses of a ticket file
+# sit beside them.
+POOL: dict[str, Callable[[Path, Path], str | None]] = {
+    "agent/show/csv-import/figure.html": lambda root, home: f"{root}/agent/show/csv-import/figure.html",
+    "agent/show/csv-import/ticket.md": lambda root, home: f"{root}/agent/show/csv-import/ticket.md",
+    "agent/research/tickets.md": lambda root, home: f"{root}/agent/research/tickets.md",
+    "agent/tickets/csv-import/notes.html": lambda root, home: f"{root}/agent/tickets/csv-import/notes.html",
+    "~/Downloads/show/ledger/page.html": lambda root, home: f"{home}/Downloads/show/ledger/page.html",
+    "/srv/other/agent/show/hub/page.html": lambda root, home: "/srv/other/agent/show/hub/page.html",
+    "https://example.com/rfc.html": lambda root, home: "https://example.com/rfc.html",
+    "agent/tickets/csv-import.md": lambda root, home: None,
+    "agent/tickets/csv-import.md#d4": lambda root, home: None,
+    "/srv/other/agent/tickets/one-hub-tab.md": lambda root, home: None,
+    "~/.dotfiles/agent/tickets/one-hub-tab.md": lambda root, home: None,
+}
+
+
+@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
+@settings(deadline=None)
+@given(linked=st.lists(st.lists(st.sampled_from(sorted(POOL)), max_size=4, unique=True), min_size=1, max_size=5))
+def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
+    linked: list[list[str]], scratch: Callable[[], Path], tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """session-pages-feed-the-hub#P2, over sessions whose turns link artefacts, ticket files and
+    paths that only look like one: each turn's artefacts, in the order its record gives them, under
+    that turn's number, newest turn first, and nothing else."""
+    home = tmp_path_factory.mktemp("home")
+    turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
+    directory, transcript = write_session(scratch() / DRAWN, turns)
+    for number, paths in enumerate(linked, start=1):
+        record_path = directory / "turns" / f"{number:02d}.md"
+        record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
+    root = directory.parents[2]
+    expected = {}
+    for number, paths in reversed(list(enumerate(linked, start=1))):
+        listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]
+        if listed:
+            expected[f"{number:02d}"] = listed
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("HOME", str(home))
+        page = render_session(directory, transcript, now=NOW)
+    assert column_of(page) == expected
+    assert all(chips_of(page)[key] == items for key, items in expected.items())
 
 
 if __name__ == "__main__":
