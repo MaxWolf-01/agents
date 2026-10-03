@@ -12,6 +12,8 @@ not on the fix.
 
 - A write that leaves a record of the session unparseable is sent back with the reader's error,
   every time. A session whose first turn record is still to come is not unparseable for that.
+- A turn record whose prose points at another part of the page in words ("under Details") rather
+  than linking it is sent back the same way, every time.
 - The first write after which the records parse, in a turn that has written its record, gets
   the turn's prose review (`turn_review`), and its findings are sent back. The review runs once
   per turn: an edit after the findings, or a record written later in the turn, is parsed and not
@@ -51,7 +53,7 @@ class Decision:
 def decide(hook: dict, directory: Path | None) -> Decision:
     """What to tell the agent after the write the hook JSON describes, over the session directory."""
     import turn_review
-    from session_page import NoTurnRecords, RecordError, left_alone, read_session, written_this_turn
+    from session_page import NoTurnRecords, RecordError, check_references, left_alone, read_session, written_this_turn
     from stop_hook import RECAP
 
     if unread := left_alone():
@@ -69,6 +71,11 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("allow", "no turn record yet")
     except RecordError as e:
         return Decision("send back", "record does not parse", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
+    if written.parent == directory.resolve() / "turns":
+        try:
+            check_references(written)
+        except RecordError as e:
+            return Decision("send back", "reference in words", f"{e}\nFix the record and carry on with the turn; then {RECAP}, as you would have without this error.")
     if (turn := written_this_turn(session)) is None:
         return Decision("allow", "records parse")
     if turn_review.reviewed_since(session.id, session.began):
