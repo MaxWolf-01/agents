@@ -281,7 +281,8 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
 ) -> None:
     """session-page#P2: the records and the transcript, carried on their own to a directory of the
     same name and depth, give back the page the session's own directory did, whatever else was
-    lying beside them there."""
+    lying beside them there. The path an artefact link carries for the hub names the repo root the
+    page was rendered under, so the two pages compare with the new root read as the old."""
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "notes.txt").write_text("a scratch file, which is not a record")
     page = render_session(worked_example, transcript, now=NOW)
@@ -292,6 +293,7 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
     again = render_session(elsewhere, Path(shutil.copy(transcript, tmp_path)), now=NOW)
+    again = again.replace(str(tmp_path / "elsewhere"), str(tmp_path))
     assert top_of(again) == top_of(page)  # first, so a failure names the block that moved
     assert sections_of(again) == sections_of(page)
     assert again == page
@@ -438,7 +440,6 @@ TICKET_LINKS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
 def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
     worked_example: Path, transcript: Path
 ) -> None:
@@ -453,7 +454,6 @@ def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_an
     assert column_of(render_session(worked_example, transcript, now=NOW)) == shown
 
 
-@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
 def test_a_collapsed_turn_shows_its_artefacts_on_its_summary_line(worked_example: Path, transcript: Path) -> None:
     """A collapsed turn shows its artefacts as chips: its summary line, which is all of it a
     collapsed turn shows, carries the column's group for it."""
@@ -479,7 +479,6 @@ POOL: dict[str, Callable[[Path, Path], str | None]] = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="session-page-lists-its-artefacts: the column is not built yet")
 @settings(deadline=None)
 @given(linked=st.lists(st.lists(st.sampled_from(sorted(POOL)), max_size=4, unique=True), min_size=1, max_size=5))
 def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
