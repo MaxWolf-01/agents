@@ -3,14 +3,16 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 /** What a run was: a turn of max's, or a step of explore mode. */
 export type Kind = "turn" | "step";
 
-/**
- * One entry of a finished turn. A text an entry cannot hold names itself in `whose`, and a fork writes its gist, which
- * is logged after the text's `speaker` as the text itself is.
- */
+/** One entry of a finished turn. A text an entry cannot hold carries `gist`: what a fork needs to write its gist. */
 export interface Entry {
 	text: string;
-	speaker?: string;
-	whose?: string;
+	gist?: Speech;
+}
+
+/** Who said a text, and how a fork's ask names it. */
+export interface Speech {
+	speaker: string;
+	whose: string;
 }
 
 /** Bytes of text one entry holds, as the store's `--help` says. */
@@ -64,16 +66,15 @@ export function head(text: string, n = 80): string {
 	return Array.from(text).slice(0, n).join("");
 }
 
-/** `gist` as the entry of `entry` logs it: after the entry's speaker, once, whether or not the gist already named it. */
-export function spoken(entry: Entry, gist: string): string {
-	if (!entry.speaker) return gist;
-	const prefix = `${entry.speaker}: `;
-	return prefix + (gist.toLowerCase().startsWith(prefix.toLowerCase()) ? gist.slice(prefix.length) : gist);
+/** A line as an entry logs it: after its speaker, as an entry that fits reads, once though the line already names it. */
+export function spoken(speaker: string, line: string): string {
+	const prefix = `${speaker}: `;
+	return prefix + (line.toLowerCase().startsWith(prefix.toLowerCase()) ? line.slice(prefix.length) : line);
 }
 
 function said(speaker: string, words: string, whose: string): Entry {
-	const text = `${speaker}: ${words}`;
-	return fits(text) ? { text, speaker } : { text, speaker, whose };
+	const text = spoken(speaker, words);
+	return fits(text) ? { text } : { text, gist: { speaker, whose } };
 }
 
 function textOf(content: string | readonly { type: string; text?: string }[]): string {

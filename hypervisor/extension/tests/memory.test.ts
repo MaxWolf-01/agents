@@ -112,21 +112,24 @@ test("a turn the log could not take is journaled, and the next view says so once
 
 // What the live run on max's subscription logged before this held: `#1 Noted for later: …`, the speaker gone.
 test("a gisted entry is logged after its speaker, as an entry that fits is, and once though the gist names it", async () => {
-	const long = (words: string) => `${words} ${"and more that no entry holds. ".repeat(30)}`;
-	const asks: string[] = [];
+	const long = (marker: string) => `${marker} ${"and more that no entry holds. ".repeat(30)}`;
+	// Each long text opens with a marker its ask quotes; the gist naming its speaker fills the entry to the byte.
+	const gists: Record<string, string> = { alpha: `max: ${"a".repeat(507)}`, bravo: "Noted for later: the plan", charlie: "Read the vault's index" };
+	const asks: Record<string, string> = {};
 	const gist = (ask: string) => {
-		asks.push(ask);
-		return ask.startsWith("Max's message") ? "max: Asked what I know about him so far" : ask.includes("finding") ? "Read the vault's index" : "Noted for later: the plan";
+		const marker = Object.keys(gists).find((m) => ask.includes(`"${m} `))!;
+		asks[marker] = ask;
+		return gists[marker];
 	};
 	const { store, calls } = standInStore([]);
 	const mind = memory(store, journal().journal);
 	const said = (text: string, timestamp: number) => ({ role: "assistant", content: [{ type: "text", text }], stopReason: "stop", timestamp }) as AgentMessage;
-	mind.finish([{ role: "user", content: long("what do you know?"), timestamp: 1 } as AgentMessage, said(long("Noted."), 2)], finished(0, false, gist));
-	mind.finish([{ role: "user", content: "explore", timestamp: 3 } as AgentMessage, said(long("Found the vault."), 4)], finished(0, false, gist), "step");
+	mind.finish([{ role: "user", content: long("alpha"), timestamp: 1 } as AgentMessage, said(long("bravo"), 2)], finished(0, false, gist));
+	mind.finish([{ role: "user", content: "explore", timestamp: 3 } as AgentMessage, said(long("charlie"), 4)], finished(0, false, gist), "step");
 	await mind.settled();
 	assert.deepEqual(
 		calls.map((c) => c.replace(/^append /, "")),
-		["max: Asked what I know about him so far", "me: Noted for later: the plan", "finding: Read the vault's index"],
+		[`max: ${"a".repeat(507)}`, "me: Noted for later: the plan", "finding: Read the vault's index"],
 	);
-	for (const [ask, speaker] of [[asks[0], "max: "], [asks[1], "me: "], [asks[2], "finding: "]]) assert.match(ask, new RegExp(`at most ${512 - speaker.length} bytes`));
+	for (const [marker, speaker] of [["alpha", "max: "], ["bravo", "me: "], ["charlie", "finding: "]]) assert.match(asks[marker], new RegExp(`at most ${512 - speaker.length} bytes`));
 });
