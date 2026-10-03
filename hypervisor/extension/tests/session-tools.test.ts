@@ -1,5 +1,6 @@
-// lifelong-hypervisor#P4 at the session tools, past the directory check the registry's check rarely gets by: every
-// directory a tool is given exists, so each run reaches the programs it starts, which are watched and never run.
+// The session tools held to the rules of lifelong-hypervisor#P4's registry check, past the directory check that check
+// rarely gets by: every directory a tool is given exists, so each run reaches the programs it starts, which are
+// watched and never run.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -7,10 +8,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import fc from "fast-check";
-import { watchEffects } from "./effects.ts";
-import { paramsFor } from "./params.ts";
-import { strings, toolProblems } from "./rules.ts";
-import { execute, standIn } from "./stand-in.ts";
+import { watchEffects } from "./properties/effects.ts";
+import { paramsFor } from "./properties/params.ts";
+import { strings, toolProblems } from "./properties/rules.ts";
+import { execute, standIn } from "./properties/stand-in.ts";
 
 const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
@@ -21,7 +22,7 @@ after(() => {
 	rmSync(store, { recursive: true, force: true });
 	rmSync(home, { recursive: true, force: true });
 });
-const { sessionTools } = await import("../../src/tools.ts");
+const { sessionTools } = await import("../src/tools.ts");
 
 const HOSTILE = fc.oneof(
 	fc.string(),
@@ -29,7 +30,7 @@ const HOSTILE = fc.oneof(
 );
 const DIRS = fc.constantFrom("", "~", home, "repo with spaces; and $(x)", "~/repo with spaces; and $(x)");
 
-test("lifelong-hypervisor#P4: the session tools run no shell, start nothing but tmux and claude in auto mode, and write only the store", async () => {
+test("the session tools run no shell, start nothing but tmux and claude in auto mode, and write only the store", async () => {
 	const context = standIn({ cwd: home, hasUI: false });
 	let opened = 0;
 	for (const tool of sessionTools({ home, store })) {
