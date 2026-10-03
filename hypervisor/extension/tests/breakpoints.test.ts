@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { placeBreakpoints, remember, viewEnds, type Written } from "../src/breakpoints.ts";
+import { cacheReads } from "./cache-model.ts";
 
 const HEADER = "now 2026-10-01T14:07 (Thu), 2 minutes since the last entry, #300";
 const MINUTE = 60_000;
@@ -42,9 +43,12 @@ test("the breakpoints on the tools and the first system block move into the view
 	assert.deepEqual(placed.messages[1], sent.messages[1]);
 });
 
-test("the view gets no more breakpoints than the four a request may carry leave", () => {
-	const placed = placeBreakpoints(request(entries(0, 6)), [1, 2, 3, 4]) as Request;
-	assert.equal(placed.messages[0].content.filter((b) => b.cache_control).length, 2);
+test("the view gets the first of its ends that the four breakpoints a request may carry leave room for", () => {
+	const placed = placeBreakpoints(request(entries(0, 6)), [4, 2, 3, 1]) as Request;
+	assert.deepEqual(placed.messages[0].content.flatMap((b, i) => (b.cache_control ? [i + 1] : [])), [2, 4]);
+	// A system prompt sent as a string carries no breakpoint, so the last tool's moves into the view too.
+	const string = placeBreakpoints({ ...request(entries(0, 6)), system: "the prompt" }, [4, 2, 3, 1]) as Request;
+	assert.deepEqual(string.messages[0].content.flatMap((b, i) => (b.cache_control ? [i + 1] : [])), [2, 3, 4]);
 });
 
 test("a request without breakpoints gets none in the view", () => {
@@ -72,14 +76,16 @@ test("one breakpoint reads the longest prefix an earlier request wrote that the 
 		{ lines: entries(0, 28), expires: MINUTE },
 	];
 	assert.deepEqual(viewEnds(view, Array(16).fill(30), written, 2 * MINUTE), [20, 30]);
+	assert.deepEqual(viewEnds(view, Array(16).fill(15), written, 2 * MINUTE), [20, 15], "the read keeps nothing the next view starts with");
+	assert.deepEqual(viewEnds(view, Array(16).fill(20), written, 2 * MINUTE), [20], "nothing ahead adds to what the read keeps");
 });
 
-test("past the budget, the breakpoints go where the next view keeps the most bytes over the turns ahead", () => {
-	// Three lines of 10 bytes: a 1-entry turn keeps all three, longer ones keep the first or none.
+test("past the budget, each breakpoint goes where it adds the most bytes the next view keeps over the turns ahead", () => {
+	// Three lines of about 10 bytes: a 1-entry turn keeps all three, longer ones keep the first or none.
 	const view = ["T #0-3 aa", "T #4-5 bb", "T #6 ccc", HEADER];
 	assert.deepEqual(viewEnds(view, [3, 1, 1, 1, 0, 0], [], 0), [1, 3]);
-	assert.deepEqual(viewEnds(view, [3, 1, 1, 1, 0, 0], [], 0, 1), [1]);
-	assert.deepEqual(viewEnds(view, [3, 0, 0, 0, 0, 0], [], 0, 1), [3]);
+	assert.deepEqual(viewEnds(view, [3, 3, 3, 1, 1, 1, 0], [], 0), [3, 1]);
+	assert.deepEqual(viewEnds(view, [3, 0, 0, 0, 0, 0], [], 0), [3]);
 	assert.deepEqual(viewEnds(view, [0, 0, 0], [], 0), []);
 });
 
@@ -98,26 +104,10 @@ test("a request leaves behind the prefixes its view's breakpoints close, for as 
 	assert.equal(remember(later, { messages: [] }, at), later);
 });
 
-/**
- * What each request reads from the cache, by the rules Anthropic's prompt-caching docs give: a breakpoint writes an
- * entry for the prefix it closes, and a read checks the breakpoint and up to 19 blocks before it for an entry an earlier
- * request wrote. Returns, for each request, how many of the view's bytes were read.
- */
-function cacheReads(requests: Request[]): number[] {
-	const cache = new Set<string>();
-	return requests.map((r) => {
-		const blocks = [...r.system, ...r.messages.flatMap((m) => m.content)];
-		const prefixes = blocks.map((_, i) => JSON.stringify(blocks.slice(0, i + 1).map((b) => b.text)));
-		const marked = blocks.flatMap((b, i) => (b.cache_control ? [i] : []));
-		let read = -1;
-		for (const at of marked) for (let i = at; i > at - 20 && i >= 0; i--) if (cache.has(prefixes[i])) {
-			read = Math.max(read, i);
-			break;
-		}
-		for (const at of marked) cache.add(prefixes[at]);
-		const view = r.system.length;
-		return blocks.slice(view, read + 1).reduce((sum, b) => sum + b.text.length, 0);
-	});
+/** How many of the view's bytes each request reads from the cache. */
+function viewReads(requests: Request[]): number[] {
+	const blocks = requests.map((r) => [...r.system, ...r.messages.flatMap((m) => m.content)]);
+	return cacheReads(blocks).map((read, i) => blocks[i].slice(requests[i].system.length, read + 1).reduce((sum, b) => sum + b.text.length, 0));
 }
 
 /** The requests a run of turns sends, the extension placing the breakpoints as it does between turns. */
@@ -133,7 +123,7 @@ function turns(views: string[][], stays: number[][]): Request[] {
 
 test("below the budget, each turn reads from the cache the whole view the turn before sent", () => {
 	const ends = [3, 10, 40, 41];
-	const reads = cacheReads(turns(ends.map((n) => entries(0, n)), ends.map((n) => Array(16).fill(n))));
+	const reads = viewReads(turns(ends.map((n) => entries(0, n)), ends.map((n) => Array(16).fill(n))));
 	const viewOf = (n: number) => `<view>\n${entries(0, n).join("\n")}\n`.length;
 	assert.deepEqual(reads, [0, viewOf(3), viewOf(10), viewOf(40)]);
 });
@@ -144,7 +134,7 @@ test("past the budget, a turn reads the view's lines that an earlier turn's view
 	const b = [block(0, 255), block(256, 383), block(384, 447), block(448, 449), ...entries(450, 452)];
 	const c = [block(0, 255), block(256, 383), block(384, 447), block(448, 449), block(450, 451), ...entries(452, 454)];
 	// The store says a turn of two entries keeps the first four lines; the third view merges in the fifth line.
-	const reads = cacheReads(turns([a, b, c], [[5, 3, 3, 3], [4, 4, 4, 4], [5, 5, 5, 5]]));
+	const reads = viewReads(turns([a, b, c], [[5, 3, 3, 3], [4, 4, 4, 4], [5, 5, 5, 5]]));
 	const prefix = (view: string[], n: number) => `<view>\n${view.slice(0, n).join("\n")}\n`.length;
 	assert.deepEqual(reads, [0, prefix(b, 3), prefix(c, 4)]);
 });

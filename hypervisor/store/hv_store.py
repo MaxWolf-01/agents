@@ -109,7 +109,7 @@ class View:
 
 @dataclass
 class Stays:
-    """Print, for each number of entries from 1 to AHEAD, how many of the view's lines, counted from
+    """Print, for each number of entries from 1 to --ahead, how many of the view's lines, counted from
     its first, the view starts with again once that many more entries are logged."""
 
     ahead: int

@@ -22,7 +22,8 @@ export interface Written {
  * A request as the Anthropic provider sends it, with cache breakpoints moved into the view, or nothing for a payload of
  * another shape. pi puts one on each system block, the last tool and the last message. The cache reads tools, then
  * system, then messages, so the last system block's breakpoint covers the tools and the blocks before it; those
- * breakpoints go, and the view gets them, after its first `ends` lines (`viewEnds`). The view is sent as a text block
+ * breakpoints go, and the view gets as many of them as are left, after its first `ends` lines in the order given
+ * (`viewEnds`). The view is sent as a text block
  * per line: the cache finds an entry an earlier request wrote only where this request has a block boundary at the
  * same point, and looks for one up to 20 blocks back from each breakpoint.
  */
@@ -33,7 +34,7 @@ export function placeBreakpoints(payload: unknown, ends: number[] = []): unknown
 	const out: Payload = { ...payload, ...(system === undefined ? {} : { system }), ...(payload.tools ? { tools: payload.tools.map(bare) } : {}) };
 	const at = (payload.messages ?? []).findIndex(isView);
 	if (!mark || at < 0) return out;
-	const closed = new Set(ends.slice(0, Math.max(0, MOST - count(out))));
+	const closed = new Set(ends.slice(0, MOST - count(out)));
 	const messages = [...(payload.messages ?? [])];
 	const [first, ...rest] = messages[at].content as Block[];
 	const lines = perLine(first.text ?? "").map((text, i): Block => ({ type: "text", text, ...(closed.has(i + 1) ? { cache_control: mark } : {}) }));
@@ -42,13 +43,14 @@ export function placeBreakpoints(payload: unknown, ends: number[] = []): unknown
 }
 
 /**
- * After how many of the view's lines to place its breakpoints, at most `spare` of them. One goes where an entry an
- * earlier request wrote still matches, the longest such prefix, so this request reads it. The rest go where the next
- * turn's view is likeliest to start with the same lines: `stays[k - 1]` is how many lines it starts with after k more
- * entries (the store's `stays`), and the ends chosen cover the most bytes over those k. Only the view's own lines
- * count: a note or the header after them changes every turn.
+ * After how many of the view's lines to place its breakpoints, the one that matters most first, since a request has
+ * room for only as many as pi leaves. The first goes where an entry an earlier request wrote still matches, the
+ * longest such prefix, so this request reads it. The rest go where the next turn's view is likeliest to start with
+ * the same lines: `stays[k - 1]` is how many lines it starts with after k more entries (the store's `stays`), and
+ * each end chosen adds the most bytes kept over those k. Only the view's own lines count: a note or the header after
+ * them changes every turn.
  */
-export function viewEnds(lines: string[], stays: number[], written: Written[], now: number, spare = MOST - 2): number[] {
+export function viewEnds(lines: string[], stays: number[], written: Written[], now: number): number[] {
 	const shown = lines.findIndex((line) => !VIEW_LINE.test(line));
 	const view = shown < 0 ? lines.length : shown;
 	const bytes = [0];
@@ -58,12 +60,12 @@ export function viewEnds(lines: string[], stays: number[], written: Written[], n
 	const kept = (ends: number[]) => stays.reduce((sum, stay) => sum + bytes[Math.max(0, ...ends.filter((end) => end <= stay))], 0);
 	const ends = read ? [read] : [];
 	const candidates = [...new Set(stays)].filter((stay) => stay > 0 && stay <= view);
-	while (ends.length < spare) {
+	while (ends.length < MOST) {
 		const best = candidates.reduce<number | undefined>((top, c) => (top === undefined || kept([...ends, c]) > kept([...ends, top]) ? c : top), undefined);
 		if (best === undefined || kept([...ends, best]) <= kept(ends)) break;
 		ends.push(best);
 	}
-	return ends.sort((a, b) => a - b);
+	return ends;
 }
 
 /** `written` with the entries a request sent wrote or read in the view, each living as long as its breakpoint says. */

@@ -30,8 +30,9 @@ const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta
  * as its tool calls and its finding.
  *
  * Under `config.store`: `log/`, the store's own directory; `requests.jsonl`, a line for each request sent, what it
- * carried in brief; `forks.jsonl`, a line for each fork, with the tokens each of its calls read from cache and wrote;
- * `lost.jsonl`, a line for each turn the log could not take.
+ * carried in brief, with the error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork,
+ * with the tokens each of its calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not
+ * take.
  */
 export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	return (pi) => {
@@ -55,9 +56,16 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		let ends: number[] = [];
 		/** The view's prefixes the requests sent wrote to the cache, while their entries live. */
 		let written: Written[] = [];
+		/** Why the store's `stays` failed for the run in flight, which its requests' log lines carry. */
+		let failed: string | undefined;
 		const render = async () => {
+			failed = undefined;
 			const rendered = await mind.view();
-			const stays = await store.stays(AHEAD).catch(() => []);
+			// Without the store's `stays`, the view still reads what earlier requests wrote; the request log says why.
+			const stays = await store.stays(AHEAD).catch((error) => {
+				failed = String(error);
+				return [];
+			});
 			ends = viewEnds(rendered.split("\n"), stays, written, Date.now());
 			return rendered;
 		};
@@ -90,7 +98,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 			// pi's cache warming re-sends the last request for one token; a fork continues the run's own.
 			const warm = (placed as { max_tokens?: number }).max_tokens === 1;
 			if (!warm) sent = placed as Finished["payload"];
-			await requests({ ...brief(placed as Finished["payload"]), ...(warm ? { warm } : {}) });
+			await requests({ ...brief(placed as Finished["payload"]), ...(warm ? { warm } : {}), ...(failed ? { stays: failed } : {}) });
 			return placed;
 		});
 		pi.on("agent_end", async (event, ctx) => {
