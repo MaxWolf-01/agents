@@ -19,6 +19,8 @@ export function store(dir: string) {
 		/** Logs `text` as one entry and returns its number. */
 		append: async (text: string, gist = "") => Number((await run(["append", ...(gist ? [`--gist=${gist}`] : [])], text)).trim().slice(1)),
 		view: () => run(["view"]),
+		/** For each count of entries from 1 to `ahead`, how many of the view's lines it starts with once they are logged. */
+		stays: async (ahead: number) => (await run(["stays", `--ahead=${ahead}`])).split("\n").filter(Boolean).map(Number),
 		zoom: (block: string) => run(["zoom", "--", block]),
 		recall: (regex: string) => run(["recall", "--", regex]),
 		raw: (id: number) => run(["raw", "--", String(id)]),
