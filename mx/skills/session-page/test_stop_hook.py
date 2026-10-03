@@ -745,11 +745,13 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
 
 
 def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
-    """turns-end-on-their-recap#P4, in its own words: at most three lines, what the page holds now,
-    what comes next and what waits on the user, each open question named by what it decides."""
-    for part in ("3 short lines at most", "what the page holds now", "what comes next", "what waits on the user",
-                 "named by what it decides"):
+    """turns-end-on-their-recap#P4 as recap-states-action-items amends it: what waits on the user,
+    as action items, one plain line each, each open question named by what it decides, and no
+    pointer to the page."""
+    for part in ("what waits on the user", "action items", "one plain line each", "named by what it decides",
+                 "no line points at the page"):
         assert part in stop_hook.RECAP
+    assert "what the page holds now" not in stop_hook.RECAP
 
 
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
