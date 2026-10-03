@@ -44,13 +44,17 @@ async function loaded(flipped: boolean) {
 	return { ...extension, atLoad };
 }
 
-// Every tool of the closed set has landed: the extension registers exactly the set, the parent's tools active in a
-// conversation, and under `--explore` (`flipped`) the explorer's read tools in place of the session tools.
-test("lifelong-hypervisor#P4: the extension's tools are the closed set, and none of pi's own stays active", async () => {
+// Within the closed set rather than equal to it: the memory tools land first (hypervisor-view-swap), the session
+// tools after (hypervisor-orchestrators), and the check has to hold at each step. The explorer's tools have landed,
+// so under `--explore` (`flipped`) they are exactly the tools active beyond the parent's.
+test("lifelong-hypervisor#P4: the extension's tools are within the closed set, and none of pi's own stays active", async () => {
+	const allowed = new Set([...CONVERSE, ...EXPLORE]);
 	for (const flipped of [false, true]) {
 		const { tools, active } = await loaded(flipped);
-		assert.deepEqual([...tools.keys()].sort(), [...CONVERSE, ...EXPLORE].sort(), "the tools registered");
-		assert.deepEqual([...active].sort(), (flipped ? [...MEMORY, ...EXPLORE] : CONVERSE).sort(), flipped ? "the tools active under --explore" : "the tools active");
+		assert.deepEqual([...tools.keys()].filter((name) => !allowed.has(name)), [], "tools outside the closed set");
+		assert.deepEqual(active.filter((name) => !tools.has(name)), [], "pi's own tools still active");
+		if (!flipped) assert.deepEqual(MEMORY.filter((name) => !tools.has(name)), [], "memory tools missing");
+		else assert.deepEqual(active.filter((name) => !CONVERSE.includes(name)).sort(), [...EXPLORE].sort(), "the explorer's tools under --explore");
 	}
 });
 
