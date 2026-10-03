@@ -3,9 +3,13 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 /** What a run was: a turn of max's, or a step of explore mode. */
 export type Kind = "turn" | "step";
 
-/** One entry of a finished turn. A text an entry cannot hold names itself in `whose`, and a fork writes its gist. */
+/**
+ * One entry of a finished turn. A text an entry cannot hold names itself in `whose`, and a fork writes its gist, which
+ * is logged after the text's `speaker` as the text itself is.
+ */
 export interface Entry {
 	text: string;
+	speaker?: string;
 	whose?: string;
 }
 
@@ -27,7 +31,7 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 		if (step && message.role === "user") return [];
 		if (message.role === "user") {
 			const words = textOf(message.content);
-			return [said(`max: ${words}`, `max's message that begins "${head(words.trim())}"`)];
+			return [said("max", words, `max's message that begins "${head(words.trim())}"`)];
 		}
 		if (message.role !== "assistant") return [];
 		const words = saidIn(message);
@@ -35,7 +39,7 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 		const [voice, what] = step ? ["finding", "finding"] : ["me", "message"];
 		const kept = words.trim() && (!step || message === finding);
 		return [
-			...(kept ? [said(`${voice}: ${words}`, `your ${what} that begins "${head(words.trim())}"`)] : []),
+			...(kept ? [said(voice, words, `your ${what} that begins "${head(words.trim())}"`)] : []),
 			...calls.map((call) => {
 				const result = results.get(call.id);
 				const answer = result ? `${result.isError ? "error: " : ""}${textOf(result.content)}` : "(no result)";
@@ -60,8 +64,16 @@ export function head(text: string, n = 80): string {
 	return Array.from(text).slice(0, n).join("");
 }
 
-function said(text: string, whose: string): Entry {
-	return fits(text) ? { text } : { text, whose };
+/** `gist` as the entry of `entry` logs it: after the entry's speaker, once, whether or not the gist already named it. */
+export function spoken(entry: Entry, gist: string): string {
+	if (!entry.speaker) return gist;
+	const prefix = `${entry.speaker}: `;
+	return prefix + (gist.toLowerCase().startsWith(prefix.toLowerCase()) ? gist.slice(prefix.length) : gist);
+}
+
+function said(speaker: string, words: string, whose: string): Entry {
+	const text = `${speaker}: ${words}`;
+	return fits(text) ? { text, speaker } : { text, speaker, whose };
 }
 
 function textOf(content: string | readonly { type: string; text?: string }[]): string {

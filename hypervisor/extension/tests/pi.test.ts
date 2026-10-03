@@ -141,8 +141,8 @@ test("a fork sends the turn's last request as it went, then the turn's answer an
 test("the log holds every turn: the long message by its gist, with its whole text kept raw", () => {
 	const log = readFileSync(path.join(store, "log", "LOG.txt"), "utf8");
 	for (let n = 1; n <= TURNS; n++) assert.ok(log.includes(`turn-${n}-marker`), `turn ${n}`);
-	assert.ok(log.includes("turn-3-marker: max sent a long message, its gist [raw:"));
-	assert.ok(log.includes("the gist of a long answer [raw:"));
+	assert.ok(log.includes("max: turn-3-marker: max sent a long message, its gist [raw:"));
+	assert.ok(log.includes("me: the gist of a long answer [raw:"));
 });
 
 test("each fork's calls are logged with the tokens they read from cache and wrote", () => {
