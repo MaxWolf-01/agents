@@ -330,7 +330,8 @@ def test_the_view_is_refused_while_a_compression_it_needs_is_outstanding(store: 
 
 
 @settings(max_examples=40, deadline=None)
-@given(st.integers(0, 60), st.integers(5, 12), st.integers(1, 6))
+# Seven lines tile any log of up to 127 entries, so every view here renders.
+@given(st.integers(0, 60), st.integers(7, 12), st.integers(1, 6))
 def test_stays_says_how_many_lines_the_view_starts_with_once_more_entries_are_logged(logged: int, budget: int, ahead: int) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = Path(tmp) / "store"

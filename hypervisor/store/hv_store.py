@@ -253,11 +253,8 @@ def view(d: Path, cmd: View) -> None:
 
 
 def stays(d: Path, cmd: Stays) -> None:
-    T = memo.log_len(d)
-    lines = memo.cover(T, cmd.budget)
-    for k in range(1, cmd.ahead + 1):
-        later = memo.cover(T + k, cmd.budget)
-        print(next((i for i, (a, b) in enumerate(zip(lines, later)) if a != b), min(len(lines), len(later))))
+    for kept in lines_kept(memo.log_len(d), cmd.ahead, cmd.budget):
+        print(kept)
 
 
 def zoom(d: Path, cmd: Zoom) -> None:
@@ -438,6 +435,17 @@ def view_line(d: Path, lo: int, hi: int) -> str:
         return f"{stamp} #{i} {text}"
     text = read_compression(d, lo, hi) if hi <= memo.log_len(d) else None
     return f"{memo.log_get(d, lo)[1]} #{lo}-{hi - 1} {text or '(not compressed yet)'}"
+
+
+def lines_kept(T: int, ahead: int, budget: int) -> list[int]:
+    """For each k from 1 to `ahead`, how many of the first lines of the view of T entries the view of
+    T + k entries starts with."""
+    lines = memo.cover(T, budget)
+    kept = []
+    for k in range(1, ahead + 1):
+        later = memo.cover(T + k, budget)
+        kept.append(next((i for i, (a, b) in enumerate(zip(lines, later)) if a != b), min(len(lines), len(later))))
+    return kept
 
 
 def header(d: Path, T: int, at: datetime.datetime) -> str:
