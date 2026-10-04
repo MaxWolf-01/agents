@@ -63,11 +63,11 @@ def closed_port() -> int:
 def opened(record: Path, count: int) -> list[tuple[str, str]]:
     """What the stand-in browser was asked to open, as (session, path) in the order the opens
     landed, once `count` have landed or five seconds have passed: the hook starts each open and
-    waits on none. A tenth of a second more catches an open beyond the count."""
+    waits on none. An open beyond the count may land later, so what proves none was asked for is
+    the log, which `main` writes before it returns."""
     deadline = time.monotonic() + 5
     while (len(record.read_text().splitlines()) if record.exists() else 0) < count and time.monotonic() < deadline:
         time.sleep(0.05)
-    time.sleep(0.1)
     return [tuple(line.split("\t", 1)) for line in record.read_text().splitlines()] if record.exists() else []
 
 
@@ -301,10 +301,12 @@ def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_whe
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
 # for them, from the repo root the session's directory sits under: a path from the root joined to
 # it, an absolute or `~` path as it is, a URL as it is, and a fragment dropped, as the hub finds a
-# page by its file. A ticket file is no artefact (session-pages-feed-the-hub#P2) and is handed none.
+# page by its file, so a page opens once however many of its sections are linked. A ticket file is no artefact (session-pages-feed-the-hub#P2) and is handed none.
 RECORD_LINKS = {
     "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
     "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
+    "two sections of one page": (["- [P1](agent/show/x/spec.html#p1)", "- [P2](agent/show/x/spec.html#p2)"],
+                                 ["{root}/agent/show/x/spec.html"]),
     "a file outside the repo": (["- [The figure](/srv/figures/fig.svg)"], ["/srv/figures/fig.svg"]),
     "a file under home": (["- [Notes](~/notes/fig.html)"], ["{home}/notes/fig.html"]),
     "a URL": (["- [The run](http://127.0.0.1:8000/run?step=3)"], ["http://127.0.0.1:8000/run?step=3"]),
@@ -352,7 +354,22 @@ def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not
     with_write(unrecorded, "Write", record)
     run(payload(worked_example, unrecorded))
     assert opened(browser, first + 1)[first:] == [(worked_example.name, "/srv/figures/fig.svg")]
-    assert logged(attended, "opened")[-2]["opened"] == "not reopened: no hub answers"
+    assert [entry["opened"] for entry in logged(attended, "page")][-1] == "not reopened: no hub answers"
+
+
+def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
+    worked_example: Path, transcript: Path, stale_page: str, browser: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], attended: Path,
+) -> None:
+    """A page on disk that this hook did not write, a render of an older version say, is rendered
+    over and, with no hub, not opened again; the turn's artefacts still open, and the line still
+    shows under the recap."""
+    (worked_example / PAGE).write_text(stale_page)
+    run(payload(worked_example, transcript))
+    assert (worked_example / PAGE).read_text() != stale_page
+    assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
+    assert str(worked_example / PAGE) not in [path for _, path in opened(browser, 2)]
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the hub ----------------------------------------------------------------
@@ -402,6 +419,48 @@ def test_the_hooks_line_links_the_sessions_unit_where_a_hub_answers_and_the_page
     link = f"http://127.0.0.1:{port}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
     run(payload(worked_example, transcript))
     assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
+
+
+@pytest.fixture
+def speaks_no_http() -> Iterator[int]:
+    """Something on a port of its own that answers a request with a line that is no HTTP. Hands back
+    the port."""
+    server = socket.create_server(("127.0.0.1", 0))
+
+    def answer() -> None:
+        while True:
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
+            with connection:
+                connection.recv(1024)
+                connection.sendall(b"hello, this is no hub\r\n")
+
+    threading.Thread(target=answer, daemon=True).start()
+    yield server.getsockname()[1]
+    server.close()
+
+
+# Each hands back a hub port the health check cannot ask.
+UNASKABLE = {
+    "a port that is no number": lambda request: "abc",
+    "something on the port that speaks no HTTP": lambda request: str(request.getfixturevalue("speaks_no_http")),
+}
+
+
+@pytest.mark.parametrize("port", UNASKABLE.values(), ids=UNASKABLE)
+def test_a_hub_port_that_cannot_be_asked_is_no_hub(
+    port: Callable[[pytest.FixtureRequest], str], worked_example: Path, transcript: Path, browser: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, attended: Path,
+) -> None:
+    """The first render still opens the page, keeps `sessions/` out of the agent repo's status and
+    links the page's file, as it does where nothing listens."""
+    monkeypatch.setenv("CONTAINER_HUB_PORT", port(request))
+    run(payload(worked_example, transcript))
+    assert (worked_example.name, str(worked_example / PAGE)) in opened(browser, 1)
+    assert logged(attended, "excluded")
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the sessions directory kept out of the agent repo's status -------------
@@ -888,7 +947,7 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
 def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
     """turns-end-on-their-recap#P4 as recap-states-action-items amends it: what waits on the user,
     as action items, one plain line each, each open question named by what it decides, and no
-    pointer to the page."""
+    pointer to the page. A phrase pin: each part is RECAP's own wording of the ticket's."""
     for part in ("what waits on the user", "action items", "one plain line each", "named by what it decides",
                  "no line points at the page"):
         assert part in stop_hook.RECAP

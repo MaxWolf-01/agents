@@ -13,13 +13,14 @@ wrote it (write_hook.py), so it is over by the time the turn ends.
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
-A render hands `claude-browser`, where the host has one, every artefact the record this turn wrote
-links (a ticket file is none), each told the session through MX_ORIGIN_SESSION. Where the
-container hub answers, every render hands it the page too: the hub lands each page in the
-session's unit and turns a repeat into a reload. Where none does, only the render that writes the
-page first opens it, since a repeat would be another tab. The first render also keeps `sessions/` out of the agent
-repo's `git status`, through that clone's `.git/info/exclude`, where nothing ignores it yet. Each
-open and the exclude is a line of the log too, saying what came of it.
+A render opens each artefact that this turn's record links with `claude-browser`, where the host
+has one, and tells it the session through MX_ORIGIN_SESSION. A ticket file is not an artefact, so
+it never opens. Where the container hub answers, every render opens the page too: the hub lands
+each page in the session's unit and turns a repeat into a reload. Where none does, only the render
+that writes the page first opens it, since a repeat would be another tab. The first render also
+keeps `sessions/` out of the agent repo's `git status`, through that clone's `.git/info/exclude`,
+where nothing ignores it yet. Each open, and the exclude, is a line of the log saying what came of
+it.
 
 The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
 whose turn wrote a record shows the user one line of the hook's own under it, as a `systemMessage`:
@@ -35,7 +36,7 @@ import os
 import shutil
 import subprocess
 import sys
-import urllib.error
+import http.client
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, ROOT, RecordError, Session, Turn, left_alone, open_questions, page, read_session, resolved, session_directory,
+    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, resolved, session_directory,
     written_this_turn,
 )
 
@@ -67,6 +68,14 @@ class Decision:
 
 # The longest chat reply a session that has a page ends a turn with and writes no record.
 CHAT_LINES = 3
+
+# The container hub's half of the contract, which the dotfiles' `container-hub --help` names: the
+# port it serves on, the variable that moves it, the path it answers while it runs, and its tab at a
+# session's unit.
+HUB_PORT = 8377
+HUB_PORT_VARIABLE = "CONTAINER_HUB_PORT"
+HUB_HEALTH = "/.health"
+HUB_UNIT = "/u/{session}"
 
 # How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap. The
 # hook shows the link to the page under it.
@@ -143,22 +152,20 @@ def shown(session: Session) -> str:
 def hub_unit(session_id: str) -> str:
     """The container hub's tab at the session's unit, where a hub answers its health check on this
     host; empty where none does."""
-    hub = f"http://127.0.0.1:{os.environ.get('CONTAINER_HUB_PORT') or 8377}"
+    hub = f"http://127.0.0.1:{os.environ.get(HUB_PORT_VARIABLE) or HUB_PORT}"
     try:
-        with urllib.request.urlopen(f"{hub}/.health", timeout=1) as answer:
-            answered = 200 <= answer.status < 300
-    except (OSError, ValueError):  # refused, timed out, an HTTP error status, a port that is no number
+        with urllib.request.urlopen(hub + HUB_HEALTH, timeout=1):
+            return hub + HUB_UNIT.format(session=session_id)
+    # Refused, timed out or an error status (OSError); a port that is no number (InvalidURL), or
+    # something on the port that speaks no HTTP (BadStatusLine), both HTTPException.
+    except (OSError, http.client.HTTPException):
         return ""
-    return f"{hub}/u/{session_id}" if answered else ""
 
 
 def linked(session: Session, turn: Turn) -> tuple[str, ...]:
-    """What each of the turn's artefacts opens, resolved as the page's artefact column resolves a link."""
-    root = ROOT.set(session.root)
-    try:
-        return tuple(resolved(link.path) for link in turn.artefacts)
-    finally:
-        ROOT.reset(root)
+    """What the turn's artefacts open, each file or URL once, resolved as the page's artefact column
+    resolves a link: two links into sections of one page open it once."""
+    return tuple(dict.fromkeys(resolved(link.path, session.root) for link in turn.artefacts))
 
 
 def written_outside_write(session: Session) -> Turn | None:
@@ -225,13 +232,13 @@ def exclude_sessions(sessions: Path) -> str:
 
 def main() -> None:
     hook = json.load(sys.stdin)
-    directory = session_directory(Path(hook["cwd"]), hook["session_id"])
+    session_id = hook["session_id"]
+    directory = session_directory(Path(hook["cwd"]), session_id)
     decision = decide(hook, directory)
-    turn_review.log(hook["session_id"], verb=decision.verb, why=decision.why, directory=directory and str(directory))
+    turn_review.log(session_id, verb=decision.verb, why=decision.why, directory=directory and str(directory))
     if decision.verb == "render":
         first = not (directory / PAGE).exists()
         (directory / PAGE).write_text(decision.page)
-        session_id = hook["session_id"]
         unit = hub_unit(session_id)
         opened = open_in_browser(str(directory / PAGE), session_id) if unit or first else "not reopened: no hub answers"
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
