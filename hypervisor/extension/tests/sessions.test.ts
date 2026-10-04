@@ -14,7 +14,7 @@ import { entriesOf } from "../src/entries.ts";
 import { eventMessage, eventsIn } from "../src/events.ts";
 import { post, type Told, take } from "../src/inbox.ts";
 import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
-import { changes, type Seen, watched } from "../src/watch.ts";
+import { changes, type Seen, watch, watched } from "../src/watch.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-sessions-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -286,4 +286,86 @@ test("the inbox hands over each message once, oldest first, and keeps them when 
 	assert.deepEqual(readdirSync(path.join(store, "inbox")), []);
 	await take(store, (told) => (texts = told.map((t) => t.text)));
 	assert.deepEqual(texts, []);
+});
+
+/** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
+function watching(at: string, store: string, ready = () => true) {
+	const delivered: string[][] = [];
+	const failures: unknown[] = [];
+	const w = watch({ home: at, store }, 2 ** 30, (events) => delivered.push(events), (error) => failures.push(error), ready);
+	return { ...w, delivered, failures, settled: () => new Promise((settle) => setTimeout(settle, 100)) };
+}
+
+/** A home whose registry holds this process as the claude a spawned window runs, in `status`. */
+function spawnedHere(status: string) {
+	const { home: at, store } = home();
+	registered(at, process.pid, { name: "orch-1", status });
+	mkdirSync(store);
+	writeFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: "t", pane: "%5", pid: process.pid, window: "my-repo:board-fix", dir: at })}\n`);
+	return { home: at, store, entry: path.join(at, ".claude", "sessions", `${process.pid}.json`) };
+}
+
+test("the watch takes a registry file caught mid-write for no change, and a live session's turn ending for one", async () => {
+	const { home: at, store, entry } = spawnedHere("busy");
+	const w = watching(at, store);
+	try {
+		await w.settled();
+		writeFileSync(entry, "{");
+		await w.look();
+		assert.deepEqual(w.delivered, [], "the session's process lives, so it has not ended");
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await w.look();
+		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle"]]);
+	} finally {
+		w.stop();
+	}
+});
+
+test("the watch holds its events while pi cannot take them, the inbox untouched, and hands them over once it can", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	let ready = false;
+	const w = watching(at, store, () => ready);
+	try {
+		await w.settled();
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
+		await w.look();
+		assert.deepEqual(w.delivered, []);
+		assert.equal(readdirSync(path.join(store, "inbox")).length, 1);
+		assert.deepEqual(w.failures, [], "holding is not a failure");
+		ready = true;
+		await w.look();
+		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle", "my-repo:board-fix (hv tell): done"]]);
+		await w.look();
+		assert.equal(w.delivered.length, 1, "each event once");
+	} finally {
+		w.stop();
+	}
+});
+
+test("a look whose delivery fails leaves its events for the next look, and two looks at once deliver once", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	const delivered: string[][] = [];
+	let refuse = true;
+	const failures: unknown[] = [];
+	const w = watch(
+		{ home: at, store },
+		2 ** 30,
+		(events) => {
+			if (refuse) throw new Error("not now");
+			delivered.push(events);
+		},
+		(error) => failures.push(error),
+	);
+	try {
+		await new Promise((settle) => setTimeout(settle, 100));
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await w.look();
+		assert.equal(failures.length, 1);
+		refuse = false;
+		await Promise.all([w.look(), w.look()]);
+		assert.deepEqual(delivered, [["my-repo:board-fix: busy → idle"]]);
+	} finally {
+		w.stop();
+	}
 });

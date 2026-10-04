@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { budgetOf } from "../src/explore-run.ts";
-import { type Request, standInAnthropic, textOf, USAGE } from "./stand-in-anthropic.ts";
+import { type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
 
 const RUN = path.resolve(import.meta.dirname, "../src/explore-run.ts");
 const PER_CALL = USAGE.input_tokens + USAGE.output_tokens + USAGE.cache_read_input_tokens + USAGE.cache_creation_input_tokens;
@@ -67,8 +67,7 @@ let bySteps: Awaited<ReturnType<typeof explore>>;
 let byTokens: Awaited<ReturnType<typeof explore>>;
 before(async () => {
 	anthropic = await standInAnthropic(answer);
-	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
+	standInModels(agent, anthropic.url);
 	bySteps = await explore("steps", "--steps", String(STEPS), "--tokens", String(AMPLE));
 	// A step makes three calls: under one step's tokens, the budget allows the first step and no second.
 	byTokens = await explore("tokens", "--tokens", String(2 * PER_CALL));

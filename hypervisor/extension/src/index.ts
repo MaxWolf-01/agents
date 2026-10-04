@@ -88,22 +88,42 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		let sent: Finished["payload"] | undefined;
 
 		let watching: ReturnType<typeof watch> | undefined;
+		/**
+		 * Whether a run is past `before_agent_start` and not yet running. pi counts a run as running only once that
+		 * hook returns, and this one waits for the view, so an event sent then would start a second run beside it.
+		 */
+		let starting = false;
 
-		pi.on("session_start", async () => {
+		pi.on("session_start", async (_event, ctx) => {
 			pi.setActiveTools([...tools, ...(exploring() ? reading : steering)].map((tool) => tool.name));
 			await store.init();
+			// An event goes when pi starts a run with it (idle) or queues it (running), never while it compacts or starts.
+			const ready = () => !starting && (ctx.isIdle() || ctx.signal !== undefined);
 			if (!exploring())
 				watching ??= watch(
 					config,
 					WATCH_MS,
 					(events) => pi.sendUserMessage(eventMessage(events), { deliverAs: "followUp" }),
 					(error) => void watchLog({ at: new Date().toISOString(), error: String(error) }).catch(() => {}),
+					ready,
 				);
 		});
 		pi.on("before_agent_start", async (event) => {
-			view = await render();
+			starting = true;
+			try {
+				view = await render();
+			} catch (error) {
+				starting = false;
+				throw error;
+			}
 			prompt = typeof event.prompt === "string" ? event.prompt : undefined;
 			return { systemPrompt: exploring() ? `${system.trimEnd()}\n\n${readFileSync(EXPLORE_PROMPT, "utf8")}` : system };
+		});
+		pi.on("agent_start", () => {
+			starting = false;
+		});
+		pi.on("agent_settled", () => {
+			starting = false;
 		});
 		pi.on("context", async (event) => {
 			if (!Array.isArray(event.messages)) return undefined;

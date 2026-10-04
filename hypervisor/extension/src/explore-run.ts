@@ -10,10 +10,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { fromEnvironment } from "./index.ts";
+import { HYPERVISOR, MODEL, PI } from "./pi.ts";
 
-const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
-const EXTENSION = path.resolve(import.meta.dirname, "index.ts");
-const MODEL = "anthropic/claude-opus-5-5";
 const GOAL = "Gather what makes you the best assistant, coordinator of coding agents, secretary, collaborator and companion to max.";
 export const USAGE =
 	"usage: explore-run.ts [--steps N] [--tokens N] [--model provider/id]\n" +
@@ -37,7 +35,7 @@ export async function explore(budget: Budget, model: string): Promise<number> {
 	const before = forkTokens(forks, 0).lines;
 	const pi = spawn(
 		process.execPath,
-		[PI, "--mode", "rpc", "--no-session", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--explore", "--model", model],
+		[PI, "--mode", "rpc", "--no-session", ...HYPERVISOR, "--explore", "--model", model],
 		{ cwd: config.home, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	pi.stdout!.setEncoding("utf8");
