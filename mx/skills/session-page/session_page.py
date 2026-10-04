@@ -732,7 +732,7 @@ def assemble(session: Session, now: datetime) -> str:
 <main class="page">
   <section class="intro">
     <h1 class="v-title">{title}</h1>
-    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> ·{turns} turn{'s' * (turns != 1)} · {esc(span)} · rendered {now:%Y-%m-%d %H:%M}</p>
+    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {esc(span)} · rendered {now:%Y-%m-%d %H:%M}</p>
     <div class="prose brief">{block(session.brief)}</div>
     <div class="actions">
       <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}

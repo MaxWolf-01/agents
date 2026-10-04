@@ -61,6 +61,7 @@ with sync_playwright() as pw:
     # what a click on the session id leaves on the clipboard
     context.grant_permissions(["clipboard-read", "clipboard-write"])
     page.click("#session-id")
+    page.wait_for_function("document.querySelector('#toast').textContent.startsWith('copied: ')", timeout=5000)
     out["copied"] = page.evaluate("navigator.clipboard.readText()")
     out["chips"] = page.evaluate('''[...document.querySelectorAll("details.turn")].map((t) => [t.id,
         [...t.querySelectorAll(":scope > summary .chip-link")].filter((a) => a.checkVisibility()).map((a) => a.textContent)])''')
@@ -89,7 +90,7 @@ with sync_playwright() as pw:
     out["opened"]["t03 1"] = opened("1")
     out["clicked"] = page.evaluate("clicked")
     page.keyboard.press("2")
-    page.wait_for_function("document.querySelector('#toast').textContent !== ''", timeout=5000)
+    page.wait_for_function("document.querySelector('#toast').textContent.startsWith('turn ')", timeout=5000)
     out["toast"] = page.text_content("#toast")
     # a window too short for the column to show every group: focusing the oldest turn scrolls its
     # group into the column's view

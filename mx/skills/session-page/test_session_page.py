@@ -504,6 +504,7 @@ def test_the_session_id_copies_whole_from_the_meta_line(worked_example: Path, tr
     meta = re.search(r'<p class="v-meta">session (.*?)</p>', render_session(worked_example, transcript, now=NOW)).group(1)
     button = elements(meta, "session-id")["session-id"]
     assert f'data-copy="{SESSION}"' in button and button.endswith(f">{SESSION[:8]}</button>")
+    assert re.sub(r"<[^>]+>", "", meta).startswith(f"{SESSION[:8]} · 4 turns · "), meta
 
 
 def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_the_session(
@@ -517,10 +518,10 @@ def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_th
     register(registry, 101, "11111111-2222-3333-4444-555555555555", "agents-12", updated=3)
     (registry / "102.json").write_text('{"sessionId": ')
     assert "session-name" not in render()
-    register(registry, 103, SESSION, "agents-46", updated=2)
-    register(registry, 104, SESSION, "agents-45", updated=1)
+    register(registry, 103, SESSION, "agents-9", updated=1)
+    register(registry, 104, SESSION, "agents-10", updated=2)
     actions = re.search(r'<div class="actions">(.*?)</div>', render(), re.S).group(1)
-    assert re.fullmatch(r'\s*<button [^>]*id="resume".*?</button>\s*<span [^>]*id="session-name"[^>]*>agents-46</span>\s*',
+    assert re.fullmatch(r'\s*<button [^>]*id="resume".*?</button>\s*<span [^>]*id="session-name"[^>]*>agents-10</span>\s*',
                         actions, re.S), actions
 
 
