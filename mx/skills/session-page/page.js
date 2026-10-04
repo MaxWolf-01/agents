@@ -78,20 +78,24 @@ const say = (text) => {
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => toast.classList.remove("on"), 2200)
 }
-const resume = document.getElementById("resume")
-const copy = async () => {
-  const cmd = resume.dataset.cmd
-  try { await navigator.clipboard.writeText(cmd) }
+const write = async (text) => {
+  try { await navigator.clipboard.writeText(text) }
   catch {
-    const ta = Object.assign(document.createElement("textarea"), { value: cmd })
+    const ta = Object.assign(document.createElement("textarea"), { value: text })
     document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove()
   }
+  say("copied: " + text)
+}
+const resume = document.getElementById("resume")
+const copy = async () => {
+  await write(resume.dataset.cmd)
   resume.classList.add("copied")
   resume.querySelector("span").textContent = "copied"
-  say("copied: " + cmd)
   setTimeout(() => { resume.classList.remove("copied"); resume.querySelector("span").textContent = "copy resume command" }, 1600)
 }
 resume.addEventListener("click", copy)
+const id = document.getElementById("session-id")
+id.addEventListener("click", () => write(id.dataset.copy))
 
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return

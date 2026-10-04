@@ -60,6 +60,9 @@ main.page { display: grid; grid-template-columns: minmax(0, 1fr) var(--column); 
 .brief > * { max-width: none; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1.75rem; }
 #resume.copied { border-color: var(--accent); color: var(--accent); }
+button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: copy; }
+button.id:hover { color: var(--accent); }
+.actions .name { color: var(--body); }
 
 .waiting { padding-bottom: 2.75rem; }
 .blk { position: relative; scroll-margin-top: 1.5rem; }

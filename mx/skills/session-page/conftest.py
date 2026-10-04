@@ -36,6 +36,16 @@ def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return turn_review.LOG
 
 
+@pytest.fixture(autouse=True)
+def registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Claude Code's session registry, the check's own and empty until it writes an entry, so no
+    page reads a name from the sessions running on this machine. Handed back."""
+    config = tmp_path / "claude-config"
+    (config / "sessions").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    return config / "sessions"
+
+
 def unreachable(system: str, prompt: str) -> list[dict]:
     """A reviewer stand-in for a check where no model call may be made. It fails the check through
     `pytest.fail`, which the review's fail-open handler does not catch."""

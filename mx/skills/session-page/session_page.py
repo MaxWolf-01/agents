@@ -115,8 +115,10 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     spoken = said(entries)
     times = [written.get(t.number) for t in turns]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
+    session = str(front["session"])
     return Session(
-        id=str(front["session"]),
+        id=session,
+        name=registered_name(session),
         repo=Path(str(front["repo"])),
         title=title,
         brief=sections.get("Brief", (0, ""))[1],
@@ -127,6 +129,23 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=directory.parents[len(SESSIONS.parts)],
     )
+
+
+def registered_name(session: str) -> str:
+    """The session's short name (the `agents-46` kind Claude Code shows), from its entry in Claude
+    Code's session registry, one `sessions/<pid>.json` per running process under the config
+    directory. A session resumed in two processes has two entries; the one updated last names it.
+    Empty where no entry is the session's."""
+    registry = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "sessions"
+    named = []
+    for path in registry.glob("*.json"):
+        try:
+            entry = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue  # an entry half written, or gone between the glob and the read
+        if isinstance(entry, dict) and entry.get("sessionId") == session and entry.get("name"):
+            named.append((entry.get("updatedAt") or 0, str(entry["name"])))
+    return max(named)[1] if named else ""
 
 
 def left_alone() -> str:
@@ -256,6 +275,7 @@ class Session:
     title: str  # session.md's H1
     brief: str  # its `## Brief`
     root: Path  # the repo root the directory sits under, which a record's paths are from
+    name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
@@ -686,6 +706,8 @@ def assemble(session: Session, now: datetime) -> str:
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
     body = "".join(turn_section(t, session.settled, open_=i == 0) for i, t in enumerate(newest_first))
     title = inline(session.title)
+    name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
+            if session.name else "")
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -710,10 +732,10 @@ def assemble(session: Session, now: datetime) -> str:
 <main class="page">
   <section class="intro">
     <h1 class="v-title">{title}</h1>
-    <p class="v-meta">session {esc(session.id[:8])} · {turns} turn{'s' * (turns != 1)} · {esc(span)} · rendered {now:%Y-%m-%d %H:%M}</p>
+    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {esc(span)} · rendered {now:%Y-%m-%d %H:%M}</p>
     <div class="prose brief">{block(session.brief)}</div>
     <div class="actions">
-      <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>
+      <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
     </div>
   </section>{top}
   <section class="turns" aria-labelledby="turns">
