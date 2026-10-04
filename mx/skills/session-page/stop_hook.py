@@ -60,11 +60,12 @@ class Decision:
 # The longest chat reply a session that has a page ends a turn with and writes no record.
 CHAT_LINES = 3
 
-# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap, no
-# longer than the reply that needs no record. The hook shows the page's link under it.
+# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap. The
+# hook shows the page's link under it.
 RECAP = (
-    f"end the turn on its chat recap: {CHAT_LINES} short lines at most, one each for what the page holds now, "
-    "what comes next, and what waits on the user, each open question named by what it decides"
+    "end the turn on its chat recap: what waits on the user, as action items, one plain line each that reads "
+    "on its own, each open question named by what it decides, or one line saying nothing does; "
+    "no line points at the page"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 IN_THE_CHAT = (
