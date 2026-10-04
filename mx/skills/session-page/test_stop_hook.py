@@ -293,7 +293,9 @@ def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_whe
         run(payload(worked_example, unrecorded))
     page = str(worked_example / PAGE)
     assert opened(browser, opens) == [(worked_example.name, page)] * opens
-    assert [(entry["page"], entry["opened"].startswith("started ")) for entry in logged(attended, "opened")] == [(page, True)] * opens
+    said = [(entry["page"], entry["opened"]) for entry in logged(attended, "opened")]
+    assert [(where, what.startswith("started ")) for where, what in said[:opens]] == [(page, True)] * opens
+    assert said[opens:] == [(page, "not reopened: no hub answers")] * (3 - opens)
 
 
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
@@ -317,7 +319,7 @@ RECORD_LINKS = {
 
 
 @pytest.mark.parametrize("links, handed", RECORD_LINKS.values(), ids=RECORD_LINKS)
-def test_every_link_the_turns_record_carries_is_handed_to_the_browser_as_the_sessions(
+def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_sessions(
     links: list[str], handed: list[str], worked_example: Path, unrecorded: Path, browser: Path,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path,
 ) -> None:
@@ -335,6 +337,22 @@ def test_every_link_the_turns_record_carries_is_handed_to_the_browser_as_the_ses
     assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
     assert [(entry["artefact"], entry["opened"].startswith("started ")) for entry in logged(attended, "artefact")] == [
         (path, True) for path in expected]
+
+
+def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not_reopen(
+    worked_example: Path, unrecorded: Path, transcript: Path, browser: Path, run: Callable[[dict], None],
+    attended: Path,
+) -> None:
+    """stop-hook-opens-the-turns-artefacts' D4 leaves a turn's artefacts out of it: with no hub, a
+    render after the first hands `claude-browser` the artefact its turn linked and not the page."""
+    run(payload(worked_example, transcript))
+    first = len(opened(browser, 3))
+    record = worked_example / "turns" / "05.md"
+    record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n")
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    assert opened(browser, first + 1)[first:] == [(worked_example.name, "/srv/figures/fig.svg")]
+    assert logged(attended, "opened")[-2]["opened"] == "not reopened: no hub answers"
 
 
 # ---- the hub ----------------------------------------------------------------
