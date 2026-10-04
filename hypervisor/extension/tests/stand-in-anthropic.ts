@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -71,4 +71,11 @@ export function textOf(message: Request["messages"][number], results = true): st
 export function standInModels(agent: string, url: string) {
 	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
+}
+
+const prompt = (name: string) => readFileSync(path.resolve(import.meta.dirname, "..", name), "utf8").trim();
+
+/** Whether a system block is the conversation's prompt: the hypervisor's, with what it says of the session tools and nothing of explore mode. */
+export function conversing(block: { text: string }): boolean {
+	return block.text.startsWith(prompt("system-prompt.md")) && block.text.includes(prompt("sessions-prompt.md")) && !block.text.includes("## Explore mode");
 }

@@ -153,7 +153,7 @@ async function places({ home, store }: ExploreConfig) {
 			const real = await realpath(absolute(home, spelled)).catch((error: NodeJS.ErrnoException) => {
 				throw new Error(`${spelled}: ${error.code === "ENOENT" ? "no such file or directory" : error.code}`);
 			});
-			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles or the hypervisor's own store`);
+			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles, a process's files under /proc, or the hypervisor's own store`);
 			return real;
 		},
 		shown: (real: string) => shown(home, real),

@@ -26,6 +26,8 @@ export interface Config {
 }
 
 const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
+/** What the system prompt gains in a conversation, where the session tools are the agent's, and in explore mode. */
+const SESSIONS_PROMPT = fileURLToPath(new URL("../sessions-prompt.md", import.meta.url));
 const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta.url));
 /** How often the spawned sessions and the inbox are looked at. */
 const WATCH_MS = 3000;
@@ -33,7 +35,7 @@ const WATCH_MS = 3000;
 /**
  * The hypervisor as a pi extension. It registers the hypervisor's tools and makes them the whole active set, so none
  * of pi's own tools (`bash`, `edit`, `write`, an unguarded `read`) stays active. With `--explore`, each run is one
- * explore step: the explorer's read tools take the session tools' place, the system prompt gains explore mode's, and
+ * explore step: the explorer's read tools take the session tools' place, the system prompt explore mode's part theirs, and
  * the step is logged as its tool calls and its finding. Outside explore mode, what the spawned sessions do and what
  * orchestrators leave with `hv tell` reach the agent as `<event>` messages, which start a turn of their own when none
  * runs.
@@ -117,7 +119,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 				throw error;
 			}
 			prompt = typeof event.prompt === "string" ? event.prompt : undefined;
-			return { systemPrompt: exploring() ? `${system.trimEnd()}\n\n${readFileSync(EXPLORE_PROMPT, "utf8")}` : system };
+			return { systemPrompt: `${system.trimEnd()}\n\n${readFileSync(exploring() ? EXPLORE_PROMPT : SESSIONS_PROMPT, "utf8")}` };
 		});
 		pi.on("agent_start", () => {
 			starting = false;

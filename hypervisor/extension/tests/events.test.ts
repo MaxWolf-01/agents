@@ -10,7 +10,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { post } from "../src/inbox.ts";
 import { HYPERVISOR, PI } from "../src/pi.ts";
-import { type Request, standInAnthropic, standInModels, textOf } from "./stand-in-anthropic.ts";
+import { conversing, type Request, standInAnthropic, standInModels, textOf } from "./stand-in-anthropic.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-events-")));
 const store = path.join(dir, "store");
@@ -106,8 +106,7 @@ test("a spawned session's turn ending starts a turn of the hypervisor's own, car
 	assert.equal(request.messages.length, 2);
 	assert.ok(textOf(request.messages[0]).includes("max-marker"), "the earlier turn is in the view");
 	assert.equal(textOf(request.messages[1]), "<event>\nagents:board-fix: busy → idle\n</event>");
-	const prompt = readFileSync(path.resolve(import.meta.dirname, "../system-prompt.md"), "utf8");
-	assert.ok(request.system?.some((b) => b.text === prompt.trim() || b.text === prompt), "the hypervisor's system prompt");
+	assert.ok(request.system?.some(conversing), "the hypervisor's system prompt");
 });
 
 test("an orchestrator's hv tell starts a turn carrying what it said and where from", () => {

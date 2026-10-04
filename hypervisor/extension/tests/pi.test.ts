@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { HYPERVISOR, MODEL, PI } from "../src/pi.ts";
-import { type Reply, type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
+import { conversing, type Reply, type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
 
 const TURNS = 10;
 const LONG = `turn-3-marker ${"a long message that no entry holds as it is. ".repeat(20)}`;
@@ -134,8 +134,7 @@ test("the memory and session tools are the whole tool set, and zoom answers from
 });
 
 test("the system prompt is the hypervisor's", () => {
-	const prompt = readFileSync(path.resolve(import.meta.dirname, "../system-prompt.md"), "utf8");
-	for (const { request } of sent) assert.ok(request.system?.some((b) => b.text === prompt.trim() || b.text === prompt));
+	for (const { request } of sent) assert.ok(request.system?.some(conversing));
 });
 
 test("a fork sends the turn's last request as it went, then the turn's answer and its ask", () => {

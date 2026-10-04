@@ -103,7 +103,7 @@ test("explore mode reads with the read tools and memex beside the memory tools, 
 	// On an OAuth key, pi sends a tool named like one of Claude Code's under Claude Code's casing: read as Read.
 	for (const request of [...steps.values()].flat()) {
 		assert.deepEqual(request.tools?.map((t) => t.name.toLowerCase()).sort(), ["find", "grep", "ls", "memex", "raw", "read", "recall", "zoom"]);
-		assert.ok(request.system?.some((b) => b.text.includes("## Explore mode")));
+		assert.ok(request.system?.some((b) => b.text.includes("## Explore mode") && !b.text.includes("## Sessions")), "explore mode's prompt, and nothing of the session tools it lacks");
 	}
 });
 
