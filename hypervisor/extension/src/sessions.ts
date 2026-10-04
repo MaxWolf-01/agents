@@ -45,13 +45,13 @@ const PANE_LINES = 50;
 const BRIEFLY = "Your answer goes back to the hypervisor, an agent that coordinates max's sessions and pays for every word it reads: answer with what it asked for and nothing else, as briefly as the answer allows.";
 
 /**
- * Opens a tmux window named `name` in the tmux session of the repo at `dir`, running interactive Claude Code in auto
- * mode with `brief` as its first prompt. The repo's tmux session is started if it does not run yet.
+ * Opens a tmux window named `name` in the tmux session of the repo `dir` lies in, running interactive Claude Code in
+ * auto mode in `dir` with `brief` as its first prompt. The repo's tmux session is started if it does not run yet.
  */
 export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: string; name: string; brief: string }): Promise<string> {
 	const where = await directory(config.home, dir);
 	const window = slug(name);
-	const group = slug(path.basename(where));
+	const group = slug(path.basename(await repo(where)));
 	if (!window) throw new Error(`"${name}" leaves no window name; use letters, digits, - or _`);
 	if (!brief.trim()) throw new Error("the brief is empty");
 	const claude = ["claude", "--permission-mode", "auto", "--name", window, "--", `${brief.trim()}\n\n${reportBack(config.store)}`];
@@ -68,7 +68,9 @@ export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: 
 	const spawned: Spawned = { at: new Date().toISOString(), pane, pid: Number(pid), window: `${group}:${window}`, dir: where };
 	await mkdir(config.store, { recursive: true });
 	await appendFile(path.join(config.store, SPAWNED), `${JSON.stringify(spawned)}\n`);
-	return `Started ${spawned.window} in ${where}. max steps in with: tmux switch-client -t ${pane || `=${group}:${window}`}`;
+	const started = `Started ${spawned.window} in ${where}. max steps in with: tmux switch-client -t ${pane || `=${group}:${window}`}`;
+	if (await trusted(config.home, where)) return started;
+	return `${started}\nClaude Code has no record of being trusted in ${shown(config.home, where)}, so its trust dialog may hold the brief until max accepts it in that window.`;
 }
 
 /** Sends `message` to a session's inbox socket, as a cross-session message from the hypervisor. */
@@ -232,6 +234,38 @@ async function directory(home: string, dir: string): Promise<string> {
 	if (!where || !(await stat(where)).isDirectory()) throw new Error(`${dir} is not a directory`);
 	if (where.includes("#")) throw new Error(`${where}: a directory with # in its path cannot start a tmux window`);
 	return where;
+}
+
+/**
+ * The repo `dir` lies in: the nearest directory at or above it holding `.git`, and for a linked worktree, whose `.git`
+ * is a file naming a directory under the main one's `.git/worktrees/`, that main worktree. `dir` itself when no
+ * directory above it holds `.git`.
+ */
+export async function repo(dir: string): Promise<string> {
+	for (let at = dir; ; at = path.dirname(at)) {
+		const git = path.join(at, ".git");
+		const info = await stat(git).catch(() => undefined);
+		if (info?.isDirectory()) return at;
+		if (info?.isFile()) {
+			const linked = /^gitdir: (.*)\/\.git\/worktrees\/[^/]+\/?$/m.exec(await readFile(git, "utf8").catch(() => ""));
+			return linked ? path.resolve(at, linked[1]) : at;
+		}
+		if (at === path.dirname(at)) return dir;
+	}
+}
+
+/**
+ * Whether Claude Code's config in `home` records its trust dialog accepted for `dir` or a directory above it, as
+ * Claude Code itself looks it up before it takes a first prompt.
+ */
+async function trusted(home: string, dir: string): Promise<boolean> {
+	const projects = await readFile(path.join(home, ".claude.json"), "utf8")
+		.then((text) => JSON.parse(text).projects ?? {})
+		.catch(() => ({}));
+	for (let at = dir; ; at = path.dirname(at)) {
+		if (projects[at]?.hasTrustDialogAccepted === true) return true;
+		if (at === path.dirname(at)) return false;
+	}
 }
 
 /** `text` as one word of a POSIX shell command. */

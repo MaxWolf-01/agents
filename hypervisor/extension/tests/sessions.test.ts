@@ -52,10 +52,11 @@ const called = (): { program: string; argv: string[]; cwd: string }[] =>
 		.map((line) => JSON.parse(line));
 beforeEach(() => answering({}));
 
-/** A home of its own, with a repo directory in it and an empty store. */
+/** A home of its own, with a repo directory in it, an empty store, and Claude Code trusted in the whole home. */
 function home() {
 	const at = mkdtempSync(path.join(dir, "home-"));
 	mkdirSync(path.join(at, "my.repo"));
+	writeFileSync(path.join(at, ".claude.json"), JSON.stringify({ projects: { [at]: { hasTrustDialogAccepted: true } } }));
 	return { home: at, store: path.join(at, "store"), repo: path.join(at, "my.repo") };
 }
 
@@ -111,6 +112,36 @@ test("spawn opens a window in a repo session that runs, and refuses a window nam
 	await assert.rejects(spawn({ home: at, store }, { dir: repo, name: "board-fix", brief: "b" }), /my-repo:board-fix exists already/);
 	assert.ok(!called().some((c) => c.argv[0] === "new-window"));
 	await assert.rejects(spawn({ home: at, store }, { dir: "nowhere", name: "x", brief: "b" }), /nowhere is not a directory/);
+});
+
+test("spawn names the tmux session for the repo the directory lies in, a linked worktree's for its main one", async () => {
+	const { home: at, store, repo } = home();
+	mkdirSync(path.join(repo, ".git", "worktrees", "wt"), { recursive: true });
+	mkdirSync(path.join(repo, "sub", "deeper"), { recursive: true });
+	const worktree = path.join(at, "my.repo-ticket");
+	mkdirSync(worktree);
+	writeFileSync(path.join(worktree, ".git"), `gitdir: ${repo}/.git/worktrees/wt\n`);
+	const plain = path.join(at, "notes");
+	mkdirSync(plain);
+	for (const [where, session] of [[path.join(repo, "sub", "deeper"), "my-repo"], [worktree, "my-repo"], [plain, "notes"]]) {
+		answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+		await spawn({ home: at, store }, { dir: where, name: "w", brief: "b" });
+		const opened = called().find((c) => c.argv[0] === "new-session")!.argv;
+		assert.equal(opened[opened.indexOf("-s") + 1], session, where);
+		assert.equal(opened[opened.indexOf("-c") + 1], where, "claude runs where it was asked to");
+	}
+});
+
+test("spawn says when Claude Code has never been trusted where it starts, since its trust dialog then holds the brief", async () => {
+	const { home: at, store, repo } = home();
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.doesNotMatch(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust/, "a directory below a trusted one is trusted");
+	writeFileSync(path.join(at, ".claude.json"), JSON.stringify({ projects: { [at]: { hasTrustDialogAccepted: false }, [path.join(at, "other")]: { hasTrustDialogAccepted: true } } }));
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /\nClaude Code has no record of being trusted in ~\/my\.repo, so its trust dialog may hold the brief until max accepts it in that window\.$/);
+	rmSync(path.join(at, ".claude.json"));
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust dialog may hold the brief/, "no config at all");
 });
 
 /** A registry entry for `pid` in `home`'s Claude Code config directory `config`. */
