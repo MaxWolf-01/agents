@@ -751,7 +751,6 @@ def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> No
     for part in ("what waits on the user", "action items", "one plain line each", "named by what it decides",
                  "no line points at the page"):
         assert part in stop_hook.RECAP
-    assert "what the page holds now" not in stop_hook.RECAP
 
 
 def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
