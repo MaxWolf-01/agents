@@ -36,6 +36,8 @@ const DENIED = [
 	".dotfiles/secrets/creds",
 ];
 const DENIED_ANYWHERE = ["/proc"];
+/** What a Claude Code config directory beside `.claude` (`.claude-<profile>`, as the session tools read them) keeps its credentials in. */
+const PROFILE_CREDENTIALS = ".credentials.json";
 
 /** Directories a search or a listing of matches walks past: what they hold is history or vendored code, not max's. */
 const PASSED = new Set([".git", "node_modules"]);
@@ -138,7 +140,8 @@ type Places = Awaited<ReturnType<typeof places>>;
  * tool call, kept both as spelled and as they resolve, for a root that is a symlink or lies below one.
  */
 async function places({ home, store }: ExploreConfig) {
-	const spelled = [...DENIED.map((root) => path.join(home, root)), ...DENIED_ANYWHERE, ...(store ? [store] : [])];
+	const profiles = (await readdir(home).catch(() => [] as string[])).filter((name) => name.startsWith(".claude-")).map((name) => path.join(home, name, PROFILE_CREDENTIALS));
+	const spelled = [...DENIED.map((root) => path.join(home, root)), ...profiles, ...DENIED_ANYWHERE, ...(store ? [store] : [])];
 	const resolved = await Promise.all(spelled.map((root) => realpath(root).catch(() => root)));
 	const roots = [...new Set([...spelled, ...resolved])];
 
