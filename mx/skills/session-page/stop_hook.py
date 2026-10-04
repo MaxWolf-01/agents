@@ -13,24 +13,31 @@ wrote it (write_hook.py), so it is over by the time the turn ends.
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
-The render that writes a session's page for the first time opens it with `claude-browser`, where
-the host has one; later renders rewrite the same file, and the open tab is reloaded by hand. The
-same render keeps `sessions/` out of the agent repo's `git status`, through that clone's
-`.git/info/exclude`, where nothing ignores it yet. Each is a line of the log too, saying what came
-of it.
+A render opens each artefact that this turn's record links with `claude-browser`, where the host
+has one, and tells it the session through MX_ORIGIN_SESSION. A ticket file is not an artefact, so
+it never opens. Where the container hub answers, every render opens the page too: the hub lands
+each page in the session's unit and turns a repeat into a reload. Where none does, only the render
+that writes the page first opens it, since a repeat would be another tab. The first render also
+keeps `sessions/` out of the agent repo's `git status`, through that clone's `.git/info/exclude`,
+where nothing ignores it yet. Each open, and the exclude, is a line of the log saying what came of
+it.
 
 The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
 whose turn wrote a record shows the user one line of the hook's own under it, as a `systemMessage`:
-the questions waiting on them and the page's link.
+the questions waiting on them and a link to the hub's tab at the session's unit, or to the page's
+file where no hub answers.
 
 Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+import http.client
+import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,7 +47,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, session_directory, written_this_turn,
+    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, resolved, session_directory,
+    written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -54,17 +62,27 @@ class Decision:
     why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     page: str = ""  # the session page, where the verb is render
-    shown: str = ""  # the line the user sees under the turn, where a render's turn wrote a record
+    shown: str = ""  # what waits on the user, where a render's turn wrote a record; `main` adds the link
+    artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
 
 # The longest chat reply a session that has a page ends a turn with and writes no record.
 CHAT_LINES = 3
 
-# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap, no
-# longer than the reply that needs no record. The hook shows the page's link under it.
+# The container hub's half of the contract, which the dotfiles' `container-hub --help` names: the
+# port it serves on, the variable that moves it, the path it answers while it runs, and its tab at a
+# session's unit.
+HUB_PORT = 8377
+HUB_PORT_VARIABLE = "CONTAINER_HUB_PORT"
+HUB_HEALTH = "/.health"
+HUB_UNIT = "/u/{session}"
+
+# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap. The
+# hook shows the link to the page under it.
 RECAP = (
-    f"end the turn on its chat recap: {CHAT_LINES} short lines at most, one each for what the page holds now, "
-    "what comes next, and what waits on the user, each open question named by what it decides"
+    "end the turn on its chat recap: what waits on the user, as action items, one plain line each that reads "
+    "on its own, each open question named by what it decides, or one line saying nothing does; "
+    "no line points at the page"
 )
 UNPARSED = f"Fix the record, then {RECAP}, as you would have without this error. The page renders once every record parses."
 IN_THE_CHAT = (
@@ -91,9 +109,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
     - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
-      the user sees under the agent's recap (`shown`), and where that record was reviewed, the
-      records as the turn ended are logged beside the review, so the log pairs a draft with its
-      revision.
+      the user sees under the agent's recap (`shown`, short of its link) and the record's
+      artefacts, and where that record was reviewed, the records as the turn ended are logged
+      beside the review, so the log pairs a draft with its revision.
 
     The answer in the chat sends the agent back once per turn: a turn a Stop hook already continued
     renders a long reply, so an agent that keeps its answer in the chat is not held in a loop.
@@ -117,17 +135,37 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
+    rendered = {"page": page(session, datetime.now()), "shown": shown(session), "artefacts": linked(session, turn)}
     if not turn_review.reviewed_since(session.id, session.began):
-        return Decision("render", "record not reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
+        return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
-    return Decision("render", "record reviewed this turn", page=page(session, datetime.now()), shown=shown(session, directory))
+    return Decision("render", "record reviewed this turn", **rendered)
 
 
-def shown(session: Session, directory: Path) -> str:
-    """The line under a turn whose answer is on the page: what waits on the user there, and the link."""
+def shown(session: Session) -> str:
+    """The line under a turn whose answer is on the page, up to its link: what waits on the user there."""
     waiting = [q.tag for _, q in open_questions(session)]
     ask = f"waiting on you: {' '.join(waiting)}" if waiting else "nothing waiting on you"
-    return f"session page · {ask} · {(directory / PAGE).as_uri()}"
+    return f"session page · {ask}"
+
+
+def hub_unit(session_id: str) -> str:
+    """The container hub's tab at the session's unit, where a hub answers its health check on this
+    host; empty where none does."""
+    hub = f"http://127.0.0.1:{os.environ.get(HUB_PORT_VARIABLE) or HUB_PORT}"
+    try:
+        with urllib.request.urlopen(hub + HUB_HEALTH, timeout=1):
+            return hub + HUB_UNIT.format(session=session_id)
+    # Refused, timed out or an error status (OSError); a port that is no number (InvalidURL), or
+    # something on the port that speaks no HTTP (BadStatusLine), both HTTPException.
+    except (OSError, http.client.HTTPException):
+        return ""
+
+
+def linked(session: Session, turn: Turn) -> tuple[str, ...]:
+    """What the turn's artefacts open, each file or URL once, resolved as the page's artefact column
+    resolves a link: two links into sections of one page open it once."""
+    return tuple(dict.fromkeys(resolved(link.path, session.root) for link in turn.artefacts))
 
 
 def written_outside_write(session: Session) -> Turn | None:
@@ -143,14 +181,15 @@ def written_outside_write(session: Session) -> Turn | None:
     return outside[-1] if outside else None
 
 
-def open_in_browser(page: Path) -> str:
-    """Open the page in the browser without waiting on it, and say what came of that. A host with no
-    `claude-browser`, or one that fails to start, leaves the page on disk and the turn as it was."""
+def open_in_browser(target: str, session_id: str) -> str:
+    """Open a page, file or URL in the browser as the session's, without waiting on it, and say
+    what came of that. A host with no `claude-browser`, or one that fails to start, leaves the turn
+    as it was."""
     if not (opener := shutil.which("claude-browser")):
         return "no claude-browser on PATH"
     try:
-        subprocess.Popen([opener, str(page)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen([opener, target], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env=os.environ | {"MX_ORIGIN_SESSION": session_id})
     except OSError as e:
         return f"{opener} did not start: {e}"
     return f"started {opener}"
@@ -193,17 +232,22 @@ def exclude_sessions(sessions: Path) -> str:
 
 def main() -> None:
     hook = json.load(sys.stdin)
-    directory = session_directory(Path(hook["cwd"]), hook["session_id"])
+    session_id = hook["session_id"]
+    directory = session_directory(Path(hook["cwd"]), session_id)
     decision = decide(hook, directory)
-    turn_review.log(hook["session_id"], verb=decision.verb, why=decision.why, directory=directory and str(directory))
+    turn_review.log(session_id, verb=decision.verb, why=decision.why, directory=directory and str(directory))
     if decision.verb == "render":
         first = not (directory / PAGE).exists()
         (directory / PAGE).write_text(decision.page)
+        unit = hub_unit(session_id)
+        opened = open_in_browser(str(directory / PAGE), session_id) if unit or first else "not reopened: no hub answers"
+        turn_review.log(session_id, opened=opened, page=str(directory / PAGE))
+        for artefact in decision.artefacts:
+            turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
         if first:
-            turn_review.log(hook["session_id"], opened=open_in_browser(directory / PAGE), page=str(directory / PAGE))
-            turn_review.log(hook["session_id"], excluded=exclude_sessions(directory.parent))
+            turn_review.log(session_id, excluded=exclude_sessions(directory.parent))
         if decision.shown:
-            print(json.dumps({"systemMessage": decision.shown}))
+            print(json.dumps({"systemMessage": f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
 

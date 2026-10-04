@@ -9,11 +9,14 @@ The directory is `agent/sessions/<session-id>/`: `session.md` and one `turns/NN.
 the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
 brief and resume command, the questions no later turn answered or superseded, then the turns
 newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
+Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
+no artefact there.
 
 Run as a command, it prints where a session's directory is.
 """
 
 import html
+import itertools
 import json
 import os
 import re
@@ -36,6 +39,11 @@ PAGE = "index.html"  # the rendered page, in the session's own directory
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
+# The column beside the turns that lists every artefact of the session, and the attribute each link
+# to an artefact carries, wherever on the page it sits: the file it resolves to on this machine, or
+# its URL. The dotfiles' container hub finds the links it marks by these two names.
+COLUMN = "artefacts"
+ARTEFACT = "data-artefact"
 
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
@@ -88,11 +96,7 @@ def render_session(directory: Path, transcript: Path, now: datetime | None = Non
     `now` is the clock the page is rendered against, the machine's by default; a check pins it so
     that two renders of the same records compare.
     """
-    root = ROOT.set(directory.parents[len(SESSIONS.parts)])
-    try:
-        return page(read_session(directory, transcript), now or datetime.now())
-    finally:
-        ROOT.reset(root)
+    return page(read_session(directory, transcript), now or datetime.now())
 
 
 def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = ()) -> "Session":
@@ -121,6 +125,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         settled=settled,
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
+        root=directory.parents[len(SESSIONS.parts)],
     )
 
 
@@ -180,12 +185,20 @@ class Question:
 
 @dataclass(frozen=True)
 class Link:
-    """One item under a turn's `## Links`: an artefact the turn produced, which opens in a tab of
-    its own."""
+    """One item under a turn's `## Links`: an artefact the turn produced, or a ticket file, which
+    the artefact column leaves out. Either opens from the page in a tab of its own; the Stop hook
+    hands the artefacts to the container hub, where one runs (stop_hook.py)."""
 
     text: str
     path: str  # from the repo root, which the renderer resolves, or absolute for one outside the repo
     note: str
+
+    @property
+    def ticket(self) -> bool:
+        """Whether it points at a ticket file, in this repo or another: a markdown file directly
+        in an `agent/tickets/`."""
+        target = Path(file_part(self.path))
+        return target.suffix == ".md" and target.parent.parts[-2:] == tracker.TICKETS.parts
 
 
 @dataclass(frozen=True)
@@ -219,6 +232,10 @@ class Turn:
     def key(self) -> str:
         return f"{self.number:02d}"
 
+    @property
+    def artefacts(self) -> tuple[Link, ...]:
+        return tuple(link for link in self.links if not link.ticket)
+
 
 @dataclass(frozen=True)
 class Settled:
@@ -238,6 +255,7 @@ class Session:
     repo: Path
     title: str  # session.md's H1
     brief: str  # its `## Brief`
+    root: Path  # the repo root the directory sits under, which a record's paths are from
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
@@ -634,7 +652,7 @@ KEYS = [
     ("O", "open or close every turn"),
     ("g g", "top"),
     ("G", "last block"),
-    ("1 to 9", "open the turn's nth link"),
+    ("1 to 9", "open the turn's nth artefact"),
     ("y", "copy the resume command"),
     ("?", "this list"),
 ]
@@ -646,6 +664,15 @@ def open_questions(session: Session) -> list[tuple[Turn, Question]]:
 
 
 def page(session: Session, now: datetime) -> str:
+    """The session page, with every path a record writes resolved from the session's repo root."""
+    root = ROOT.set(session.root)
+    try:
+        return assemble(session, now)
+    finally:
+        ROOT.reset(root)
+
+
+def assemble(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
     waiting = open_questions(session)
     dates = sorted({t.date for t in session.turns})
@@ -692,7 +719,7 @@ def page(session: Session, now: datetime) -> str:
   <section class="turns" aria-labelledby="turns">
     <div class="divider"><h2 class="v-meta" id="turns">turns · newest first</h2></div>
     {body}
-  </section>
+  </section>{column(newest_first)}
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -700,6 +727,37 @@ def page(session: Session, now: datetime) -> str:
 </body>
 </html>
 """
+
+
+def column(newest_first: list[Turn]) -> str:
+    """Every artefact of the session, grouped under the number of the turn that linked it, in the
+    order of the turns beside it."""
+    groups = "".join(f"""
+    <section class="group" id="a{t.key}">
+      <a class="v-num turn-ref" href="#t{t.key}" title="{esc(strip_tags(inline(t.headline)))}">{t.key}</a>
+      <ol>{"".join(f'<li>{opening_key(i)}{artefact(link, "artefact")}</li>' for i, link in enumerate(t.artefacts, start=1))}</ol>
+    </section>""" for t in newest_first if t.artefacts)
+    return f"""
+  <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
+    <div class="divider"><h2 class="v-meta" id="column-title">artefacts · by turn</h2></div>{groups or '<p class="v-meta">none yet</p>'}
+  </aside>"""
+
+
+def opening_key(i: int) -> str:
+    """The key that opens a turn's `i`th artefact, where one does."""
+    return f'<kbd class="n">{i}</kbd>' if i <= 9 else NO_KEY
+
+
+NO_KEY = '<span class="n"></span>'
+
+
+def artefact(link: Link, cls: str) -> str:
+    """A link from a turn's Links, an artefact carrying the path the hub finds it by; a ticket file
+    carries none, since the hub marks no ticket."""
+    title = strip_tags(inline(link.text, paths=False)) + (f": {strip_tags(inline(link.note))}" if link.note else "")
+    marked = "" if link.ticket else f' {ARTEFACT}="{esc(resolved(link.path, ROOT.get()))}"'
+    return (f'<a class="{cls}" href="{esc(href(link.path))}"{marked} target="_blank" '
+            f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
 def open_question(turn: Turn, q: Question) -> str:
@@ -738,12 +796,21 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
   <summary class="head">
     <span class="rail v-num">{t.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
-    <span class="v-meta date">{esc(t.date)}</span>
+    <span class="v-meta date">{esc(t.date)}</span>{chips(t)}
   </summary>
   <div class="turn-body">
     {you(t)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
   </div>
 </details>"""
+
+
+def chips(t: Turn) -> str:
+    """The turn's artefacts on its summary line, which is what shows of a collapsed turn."""
+    if not t.artefacts:
+        return ""
+    return ('<span class="chips">' + "".join(
+        f'<span class="chip">{opening_key(i)}{artefact(link, "chip-link")}</span>' for i, link in enumerate(t.artefacts, start=1)
+    ) + "</span>")
 
 
 def you(t: Turn) -> str:
@@ -788,11 +855,11 @@ def links(items: tuple[Link, ...]) -> str:
     if not items:
         return ""
     rows = []
-    for i, link in enumerate(items, start=1):
-        key = f'<kbd class="n">{i}</kbd>' if i <= 9 else '<span class="n"></span>'
+    keys = itertools.count(1)
+    for link in items:
         note = f'<span class="desc v-small">{inline(link.note)}</span>' if link.note else ""
-        rows.append(f'<li>{key}<span class="link-main"><a class="link" href="{esc(href(link.path))}" target="_blank" rel="noopener">'
-                    f'{inline(link.text, paths=False)}</a>{note}</span></li>')
+        key = NO_KEY if link.ticket else opening_key(next(keys))
+        rows.append(f'<li>{key}<span class="link-main">{artefact(link, "link")}{note}</span></li>')
     return f'<ol class="links">{"".join(rows)}</ol>'
 
 
@@ -840,7 +907,7 @@ THEME = """
 
 def block(text: str) -> str:
     """A record's markdown as HTML: CommonMark with tables, raw HTML shown as text, links resolved
-    from the repo root and opening in a new tab, and a code span naming a path on this machine
+    from the repo root and opening in a tab of their own, and a code span naming a path on this machine
     made a link to it."""
     return MARKDOWN.render(text)
 
@@ -874,13 +941,30 @@ MARKDOWN.add_render_rule("link_open", link_open)
 MARKDOWN.add_render_rule("code_inline", code_inline)
 
 
+URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
+
+
 def href(path: str) -> str:
     """A link from the page: a path from the repo root climbs to it, an absolute or `~` path is
     its file URL, and a URL stays as it is."""
-    if re.match(r"[a-z][a-z0-9+.-]*:", path, re.I):
+    if URL.match(path):
         return path
     local = Path(path).expanduser()
     return local.as_uri() if local.is_absolute() else UP + path
+
+
+def resolved(path: str, root: Path) -> str:
+    """The file a link opens on this machine, a fragment or query dropped: a path from the repo root
+    joined to `root`, an absolute or `~` path as it is; a URL as it is."""
+    if URL.match(path):
+        return path
+    local = Path(file_part(path)).expanduser()
+    return os.path.normpath(local if local.is_absolute() else root / local)
+
+
+def file_part(path: str) -> str:
+    """A link's path short of its fragment or query: the file it points at."""
+    return re.split(r"[#?]", path)[0]
 
 
 def path_target(text: str) -> str | None:

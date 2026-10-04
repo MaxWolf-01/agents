@@ -9,17 +9,21 @@ with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
 and turns-end-on-their-recap's P3, over the worked example in `fixtures/`, whose records a check
 corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
-The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open.
+The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
+for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
 """
 
 import io
 import json
 import os
+import socket
 import shutil
 import subprocess
 import sys
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -36,23 +40,35 @@ from test_reading import messages_of
 
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """A `claude-browser` first on PATH that appends each path it is asked to open to the file
-    handed back, so no check starts a browser."""
+    """A `claude-browser` first on PATH that appends each open it is asked for to the file handed
+    back, as the session it was told and the path, so no check starts a browser. No hub answers on
+    the port the hook asks, so no check reaches one running on the host."""
     where = tmp_path / "browser"
     where.mkdir()
-    (where / "claude-browser").write_text(f'#!/usr/bin/env bash\necho "$@" >> "{where}/opened"\n')
+    (where / "claude-browser").write_text(
+        f'#!/usr/bin/env bash\nprintf \'%s\\t%s\\n\' "$MX_ORIGIN_SESSION" "$*" >> "{where}/opened"\n')
     (where / "claude-browser").chmod(0o755)
     monkeypatch.setenv("PATH", f"{where}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CONTAINER_HUB_PORT", str(closed_port()))
     return where / "opened"
 
 
-def opened(record: Path) -> list[str]:
-    """What the stand-in browser has opened, once it has opened anything or five seconds have
-    passed: the hook starts it and does not wait on it."""
+def closed_port() -> int:
+    """A port nothing listens on: one the system just handed out and took back."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def opened(record: Path, count: int) -> list[tuple[str, str]]:
+    """What the stand-in browser was asked to open, as (session, path) in the order the opens
+    landed, once `count` have landed or five seconds have passed: the hook starts each open and
+    waits on none. An open beyond the count may land later, so what proves none was asked for is
+    the log, which `main` writes before it returns."""
     deadline = time.monotonic() + 5
-    while not record.exists() and time.monotonic() < deadline:
+    while (len(record.read_text().splitlines()) if record.exists() else 0) < count and time.monotonic() < deadline:
         time.sleep(0.05)
-    return record.read_text().splitlines() if record.exists() else []
+    return [tuple(line.split("\t", 1)) for line in record.read_text().splitlines()] if record.exists() else []
 
 
 @pytest.fixture
@@ -238,29 +254,216 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     assert (worked_example / "index.html").read_text() != stale_page
 
 
-# ---- the page opening on its first render -----------------------------------
+def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None]
+) -> None:
+    """The page the hook writes is the renderer's, links included: an artefact carries the path the
+    hub finds it by, and a path a record writes as code opens the file, both resolved from the repo
+    root the records sit under."""
+    root = worked_example.parents[len(SESSIONS.parts)]
+    (root / "mx").mkdir()
+    (root / "mx" / "tool.py").write_text("")
+    newest = worked_example / "turns" / "04.md"
+    newest.write_text(newest.read_text().replace("\n## Details\n\n", "\n## Details\n\nThe code is `mx/tool.py`.\n\n", 1))
+    run(payload(worked_example, transcript))
+    written = (worked_example / PAGE).read_text()
+    assert f'{session_page.ARTEFACT}="{root}/agent/show/session-page/round-3/spec.html"' in written
+    assert '<a class="path" href="../../../mx/tool.py"' in written
 
 
-def test_the_render_that_writes_the_page_first_opens_it_and_no_later_one_does(
-    worked_example: Path, transcript: Path, browser: Path, capsys: pytest.CaptureFixture,
+# ---- what a turn's end opens ------------------------------------------------
+
+
+# Each is whether a hub answers, and how many of three renders open the page.
+PAGE_OPENS = {"a hub that answers": (True, 3), "no hub": (False, 1)}
+
+
+@pytest.mark.parametrize("answers, opens", PAGE_OPENS.values(), ids=PAGE_OPENS)
+def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_where_none_does(
+    answers: bool, opens: int, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
+    attended: Path, hub: Callable[[int], int],
+) -> None:
+    """stop-hook-opens-the-turns-artefacts and its D4: a render hands the page to `claude-browser`,
+    told the session it belongs to, every time where the hub turns a repeat into a reload, and only
+    the first time where no hub would, since a repeat would be another tab. The turns wrote no
+    record, so the links record 04 carries, from a turn before, open nothing."""
+    if answers:
+        hub(200)
+    for _ in range(3):
+        run(payload(worked_example, unrecorded))
+    page = str(worked_example / PAGE)
+    assert opened(browser, opens) == [(worked_example.name, page)] * opens
+    said = [(entry["page"], entry["opened"]) for entry in logged(attended, "opened")]
+    assert [(where, what.startswith("started ")) for where, what in said[:opens]] == [(page, True)] * opens
+    assert said[opens:] == [(page, "not reopened: no hub answers")] * (3 - opens)
+
+
+# Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
+# for them, from the repo root the session's directory sits under: a path from the root joined to
+# it, an absolute or `~` path as it is, a URL as it is, and a fragment dropped, as the hub finds a
+# page by its file, so a page opens once however many of its sections are linked. A ticket file
+# is no artefact (session-pages-feed-the-hub#P2) and is handed none.
+RECORD_LINKS = {
+    "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
+    "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
+    "two sections of one page": (["- [P1](agent/show/x/spec.html#p1)", "- [P2](agent/show/x/spec.html#p2)"],
+                                 ["{root}/agent/show/x/spec.html"]),
+    "a file outside the repo": (["- [The figure](/srv/figures/fig.svg)"], ["/srv/figures/fig.svg"]),
+    "a file under home": (["- [Notes](~/notes/fig.html)"], ["{home}/notes/fig.html"]),
+    "a URL": (["- [The run](http://127.0.0.1:8000/run?step=3)"], ["http://127.0.0.1:8000/run?step=3"]),
+    "a ticket file": (["- [The ticket](agent/tickets/session-page.md)"], []),
+    "a ticket file in another repo": (["- [The ticket](/srv/other/agent/tickets/one-hub-tab.md#d2)"], []),
+    "several at once": (
+        ["- [Pages](agent/show/x/pages.html): which page carries what", "- [The diff](agent/show/x/diff.html)",
+         "- [The ticket](agent/tickets/session-page.md)"],
+        ["{root}/agent/show/x/pages.html", "{root}/agent/show/x/diff.html"]),
+    "no links": ([], []),
+}
+
+
+@pytest.mark.parametrize("links, handed", RECORD_LINKS.values(), ids=RECORD_LINKS)
+def test_every_artefact_the_turns_record_links_is_handed_to_the_browser_as_the_sessions(
+    links: list[str], handed: list[str], worked_example: Path, unrecorded: Path, browser: Path,
+    capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path,
+) -> None:
+    """session-pages-feed-the-hub#P1, at the Stop hook's input: the record this turn wrote, its
+    links in, and the `claude-browser` calls out, each told the session, beside the page's own on
+    its first render. The log says what came of each."""
+    record = worked_example / "turns" / "05.md"
+    record.write_text(RECORD_05 + ("\n## Links\n\n" + "\n".join(links) + "\n" if links else ""))
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    assert shown(capsys)
+    root = worked_example.parents[len(SESSIONS.parts)]
+    expected = [path.format(root=root, home=Path.home()) for path in handed]
+    calls = opened(browser, len(expected) + 1)
+    assert sorted(calls) == sorted([(worked_example.name, str(worked_example / PAGE))] + [(worked_example.name, path) for path in expected])
+    assert [(entry["artefact"], entry["opened"].startswith("started ")) for entry in logged(attended, "artefact")] == [
+        (path, True) for path in expected]
+
+
+def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not_reopen(
+    worked_example: Path, unrecorded: Path, transcript: Path, browser: Path, run: Callable[[dict], None],
+    attended: Path,
+) -> None:
+    """stop-hook-opens-the-turns-artefacts' D4 leaves a turn's artefacts out of it: with no hub, a
+    render after the first hands `claude-browser` the artefact its turn linked and not the page."""
+    run(payload(worked_example, transcript))
+    first = len(opened(browser, 3))
+    record = worked_example / "turns" / "05.md"
+    record.write_text(RECORD_05 + "\n## Links\n\n- [The figure](/srv/figures/fig.svg)\n")
+    with_write(unrecorded, "Write", record)
+    run(payload(worked_example, unrecorded))
+    assert opened(browser, first + 1)[first:] == [(worked_example.name, "/srv/figures/fig.svg")]
+    assert [entry["opened"] for entry in logged(attended, "page")][-1] == "not reopened: no hub answers"
+
+
+def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
+    worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """stop-hook-opens-the-page-on-its-first-render: the first render opens the page with
-    `claude-browser`; later turns rewrite the same file and leave the open tab to a manual reload."""
-    for _ in range(3):
-        run(payload(worked_example, transcript))
-        assert shown(capsys)
-    assert [entry["page"] for entry in logged(attended, "opened")] == [str(worked_example / PAGE)]
-    assert opened(browser) == [str(worked_example / PAGE)]
-
-
-def test_a_page_already_there_is_rendered_and_not_opened(
-    worked_example: Path, transcript: Path, stale_page: str, run: Callable[[dict], None], attended: Path,
-) -> None:
+    """A page on disk that this hook did not write, a render of an older version say, is rendered
+    over and, with no hub, not opened again; the turn's artefacts still open, and the line still
+    shows under the recap."""
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, transcript))
     assert (worked_example / PAGE).read_text() != stale_page
-    assert logged(attended, "opened") == []
+    assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
+    assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
+        str(worked_example.parents[len(SESSIONS.parts)] / "agent/show/session-page/round-3" / page)
+        for page in ("pages.html", "spec.html")]
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
+
+
+# ---- the hub ----------------------------------------------------------------
+
+
+@pytest.fixture
+def hub(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[int], int]]:
+    """Start a stand-in of the container hub on a port of its own, which answers every GET with the
+    status given, and point the hook at that port. Hands back the port."""
+    servers: list[ThreadingHTTPServer] = []
+
+    def start(status: int) -> int:
+        class Answer(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                self.send_response(status if self.path == "/.health" else 404)
+                self.end_headers()
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Answer)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        servers.append(server)
+        monkeypatch.setenv("CONTAINER_HUB_PORT", str(server.server_port))
+        return server.server_port
+
+    yield start
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+# Each is what answers the hub's health check, None for nothing on the port, and whether the line
+# links the unit.
+HUBS = {"a hub that answers": (200, True), "something else on the port": (404, False), "no hub": (None, False)}
+
+
+@pytest.mark.parametrize("status, unit", HUBS.values(), ids=HUBS)
+def test_the_hooks_line_links_the_sessions_unit_where_a_hub_answers_and_the_page_where_none_does(
+    status: int | None, unit: bool, worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], hub: Callable[[int], int],
+) -> None:
+    """stop-hook-opens-the-turns-artefacts: the hub tab at the session's unit is
+    `http://127.0.0.1:<port>/u/<session id>`, and the hub answers `GET /.health` when it runs;
+    where nothing does, the line keeps the page's `file://` link."""
+    port = hub(status) if status else None
+    link = f"http://127.0.0.1:{port}/u/{worked_example.name}" if unit else (worked_example / PAGE).as_uri()
+    run(payload(worked_example, transcript))
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {link}"
+
+
+@pytest.fixture
+def speaks_no_http() -> Iterator[int]:
+    """Something on a port of its own that answers a request with a line that is no HTTP. Hands back
+    the port."""
+    server = socket.create_server(("127.0.0.1", 0))
+
+    def answer() -> None:
+        while True:
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
+            with connection:
+                connection.recv(1024)
+                connection.sendall(b"hello, this is no hub\r\n")
+
+    threading.Thread(target=answer, daemon=True).start()
+    yield server.getsockname()[1]
+    server.close()
+
+
+# Each hands back a hub port the health check cannot ask.
+UNASKABLE = {
+    "a port that is no number": lambda request: "abc",
+    "something on the port that speaks no HTTP": lambda request: str(request.getfixturevalue("speaks_no_http")),
+}
+
+
+@pytest.mark.parametrize("port", UNASKABLE.values(), ids=UNASKABLE)
+def test_a_hub_port_that_cannot_be_asked_is_no_hub(
+    port: Callable[[pytest.FixtureRequest], str], worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, attended: Path,
+) -> None:
+    """The first render still opens the page, keeps `sessions/` out of the agent repo's status and
+    links the page's file, as it does where nothing listens."""
+    monkeypatch.setenv("CONTAINER_HUB_PORT", port(request))
+    run(payload(worked_example, transcript))
+    assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
+    assert logged(attended, "excluded")
+    assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
 
 # ---- the sessions directory kept out of the agent repo's status -------------
@@ -745,10 +948,11 @@ def test_what_the_turns_end_still_sends_back_asks_for_the_recap(
 
 
 def test_the_recap_every_send_back_asks_for_is_the_one_the_ticket_states() -> None:
-    """turns-end-on-their-recap#P4, in its own words: at most three lines, what the page holds now,
-    what comes next and what waits on the user, each open question named by what it decides."""
-    for part in ("3 short lines at most", "what the page holds now", "what comes next", "what waits on the user",
-                 "named by what it decides"):
+    """turns-end-on-their-recap#P4 as recap-states-action-items amends it: what waits on the user,
+    as action items, one plain line each, each open question named by what it decides, and no
+    pointer to the page. A phrase pin: each part is RECAP's own wording of the ticket's."""
+    for part in ("what waits on the user", "action items", "one plain line each", "named by what it decides",
+                 "no line points at the page"):
         assert part in stop_hook.RECAP
 
 
