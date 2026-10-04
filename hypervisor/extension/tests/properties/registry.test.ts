@@ -8,8 +8,9 @@ import path from "node:path";
 import { after, test } from "node:test";
 import fc from "fast-check";
 import { watchEffects } from "./effects.ts";
-import { paramsFor } from "./params.ts";
+import { HOSTILE, paramsFor } from "./params.ts";
 import { harnessProblems, strings, toolProblems } from "./rules.ts";
+import { VIEW_OPEN } from "../../src/swap.ts";
 import { execute, load, standIn, within } from "./stand-in.ts";
 
 const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
@@ -29,11 +30,6 @@ const MEMORY = ["zoom", "recall", "raw"];
 const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
 /** The explorer's read tools, which join the set under `--explore`. */
 const EXPLORE = ["read", "ls", "find", "grep", "memex"];
-/** Strings that do harm wherever a tool hands them to a shell or uses them as a path. */
-const HOSTILE = fc.oneof(
-	fc.string(),
-	fc.constantFrom("; touch pwned", "$(touch pwned)", "`touch pwned`", "x\nrm -rf ~", "../../../../tmp/pwned", "/tmp/pwned", "-rf", "--help", "#(touch pwned)"),
-);
 
 /** The extension loaded, with what loading it did. */
 async function loaded(flipped: boolean) {
@@ -44,8 +40,8 @@ async function loaded(flipped: boolean) {
 	return { ...extension, atLoad };
 }
 
-// Every tool of the closed set has landed: the extension registers exactly the set, the parent's tools active in a
-// conversation, and under `--explore` (`flipped`) the explorer's read tools in place of the session tools.
+// The extension registers exactly the closed set, the parent's tools active in a conversation, and under `--explore`
+// (`flipped`) the explorer's read tools in place of the session tools.
 test("lifelong-hypervisor#P4: the extension's tools are the closed set, and none of pi's own stays active", async () => {
 	for (const flipped of [false, true]) {
 		const { tools, active } = await loaded(flipped);
@@ -79,15 +75,26 @@ test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, 
 });
 
 type Block = { type: string; text?: string; cache_control?: unknown };
-const block = fc.record({ type: fc.constant("text"), text: fc.string({ maxLength: 30 }) }, { noNullPrototype: true });
+/** A cache breakpoint as pi's Anthropic provider places one, on a system block or a tool. */
+const breakpoint = fc.constantFrom({ type: "ephemeral" }, { type: "ephemeral", ttl: "1h" });
+const block = fc.record({ type: fc.constant("text"), text: fc.string({ maxLength: 30 }), cache_control: breakpoint }, { requiredKeys: ["type", "text"], noNullPrototype: true });
+const tool = fc.record(
+	{ name: fc.string({ minLength: 1, maxLength: 12 }), description: fc.string({ maxLength: 30 }), input_schema: fc.constant({ type: "object", properties: {} }), cache_control: breakpoint },
+	{ requiredKeys: ["name", "description", "input_schema"], noNullPrototype: true },
+);
+const message = fc.record({ role: fc.constantFrom("user", "assistant"), content: fc.array(block, { minLength: 1, maxLength: 2 }) }, { noNullPrototype: true });
+/** The view's message, as the context swap puts it first: lines the hook may split into blocks and close with breakpoints. */
+const view = fc
+	.array(fc.string({ maxLength: 20 }).map((text) => `2026-10-01T14:07 #1 ${text.replace(/\n/g, " ")}`), { maxLength: 4 })
+	.map((lines) => ({ role: "user", content: [{ type: "text", text: `${VIEW_OPEN}${lines.join("\n")}\n</view>` }] }));
 // A request as the Anthropic provider sends it, which is what the provider hook sees.
 const payload = fc.record(
 	{
 		model: fc.constant("claude-opus-5-5"),
 		max_tokens: fc.constant(32000),
 		system: fc.array(block, { minLength: 1, maxLength: 3 }),
-		tools: fc.array(fc.record({ name: fc.string({ minLength: 1, maxLength: 12 }), description: fc.string({ maxLength: 30 }), input_schema: fc.constant({ type: "object", properties: {} }) }, { noNullPrototype: true }), { maxLength: 5 }),
-		messages: fc.array(fc.record({ role: fc.constantFrom("user", "assistant"), content: fc.array(block, { minLength: 1, maxLength: 2 }) }, { noNullPrototype: true }), { minLength: 1, maxLength: 4 }),
+		tools: fc.array(tool, { maxLength: 5 }),
+		messages: fc.tuple(fc.option(view, { nil: undefined }), fc.array(message, { minLength: 1, maxLength: 4 })).map(([first, rest]) => (first ? [first, ...rest] : rest)),
 	},
 	{ noNullPrototype: true },
 );

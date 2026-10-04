@@ -23,9 +23,9 @@ const HIDDEN = "c4n4ry-name-52bd07";
 const OPEN = "open-content-e05c";
 
 /**
- * The denied roots under home: keys, credential stores, browser profiles and caches, and the hypervisor's store's
- * `pi/`, which holds its own pi's credentials. `~/work` is readable, and so is `~/.dotfiles/secrets` but for the
- * store at `creds`.
+ * The denied roots under home: keys, credential stores (every Claude Code config directory's among them), browser
+ * profiles and caches, and the hypervisor's store's `pi/`, which holds its own pi's credentials. `~/work` is
+ * readable, and so is `~/.dotfiles/secrets` but for the store at `creds`.
  */
 const DENIED = [
 	".ssh",
@@ -37,6 +37,8 @@ const DENIED = [
 	".netrc",
 	".git-credentials",
 	".claude/.credentials.json",
+	".claude-work/.credentials.json",
+	".claude-clankr1/.credentials.json",
 	".mozilla",
 	".config/google-chrome",
 	".config/chromium",
@@ -52,7 +54,7 @@ const DENIED = [
 ];
 /** The hypervisor's store, where it lies unless `$HV_STORE` moves it. */
 const STORE = ".local/share/hypervisor";
-const FILES = new Set([".netrc", ".git-credentials", ".claude/.credentials.json", ".pi/agent/auth.json", ".codex/auth.json"]);
+const FILES = new Set([".netrc", ".git-credentials", ".claude/.credentials.json", ".claude-work/.credentials.json", ".claude-clankr1/.credentials.json", ".pi/agent/auth.json", ".codex/auth.json"]);
 /** Open files, some beside a denied root or named like one, so a check by prefix refuses them. */
 const READABLE = [
 	"workshop/plan.md",
@@ -60,6 +62,7 @@ const READABLE = [
 	"work/notes.md",
 	".config/nvim/init.lua",
 	".claude/settings.json",
+	".claude-work/settings.json",
 	".pi/agent/settings.json",
 	".codex/config.toml",
 	".dotfiles/secrets/readme.md",
@@ -152,7 +155,7 @@ const intoDenied = fc
 /** Links straight to a denied file. */
 const toDeniedFile = fc.constantFrom("notes/key", "workshop/creds");
 /** Places around the denied roots that a search or a listing passes through. */
-const around = fc.constantFrom("", "notes", "notes/up", ".config", ".claude", "workshop", "work", ".local", STORE, ".cache", ".pi/agent", ".codex", ".dotfiles/secrets");
+const around = fc.constantFrom("", "notes", "notes/up", ".config", ".claude", "workshop", "work", ".claude-work", ".local", STORE, ".cache", ".pi/agent", ".codex", ".dotfiles/secrets");
 
 /** The spellings of a path from home that name the place itself: absolute, under `~/`, relative, doubled slashes, /proc. */
 function spellings(rel: string): fc.Arbitrary<string> {
@@ -207,6 +210,8 @@ test("lifelong-hypervisor#P5: a file outside the denied roots reads back through
 		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/to-work/notes.md", "notes/up/.dotfiles/secrets/readme.md").chain(spellings), async (spelled) => {
 			const reads = await Promise.all(tools.map((tool) => execute(tool, minimal(tool, spelled), context, 5000)));
 			assert.ok(reads.some(({ said }) => said.includes(OPEN)), `no read tool read ${spelled}`);
+			const read = reads[tools.findIndex((tool) => tool.name === "read")];
+			assert.ok(read.said.includes(OPEN) || read.said.startsWith("a directory: ls lists it"), `read did not read ${spelled}:\n${read.said}`);
 		}),
 	);
 });

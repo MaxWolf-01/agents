@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { isStub } from "./lifted-by.ts";
 
 /** pi's own tools, the first four active unless an extension changes the set. */
 const PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -66,7 +65,7 @@ export interface Outcome {
 	said: string;
 }
 
-/** Runs `work` for `ms` at most, handing it the signal that aborts it then. A stub's error propagates. */
+/** Runs `work` for `ms` at most, handing it the signal that aborts it then. */
 export async function within(ms: number, work: (signal: AbortSignal) => Promise<unknown>): Promise<Outcome> {
 	const stop = new AbortController();
 	const timer = setTimeout(() => stop.abort(), ms);
@@ -74,7 +73,6 @@ export async function within(ms: number, work: (signal: AbortSignal) => Promise<
 	try {
 		return await Promise.race([work(stop.signal).then((result) => ({ end: "returned" as const, said: JSON.stringify(result) ?? "" })), late]);
 	} catch (error) {
-		if (isStub(error)) throw error;
 		return { end: "threw", said: error instanceof Error ? `${error.message}\n${error.stack}` : String(error) };
 	} finally {
 		clearTimeout(timer);
