@@ -11,7 +11,7 @@ Agents write the code and the user reads little of it, so a test earns its place
 2. **It is the regression test for a bug that reached the user or a live run.** A bug a reviewer only imagined earns no test.
 3. **It states an invariant of a seam**, as a property test, where stating it is how the seam gets clear (Property tests, below).
 
-A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite whose red sometimes means nothing is read by rerunning it until it is green, and then holds nothing.
+A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite that sometimes fails for no reason gets rerun until it passes, and its failures stop being read.
 
 Read `GLOSSARY.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
 
@@ -37,7 +37,7 @@ Every expected value comes from outside the implementation: a sentence of the ti
 
 A property test is written when a seam is designed or cleaned: `/mx:improve-codebase-architecture` names the invariant at the new seam and its check. A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
 
-An invariant that cannot be stated cleanly, or whose test needs heavy fakes, says the seam is wrong: that is a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
+An invariant that cannot be stated cleanly, or whose test needs heavy fakes, is a sign the seam is wrong: a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
 ## The inputs
 
