@@ -9,8 +9,11 @@ import { Refused, type Store } from "../src/store.ts";
 
 const HEADER = "now 2026-10-01T14:07 (Thu), 2 minutes since the last entry, #3";
 
-/** A store whose view needs `needed` compressed, with every call it gets in `calls`; an append of `refused` fails. */
-function standInStore(needed: string[], refused = "") {
+/**
+ * A store whose view needs `needed` compressed, with every call it gets in `calls`; an append of `refused` fails, `due`
+ * lists `later` once `needed` is written, and the first `broken` views fail as a store that cannot run would.
+ */
+function standInStore(needed: string[], refused = "", { later = [] as string[], broken = 0 } = {}) {
 	const calls: string[] = [];
 	const written = new Set<string>();
 	const store = {
@@ -19,7 +22,10 @@ function standInStore(needed: string[], refused = "") {
 			calls.push(`append ${gist || text}`);
 			return calls.length;
 		},
-		due: async () => needed.filter((b) => !written.has(b)),
+		due: async () => {
+			const first = needed.filter((b) => !written.has(b));
+			return first.length ? first : later.filter((b) => !written.has(b));
+		},
 		body: async (block: string) => `body of ${block}`,
 		compress: async (block: string, line: string) => {
 			calls.push(`compress ${block} ${line}`);
@@ -28,6 +34,7 @@ function standInStore(needed: string[], refused = "") {
 		},
 		view: async () => {
 			calls.push("view");
+			if (broken-- > 0) throw new Error("uv: command not found");
 			const missing = needed.filter((b) => !written.has(b));
 			if (missing.length) throw new Refused(`The view needs compressions not written yet: ${missing.join(" ")}.`);
 			return `${HEADER}\n2026-10-01T14:00 #0-1 a block\n2026-10-01T14:05 #2 an entry\n`;
@@ -36,17 +43,18 @@ function standInStore(needed: string[], refused = "") {
 	return { store: store as unknown as Store, calls };
 }
 
-/** A turn whose forks answer after `ms` with what `reply` makes of the ask, or fail. */
-function finished(ms: number, fail = false, reply: (ask: string) => string = () => "the line"): Finished {
+/** A turn whose forks answer after `ms`, or as long as it says for the ask, with what `reply` makes of the ask, or fail. */
+function finished(ms: number | ((ask: string) => number), fail = false, reply: (ask: string) => string = () => "the line"): Finished {
 	const usage = { input: 1, output: 1, cacheRead: 9, cacheWrite: 0, totalTokens: 11, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 	return {
 		payload: { messages: [{ role: "user", content: [{ type: "text", text: "<view>\n</view>" }] }] },
 		model: {} as Finished["model"],
 		models: {
 			complete: async (_model, _context, options) => {
-				await new Promise((settle) => setTimeout(settle, ms));
 				const sent = (await options?.onPayload?.({}, {} as never)) as { messages: { content: { text: string }[] }[] } | undefined;
-				const text = reply(sent?.messages.at(-1)?.content.at(-1)?.text ?? "");
+				const ask = sent?.messages.at(-1)?.content.at(-1)?.text ?? "";
+				await new Promise((settle) => setTimeout(settle, typeof ms === "number" ? ms : ms(ask)));
+				const text = reply(ask);
 				return { role: "assistant", content: [{ type: "text", text }], usage, stopReason: fail ? "error" : "stop", errorMessage: "overloaded" } as never;
 			},
 		},
@@ -132,4 +140,33 @@ test("a gisted entry is logged after its speaker, as an entry that fits is, and 
 		[`max: ${"a".repeat(507)}`, "me: Noted for later: the plan", "finding: Read the vault's index"],
 	);
 	for (const [marker, speaker] of [["alpha", "max: "], ["bravo", "me: "], ["charlie", "finding: "]]) assert.match(asks[marker], new RegExp(`at most ${512 - speaker.length} bytes`));
+});
+
+test("a refused entry ends the turn's logging there: no later entry is logged, and all of them are journaled", async () => {
+	const three = [...turn, { role: "assistant", content: [{ type: "text", text: "still nothing" }], stopReason: "stop", timestamp: 3 }] as AgentMessage[];
+	const { store, calls } = standInStore([], "max: what is in flight?");
+	const { kept, journal: j } = journal();
+	const mind = memory(store, j);
+	mind.finish(three, finished(0));
+	await mind.settled();
+	assert.deepEqual(calls, []);
+	assert.deepEqual(kept.lost.map((l) => l.entries), [["max: what is in flight?", "me: nothing yet", "me: still nothing"]]);
+});
+
+test("the view renders once the compression it needs is written, without waiting for the rounds after it", async () => {
+	const { store, calls } = standInStore(["0-1"], "", { later: ["0-3"] });
+	const mind = memory(store, journal().journal);
+	mind.finish(turn, finished((ask) => (ask.includes("#0-3") ? 2000 : 0)));
+	assert.match(await mind.view(), /#0-1 a block/);
+	assert.ok(!calls.some((c) => c.startsWith("compress 0-3")), "the view came before the later round's compression");
+	await mind.settled();
+	assert.ok(calls.includes("compress 0-3 the line"));
+});
+
+test("a view the store fails to render keeps the lost turn's note for the next view", async () => {
+	const { store } = standInStore([], "me: nothing yet", { broken: 1 });
+	const mind = memory(store, journal().journal);
+	mind.finish(turn, finished(0));
+	await assert.rejects(mind.view(), /uv: command not found/);
+	assert.match(await mind.view(), /\(not logged: the turn ending/);
 });

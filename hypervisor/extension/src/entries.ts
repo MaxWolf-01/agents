@@ -57,8 +57,13 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 
 /** Whether an entry holds `text` as it is, as the store judges it: one line of at most `ENTRY` bytes, no space at its ends. */
 export function fits(text: string): boolean {
-	return text.length > 0 && text === text.trim() && !/[\n\r]/.test(text) && Buffer.byteLength(text) <= ENTRY;
+	const points = Array.from(text, (c) => c.codePointAt(0)!);
+	return points.length > 0 && !SPACE.has(points[0]) && !SPACE.has(points.at(-1)!) && !points.some((p) => BREAK.has(p)) && Buffer.byteLength(text) <= ENTRY;
 }
+
+/** The whitespace and the line breaks of the store's Python (`str.isspace`, `str.splitlines`), which are not JavaScript's. */
+const SPACE = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000]);
+const BREAK = new Set([0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029]);
 
 /** The text an assistant message says, without its thinking and tool calls. */
 export function saidIn(message: { content: readonly { type: string; text?: string }[] }): string {
