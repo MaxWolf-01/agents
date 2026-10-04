@@ -10,11 +10,18 @@
 # options of `extension/src/explore-run.ts`, which prints them.
 #
 # `hv tell <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
+#
+# `hv view` prints the view the hypervisor's latest turn started from: all it remembered then.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 extension=$here/extension
 store=${HV_STORE:-$HOME/.local/share/hypervisor}
+
+if [[ ${1:-} == view ]]; then
+	[[ -f $store/view.txt ]] || { echo "hv view: no turn has started over $store yet" >&2; exit 1; }
+	exec cat "$store/view.txt"
+fi
 
 if [[ ${1:-} == tell ]]; then
 	shift

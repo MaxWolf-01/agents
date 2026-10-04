@@ -2,7 +2,7 @@
 // subscription is: what the requests carry across ten turns, what the log keeps, and what the forks send and record.
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -181,4 +181,14 @@ test("hv starts pi's TUI on the hypervisor's model with the arguments explore mo
 	assert.equal(args[args.indexOf("--model") + 1], MODEL);
 	const at = args.indexOf(HYPERVISOR[0]);
 	assert.deepEqual(args.slice(at, at + HYPERVISOR.length), HYPERVISOR);
+});
+
+test("hv view prints the view the last turn started from", () => {
+	const last = sent.filter(({ turn }) => turn === TURNS)[0].request;
+	const blocks = last.messages[0].content as { text: string }[];
+	const view = blocks.map((b) => b.text).join("").slice("<view>\n".length, -"\n</view>".length);
+	const hv = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["view"], { env: { ...process.env, HV_STORE: store }, encoding: "utf8" });
+	assert.equal(hv.status, 0, hv.stderr);
+	assert.equal(hv.stdout, `${view}\n`);
+	assert.match(hv.stdout, new RegExp(`turn-${TURNS - 1}-marker`));
 });

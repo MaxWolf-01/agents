@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -29,6 +29,8 @@ const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
 /** What the system prompt gains in a conversation, where the session tools are the agent's, and in explore mode. */
 const SESSIONS_PROMPT = fileURLToPath(new URL("../sessions-prompt.md", import.meta.url));
 const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta.url));
+/** The view the run in flight started from, in the store. */
+const VIEW = "view.txt";
 /** How often the spawned sessions and the inbox are looked at. */
 const WATCH_MS = 3000;
 
@@ -40,7 +42,8 @@ const WATCH_MS = 3000;
  * orchestrators leave with `hv tell` reach the agent as `<event>` messages, which start a turn of their own when none
  * runs.
  *
- * Under `config.store`: `log/`, the store's own directory; `requests.jsonl`, a line for each request sent, what it
+ * Under `config.store`: `log/`, the store's own directory; `view.txt`, the view the latest run started from;
+ * `requests.jsonl`, a line for each request sent, what it
  * carried in brief, with the error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork,
  * with the tokens each of its calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not
  * take; `spawned.jsonl`, a line for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken;
@@ -75,6 +78,8 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		const render = async () => {
 			failed = undefined;
 			const rendered = await mind.view();
+			// What the agent wakes to, kept where max reads it (`hv view`); a turn goes on without it.
+			await writeFile(path.join(config.store, VIEW), `${rendered}\n`).catch(() => {});
 			// Without the store's `stays`, the view still reads what earlier requests wrote; the request log says why.
 			const stays = await store.stays(AHEAD).catch((error) => {
 				failed = String(error);
