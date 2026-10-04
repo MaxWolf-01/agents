@@ -107,7 +107,7 @@ One tag on a board row, carrying a single fact about the ticket for scanning.
 _Avoid_: mark (bare; a call mark is one too), badge, pill, label
 
 **Retire**:
-Take a shipped ticket's record out of the live tracker; history keeps it.
+Take a finished tree out of the live tracker: a top-level ticket and every ticket under it done, and no ticket that stays citing their properties; history keeps it.
 _Avoid_: archive, clean up
 
 **Tombstone**:

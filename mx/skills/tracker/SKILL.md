@@ -79,7 +79,7 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 ## Retire
 
-Retiring is for work that has **shipped**, and `tracker retire` is what runs it. What a README, a PR or the build still needs is promoted out of `agent/show/` in that same commit (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
+A **finished tree** leaves the live tracker: a top-level ticket and every ticket under it done, and no ticket that stays citing their properties. `tracker retire` takes out every one there is, with the show directories, prototypes and research notes its tickets own, in a commit of its own, and runs once a `done` is committed: dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
 Loose work has no ticket to retire: its show directory and the prototypes it made are the agent repo's, committed in that repo's own checkout on the branch it has out, as a ticket's files are, and `git -C agent rm`'d there once the code branch they served has merged.
 

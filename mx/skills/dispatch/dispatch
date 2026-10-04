@@ -93,13 +93,14 @@
 #            `review` unless it is a hinge: it is ruled with the parent, and
 #            `accept` writes its `done`. One commit either way, and none when
 #            the ticket already says so. A `done` retires the ticket's run
-#            (below).
+#            (below), and `tracker retire` takes out the trees it finished.
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
 #            the parent with its range, `code@<sha>..<sha>`. Refuses before
 #            that merge, and writes nothing when the tracker refuses any one
-#            of them. One commit; then retires every child's run.
+#            of them. One commit; then `tracker retire` takes out the trees it
+#            finished, and every child's run is retired.
 #   A ticket that is done has nothing left to resume, so the `done` retires
 #   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
 #   both ticket/<slug> branches here. A retirement that fails is said, with
@@ -159,6 +160,13 @@ run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
 commit_ticket() { run git -C "$agent_top" commit -q -m "$2" -- "$tickets/$1.md"; } # <slug> <message>
+
+# Once a `done` is committed, every tree it finished leaves the tracker in a commit of its own. A
+# retirement the tracker refuses is said, and the `done` stands.
+retire_trees() {
+    run "$tracker" retire ||
+        echo "dispatch: the done is committed, and \`tracker retire\` refused; run it again once that is fixed" >&2
+}
 
 # The two repos a round lands in, by the name its `diff:` range carries, and the branch each one's
 # ticket branches cut from and merge back into.
@@ -715,6 +723,8 @@ review() {
         run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
         run diffview --serve "$diffviews"
     fi
+    # After the page, which reads the ticket's notes from its file
+    [ -z "$retiring" ] || retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     [ -z "$retiring" ] || retire "$id"
@@ -763,6 +773,7 @@ accept() { # <slug>
     [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
     run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
+    retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
     # retired by its own `review`, so only the children in review come up here.

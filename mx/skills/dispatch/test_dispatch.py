@@ -616,11 +616,14 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
 
     accepted = run(toy, "accept", "lamp-ui")
     assert accepted.returncode == 0, accepted.stderr
-    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in parent.read_text(), "the parent's range"
-    assert {slug: status_of(toy, slug) for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset")} == dict.fromkeys(
-        ("lamp-ui", "preset-format", "warm-preset", "cool-preset"), "done")
-    assert "lamp-ui landed" in git(agent, "log", "-1", "--format=%s")
-    assert not git(agent, "status", "--porcelain", "--", "tickets"), "one commit carries the tree"
+    # one commit carries the tree's `done`, and the next retires the tree it finished
+    assert git(agent, "log", "-2", "--format=%s").splitlines() == ["retire lamp-ui: finished", "lamp-ui landed, ruled whole"]
+    landed = lambda slug: git(agent, "show", f"HEAD~1:tickets/{slug}.md")  # noqa: E731
+    assert f"code@{main}..{git(toy, 'rev-parse', 'lamp-ui').strip()}" in landed("lamp-ui"), "the parent's range"
+    for slug in ("lamp-ui", "preset-format", "warm-preset", "cool-preset"):
+        assert "status: done" in landed(slug), slug
+        assert not (tickets / f"{slug}.md").exists(), f"{slug} retired"
+    assert not git(agent, "status", "--porcelain", "--", "tickets")
     for slug in ("warm-preset", "cool-preset"):
         assert not (toy.parent / f"lamp-{slug}").exists(), f"the accept retires {slug}'s run"
         for at in (toy, agent):
