@@ -130,16 +130,23 @@ block_id = st.one_of(
     st.tuples(st.integers(-1, 40), st.integers(-1, 40)).map(lambda p: f"{p[0]}-{p[1]}"),
     text,
 )
-# A block a log of a dozen entries holds, so `body` gets past its refusals and reads it.
+# A block a log of up to a dozen entries may hold, so `body` often gets past its refusals and reads it.
 logged_block = st.integers(1, 3).flatmap(lambda k: st.integers(0, 12 // 2**k - 1).map(lambda i: f"{i * 2**k}-{(i + 1) * 2**k - 1}"))
+
+
+def stamped(stamp: str, text: str) -> str:
+    """A line as `import` reads one: the stamp, then the text on one line, never empty."""
+    return f"{stamp} {' '.join(text.split()) or 'x'}"
+
+
 # A stamp as `import` reads one, to the minute or to the day, or not a stamp at all.
 minute = st.datetimes(datetime.datetime(2020, 1, 1), datetime.datetime(2099, 12, 31)).map(lambda t: t.strftime("%Y-%m-%dT%H:%M"))
 stamp = st.one_of(minute, st.dates(datetime.date(2020, 1, 1), datetime.date(2099, 12, 31)).map(str), text)
 # The lines `import` takes on stdin: stamped texts, mostly in order and later than anything logged in this decade,
 # now and then out of order, too early, or not stamped.
-line = st.tuples(stamp, entry).map(lambda p: f"{p[0]} {' '.join(p[1].split()) or 'x'}")
+line = st.tuples(stamp, entry).map(lambda p: stamped(*p))
 in_order = st.lists(minute.filter(lambda m: m >= "2030"), min_size=1, max_size=4).map(sorted).flatmap(
-    lambda stamps: st.tuples(*[entry.map(lambda e, s=s: f"{s} {' '.join(e.split()) or 'x'}") for s in stamps])
+    lambda stamps: st.tuples(*[entry.map(lambda e, s=s: stamped(s, e)) for s in stamps])
 )
 imported = st.one_of(in_order.map("\n".join), in_order.map("\n".join), st.lists(line, min_size=1, max_size=4).map("\n".join))
 # A command line and the text on its stdin.

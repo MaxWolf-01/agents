@@ -203,10 +203,13 @@ test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, ho
 	);
 });
 
-// The check above draws a given root in about one run of two hundred; this one draws each of them evenly.
+// The check above spreads its runs over every kind of target, so a single root comes up rarely; this one draws each
+// root evenly, and only places that exist, since a tool that misses a place throws whether or not it is denied.
 test("lifelong-hypervisor#P5: every denied root is refused by every tool that takes a path", async () => {
 	const tools = exploreTools({ home, store: path.join(home, STORE), memex }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
-	const below = fc.tuple(fc.constantFrom(...DENIED), tail).map(([root, under]) => (FILES.has(root) ? root : [root, ...under].join("/")));
+	// The secret's file name is left out, since a refusal names the path it was given.
+	const held = ["", "notes.txt", "deep", "deep/inner.txt"];
+	const below = fc.tuple(fc.constantFrom(...DENIED), fc.constantFrom(...held)).map(([root, under]) => (FILES.has(root) || !under ? root : `${root}/${under}`));
 	await fc.assert(
 		fc.asyncProperty(below.chain(spellings), async (spelled) => {
 			for (const tool of tools) {

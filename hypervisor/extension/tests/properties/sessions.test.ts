@@ -23,7 +23,10 @@ for (const name of NAMED) mkdirSync(path.join(home, name));
 // pane of its own with an inbox socket that counts the messages it takes.
 const socket = path.join(home, "inbox.sock");
 let delivered = 0;
-const inbox = createServer((c) => c.on("data", () => delivered++));
+const inbox = createServer((c) => {
+	delivered++;
+	c.resume();
+});
 await new Promise<void>((resolve) => inbox.listen(socket, resolve));
 mkdirSync(path.join(home, ".claude", "sessions"), { recursive: true });
 for (const [pid, name, pane] of [[process.pid, "orch", "%5"], [process.ppid, "#(touch pwned)", "%6"]] as const)
@@ -59,7 +62,7 @@ test("lifelong-hypervisor#P4: the session tools run no shell, start nothing but 
 		);
 	}
 	assert.ok(opened >= 20, `spawn opened a window in ${opened} runs of 200, too few to judge what it starts`);
-	assert.ok(captured >= 20, `look read a pane in ${captured} runs of 200, too few to judge what it starts`);
+	assert.ok(captured >= 20, `look read a pane in ${captured} runs of 200, too few to judge what it runs`);
 	assert.ok(delivered >= 20, `tell reached the inbox socket in ${delivered} runs of 200, too few to judge what it sends`);
 	assert.deepEqual(effects.stray, { launches: [], writes: [] });
 });
