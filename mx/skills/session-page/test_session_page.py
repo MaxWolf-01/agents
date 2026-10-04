@@ -460,7 +460,7 @@ def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_an
     newest.write_text(with_links(newest.read_text(), TICKET_LINKS))
     page = render_session(worked_example, transcript, now=NOW)
     assert column_of(page) == shown
-    assert sorted(target for _, target in artefacts(page) if "tickets" in target) == []
+    assert [target for _, target in artefacts(page) if "tickets" in target] == []
     assert keys_of(sections_of(page)["04"]) == ["", "", "1", "2"]
 
 

@@ -185,8 +185,9 @@ class Question:
 
 @dataclass(frozen=True)
 class Link:
-    """One item under a turn's `## Links`: an artefact the turn produced, which opens in a tab of
-    its own, or a ticket file, which the artefact column leaves out."""
+    """One item under a turn's `## Links`: an artefact the turn produced, or a ticket file, which
+    the artefact column leaves out. Either opens from the page in a tab of its own; the Stop hook
+    hands the artefacts to the container hub, where one runs (stop_hook.py)."""
 
     text: str
     path: str  # from the repo root, which the renderer resolves, or absolute for one outside the repo
@@ -196,7 +197,7 @@ class Link:
     def ticket(self) -> bool:
         """Whether it points at a ticket file, in this repo or another: a markdown file directly
         in an `agent/tickets/`."""
-        target = Path(re.split(r"[#?]", self.path)[0])
+        target = Path(file_part(self.path))
         return target.suffix == ".md" and target.parent.parts[-2:] == tracker.TICKETS.parts
 
 
@@ -744,13 +745,18 @@ def column(newest_first: list[Turn]) -> str:
 
 def opening_key(i: int) -> str:
     """The key that opens a turn's `i`th artefact, where one does."""
-    return f'<kbd class="n">{i}</kbd>' if i <= 9 else '<span class="n"></span>'
+    return f'<kbd class="n">{i}</kbd>' if i <= 9 else NO_KEY
+
+
+NO_KEY = '<span class="n"></span>'
 
 
 def artefact(link: Link, cls: str) -> str:
-    """A link to an artefact, carrying the path the hub finds it by."""
+    """A link from a turn's Links, an artefact carrying the path the hub finds it by; a ticket file
+    carries none, since the hub marks no ticket."""
     title = strip_tags(inline(link.text, paths=False)) + (f": {strip_tags(inline(link.note))}" if link.note else "")
-    return (f'<a class="{cls}" href="{esc(href(link.path))}" {ARTEFACT}="{esc(resolved(link.path))}" target="_blank" '
+    marked = "" if link.ticket else f' {ARTEFACT}="{esc(resolved(link.path, ROOT.get()))}"'
+    return (f'<a class="{cls}" href="{esc(href(link.path))}"{marked} target="_blank" '
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
@@ -852,12 +858,8 @@ def links(items: tuple[Link, ...]) -> str:
     keys = itertools.count(1)
     for link in items:
         note = f'<span class="desc v-small">{inline(link.note)}</span>' if link.note else ""
-        if link.ticket:
-            key, anchor = '<span class="n"></span>', (f'<a class="link" href="{esc(href(link.path))}" target="_blank" rel="noopener">'
-                                                     f'{inline(link.text, paths=False)}</a>')
-        else:
-            key, anchor = opening_key(next(keys)), artefact(link, "link")
-        rows.append(f'<li>{key}<span class="link-main">{anchor}{note}</span></li>')
+        key = NO_KEY if link.ticket else opening_key(next(keys))
+        rows.append(f'<li>{key}<span class="link-main">{artefact(link, "link")}{note}</span></li>')
     return f'<ol class="links">{"".join(rows)}</ol>'
 
 
@@ -905,7 +907,7 @@ THEME = """
 
 def block(text: str) -> str:
     """A record's markdown as HTML: CommonMark with tables, raw HTML shown as text, links resolved
-    from the repo root and opening in a new tab, and a code span naming a path on this machine
+    from the repo root and opening in a tab of their own, and a code span naming a path on this machine
     made a link to it."""
     return MARKDOWN.render(text)
 
@@ -951,13 +953,18 @@ def href(path: str) -> str:
     return local.as_uri() if local.is_absolute() else UP + path
 
 
-def resolved(path: str) -> str:
+def resolved(path: str, root: Path) -> str:
     """The file a link opens on this machine, a fragment or query dropped: a path from the repo root
-    joined to the root, an absolute or `~` path as it is; a URL as it is."""
+    joined to `root`, an absolute or `~` path as it is; a URL as it is."""
     if URL.match(path):
         return path
-    local = Path(re.split(r"[#?]", path)[0]).expanduser()
-    return os.path.normpath(local if local.is_absolute() else ROOT.get() / local)
+    local = Path(file_part(path)).expanduser()
+    return os.path.normpath(local if local.is_absolute() else root / local)
+
+
+def file_part(path: str) -> str:
+    """A link's path short of its fragment or query: the file it points at."""
+    return re.split(r"[#?]", path)[0]
 
 
 def path_target(text: str) -> str | None:
