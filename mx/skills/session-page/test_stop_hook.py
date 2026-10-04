@@ -301,7 +301,8 @@ def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_whe
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
 # for them, from the repo root the session's directory sits under: a path from the root joined to
 # it, an absolute or `~` path as it is, a URL as it is, and a fragment dropped, as the hub finds a
-# page by its file, so a page opens once however many of its sections are linked. A ticket file is no artefact (session-pages-feed-the-hub#P2) and is handed none.
+# page by its file, so a page opens once however many of its sections are linked. A ticket file
+# is no artefact (session-pages-feed-the-hub#P2) and is handed none.
 RECORD_LINKS = {
     "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
     "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
@@ -358,7 +359,7 @@ def test_a_later_turns_artefacts_open_where_no_hub_answers_and_the_page_does_not
 
 
 def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
-    worked_example: Path, transcript: Path, stale_page: str, browser: Path, capsys: pytest.CaptureFixture,
+    worked_example: Path, transcript: Path, stale_page: str, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], attended: Path,
 ) -> None:
     """A page on disk that this hook did not write, a render of an older version say, is rendered
@@ -368,7 +369,9 @@ def test_a_page_already_there_is_rendered_and_not_reopened_where_no_hub_answers(
     run(payload(worked_example, transcript))
     assert (worked_example / PAGE).read_text() != stale_page
     assert [entry["opened"] for entry in logged(attended, "page")] == ["not reopened: no hub answers"]
-    assert str(worked_example / PAGE) not in [path for _, path in opened(browser, 2)]
+    assert [entry["artefact"] for entry in logged(attended, "artefact")] == [
+        str(worked_example.parents[len(SESSIONS.parts)] / "agent/show/session-page/round-3" / page)
+        for page in ("pages.html", "spec.html")]
     assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 
 
@@ -451,14 +454,14 @@ UNASKABLE = {
 
 @pytest.mark.parametrize("port", UNASKABLE.values(), ids=UNASKABLE)
 def test_a_hub_port_that_cannot_be_asked_is_no_hub(
-    port: Callable[[pytest.FixtureRequest], str], worked_example: Path, transcript: Path, browser: Path, capsys: pytest.CaptureFixture,
+    port: Callable[[pytest.FixtureRequest], str], worked_example: Path, transcript: Path, capsys: pytest.CaptureFixture,
     run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, attended: Path,
 ) -> None:
     """The first render still opens the page, keeps `sessions/` out of the agent repo's status and
     links the page's file, as it does where nothing listens."""
     monkeypatch.setenv("CONTAINER_HUB_PORT", port(request))
     run(payload(worked_example, transcript))
-    assert (worked_example.name, str(worked_example / PAGE)) in opened(browser, 1)
+    assert [entry["opened"].startswith("started ") for entry in logged(attended, "page")] == [True]
     assert logged(attended, "excluded")
     assert shown(capsys) == f"session page · waiting on you: Q7 · {(worked_example / PAGE).as_uri()}"
 

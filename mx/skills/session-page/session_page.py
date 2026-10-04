@@ -186,8 +186,8 @@ class Question:
 @dataclass(frozen=True)
 class Link:
     """One item under a turn's `## Links`: an artefact the turn produced, or a ticket file, which
-    the artefact column leaves out. Either opens in a tab of its own, or in the session's unit where
-    the container hub runs."""
+    the artefact column leaves out. Either opens from the page in a tab of its own; the Stop hook
+    hands the artefacts to the container hub, where one runs (stop_hook.py)."""
 
     text: str
     path: str  # from the repo root, which the renderer resolves, or absolute for one outside the repo

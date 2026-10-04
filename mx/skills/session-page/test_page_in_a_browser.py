@@ -118,6 +118,7 @@ def rendered(worked_example: Path, transcript: Path) -> tuple[Path, Path]:
     root = worked_example.parents[2]
     newest = worked_example / "turns" / "04.md"
     newest.write_text(newest.read_text().replace("## Links\n\n", "## Links\n\n" + TICKET, 1))
+    assert TICKET in newest.read_text(), "record 04 has no `## Links` to put the ticket in"
     for path in (*ARTEFACTS, "agent/tickets/session-page.md"):
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(f"<title>{path}</title>")
@@ -139,8 +140,9 @@ def test_the_column_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]
     they have scrolled to their end; the newest turn, open, shows no chips and each collapsed turn
     shows its artefacts as chips; j and k walk the open question and then the turns, marking the
     focused turn's group in the column; 1 and 2 open the focused turn's first and second artefact,
-    past the ticket file turn 04 links first, by clicking its link, and a number the turn has no artefact for opens nothing and says so. In a window too short for
-    the column, focusing a turn scrolls its group into the column's view."""
+    past the ticket file turn 04 links first, by clicking its link, and a number the turn has no
+    artefact for opens nothing and says so. In a window too short for the column, focusing a turn
+    scrolls its group into the column's view."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to drive the page with")
