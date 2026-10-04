@@ -18,21 +18,27 @@ check:
 JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
+UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider
+PYTEST = $(UV_PYTEST) -n $(JOBS)
+# The full-path checks test-full-path runs: every one, or those in the test files TESTS names.
+TESTS ?= mx/
 
-# The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
+# The test files this tree's changes since BASE reach (tools/affected_tests.py says how), less
+# their full-path checks, which it names with the command that runs them. pytest exits 5 when it
+# ran nothing: every test it collected was a full-path check.
 test:
 	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
-	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
-	# pytest exits 5 when every test it collected was deselected: each one a full-path check.
-	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE); make test-full-path runs the full-path checks among them"; \
-	$(PYTEST) -m 'not full_path' $$tests || [ $$? -eq 5 ]; fi
+	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; exit 0; fi; \
+	echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; \
+	$(PYTEST) -m 'not full_path' $$tests || [ $$? -eq 5 ] || exit 1; \
+	full=$$($(UV_PYTEST) -q --co -m full_path $$tests 2>/dev/null | sed -n 's/::.*//p' | sort -u); \
+	[ -z "$$full" ] || echo "+ full-path checks reached: make test-full-path TESTS=\"$$(echo $$full)\""
 
 test-all:
 	$(PYTEST) -m 'not full_path' mx/
 
 test-full-path:
-	$(PYTEST) -m full_path mx/
+	$(PYTEST) -m full_path $(TESTS)
 
 version:
 	@jq -r .version $(PLUGIN)

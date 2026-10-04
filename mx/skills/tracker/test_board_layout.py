@@ -104,8 +104,8 @@ The first two touch nothing in common and can run as one wave."""
 def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
-    # The patience is render-lint's default three times over: the suite runs a browser per core, and
-    # under that load the board has taken past 20s to load with nothing wrong with it.
+    # 60s: the suite runs a browser per core, and under that load the board has taken past 20s to
+    # load with nothing wrong with it.
     done = subprocess.run(
         ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root()),
          "--patience", "60"],

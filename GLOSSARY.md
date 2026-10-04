@@ -158,7 +158,7 @@ _In code_: `make test`, `make test-all`
 **Full-path check**:
 A check that drives the real thing end to end (a browser on the page, tmux, a paid API), kept out of the fast suite.
 _Avoid_: integration test, e2e test, slow test
-_In code_: `make test-full-path`
+_In code_: `make test-full-path`, `@pytest.mark.full_path`
 
 ### Showing
 
