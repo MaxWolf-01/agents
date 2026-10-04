@@ -20,12 +20,13 @@ JOBS ?= auto
 BASE ?= master
 UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider
 PYTEST = $(UV_PYTEST) -n $(JOBS)
-# The full-path checks test-full-path runs: every one, or those in the test files TESTS names.
-TESTS ?= mx/
+# The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
+# the command line. Never read from the environment, so an exported TESTS cannot narrow a release.
+TESTS = mx/
 
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how), less
-# their full-path checks, which it names with the command that runs them. pytest exits 5 when it
-# ran nothing: every test it collected was a full-path check.
+# their full-path checks. The recipe then prints the test-full-path command that runs those.
+# pytest exits 5 when it ran nothing: every test it collected was a full-path check.
 test:
 	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
 	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; exit 0; fi; \
