@@ -28,6 +28,7 @@ Examples:
     tracker import map-columns report.md  # a worker's report into the ticket it is of
     tracker drop map-columns             # a ticket never done: the reject ruling
     tracker retire                       # every finished tree out, committed
+    tracker retire --dry-run             # what that would take out, changing nothing
     tracker hook                         # install the pre-commit hook that runs `check`
 """
 
@@ -699,14 +700,17 @@ LINKED = re.compile(r"agent/(?:prototypes|research)/[\w./-]*[\w-]")
 
 
 @app.command(name="retire")
-def retire() -> int:
+def retire(dry_run: bool = False) -> int:
     """Take every finished tree out of the live tracker, with the show directories, prototypes and
     research notes its tickets own, and commit the removal. A tree is finished when its top-level
     ticket and every ticket under it are done and no ticket that stays cites one of its properties.
     Prints every step it runs, and each done tree it leaves with what holds it. Run it once a
     `done` is committed; it retires nothing where no tree is finished.
+
+    Args:
+        dry_run: print each finished tree and every file it would take out, and change nothing.
     """
-    tracker = writing()
+    tracker = here() if dry_run else writing()
     top = toplevel(tracker.root)
     trees, held = finished(tracker)
     for slug, why in held.items():
@@ -715,6 +719,12 @@ def retire() -> int:
         print("no finished tree to retire")
         return 0
     retiring = [one for tree in trees.values() for one in tree]
+    if dry_run:
+        for slug, tree in trees.items():
+            print(f"would retire {slug}" + (f" with {', '.join(one.slug for one in tree[1:])}" if tree[1:] else ""))
+        for path in sorted(owned(retiring, tracker)):
+            print(f"  {path.relative_to(top)}")
+        return 0
 
     known = {top / name for name in git(top, "ls-files").splitlines()}
     leaving = sorted(owned(retiring, tracker))

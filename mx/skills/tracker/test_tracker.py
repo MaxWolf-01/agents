@@ -1119,6 +1119,13 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
     git(repo, "add", "agent/tickets", *[str(path) for path in kept])
     git(repo, "commit", "-q", "-m", "the work")
 
+    untouched = git(repo, "status", "--porcelain")
+    dry = run(repo, "retire", "--dry-run")
+    assert dry.code == 0 and "would retire one-flow with map-columns, saved-views" in dry.out, dry.said
+    assert "agent/prototypes/one-flow/board.py" in dry.out
+    assert all(path.exists() for path in {**kept, **deleted, **moved}), "a dry run moves nothing"
+    assert git(repo, "status", "--porcelain") == untouched and "one-flow" in run(repo, "get", "speed-up-tests", "blocked-by").out
+
     said = run(repo, "retire")
     assert said.code == 0, said.said
     assert "retired one-flow, 3 tickets in all" in said.out
