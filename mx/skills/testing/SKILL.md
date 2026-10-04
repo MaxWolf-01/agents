@@ -1,19 +1,31 @@
 ---
 name: testing
-description: "Use when writing or changing tests, deciding what a piece of work should test, or when another skill routes testing here: the seam a test enters at, the oracle its expectations come from, inputs that can discriminate a bug."
+description: "Use when writing or changing tests, deciding what a piece of work should test or which checks a change has to pass, or when another skill routes testing here: the job a test does, the seam it enters at, the oracle its expectations come from, inputs that can discriminate a bug."
 ---
 
 # Testing
 
-A suite does two separable jobs: it **holds code in place** (a change in behaviour fails a test) and it **tells code is wrong** (the implementation disagrees with something outside it). The second needs an **oracle** independent of the implementation, and that is where a suite is usually thin. Write code and tests in whichever order the work wants.
+Agents write the code and the user reads little of it, so a test earns its place by one of three jobs:
+
+1. **It holds a behaviour the user relies on**, at a seam the next agent will touch, so that agent's change cannot break it unnoticed. It states the behaviour, never the bytes or the internals: a test that fails on a refactor that kept the behaviour is a defect of the test.
+2. **It is the regression test for a bug that reached the user or a live run.** A bug a reviewer only imagined earns no test.
+3. **It states an invariant of a seam**, as a property test, where stating it is how the seam gets clear (Property tests, below).
+
+A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite whose red sometimes means nothing is read by rerunning it until it is green, and then holds nothing.
 
 Read `GLOSSARY.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
+
+## Two kinds of run
+
+**The fast suite** is `make test`: in-process, with no browser, no network and no sleeps. Every session and every worker runs it on every change, and the three jobs live in it.
+
+**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a Makefile target of their own, and run deliberately: by the session landing a change that reaches their path, on a host that has what they drive, and before a release. A landing's show is usually the output of such a run, so its runnable script (`/mx:show`, A runnable artifact) is the natural home for one: the check and the demonstration are the same run.
 
 ## The seam
 
 A **seam** is where a test enters the system: a function, a module's public API, an endpoint, the browser. The ticket's Testing seams names them for the work in hand (`/mx:tracker`); where nothing names one, propose the highest seam that still reaches the behaviour and confirm it before writing. Fewer seams across a codebase is better. `/mx:codebase-design` holds the vocabulary for arguing about where one belongs.
 
-Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable, by calling it directly or driving the framework's test client, but every test of it pays that setup and a mutation tool cannot reach it at all. Put the logic in a plain function the entry point calls, and test that.
+Logic inside a decorated entry point (a route handler, a CLI command, a scheduled task) is testable, by calling it directly or driving the framework's test client, but every test of it pays that setup. Put the logic in a plain function the entry point calls, and test that.
 
 Mock what the module does not own: the network, the clock, randomness, an external service. A test that mocks the module's own collaborators is testing the mock.
 
@@ -21,9 +33,11 @@ Mock what the module does not own: the network, the clock, randomness, an extern
 
 Every expected value comes from outside the implementation: a sentence of the ticket, a worked example, a known-good literal, an independent simpler computation, or a property that must hold whatever the input. An expectation recomputed the way the code computes it agrees with the code by construction, including when both are wrong.
 
-Properties are the cheapest oracle to state: a ticket's Property already says what must always or never hold, so it becomes a check over generated inputs at its seam rather than a sentence somebody re-reads.
+## Property tests
 
-An invariant the code already asserts is a property with its oracle written; a generator over its inputs turns it into a test, and a property test is that same invariant run over many inputs before production runs it over one.
+A property test is written when a seam is designed or cleaned: `/mx:improve-codebase-architecture` names the invariant at the new seam and its check. A slice writes one where a generator over the seam's inputs beats hand-picked examples. An invariant the code already asserts is a property with its oracle written, and a generator over its inputs turns it into a test.
+
+An invariant that cannot be stated cleanly, or whose test needs heavy fakes, says the seam is wrong: that is a finding for `/mx:improve-codebase-architecture`, not a reason for more test code. A ticket's Properties are prose the reviewer checks each diff against, and turn into checks only by this route.
 
 ## The inputs
 
@@ -31,16 +45,6 @@ Choose inputs that can tell the bug from the fix. An input symmetric in the dime
 
 Generate structure rather than raw randomness: draw whole valid values of the domain (a note, an order, a request), so the generator explores the space the code actually meets. Unstructured random input lands on the rejection path almost every time, and a run that always rejects proves the validator, not the feature.
 
-Property tests live in the project's properties directory, as module-level functions, and run in the ordinary suite. Hypothesis writes a failing case back as an `@example` only on a function it finds at module level; a property that is a method of a test class never gets its case written back.
-
-A property written before the behaviour it tests exists is an **expected failure**: strict, so the run goes red the moment the property passes with the annotation still on, and naming the ticket that lifts it. At a stub it tolerates only the not-implemented exception, so a wrong implementation or a mistake in the property itself fails instead of passing as expected. A seam that exists without the behaviour, or a wire seam with no route yet, fails in more ways than one, so its expected failure tolerates any; the orchestrator's check that none names a landed ticket is the guard there. A property that holds carries none.
-
 ## The suite already there
 
 Extend it: its fixtures, its helpers, its naming, its seams. A second parallel suite beside the first splits the signal, and the next agent has to read both to know what is covered.
-
-## What the suite fails to hold
-
-`make harden` measures it, once per ticket tree, when its frontier empties (`/mx:dispatch`): the mutants of that tree's own changes that no test notices, the changed lines nothing runs, and the changes it could not measure. `harden` is what that target runs, and `harden --help` is the reference for what it measures and what its report means.
-
-`make fuzz` runs the same property tests coverage-guided under HypoFuzz until stopped; what it finds replays through the ordinary suite from Hypothesis' example database. `/mx:project-setup` wires it.

@@ -26,7 +26,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## User stories`**: numbered, `As an <actor>, I want <a capability>, so that <a benefit>`.
 - **`## Properties`**: `- P<n> <the property>`, one always or never sentence each. The id is permanent, and every descendant cites it `<slug>#P<n>`.
 - **`## Decisions`**: the calls, each carrying the **call mark** that says who settled it.
-- **`## Testing seams`**: the seams the work is tested at, their oracles, and every property disposed of as executable or reviewed.
+- **`## Testing seams`**: the seams the work is tested at, and their oracles.
 - **`## Out of scope`**: what this ticket will not do, each with its reason.
 - **`## Fog`**: in-scope work whose question cannot yet be stated.
 - **`## Acceptance criteria`**, always: `- [ ]` items, what the work has to hold to be done.
@@ -57,7 +57,7 @@ A ticket's **context** is its own body and every ancestor's, so a parent ticket 
 
 Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file: every write this command makes is refused from a `ticket/<slug>` branch, which is what a worker holds either repo on, `dispatch review` refuses a ticket branch that wrote one, and the commit hook refuses one staged there. What a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and the commit hook refuses that commit where the import would refuse the report.
 
-**A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, harden, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. Only a hinge is ruled alone, before its dependents start. From the parent's review page the user can still amend, redo or reject a single child.
+**A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. Only a hinge is ruled alone, before its dependents start. From the parent's review page the user can still amend, redo or reject a single child.
 
 ## State
 

@@ -23,10 +23,7 @@ Give each its **blocking edges**: the tickets that must be done before it can st
 
 **Mark the hinges.** A slice is a **hinge** when the slices it blocks would have to be rewritten, not amended, were it wrong: an interface or data shape they consume. The user rules on a hinge alone before its dependents start; every other slice is ruled with the ticket being cut, at its close-out, and its dependents build on it unruled. Test each blocking edge: if the blocker came back wrong, would the fix to the dependent be an amend? Then it is no hinge.
 
-**Properties stay on the ticket being cut.** Every slice reads them through its ancestry and cites one as `<slug>#P<n>`; no slice copies one. The ticket's Testing seams already marked each property executable or reviewed:
-
-- **Executable**: one child ticket turns them all into checks in the project's properties directory (`tests/properties/`) before any slice is built, so no check can copy an implementation, since none exists yet. It is blocked by nothing, blocks every slice whose seam it checks, and is a hinge, since every slice builds against its checks. Its brief is the ancestry and the seams' interfaces; where an interface does not exist yet, it lands a stub so the suite collects. A check that cannot hold yet lands as an expected failure (`/mx:testing`) naming the one slice that makes it pass, and the ticket's body lists that slice beside each property. It sits in the cross-cutting position below.
-- **Reviewed**: each slice's review checks it, reading the ancestry with the diff.
+**Properties stay on the ticket being cut.** Every slice reads them through its ancestry and cites one as `<slug>#P<n>`; no slice copies one. Each slice's review checks them, reading the ancestry with the diff.
 
 A property no single slice can make hold means the cut is wrong: merge the slices, or split the property at the seam.
 
@@ -43,8 +40,6 @@ A property no single slice can make hold means the cut is wrong: merge the slice
 `tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, `--hinge` on a hinge, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
 Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker knows what it builds on; they reach the user when the parent ticket is ruled, and the slice's worker files none of them again.
-
-**The breakdown is filed when the check is clean.** `property-coverage` holds every executable property to having a check and names what does not line up, at the line it read; its `--help` is its reference. Fix what it names and run it again.
 
 ## 4. Show the breakdown, then dispatch
 

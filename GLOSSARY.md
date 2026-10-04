@@ -141,7 +141,7 @@ A ticket's work is on the branch the user's accept merges it into, and verified 
 _Avoid_: merged, finished, complete
 
 **Debrief**:
-What the orchestrator tells the user when a ticket's tree is finished: what the workers and the harden report found, and what it proposes to do about it.
+What the orchestrator tells the user when a ticket's tree is finished: what the workers and the review one level up found, and what it proposes to do about it.
 _Avoid_: synthesis, summary, PR description, report (a worker's is one)
 
 ### Testing
@@ -150,9 +150,15 @@ _Avoid_: synthesis, summary, PR description, report (a worker's is one)
 What a test compares the code's behaviour against, chosen so that it is not the code itself: a property the ticket states, a worked example, a reference implementation, a round trip, a model.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
-**Expected failure**:
-The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
-_Avoid_: mark (a call mark or a row mark), xfail, skip
+**Fast suite**:
+The tests that run on every change: in-process, with no browser, no network and no sleeps.
+_Avoid_: unit tests (a fast test may enter at any seam)
+_In code_: `make test`, `make test-all`
+
+**Full-path check**:
+A check that drives the real thing end to end (a browser on the page, tmux, a paid API), run deliberately from a target of its own rather than on every change.
+_Avoid_: integration test, e2e test, slow test
+_In code_: `make test-full-path`
 
 ### Showing
 
