@@ -44,8 +44,8 @@ async function loaded(flipped: boolean) {
 	return { ...extension, atLoad };
 }
 
-// Every tool of the closed set has landed: the extension registers exactly the set, the parent's tools active in a
-// conversation, and under `--explore` (`flipped`) the explorer's read tools in place of the session tools.
+// The extension registers exactly the closed set, the parent's tools active in a conversation, and under `--explore`
+// (`flipped`) the explorer's read tools in place of the session tools.
 test("lifelong-hypervisor#P4: the extension's tools are the closed set, and none of pi's own stays active", async () => {
 	for (const flipped of [false, true]) {
 		const { tools, active } = await loaded(flipped);
