@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
+description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through the one it recommends, or another the user names.
 ---
 
 # Improve Codebase Architecture
@@ -56,7 +56,7 @@ Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the bui
 
 ### 3. Grilling loop
 
-When the report lands, ask the user which candidate they want to explore. Once they pick one, run `/mx:grilling` to walk the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+When the report lands, run `/mx:grilling` on the candidate you recommend, the report's strongest; the user names another to switch to it. It walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
 Side effects happen inline as decisions crystallize; run `/mx:domain-modelling` to keep the domain model current as you go:
 

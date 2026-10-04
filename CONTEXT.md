@@ -15,7 +15,7 @@ One design decision as the ticket states it, carrying a call mark that says who 
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
 **Intent-side call**:
-A call on what a thing is for and its shape, which is the user's to make; a call on how it is built is an implementation call, the agent's.
+A call on what gets built, which is the user's to make; a call on how it is built is an implementation call, the agent's.
 _Avoid_: product decision, design call (bare; every call is a design decision)
 
 **Call mark**:
@@ -71,7 +71,7 @@ The user's answer on what a ticket built: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Standing yes**:
-The user's accept, given in advance, of every build that carries no call worth their time that they have not already made.
+The user's accept, given in advance, of every build that carries no call of theirs they have not already made, as far as its parent ticket's branch; a merge into the integration branch waits for their word on the work.
 _Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:
