@@ -7,7 +7,8 @@ string or a word ending in a file extension that is some file's name under mx/ o
 store. A name several files share resolves to the one beside the naming file when there is one,
 else to all of them, so an ambiguous name runs more tests, never fewer. A change to what runs the
 tests or wraps what they test (`reaches_every_test`) reaches every test. The hypervisor's extension
-is a TypeScript package: a change anywhere in it reaches all of its tests.
+is a TypeScript package that drives the store's command line and is started by `hypervisor/hv`: a
+change anywhere under `hypervisor/` but the store's own tests reaches all of the extension's tests.
 
 Prints one test path per line, nothing when no test is reached.
 """
@@ -100,7 +101,8 @@ def main() -> None:
             if f.is_file() and "__pycache__" not in f.parts:
                 by_name[f.name].append(f)
         hit = [t for t in tests if reach(t, by_name) & changes]
-        if any(c.is_relative_to(EXTENSION) and "node_modules" not in c.parts for c in changes):
+        if any(c.is_relative_to(EXTENSION.parent) and not c.is_relative_to(STORE / "tests")
+               and "node_modules" not in c.parts for c in changes):
             hit += extension_tests
     for t in hit:
         print(t.relative_to(ROOT))
