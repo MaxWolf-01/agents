@@ -2,7 +2,7 @@ PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 HOOKS := mx/hooks/hooks.json
 
-.PHONY: check test test-all version release-patch release-minor release-major
+.PHONY: check test test-all test-full-path version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -18,16 +18,25 @@ check:
 JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with libcst --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
+PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
+# The full-path checks: each starts a browser or drives tmux, so they run from test-full-path alone.
+FULL_PATH = mx/skills/tracker/test_board_layout.py mx/skills/show/test_render_lint.py mx/skills/show/test_browsers.py \
+  mx/skills/session-page/test_page_in_a_browser.py mx/skills/dispatch/test_dispatch.py mx/skills/dispatch/test_dispatch_ps.py
 
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
 test:
-	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
+	@reached=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
+	tests=$$(printf '%s\n' $$reached | grep -vxF $(addprefix -e ,$(FULL_PATH))); \
+	full=$$(printf '%s\n' $$reached | grep -xF $(addprefix -e ,$(FULL_PATH))); \
+	[ -z "$$full" ] || echo "+ full-path checks reached, left to make test-full-path:" $$full; \
 	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
 	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; $(PYTEST) $$tests; fi
 
 test-all:
-	$(PYTEST) mx/
+	$(PYTEST) mx/ $(addprefix --ignore=,$(FULL_PATH))
+
+test-full-path:
+	$(PYTEST) $(FULL_PATH)
 
 version:
 	@jq -r .version $(PLUGIN)
@@ -36,7 +45,7 @@ release-patch: PART = patch
 release-minor: PART = minor
 release-major: PART = major
 
-release-patch release-minor release-major: check test-all
+release-patch release-minor release-major: check test-all test-full-path
 	@V=$$(jq -r .version $(PLUGIN)); \
 	NEW=$$(echo $$V | awk -F. -v part=$(PART) '{ \
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \
