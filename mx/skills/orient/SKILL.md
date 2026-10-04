@@ -68,7 +68,7 @@ Keep the planning steps (1 to 3) in **one unbroken context window** (no handoff 
 
 Not product work, upkeep.
 
-- **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities**; picking one generates an idea to take into the main flow at `/mx:grill-with-docs`.
+- **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities**, then grill through them in order of impact.
 - **`/mx:bloat-audit`**: an over-engineering audit, a ranked list of what to delete, simplify, or replace with stdlib.
 
 ## Vocabulary underneath

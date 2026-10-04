@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through its candidates in order of impact, as the user's comments on it pick, drop or reorder them.
+description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through its candidates in order of impact.
 ---
 
 # Improve Codebase Architecture
@@ -45,7 +45,7 @@ The scan is done when every candidate carries:
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
 - **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
-- **Impact**: what the deepening buys against what it costs, which places it in the order the report and the grilling take
+- **Impact**: what the deepening buys against what it costs, in one line; candidates are ordered by it, in the report and in the grilling. Strength is how sure you are the deepening holds, impact what it pays
 - **ADR conflict**, when a candidate contradicts an existing ADR and the friction is real enough to warrant revisiting it: _"contradicts ADR-0007, but worth reopening because…"_. Don't list every theoretical refactor an ADR forbids.
 - **Related candidates**, when it hangs together with others: it builds on one, or two are the same deepening seen from two sides and belong in one piece of work.
 
@@ -57,7 +57,7 @@ Fork (`/mx:fork`) to build it: the fork inherits the scan's reading, and the bui
 
 ### 3. Grilling loop
 
-When the report lands, run `/mx:grilling` through its candidates in the report's order, related ones together where one depends on another; the user's comments on the report pick, drop or reorder them. Each walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+When the report lands, run `/mx:grilling` through its candidates in the report's order, one grilling and one ticket per candidate or group of related ones; the user's comments on the report pick, drop or reorder them. Each grilling walks the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
 Side effects happen inline as decisions crystallize; run `/mx:domain-modelling` to keep the domain model current as you go:
 
