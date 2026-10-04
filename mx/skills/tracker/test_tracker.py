@@ -1119,31 +1119,38 @@ def test_p6_retiring_loses_nothing_git_history_or_the_logs_does_not_keep(
     git(repo, "add", "agent/tickets", *[str(path) for path in kept])
     git(repo, "commit", "-q", "-m", "the work")
 
-    said = run(repo, "retire", "one-flow")
+    untouched = git(repo, "status", "--porcelain")
+    dry = run(repo, "retire", "--dry-run")
+    assert dry.code == 0 and "would retire one-flow with map-columns, saved-views" in dry.out, dry.said
+    assert "agent/prototypes/one-flow/board.py" in dry.out
+    assert all(path.exists() for path in {**kept, **deleted, **moved}), "a dry run moves nothing"
+    assert git(repo, "status", "--porcelain") == untouched and "one-flow" in run(repo, "get", "speed-up-tests", "blocked-by").out
+
+    said = run(repo, "retire")
     assert said.code == 0, said.said
-    assert "retired one-flow and 2 child tickets; staged, not committed" in said.out
+    assert "retired one-flow, 3 tickets in all" in said.out
+    assert git(repo, "log", "-1", "--format=%s") == "retire one-flow: finished\n"
+    assert not git(repo, "status", "--short", "--", "agent/tickets"), "the commit carries every ticket it touched"
 
     for path, text in kept.items():
         assert not path.exists(), path
-        assert git(repo, "show", f"HEAD:{path.relative_to(repo)}") == text, "git history keeps it"
-        assert f"D  {path.relative_to(repo)}" in git(repo, "status", "--short"), "and the removal is staged"
+        assert git(repo, "show", f"HEAD~1:{path.relative_to(repo)}") == text, "git history keeps it"
         assert str(path.relative_to(repo)) in said.out, "the run says where it went"
     for path in deleted:
         assert not path.exists() and not (home / "logs").joinpath(path.relative_to(repo)).exists()
         assert f"rm {path.relative_to(repo)}" in said.out
         source = next(one for one in kept if one.parent in (path.parent, path.parent.parent))
-        assert git(repo, "show", f"HEAD:{source.relative_to(repo)}"), \
+        assert git(repo, "show", f"HEAD~1:{source.relative_to(repo)}"), \
             f"{path} is deleted only because the source beside it, {source}, is tracked"
     for path, text in moved.items():
         assert not path.exists(), path
         assert (home / "logs" / "agent" / repo.name / path.relative_to(repo)).read_text() == text
     assert (repo / "agent" / "research" / "06-timing.md").exists(), "a note a ticket that stays cites stays"
     assert sorted(path.name for path in tickets.glob("*.md")) == ["flaky-upload.md", "speed-up-tests.md"]
-    assert git(repo, "show", "HEAD:agent/tickets/one-flow.md"), "and history holds the tickets"
+    assert "status: done" in git(repo, "show", "HEAD~1:agent/tickets/one-flow.md"), "and history holds the done ticket"
     assert not (show / "one-flow").exists() and not (show / "map-columns").exists(), "and the emptied directories go"
 
     assert run(repo, "get", "speed-up-tests", "blocked-by").code == 1, "the edge onto a retired ticket goes with it"
-    assert "M  agent/tickets/speed-up-tests.md" in git(repo, "status", "--short"), "staged with the rest"
     assert run(repo, "check", str(tickets / "speed-up-tests.md")).code == 0
 
 
@@ -1293,14 +1300,34 @@ def test_p3_a_leaf_builds_on_an_unruled_sibling_only_once_it_is_merged_and_no_hi
     assert {line.split()[0] for line in ready.splitlines()} == startable(tree), (tree, said.out)
 
 
-def test_retiring_is_refused_while_a_ticket_that_stays_cites_a_property_of_one_leaving(tickets: Path, repo: Path) -> None:
+def test_a_finished_tree_a_live_ticket_cites_stays_until_the_citing_one_finishes_too(tickets: Path, repo: Path) -> None:
     ticket(tickets, "one-flow", "## Properties\n\n- P1 A ticket is read whole or refused.\n", status="done")
-    path = ticket(tickets, "map-columns", "## Acceptance criteria\n\n- [ ] `one-flow#P1` holds.\n")
+    path = ticket(tickets, "map-columns", "## Acceptance criteria\n\n- [ ] `one-flow#P1` holds.\n", status="review",
+                  **{"needs-user": "true"})  # done on the ruling, with no branch to merge
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the tickets")
-    said = run(repo, "retire", "one-flow")
-    assert said.code == 1 and f"{path}:{line_of(path, 'one-flow#P1')}: one-flow#P1" in said.err
+    said = run(repo, "retire")
+    assert said.code == 0 and f"one-flow stays: cited at {path}:{line_of(path, 'one-flow#P1')}: one-flow#P1" in said.out
     assert (tickets / "one-flow.md").exists()
+
+    assert run(repo, "set", "map-columns", "status=done").code == 0
+    git(repo, "commit", "-q", "-am", "map-columns done")
+    assert run(repo, "retire").code == 0
+    assert not list(tickets.glob("*.md")), "the citing tree and the one it cites leave together"
+
+
+def test_a_tree_with_a_ticket_not_done_stays_whole(tickets: Path, repo: Path) -> None:
+    """A done child of a parent still open is read at the parent's close-out, and a done parent's
+    child not done is still live work, so neither tree leaves."""
+    ticket(tickets, "one-flow", status="claimed")
+    ticket(tickets, "map-columns", parent="one-flow", status="done", hinge="true")
+    ticket(tickets, "csv-import", status="done")
+    ticket(tickets, "saved-views", parent="csv-import", status="review")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "the tickets")
+    said = run(repo, "retire")
+    assert said.code == 0 and "csv-import stays: saved-views not done" in said.out and "no finished tree" in said.out
+    assert len(list(tickets.glob("*.md"))) == 4
 
 
 @pytest.mark.parametrize("status", ["proposed", "open", "claimed", "review"])
@@ -1336,7 +1363,7 @@ def test_dropping_a_done_ticket_is_refused_as_retirings(tickets: Path, repo: Pat
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the ticket")
     said = run(repo, "drop", "one-flow")
-    assert said.code == 1 and "retiring is what takes shipped work out" in said.err
+    assert said.code == 1 and "`tracker retire` takes it out" in said.err
     assert (tickets / "one-flow.md").exists()
 
 
@@ -1367,21 +1394,12 @@ def test_dropping_a_ticket_with_changes_no_commit_holds_is_refused(tickets: Path
     assert path.exists()
 
 
-def test_retiring_a_ticket_whose_work_has_not_landed_is_refused(tickets: Path, repo: Path) -> None:
-    ticket(tickets, "one-flow", status="review")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "the ticket")
-    said = run(repo, "retire", "one-flow")
-    assert said.code == 1 and "is not done" in said.err
-    assert (tickets / "one-flow.md").exists()
-
-
 def test_retiring_a_file_with_changes_no_commit_holds_is_refused_before_anything_moves(tickets: Path, repo: Path) -> None:
     path = ticket(tickets, "one-flow", status="done")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "the ticket")
     path.write_text(path.read_text() + "\nA line nothing has committed.\n")
-    said = run(repo, "retire", "one-flow")
+    said = run(repo, "retire")
     assert said.code == 1 and "git history is what keeps a file that leaves" in said.err
     assert path.exists()
 
@@ -1551,7 +1569,7 @@ def test_a_worker_is_refused_a_write_from_the_worktree_it_holds(split: Path) -> 
         ("rule", "one-flow", "D1", "keep it"),
         ("import", "one-flow", str(report)),
         ("drop", "one-flow"),
-        ("retire", "one-flow"),
+        ("retire",),
     ]
     for at in (worktree, worktree / "agent", report.parent):
         for write in writes:
@@ -1673,16 +1691,16 @@ def test_retiring_takes_what_the_ticket_owns_in_the_agent_repo(split: Path) -> N
     git(split / "agent", "commit", "-q", "-m", "one-flow, with what it owns")
 
     (split / "agent" / "show" / "one-flow" / "notes.md").write_text("what it turned on\n")  # untracked
-    said = run(split, "retire", "one-flow")
+    said = run(split, "retire")
     assert said.code == 0, said.said
     kept = Path.home() / "logs" / "agent" / split.name / "show" / "one-flow" / "notes.md"
     assert kept.is_file(), f"an untracked file leaves to {kept}, under the project's own name"
     kept.unlink()
     for gone in ("tickets/one-flow.md", "show/one-flow/walkthrough", "research/one-flow.md"):
         assert not (split / "agent" / gone).exists(), f"{gone} stayed"
-    assert "one-flow, with what it owns" in git(split / "agent", "log", "-1", "--format=%s"), "staged, not committed"
-    assert sorted(git(split / "agent", "diff", "--cached", "--name-only").split()) == [
-        "research/one-flow.md", "show/one-flow/walkthrough", "tickets/one-flow.md"], "every removal is staged"
+    assert sorted(git(split / "agent", "show", "--name-only", "--format=%s", "HEAD").split()) == sorted([
+        "retire", "one-flow:", "finished", "research/one-flow.md", "show/one-flow/walkthrough", "tickets/one-flow.md"]), \
+        "every removal in one commit of its own"
 
 
 def test_a_range_names_which_of_the_two_repos_it_is_in(tickets: Path, repo: Path) -> None:
