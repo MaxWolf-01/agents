@@ -36,7 +36,7 @@ const DENIED = [
 	".dotfiles/secrets/creds",
 ];
 const DENIED_ANYWHERE = ["/proc"];
-/** What each Claude Code config directory keeps its credentials in, `.claude`'s among them in `DENIED`. */
+/** The file each Claude Code config directory keeps its credentials in. `.claude`'s is also in `DENIED`, as D5 ruled. */
 const CREDENTIALS = ".credentials.json";
 
 /** Directories a search or a listing of matches walks past: what they hold is history or vendored code, not max's. */
