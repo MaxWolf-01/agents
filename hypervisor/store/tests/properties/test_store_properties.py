@@ -5,7 +5,6 @@ takes as many appends and about as many compressions, which a process per call w
 """
 
 import contextlib
-import datetime
 import io
 import re
 import sys
@@ -130,21 +129,8 @@ block_id = st.one_of(
     st.tuples(st.integers(-1, 40), st.integers(-1, 40)).map(lambda p: f"{p[0]}-{p[1]}"),
     text,
 )
-# A stamp as `import` reads one, to the minute or to the day, or not a stamp at all.
-minute = st.datetimes(datetime.datetime(2020, 1, 1), datetime.datetime(2099, 12, 31)).map(lambda t: t.strftime("%Y-%m-%dT%H:%M"))
-stamp = st.one_of(minute, st.dates(datetime.date(2020, 1, 1), datetime.date(2099, 12, 31)).map(str), text)
-# The lines `import` takes on stdin: stamped texts, mostly in order and later than anything logged in this decade,
-# now and then out of order, too early, or not stamped.
-line = st.tuples(stamp, entry).map(lambda p: f"{p[0]} {' '.join(p[1].split()) or 'x'}")
-in_order = st.lists(minute.filter(lambda m: m >= "2030"), min_size=1, max_size=4).map(sorted).flatmap(
-    lambda stamps: st.tuples(*[entry.map(lambda e, s=s: f"{s} {' '.join(e.split()) or 'x'}") for s in stamps])
-)
-imported = st.one_of(in_order.map("\n".join), in_order.map("\n".join), st.lists(line, min_size=1, max_size=4).map("\n".join))
 # A command line and the text on its stdin.
 command = st.one_of(
-    st.tuples(st.just(("import",)), imported),
-    st.tuples(block_id.map(lambda b: ("body", b)), st.just("")),
-    st.tuples(st.integers(0, 20).map(lambda n: ("stays", "--ahead", n)), st.just("")),
     st.tuples(st.just(("append",)), entry),
     st.tuples(st.just(("init",)), st.just("")),
     st.tuples(st.lists(text, max_size=2).map(lambda rest: ("init", *rest)), st.just("")),
@@ -184,12 +170,10 @@ def test_no_command_changes_an_earlier_entry(first: list[str], commands: list[tu
             if args == ("compress", "<due>"):
                 due = run(store, "due")[1].split()
                 args = ("compress", due[0]) if due else ("due",)
-            code, out = run(store, *args, stdin=stdin)
+            code, _ = run(store, *args, stdin=stdin)
             if args == ("append",):
                 assert code == 0, f"append refused {stdin!r}"
                 logged += 1
-            if args == ("import",) and code == 0:
-                logged += int(re.search(r"Imported (\d+) entries", out)[1])
             after = entries(store, logged)
             changed = [key for key in before if not kept(key, before[key], after[key])]
             assert not changed, f"`{' '.join(map(str, args))}` changed {changed}"

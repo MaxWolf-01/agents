@@ -143,7 +143,7 @@ const UNGUARDED = /^--(dangerously-skip-permissions|allow-dangerously-skip-permi
 function claudeProblems(args: string[]): string[] {
 	if (CLAUDE_COMMANDS.has(args[0])) return [];
 	const problems = args.filter((arg) => UNGUARDED.test(arg)).map((arg) => `claude ${arg}: changes what the classifier judges`);
-	const mode = args.flatMap((arg, i) => (arg === "--permission-mode" ? [args[i + 1]] : arg.startsWith("--permission-mode=") ? [arg.slice(arg.indexOf("=") + 1)] : []));
+	const mode = args.flatMap((arg, i) => (arg === "--permission-mode" ? [args[i + 1]] : arg.startsWith("--permission-mode=") ? [arg.slice(18)] : []));
 	if (mode.length !== 1 || mode[0] !== "auto") problems.push(`claude ${args.join(" ")}: a session not in auto mode`);
 	return problems;
 }

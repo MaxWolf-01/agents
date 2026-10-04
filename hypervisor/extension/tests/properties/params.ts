@@ -1,28 +1,5 @@
 import fc from "fast-check";
 
-/**
- * Strings that do harm wherever a tool hands them to a shell, to tmux as a format, to claude as a flag, or uses them
- * as a path, among any strings at all.
- */
-export const HOSTILE = fc.oneof(
-	fc.string(),
-	fc.constantFrom(
-		"; touch pwned",
-		"$(touch pwned)",
-		"`touch pwned`",
-		"x\nrm -rf ~",
-		"../../../../tmp/pwned",
-		"/tmp/pwned",
-		"-rf",
-		"--help",
-		"--settings",
-		"--dangerously-skip-permissions",
-		"#(touch pwned)",
-		"##(touch pwned)",
-		"a#{pane_id}",
-	),
-);
-
 type Schema = {
 	type?: string;
 	const?: unknown;

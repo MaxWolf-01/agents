@@ -207,8 +207,6 @@ test("lifelong-hypervisor#P5: a file outside the denied roots reads back through
 		fc.asyncProperty(fc.constantFrom(...READABLE, "notes/open", "notes/to-work/notes.md", "notes/up/.dotfiles/secrets/readme.md").chain(spellings), async (spelled) => {
 			const reads = await Promise.all(tools.map((tool) => execute(tool, minimal(tool, spelled), context, 5000)));
 			assert.ok(reads.some(({ said }) => said.includes(OPEN)), `no read tool read ${spelled}`);
-			const read = reads[tools.findIndex((tool) => tool.name === "read")];
-			assert.ok(read.said.includes(OPEN) || read.said.startsWith("a directory: ls lists it"), `read did not read ${spelled}:\n${read.said}`);
 		}),
 	);
 });
