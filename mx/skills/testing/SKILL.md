@@ -7,7 +7,7 @@ description: "Use when writing or changing tests, deciding what a piece of work 
 
 A suite does two separable jobs: it **holds code in place** (a change in behaviour fails a test) and it **tells code is wrong** (the implementation disagrees with something outside it). The second needs an **oracle** independent of the implementation, and that is where a suite is usually thin. Write code and tests in whichever order the work wants.
 
-Read `CONTEXT.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
+Read `GLOSSARY.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
 
 ## The seam
 

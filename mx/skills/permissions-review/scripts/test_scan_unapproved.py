@@ -81,7 +81,7 @@ def test_git_reads_are_auto_approved_but_writes_are_not() -> None:
 
 
 def test_read_only_programs_lose_the_exemption_when_they_can_write() -> None:
-    assert internally_approved("sed -n 1,60p CONTEXT.md")
+    assert internally_approved("sed -n 1,60p GLOSSARY.md")
     assert not internally_approved("sed -i s/a/b/ file")
     assert not internally_approved("sed -i.bak s/a/b/ file")
     assert not internally_approved("sed -ni p file")

@@ -6,7 +6,7 @@ argument-hint: [focus-area]
 
 # Status Report
 
-Report where the work stands, so the reader can validate or correct it in one scan. Assume they lost the thread: give the context around each point, write in ASD-STE100 Simplified Technical English (short sentences, one idea each, plain words), and use the `CONTEXT.md` vocabulary.
+Report where the work stands, so the reader can validate or correct it in one scan. Assume they lost the thread: give the context around each point, write in ASD-STE100 Simplified Technical English (short sentences, one idea each, plain words), and use the `GLOSSARY.md` vocabulary.
 
 Focus area, if given: $ARGUMENTS. Otherwise cover the whole session.
 
