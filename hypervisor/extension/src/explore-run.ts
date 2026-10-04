@@ -6,10 +6,10 @@
 // its credentials from the environment, as `hv` sets them.
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { fromEnvironment } from "./index.ts";
+import { lines } from "./journal.ts";
 import { HYPERVISOR, MODEL, PI } from "./pi.ts";
 
 const GOAL = "Gather what makes you the best assistant, coordinator of coding agents, secretary, collaborator and companion to max.";
@@ -31,8 +31,7 @@ export interface Tokens {
 /** Runs explore mode to the end of its budget; resolves with the exit code, 1 when a step failed. */
 export async function explore(budget: Budget, model: string): Promise<number> {
 	const config = fromEnvironment();
-	const forks = path.join(config.store, "forks.jsonl");
-	const before = forkTokens(forks, 0).lines;
+	const before = (await forkTokens(config.store, 0)).lines;
 	const pi = spawn(
 		process.execPath,
 		[PI, "--mode", "rpc", "--no-session", ...HYPERVISOR, "--explore", "--model", model],
@@ -45,7 +44,7 @@ export async function explore(budget: Budget, model: string): Promise<number> {
 	let code = 0;
 	for (;;) {
 		// Forks still running for the step before are not in forks.jsonl yet; the closing count has them all.
-		const used = total(steps) + total(forkTokens(forks, before).tokens);
+		const used = total(steps) + total((await forkTokens(config.store, before)).tokens);
 		if (!allows(budget, taken + 1, used)) break;
 		const done = await step(pi, stepMessage(taken + 1, budget, used));
 		steps = plus(steps, done.tokens);
@@ -58,7 +57,7 @@ export async function explore(budget: Budget, model: string): Promise<number> {
 	console.log("Waiting for the last steps' compressions to be written.");
 	pi.stdin!.end();
 	await closed;
-	const forked = forkTokens(forks, before).tokens;
+	const forked = (await forkTokens(config.store, before)).tokens;
 	console.log(`Used ${shown(plus(steps, forked))} tokens in ${taken} ${taken === 1 ? "step" : "steps"}: ${shown(steps)} by the steps, ${shown(forked)} by the forks.`);
 	return code;
 }
@@ -136,16 +135,14 @@ function step(pi: ChildProcess, message: string): Promise<Step> {
 	});
 }
 
-/** The tokens of the forks logged in `forks.jsonl` after its first `skip` lines; a store with no fork yet has none. */
-function forkTokens(file: string, skip: number): { lines: number; tokens: Tokens } {
-	let lines: string[] = [];
-	try {
-		lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-	}
-	const calls = lines.slice(skip).flatMap((line) => JSON.parse(line).calls as { usage: Tokens }[]);
-	return { lines: lines.length, tokens: calls.reduce((sum, call) => plus(sum, call.usage), none()) };
+/**
+ * The tokens of the forks logged in the store's `forks.jsonl` after its first `skip` lines; a store with no fork yet has
+ * none. A line still being written is left out until it is whole.
+ */
+async function forkTokens(store: string, skip: number): Promise<{ lines: number; tokens: Tokens }> {
+	const forks = await lines<{ calls: { usage: Tokens }[] }>(store, "forks.jsonl");
+	const calls = forks.slice(skip).flatMap((fork) => fork.calls);
+	return { lines: forks.length, tokens: calls.reduce((sum, call) => plus(sum, call.usage), none()) };
 }
 
 const none = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });

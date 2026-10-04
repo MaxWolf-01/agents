@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -27,7 +27,7 @@ export interface Config {
 }
 
 const PROMPT = fileURLToPath(new URL("../system-prompt.md", import.meta.url));
-/** What the system prompt gains in a conversation, where the session tools are the agent's, and in explore mode. */
+/** What the system prompt gains in a conversation, where the session tools are the agent's; explore mode gains its own. */
 const SESSIONS_PROMPT = fileURLToPath(new URL("../sessions-prompt.md", import.meta.url));
 const EXPLORE_PROMPT = fileURLToPath(new URL("../explore-prompt.md", import.meta.url));
 /** The view the run in flight started from, in the store. */
@@ -38,17 +38,17 @@ const WATCH_MS = 3000;
 /**
  * The hypervisor as a pi extension. It registers the hypervisor's tools and makes them the whole active set, so none
  * of pi's own tools (`bash`, `edit`, `write`, an unguarded `read`) stays active. With `--explore`, each run is one
- * explore step: the explorer's read tools take the session tools' place, the system prompt explore mode's part theirs, and
- * the step is logged as its tool calls and its finding. Outside explore mode, what the spawned sessions do and what
- * orchestrators leave with `hv tell` reach the agent as `<event>` messages, which start a turn of their own when none
- * runs.
+ * explore step: the explorer's read tools take the session tools' place, explore mode's prompt takes the sessions
+ * prompt's, and the step is logged as its tool calls and its finding. Outside explore mode, what the spawned sessions
+ * do and what orchestrators leave with `hv tell` reach the agent as `<event>` messages, which start a turn of their own
+ * when none runs.
  *
- * Under `config.store`: `log/`, the store's own directory; `view.txt`, the view the latest run started from;
- * `requests.jsonl`, a line for each request sent, what it
- * carried in brief, with the error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork,
- * with the tokens each of its calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not
- * take; `spawned.jsonl`, a line for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken;
- * `watch.jsonl`, a line for each look of the watch that failed.
+ * Under `config.store`: `log/`, the store's own directory; `view.txt`, the view the latest run started from, absent
+ * when it could not be written; `requests.jsonl`, a line for each request sent, what it carried in brief, with the
+ * error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork, with the tokens each of its
+ * calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not take; `spawned.jsonl`, a line
+ * for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken; `watch.jsonl`, a line for
+ * each look of the watch that failed.
  */
 export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	return (pi) => {
@@ -76,8 +76,9 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 		const render = async () => {
 			failed = undefined;
 			const rendered = await mind.view();
-			// What the agent wakes to, kept where max reads it (`hv view`); a turn goes on without it.
-			await writeFile(path.join(config.store, VIEW), `${rendered}\n`).catch(() => {});
+			// What the agent wakes to, kept where max reads it (`hv view`). A turn goes on without it, and an older
+			// turn's view does not stay to pass for this one's.
+			await writeFile(path.join(config.store, VIEW), `${rendered}\n`).catch(() => rm(path.join(config.store, VIEW), { force: true }).catch(() => {}));
 			// Without the store's `stays`, the view still reads what earlier requests wrote; the request log says why.
 			const stays = await store.stays(AHEAD).catch((error) => {
 				failed = String(error);

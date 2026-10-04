@@ -19,7 +19,7 @@ extension=$here/extension
 store=${HV_STORE:-$HOME/.local/share/hypervisor}
 
 if [[ ${1:-} == view ]]; then
-	[[ -f $store/view.txt ]] || { echo "hv view: no turn has started over $store yet" >&2; exit 1; }
+	[[ -f $store/view.txt ]] || { echo "hv view: no view in $store: no turn has started, or the latest could not write it" >&2; exit 1; }
 	exec cat "$store/view.txt"
 fi
 

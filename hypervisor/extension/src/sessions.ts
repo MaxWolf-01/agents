@@ -3,7 +3,7 @@ import { createConnection } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { append, lines } from "./journal.ts";
-import { absolute, shown } from "./paths.ts";
+import { absolute, claudeConfigs, shown } from "./paths.ts";
 import { run } from "./run.ts";
 
 /** Where the session tools find things: max's home, whose `.claude*` directories list the live sessions, and the store. */
@@ -137,7 +137,7 @@ export async function sessions(home: string): Promise<Session[]> {
  * leaves its file behind.
  */
 export async function registry(home: string): Promise<Session[]> {
-	const configs = (await readdir(home).catch(() => [])).filter((name) => name === ".claude" || name.startsWith(".claude-"));
+	const configs = await claudeConfigs(home);
 	const files = (await Promise.all(configs.map(async (config) => (await readdir(path.join(home, config, "sessions")).catch(() => [])).filter((file) => /^\d+\.json$/.test(file)).map((file) => path.join(home, config, "sessions", file))))).flat();
 	const read = await Promise.all(files.map((file) => readFile(file, "utf8").then(entry, () => undefined)));
 	return read.filter((s): s is Session => s !== undefined && alive(s.pid));

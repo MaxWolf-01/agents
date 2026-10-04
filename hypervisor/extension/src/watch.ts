@@ -12,7 +12,7 @@ export interface Seen {
 
 /**
  * Looks at the spawned sessions and the inbox once at the start and every `ms` after, and hands `deliver` the events
- * since the last look, if any. The first look only learns the sessions' states. A look that fails goes to `failed`, and the next one
+ * since the last look, if any. The first look, which `started` resolves after, only learns the sessions' states. A look that fails goes to `failed`, and the next one
  * starts from the states the last good one saw; so does a look that has events while `ready` says `deliver` cannot
  * take them, and it leaves the inbox as it is. Reads files alone: the registry, and the store's own.
  */
@@ -47,8 +47,7 @@ export function watch(
 	};
 	const timer = setInterval(() => void look(), ms);
 	timer.unref();
-	void look();
-	return { look, stop: () => clearInterval(timer) };
+	return { look, stop: () => clearInterval(timer), started: look() };
 }
 
 /**

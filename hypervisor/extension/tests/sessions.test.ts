@@ -324,7 +324,7 @@ function watching(at: string, store: string, ready = () => true) {
 	const delivered: string[][] = [];
 	const failures: unknown[] = [];
 	const w = watch({ home: at, store }, 2 ** 30, (events) => delivered.push(events), (error) => failures.push(error), ready);
-	return { ...w, delivered, failures, settled: () => new Promise((settle) => setTimeout(settle, 100)) };
+	return { ...w, delivered, failures };
 }
 
 /** A home whose registry holds this process as the claude a spawned window runs, in `status`. */
@@ -340,7 +340,7 @@ test("the watch takes a registry file caught mid-write for no change, and a live
 	const { home: at, store, entry } = spawnedHere("busy");
 	const w = watching(at, store);
 	try {
-		await w.settled();
+		await w.started;
 		writeFileSync(entry, "{");
 		await w.look();
 		assert.deepEqual(w.delivered, [], "the session's process lives, so it has not ended");
@@ -357,7 +357,7 @@ test("the watch holds its events while pi cannot take them, the inbox untouched,
 	let ready = false;
 	const w = watching(at, store, () => ready);
 	try {
-		await w.settled();
+		await w.started;
 		registered(at, process.pid, { name: "orch-1", status: "idle" });
 		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
 		await w.look();
@@ -389,7 +389,7 @@ test("a look whose delivery fails leaves its events for the next look, and two l
 		(error) => failures.push(error),
 	);
 	try {
-		await new Promise((settle) => setTimeout(settle, 100));
+		await w.started;
 		registered(at, process.pid, { name: "orch-1", status: "idle" });
 		await w.look();
 		assert.equal(failures.length, 1);
