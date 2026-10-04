@@ -238,6 +238,23 @@ def test_a_session_that_needed_a_page_has_one_beside_its_records(
     assert (worked_example / "index.html").read_text() != stale_page
 
 
+def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
+    worked_example: Path, transcript: Path, run: Callable[[dict], None]
+) -> None:
+    """The page the hook writes is the renderer's, links included: an artefact carries the path the
+    hub finds it by, and a path a record writes as code opens the file, both resolved from the repo
+    root the records sit under."""
+    root = worked_example.parents[len(SESSIONS.parts)]
+    (root / "mx").mkdir()
+    (root / "mx" / "tool.py").write_text("")
+    newest = worked_example / "turns" / "04.md"
+    newest.write_text(newest.read_text().replace("\n## Details\n\n", "\n## Details\n\nThe code is `mx/tool.py`.\n\n", 1))
+    run(payload(worked_example, transcript))
+    written = (worked_example / PAGE).read_text()
+    assert f'{session_page.ARTEFACT}="{root}/agent/show/session-page/round-3/spec.html"' in written
+    assert '<a class="path" href="../../../mx/tool.py"' in written
+
+
 # ---- the page opening on its first render -----------------------------------
 
 

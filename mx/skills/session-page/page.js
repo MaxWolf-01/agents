@@ -28,7 +28,16 @@ const nativeKey = (e) => (e.key === "Enter" || e.key === " ") && e.target.closes
 const blocks = [...document.querySelectorAll("[data-block]")]
 const turns = blocks.filter((b) => b.matches(".turn"))
 let cur = -1
-const mark = () => blocks.forEach((b, n) => b.classList.toggle("cur", n === cur))
+// the focused turn's group in the artefact column is marked too, and scrolled into the column's view
+const column = document.getElementById("artefacts")
+const group = (turn) => turn && turn.matches(".turn") ? document.getElementById("a" + turn.id.slice(1)) : null
+const mark = () => {
+  blocks.forEach((b, n) => b.classList.toggle("cur", n === cur))
+  const g = group(blocks[cur])
+  column.querySelectorAll(".group").forEach((el) => el.classList.toggle("cur", el === g))
+  if (g && (g.offsetTop < column.scrollTop || g.offsetTop + g.offsetHeight > column.scrollTop + column.clientHeight))
+    column.scrollTop = g.offsetTop - column.clientHeight / 3
+}
 const focusBlock = (i) => {
   if (!blocks.length) return
   cur = Math.max(0, Math.min(blocks.length - 1, i))
@@ -101,9 +110,10 @@ document.addEventListener("keydown", (e) => {
     default: {
       if (!/^[1-9]$/.test(e.key)) return
       const turn = focused && focused.matches(".turn") ? focused : turns[0]
-      const link = turn && turn.querySelectorAll("a.link")[+e.key - 1]
-      if (link) window.open(link.href, "_blank", "noopener")
-      else say(`turn ${turn ? turn.id.slice(1) : ""} has no link ${e.key}`)
+      const g = group(turn)
+      const link = g && g.querySelectorAll("a[data-artefact]")[+e.key - 1]
+      if (link) link.click()  // a click, so whatever handles one on the page handles the key too
+      else say(`turn ${turn ? turn.id.slice(1) : ""} has no artefact ${e.key}`)
     }
   }
   e.preventDefault()
