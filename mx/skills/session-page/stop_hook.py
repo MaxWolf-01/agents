@@ -13,12 +13,13 @@ wrote it (write_hook.py), so it is over by the time the turn ends.
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
 
-Every render hands the page to `claude-browser`, where the host has one, and with it every link the
-record this turn wrote carries, each told the session through MX_ORIGIN_SESSION: where the container
-hub runs, they land in the session's unit there, and a page already open is reloaded. The render
-that writes a session's page for the first time also keeps `sessions/` out of the agent repo's
-`git status`, through that clone's `.git/info/exclude`, where nothing ignores it yet. Each open and
-the exclude is a line of the log too, saying what came of it.
+A render hands `claude-browser`, where the host has one, every artefact the record this turn wrote
+links (a ticket file is none), and the page itself: on every render where the container hub
+answers, since it lands each in the session's unit and turns a repeat into a reload, and only on
+the render that writes the page first where none does, since a repeat would be another tab. Each is
+told the session through MX_ORIGIN_SESSION. The first render also keeps `sessions/` out of the agent
+repo's `git status`, through that clone's `.git/info/exclude`, where nothing ignores it yet. Each
+open and the exclude is a line of the log too, saying what came of it.
 
 The agent ends a turn whose answer is on the page on its recap, which carries no link, so a render
 whose turn wrote a record shows the user one line of the hook's own under it, as a `systemMessage`:
@@ -61,7 +62,7 @@ class Decision:
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     page: str = ""  # the session page, where the verb is render
     shown: str = ""  # what waits on the user, where a render's turn wrote a record; `main` adds the link
-    artefacts: tuple[str, ...] = ()  # the file or URL of each link the record this turn wrote carries
+    artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
 
 # The longest chat reply a session that has a page ends a turn with and writes no record.
@@ -99,9 +100,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
     - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
-      the user sees under the agent's recap (`shown`, short of its link) and the record's links, and where that record
-      was reviewed, the records as the turn ended are logged beside the review, so the log pairs a
-      draft with its revision.
+      the user sees under the agent's recap (`shown`, short of its link) and the record's
+      artefacts, and where that record was reviewed, the records as the turn ended are logged
+      beside the review, so the log pairs a draft with its revision.
 
     The answer in the chat sends the agent back once per turn: a turn a Stop hook already continued
     renders a long reply, so an agent that keeps its answer in the chat is not held in a loop.
@@ -152,10 +153,10 @@ def hub_unit(session_id: str) -> str:
 
 
 def linked(session: Session, turn: Turn) -> tuple[str, ...]:
-    """What each of the turn's links opens, resolved as the page's artefact column resolves a link."""
+    """What each of the turn's artefacts opens, resolved as the page's artefact column resolves a link."""
     root = ROOT.set(session.root)
     try:
-        return tuple(resolved(link.path) for link in turn.links)
+        return tuple(resolved(link.path) for link in turn.artefacts)
     finally:
         ROOT.reset(root)
 
@@ -231,14 +232,15 @@ def main() -> None:
         first = not (directory / PAGE).exists()
         (directory / PAGE).write_text(decision.page)
         session_id = hook["session_id"]
-        turn_review.log(session_id, opened=open_in_browser(str(directory / PAGE), session_id), page=str(directory / PAGE))
+        unit = hub_unit(session_id)
+        if unit or first:
+            turn_review.log(session_id, opened=open_in_browser(str(directory / PAGE), session_id), page=str(directory / PAGE))
         for artefact in decision.artefacts:
             turn_review.log(session_id, opened=open_in_browser(artefact, session_id), artefact=artefact)
         if first:
             turn_review.log(session_id, excluded=exclude_sessions(directory.parent))
         if decision.shown:
-            link = hub_unit(session_id) or (directory / PAGE).as_uri()
-            print(json.dumps({"systemMessage": f"{decision.shown} · {link}"}))
+            print(json.dumps({"systemMessage": f"{decision.shown} · {unit or (directory / PAGE).as_uri()}"}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
 

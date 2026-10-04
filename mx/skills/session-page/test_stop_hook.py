@@ -274,34 +274,44 @@ def test_the_page_the_hook_writes_resolves_a_records_paths_from_the_repo_root(
 # ---- what a turn's end opens ------------------------------------------------
 
 
-def test_every_render_opens_the_session_page_as_the_sessions(
-    worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None], attended: Path,
+# Each is whether a hub answers, and how many of three renders open the page.
+PAGE_OPENS = {"a hub that answers": (True, 3), "no hub": (False, 1)}
+
+
+@pytest.mark.parametrize("answers, opens", PAGE_OPENS.values(), ids=PAGE_OPENS)
+def test_the_page_opens_on_every_render_where_a_hub_answers_and_on_the_first_where_none_does(
+    answers: bool, opens: int, worked_example: Path, unrecorded: Path, browser: Path, run: Callable[[dict], None],
+    attended: Path, hub: Callable[[int], int],
 ) -> None:
-    """stop-hook-opens-the-turns-artefacts: each render hands the page to `claude-browser`, told the
-    session it belongs to, and the hub turns a repeat into a reload. The turns wrote no record, so
-    the links record 04 carries, from a turn before, open nothing."""
+    """stop-hook-opens-the-turns-artefacts and its D4: a render hands the page to `claude-browser`,
+    told the session it belongs to, every time where the hub turns a repeat into a reload, and only
+    the first time where no hub would, since a repeat would be another tab. The turns wrote no
+    record, so the links record 04 carries, from a turn before, open nothing."""
+    if answers:
+        hub(200)
     for _ in range(3):
         run(payload(worked_example, unrecorded))
     page = str(worked_example / PAGE)
-    assert opened(browser, 3) == [(worked_example.name, page)] * 3
-    assert [(entry["page"], entry["opened"].startswith("started ")) for entry in logged(attended, "opened")] == [(page, True)] * 3
+    assert opened(browser, opens) == [(worked_example.name, page)] * opens
+    assert [(entry["page"], entry["opened"].startswith("started ")) for entry in logged(attended, "opened")] == [(page, True)] * opens
 
 
 # Each is the `## Links` a record written this turn carries, and the paths `claude-browser` is handed
 # for them, from the repo root the session's directory sits under: a path from the root joined to
 # it, an absolute or `~` path as it is, a URL as it is, and a fragment dropped, as the hub finds a
-# page by its file.
+# page by its file. A ticket file is no artefact (session-pages-feed-the-hub#P2) and is handed none.
 RECORD_LINKS = {
     "a page from the repo root": (["- [The spec](agent/show/x/spec.html): this round's"], ["{root}/agent/show/x/spec.html"]),
     "a section of a page": (["- [P1](agent/show/x/spec.html#p1)"], ["{root}/agent/show/x/spec.html"]),
     "a file outside the repo": (["- [The figure](/srv/figures/fig.svg)"], ["/srv/figures/fig.svg"]),
     "a file under home": (["- [Notes](~/notes/fig.html)"], ["{home}/notes/fig.html"]),
     "a URL": (["- [The run](http://127.0.0.1:8000/run?step=3)"], ["http://127.0.0.1:8000/run?step=3"]),
-    "a ticket file": (["- [The ticket](agent/tickets/session-page.md)"], ["{root}/agent/tickets/session-page.md"]),
+    "a ticket file": (["- [The ticket](agent/tickets/session-page.md)"], []),
+    "a ticket file in another repo": (["- [The ticket](/srv/other/agent/tickets/one-hub-tab.md#d2)"], []),
     "several at once": (
         ["- [Pages](agent/show/x/pages.html): which page carries what", "- [The diff](agent/show/x/diff.html)",
          "- [The ticket](agent/tickets/session-page.md)"],
-        ["{root}/agent/show/x/pages.html", "{root}/agent/show/x/diff.html", "{root}/agent/tickets/session-page.md"]),
+        ["{root}/agent/show/x/pages.html", "{root}/agent/show/x/diff.html"]),
     "no links": ([], []),
 }
 
@@ -312,8 +322,8 @@ def test_every_link_the_turns_record_carries_is_handed_to_the_browser_as_the_ses
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], attended: Path,
 ) -> None:
     """session-pages-feed-the-hub#P1, at the Stop hook's input: the record this turn wrote, its
-    links in, and the `claude-browser` calls out, each told the session, beside the page's own. The
-    log says what came of each."""
+    links in, and the `claude-browser` calls out, each told the session, beside the page's own on
+    its first render. The log says what came of each."""
     record = worked_example / "turns" / "05.md"
     record.write_text(RECORD_05 + ("\n## Links\n\n" + "\n".join(links) + "\n" if links else ""))
     with_write(unrecorded, "Write", record)
