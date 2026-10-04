@@ -36,7 +36,7 @@ p, h1, h2, h3 { margin: 0; }
 .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); max-width: min(40rem, calc(100vw - 3rem)); box-sizing: border-box; padding: 0.5rem 0.9rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); font: 400 0.8rem/1.5 var(--font-mono); color: var(--body); opacity: 0; pointer-events: none; transition: opacity 200ms; overflow-wrap: anywhere; }
 .toast.on { opacity: 1; }
 
-/* the turns, and beside them the column of the session's artefacts, which stays in view as they scroll */
+/* the grid every block of the page sits in: the turns, and beside them the column of the session's artefacts, which stays in view as they scroll */
 main.page { display: grid; grid-template-columns: minmax(0, 1fr) var(--column); grid-template-rows: auto auto 1fr; grid-template-areas: "intro column" "waiting column" "turns column"; column-gap: var(--gap); align-items: start; }
 .intro { grid-area: intro; }
 .waiting { grid-area: waiting; }

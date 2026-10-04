@@ -40,8 +40,8 @@ SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the 
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
 # The column beside the turns that lists every artefact of the session, and the attribute each link
-# to an artefact carries: the path it resolves to on this machine, or its URL. A hub showing the
-# page finds the links it marks as open, minimized or seen by that attribute.
+# to an artefact carries, wherever on the page it sits: the file it resolves to on this machine, or
+# its URL. The dotfiles' container hub finds the links it marks by these two names.
 COLUMN = "artefacts"
 ARTEFACT = "data-artefact"
 
@@ -254,11 +254,11 @@ class Session:
     repo: Path
     title: str  # session.md's H1
     brief: str  # its `## Brief`
+    root: Path  # the repo root the directory sits under, which a record's paths are from
     turns: tuple[Turn, ...] = ()
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
     described: datetime | None = None  # when the transcript last shows session.md written
-    root: Path | None = None  # the repo root the directory sits under, which a record's paths are from
 
 
 # ---- reading the records ----------------------------------------------------
@@ -663,14 +663,15 @@ def open_questions(session: Session) -> list[tuple[Turn, Question]]:
 
 
 def page(session: Session, now: datetime) -> str:
+    """The session page, with every path a record writes resolved from the session's repo root."""
     root = ROOT.set(session.root)
     try:
-        return html_page(session, now)
+        return assemble(session, now)
     finally:
         ROOT.reset(root)
 
 
-def html_page(session: Session, now: datetime) -> str:
+def assemble(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
     waiting = open_questions(session)
     dates = sorted({t.date for t in session.turns})
@@ -733,7 +734,7 @@ def column(newest_first: list[Turn]) -> str:
     groups = "".join(f"""
     <section class="group" id="a{t.key}">
       <a class="v-num turn-ref" href="#t{t.key}" title="{esc(strip_tags(inline(t.headline)))}">{t.key}</a>
-      <ol>{"".join(f'<li>{number(i)}{artefact(link, "artefact")}</li>' for i, link in enumerate(t.artefacts, start=1))}</ol>
+      <ol>{"".join(f'<li>{opening_key(i)}{artefact(link, "artefact")}</li>' for i, link in enumerate(t.artefacts, start=1))}</ol>
     </section>""" for t in newest_first if t.artefacts)
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
@@ -741,7 +742,7 @@ def column(newest_first: list[Turn]) -> str:
   </aside>"""
 
 
-def number(i: int) -> str:
+def opening_key(i: int) -> str:
     """The key that opens a turn's `i`th artefact, where one does."""
     return f'<kbd class="n">{i}</kbd>' if i <= 9 else '<span class="n"></span>'
 
@@ -802,7 +803,7 @@ def chips(t: Turn) -> str:
     if not t.artefacts:
         return ""
     return ('<span class="chips">' + "".join(
-        f'<span class="chip">{number(i)}{artefact(link, "chip-link")}</span>' for i, link in enumerate(t.artefacts, start=1)
+        f'<span class="chip">{opening_key(i)}{artefact(link, "chip-link")}</span>' for i, link in enumerate(t.artefacts, start=1)
     ) + "</span>")
 
 
@@ -848,13 +849,15 @@ def links(items: tuple[Link, ...]) -> str:
     if not items:
         return ""
     rows = []
-    numbers = itertools.count(1)
+    keys = itertools.count(1)
     for link in items:
-        key = '<span class="n"></span>' if link.ticket else number(next(numbers))
         note = f'<span class="desc v-small">{inline(link.note)}</span>' if link.note else ""
-        hub = "" if link.ticket else f' {ARTEFACT}="{esc(resolved(link.path))}"'
-        rows.append(f'<li>{key}<span class="link-main"><a class="link" href="{esc(href(link.path))}"{hub} target="_blank" rel="noopener">'
-                    f'{inline(link.text, paths=False)}</a>{note}</span></li>')
+        if link.ticket:
+            key, anchor = '<span class="n"></span>', (f'<a class="link" href="{esc(href(link.path))}" target="_blank" rel="noopener">'
+                                                     f'{inline(link.text, paths=False)}</a>')
+        else:
+            key, anchor = opening_key(next(keys)), artefact(link, "link")
+        rows.append(f'<li>{key}<span class="link-main">{anchor}{note}</span></li>')
     return f'<ol class="links">{"".join(rows)}</ol>'
 
 
@@ -949,12 +952,12 @@ def href(path: str) -> str:
 
 
 def resolved(path: str) -> str:
-    """Where a link points on this machine: a path from the repo root joined to the root, an
-    absolute or `~` path as it is, a URL as it is."""
+    """The file a link opens on this machine, a fragment or query dropped: a path from the repo root
+    joined to the root, an absolute or `~` path as it is; a URL as it is."""
     if URL.match(path):
         return path
-    local = Path(path).expanduser()
-    return str(local if local.is_absolute() else ROOT.get() / local)
+    local = Path(re.split(r"[#?]", path)[0]).expanduser()
+    return os.path.normpath(local if local.is_absolute() else ROOT.get() / local)
 
 
 def path_target(text: str) -> str | None:

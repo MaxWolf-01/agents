@@ -13,7 +13,6 @@ column and the chips list; this checks what the reader sees of them and what the
 """
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -75,6 +74,15 @@ with sync_playwright() as pw:
     page.keyboard.press("2")
     page.wait_for_timeout(100)
     out["toast"] = page.text_content("#toast")
+    # a window too short for the column to show every group: focusing the oldest turn scrolls its
+    # group into the column's view
+    short = browser.new_context(viewport={"width": width, "height": 240}).new_page()
+    short.goto(page_url)
+    for _ in range(4):
+        short.keyboard.press("j")
+    short.wait_for_timeout(800)
+    out["short"] = {"column": short.eval_on_selector("#artefacts", BOX), "group": short.eval_on_selector("#a02", BOX),
+                    "overflows": short.eval_on_selector("#artefacts", "(el) => el.scrollHeight > el.clientHeight")}
     browser.close()
 print(json.dumps(out))
 """
@@ -95,7 +103,7 @@ def rendered(worked_example: Path, transcript: Path) -> tuple[Path, Path]:
 def probe(page: Path, width: int) -> dict:
     done = subprocess.run(
         ["uv", "run", "--quiet", "--with", "playwright", "python", "-", page.as_uri(), str(width)],
-        input=PROBE, capture_output=True, text=True, timeout=120, env=os.environ,
+        input=PROBE, capture_output=True, text=True, timeout=120,
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-2000:]}"
     return json.loads(done.stdout)
@@ -106,7 +114,8 @@ def test_the_column_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]
     they have scrolled to their end; the newest turn, open, shows no chips and each collapsed turn
     shows its artefacts as chips; j and k walk the open question and then the turns, marking the
     focused turn's group in the column; 1 and 2 open the focused turn's first and second artefact,
-    and a number the turn has no artefact for opens nothing and says so."""
+    and a number the turn has no artefact for opens nothing and says so. In a window too short for
+    the column, focusing a turn scrolls its group into the column's view."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to drive the page with")
@@ -128,6 +137,9 @@ def test_the_column_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]
     url = lambda path: (root / path).as_uri()
     assert seen["opened"] == {"t04 1": url(ARTEFACTS[2]), "t04 2": url(ARTEFACTS[3]), "t03 1": url(ARTEFACTS[1])}
     assert seen["toast"] == "turn 03 has no artefact 2"
+    short = seen["short"]
+    assert short["overflows"], "the column fits the short window, so nothing there needs scrolling"
+    assert short["column"]["top"] <= short["group"]["top"] and short["group"]["bottom"] <= short["column"]["bottom"], short
 
 
 if __name__ == "__main__":

@@ -206,9 +206,9 @@ def test_the_page_is_read_by_the_values_its_module_names() -> None:
     assert (PAGE, QUESTIONS) == ("index.html", "open-questions")
 
 
-def test_the_hub_finds_an_artefact_by_the_attribute_its_ticket_names() -> None:
-    """The column's side of the hub's contract: dotfiles' `minimize-and-restore` marks a link by
-    this attribute and looks for the column by this id, so a rename breaks the hub, not this suite."""
+def test_the_hub_finds_an_artefact_by_its_attribute_and_the_column_by_its_id() -> None:
+    """The page's side of the hub's contract: dotfiles' `minimize-and-restore` marks a link by
+    this attribute and finds the column by this id, so a rename fails here before it reaches the hub."""
     assert (ARTEFACT, COLUMN) == ("data-artefact", "artefacts")
 
 
@@ -282,7 +282,7 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     """session-page#P2: the records and the transcript, carried on their own to a directory of the
     same name and depth, give back the page the session's own directory did, whatever else was
     lying beside them there. The path an artefact link carries for the hub names the repo root the
-    page was rendered under, so the two pages compare with the new root read as the old."""
+    page was rendered under, so the two pages compare with that attribute's new root read as the old."""
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "notes.txt").write_text("a scratch file, which is not a record")
     page = render_session(worked_example, transcript, now=NOW)
@@ -293,7 +293,7 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
     again = render_session(elsewhere, Path(shutil.copy(transcript, tmp_path)), now=NOW)
-    again = again.replace(str(tmp_path / "elsewhere"), str(tmp_path))
+    again = again.replace(f'{ARTEFACT}="{tmp_path / "elsewhere"}/', f'{ARTEFACT}="{tmp_path}/')
     assert top_of(again) == top_of(page)  # first, so a failure names the block that moved
     assert sections_of(again) == sections_of(page)
     assert again == page
@@ -402,14 +402,19 @@ def artefacts(fragment: str) -> list[tuple[str, str]]:
     return found
 
 
-def column_of(page: str) -> dict[str, list[tuple[str, str]]]:
-    """The artefact column, read: each turn's group by the two digits of its record, in the order
-    the column shows them, and its artefacts."""
+def column_of(page: str) -> list[tuple[str, list[tuple[str, str]]]]:
+    """The artefact column, read: each turn's group, in the order the column shows them, by the two
+    digits of its record, with its artefacts."""
     column = elements(page, COLUMN).get(COLUMN)
     assert column is not None, f"the page has no element with id {COLUMN!r}"
     groups = elements(column, r"a\d+")
-    order = re.findall(r'\bid="a(\d+)"', column)
-    return {key: artefacts(groups[f"a{key}"]) for key in order}
+    return [(key, artefacts(groups[f"a{key}"])) for key in re.findall(r'\bid="a(\d+)"', column)]
+
+
+def keys_of(section: str) -> list[str]:
+    """The key shown beside each link in a turn's body, in order, empty for a link no key opens."""
+    links = re.search(r'<ol class="links">.*?</ol>', section, re.S).group()
+    return [re.sub(r"<[^>]+>", "", item) for item in re.findall(r"<li>(<kbd[^>]*>\d</kbd>|<span class=\"n\"></span>)", links)]
 
 
 def chips_of(page: str) -> dict[str, list[tuple[str, str]]]:
@@ -427,12 +432,12 @@ def with_links(record_text: str, items: list[str]) -> str:
 
 
 # The worked example's artefacts, newest turn first, by the text and path its records give them.
-SHOWN = {
-    "04": [("How the pages fit together", "agent/show/session-page/round-3/pages.html"),
-           ("The spec page", "agent/show/session-page/round-3/spec.html")],
-    "03": [("Round 2 as a hand-built session page", "agent/show/session-page/round-2/index.html")],
-    "02": [("The grid, the session page sketch and Q1 to Q3", "agent/show/session-page/round-1/index.html")],
-}
+SHOWN = [
+    ("04", [("How the pages fit together", "agent/show/session-page/round-3/pages.html"),
+            ("The spec page", "agent/show/session-page/round-3/spec.html")]),
+    ("03", [("Round 2 as a hand-built session page", "agent/show/session-page/round-2/index.html")]),
+    ("02", [("The grid, the session page sketch and Q1 to Q3", "agent/show/session-page/round-1/index.html")]),
+]
 # Links a turn record may carry to ticket files, here and in another repo, which are no artefact.
 TICKET_LINKS = [
     "- [The ticket this round grills](agent/tickets/session-page.md): its Decisions",
@@ -445,20 +450,25 @@ def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_an
 ) -> None:
     """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
     whose record links it, newest turn first, a turn with none left out, each carrying the path it
-    resolves to on this machine; and a ticket file the newest turn links is not listed."""
+    resolves to on this machine; and a ticket file the newest turn links is not listed, carries
+    no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
+    column's."""
     root = worked_example.parents[2]
-    shown = {key: [(text, str(root / path)) for text, path in items] for key, items in SHOWN.items()}
+    shown = [(key, [(text, str(root / path)) for text, path in items]) for key, items in SHOWN]
     assert column_of(render_session(worked_example, transcript, now=NOW)) == shown
     newest = worked_example / "turns" / "04.md"
     newest.write_text(with_links(newest.read_text(), TICKET_LINKS))
-    assert column_of(render_session(worked_example, transcript, now=NOW)) == shown
+    page = render_session(worked_example, transcript, now=NOW)
+    assert column_of(page) == shown
+    assert sorted(target for _, target in artefacts(page) if "tickets" in target) == []
+    assert keys_of(sections_of(page)["04"]) == ["", "", "1", "2"]
 
 
 def test_a_collapsed_turn_shows_its_artefacts_on_its_summary_line(worked_example: Path, transcript: Path) -> None:
     """A collapsed turn shows its artefacts as chips: its summary line, which is all of it a
     collapsed turn shows, carries the column's group for it."""
     page = render_session(worked_example, transcript, now=NOW)
-    assert chips_of(page) == column_of(page) | {"01": []}
+    assert chips_of(page) == dict(column_of(page)) | {"01": []}
 
 
 # What a drawn turn links, and the path the hub finds each by from the repo root `root` and the
@@ -466,6 +476,8 @@ def test_a_collapsed_turn_shows_its_artefacts_on_its_summary_line(worked_example
 # sit beside them.
 POOL: dict[str, Callable[[Path, Path], str | None]] = {
     "agent/show/csv-import/figure.html": lambda root, home: f"{root}/agent/show/csv-import/figure.html",
+    "agent/show/csv-import/figure.html#step-2": lambda root, home: f"{root}/agent/show/csv-import/figure.html",
+    "agent/tickets/csv-import.html": lambda root, home: f"{root}/agent/tickets/csv-import.html",
     "agent/show/csv-import/ticket.md": lambda root, home: f"{root}/agent/show/csv-import/ticket.md",
     "agent/research/tickets.md": lambda root, home: f"{root}/agent/research/tickets.md",
     "agent/tickets/csv-import/notes.html": lambda root, home: f"{root}/agent/tickets/csv-import/notes.html",
@@ -494,16 +506,18 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
         record_path = directory / "turns" / f"{number:02d}.md"
         record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
     root = directory.parents[2]
-    expected = {}
+    expected = []
     for number, paths in reversed(list(enumerate(linked, start=1))):
         listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]
         if listed:
-            expected[f"{number:02d}"] = listed
+            expected.append((f"{number:02d}", listed))
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("HOME", str(home))
         page = render_session(directory, transcript, now=NOW)
     assert column_of(page) == expected
-    assert all(chips_of(page)[key] == items for key, items in expected.items())
+    assert all(chips_of(page)[key] == items for key, items in expected)
+    marked = {target for _, items in expected for _, target in items}
+    assert {target for _, target in artefacts(page)} == marked, "a ticket file carries the attribute the hub marks by"
 
 
 if __name__ == "__main__":
