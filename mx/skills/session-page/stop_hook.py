@@ -60,7 +60,7 @@ class Decision:
     why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
     page: str = ""  # the session page, where the verb is render
-    shown: str = ""  # the line the user sees under the turn, where a render's turn wrote a record
+    shown: str = ""  # what waits on the user, where a render's turn wrote a record; `main` adds the link
     artefacts: tuple[str, ...] = ()  # the file or URL of each link the record this turn wrote carries
 
 
@@ -99,7 +99,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
     - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
-      the user sees under the agent's recap (`shown`) and the record's links, and where that record
+      the user sees under the agent's recap (`shown`, short of its link) and the record's links, and where that record
       was reviewed, the records as the turn ended are logged beside the review, so the log pairs a
       draft with its revision.
 
@@ -125,19 +125,18 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     if turn is None:
         return Decision("render", "no record written this turn", page=page(session, datetime.now()))
-    rendered = {"page": page(session, datetime.now()), "shown": shown(session, directory, hook["session_id"]),
-                "artefacts": linked(session, turn)}
+    rendered = {"page": page(session, datetime.now()), "shown": shown(session), "artefacts": linked(session, turn)}
     if not turn_review.reviewed_since(session.id, session.began):
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
 
 
-def shown(session: Session, directory: Path, session_id: str) -> str:
-    """The line under a turn whose answer is on the page: what waits on the user there, and the link."""
+def shown(session: Session) -> str:
+    """The line under a turn whose answer is on the page, up to its link: what waits on the user there."""
     waiting = [q.tag for _, q in open_questions(session)]
     ask = f"waiting on you: {' '.join(waiting)}" if waiting else "nothing waiting on you"
-    return f"session page · {ask} · {hub_unit(session_id) or (directory / PAGE).as_uri()}"
+    return f"session page · {ask}"
 
 
 def hub_unit(session_id: str) -> str:
@@ -153,7 +152,7 @@ def hub_unit(session_id: str) -> str:
 
 
 def linked(session: Session, turn: Turn) -> tuple[str, ...]:
-    """What each of the turn's links opens, as the page's artefact column names it to the hub."""
+    """What each of the turn's links opens, resolved as the page's artefact column resolves a link."""
     root = ROOT.set(session.root)
     try:
         return tuple(resolved(link.path) for link in turn.links)
@@ -176,8 +175,8 @@ def written_outside_write(session: Session) -> Turn | None:
 
 def open_in_browser(target: str, session_id: str) -> str:
     """Open a page, file or URL in the browser as the session's, without waiting on it, and say
-    what came of that. A host with no `claude-browser`, or one that fails to start, leaves the page
-    on disk and the turn as it was."""
+    what came of that. A host with no `claude-browser`, or one that fails to start, leaves the turn
+    as it was."""
     if not (opener := shutil.which("claude-browser")):
         return "no claude-browser on PATH"
     try:
@@ -238,7 +237,8 @@ def main() -> None:
         if first:
             turn_review.log(session_id, excluded=exclude_sessions(directory.parent))
         if decision.shown:
-            print(json.dumps({"systemMessage": decision.shown}))
+            link = hub_unit(session_id) or (directory / PAGE).as_uri()
+            print(json.dumps({"systemMessage": f"{decision.shown} · {link}"}))
     elif decision.verb == "send back":
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": decision.reason}}))
 
