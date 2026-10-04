@@ -32,6 +32,7 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from conftest import SESSION
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -489,6 +490,38 @@ POOL: dict[str, Callable[[Path, Path], str | None]] = {
     "/srv/other/agent/tickets/one-hub-tab.md": lambda root, home: None,
     "~/.dotfiles/agent/tickets/one-hub-tab.md": lambda root, home: None,
 }
+
+
+def register(registry: Path, pid: int, session: str, name: str, updated: int) -> None:
+    """An entry in Claude Code's session registry, in the shape a running process writes it."""
+    (registry / f"{pid}.json").write_text(json.dumps(
+        {"pid": pid, "sessionId": session, "name": name, "nameSource": "derived", "updatedAt": updated}))
+
+
+def test_the_session_id_copies_whole_from_the_meta_line(worked_example: Path, transcript: Path) -> None:
+    """session-page-copies-the-session-id: the meta line shows the id's first eight characters on
+    a button that copies the full id."""
+    meta = re.search(r'<p class="v-meta">session (.*?)</p>', render_session(worked_example, transcript, now=NOW)).group(1)
+    button = elements(meta, "session-id")["session-id"]
+    assert f'data-copy="{SESSION}"' in button and button.endswith(f">{SESSION[:8]}</button>")
+
+
+def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_the_session(
+    worked_example: Path, transcript: Path, registry: Path
+) -> None:
+    """session-page-copies-the-session-id: no entry for the session, no name; an entry for another
+    session, or one half written, names nothing; of two entries for this session, the one updated
+    last names it, beside the copy-resume button."""
+    render = lambda: render_session(worked_example, transcript, now=NOW)
+    assert "session-name" not in render()
+    register(registry, 101, "11111111-2222-3333-4444-555555555555", "agents-12", updated=3)
+    (registry / "102.json").write_text('{"sessionId": ')
+    assert "session-name" not in render()
+    register(registry, 103, SESSION, "agents-46", updated=2)
+    register(registry, 104, SESSION, "agents-45", updated=1)
+    actions = re.search(r'<div class="actions">(.*?)</div>', render(), re.S).group(1)
+    assert re.fullmatch(r'\s*<button [^>]*id="resume".*?</button>\s*<span [^>]*id="session-name"[^>]*>agents-46</span>\s*',
+                        actions, re.S), actions
 
 
 @settings(deadline=None)

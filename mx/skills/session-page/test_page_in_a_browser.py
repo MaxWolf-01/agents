@@ -26,6 +26,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from conftest import SESSION
 from session_page import PAGE, render_session
 
 SHOW = Path(__file__).resolve().parents[1] / "show"
@@ -57,6 +58,10 @@ with sync_playwright() as pw:
     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
     out["bottom"] = {"column": page.eval_on_selector("#artefacts", BOX), "turns": page.eval_on_selector(".turns", BOX)}
     page.evaluate("window.scrollTo(0, 0)")
+    # what a click on the session id leaves on the clipboard
+    context.grant_permissions(["clipboard-read", "clipboard-write"])
+    page.click("#session-id")
+    out["copied"] = page.evaluate("navigator.clipboard.readText()")
     out["chips"] = page.evaluate('''[...document.querySelectorAll("details.turn")].map((t) => [t.id,
         [...t.querySelectorAll(":scope > summary .chip-link")].filter((a) => a.checkVisibility()).map((a) => a.textContent)])''')
 
@@ -166,6 +171,7 @@ def test_the_column_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]
     assert seen["opened"] == {"t04 1": url(ARTEFACTS[2]), "t04 2": url(ARTEFACTS[3]), "t03 1": url(ARTEFACTS[1])}
     assert seen["clicked"] == [str(root / ARTEFACTS[i]) for i in (2, 3, 1)]
     assert seen["toast"] == "turn 03 has no artefact 2"
+    assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
     short = seen["short"]
     assert short["overflows"], "the column fits the short window, so nothing there needs scrolling"
     assert short["column"]["top"] <= short["group"]["top"] and short["group"]["bottom"] <= short["column"]["bottom"], short
