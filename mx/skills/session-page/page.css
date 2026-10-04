@@ -91,7 +91,6 @@ main.page { display: grid; grid-template-columns: minmax(0, 1fr) var(--column); 
 .turn > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 1rem 0; }
 .turn > summary::-webkit-details-marker { display: none; }
 .turn > summary:focus-visible { outline: none; }
-.turn > summary:focus-visible .hl { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 2px; }
 .turn > summary .hl { font-weight: 400; color: var(--body); transition: color 150ms; padding-right: 1.5rem; }
 .turn[open] > summary .hl { font-weight: 600; color: var(--strong); }
 .turn > summary:hover .hl { color: var(--accent); }
