@@ -71,7 +71,7 @@ The user's answer on what a ticket built: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Standing yes**:
-The user's accept, given in advance, of every build that carries no call of theirs they have not already made, as far as its parent ticket's branch; a merge into the integration branch waits for their word on the work.
+The user's accept, given in advance, of every build that carries no call of theirs they have not already made, as far as its parent ticket's branch.
 _Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:
