@@ -103,6 +103,7 @@ Every landing (`/mx:dispatch`) comes with its review page and one show, a build 
 
 - **One per landing.** A tree's show covers every child ticket in review, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule: on a hinge alone, and on the rest with the parent ticket at its close-out. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
+- **Top down.** It opens with the intent and the change to how the parts fit, a figure where the structure moved; each lower level appears only where the one above needs it, and the diff comes last. The user reads it from the top and goes a level lower only where the one above looks wrong or needs explaining, so a mistake high up is caught before the diff is read.
 - **The few things the user would notice.** Each gets a caption of a sentence or two, the cells the grid picks, and numbered notes on where to look. The commands a run made sit folded under what they produced.
 
 ## Where it goes
