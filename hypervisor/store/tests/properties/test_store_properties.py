@@ -130,6 +130,8 @@ block_id = st.one_of(
     st.tuples(st.integers(-1, 40), st.integers(-1, 40)).map(lambda p: f"{p[0]}-{p[1]}"),
     text,
 )
+# A block a log of a dozen entries holds, so `body` gets past its refusals and reads it.
+logged_block = st.integers(1, 3).flatmap(lambda k: st.integers(0, 12 // 2**k - 1).map(lambda i: f"{i * 2**k}-{(i + 1) * 2**k - 1}"))
 # A stamp as `import` reads one, to the minute or to the day, or not a stamp at all.
 minute = st.datetimes(datetime.datetime(2020, 1, 1), datetime.datetime(2099, 12, 31)).map(lambda t: t.strftime("%Y-%m-%dT%H:%M"))
 stamp = st.one_of(minute, st.dates(datetime.date(2020, 1, 1), datetime.date(2099, 12, 31)).map(str), text)
@@ -143,7 +145,7 @@ imported = st.one_of(in_order.map("\n".join), in_order.map("\n".join), st.lists(
 # A command line and the text on its stdin.
 command = st.one_of(
     st.tuples(st.just(("import",)), imported),
-    st.tuples(block_id.map(lambda b: ("body", b)), st.just("")),
+    st.tuples(st.one_of(logged_block, logged_block, block_id).map(lambda b: ("body", b)), st.just("")),
     st.tuples(st.integers(0, 20).map(lambda n: ("stays", "--ahead", n)), st.just("")),
     st.tuples(st.just(("append",)), entry),
     st.tuples(st.just(("init",)), st.just("")),

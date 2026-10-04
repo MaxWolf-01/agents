@@ -203,6 +203,21 @@ test("lifelong-hypervisor#P5: the explorer reads nothing under a denied root, ho
 	);
 });
 
+// The check above draws a given root in about one run of two hundred; this one draws each of them evenly.
+test("lifelong-hypervisor#P5: every denied root is refused by every tool that takes a path", async () => {
+	const tools = exploreTools({ home, store: path.join(home, STORE), memex }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
+	const below = fc.tuple(fc.constantFrom(...DENIED), tail).map(([root, under]) => (FILES.has(root) ? root : [root, ...under].join("/")));
+	await fc.assert(
+		fc.asyncProperty(below.chain(spellings), async (spelled) => {
+			for (const tool of tools) {
+				const { end, said } = await execute(tool, minimal(tool, spelled), context, 5000);
+				assert.ok(end === "threw" && !said.includes(SECRET) && !said.includes(HIDDEN), `${tool.name} did not refuse ${spelled}:\n${said}`);
+			}
+		}),
+		{ numRuns: 200 },
+	);
+});
+
 // Refusing everything would satisfy the property above; the explorer has to read the open part of home.
 test("lifelong-hypervisor#P5: a file outside the denied roots reads back through the read tools", async () => {
 	const tools = exploreTools({ home, store: path.join(home, STORE), memex }).filter((tool) => "path" in ((tool.parameters as { properties?: object }).properties ?? {}));
