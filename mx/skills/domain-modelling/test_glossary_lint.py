@@ -4,7 +4,7 @@
 # ///
 """Checks for glossary_lint. Run: uv run test_glossary_lint.py
 
-The seam is `check`: a glossary file in, findings out. The oracle is CONTEXT-FORMAT.md's own
+The seam is `check`: a glossary file in, findings out. The oracle is GLOSSARY-FORMAT.md's own
 example entries, which must pass, and entries built to break exactly one rule each.
 """
 
@@ -21,13 +21,13 @@ HERE = Path(__file__).parent
 
 
 def kinds(tmp_path: Path, text: str) -> list[tuple[str, str]]:
-    p = tmp_path / "CONTEXT.md"
+    p = tmp_path / "GLOSSARY.md"
     p.write_text(text)
     return [(f.term, f.kind) for f in check(p, 40, 2)]
 
 
 def test_the_format_examples_pass(tmp_path):
-    example = re.search(r"```md\n(# \{Context Name\}.*?)```", (HERE / "CONTEXT-FORMAT.md").read_text(), re.S)
+    example = re.search(r"```md\n(# \{Context Name\}.*?)```", (HERE / "GLOSSARY-FORMAT.md").read_text(), re.S)
     assert example
     assert kinds(tmp_path, example.group(1)) == []
 

@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parents[3] / "mx" / "skills" / "tracker"))
 from briefing import cache_path  # noqa: E402
-from fixture import C1, C2, C3, C4, C5, C6, CONTEXT, MAKEFILE, NOTES  # noqa: E402
+from fixture import C1, C2, C3, C4, C5, C6, GLOSSARY, MAKEFILE, NOTES  # noqa: E402
 
 HERE = Path(__file__).parent
 OUT = HERE.parent
@@ -63,7 +63,7 @@ def build_repo() -> tuple[str, str]:
     shutil.rmtree(REPO.parent, ignore_errors=True)
     REPO.mkdir(parents=True)
     run("git", "init", "-q", "-b", "main")
-    write({"CONTEXT.md": CONTEXT, "Makefile": MAKEFILE, ".gitignore": "agent/board.html\nagent/diffviews/\n.hypothesis/\n__pycache__/\n"})
+    write({"GLOSSARY.md": GLOSSARY, "Makefile": MAKEFILE, ".gitignore": "agent/board.html\nagent/diffviews/\n.hypothesis/\n__pycache__/\n"})
     shutil.copytree(HERE / "tracker", REPO / "agent" / "tickets")
     write(C1)
     skeleton = commit("ledger: the skeleton, a Row and an importer that raises")

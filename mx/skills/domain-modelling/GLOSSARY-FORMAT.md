@@ -1,4 +1,4 @@
-# CONTEXT.md Format
+# GLOSSARY.md Format
 
 ## Structure
 
@@ -33,22 +33,22 @@ _Avoid_: Client, buyer, account
 - **Only ambiguous terms earn an entry.** A term belongs when it's newly coined or nonstandard, carries a non-obvious meaning in this context, or has competing words (pick one, list the rest under `_Avoid_`). A term whose common meaning already says everything stays out, even a domain-specific one, and especially general programming concepts. Coin as few terms as possible; the glossary is where the unavoidable ones are defined once and used everywhere.
 - **Group terms under subheadings** when natural clusters emerge. If all terms belong to a single cohesive area, a flat list is fine.
 
-`glossary-lint [CONTEXT.md ...]` checks the word and sentence caps and code names in definitions; the other rules are judgment.
+`glossary-lint [GLOSSARY.md ...]` checks the word and sentence caps and code names in definitions; the other rules are judgment.
 
 ## Single vs multi-context repos
 
-**Single context (most repos):** One `CONTEXT.md` at the repo root.
+**Single context (most repos):** One `GLOSSARY.md` at the repo root.
 
-**Multiple contexts:** A `CONTEXT-MAP.md` at the repo root lists the contexts, where they live, and how they relate to each other:
+**Multiple contexts:** A `GLOSSARY-MAP.md` at the repo root lists the contexts, where they live, and how they relate to each other:
 
 ```md
-# Context Map
+# Glossary Map
 
 ## Contexts
 
-- [Ordering](./src/ordering/CONTEXT.md): receives and tracks customer orders
-- [Billing](./src/billing/CONTEXT.md): generates invoices and processes payments
-- [Fulfillment](./src/fulfillment/CONTEXT.md): manages warehouse picking and shipping
+- [Ordering](./src/ordering/GLOSSARY.md): receives and tracks customer orders
+- [Billing](./src/billing/GLOSSARY.md): generates invoices and processes payments
+- [Fulfillment](./src/fulfillment/GLOSSARY.md): manages warehouse picking and shipping
 
 ## Relationships
 

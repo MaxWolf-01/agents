@@ -143,7 +143,7 @@ touched=$(git diff --name-only "$base" "$head")
 touches() { printf '%s\n' "$touched" | grep -Eq "$1"; }
 touches '(^|/)(tests?|spec)/|(^|/)(test_[^/]+|conftest)\.py$|_test\.(py|go|ts|js|rs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.java$' && tests=1 || tests=
 touches '(^|/)(SKILL|AGENTS|CLAUDE)\.md$|(^|/)skills/|(^|/)\.?claude/(commands|agents|output-styles)/|prompt[^/]*\.md$' && process=1 || process=
-touches '(^|/)CONTEXT(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
+touches '(^|/)GLOSSARY(-MAP)?\.md$|(^|/)decisions/' && formats=1 || formats=
 
 if [ -n "$light" ]; then
     [ -z "$axes" ] || die "--light is one reviewer over the joined briefs; drop --axes"
@@ -166,7 +166,7 @@ done
 # else.
 sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
 [ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
-[ -n "$formats" ] && sources+=("$skill/../domain-modelling/CONTEXT-FORMAT.md" "$skill/../domain-modelling/ADR-FORMAT.md")
+[ -n "$formats" ] && sources+=("$skill/../domain-modelling/GLOSSARY-FORMAT.md" "$skill/../domain-modelling/ADR-FORMAT.md")
 for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
     [ -f "$root/$f" ] && sources+=("$root/$f")
 done

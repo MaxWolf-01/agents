@@ -6,7 +6,7 @@ Cut as soon as the grilling's frontier is empty (`/mx:grilling`), ratified or no
 
 ## 1. Read the code first
 
-Understand the current state of the code before slicing. Ticket titles and bodies use the vocabulary of `CONTEXT.md` and respect the ADRs in `decisions/` for the area being touched. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
+Understand the current state of the code before slicing. Ticket titles and bodies use the vocabulary of `GLOSSARY.md` and respect the ADRs in `decisions/` for the area being touched. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
 
 ## 2. Draft the slices
 
