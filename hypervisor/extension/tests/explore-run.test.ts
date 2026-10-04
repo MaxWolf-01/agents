@@ -3,13 +3,13 @@
 // held by a budget of steps, one by a budget of tokens.
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { budgetOf } from "../src/explore-run.ts";
-import { type Request, standInAnthropic, textOf, USAGE } from "./stand-in-anthropic.ts";
+import { budgetOf, USAGE as HELP } from "../src/explore-run.ts";
+import { type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
 
 const RUN = path.resolve(import.meta.dirname, "../src/explore-run.ts");
 const PER_CALL = USAGE.input_tokens + USAGE.output_tokens + USAGE.cache_read_input_tokens + USAGE.cache_creation_input_tokens;
@@ -67,8 +67,7 @@ let bySteps: Awaited<ReturnType<typeof explore>>;
 let byTokens: Awaited<ReturnType<typeof explore>>;
 before(async () => {
 	anthropic = await standInAnthropic(answer);
-	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
+	standInModels(agent, anthropic.url);
 	bySteps = await explore("steps", "--steps", String(STEPS), "--tokens", String(AMPLE));
 	// A step makes three calls: under one step's tokens, the budget allows the first step and no second.
 	byTokens = await explore("tokens", "--tokens", String(2 * PER_CALL));
@@ -104,7 +103,7 @@ test("explore mode reads with the read tools and memex beside the memory tools, 
 	// On an OAuth key, pi sends a tool named like one of Claude Code's under Claude Code's casing: read as Read.
 	for (const request of [...steps.values()].flat()) {
 		assert.deepEqual(request.tools?.map((t) => t.name.toLowerCase()).sort(), ["find", "grep", "ls", "memex", "raw", "read", "recall", "zoom"]);
-		assert.ok(request.system?.some((b) => b.text.includes("## Explore mode")));
+		assert.ok(request.system?.some((b) => b.text.includes("## Explore mode") && !b.text.includes("## Sessions")), "explore mode's prompt, and nothing of the session tools it lacks");
 	}
 });
 
@@ -124,4 +123,10 @@ test("the command line asks for a budget of whole steps or tokens above 0", () =
 	assert.deepEqual(budgetOf({ tokens: "500000" }), { tokens: 500000 });
 	assert.deepEqual(budgetOf({ steps: "2", tokens: "9" }), { steps: 2, tokens: 9 });
 	for (const values of [{}, { steps: "0" }, { steps: "abc" }, { tokens: "1.5" }, { steps: "3", tokens: "-1" }]) assert.equal(typeof budgetOf(values), "string", JSON.stringify(values));
+});
+
+test("explore mode's --help prints its usage", () => {
+	const ran = spawnSync(process.execPath, [RUN, "--help"], { encoding: "utf8" });
+	assert.equal(ran.status, 0, ran.stderr);
+	assert.equal(ran.stdout, `${HELP}\n`);
 });

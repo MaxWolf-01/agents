@@ -30,6 +30,7 @@ test("the breakpoints on the tools and the first system block move into the view
 	const sent = request(view);
 	const placed = placeBreakpoints(sent, [2, 3]) as Request;
 	assert.deepEqual(placed.system.map((b) => "cache_control" in b), [false, true]);
+	assert.deepEqual(placed.system.map((b) => b.text), sent.system.map((b) => b.text), "the system prompt as it came");
 	assert.deepEqual(placed.tools.map((b) => "cache_control" in b), [false, false]);
 	assert.deepEqual(placed.messages[0].content.map((b) => [b.text, b.cache_control]), [
 		["<view>\nT #0-255 a\n", undefined],
@@ -102,6 +103,12 @@ test("a request leaves behind the prefixes its view's breakpoints close, for as 
 		{ lines: entries(0, 7), expires: at + 66 * MINUTE },
 	]);
 	assert.equal(remember(later, { messages: [] }, at), later);
+	const again = remember(later, placeBreakpoints(request(entries(0, 5)), [5]), at + 7 * MINUTE);
+	assert.deepEqual(again.filter((w) => w.lines.length === 5), [{ lines: entries(0, 5), expires: at + 12 * MINUTE }], "a prefix sent again is one entry, living from the latest send");
+});
+
+test("a request of another shape than the Anthropic provider's is left to pi", () => {
+	for (const payload of [null, "a request", 7, { system: 3 }, { messages: [1] }, { tools: ["zoom"] }]) assert.equal(placeBreakpoints(payload, [1]), undefined, JSON.stringify(payload));
 });
 
 /** How many of the view's bytes each request reads from the cache. */

@@ -1,6 +1,9 @@
 import { take } from "./inbox.ts";
 import { alive, registry, type Session, type Spawned, spawnedWindows } from "./sessions.ts";
 
+/** What a look throws to leave everything for the next one, when `deliver` cannot take events now. */
+const NOT_READY = new Error("not ready for events");
+
 /** A watched session's state at one look: its status, and the window it is known by. */
 export interface Seen {
 	status: string;
@@ -9,10 +12,18 @@ export interface Seen {
 
 /**
  * Looks at the spawned sessions and the inbox once at the start and every `ms` after, and hands `deliver` the events
- * since the last look, if any. The first look only learns the sessions' states. A look that fails goes to `failed`, and the next one
- * starts from the states the last good one saw. Reads files alone: the registry, and the store's own.
+ * since the last look, if any. The first look, which `started` resolves after, only learns the sessions' states. A
+ * look that fails goes to `failed`, and the next one starts from the states the last good one saw; so does a look that
+ * has events while `ready` says `deliver` cannot take them, and it leaves the inbox as it is. Reads files alone: the
+ * registry, and the store's own.
  */
-export function watch({ home, store }: { home: string; store: string }, ms: number, deliver: (events: string[]) => void, failed: (error: unknown) => void) {
+export function watch(
+	{ home, store }: { home: string; store: string },
+	ms: number,
+	deliver: (events: string[]) => void,
+	failed: (error: unknown) => void,
+	ready: () => boolean = () => true,
+) {
 	let seen: Map<number, Seen> | undefined;
 	let looking = false;
 	const look = async () => {
@@ -25,19 +36,19 @@ export function watch({ home, store }: { home: string; store: string }, ms: numb
 			const changed = seen ? changes(seen, now) : [];
 			await take(store, (told) => {
 				const events = [...changed, ...told.map((t) => `${t.from} (hv tell): ${t.text}`)];
+				if (events.length && !ready()) throw NOT_READY;
 				if (events.length) deliver(events);
 			});
 			seen = now;
 		} catch (error) {
-			failed(error);
+			if (error !== NOT_READY) failed(error);
 		} finally {
 			looking = false;
 		}
 	};
 	const timer = setInterval(() => void look(), ms);
 	timer.unref();
-	void look();
-	return { look, stop: () => clearInterval(timer) };
+	return { look, stop: () => clearInterval(timer), started: look() };
 }
 
 /**

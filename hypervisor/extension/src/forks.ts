@@ -35,7 +35,7 @@ export function gistAsk(whose: string, limit: number): string {
 /**
  * The line a fork of the finished turn writes for `ask`. The fork sends the turn's last request as it went, then the
  * turn's answer and the ask, so everything before them is read from the cache that request wrote. A reply that is no
- * reply that `logged` does not make into a line of at most 512 bytes is asked for again once; `calls` holds every
+ * reply that `logged` does not make into a line of at most `ENTRY` bytes is asked for again once; `calls` holds every
  * call, the failed ones too.
  */
 export async function fork(finished: Finished, ask: string, calls: Call[] = [], logged = (line: string) => line): Promise<{ line: string; calls: Call[] }> {

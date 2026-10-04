@@ -9,10 +9,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { post } from "../src/inbox.ts";
-import { type Request, standInAnthropic, textOf } from "./stand-in-anthropic.ts";
-
-const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
-const EXTENSION = path.resolve(import.meta.dirname, "../src/index.ts");
+import { HYPERVISOR, PI } from "../src/pi.ts";
+import { conversing, type Request, standInAnthropic, standInModels, textOf } from "./stand-in-anthropic.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-events-")));
 const store = path.join(dir, "store");
@@ -31,6 +29,8 @@ function registered(status: string) {
 before(async () => {
 	anthropic = await standInAnthropic((request) => {
 		const last = textOf(request.messages.at(-1)!);
+		// The long message's gist keeps the next run in its start for seconds, the watch's looks included.
+		if (/is too long for one entry/.test(last) && last.includes("long-marker")) return { text: "gist of the long message", delay: 8000 };
 		if (/Write the compression|is too long for one entry/.test(last)) return { text: "compressed" };
 		runs.set(run, [...(runs.get(run) ?? []), request]);
 		return { text: `noted ${run}` };
@@ -39,13 +39,12 @@ before(async () => {
 	mkdirSync(agent);
 	mkdirSync(path.dirname(entry), { recursive: true });
 	mkdirSync(store, { recursive: true });
-	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
+	standInModels(agent, anthropic.url);
 	appendFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), pane: "%42", pid: process.pid, window: "agents:board-fix", dir })}\n`);
 	registered("busy");
 	const pi = spawn(
 		process.execPath,
-		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
+		[PI, "--mode", "rpc", "--no-session", "--offline", ...HYPERVISOR, "--provider", "stand-in", "--model", "claude-opus-5-5"],
 		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir }, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	const settled = settling(pi.stdout!);
@@ -59,6 +58,16 @@ before(async () => {
 	run = "told";
 	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "told-marker the fix is on its branch" });
 	await settled.next();
+	run = "long";
+	pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: `long-marker ${"more than an entry holds. ".repeat(30)}` })}\n`);
+	await settled.next();
+	run = "starting";
+	pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: "starting-marker hello" })}\n`);
+	// A second in, the run waits for the gist; the watch looks twice in the seven seconds left of the wait.
+	await new Promise((settle) => setTimeout(settle, 1000));
+	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "while-starting-marker reported as a turn starts" });
+	const both = () => ["max: starting-marker hello", "while-starting-marker"].every((marker) => logged().includes(marker));
+	for (const start = Date.now(); !both() && Date.now() - start < 30_000; ) await new Promise((settle) => setTimeout(settle, 100));
 	pi.stdin!.end();
 	await new Promise((resolve) => pi.on("close", resolve));
 });
@@ -66,6 +75,8 @@ after(async () => {
 	await anthropic?.close();
 	rmSync(dir, { recursive: true, force: true });
 });
+
+const logged = () => readFileSync(path.join(store, "log", "LOG.txt"), "utf8");
 
 /** `next()` resolves at the next `agent_settled` pi reports, one already reported included; it fails after 20 s without one. */
 function settling(stdout: NodeJS.ReadableStream) {
@@ -95,8 +106,7 @@ test("a spawned session's turn ending starts a turn of the hypervisor's own, car
 	assert.equal(request.messages.length, 2);
 	assert.ok(textOf(request.messages[0]).includes("max-marker"), "the earlier turn is in the view");
 	assert.equal(textOf(request.messages[1]), "<event>\nagents:board-fix: busy → idle\n</event>");
-	const prompt = readFileSync(path.resolve(import.meta.dirname, "../system-prompt.md"), "utf8");
-	assert.ok(request.system?.some((b) => b.text === prompt.trim() || b.text === prompt), "the hypervisor's system prompt");
+	assert.ok(request.system?.some(conversing), "the hypervisor's system prompt");
 });
 
 test("an orchestrator's hv tell starts a turn carrying what it said and where from", () => {
@@ -111,4 +121,9 @@ test("the log keeps each event as the event's, not max's", () => {
 	assert.match(log, /event: agents:board-fix: busy → idle/);
 	assert.match(log, /event: agents:board-fix \(hv tell\): told-marker the fix is on its branch/);
 	assert.doesNotMatch(log, /max: <event>/);
+});
+
+test("an event that arrives while a turn is starting waits for it to run, and neither the turn's message nor the event is lost", () => {
+	assert.match(logged(), /max: starting-marker hello/);
+	assert.match(logged(), /event: agents:board-fix \(hv tell\): while-starting-marker reported as a turn starts/);
 });

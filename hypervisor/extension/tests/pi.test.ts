@@ -2,15 +2,14 @@
 // subscription is: what the requests carry across ten turns, what the log keeps, and what the forks send and record.
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { type Reply, type Request, standInAnthropic, textOf, USAGE } from "./stand-in-anthropic.ts";
+import { HYPERVISOR, MODEL, PI } from "../src/pi.ts";
+import { conversing, type Reply, type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
 
-const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
-const EXTENSION = path.resolve(import.meta.dirname, "../src/index.ts");
 const TURNS = 10;
 const LONG = `turn-3-marker ${"a long message that no entry holds as it is. ".repeat(20)}`;
 const LONG_ANSWER = `a long answer to turn 7: ${"more than an entry holds. ".repeat(30)}`;
@@ -43,11 +42,10 @@ before(async () => {
 	anthropic = await standInAnthropic(answer);
 	const agent = path.join(dir, "agent");
 	mkdirSync(agent);
-	const model = { id: "claude-opus-5-5", name: "stand-in", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: anthropic.url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
+	standInModels(agent, anthropic.url);
 	const pi = spawn(
 		process.execPath,
-		[PI, "--mode", "rpc", "--no-session", "--offline", "--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "-e", EXTENSION, "--provider", "stand-in", "--model", "claude-opus-5-5"],
+		[PI, "--mode", "rpc", "--no-session", "--offline", ...HYPERVISOR, "--provider", "stand-in", "--model", "claude-opus-5-5"],
 		{ cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, HV_STORE: store, HV_HOME: dir }, stdio: ["pipe", "pipe", "inherit"] },
 	);
 	for (turn = 1; turn <= TURNS; turn++) await prompt(pi, said(turn), turn === 5 ? "turn-5-steer" : undefined);
@@ -136,8 +134,7 @@ test("the memory and session tools are the whole tool set, and zoom answers from
 });
 
 test("the system prompt is the hypervisor's", () => {
-	const prompt = readFileSync(path.resolve(import.meta.dirname, "../system-prompt.md"), "utf8");
-	for (const { request } of sent) assert.ok(request.system?.some((b) => b.text === prompt.trim() || b.text === prompt));
+	for (const { request } of sent) assert.ok(request.system?.some(conversing));
 });
 
 test("a fork sends the turn's last request as it went, then the turn's answer and its ask", () => {
@@ -171,4 +168,27 @@ test("each fork's calls are logged with the tokens they read from cache and wrot
 
 test("the request log has a line for each request the turns sent", () => {
 	assert.equal(lines("requests.jsonl").length, sent.length);
+});
+
+test("hv starts pi's TUI on the hypervisor's model with the arguments explore mode and these checks start it with", () => {
+	const extension = path.resolve(import.meta.dirname, "..");
+	const hv = readFileSync(path.join(extension, "../hv"), "utf8");
+	const launch = /\n\t\tnode ("[^"]+")((?:.|\\\n)*?)\nfi\n/.exec(hv);
+	assert.ok(launch, "hv runs pi with node");
+	const word = (w: string) => w.replace(/^"|"$/g, "").replaceAll("$extension", extension);
+	const args = launch[2].replace(/\\\n/g, " ").trim().split(/\s+/).map(word);
+	assert.equal(word(launch[1]), PI);
+	assert.equal(args[args.indexOf("--model") + 1], MODEL);
+	const at = args.indexOf(HYPERVISOR[0]);
+	assert.deepEqual(args.slice(at, at + HYPERVISOR.length), HYPERVISOR);
+});
+
+test("hv view prints the view the last turn started from", () => {
+	const last = sent.filter(({ turn }) => turn === TURNS)[0].request;
+	const blocks = last.messages[0].content as { text: string }[];
+	const view = blocks.map((b) => b.text).join("").slice("<view>\n".length, -"\n</view>".length);
+	const hv = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["view"], { env: { ...process.env, HV_STORE: store }, encoding: "utf8" });
+	assert.equal(hv.status, 0, hv.stderr);
+	assert.equal(hv.stdout, `${view}\n`);
+	assert.match(hv.stdout, new RegExp(`turn-${TURNS - 1}-marker`));
 });

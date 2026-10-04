@@ -14,7 +14,7 @@ import { entriesOf } from "../src/entries.ts";
 import { eventMessage, eventsIn } from "../src/events.ts";
 import { post, type Told, take } from "../src/inbox.ts";
 import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
-import { changes, type Seen, watched } from "../src/watch.ts";
+import { changes, type Seen, watch, watched } from "../src/watch.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-sessions-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -52,10 +52,11 @@ const called = (): { program: string; argv: string[]; cwd: string }[] =>
 		.map((line) => JSON.parse(line));
 beforeEach(() => answering({}));
 
-/** A home of its own, with a repo directory in it and an empty store. */
+/** A home of its own, with a repo directory in it, an empty store, and Claude Code trusted in the whole home. */
 function home() {
 	const at = mkdtempSync(path.join(dir, "home-"));
 	mkdirSync(path.join(at, "my.repo"));
+	writeFileSync(path.join(at, ".claude.json"), JSON.stringify({ projects: { [at]: { hasTrustDialogAccepted: true } } }));
 	return { home: at, store: path.join(at, "store"), repo: path.join(at, "my.repo") };
 }
 
@@ -111,6 +112,36 @@ test("spawn opens a window in a repo session that runs, and refuses a window nam
 	await assert.rejects(spawn({ home: at, store }, { dir: repo, name: "board-fix", brief: "b" }), /my-repo:board-fix exists already/);
 	assert.ok(!called().some((c) => c.argv[0] === "new-window"));
 	await assert.rejects(spawn({ home: at, store }, { dir: "nowhere", name: "x", brief: "b" }), /nowhere is not a directory/);
+});
+
+test("spawn names the tmux session for the repo the directory lies in, a linked worktree's for its main one", async () => {
+	const { home: at, store, repo } = home();
+	mkdirSync(path.join(repo, ".git", "worktrees", "wt"), { recursive: true });
+	mkdirSync(path.join(repo, "sub", "deeper"), { recursive: true });
+	const worktree = path.join(at, "my.repo-ticket");
+	mkdirSync(worktree);
+	writeFileSync(path.join(worktree, ".git"), `gitdir: ${repo}/.git/worktrees/wt\n`);
+	const plain = path.join(at, "notes");
+	mkdirSync(plain);
+	for (const [where, session] of [[path.join(repo, "sub", "deeper"), "my-repo"], [worktree, "my-repo"], [plain, "notes"]]) {
+		answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+		await spawn({ home: at, store }, { dir: where, name: "w", brief: "b" });
+		const opened = called().find((c) => c.argv[0] === "new-session")!.argv;
+		assert.equal(opened[opened.indexOf("-s") + 1], session, where);
+		assert.equal(opened[opened.indexOf("-c") + 1], where, "claude runs where it was asked to");
+	}
+});
+
+test("spawn says when Claude Code has never been trusted where it starts, since its trust dialog then holds the brief", async () => {
+	const { home: at, store, repo } = home();
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.doesNotMatch(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust/, "a directory below a trusted one is trusted");
+	writeFileSync(path.join(at, ".claude.json"), JSON.stringify({ projects: { [at]: { hasTrustDialogAccepted: false }, [path.join(at, "other")]: { hasTrustDialogAccepted: true } } }));
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /\nClaude Code has no record of being trusted in ~\/my\.repo, so its trust dialog may hold the brief until max accepts it in that window\.$/);
+	rmSync(path.join(at, ".claude.json"));
+	answering({ "tmux has-session": { code: 1 }, "tmux new-session": { out: "%5 4242\n" } });
+	assert.match(await spawn({ home: at, store }, { dir: repo, name: "w", brief: "b" }), /trust dialog may hold the brief/, "no config at all");
 });
 
 /** A registry entry for `pid` in `home`'s Claude Code config directory `config`. */
@@ -286,4 +317,86 @@ test("the inbox hands over each message once, oldest first, and keeps them when 
 	assert.deepEqual(readdirSync(path.join(store, "inbox")), []);
 	await take(store, (told) => (texts = told.map((t) => t.text)));
 	assert.deepEqual(texts, []);
+});
+
+/** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
+function watching(at: string, store: string, ready = () => true) {
+	const delivered: string[][] = [];
+	const failures: unknown[] = [];
+	const w = watch({ home: at, store }, 2 ** 30, (events) => delivered.push(events), (error) => failures.push(error), ready);
+	return { ...w, delivered, failures };
+}
+
+/** A home whose registry holds this process as the claude a spawned window runs, in `status`. */
+function spawnedHere(status: string) {
+	const { home: at, store } = home();
+	registered(at, process.pid, { name: "orch-1", status });
+	mkdirSync(store);
+	writeFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: "t", pane: "%5", pid: process.pid, window: "my-repo:board-fix", dir: at })}\n`);
+	return { home: at, store, entry: path.join(at, ".claude", "sessions", `${process.pid}.json`) };
+}
+
+test("the watch takes a registry file caught mid-write for no change, and a live session's turn ending for one", async () => {
+	const { home: at, store, entry } = spawnedHere("busy");
+	const w = watching(at, store);
+	try {
+		await w.started;
+		writeFileSync(entry, "{");
+		await w.look();
+		assert.deepEqual(w.delivered, [], "the session's process lives, so it has not ended");
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await w.look();
+		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle"]]);
+	} finally {
+		w.stop();
+	}
+});
+
+test("the watch holds its events while pi cannot take them, the inbox untouched, and hands them over once it can", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	let ready = false;
+	const w = watching(at, store, () => ready);
+	try {
+		await w.started;
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
+		await w.look();
+		assert.deepEqual(w.delivered, []);
+		assert.equal(readdirSync(path.join(store, "inbox")).length, 1);
+		assert.deepEqual(w.failures, [], "holding is not a failure");
+		ready = true;
+		await w.look();
+		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle", "my-repo:board-fix (hv tell): done"]]);
+		await w.look();
+		assert.equal(w.delivered.length, 1, "each event once");
+	} finally {
+		w.stop();
+	}
+});
+
+test("a look whose delivery fails leaves its events for the next look, and two looks at once deliver once", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	const delivered: string[][] = [];
+	let refuse = true;
+	const failures: unknown[] = [];
+	const w = watch(
+		{ home: at, store },
+		2 ** 30,
+		(events) => {
+			if (refuse) throw new Error("not now");
+			delivered.push(events);
+		},
+		(error) => failures.push(error),
+	);
+	try {
+		await w.started;
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await w.look();
+		assert.equal(failures.length, 1);
+		refuse = false;
+		await Promise.all([w.look(), w.look()]);
+		assert.deepEqual(delivered, [["my-repo:board-fix: busy → idle"]]);
+	} finally {
+		w.stop();
+	}
 });

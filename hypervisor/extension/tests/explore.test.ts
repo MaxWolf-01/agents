@@ -137,3 +137,22 @@ test("the hypervisor's store, which holds its pi's credentials, is denied like t
 		rmSync(own, { recursive: true, force: true });
 	}
 });
+
+test("every Claude Code config directory's credentials are denied, as .claude's are", async () => {
+	const own = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-explore-profiles-")));
+	try {
+		for (const config of [".claude-work", ".claude-clankr1"]) {
+			mkdirSync(path.join(own, config));
+			writeFileSync(path.join(own, config, ".credentials.json"), SECRET);
+			writeFileSync(path.join(own, config, "settings.json"), "e05c");
+		}
+		const [read, grep] = ["read", "grep"].map((name) => exploreTools({ home: own }).find((tool) => tool.name === name)!);
+		for (const config of [".claude-work", ".claude-clankr1"]) {
+			await assert.rejects(read.execute("check", { path: `~/${config}/.credentials.json` } as never, undefined, undefined, {} as never), /denied/);
+			assert.match(JSON.stringify(await read.execute("check", { path: `~/${config}/settings.json` } as never, undefined, undefined, {} as never)), /e05c/);
+		}
+		assert.doesNotMatch(JSON.stringify(await grep.execute("check", { path: "~", pattern: "c4n4ry" } as never, undefined, undefined, {} as never)), /c4n4ry/);
+	} finally {
+		rmSync(own, { recursive: true, force: true });
+	}
+});

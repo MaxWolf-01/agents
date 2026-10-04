@@ -4,7 +4,7 @@ import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Config } from "./index.ts";
-import { absolute, inside, shown } from "./paths.ts";
+import { absolute, claudeConfigs, inside, shown } from "./paths.ts";
 import { run } from "./run.ts";
 import { answer } from "./tools.ts";
 
@@ -36,6 +36,8 @@ const DENIED = [
 	".dotfiles/secrets/creds",
 ];
 const DENIED_ANYWHERE = ["/proc"];
+/** The file each Claude Code config directory keeps its credentials in. `.claude`'s is also in `DENIED`, as D5 ruled. */
+const CREDENTIALS = ".credentials.json";
 
 /** Directories a search or a listing of matches walks past: what they hold is history or vendored code, not max's. */
 const PASSED = new Set([".git", "node_modules"]);
@@ -51,6 +53,9 @@ const MATCHES = 100;
 const FOUND = 200;
 const LISTED = 500;
 const LINE_CHARS = 200;
+/** How many notes one memex call names at most, and how long it may take. */
+const NOTES = 50;
+const MEMEX_MS = 300_000;
 
 export type ExploreConfig = Pick<Config, "home"> &
 	Partial<Pick<Config, "store">> & {
@@ -120,7 +125,7 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 				command: Type.Union([Type.Literal("search"), Type.Literal("find")]),
 				query: Type.String(),
 				vault: Type.Optional(Type.String({ description: "One vault's name; every vault when left out." })),
-				limit: Type.Optional(Type.Integer({ description: "How many notes, at most 50." })),
+				limit: Type.Optional(Type.Integer({ description: `How many notes, at most ${NOTES}.` })),
 			}),
 			execute: async (_id, { command, query, vault, limit }, signal) =>
 				answer(await memex(config.memex ?? "memex", await places(config), { command, query, vault, limit }, signal)),
@@ -135,7 +140,8 @@ type Places = Awaited<ReturnType<typeof places>>;
  * tool call, kept both as spelled and as they resolve, for a root that is a symlink or lies below one.
  */
 async function places({ home, store }: ExploreConfig) {
-	const spelled = [...DENIED.map((root) => path.join(home, root)), ...DENIED_ANYWHERE, ...(store ? [store] : [])];
+	const profiles = (await claudeConfigs(home)).map((name) => path.join(home, name, CREDENTIALS));
+	const spelled = [...DENIED.map((root) => path.join(home, root)), ...profiles, ...DENIED_ANYWHERE, ...(store ? [store] : [])];
 	const resolved = await Promise.all(spelled.map((root) => realpath(root).catch(() => root)));
 	const roots = [...new Set([...spelled, ...resolved])];
 
@@ -153,7 +159,7 @@ async function places({ home, store }: ExploreConfig) {
 			const real = await realpath(absolute(home, spelled)).catch((error: NodeJS.ErrnoException) => {
 				throw new Error(`${spelled}: ${error.code === "ENOENT" ? "no such file or directory" : error.code}`);
 			});
-			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles or the hypervisor's own store`);
+			if (this.denied(real)) throw new Error(`${spelled}: denied, the explorer does not read keys, credentials, browser profiles, a process's files under /proc, or the hypervisor's own store`);
 			return real;
 		},
 		shown: (real: string) => shown(home, real),
@@ -311,9 +317,9 @@ interface MemexAsk {
  * such as a note's text, is dropped, so no text from a denied root reaches the model.
  */
 async function memex(program: string, where: Places, ask: MemexAsk, signal?: AbortSignal): Promise<string> {
-	const memex = (args: string[]) => run(program, args, { cwd: where.home, signal, timeout: 300_000 });
+	const memex = (args: string[]) => run(program, args, { cwd: where.home, signal, timeout: MEMEX_MS });
 	const vaults = vaultRoots(await memex(["vault:list"]));
-	const limit = Math.min(Math.max(1, ask.limit ?? (ask.command === "search" ? 5 : 10)), 50);
+	const limit = Math.min(Math.max(1, ask.limit ?? (ask.command === "search" ? 5 : 10)), NOTES);
 	const said = await memex([ask.command, `--limit=${limit}`, ...(ask.vault === undefined ? [] : [`--vault=${ask.vault}`]), "--", ask.query]);
 
 	const found = new Map<string, string[]>();
