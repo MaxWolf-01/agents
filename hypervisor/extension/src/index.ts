@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -8,6 +8,7 @@ import { AHEAD, placeBreakpoints, remember, viewEnds, type Written } from "./bre
 import { saidIn } from "./entries.ts";
 import { eventMessage } from "./events.ts";
 import { exploreTools } from "./explore.ts";
+import { append } from "./journal.ts";
 import type { Finished } from "./forks.ts";
 import { memory } from "./memory.ts";
 import { store as openStore } from "./store.ts";
@@ -53,10 +54,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		const system = readFileSync(PROMPT, "utf8");
 		const store = openStore(path.join(config.store, "log"));
-		const jsonl = (name: string) => async (line: object) => {
-			await mkdir(config.store, { recursive: true });
-			await appendFile(path.join(config.store, name), `${JSON.stringify(line)}\n`);
-		};
+		const jsonl = (name: string) => (line: object) => append(config.store, name, line);
 		const requests = jsonl("requests.jsonl");
 		const watchLog = jsonl("watch.jsonl");
 		const mind = memory(store, { fork: jsonl("forks.jsonl"), lost: jsonl("lost.jsonl") });

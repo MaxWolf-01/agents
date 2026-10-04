@@ -30,6 +30,7 @@ export function store(dir: string) {
 	};
 }
 
+// Not `run`: a command here takes its text on stdin, and a refusal is a `Refused` with the reason the store printed.
 function hvStore(dir: string, command: string[], stdin: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("uv", ["run", "--quiet", SCRIPT, "--dir", dir, ...command], { stdio: ["pipe", "pipe", "pipe"] });

@@ -162,7 +162,11 @@ function shown(t: Tokens): string {
 }
 
 if (import.meta.main) {
-	const { values } = parseArgs({ options: { steps: { type: "string" }, tokens: { type: "string" }, model: { type: "string", default: MODEL } } });
+	const { values } = parseArgs({ options: { steps: { type: "string" }, tokens: { type: "string" }, model: { type: "string", default: MODEL }, help: { type: "boolean", short: "h" } } });
+	if (values.help) {
+		console.log(USAGE);
+		process.exit(0);
+	}
 	const budget = budgetOf(values);
 	if (typeof budget === "string") {
 		console.error(`${budget}\n${USAGE}`);

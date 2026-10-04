@@ -1,7 +1,8 @@
-import { appendFile, mkdir, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { append, lines } from "./journal.ts";
 import { absolute, shown } from "./paths.ts";
 import { run } from "./run.ts";
 
@@ -40,6 +41,8 @@ const HV = fileURLToPath(new URL("../../hv", import.meta.url));
 const SPAWNED = "spawned.jsonl";
 /** How long a delegated task runs before it is stopped. */
 const DELEGATE_MS = 15 * 60_000;
+/** How long a session's inbox socket has to take a message. */
+const INBOX_MS = 5000;
 /** How many lines of a pane `look` shows. */
 const PANE_LINES = 50;
 const BRIEFLY = "Your answer goes back to the hypervisor, an agent that coordinates max's sessions and pays for every word it reads: answer with what it asked for and nothing else, as briefly as the answer allows.";
@@ -66,8 +69,7 @@ export async function spawn(config: SessionConfig, { dir, name, brief }: { dir: 
 	const opened = running ? ["new-window", "-d", "-t", `=${group}:`, ...at] : ["new-session", "-d", "-s", group, ...at];
 	const [pane, pid] = (await run("tmux", [...opened, ...claude])).trim().split(" ");
 	const spawned: Spawned = { at: new Date().toISOString(), pane, pid: Number(pid), window: `${group}:${window}`, dir: where };
-	await mkdir(config.store, { recursive: true });
-	await appendFile(path.join(config.store, SPAWNED), `${JSON.stringify(spawned)}\n`);
+	await append(config.store, SPAWNED, spawned);
 	const started = `Started ${spawned.window} in ${where}. max steps in with: tmux switch-client -t ${pane || `=${group}:${window}`}`;
 	if (await trusted(config.home, where)) return started;
 	return `${started}\nClaude Code has no record of being trusted in ${shown(config.home, where)}, so its trust dialog may hold the brief until max accepts it in that window.`;
@@ -141,16 +143,9 @@ export async function registry(home: string): Promise<Session[]> {
 	return read.filter((s): s is Session => s !== undefined && alive(s.pid));
 }
 
-/** The windows spawn opened, from the store, oldest first. */
-export async function spawnedWindows(store: string): Promise<Spawned[]> {
-	const text = await readFile(path.join(store, SPAWNED), "utf8").catch(() => "");
-	return text.split("\n").flatMap((line) => {
-		try {
-			return line ? [JSON.parse(line) as Spawned] : [];
-		} catch {
-			return [];
-		}
-	});
+/** The windows spawn opened, from the store, oldest first. A line that does not parse names no window, and the watch does not follow it. */
+export function spawnedWindows(store: string): Promise<Spawned[]> {
+	return lines<Spawned>(store, SPAWNED);
 }
 
 /**
@@ -276,7 +271,7 @@ function quoted(text: string): string {
 function deliver(socket: string, line: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const connection = createConnection(socket);
-		connection.setTimeout(5000, () => connection.destroy(new Error(`${socket}: no answer within 5 s`)));
+		connection.setTimeout(INBOX_MS, () => connection.destroy(new Error(`${socket}: no answer within ${INBOX_MS / 1000} s`)));
 		connection.on("error", reject);
 		connection.on("close", (failed) => (failed ? undefined : resolve()));
 		connection.end(line);

@@ -51,6 +51,9 @@ const MATCHES = 100;
 const FOUND = 200;
 const LISTED = 500;
 const LINE_CHARS = 200;
+/** How many notes one memex call names at most, and how long it may take. */
+const NOTES = 50;
+const MEMEX_MS = 300_000;
 
 export type ExploreConfig = Pick<Config, "home"> &
 	Partial<Pick<Config, "store">> & {
@@ -120,7 +123,7 @@ export function exploreTools(config: ExploreConfig): ToolDefinition[] {
 				command: Type.Union([Type.Literal("search"), Type.Literal("find")]),
 				query: Type.String(),
 				vault: Type.Optional(Type.String({ description: "One vault's name; every vault when left out." })),
-				limit: Type.Optional(Type.Integer({ description: "How many notes, at most 50." })),
+				limit: Type.Optional(Type.Integer({ description: `How many notes, at most ${NOTES}.` })),
 			}),
 			execute: async (_id, { command, query, vault, limit }, signal) =>
 				answer(await memex(config.memex ?? "memex", await places(config), { command, query, vault, limit }, signal)),
@@ -311,9 +314,9 @@ interface MemexAsk {
  * such as a note's text, is dropped, so no text from a denied root reaches the model.
  */
 async function memex(program: string, where: Places, ask: MemexAsk, signal?: AbortSignal): Promise<string> {
-	const memex = (args: string[]) => run(program, args, { cwd: where.home, signal, timeout: 300_000 });
+	const memex = (args: string[]) => run(program, args, { cwd: where.home, signal, timeout: MEMEX_MS });
 	const vaults = vaultRoots(await memex(["vault:list"]));
-	const limit = Math.min(Math.max(1, ask.limit ?? (ask.command === "search" ? 5 : 10)), 50);
+	const limit = Math.min(Math.max(1, ask.limit ?? (ask.command === "search" ? 5 : 10)), NOTES);
 	const said = await memex([ask.command, `--limit=${limit}`, ...(ask.vault === undefined ? [] : [`--vault=${ask.vault}`]), "--", ask.query]);
 
 	const found = new Map<string, string[]>();

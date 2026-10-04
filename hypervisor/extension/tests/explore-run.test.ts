@@ -3,12 +3,12 @@
 // held by a budget of steps, one by a budget of tokens.
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { budgetOf } from "../src/explore-run.ts";
+import { budgetOf, USAGE as HELP } from "../src/explore-run.ts";
 import { type Request, standInAnthropic, standInModels, textOf, USAGE } from "./stand-in-anthropic.ts";
 
 const RUN = path.resolve(import.meta.dirname, "../src/explore-run.ts");
@@ -123,4 +123,10 @@ test("the command line asks for a budget of whole steps or tokens above 0", () =
 	assert.deepEqual(budgetOf({ tokens: "500000" }), { tokens: 500000 });
 	assert.deepEqual(budgetOf({ steps: "2", tokens: "9" }), { steps: 2, tokens: 9 });
 	for (const values of [{}, { steps: "0" }, { steps: "abc" }, { tokens: "1.5" }, { steps: "3", tokens: "-1" }]) assert.equal(typeof budgetOf(values), "string", JSON.stringify(values));
+});
+
+test("explore mode's --help prints its usage", () => {
+	const ran = spawnSync(process.execPath, [RUN, "--help"], { encoding: "utf8" });
+	assert.equal(ran.status, 0, ran.stderr);
+	assert.equal(ran.stdout, `${HELP}\n`);
 });

@@ -55,7 +55,7 @@ export function entriesOf(messages: AgentMessage[], kind: Kind = "turn"): Entry[
 	});
 }
 
-/** Whether an entry holds `text` as it is, as the store judges it: one line of at most 512 bytes, no space at its ends. */
+/** Whether an entry holds `text` as it is, as the store judges it: one line of at most `ENTRY` bytes, no space at its ends. */
 export function fits(text: string): boolean {
 	return text.length > 0 && text === text.trim() && !/[\n\r]/.test(text) && Buffer.byteLength(text) <= ENTRY;
 }
