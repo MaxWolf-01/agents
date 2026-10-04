@@ -71,6 +71,9 @@ from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
+# Every check here starts a browser.
+pytestmark = pytest.mark.full_path
+
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
@@ -101,8 +104,11 @@ The first two touch nothing in common and can run as one wave."""
 def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
+    # The patience is render-lint's default three times over: the suite runs a browser per core, and
+    # under that load the board has taken past 20s to load with nothing wrong with it.
     done = subprocess.run(
-        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root())],
+        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root()),
+         "--patience", "60"],
         capture_output=True, text=True,
     )
     # A run that never got as far as findings is its own failure, said here rather than left to a

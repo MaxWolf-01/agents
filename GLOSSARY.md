@@ -156,7 +156,7 @@ _Avoid_: unit tests (a fast test may enter at any seam)
 _In code_: `make test`, `make test-all`
 
 **Full-path check**:
-A check that drives the real thing end to end (a browser on the page, tmux, a paid API), run deliberately from a target of its own rather than on every change.
+A check that drives the real thing end to end (a browser on the page, tmux, a paid API), kept out of the fast suite.
 _Avoid_: integration test, e2e test, slow test
 _In code_: `make test-full-path`
 

@@ -41,6 +41,9 @@ from pathlib import Path
 
 import pytest
 
+# Every check here starts a browser.
+pytestmark = pytest.mark.full_path
+
 LINT = Path(__file__).parent / "render_lint.py"
 
 PAGE = """<!doctype html>

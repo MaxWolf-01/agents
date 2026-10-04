@@ -341,6 +341,7 @@ def fake_remote(toy: Path, **extra: str) -> tuple[Path, dict[str, str]]:
     return remote, env
 
 
+@pytest.mark.full_path
 def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_it(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P4`'s worker half: the brief is the ticket's body and every ancestor's,
     which is what `tracker context` assembles for the review's `--spec` too."""
@@ -355,6 +356,7 @@ def test_a_spawn_sends_the_orchestrators_message_with_the_tickets_context_under_
     assert written.index("## warm-preset") < written.index("## parent ticket: lamp-ui")
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("fails", [False, True])
 def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, staged: Path, fails: bool) -> None:
     """`worker-hosts-run-the-current-claude`: a model alias is whatever the host's claude resolves
@@ -376,6 +378,7 @@ def test_a_spawn_brings_claude_current_before_the_worker_starts(toy: Path, stage
     assert ("claude update failed" in said.stderr) == fails, said.stderr
 
 
+@pytest.mark.full_path
 def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path, staged: Path) -> None:
     """`model-effort-defaults`: the worker's effort is set where its model is, at the spawn, `high`
     when the orchestrator says nothing, and it reaches the runner with the permission mode."""
@@ -406,6 +409,7 @@ def test_the_effort_a_spawn_names_reaches_the_runner_high_unless_given(toy: Path
     assert "stub: built warm-preset at low" in logs()
 
 
+@pytest.mark.full_path
 def test_a_spawn_hands_the_runner_the_hosts_mx_install(toy: Path, staged: Path) -> None:
     """`unattended-launch`: a worker reads no user settings, so the mx its contract names skills from
     reaches it by path, and the path travels on the line the spawn types into the pane. The spawn
@@ -461,6 +465,7 @@ def test_a_ticket_no_reader_can_read_reaches_no_worker(toy: Path, staged: Path) 
     assert not list((toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-main").glob("*.brief"))
 
 
+@pytest.mark.full_path
 def test_a_worker_reports_and_the_orchestrator_writes_the_ticket(toy: Path, staged: Path) -> None:
     """One ticket end to end: claim, spawn, the report, the import, a question ruled before the
     merge, and the landing with the range the ticket keeps.
@@ -530,6 +535,7 @@ BUILDING_ITS_OWN = BUILDING.replace(
 )
 
 
+@pytest.mark.full_path
 def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Path) -> None:
     """`speculative-first`'s review unit through the toy: a hinge ruled alone, then two leaves, the
     second built on the first while the first waits unruled in its parent's branch, and the
@@ -639,6 +645,7 @@ def test_a_parent_ruled_whole_lands_its_tree_on_its_accept(toy: Path, staged: Pa
             assert not git(at, "branch", "--list", f"ticket/{slug}")
 
 
+@pytest.mark.full_path
 def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, staged: Path) -> None:
     """The other half of the finished signal: a worker that stopped short leaves no report, the
     fetch says so and exits 0, and the review that follows writes nothing of a worker's into the
@@ -657,6 +664,7 @@ def test_a_run_that_left_no_report_is_said_and_imported_from_nowhere(toy: Path, 
     assert "## Questions" not in (tracked(toy) / "warm-preset.md").read_text()
 
 
+@pytest.mark.full_path
 def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowhere(
     toy: Path, staged: Path
 ) -> None:
@@ -698,6 +706,7 @@ def test_a_resumed_round_that_wrote_no_report_imports_the_round_before_it_nowher
     assert (tracked(toy) / "warm-preset.md").read_text() == once, "nothing of the first round said twice"
 
 
+@pytest.mark.full_path
 def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, staged: Path) -> None:
     """`ticket-file-contract#P7` where the orchestrator reads the branch: a worker that wrote a
     ticket file wrote a second copy of one, and nothing of that round is imported. That read is the
@@ -1041,6 +1050,7 @@ def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> Non
     assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
 
 
+@pytest.mark.full_path
 def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_host_has_none_to_pull(toy: Path, staged: Path) -> None:
     """`run-log`: a worker host's lines reach this machine's log when its ticket is fetched or
     cleaned up, each once; a pull that fails is said and stops nothing; a local host writes this
@@ -1076,6 +1086,7 @@ def test_a_hosts_run_log_lines_come_back_on_a_fetch_and_a_cleanup_and_a_local_ho
     subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
 
 
+@pytest.mark.full_path
 def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(dotted: Path) -> None:
     """tmux reads a `.` in a target as the window separator, so `.lamp`'s worker session is named
     whole only with a `:` after it: a respawn reuses it, a cleanup kills it, and the spawn after
@@ -1110,6 +1121,7 @@ def test_a_worker_of_a_repo_with_a_dot_in_its_name_is_found_by_its_session_name(
     assert sessions() == ["dispatch-.lamp-warm-preset"]
 
 
+@pytest.mark.full_path
 def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_others(toy: Path, staged: Path) -> None:
     """Workers rarely `job rm` their builds and test runs, so the cleanup does: every job whose cwd
     is the ticket's worktree or under it, running or done. A sibling worktree whose name extends
@@ -1143,6 +1155,7 @@ def test_a_cleanup_removes_the_jobs_its_worker_left_in_its_worktree_and_no_other
     assert sorted(s for s in sessions if s.startswith("job-")) == ["job-elsewhere", "job-warm-more"]
 
 
+@pytest.mark.full_path
 def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fails_is_said(toy: Path, staged: Path) -> None:
     """A done ticket has nothing left to resume: its `done` takes the host's worktrees and branches,
     the run record, and the fetched branches here. A host that does not answer leaves the `done`
@@ -1174,6 +1187,7 @@ def test_a_done_on_a_remote_host_retires_its_run_there_and_here_and_one_that_fai
     assert "no run recorded" in probed.stderr, probed.stderr
 
 
+@pytest.mark.full_path
 def test_a_local_host_writes_this_machines_log_itself_so_a_fetch_pulls_nothing(toy: Path, staged: Path) -> None:
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
@@ -1198,6 +1212,7 @@ def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: P
     assert "not two repos yet" in said.stderr and "project-setup" in said.stderr, said.stderr
 
 
+@pytest.mark.full_path
 def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> None:
     """A worker that died before its first commit: both branches are the base, so there is no range,
     nothing to render and nothing to rule on, and the ticket keeps the claim it had."""
@@ -1213,6 +1228,7 @@ def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> No
     assert status_of(toy, "warm-preset") == "claimed"
 
 
+@pytest.mark.full_path
 def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> None:
     """A research ticket's round: the agent branch carries the report and nothing in the code repo
     moved, so there is no diff of code to show and `review` says so rather than rendering one. A
@@ -1565,6 +1581,7 @@ def moved_on(repos: dict[str, Path]) -> str:
     return git(repos["jarvis"], "rev-parse", "origin/main").strip()
 
 
+@pytest.mark.full_path
 def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_branches_back(
         toy: Path, staged: Path) -> None:
     """`tickets-land-in-listed-repos#P5`: the host gets a bare repo for each repo warm-preset names
@@ -1624,6 +1641,7 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
         assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
 
 
+@pytest.mark.full_path
 def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path, staged: Path) -> None:
     """A child of lamp-ui, dispatched from lamp-ui's worktree onto this machine: `Backend` is cut
     from lamp-ui's branch there, which is ahead of its integration branch, into the ticket worktree,
@@ -1662,6 +1680,7 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
         assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
 
 
+@pytest.mark.full_path
 def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
     """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
     `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
@@ -1739,6 +1758,7 @@ def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_o
     assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
 
 
+@pytest.mark.full_path
 def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and_keeps_it(
         toy: Path, staged: Path) -> None:
     """On a local host a listed repo is the user's own checkout, and a `ticket/<slug>` there that
@@ -1799,6 +1819,7 @@ def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged
         f"diff: [code@{code[0]}..{code[1]}, Backend@{fork}..{git(backend, 'rev-parse', 'lamp-ui').strip()}]") == 1
 
 
+@pytest.mark.full_path
 def test_a_listed_repo_dropped_from_repos_after_the_spawn_is_fetched_and_its_run_kept_until_merged(
         toy: Path, staged: Path) -> None:
     """`jarvis` named at the spawn and dropped from `repos:` before the review: the fetch still
@@ -1833,6 +1854,7 @@ def test_a_listed_repo_dropped_from_repos_after_the_spawn_is_fetched_and_its_run
     assert git(repos["jarvis"], "log", "-1", "--format=%s", "ticket/warm-preset").strip() == work
 
 
+@pytest.mark.full_path
 def test_a_nested_repos_place_the_code_repo_already_fills_is_cut_there(toy: Path, staged: Path) -> None:
     """The code repo records `Backend` as a submodule, so its worktree comes with an empty `Backend/`:
     the spawn cuts Backend's ticket branch into it all the same, where the brief says it is."""
@@ -2202,6 +2224,7 @@ def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_on_it
     assert f"Backend@{fork}..{tip}" not in landed("warm-preset")
 
 
+@pytest.mark.full_path
 def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_run_on_the_host(
         toy: Path, staged: Path) -> None:
     """Backend's branch was squashed into `development` here and deleted, its range the squash,
@@ -2255,6 +2278,7 @@ def test_a_review_over_what_landed_leaves_a_page_it_did_not_render_as_it_is_and_
     assert page.read_text() == '{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n'
 
 
+@pytest.mark.full_path
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
     """The version skew a host is left in when an older plugin staged it: its config carries no
     agent repo, and every command on that host says which one it is."""
@@ -2276,6 +2300,7 @@ def test_the_report_the_contract_names_is_the_one_the_scripts_read() -> None:
     assert "agent/show/<slug>/report.md" in (SKILL / "worker-prompt.md").read_text()
 
 
+@pytest.mark.full_path
 def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Path) -> None:
     """The first spawn on a remote host passes `dispatch-ctl init` empty arguments for the host's
     own defaults; each has to arrive as the argument it was, or the agent repo's branch lands in
@@ -2298,6 +2323,7 @@ def test_the_first_spawn_on_a_remote_host_stages_it_whole(toy: Path, staged: Pat
     assert git(worktree / "agent", "branch", "--show-current").strip() == "ticket/warm-preset"
 
 
+@pytest.mark.full_path
 def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, staged: Path) -> None:
     """`report-checked-before-commit`: a worker commits its report in the host's agent repo, and
     that repo's commit hook refuses a report the import would."""
@@ -2310,6 +2336,7 @@ def test_a_remote_hosts_agent_repo_gets_the_trackers_commit_hook(toy: Path, stag
     assert os.access(installed, os.X_OK)
 
 
+@pytest.mark.full_path
 def test_a_commit_hook_the_agent_repo_already_has_is_its_owners(toy: Path, staged: Path) -> None:
     """On a local host the agent repo is the user's own checkout, and a hook in it stays as it was."""
     theirs = toy / "agent" / ".git" / "hooks" / "pre-commit"
@@ -2406,6 +2433,7 @@ def test_each_help_states_the_interface_within_its_budget(script: str, budget: i
     assert int(words.stdout) <= budget, f"{script} --help is {words.stdout.strip()} words"
 
 
+@pytest.mark.full_path
 def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
     """DISPATCH_RUNNER set on the orchestrator reaches a remote host and is the one its worker runs.
     It is renamed after the ticket whatever its own name: this one is called `manifest`, the file
@@ -2429,6 +2457,27 @@ def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) ->
     assert record[-1].strip() == f"{state}/runner-warm-preset", record
 
 
+@pytest.mark.full_path
+def test_push_brings_both_repos_tips_to_the_host_a_run_is_on(toy: Path, staged: Path) -> None:
+    """What a worker resumed to rebase is rebasing onto: this branch's tip in each repo, on its host."""
+    remote, env = fake_remote(toy)
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, remote / ".local" / "state" / "dispatch" / "lamp-main")
+    for at in (toy, toy / "agent"):
+        (at / "moved.md").write_text("the branch moved\n")
+        git(at, "add", "moved.md")
+        git(at, "commit", "-q", "-m", "the branch moved")
+
+    pushed = subprocess.run([str(staged), "push"], cwd=toy, capture_output=True, text=True, env=env, timeout=120)
+
+    assert pushed.returncode == 0, pushed.stderr
+    bare = remote / "repos" / "dispatch"
+    assert git(bare / "lamp.git", "rev-parse", "main") == git(toy, "rev-parse", "main")
+    assert git(bare / "lamp-agent.git", "rev-parse", "main") == git(toy / "agent", "rev-parse", "main")
+
+
+@pytest.mark.full_path
 def test_a_resume_given_no_runner_runs_the_one_the_run_was_spawned_on(toy: Path, staged: Path) -> None:
     """A resume hands the worker its old session id, which only the harness that made it knows."""
     replacement = toy.parent / "replacement.sh"

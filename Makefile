@@ -19,24 +19,20 @@ JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
 PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
-# The full-path checks: each starts a browser or drives tmux, so they run from test-full-path alone.
-FULL_PATH = mx/skills/tracker/test_board_layout.py mx/skills/show/test_render_lint.py mx/skills/show/test_browsers.py \
-  mx/skills/session-page/test_page_in_a_browser.py mx/skills/dispatch/test_dispatch.py mx/skills/dispatch/test_dispatch_ps.py
 
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
 test:
-	@reached=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
-	tests=$$(printf '%s\n' $$reached | grep -vxF $(addprefix -e ,$(FULL_PATH))); \
-	full=$$(printf '%s\n' $$reached | grep -xF $(addprefix -e ,$(FULL_PATH))); \
-	[ -z "$$full" ] || echo "+ full-path checks reached, left to make test-full-path:" $$full; \
+	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
 	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
-	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; $(PYTEST) $$tests; fi
+	# pytest exits 5 when every test it collected was deselected: each one a full-path check.
+	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE); make test-full-path runs the full-path checks among them"; \
+	$(PYTEST) -m 'not full_path' $$tests || [ $$? -eq 5 ]; fi
 
 test-all:
-	$(PYTEST) mx/ $(addprefix --ignore=,$(FULL_PATH))
+	$(PYTEST) -m 'not full_path' mx/
 
 test-full-path:
-	$(PYTEST) $(FULL_PATH)
+	$(PYTEST) -m full_path mx/
 
 version:
 	@jq -r .version $(PLUGIN)

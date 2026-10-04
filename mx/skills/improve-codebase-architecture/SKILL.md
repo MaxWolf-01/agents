@@ -32,7 +32,7 @@ Then walk the codebase. Don't follow rigid heuristics; explore organically and n
 - Which parts of the codebase are untested, or hard to test through their current interface?
 - Where does behaviour sit inside a decorated entry point (a route handler, a CLI command, a task), where every test of it pays the framework's setup?
 - Which seams have a stated contract and no property checking it?
-- Where does a seam's invariant resist being stated cleanly, or its test need heavy fakes? That is a finding about the seam, never a call for more test code.
+- Where does a seam's invariant resist being stated cleanly, or its test need heavy fakes? That is a finding about the seam.
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
@@ -42,7 +42,7 @@ The scan is done when every candidate carries:
 - **Problem**: why the current architecture is causing friction
 - **Solution**: plain English description of what would change; the interface itself is designed in step 3, with the user
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
-- **Invariant**: what always holds at the new seam, and the check that states it (`/mx:testing`, Property tests). One that cannot be stated cleanly, or whose check needs heavy fakes, says the seam is not there yet
+- **Invariant**: what always holds at the new seam, and the check that states it (`/mx:testing`, Property tests).
 - **Dependency category**: which of the four in `/mx:codebase-design` the deepening falls into
 - **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`
 - **Impact**: what the deepening buys against what it costs, in one line; candidates are ordered by it, in the report and in the grilling. Strength is how sure you are the deepening holds, impact what it pays

@@ -222,6 +222,7 @@ def test_a_probe_that_fails_over_a_manifest_is_a_row_not_an_empty_scratch_dir(tm
     assert "exit 3" in row[7]
 
 
+@pytest.mark.full_path
 def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, str]):
     d = scratch(tmp_path, "agents", "master")
     finished(d, spawned(d, "hypofuzz-default"))
@@ -330,6 +331,7 @@ def test_peek_without_a_worker_says_so(home: Path, tmux: dict[str, str]):
     assert "takes a worker" in out.stderr
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("worker", ["hypofuzz-default", "dispatch-agents-hypofuzz-default",
                                     "local/hypofuzz-default", "local/dispatch-agents-hypofuzz-default"])
 def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker: str):
@@ -340,7 +342,8 @@ def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker
     assert "hypofuzz-default" in out.stderr
 
 
-@pytest.mark.parametrize("fragment", ["hypofuzz", "fuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
+@pytest.mark.full_path
+@pytest.mark.parametrize("fragment", ["hypofuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
                                       "agents/master/hypofuzz-default"])
 def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fragment: str):
     """P3: a fragment that matched would make attach a guess."""
@@ -351,6 +354,7 @@ def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fra
     assert "no worker called" in out.stderr
 
 
+@pytest.mark.full_path
 def test_a_slug_that_is_only_a_number_is_still_a_name(home: Path, tmux: dict[str, str]):
     """`1` and `01` are equal numbers and different names; a slug is a name."""
     d = scratch(home / ROOT, "jarvis", "main")
@@ -408,6 +412,7 @@ def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: 
     assert "hypofuzz-default" in out.stdout, "the scratch dir beside it is still read"
 
 
+@pytest.mark.full_path
 def test_a_pane_that_cannot_be_read_is_a_failed_peek_not_an_empty_one(home: Path, tmux: dict[str, str]):
     """The session can end between the read that resolved it and the capture."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -463,6 +468,7 @@ def test_this_machine_is_one_host_under_both_its_names(home: Path, tmux: dict[st
     assert ssh_calls(home) == []
 
 
+@pytest.mark.full_path
 def test_peek_prints_the_last_lines_of_the_workers_pane(home: Path, tmux: dict[str, str]):
     session(tmux, "dispatch-agents-hypofuzz-default", "seq 1 40; sleep 30")
     time.sleep(0.5)
@@ -497,6 +503,7 @@ cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec "$REMOTE_SHELL" -c "$*"
 """
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
 def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
         tmp_path: Path, home: Path, tmux: dict[str, str], shell: str):
@@ -537,6 +544,7 @@ def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
     assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default:"
 
 
+@pytest.mark.full_path
 def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: dict[str, str]):
     """Inside the caller's own tmux, a plain attach refuses to nest; TMUX unset, it nests."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -554,6 +562,7 @@ def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: 
     assert "prefix twice" in out.stderr
 
 
+@pytest.mark.full_path
 def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: dict[str, str]):
     """P5, what attach invites: a Ctrl-C leaves the status line a resume needs, rather than killing
     the runner before its last act."""

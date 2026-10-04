@@ -19,6 +19,9 @@ import pytest
 
 from test_render_lint import LINT, PAGE, RESTLESS
 
+# Every check here starts a browser.
+pytestmark = pytest.mark.full_path
+
 BROWSERS = Path(__file__).parent / "browsers"
 REPO = Path(__file__).resolve().parents[3]
 

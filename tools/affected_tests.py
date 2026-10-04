@@ -79,9 +79,9 @@ def reach(test: Path, by_name: dict[str, list[Path]]) -> set[Path]:
 
 
 def reaches_every_test(path: Path) -> bool:
-    """What runs the tests or wraps what they test: the Makefile, this script, and mx/ outside its
-    skills (the bin wrappers, the hooks, the plugin manifest)."""
-    return (path == ROOT / "Makefile" or path.is_relative_to(ROOT / "tools")
+    """What runs the tests or wraps what they test: the Makefile, pytest.ini, this script, and mx/
+    outside its skills (the bin wrappers, the hooks, the plugin manifest)."""
+    return (path in (ROOT / "Makefile", ROOT / "pytest.ini") or path.is_relative_to(ROOT / "tools")
             or (path.is_relative_to(MX) and not path.is_relative_to(MX / "skills")))
 
 
