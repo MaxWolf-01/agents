@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code status line: reads the session JSON on stdin, prints two rows.
+# Claude Code status line: reads the session JSON on stdin, prints two rows, and keeps the input in ~/.cache/claude-statusline/.
 #   row 1: session id │ [host] user in dir with model (effort) │ git │ session duration
 #   row 2: label bar detail, for the context window and the 5h and weekly usage windows
 # Input fields: https://code.claude.com/docs/en/statusline
@@ -34,7 +34,7 @@ save_input() {
   else
     rm -f "$tmp"
   fi
-  find "$dir" -maxdepth 1 -name '*.json' -mtime +7 -delete
+  find "$dir" -maxdepth 1 \( -name '*.json' -o -name '.tmp.*' \) -mtime +7 -delete
 }
 save_input 2>/dev/null
 
