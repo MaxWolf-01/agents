@@ -114,7 +114,7 @@ document.addEventListener("keydown", (e) => {
     case "y": copy(); break
     default: {
       if (!/^[1-9]$/.test(e.key)) return
-      const turn = focused && focused.matches(".turn") ? focused : turns[0]
+      const turn = focused && focused.matches("details.turn") ? focused : turns[0]
       const g = group(turn)
       const link = g && g.querySelectorAll("a[data-artefact]")[+e.key - 1]
       if (link) link.click()  // a click, so whatever handles one on the page handles the key too

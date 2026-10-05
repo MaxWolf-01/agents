@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, chat_record, left_alone, open_questions, page, read_session, resolved, session_directory,
+    PAGE, RecordError, Session, Turn, chat_path, chat_record, left_alone, open_questions, page, read_session, resolved, session_directory,
     written_this_turn,
 )
 
@@ -109,8 +109,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
     - Otherwise the page renders. Where this turn wrote no record and ended on a reply, the reply
-      is written first as the turn's record, a chat turn (`session_page.CHAT`), numbered on from the
-      last; a turn that ended on no text writes none. Where this turn wrote a record, the render comes with the line
+      is written first as a chat turn (`session_page.CHAT`), which takes no number of the agent's
+      records; a turn that ended on no text writes none. Where this turn wrote a record, the render comes with the line
       the user sees under the agent's recap (`shown`, short of its link) and the record's
       artefacts, and where that record was reviewed, the records as the turn ended are logged
       beside the review, so the log pairs a draft with its revision.
@@ -134,9 +134,10 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if len(reply) > CHAT_LINES and turn is None and not again:
         if outside := written_outside_write(session):
             return Decision("send back", "record written outside Write", OUTSIDE_WRITE.format(record=outside.path, page=(directory / PAGE).as_uri()))
-        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=next_record(session), page=(directory / PAGE).as_uri()))
+        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
     if turn is None and reply and not written_outside_write(session):
-        return Decision("render", "chat reply recorded", chat=(next_record(session), chat_record(hook["last_assistant_message"], datetime.now(UTC))))
+        now = datetime.now(UTC)
+        return Decision("render", "chat reply recorded", chat=(chat_path(directory / "turns", now), chat_record(hook["last_assistant_message"], now)))
     if turn is None:
         return Decision("render", "no record written this turn")
     rendered = {"shown": shown(session), "artefacts": linked(session, turn)}
@@ -144,12 +145,6 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
-
-
-def next_record(session: Session) -> Path:
-    """Where the session's next turn record goes: numbered on from the last."""
-    last = session.turns[-1]
-    return last.path.parent / f"{last.number + 1:02d}.md"
 
 
 def shown(session: Session) -> str:
