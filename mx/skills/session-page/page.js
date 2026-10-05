@@ -26,7 +26,8 @@ const typing = (e) => e.target.matches && e.target.matches("input, textarea, sel
 const nativeKey = (e) => (e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button, a, summary")
 
 const blocks = [...document.querySelectorAll("[data-block]")]
-const turns = blocks.filter((b) => b.matches(".turn"))
+// a chat turn is a turn with nothing to open or close, so only a record's turn opens
+const turns = blocks.filter((b) => b.matches("details.turn"))
 let cur = -1
 // the focused turn's group in the artefact column is marked too, and scrolled into the column's view
 const column = document.getElementById("artefacts")

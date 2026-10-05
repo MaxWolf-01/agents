@@ -90,7 +90,7 @@ button.id:hover { color: var(--accent); }
 
 /* turns */
 .turn { border-top: 1px solid var(--edge); }
-.turn:last-of-type { border-bottom: 1px solid var(--edge); }
+.turn:last-child { border-bottom: 1px solid var(--edge); }
 .turn > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 1rem 0; }
 .turn > summary::-webkit-details-marker { display: none; }
 .turn > summary:focus-visible { outline: none; }
@@ -106,6 +106,13 @@ button.id:hover { color: var(--accent); }
 .chip a { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .chip:hover a { color: var(--accent); }
 .turn-body { padding: 0 0 2.5rem var(--rail); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+/* a chat turn: the reply the turn ended on in the chat, one compact row with nothing to open */
+.turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.6rem 0; }
+.turn.chat:focus-visible { outline: none; }
+.turn.chat .date { white-space: nowrap; }
+.chat-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.15rem; padding-right: 1.5rem; }
+.reply { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; align-items: baseline; padding: 0 0.8rem; margin-left: -0.8rem; max-width: var(--measure); }
+.reply .prose { font-size: 0.95em; overflow-wrap: anywhere; }
 
 .said > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: baseline; padding: 0.45rem 0.8rem; margin-left: -0.8rem; border-radius: var(--radius); transition: background-color 150ms; }
 .said > summary::-webkit-details-marker { display: none; }
@@ -156,6 +163,8 @@ a.path:hover { text-decoration-color: var(--accent); }
   .blk.cur::before { left: -0.75rem; }
   .turn > summary { grid-template-columns: var(--rail) minmax(0, 1fr); }
   .turn > summary .date { grid-column: 2; }
+  .turn.chat { grid-template-columns: var(--rail) minmax(0, 1fr); }
+  .turn.chat .date { grid-column: 2; }
   .said > summary { grid-template-columns: auto minmax(0, 1fr); }
   .said > summary .count { display: none; }
 }

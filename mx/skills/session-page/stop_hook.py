@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, left_alone, open_questions, page, read_session, resolved, session_directory,
+    PAGE, RecordError, Session, Turn, chat_record, left_alone, open_questions, page, read_session, resolved, session_directory,
     written_this_turn,
 )
 
@@ -61,7 +61,7 @@ class Decision:
     verb: Verb
     why: str  # which path the hook took, for the log
     reason: str = ""  # what the agent reads, where it is sent back; empty otherwise
-    page: str = ""  # the session page, where the verb is render
+    chat: tuple[Path, str] | None = None  # the chat turn's record a render writes first, as its path and text
     shown: str = ""  # what waits on the user, where a render's turn wrote a record; `main` adds the link
     artefacts: tuple[str, ...] = ()  # the file or URL of each artefact the record this turn wrote links
 
@@ -108,7 +108,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     - A reply longer than CHAT_LINES with no record written this turn is sent back to move the
       answer onto the page. Where the turn wrote a record without the Write tool, the send-back
       names that record, to be written again with Write.
-    - Otherwise the page renders. Where this turn wrote a record, the render comes with the line
+    - Otherwise the page renders. Where this turn wrote no record and ended on a reply, the reply
+      is written first as the turn's record, a chat turn (`session_page.CHAT`), numbered on from the
+      last; a turn that ended on no text writes none. Where this turn wrote a record, the render comes with the line
       the user sees under the agent's recap (`shown`, short of its link) and the record's
       artefacts, and where that record was reviewed, the records as the turn ended are logged
       beside the review, so the log pairs a draft with its revision.
@@ -133,9 +135,12 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         if outside := written_outside_write(session):
             return Decision("send back", "record written outside Write", OUTSIDE_WRITE.format(record=outside.path, page=(directory / PAGE).as_uri()))
         return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
+    if turn is None and reply and not written_outside_write(session):
+        record = directory / "turns" / f"{session.turns[-1].number + 1:02d}.md"
+        return Decision("render", "chat reply recorded", chat=(record, chat_record(hook["last_assistant_message"], datetime.now(UTC))))
     if turn is None:
-        return Decision("render", "no record written this turn", page=page(session, datetime.now()))
-    rendered = {"page": page(session, datetime.now()), "shown": shown(session), "artefacts": linked(session, turn)}
+        return Decision("render", "no record written this turn")
+    rendered = {"shown": shown(session), "artefacts": linked(session, turn)}
     if not turn_review.reviewed_since(session.id, session.began):
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
@@ -238,7 +243,9 @@ def main() -> None:
     turn_review.log(session_id, verb=decision.verb, why=decision.why, directory=directory and str(directory))
     if decision.verb == "render":
         first = not (directory / PAGE).exists()
-        (directory / PAGE).write_text(decision.page)
+        if decision.chat:
+            decision.chat[0].write_text(decision.chat[1])
+        (directory / PAGE).write_text(page(read_session(directory, Path(hook["transcript_path"])), datetime.now()))
         unit = hub_unit(session_id)
         opened = open_in_browser(str(directory / PAGE), session_id) if unit or first else "not reopened: no hub answers"
         turn_review.log(session_id, opened=opened, page=str(directory / PAGE))

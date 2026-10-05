@@ -15,14 +15,15 @@ import html
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_page import RecordError, render_session
+from session_page import RecordError, chat_record, read_turn, render_session
 from test_session_page import sections_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
@@ -268,6 +269,38 @@ def test_a_record_that_clears_a_question_it_cannot_is_refused_at_its_line(
 ) -> None:
     record = worked_example / "turns" / "05.md"
     record.write_text(f"---\ndate: 2026-09-24\n{frontmatter}\n---\n\n# Round 4\n")
+    with pytest.raises(RecordError, match=re.escape(reason)) as refused:
+        render_session(worked_example, transcript, now=NOW)
+    assert str(refused.value).startswith(f"{record}:{line}: ")
+
+
+# A chat turn's record of any reply. A carriage return is left out: reading a file turns one into a
+# line break, so a reply carrying one reads back with a line break in its place.
+REPLIES = st.text(st.characters(blacklist_characters="\r", blacklist_categories=("Cs",))).filter(str.strip)
+
+
+@settings(deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(reply=REPLIES)
+def test_a_chat_turns_record_reads_back_as_the_reply_it_was_written_from(reply: str, tmp_path: Path) -> None:
+    """chat-replies-reach-the-page: the record's body is the reply as it stood, whatever it holds,
+    headings, frontmatter fences and markdown included, and it is marked as a chat turn."""
+    record = tmp_path / "05.md"
+    at = datetime(2026, 10, 5, 14, 2, tzinfo=UTC)
+    record.write_text(chat_record(reply, at))
+    turn = read_turn(record)
+    assert (turn.chat, turn.written, turn.number) == (reply.strip(), at, 5)
+
+
+@pytest.mark.parametrize("frontmatter, line, reason", [
+    ("chat: yesterday", 3, "chat: 'yesterday' is not a time with its zone"),
+    ("chat: 2026-10-05T14:02:00", 3, "is not a time with its zone"),
+    ("chat: 2026-10-05T14:02:00+00:00\nanswered:\n  Q7: a", 4, "'answered' in a chat turn's record"),
+])
+def test_a_chat_turns_record_that_does_not_read_is_refused_at_its_line(
+    worked_example: Path, transcript: Path, frontmatter: str, line: int, reason: str
+) -> None:
+    record = worked_example / "turns" / "05.md"
+    record.write_text(f"---\ndate: 2026-10-05\n{frontmatter}\n---\n\nYes, the second bank.\n")
     with pytest.raises(RecordError, match=re.escape(reason)) as refused:
         render_session(worked_example, transcript, now=NOW)
     assert str(refused.value).startswith(f"{record}:{line}: ")
