@@ -5,7 +5,8 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `agent/sessions/<session-id>/`: `session.md` and one `turns/NN.md` per turn, in
+The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
+recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in
 the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
 brief and resume command, the questions no later turn answered or superseded, then the turns
 newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
@@ -25,7 +26,7 @@ import sys
 from collections.abc import Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TypeVar
 
@@ -109,12 +110,17 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     front, title, sections = read_record(
         directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"})
     turns = read_turns(directory / "turns")
+    chats = read_chats(directory / "turns")
     settled = settle(turns)
     entries = read_transcript(transcript) + list(pending)
     written = written_at(entries, directory, turns)
+    turns = [replace(t, written=written.get(t.number)) for t in turns]
     spoken = said(entries)
-    times = [written.get(t.number) for t in turns]
+    timeline = in_order(turns, chats)
+    times = [t.written for t in timeline]
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
+    paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
+              for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front["session"])
     return Session(
         id=session,
@@ -122,8 +128,8 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         repo=Path(str(front["repo"])),
         title=title,
         brief=sections.get("Brief", (0, ""))[1],
-        turns=tuple(replace(t, written=written.get(t.number), messages=tuple(said_before), sent=tuple(sent_before))
-                    for t, said_before, sent_before in zip(turns, messages, peers)),
+        turns=tuple(paired[t.path] for t in turns),
+        chats=tuple(paired[c.path] for c in chats),
         settled=settled,
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
@@ -257,6 +263,24 @@ class Turn:
 
 
 @dataclass(frozen=True)
+class Chat:
+    """One `turns/chat-<time>.md`: a chat turn, the reply a turn ended on in the chat where the
+    turn wrote no record, which the Stop hook recorded. It takes no number of the agent's records,
+    and sits among them by its time."""
+
+    path: Path
+    date: str
+    reply: str  # as markdown, as it stood
+    written: datetime  # when the Stop hook wrote it, which pairs the user's messages with it
+    messages: tuple[str, ...] = ()
+    sent: tuple[Sent, ...] = ()
+
+    @property
+    def key(self) -> str:
+        return self.path.stem
+
+
+@dataclass(frozen=True)
 class Settled:
     """How a question left the top: answered with `value`, or superseded by the question `value`
     names, in turn `turn`."""
@@ -277,6 +301,7 @@ class Session:
     root: Path  # the repo root the directory sits under, which a record's paths are from
     name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
     turns: tuple[Turn, ...] = ()
+    chats: tuple[Chat, ...] = ()  # oldest first
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
     described: datetime | None = None  # when the transcript last shows session.md written
@@ -295,9 +320,8 @@ def read_turns(turns: Path) -> list[Turn]:
 
 
 def read_turn(path: Path) -> Turn:
-    front, headline, sections = read_record(
-        path, required={"date"}, allowed={"date", "answered", "superseded"},
-        sections={"Questions", "Links", "Details"})
+    front, body, offset = read_frontmatter(path, required={"date"}, allowed={"date", "answered", "superseded"})
+    headline, sections = split_sections(path, body, offset, {"Questions", "Links", "Details"})
     tables = {}
     for name in ("answered", "superseded"):
         table = front.get(name) or {}
@@ -320,6 +344,54 @@ def read_turn(path: Path) -> Turn:
         details=sections.get("Details", (0, ""))[1],
         **tables,
     )
+
+
+# A chat turn's record, which the Stop hook writes for a turn that ended on a chat reply and wrote
+# no record of its own: `turns/chat-<time>.md`, the time in UTC so that names sort as times do. Its
+# frontmatter's `chat` is when the hook wrote it, which pairs the user's messages with it as a
+# Write call's time does for a record the agent wrote; its body is the reply as it stood.
+CHAT = "chat"
+CHAT_NAME = "chat-%Y%m%dT%H%M%SZ.md"
+
+
+def chat_path(turns: Path, at: datetime) -> Path:
+    """Where the chat turn written at `at`, a time with its zone, goes in the `turns/` directory."""
+    return turns / at.astimezone(UTC).strftime(CHAT_NAME)
+
+
+def chat_record(reply: str, at: datetime) -> str:
+    """A chat turn's record of `reply`, written at `at`, a time with its zone."""
+    return f"---\ndate: {at.astimezone():%Y-%m-%d}\n{CHAT}: {at.isoformat()}\n---\n\n{reply.strip()}\n"
+
+
+def read_chats(turns: Path) -> list[Chat]:
+    return [read_chat(path) for path in sorted(turns.glob("chat-*.md")) if re.fullmatch(r"chat-\d{8}T\d{6}Z\.md", path.name)]
+
+
+def read_chat(path: Path) -> Chat:
+    """A chat turn's record. The body is never split into sections, so a heading in the reply
+    stays the reply's own."""
+    front, body, _ = read_frontmatter(path, required={"date", CHAT}, allowed={"date", CHAT})
+    try:
+        at = datetime.fromisoformat(str(front[CHAT]))
+    except ValueError:
+        at = None
+    if at is None or at.tzinfo is None:
+        raise RecordError(path, line_of(path, CHAT), f"{CHAT}: {front[CHAT]!r} is not a time with its zone, like 2026-10-05T14:02:00+00:00")
+    return Chat(path=path, date=str(front["date"]), reply=body.strip(), written=at)
+
+
+def in_order(turns: list[Turn], chats: list[Chat]) -> list[Turn | Chat]:
+    """The turn records and chat turns as they happened: each chat turn before the first record
+    written after it. A record the transcript shows no write for has no time, and holds its place
+    in the numbered order."""
+    timeline: list[Turn | Chat] = []
+    waiting = sorted(chats, key=lambda c: c.written)
+    for turn in turns:
+        while waiting and turn.written is not None and waiting[0].written < turn.written:
+            timeline.append(waiting.pop(0))
+        timeline.append(turn)
+    return timeline + waiting
 
 
 # A pointer at another part of the page in words: a question at the top sits far from the turn
@@ -346,6 +418,13 @@ def read_record(
     path: Path, required: set[str], allowed: set[str], sections: set[str]
 ) -> tuple[dict, str, dict[str, tuple[int, str]]]:
     """A record's frontmatter as data, its H1, and each of its `##` sections as (first line, text)."""
+    front, body, offset = read_frontmatter(path, required, allowed)
+    h1, parts = split_sections(path, body, offset, sections)
+    return front, h1, parts
+
+
+def read_frontmatter(path: Path, required: set[str], allowed: set[str]) -> tuple[dict, str, int]:
+    """A record's frontmatter as data, the text after it, and the line that text starts on."""
     if not path.is_file():
         raise RecordError(path, None, "no such file")
     text = path.read_text()
@@ -363,8 +442,7 @@ def read_record(
         raise RecordError(path, line_of(path, unknown[0]), f"unknown frontmatter field {unknown[0]!r}; the fields are {', '.join(sorted(allowed))}")
     if missing := sorted(required - set(front)):
         raise RecordError(path, 2, f"frontmatter lacks {missing[0]!r}")
-    h1, parts = split_sections(path, text[m.end():], m.group(0).count("\n") + 1, sections)
-    return front, h1, parts
+    return front, text[m.end():], m.group(0).count("\n") + 1
 
 
 def line_of(path: Path, key: str) -> int:
@@ -695,7 +773,8 @@ def page(session: Session, now: datetime) -> str:
 def assemble(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
     waiting = open_questions(session)
-    dates = sorted({t.date for t in session.turns})
+    timeline = in_order(list(session.turns), list(session.chats))
+    dates = sorted({t.date for t in timeline})
     span = dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
     turns = len(session.turns)
     top = f"""
@@ -704,7 +783,8 @@ def assemble(session: Session, now: datetime) -> str:
     {''.join(open_question(t, q) for t, q in waiting)}
   </section>""" if waiting else ""
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
-    body = "".join(turn_section(t, session.settled, open_=i == 0) for i, t in enumerate(newest_first))
+    body = "".join(chat_row(t) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0])
+                   for t in reversed(timeline))
     title = inline(session.title)
     name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
@@ -826,6 +906,20 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
 </details>"""
 
 
+def chat_row(c: Chat) -> str:
+    """A chat turn: one compact row with no number, the user's messages behind a click and the
+    reply as it was, with nothing to open or close."""
+    return f"""
+<article class="turn chat blk" id="{c.key}" tabindex="-1" data-block>
+  <span class="rail"></span>
+  <div class="chat-body">
+    {you(c)}{"".join(map(peer, c.sent))}
+    <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(c.reply)}</div></div>
+  </div>
+  <span class="v-meta date">{esc(c.date)}</span>
+</article>"""
+
+
 def chips(t: Turn) -> str:
     """The turn's artefacts on its summary line, which is what shows of a collapsed turn."""
     if not t.artefacts:
@@ -835,7 +929,7 @@ def chips(t: Turn) -> str:
     ) + "</span>")
 
 
-def you(t: Turn) -> str:
+def you(t: Turn | Chat) -> str:
     """The user's messages, under "you"."""
     if t.written is None:
         return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'

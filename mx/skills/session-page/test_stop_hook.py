@@ -15,7 +15,9 @@ for which session; the hub is absent unless a check starts a stand-in of it on a
 
 import io
 import json
+import html
 import os
+import re
 import socket
 import shutil
 import subprocess
@@ -23,6 +25,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -693,6 +696,117 @@ def test_a_turn_that_wrote_no_record_gets_no_line(
     assert (worked_example / PAGE).is_file()
 
 
+# ---- a chat turn ------------------------------------------------------------
+
+ANSWERED_IN_THE_CHAT = {
+    "a one-line answer": ("Yes, the second bank.", False),
+    "three lines": (THREE_LINES, False),
+    "a long answer sent back once already": (LONG, True),
+    "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
+}
+NUMBERED = ["01.md", "02.md", "03.md", "04.md"]  # the worked example's records
+TURN_ID = re.compile(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"')
+
+
+def chats(directory: Path) -> list[Path]:
+    """The chat turns' records in the session directory."""
+    return sorted((directory / "turns").glob("chat-*.md"))
+
+
+def rows(page: str) -> list[str]:
+    """The ids of the page's turns, top to bottom."""
+    return [i for _, i in sorted((m.start(), m.group(1)) for m in TURN_ID.finditer(page))]
+
+
+
+@pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)
+def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_a_chat_turn(
+    reply: str, again: bool, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None],
+) -> None:
+    """chat-replies-reach-the-page, as its D1 rules: the hook writes the reply as `turns/chat-<time>.md`,
+    taking no number of the agent's records, its body the reply as it stood; the page shows it with
+    no number, newest, with the user's message the transcript pairs with it, and the agent's newest
+    record stays the turn open."""
+    before = datetime.now(UTC).replace(microsecond=0)
+    run(payload(worked_example, unrecorded, reply=reply, stop_hook_active=again))
+    assert shown(capsys) == ""
+    assert sorted(p.name for p in (worked_example / "turns").glob("[0-9]*.md")) == NUMBERED
+    [chat] = chats(worked_example)
+    assert before <= datetime.strptime(chat.name, "chat-%Y%m%dT%H%M%SZ.md").replace(tzinfo=UTC) <= datetime.now(UTC)
+    front, body = chat.read_text().split("---\n", 2)[1:]
+    assert [line.split(": ")[0] for line in front.splitlines()] == ["date", "chat"]
+    assert body.strip() == reply.strip()
+    page = (worked_example / PAGE).read_text()
+    assert rows(page) == [chat.stem, "t04", "t03", "t02", "t01"]
+    row = page[page.index(f'id="{chat.stem}"'):]
+    row = row[:row.index("</article>")]
+    assert '<span class="rail"></span>' in row
+    assert html.unescape(re.findall(r'<div class="msg"><p>(.*?)</p>', row)[0]) == SPOKEN_AFTER["message"]["content"]
+    assert '<details class="turn blk" id="t04" data-block open>' in page
+
+
+SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
+
+
+@pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
+def test_a_turn_that_ends_on_no_text_writes_no_record_and_still_renders(
+    reply: str, worked_example: Path, unrecorded: Path, stale_page: str, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None],
+) -> None:
+    (worked_example / PAGE).write_text(stale_page)
+    run(payload(worked_example, unrecorded, reply=reply))
+    assert shown(capsys) == ""
+    assert sorted(p.name for p in (worked_example / "turns").glob("*.md")) == NUMBERED
+    assert (worked_example / PAGE).read_text() != stale_page
+
+
+def test_a_long_reply_sent_back_writes_no_chat_turn(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """The send-back for a long reply stays as it is: the turn the hook sends back has written nothing."""
+    run(payload(worked_example, unrecorded, reply=LONG))
+    assert str(worked_example / "turns" / "05.md") in said_back(capsys)
+    assert sorted(p.name for p in (worked_example / "turns").glob("*.md")) == NUMBERED
+
+
+def test_a_record_written_through_the_shell_is_the_turns_and_no_chat_turn_is_added(
+    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """A turn that wrote a record, if not with Write, wrote one: its short reply is no record of its own."""
+    (worked_example / "turns" / "05.md").write_text(RECORD_05)
+    run(payload(worked_example, unrecorded, reply="Round 4 is on the page."))
+    capsys.readouterr()
+    assert chats(worked_example) == []
+
+
+def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
+    worked_example: Path, unrecorded: Path, tmp_path: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    """D1's point: no record the agent writes can land on a chat turn. After one, the next turn's long
+    reply goes back to be moved onto 05, the number after the agent's 04, and a record 05 written
+    with Write is that turn's, shown under its recap above the chat turn, which keeps its reply."""
+    run(payload(worked_example, unrecorded, reply="Yes, the second bank."))
+    capsys.readouterr()
+    [chat] = chats(worked_example)
+    later = {"type": "user", "message": {"role": "user", "content": "And the third?"},
+             "timestamp": (datetime.now(UTC) + timedelta(minutes=1)).isoformat()}
+    next_turn = appended(unrecorded, tmp_path / "next.jsonl", later)
+    run(payload(worked_example, next_turn, reply=LONG))
+    record = worked_example / "turns" / "05.md"
+    assert str(record) in said_back(capsys)
+    record.write_text(RECORD_05)
+    call = {"type": "tool_use", "id": "toolu_05", "name": "Write", "input": {"file_path": str(record)}}
+    appended(next_turn, next_turn, {"type": "assistant", "message": {"role": "assistant", "content": [call]},
+                                    "timestamp": (datetime.now(UTC) + timedelta(minutes=2)).isoformat()})
+    run(payload(worked_example, next_turn, reply="Round 4 is on the page."))
+    assert shown(capsys).startswith("session page · ")
+    page = (worked_example / PAGE).read_text()
+    assert rows(page) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
+    assert messages_of(page)["05"] == ["And the third?"]
+    assert "Yes, the second bank." in chat.read_text()
+
+
 RECORD_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
 
 
@@ -889,6 +1003,10 @@ def no_record(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) 
     return payload(example, fixtures.getfixturevalue("unrecorded"))
 
 
+def chat_reply(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example, fixtures.getfixturevalue("unrecorded"), reply="Yes, the second bank.")
+
+
 def reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
     """The record's Write had it reviewed, as the write hook logs it."""
     fixtures.getfixturevalue("attended").write_text(json.dumps(REVIEWED_04 | {"session_id": example.name}) + "\n")
@@ -910,6 +1028,7 @@ PATHS = {
     "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
     "a record written through the shell": (through_the_shell, "send back", "record written outside Write", True),
     "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
+    "a chat reply and no record": (chat_reply, "render", "chat reply recorded", True),
     "a record reviewed when it was written": (reviewed, "render", "record reviewed this turn", True),
     "a record not reviewed this turn": (not_reviewed, "render", "record not reviewed this turn", True),
 }
