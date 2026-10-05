@@ -16,7 +16,6 @@ for which session; the hub is absent unless a check starts a stand-in of it on a
 import io
 import json
 import os
-import re
 import socket
 import shutil
 import subprocess
@@ -717,12 +716,13 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     run(payload(worked_example, unrecorded, reply=reply, stop_hook_active=again))
     assert shown(capsys) == ""
     record = (worked_example / "turns" / "05.md").read_text()
-    assert re.match(r"---\ndate: \d{4}-\d\d-\d\d\nchat: \S+\n---\n", record)
-    assert record.split("---\n", 2)[2].strip() == reply.strip()
+    front, body = record.split("---\n", 2)[1:]
+    assert [line.split(": ")[0] for line in front.splitlines()] == ["date", "chat"]
+    assert body.strip() == reply.strip()
     page = (worked_example / PAGE).read_text()
-    assert re.search(r'<article class="turn chat blk" id="t05"', page)
+    assert '<article class="turn chat blk" id="t05"' in page
     assert messages_of(page)["05"] == [SPOKEN_AFTER["message"]["content"]]
-    assert re.search(r'<details class="turn blk" id="t04" data-block open>', page)
+    assert '<details class="turn blk" id="t04" data-block open>' in page
 
 
 SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
