@@ -24,7 +24,7 @@ A question still open when the session ends leaves the page for a ticket, since 
 
 ### The turn record
 
-`turns/NN.md`, numbered on from the last record, shaped like a ticket file and written once: a later turn never edits it, and a question clears through the frontmatter of the turn that received its answer.
+`turns/NN.md`, numbered on from the last `NN.md`, shaped like a ticket file and written once: a later turn never edits it, and a question clears through the frontmatter of the turn that received its answer.
 
 ```markdown
 ---

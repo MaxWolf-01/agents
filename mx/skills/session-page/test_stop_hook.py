@@ -705,6 +705,7 @@ ANSWERED_IN_THE_CHAT = {
     "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
 }
 NUMBERED = ["01.md", "02.md", "03.md", "04.md"]  # the worked example's records
+TURN_ID = re.compile(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"')
 
 
 def chats(directory: Path) -> list[Path]:
@@ -716,8 +717,6 @@ def rows(page: str) -> list[str]:
     """The ids of the page's turns, top to bottom."""
     return [i for _, i in sorted((m.start(), m.group(1)) for m in TURN_ID.finditer(page))]
 
-
-TURN_ID = re.compile(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"')
 
 
 @pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)

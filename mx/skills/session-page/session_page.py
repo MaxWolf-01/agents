@@ -5,7 +5,8 @@
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
-The directory is `agent/sessions/<session-id>/`: `session.md` and one `turns/NN.md` per turn, in
+The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
+recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in
 the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
 brief and resume command, the questions no later turn answered or superseded, then the turns
 newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.

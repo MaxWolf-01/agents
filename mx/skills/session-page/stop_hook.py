@@ -134,7 +134,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if len(reply) > CHAT_LINES and turn is None and not again:
         if outside := written_outside_write(session):
             return Decision("send back", "record written outside Write", OUTSIDE_WRITE.format(record=outside.path, page=(directory / PAGE).as_uri()))
-        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
+        record = directory / "turns" / f"{session.turns[-1].number + 1:02d}.md"
+        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=record, page=(directory / PAGE).as_uri()))
     if turn is None and reply and not written_outside_write(session):
         now = datetime.now(UTC)
         return Decision("render", "chat reply recorded", chat=(chat_path(directory / "turns", now), chat_record(hook["last_assistant_message"], now)))
