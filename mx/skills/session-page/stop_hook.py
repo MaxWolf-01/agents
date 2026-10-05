@@ -134,10 +134,9 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if len(reply) > CHAT_LINES and turn is None and not again:
         if outside := written_outside_write(session):
             return Decision("send back", "record written outside Write", OUTSIDE_WRITE.format(record=outside.path, page=(directory / PAGE).as_uri()))
-        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=directory / "turns" / f"{session.turns[-1].number + 1:02d}.md", page=(directory / PAGE).as_uri()))
+        return Decision("send back", "answer in the chat", IN_THE_CHAT.format(record=next_record(session), page=(directory / PAGE).as_uri()))
     if turn is None and reply and not written_outside_write(session):
-        record = directory / "turns" / f"{session.turns[-1].number + 1:02d}.md"
-        return Decision("render", "chat reply recorded", chat=(record, chat_record(hook["last_assistant_message"], datetime.now(UTC))))
+        return Decision("render", "chat reply recorded", chat=(next_record(session), chat_record(hook["last_assistant_message"], datetime.now(UTC))))
     if turn is None:
         return Decision("render", "no record written this turn")
     rendered = {"shown": shown(session), "artefacts": linked(session, turn)}
@@ -145,6 +144,12 @@ def decide(hook: dict, directory: Path | None) -> Decision:
         return Decision("render", "record not reviewed this turn", **rendered)
     turn_review.log(session.id, decision="turn end", **turn_review.as_read(session, turn))
     return Decision("render", "record reviewed this turn", **rendered)
+
+
+def next_record(session: Session) -> Path:
+    """Where the session's next turn record goes: numbered on from the last."""
+    last = session.turns[-1]
+    return last.path.parent / f"{last.number + 1:02d}.md"
 
 
 def shown(session: Session) -> str:
