@@ -17,6 +17,7 @@ Examples:
     tracker check                        # the staged ticket files and reports: what the commit hook runs
     tracker check agent/tickets/one-flow.md
     tracker root                         # where this project's ticket files are written
+    tracker repos                        # the repos its tickets land in beside the code repo
     tracker get map-columns status
     tracker data | jq -r '.tickets[] | select(.status == "open") | .slug'
     tracker context map-columns          # the ticket's body, then every ancestor's
@@ -36,11 +37,13 @@ from __future__ import annotations
 
 import datetime
 import difflib
+import functools
 import json
 import os
 import re
 import subprocess
 import sys
+import tomllib
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Iterable, Literal, Sequence, get_args
@@ -52,16 +55,20 @@ from tyro.extras import SubcommandApp
 Status = Literal["proposed", "open", "claimed", "review", "done"]
 Size = Literal["XS", "S", "M", "L", "XL"]
 Priority = Literal[1, 2, 3, 4, 5]
-Field = Literal["status", "parent", "blocked-by", "needs-user", "hinge", "priority", "size", "diff", "gh"]
+Field = Literal["status", "parent", "blocked-by", "needs-user", "hinge", "priority", "size", "repos", "diff", "gh"]
 STATUSES, SIZES, PRIORITIES = get_args(Status), get_args(Size), get_args(Priority)
 FIELDS = get_args(Field)
-LIST_FIELDS = ("blocked-by", "diff", "gh")
+LIST_FIELDS = ("blocked-by", "repos", "diff", "gh")
 
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 GH_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
-RANGE = re.compile(r"(?:(?:code|agent)@)?[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}")
+REPO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+# `<repo>@<first>..<last>`, the repo `code`, `agent` or a listed one's name; a bare range is the code repo's
+RANGE = re.compile(rf"(?:({REPO_NAME.pattern})@)?[0-9a-f]{{7,40}}\.\.([0-9a-f]{{7,40}})")
+OWN_REPOS = (None, "code", "agent")  # what a range names a repo every project has by
 
 TICKETS = Path("agent") / "tickets"
+REPO_LIST = "repos.toml"  # beside the tickets, in the agent repo
 LOGS = "logs"  # under the user's home: where an untracked file goes when it leaves the tree
 
 
@@ -119,6 +126,29 @@ def root() -> int:
     return 0
 
 
+@app.command(name="repos")
+def repos() -> int:
+    """Print the repos this project's tickets land in beside the code repo and the agent repo, one
+    line each, tab-separated: its name, its absolute path, and its integration branch. Nothing where
+    the project lists none.
+
+    The list is `agent/repos.toml`, one table per repo. The table's name is what a ticket's `repos:`
+    and a `diff:` range (`<name>@<sha>..<sha>`) call the repo; `code` and `agent` are taken.
+
+        [Backend]
+        path = "Backend"              # from the project root, or absolute, `~` expanded
+        integration = "development"   # the branch tickets merge into and are done on
+
+    A repo with no `integration` is done on the branch its `origin/HEAD` names. A ticket is done on
+    a listed repo once its work there is in that branch, locally or at `origin`. A list this cannot
+    read whole is refused with the reason: TOML that does not parse, a table with no `path`, a path
+    that is no git repo's root, an integration branch the repo does not have."""
+    root = tracker_root(Path.cwd())
+    for one in [resolved(root, name) for name in repo_list(root)]:  # all read before a line is printed
+        print(f"{one.name}\t{one.path}\t{one.integration}")
+    return 0
+
+
 @app.command(name="get")
 def get(slug: Annotated[str, tyro.conf.Positional], field: Annotated[Field, tyro.conf.Positional]) -> int:
     """Print one frontmatter field of one ticket, as the file writes it, a list field one entry per
@@ -146,7 +176,7 @@ def data(source: Annotated[str, tyro.conf.Positional] = "", called: str = "") ->
 
         {"root": "str", "tickets": [{"slug": "str", "path": "str", "status": "str",
           "parent": "str|null", "blocked-by": ["str"], "needs-user": bool, "hinge": bool, "priority": int,
-          "size": "str", "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
+          "size": "str", "repos": ["str"], "diff": ["str"], "gh": ["str"], "title": "str|null", "brief": "str",
           "sections": [{"heading": "str", "line": int, "text": "str"}],
           "questions": [{"tag": "str", "headline": "str", "detail": "str", "ruled": "str|null",
                          "answer": "str", "line": int}],
@@ -185,6 +215,7 @@ def as_data(ticket: Ticket, tracker: Tracker) -> dict:
         "slug": ticket.slug, "path": str(ticket.path), "status": ticket.status,
         "parent": ticket.parent, "blocked-by": ticket.blocked_by, "needs-user": ticket.needs_user,
         "hinge": ticket.hinge, "priority": ticket.meta.get("priority"), "size": ticket.meta.get("size"),
+        "repos": ticket.repos,
         "diff": [str(one) for one in ticket.meta.get("diff") or []],
         "gh": [str(one) for one in ticket.meta.get("gh") or []],
         "title": ticket.title, "brief": ticket.brief,
@@ -300,6 +331,7 @@ def new(
     size: Size,
     parent: str = "",
     blocked_by: tuple[str, ...] = (),
+    repos: tuple[str, ...] = (),
     status: Literal["proposed", "open"] = "proposed",
     needs_user: bool = False,
     hinge: bool = False,
@@ -315,6 +347,7 @@ def new(
         size: the user's time on it: XS, S, M, L or XL.
         parent: the ticket this one is part of; absent on a top-level ticket.
         blocked_by: the tickets that have to be done first, by slug.
+        repos: the listed repos the work lands in, by the names `tracker repos` prints.
         status: the status to file it at.
         needs_user: mark the ticket as one the user is in the loop for.
         hinge: mark a child ticket as a hinge, ruled alone before anything builds on it (SLICING.md).
@@ -330,7 +363,7 @@ def new(
         raise Refused([f"{path} is already a ticket"])
     if brief not in ("", "-") and not Path(brief).is_file():
         raise Refused([f"{brief} is no file to read a brief from"])
-    meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by),
+    meta = {"status": status, "parent": parent, "blocked-by": list(blocked_by), "repos": list(repos),
             "needs-user": needs_user, "hinge": hinge, "priority": priority, "size": size}
     written = "---\n" + "".join(f"{key}: {rendered(value)}\n" for key, value in meta.items() if value not in ("", [], False)) + "---\n"
     told = (sys.stdin.read() if brief == "-" else Path(brief).read_text()).strip() if brief else ""
@@ -371,7 +404,8 @@ def set_fields(
 
     Args:
         slug: the ticket.
-        assignments: `status=claimed`, `diff+=4f2a91c..8b3ce07`, `blocked-by=[one, another]`.
+        assignments: `status=claimed`, `diff+=code@4f2a91c..8b3ce07`, `repos+=Backend`,
+            `blocked-by=[one, another]`.
     """
     tracker = writing()
     ticket = tracker.ticket(slug)
@@ -442,16 +476,26 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not reached the branch the user's accept merges it into
-    (`accepted_into`), or None once it has, in every repo holding a branch of it. A parent ticket's
-    own branch has reached it only with every child done or in review merged into that branch,
-    since the parent's accept takes them in with it. A ticket with no branch anywhere is done once
-    every child ticket is, or, where the user is in the loop for it, at the ruling itself."""
+    (`accepted_into`), or None once it has, in every repo holding a branch of it, and why its work
+    in a listed repo is not in that repo's integration branch (`unlanded_listed`). A parent
+    ticket's own branch has reached it only with every child done or in review merged into that
+    branch, since the parent's accept takes them in with it. A ticket with no code, no range
+    recorded and no branch in any of its repos, is done once every child ticket is; a ticket the
+    user is in the loop for is done at the ruling itself."""
+    if why := unlanded_listed(ticket, tracker):
+        return why
     branches = [(top, branch_of(top, ticket, tracker)) for top in repos_of(tracker)]
-    if all(branch is None for _, branch in branches):
+    built_listed = bool(listed_branches(ticket, tracker) or listed_ranges(ticket))
+    if all(branch is None for _, branch in branches) and not built_listed:
         children = tracker.children(ticket.slug)
-        if ticket.needs_user or (children and all(child.status == "done" for child in children)):
+        pending = [child.slug for child in children if child.status != "done"]
+        coded = bool(ticket.meta.get("diff"))
+        if ticket.needs_user or (not pending and (children or not coded)):
             return None
-        return f"no branch ticket/{ticket.slug} in {' or '.join(str(top) for top, _ in branches)}; done is written where the work was built, and follows the user's accept and its merge"
+        nowhere = f"no branch ticket/{ticket.slug} in {' or '.join(str(top) for top, _ in branches)}"
+        if not coded:
+            return f"{nowhere}, and {', '.join(pending)} not done; a ticket with no code of its own is done once every child ticket is"
+        return f"{nowhere}; done is written where the work was built, and follows the user's accept and its merge"
     for top, branch in branches:
         if branch is None:
             continue
@@ -466,6 +510,41 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
                    if child.status != "done" and not merged_under_parent(child, tracker)]:
         return f"{', '.join(waiting)} neither done nor in review merged into {ticket.slug}; the parent ticket's accept takes in every child, so each is merged first or ruled out of the tree"
     return None
+
+
+def unlanded_listed(ticket: Ticket, tracker: Tracker) -> str | None:
+    """Why the ticket's work in a listed repo is not in that repo's integration branch, or None once
+    it is: a range `diff:` records there whose last commit the branch does not hold, or a branch of
+    the ticket's in one of its `repos:` not merged into it. Done means merged there, whichever
+    parent ticket's branch the work passed through on the way."""
+    for written, name, last in listed_ranges(ticket):
+        repo = resolved(tracker.root, name)
+        if tried(repo.path, "cat-file", "-e", f"{last}^{{commit}}").returncode != 0:
+            return f"`{written}`'s last commit {last} is no commit of {repo.name} at {repo.path}; fetch it, or record the range the work landed as"
+        if not in_integration(repo, last):
+            return f"`{written}`'s last commit {last} is not in {repo.name}'s integration branch {repo.integration}, at {repo.path}; done follows its merge"
+    for repo, branch in listed_branches(ticket, tracker):
+        if not in_integration(repo, branch):
+            return f"{branch} is not merged into {repo.name}'s integration branch {repo.integration}, at {repo.path}; done follows its merge"
+    return None
+
+
+def listed_ranges(ticket: Ticket) -> list[tuple[str, str, str]]:
+    """(the range as written, the listed repo it names, its last commit), for every `diff:` range
+    in a listed repo."""
+    written = ticket.meta.get("diff")
+    return [(str(one), found.group(1), found.group(2)) for one in (written if isinstance(written, list) else [])
+            if (found := RANGE.fullmatch(str(one))) and found.group(1) not in OWN_REPOS]
+
+
+def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]]:
+    """The ticket's branch in each listed repo its `repos:` names, where that repo has one."""
+    found = []
+    for name in ticket.repos:
+        repo = resolved(tracker.root, name)
+        if branch := branch_of(repo.path, ticket, tracker):
+            found.append((repo, branch))
+    return found
 
 
 def accepted_into(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
@@ -544,6 +623,89 @@ def ticket_branch(top: Path, slug: str) -> str | None:
     """The ticket's own branch, by the slug it ends in, or None where the repo has none."""
     branches = git(top, "for-each-ref", "--format=%(refname:short)", "refs/heads/ticket/").split()
     return next((branch for branch in branches if branch.rsplit("/", 1)[-1] == slug), None)
+
+
+# ---- the repo list ---------------------------------------------------------
+# The repos a project's tickets land in beside the code repo and the agent repo, `agent/repos.toml`.
+# `tracker repos` is its one reader for every other tool; `--help` there says what it holds.
+
+
+@dataclass(frozen=True)
+class Listed:
+    """One repo on the repo list, read off the disk."""
+
+    name: str
+    path: Path
+    integration: str  # the branch its tickets merge into and are done on
+
+
+def repo_list(root: Path) -> dict[str, dict]:
+    """The repo list beside the tracker at `root`, its tables by name, in the file's order; empty
+    where the project has none. It opens no repo, so a ticket's names are checked against it
+    without a git command per ticket."""
+    path = root.parent / REPO_LIST
+    return tables(path, path.read_text()) if path.is_file() else {}
+
+
+@functools.cache
+def tables(path: Path, text: str) -> dict[str, dict]:
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as broken:
+        raise Refused([f"{path} is not TOML: {broken}"])
+    said = []
+    for name, table in parsed.items():
+        if not isinstance(table, dict):
+            said.append(f"{path}: `{name}` is no table; a listed repo is `[{name}]` with its `path` under it")
+        elif not REPO_NAME.fullmatch(name):
+            said.append(f"{path}: `[{name}]` is no name a range can carry; a listed repo's name is letters, digits, `-` and `_`")
+        elif name in ("code", "agent"):
+            said.append(f"{path}: `[{name}]` is what a range calls the project's {name} repo; a listed repo takes another name")
+        elif not isinstance(table.get("path"), str) or not table["path"]:
+            said.append(f"{path}: `[{name}]` has no `path`; it says where the repo is, from the project root or absolute")
+        elif extra := sorted(set(table) - {"path", "integration"}):
+            said.append(f"{path}: `[{name}]` declares {', '.join(extra)}; a listed repo declares `path` and `integration`")
+        elif not isinstance(table.get("integration", ""), str):
+            said.append(f"{path}: `[{name}]` integration is no branch name")
+    refuse(said)
+    return parsed
+
+
+def resolved(root: Path, name: str) -> Listed:
+    """The listed repo `name`, read off the disk: its absolute path, which is a git repo's root, and
+    its integration branch, which the repo has, locally or at `origin`."""
+    listing, file = repo_list(root), root.parent / REPO_LIST
+    if name not in listing:
+        raise Refused([f"`{name}` names no repo {file} lists"])
+    table = listing[name]
+    path = Path(table["path"]).expanduser()
+    path = (path if path.is_absolute() else project_root(root) / path).resolve()
+    top = tried(path, "rev-parse", "--show-toplevel") if path.is_dir() else None
+    if top is None or top.returncode != 0 or Path(top.stdout.strip()).resolve() != path:
+        raise Refused([f"{file}: `[{name}]` path {path} is no git repo's root"])
+    integration = table.get("integration") or origin_head(path)
+    if not integration:
+        raise Refused([f"{file}: `[{name}]` names no `integration`, and {path} has no origin/HEAD to read it from; name the branch its tickets merge into"])
+    if not integration_refs(path, integration):
+        raise Refused([f"{file}: `[{name}]` integration {integration} is no branch of {path}, locally or at origin"])
+    return Listed(name, path, integration)
+
+
+def origin_head(top: Path) -> str | None:
+    """The branch `origin/HEAD` names in `top`, or None where it names none."""
+    said = tried(top, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD").stdout.strip()
+    return said.removeprefix("origin/") or None
+
+
+def integration_refs(top: Path, branch: str) -> list[str]:
+    """Where `top` holds its integration branch: the local branch and `origin`'s, those it has. A
+    merge counts in either, since a merge on the user's machine is local and a PR's is at origin."""
+    refs = (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
+    return [ref for ref in refs if tried(top, "rev-parse", "--verify", "-q", ref).returncode == 0]
+
+
+def in_integration(repo: Listed, tip: str) -> bool:
+    return any(reached(repo.path, tip, ref) for ref in integration_refs(repo.path, repo.integration))
 
 
 def written_with(text: str, changes: dict[str, str | None]) -> str:
@@ -976,7 +1138,7 @@ def frontmatter_refusals(ticket: Ticket) -> list[Refusal]:
 
     for ref in meta.get("diff") if isinstance(meta.get("diff"), list) else []:
         if not RANGE.fullmatch(str(ref)):
-            refuse("diff", f"`diff: {ref}` is no commit range; a round lands as `code@<sha>..<sha>` and `agent@<sha>..<sha>`, one per repo, and never as a branch name, since a ticket branch is deleted once it lands")
+            refuse("diff", f"`diff: {ref}` is no commit range; a round lands as `code@<sha>..<sha>` and `agent@<sha>..<sha>`, one per repo, and as `<name>@<sha>..<sha>` in a repo {REPO_LIST} lists by that name, and never as a branch name, since a ticket branch is deleted once it lands")
     for ref in meta.get("gh") if isinstance(meta.get("gh"), list) else []:
         if not GH_REF.fullmatch(str(ref)):
             refuse("gh", f"`gh: {ref}` is no reference; a reference is `owner/repo#number`")
@@ -1023,10 +1185,28 @@ def reference_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
             found.append(Refusal(ticket.path, line, f"`{ref}` names no ticket at {tracker.root / f'{slug}.md'}"))
         elif number not in {one.id for one in tracker.tickets[slug].properties}:
             found.append(Refusal(ticket.path, line, f"`{ref}` names no property; {slug} states {', '.join(one.id for one in tracker.tickets[slug].properties) or 'none'}"))
+    found += repo_refusals(ticket, tracker)
     for slug, claimed in tracker.collisions.items():
         if ticket.path in claimed:
             found.append(Refusal(ticket.path, 1, f"two files claim the slug {slug}: {', '.join(str(one) for one in claimed)}"))
     return found
+
+
+def repo_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
+    """Every repo the ticket names is on the repo list: each `repos:` entry, and the repo of every
+    `diff:` range that names neither the code repo nor the agent repo."""
+    named = [("repos", f"repos: {name}", name) for name in ticket.repos]
+    named += [("diff", f"diff: {written}", name) for written, name, _ in listed_ranges(ticket)]
+    if not named:
+        return []
+    file = tracker.root.parent / REPO_LIST
+    try:
+        listing = repo_list(tracker.root)
+    except Refused as unread:
+        return [Refusal(ticket.path, at(ticket, named[0][0]), f"{file} cannot be read, so no repo a ticket names resolves: {unread}")]
+    lists = f"it lists {', '.join(listing)}" if listing else f"the project lists none at {file}"
+    return [Refusal(ticket.path, at(ticket, key), f"`{written}` names no repo; {'a range lands in `code`, `agent` or' if key == 'diff' else 'a ticket names'} a repo {REPO_LIST} lists, one per repo, and {lists}")
+            for key, written, name in named if name not in listing]
 
 
 # ---- what a ticket file holds ----------------------------------------------
@@ -1141,6 +1321,11 @@ class Ticket:
     @property
     def blocked_by(self) -> list[str]:
         return [str(ref) for ref in self.meta.get("blocked-by") or []]
+
+    @property
+    def repos(self) -> list[str]:
+        written = self.meta.get("repos")
+        return [str(one) for one in written] if isinstance(written, list) else []
 
     @property
     def needs_user(self) -> bool:
