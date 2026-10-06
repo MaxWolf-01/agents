@@ -1,6 +1,6 @@
 ---
 name: show
-description: "Show, don't tell: the artifacts that make a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use whenever an answer needs more than a line, when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
+description: "Show, don't tell: the artifacts that make a thing visible, so a reader sees what it is and what it does: a figure, a diagram, a demo, an explainer page. Use when writing a ticket's Decisions or an ADR, when work lands for the user's ruling, when someone asks for a demo or has to see or learn how something works, or when another skill needs an artifact."
 ---
 
 # Show

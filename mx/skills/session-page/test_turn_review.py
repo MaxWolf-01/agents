@@ -4,9 +4,9 @@
 # ///
 """What the turn review reads its rules and the record's shape from. Run: uv run test_turn_review.py
 
-The seam is `turn_review`'s readers of the catalogue and the session page's rules (RULES.md), whose output the reviewer's
-system prompt is built from. The oracles are the catalogue's own published selection command and
-the renderer's reader of a turn record.
+The seam is `turn_review`'s readers of the catalogue and the session page's rules (RULES.md), whose
+output the reviewer's system prompt is built from. The oracles are the catalogue's own published
+selection command and the renderer's reader of a turn record.
 """
 
 import re
