@@ -238,7 +238,7 @@ def render_previous(directory: Path, transcript: Path) -> str:
         return f"no transcript at {theirs}: its page links forward from its next render"
     try:
         (directory / PAGE).write_text(page(read_session(directory, theirs), datetime.now()))
-    except RecordError as e:
+    except (RecordError, OSError) as e:
         return f"not rendered: {e}"
     return "rendered"
 

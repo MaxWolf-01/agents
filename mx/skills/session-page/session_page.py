@@ -161,7 +161,7 @@ def predecessor(directory: Path) -> str:
 
 def successors(directory: Path) -> tuple[str, ...]:
     """The sessions beside `directory` whose `previous` names it, by id: one handoff split into
-    several has several. Only the render that writes their own page writes `previous`."""
+    several has several."""
     return tuple(sorted(
         d.name for d in directory.parent.iterdir() if d != directory and d.is_dir() and predecessor(d) == directory.name
     )) if directory.parent.is_dir() else ()

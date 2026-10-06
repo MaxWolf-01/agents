@@ -1203,6 +1203,8 @@ def test_a_predecessor_with_no_transcript_beside_it_is_logged_and_links_forward_
     handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
     capsys: pytest.CaptureFixture, attended: Path,
 ) -> None:
+    """pages-link-across-handoffs' Decisions: with no transcript there, the hook logs that and the
+    forward link waits for the predecessor's next render."""
     directory, said = first_turn
     theirs = said.parent / f"{BEFORE}.jsonl"
     kept = theirs.read_text()
