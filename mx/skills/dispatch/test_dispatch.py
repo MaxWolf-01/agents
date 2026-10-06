@@ -1157,23 +1157,24 @@ def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> No
 
 def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> None:
     """A research ticket's round: the agent branch carries the report and nothing in the code repo
-    moved, so there is no diff of code to show and `review` says so rather than rendering one."""
+    moved, so there is no diff of code to show and `review` says so rather than rendering one. A
+    page already at the ticket's path, which a session rendered by hand, is left as it is."""
     (staged.parent / "run-worker.sh").write_text(BUILDING.replace(
         "printf 'the lamp, warm\\n' > lamp.txt\ngit add lamp.txt\ngit commit -q -m \"$slug: the warm preset\"\n", ""))
     run(toy, "claim", "warm-preset")
     assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
     waited(toy)
     assert not git(toy, "diff", "--name-only", "main", "ticket/warm-preset").split()
-    stale = toy / "agent" / "diffviews" / "warm-preset.html"  # a page an older dispatch rendered over the report
-    stale.parent.mkdir(parents=True, exist_ok=True)
-    stale.write_text("the report as a changed file\n")
+    by_hand = toy / "agent" / "diffviews" / "warm-preset.html"
+    by_hand.parent.mkdir(parents=True, exist_ok=True)
+    by_hand.write_text("the code in a repo dispatch does not read\n")
 
     assert run(toy, "fetch", "warm-preset").returncode == 0
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     assert "gets no review page" in said.stderr, said.stderr
     assert status_of(toy, "warm-preset") == "review"
-    assert not stale.exists()
+    assert by_hand.read_text() == "the code in a repo dispatch does not read\n"
     assert not (toy.parent / "bin" / "diffview.args").exists()
 
 
