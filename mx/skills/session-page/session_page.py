@@ -846,8 +846,10 @@ def assemble(session: Session, now: datetime) -> str:
     {''.join(open_question(t, q) for t, q in waiting)}
   </section>""" if waiting else ""
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
-    body = "".join(chat_row(t) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0])
-                   for t in reversed(timeline))
+    shown = list(reversed(timeline))
+    hinted = [unanswered(t) and not (i and unanswered(shown[i - 1])) for i, t in enumerate(shown)]
+    body = "".join(chat_row(t, hint) if isinstance(t, Chat) else turn_section(t, session.settled, t is newest_first[0], hint)
+                   for t, hint in zip(shown, hinted))
     title = inline(session.title)
     name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
@@ -883,7 +885,7 @@ def assemble(session: Session, now: datetime) -> str:
     </div>
   </section>{top}
   <section class="turns" aria-labelledby="turns">
-    <div class="divider"><h2 class="v-meta" id="turns">turns · newest first</h2></div>
+    <div class="divider"><h2 class="v-meta" id="turns">turns</h2></div>
     {body}
   </section>{column(newest_first)}
 </main>
@@ -964,7 +966,17 @@ def options(q: Question, answer: str | None = None) -> str:
     return f'<ol class="opts">{"".join(items)}</ol>'
 
 
-def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
+def unanswered(t: Turn | Chat) -> bool:
+    """Whether the transcript shows the turn and no message of the user's before it."""
+    return t.written is not None and not t.messages
+
+
+def when(t: Turn | Chat) -> str:
+    """The turn's date, and its time to the minute where the transcript has it."""
+    return f"{t.date} {t.written.astimezone():%H:%M}" if t.written else t.date
+
+
+def turn_section(t: Turn, settled: dict[str, Settled], open_: bool, hint: bool) -> str:
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
     asked = "".join(asked_question(q, settled[q.tag]) for q in t.questions if q.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
@@ -973,25 +985,25 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
   <summary class="head">
     <span class="rail v-num">{t.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
-    <span class="v-meta date">{esc(t.date)}</span>{chips(t)}
+    <span class="v-meta date">{esc(when(t))}</span>{chips(t)}
   </summary>
   <div class="turn-body">
-    {you(t)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
+    {you(t, hint)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
   </div>
 </details>"""
 
 
-def chat_row(c: Chat) -> str:
+def chat_row(c: Chat, hint: bool) -> str:
     """A chat turn: one compact row with no number, the user's messages behind a click and the
     reply as it was, with nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{c.key}" tabindex="-1" data-block>
   <span class="rail"></span>
   <div class="chat-body">
-    {you(c)}{"".join(map(peer, c.sent))}
+    {you(c, hint)}{"".join(map(peer, c.sent))}
     <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(c.reply)}</div></div>
   </div>
-  <span class="v-meta date">{esc(c.date)}</span>
+  <span class="v-meta date">{esc(when(c))}</span>
 </article>"""
 
 
@@ -1004,13 +1016,14 @@ def chips(t: Turn) -> str:
     ) + "</span>")
 
 
-def you(t: Turn | Chat) -> str:
-    """The user's messages, under "you"."""
+def you(t: Turn | Chat, hint: bool) -> str:
+    """The user's messages, under "you". Of a run of turns with none before them, only the newest
+    says so (`hint`)."""
     if t.written is None:
         return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'
     messages = t.messages
     if not messages:
-        return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
+        return '' if not hint else '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
     lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
