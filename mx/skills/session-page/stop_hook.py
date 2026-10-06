@@ -79,7 +79,7 @@ HUB_PORT_VARIABLE = "CONTAINER_HUB_PORT"
 HUB_HEALTH = "/.health"
 HUB_UNIT = "/u/{session}"
 
-# How every send-back, the write hook's too, asks the turn to end: the show skill's chat recap. The
+# How every send-back, the write hook's too, asks the turn to end: RULES.md's chat recap. The
 # hook shows the link to the page under it.
 RECAP = (
     "end the turn on its chat recap: what waits on the user, as action items, one plain line each that reads "

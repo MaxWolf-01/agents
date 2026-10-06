@@ -33,7 +33,7 @@ from stop_hook import RECAP
 from conftest import SPOKEN_AFTER, UNATTENDED, unreachable
 from test_stop_hook import LEFT_ALONE, LONG, TURN_STARTS, UNPARSEABLE, appended, logged, with_write
 from test_stop_hook import payload as stopped
-from test_turn_review import CATALOGUE_FIXTURE, SKILL_FIXTURE
+from test_turn_review import CATALOGUE_FIXTURE, RULES_FIXTURE
 from write_hook import decide
 
 # Passages of the worked example's record 4, the one its turn wrote, as a reviewer would quote them.
@@ -281,7 +281,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert "hey can you please disregard" in prompt  # one the fourth turn answered
     assert "toolu_" not in prompt
     assert "Claude Code" not in system and "**AI vocabulary.**" in system
-    assert turn_review.record_shape(turn_review.SHOW.read_text()) in system
+    assert turn_review.record_shape(turn_review.RULES.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
 
@@ -503,12 +503,12 @@ def test_a_catalogue_with_no_chat_rules_lets_the_record_through(
     assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
 
 
-def test_a_show_skill_with_no_turn_record_section_lets_the_record_through(
+def test_rules_with_no_turn_record_section_let_the_record_through(
     worked_example: Path, writing: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    skill = tmp_path / "SKILL.md"
-    skill.write_text(SKILL_FIXTURE.replace("### The turn record", "### Another section"))
-    monkeypatch.setattr(turn_review, "SHOW", skill)
+    rules = tmp_path / "RULES.md"
+    rules.write_text(RULES_FIXTURE.replace("## The turn record", "## Another section"))
+    monkeypatch.setattr(turn_review, "RULES", rules)
     monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
     assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
     (entry,) = logged(attended, "decision")

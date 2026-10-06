@@ -6,14 +6,13 @@
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
 The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
-recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in
-the shape the show skill gives them (../show/SKILL.md, The session page), and `previous`, which the
-Stop hook writes where the session picked up another's continuation handoff. Any of them may be
-missing: a session's first turns are often chat turns alone, and `session.md` comes with the first
-record. The page shows the title, links to the pages of the sessions before and after it across a
-handoff, the brief and resume command, the questions no later turn answered or superseded, then the
-turns newest first, each with the user's messages it answered and what other sessions sent
-meanwhile, read from the transcript.
+recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
+shape RULES.md gives them, and `previous`, which the Stop hook writes where the session picked up
+another's continuation handoff. Any of them may be missing: a session's first turns are often chat
+turns alone, and `session.md` comes with the first record. The page shows the title, links to the
+pages of the sessions before and after it across a handoff, the brief and resume command, the
+questions no later turn answered or superseded, then the turns newest first, each with the user's
+messages it answered and what other sessions sent meanwhile, read from the transcript.
 Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
 no artefact there.
 
