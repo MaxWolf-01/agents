@@ -6,7 +6,7 @@ states, seeing what the page's reader has seen: the earlier records, each after 
 it answered, and the messages this record answers. The records under review are the turn's own and,
 where the transcript shows this turn writing it, session.md, whose title and brief head the page.
 Tool calls are not on the page, so the reviewer never sees them. The record's shape, as
-../show/SKILL.md gives it to the agent, is exempt as structure. It answers against a JSON schema; a
+RULES.md gives it to the agent, is exempt as structure. It answers against a JSON schema; a
 finding whose quote is in no record under review is dropped, and at most MOST go back to the agent.
 
 Fails open: a reviewer that errors, times out or answers off the schema finds nothing. Every
@@ -37,8 +37,8 @@ MOST = 3  # findings handed back per record
 REVIEWED = ("feedback", "clean", "failed")  # the log's decisions a model call was made for
 LOG = Path.home() / "logs" / "session-page" / "log.jsonl"  # the review's decisions and the hooks', one JSON line each
 
-SHOW = HERE.parent / "show" / "SKILL.md"  # its turn-record section is the shape the reviewer exempts
-SHAPE = "### The turn record"
+RULES = HERE / "RULES.md"  # its turn-record section is the shape the reviewer exempts
+SHAPE = "## The turn record"
 
 SYSTEM = """You review the prose of the records a coding agent writes as a turn ends, which its user reads rendered on a web page. Review it against the rules below, as a careful human editor would.
 
@@ -83,7 +83,7 @@ def feedback_on(session: Session, turn: Turn) -> str:
     t0 = time.monotonic()
     try:
         rules = chat_rules(CATALOGUE.read_text())
-        answer = review(SYSTEM.format(shape=record_shape(SHOW.read_text()), rules=rules), reviewer_input(session, turn))
+        answer = review(SYSTEM.format(shape=record_shape(RULES.read_text()), rules=rules), reviewer_input(session, turn))
     except Exception as e:  # noqa: BLE001  fail open: a broken reviewer never holds up the page
         log(session.id, decision="failed", why=str(e), ms=ms_since(t0), **read)
         return ""
@@ -182,17 +182,17 @@ def chat_rules(catalogue: str) -> str:
     return "\n".join(kept).rstrip("\n")
 
 
-def record_shape(skill: str) -> str:
-    """The section of the show skill under SHAPE, down to the next heading of its level or above;
-    a heading inside a fenced block is the example record's own.
+def record_shape(rules: str) -> str:
+    """The section of the session page's rules under SHAPE, down to the next heading of its level or
+    above; a heading inside a fenced block is the example record's own.
 
-    A skill with no such section, or an empty one, raises into the fail-open path, as a catalogue
+    Rules with no such section, or an empty one, raise into the fail-open path, as a catalogue
     with no chat rules does.
     """
     level = SHAPE.split()[0]
     kept: list[str] | None = None
     fence = False
-    for line in skill.splitlines():
+    for line in rules.splitlines():
         if line.startswith("```"):
             fence = not fence
         heading = not fence and re.match(r"#+ ", line)
@@ -204,7 +204,7 @@ def record_shape(skill: str) -> str:
         else:
             kept.append(line)
     if not kept or not "\n".join(kept).strip():
-        raise RuntimeError(f"no {SHAPE!r} section in {SHOW}")
+        raise RuntimeError(f"no {SHAPE!r} section in {RULES}")
     return "\n".join(kept).strip()
 
 

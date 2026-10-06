@@ -49,6 +49,15 @@ if [ -z "$plugin" ]; then
         "DISPATCH_PLUGIN_DIR unset, so no mx plugin to give the worker" | tee "$here/$run_id.status" >&2
     exit 1
 fi
+# The asking rule has its home in the session page's rules, and worker-prompt.md names it as
+# appended below itself: its section, down to the next heading of its level or above.
+rules=$plugin/skills/session-page/RULES.md
+asking_rule=$(awk '/^## What the user decides$/ { on = 1; print; next } on && /^#{1,2} / { exit } on' "$rules" 2> /dev/null)
+if [ -z "$asking_rule" ]; then
+    printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
+        "no '## What the user decides' section in $rules; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
+    exit 1
+fi
 # Kept from the worker, so a `dispatch-ctl` it runs lists the host's mx for itself.
 unset DISPATCH_PLUGIN_DIR
 
@@ -115,7 +124,9 @@ common=(
     --strict-mcp-config
     --plugin-dir "$plugin"
     --settings '{"autoMemoryEnabled": false}'
-    --append-system-prompt "$(cat "$prompt_file")"
+    --append-system-prompt "$(cat "$prompt_file")
+
+$asking_rule"
 )
 
 # Each attempt runs in a systemd scope of its own, <run>-a<attempt>-<runner pid>, stopped when the

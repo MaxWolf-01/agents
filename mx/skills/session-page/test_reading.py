@@ -15,7 +15,9 @@ import html
 import json
 import re
 import sys
+import time
 from datetime import UTC, datetime
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -111,8 +113,33 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     page = render_session(worked_example, unwritten, now=NOW)
     shown, section = messages_of(page), sections_of(page)["03"]
     assert shown["03"] == [] and "no Write call for this turn's record" in section
+    dates = {key: re.search(r'class="v-meta date">(.*?)<', text).group(1) for key, text in sections_of(page).items()}
+    assert dates["03"] == "2026-09-23"  # session-page-turns-decluttered: the record's date alone
+    assert all(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", d) for key, d in dates.items() if key != "03")
     assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
     assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
+
+
+@pytest.fixture
+def new_york(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The local clock four hours behind UTC, where the worked example's 2026-09-23 00:20Z is still
+    the evening of the 22nd."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_a_turns_date_and_the_pages_span_come_from_the_clock_its_time_does(
+    new_york: None, worked_example: Path, transcript: Path
+) -> None:
+    """session-page-turns-decluttered: record 3 says 2026-09-23 and was written at 00:20Z, which is
+    20:20 on the 22nd in New York; its row and the header's span both read the 22nd."""
+    page = render_session(worked_example, transcript, now=NOW)
+    dates = {key: re.search(r'class="v-meta date">(.*?)<', text).group(1) for key, text in sections_of(page).items()}
+    assert dates == {"01": "2026-09-22 17:00", "02": "2026-09-22 17:40", "03": "2026-09-22 20:20", "04": "2026-09-22 21:30"}
+    assert " 4 turns · 2026-09-22 · rendered " in html_text(page)
 
 
 def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
@@ -323,5 +350,114 @@ def test_a_chat_turns_record_that_does_not_read_is_refused_at_its_line(
     assert str(refused.value).startswith(f"{record}:{line}: ")
 
 
+# ---- a page with no session.md ----------------------------------------------
+
+FRESH = "8e0f1c22-0000-0000-0000-000000000000"
+STARTED = {"type": "user", "message": {"role": "user", "content": "Carry on from the handoff."},
+           "timestamp": "2026-10-05T09:00:00.000Z", "cwd": "/srv/help line", "sessionId": FRESH}
+AI_TITLE = {"type": "ai-title", "aiTitle": "Helferline <handoff> continued", "sessionId": FRESH}
+RENAMED = {"type": "custom-title", "customTitle": "helferline: lost page", "sessionId": FRESH}
+# Each is what the transcript holds besides the first prompt, and the title the page shows: a
+# `/rename` over Claude Code's own title, whichever came later, the last of each kind, and the
+# session id's first eight where it has neither.
+TITLES = {
+    "Claude Code's own title": ([AI_TITLE], "Helferline <handoff> continued"),
+    "a rename before a newer title of its own": ([RENAMED, AI_TITLE | {"aiTitle": "Something newer"}], "helferline: lost page"),
+    "the last of two renames": ([RENAMED, RENAMED | {"customTitle": "helferline: found"}], "helferline: found"),
+    "no title yet": ([], "session 8e0f1c22"),
+}
+
+
+@pytest.mark.parametrize("entries, title", TITLES.values(), ids=TITLES)
+def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_claude_codes_title(
+    entries: list[dict], title: str, tmp_path: Path,
+) -> None:
+    """every-session-gets-a-page#P5: no session.md and no numbered record, one chat turn, and the
+    page renders it, titled as the hub's rail titles the session, with no brief, and a resume
+    command that changes to the directory the session started in."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    at = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+    chat = chat_path(directory / "turns", at)
+    chat.parent.mkdir(parents=True)
+    chat.write_text(chat_record("On it: reading the handoff.", at))
+    said = tmp_path / "t.jsonl"
+    said.write_text("".join(json.dumps(e) + "\n" for e in [STARTED, *entries]))
+    page = render_session(directory, said, now=NOW)
+    assert html.unescape(re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)) == title
+    assert html.unescape(re.search(r"<title>(.*?) · session page</title>", page).group(1)) == title
+    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == [chat.stem]
+    assert '<div class="prose brief"></div>' in page
+    assert f'data-cmd="cd &#x27;/srv/help line&#x27; &amp;&amp; claude --resume {FRESH}"' in page
+    assert "1 turn · 2026-10-05 · " in html_text(page)
+
+
+def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newest(tmp_path: Path) -> None:
+    """session-page-turns-decluttered: the first chat turn answers the prompt, the two after it have
+    no message before them and form a run, whose newest alone carries the hint; each row shows its
+    time to the minute."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    (directory / "turns").mkdir(parents=True)
+    times = [datetime(2026, 10, 5, 9, m, tzinfo=UTC) for m in (1, 5)] + [datetime(2026, 10, 5, 23, 59, tzinfo=UTC)]
+    for at in times:
+        chat_path(directory / "turns", at).write_text(chat_record("Still building.", at))
+    said = tmp_path / "t.jsonl"
+    said.write_text(json.dumps(STARTED) + "\n")
+    page = render_session(directory, said, now=NOW)
+    rows = re.findall(r'<article class="turn chat[^"]*" id="([^"]+)".*?</article>', page, re.S)
+    bodies = re.findall(r'<article class="turn chat.*?</article>', page, re.S)
+    assert rows == [chat_path(directory / "turns", at).stem for at in reversed(times)]
+    assert ["no message of yours" in b for b in bodies] == [True, False, False]
+    assert [re.search(r'class="v-meta date">(.*?)<', b).group(1) for b in bodies] == [
+        f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
+
+
+def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Path) -> None:
+    """session-page-turns-decluttered: two runs, each broken by a message of the user's, and the
+    newest turn of each carries the hint."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    (directory / "turns").mkdir(parents=True)
+    for minute in (1, 5, 11, 15):
+        at = datetime(2026, 10, 5, 9, minute, tzinfo=UTC)
+        chat_path(directory / "turns", at).write_text(chat_record("Still building.", at))
+    asked = {"type": "user", "message": {"role": "user", "content": "How far along?"}, "timestamp": "2026-10-05T09:10:00.000Z"}
+    said = tmp_path / "t.jsonl"
+    said.write_text(json.dumps(STARTED) + "\n" + json.dumps(asked) + "\n")
+    page = render_session(directory, said, now=NOW)
+    bodies = re.findall(r'<article class="turn chat.*?</article>', page, re.S)
+    assert ["no message of yours" in b for b in bodies] == [True, False, True, False]
+
+
+def test_a_session_whose_transcript_names_no_directory_resumes_from_the_repo_root(tmp_path: Path) -> None:
+    """With no session.md and no `cwd` in the transcript, the resume command changes to the root of
+    the repo the session's directory is in."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    at = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+    chat = chat_path(directory / "turns", at)
+    chat.parent.mkdir(parents=True)
+    chat.write_text(chat_record("On it.", at))
+    said = tmp_path / "t.jsonl"
+    said.write_text(json.dumps({k: v for k, v in STARTED.items() if k != "cwd"}) + "\n")
+    page = render_session(directory, said, now=NOW)
+    assert f'data-cmd="cd {tmp_path} &amp;&amp; claude --resume {FRESH}"' in page
+
+
+def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_example: Path, transcript: Path) -> None:
+    """every-session-gets-a-page#P5's other half: session.md written and the turn ended on no text,
+    so neither a numbered record nor a chat turn exists, and the page still renders."""
+    for record in (worked_example / "turns").iterdir():
+        record.unlink()
+    page = render_session(worked_example, transcript, now=NOW)
+    assert "Leading words for showing" in re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)
+    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == []
+    assert " 0 turns · rendered " in html_text(page)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
+    page = render_session(worked_example, transcript, now=NOW)
+    turns = re.search(r'<section class="turns"[^>]*>(.*?)<(?:details|article)', page, re.S).group(1)
+    assert turns.strip() == ""
+    assert re.search(r'<aside class="column"[^>]*>\s*<h2 class="v-meta" id="column-title">artefacts · by turn</h2>', page)

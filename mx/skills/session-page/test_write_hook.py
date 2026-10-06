@@ -33,7 +33,7 @@ from stop_hook import RECAP
 from conftest import SPOKEN_AFTER, UNATTENDED, unreachable
 from test_stop_hook import LEFT_ALONE, LONG, TURN_STARTS, UNPARSEABLE, appended, logged, with_write
 from test_stop_hook import payload as stopped
-from test_turn_review import CATALOGUE_FIXTURE, SKILL_FIXTURE
+from test_turn_review import CATALOGUE_FIXTURE, RULES_FIXTURE
 from write_hook import decide
 
 # Passages of the worked example's record 4, the one its turn wrote, as a reviewer would quote them.
@@ -212,21 +212,18 @@ def test_a_record_whose_write_did_not_parse_is_reviewed_once_the_edit_that_fixes
     assert [e["decision"] for e in logged(attended, "decision")] == ["feedback"]
 
 
-def test_the_record_an_answer_in_the_chat_is_moved_into_is_reviewed_on_its_write(
+def test_a_record_reviewed_on_its_write_renders_as_reviewed_when_the_turn_ends(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    """The Stop hook sends a long answer back to the page; the record the agent then writes in the
-    continued turn is reviewed on its write, and the next stop renders it as reviewed."""
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, reply=LONG))))
-    stop_hook.main()
-    assert "05.md" in json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    """The record a turn writes is reviewed on its write, and the stop that follows renders it as
+    reviewed."""
     record = worked_example / "turns" / "05.md"
     record.write_text(PIVOTAL_05)
     monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
     assert str(record) in run(wrote(record, unrecorded))
     with_write(unrecorded, "Write", record)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, stop_hook_active=True))))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, reply=LONG))))
     stop_hook.main()
     assert "systemMessage" in json.loads(capsys.readouterr().out)
     assert logged(attended, "verb")[-1]["why"] == "record reviewed this turn"
@@ -284,7 +281,7 @@ def test_the_reviewer_reads_what_the_page_shows_and_no_tool_call(
     assert "hey can you please disregard" in prompt  # one the fourth turn answered
     assert "toolu_" not in prompt
     assert "Claude Code" not in system and "**AI vocabulary.**" in system
-    assert turn_review.record_shape(turn_review.SHOW.read_text()) in system
+    assert turn_review.record_shape(turn_review.RULES.read_text()) in system
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"]["findings"]["maxItems"] == 3
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5" and argv[argv.index("--effort") + 1] == "low"
 
@@ -320,8 +317,8 @@ def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
 def test_the_first_paged_turns_session_record_is_parsed_before_any_turn_record_exists(
     broken: bool, worked_example: Path, writing: Path, run: Callable[[dict], str],
 ) -> None:
-    """The show skill has the first paged turn write session.md before its turn record, so a
-    session with no turn record yet is one still being written: only session.md is answered for."""
+    """every-session-gets-a-page#P5: the reader takes a directory with no numbered record, so a
+    session.md written before any turn record is parsed and answered for like any other record."""
     for record in (worked_example / "turns").iterdir():
         record.unlink()
     session = worked_example / "session.md"
@@ -506,12 +503,12 @@ def test_a_catalogue_with_no_chat_rules_lets_the_record_through(
     assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
 
 
-def test_a_show_skill_with_no_turn_record_section_lets_the_record_through(
+def test_rules_with_no_turn_record_section_let_the_record_through(
     worked_example: Path, writing: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    skill = tmp_path / "SKILL.md"
-    skill.write_text(SKILL_FIXTURE.replace("### The turn record", "### Another section"))
-    monkeypatch.setattr(turn_review, "SHOW", skill)
+    rules = tmp_path / "RULES.md"
+    rules.write_text(RULES_FIXTURE.replace("## The turn record", "## Another section"))
+    monkeypatch.setattr(turn_review, "RULES", rules)
     monkeypatch.setattr(turn_review, "review", reviewer(finding(IN_RECORD[0])))
     assert decide(wrote(worked_example / "turns" / "04.md", writing), worked_example).verb == "allow"
     (entry,) = logged(attended, "decision")
