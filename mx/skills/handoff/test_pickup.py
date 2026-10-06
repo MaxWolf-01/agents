@@ -13,8 +13,10 @@ continuation another session wrote. How the pages then link is the session page'
 """
 
 import os
+import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -96,15 +98,50 @@ def test_a_file_outside_a_handoffs_directory_is_refused_untouched(tmp_path: Path
     assert git(repo / "agent", "log", "--format=%s").splitlines() == ["hand off"]
 
 
-def test_a_removal_git_refuses_fails_after_the_handoff_is_printed(tmp_path: Path) -> None:
-    """A handoff never committed: git refuses the rm, and the session has read it all the same."""
+def never_committed(handoff: Path) -> Path:
+    draft = handoff.with_name("2026-10-07-draft.md")
+    draft.write_text(HANDOFF)
+    return draft
+
+
+def edited_since(handoff: Path) -> Path:
+    handoff.write_text(HANDOFF + "\nA correction the user made.\n")
+    return handoff
+
+
+REFUSED = {"a handoff never committed": never_committed, "a handoff edited since it was committed": edited_since}
+
+
+@pytest.mark.parametrize("change", REFUSED.values(), ids=REFUSED)
+def test_a_handoff_git_would_refuse_to_remove_is_refused_before_anything_is_done(tmp_path: Path, change: Callable[[Path], Path]) -> None:
+    """Refused before it is printed or linked, so a pickup run again once it is committed is clean."""
     repo = project(tmp_path)
-    untracked = repo / "agent" / "handoffs" / "2026-10-07-draft.md"
-    untracked.write_text(HANDOFF)
-    done = pickup(repo, untracked, tmp_path)
-    assert done.returncode == 1 and "git rm" in done.stderr
+    handoff = change(repo / "agent" / "handoffs" / "2026-10-06-ledger.md")
+    done = pickup(repo, handoff, tmp_path)
+    assert done.returncode == 1 and "nothing done" in done.stderr and "commit" in done.stderr
+    assert done.stdout == "" and handoff.exists()
+    assert not (repo / "agent" / "sessions").exists()
+    assert git(repo / "agent", "log", "--format=%s").splitlines() == ["hand off"]
+
+
+def test_the_pickup_says_how_to_read_the_handoff_again_once_it_is_removed(tmp_path: Path) -> None:
+    """The Bash tool cuts a long output short, and the file is gone by then: git still has it."""
+    repo = project(tmp_path)
+    done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
+    [again] = re.findall(r"read it again with `(.+?)`", done.stderr)
+    assert subprocess.run(again, shell=True, capture_output=True, text=True).stdout == HANDOFF
+
+
+def test_a_commit_git_refuses_anyway_fails_after_the_handoff_is_printed_and_linked(tmp_path: Path) -> None:
+    """A pre-commit hook that says no: the session has read the handoff all the same."""
+    repo = project(tmp_path)
+    hook = repo / "agent" / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho no commits today >&2\nexit 1\n")
+    hook.chmod(0o755)
+    done = pickup(repo, repo / "agent" / "handoffs" / "2026-10-06-ledger.md", tmp_path)
+    assert done.returncode == 1 and "git commit" in done.stderr and "no commits today" in done.stderr
     assert done.stdout == HANDOFF
-    assert untracked.exists()
+    assert (repo / "agent" / "sessions" / "new-1" / "previous").read_text() == "old-1\n"
 
 
 if __name__ == "__main__":

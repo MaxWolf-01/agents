@@ -12,9 +12,10 @@ session's page is then rendered again from its transcript, so that it links forw
 handoff, one this session wrote itself, and the pickup of a dispatched worker or a print-mode
 session link nothing.
 
-What it did is said on stderr, after the handoff. Exits 1, saying why, where the file is no handoff
-directly under an `agent/handoffs/`, and where git refuses the removal or the commit, by which point
-the handoff is printed and linked.
+What it did is said on stderr, before the handoff, with the command that shows the handoff again
+from git. Exits 1, saying why and having done nothing, where the file is no handoff directly under
+an `agent/handoffs/`, or one never committed or edited since; and where git refuses the removal or
+the commit anyway, after printing and linking the handoff.
 
 Examples:
 
@@ -47,10 +48,15 @@ def main() -> None:
     handoff = tyro.cli(Args, description=__doc__).handoff.resolve()
     if handoff.parent.parts[-2:] != ("agent", "handoffs") or not handoff.is_file():
         sys.exit(f"{handoff} is no file directly under an agent/handoffs/ directory")
+    if refused := uncommitted(handoff):
+        sys.exit(f"pickup.py: nothing done: {refused}")
     text = handoff.read_text()
-    print(text, end="" if text.endswith("\n") else "\n", flush=True)
     say(f"linked: {link(text)}")
-    say(f"retired: {retire(handoff)}")
+    retired, failed = retire(handoff)
+    say(f"retired: {retired}")
+    # the status comes first: a tool that cuts a long output short keeps its start
+    print(text, end="" if text.endswith("\n") else "\n", flush=True)
+    sys.exit(1 if failed else 0)
 
 
 def say(line: str) -> None:
@@ -108,15 +114,31 @@ def render(directory: Path) -> str:
     return f"rendered again, linking forward: {directory / PAGE}"
 
 
-def retire(handoff: Path) -> str:
-    """`git rm` the handoff in the repo that holds it and commit that removal alone."""
-    # from the agent repo, since removing the last handoff removes the directory that held it
-    where, name = str(handoff.parents[1]), str(handoff.relative_to(handoff.parents[1]))
+def git(handoff: Path, *args: str) -> subprocess.CompletedProcess:
+    """git run in the agent repo that holds the handoff, from its root, since removing the last
+    handoff removes the directory that held it."""
+    return subprocess.run(["git", "-C", str(handoff.parents[1]), *args], capture_output=True, text=True)
+
+
+def uncommitted(handoff: Path) -> str:
+    """Why git would refuse to remove the handoff (never committed, or edited since it was), with
+    what to do about it; empty where nothing stands in the way."""
+    name = handoff.name
+    if git(handoff, "ls-files", "--error-unmatch", "--", f"handoffs/{name}").returncode != 0:
+        return f"{handoff} was never committed in {handoff.parents[1]}: commit it there, then pick it up"
+    if git(handoff, "status", "--porcelain", "--", f"handoffs/{name}").stdout.strip():
+        return f"{handoff} has changes not committed in {handoff.parents[1]}: commit them, then pick it up"
+    return ""
+
+
+def retire(handoff: Path) -> tuple[str, bool]:
+    """`git rm` the handoff and commit that removal alone; what came of it, and whether git refused."""
+    name = f"handoffs/{handoff.name}"
     for step in (["rm", "-q", "--", name], ["commit", "-q", "-m", f"pick up handoff {handoff.stem}", "--", name]):
-        done = subprocess.run(["git", "-C", where, *step], capture_output=True, text=True)
-        if done.returncode != 0:
-            sys.exit(f"pickup.py: git {' '.join(step)} in {where} failed: {(done.stderr or done.stdout).strip()}")
-    return f"removed and committed in {where}"
+        if (done := git(handoff, *step)).returncode != 0:
+            return f"git {' '.join(step)} in {handoff.parents[1]} failed: {(done.stderr or done.stdout).strip()}", True
+    commit = git(handoff, "rev-parse", "--short", "HEAD").stdout.strip()
+    return f"removed in {commit}; read it again with `git -C {handoff.parents[1]} show {commit}^:{name}`", False
 
 
 if __name__ == "__main__":
