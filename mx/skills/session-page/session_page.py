@@ -7,12 +7,13 @@
 
 The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
 recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
-shape RULES.md gives them, and `previous`, which the Stop hook writes where the session picked up
-another's continuation handoff. Any of them may be missing: a session's first turns are often chat
-turns alone, and `session.md` comes with the first record. The page shows the title, links to the
-pages of the sessions before and after it across a handoff, the brief and resume command, the
-questions no later turn answered or superseded, then the turns newest first, each with the user's
-messages it answered and what other sessions sent meanwhile, read from the transcript.
+shape RULES.md gives them, and `previous`, which the handoff skill's `pickup.py` writes where the
+session picked up another's continuation handoff. Any of them may be missing: a session's first
+turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
+title, links to the pages of the sessions before and after it across a handoff, the brief and
+resume command, the questions no later turn answered or superseded, then the turns newest first,
+each with the user's messages it answered and what other sessions sent meanwhile, read from the
+transcript.
 Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
 no artefact there.
 
@@ -41,7 +42,8 @@ import tracker  # noqa: E402  finds the agent repo a session's directory is in, 
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
 # In a session's directory, the id of the session whose continuation handoff it picked up, which the
-# Stop hook writes once. The link forward from that session's page is read from it, not written.
+# handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
+# it, not written.
 PREVIOUS = "previous"
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
@@ -652,87 +654,6 @@ def claude_title(entries: list[dict]) -> str:
 def started_in(entries: list[dict]) -> Path | None:
     """The directory the session started in, as its first entry that carries one has it."""
     return next((Path(e["cwd"]) for e in entries if isinstance(e.get("cwd"), str) and e["cwd"]), None)
-
-
-def continued_from(entries: list[dict], own: str) -> str:
-    """The session that wrote the first continuation handoff this session picked up: read, and then
-    named in a `git rm`. A handoff only read is no pickup. Only a read from the
-    file's first line counts, since the frontmatter is what names the session. The id comes from the
-    `session:` of that frontmatter as the read returned it, so the removed handoff still names it. A
-    handoff is a file directly under an `agent/handoffs/`; one this session wrote itself, or a fork's,
-    names none. Empty where no pickup names one."""
-    removed = list(removals(entries))
-    for at, path, session in handoff_reads(entries, own):
-        if any(names(path, argument) for when, argument in removed if when > at):
-            return session
-    return ""
-
-
-def handoff_reads(entries: list[dict], own: str) -> Iterator[tuple[int, Path, str]]:
-    """Each Read of a continuation handoff another session wrote, as the index of its entry, the
-    file's path and the `session:` its frontmatter names."""
-    for at, entry in enumerate(entries):
-        read = entry.get("toolUseResult")
-        file = read.get("file") if isinstance(read, dict) else None
-        if not isinstance(file, dict) or not isinstance(file.get("filePath"), str) or not isinstance(file.get("content"), str):
-            continue
-        path = Path(file["filePath"])
-        if path.parent.parts[-2:] != ("agent", "handoffs") or file.get("startLine", 1) != 1:
-            continue
-        m = re.match(r"---\n(.*?)\n---(?:\n|$)", file["content"], re.S)
-        try:
-            front = yaml.load(m.group(1), Loader=yaml.BaseLoader) if m else None
-        except yaml.YAMLError:
-            continue
-        if isinstance(front, dict) and front.get("purpose") == "continuation" and isinstance(front.get("session"), str) \
-                and re.fullmatch(r"[\w-]+", front["session"]) and front["session"] != own:
-            yield at, path, front["session"]
-
-
-def removals(entries: list[dict]) -> Iterator[tuple[int, str]]:
-    """Each path a Bash call handed to `git rm`, as the index of the call's entry and the path as the
-    command spelled it. A call that ended in an error counts too: `git rm … && git commit …` fails
-    when the commit does, after the rm took. A command is split at `&&`, `;`, `|` and newlines;
-    within a part, every argument after `rm` that follows a `git` and is no option counts, so
-    `git -C agent rm …` does too."""
-    for at, entry in enumerate(entries):
-        if entry.get("type") != "assistant":
-            continue
-        for block in content_blocks(entry):
-            command = (block.get("input") or {}).get("command") if block.get("name") == "Bash" else None
-            if block.get("type") != "tool_use" or not isinstance(command, str):
-                continue
-            try:
-                lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-                lexer.whitespace, lexer.whitespace_split = " \t\r", True
-                tokens = list(lexer)
-            except ValueError:
-                continue
-            part: list[str] = []
-            for token in tokens + [";"]:
-                if token and set(token) <= set("&;|\n()"):
-                    if "git" in part and "rm" in part[part.index("git"):]:
-                        yield from ((at, a) for a in part[part.index("rm", part.index("git")) + 1:] if not a.startswith("-"))
-                    part = []
-                else:
-                    part.append(token)
-
-
-def content_blocks(entry: dict) -> list[dict]:
-    """The blocks of an entry's message content; none where its content is a plain string."""
-    content = (entry.get("message") or {}).get("content") if isinstance(entry.get("message"), dict) else None
-    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
-
-
-def names(path: Path, argument: str) -> bool:
-    """Whether a `git rm` argument names the file at the absolute `path`: the same path, or one
-    relative to wherever the command ran, which `path` then ends with once its leading `./` and
-    `../` are dropped."""
-    given = Path(argument)
-    if given.is_absolute():
-        return given == path
-    parts = list(itertools.dropwhile(lambda p: p in (".", ".."), given.parts))
-    return bool(parts) and list(path.parts[-len(parts):]) == parts
 
 
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
