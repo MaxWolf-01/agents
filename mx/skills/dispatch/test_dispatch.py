@@ -1178,6 +1178,182 @@ def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> No
     assert not (toy.parent / "bin" / "diffview.args").exists()
 
 
+# `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names
+# beside the code repo and the agent repo. The oracle is each toy repo's own history, read with git:
+# a round is one commit per branch, so a range is that commit's parent and the commit.
+
+
+def listed_repo(at: Path, branch: str) -> Path:
+    """A repo for the toy's repo list, with one commit on `branch`."""
+    git(at.parent, "init", "-q", "-b", branch, str(at))
+    (at / "README").write_text(f"{at.name}\n")
+    git(at, "add", "-A")
+    git(at, "commit", "-q", "-m", f"{at.name} begins")
+    return at
+
+
+def listing(toy: Path, slug: str, toml: str, repos: str) -> None:
+    """The toy's repo list as `toml`, and `slug` claimed and naming `repos` in its `repos:`."""
+    agent = toy / "agent"
+    (agent / "repos.toml").write_text(toml)
+    path = tracked(toy) / f"{slug}.md"
+    path.write_text(path.read_text().replace("status: open", f"status: claimed\nrepos: [{repos}]", 1))
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", f"the repo list, and {slug} claimed")
+
+
+def built_on(top: Path, branch: str, start: str, name: str) -> tuple[str, str]:
+    """One commit on `branch` in `top`, cut from `start` unless it exists: (its parent, itself).
+    `top` is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    exists = subprocess.run(["git", "-C", str(top), "rev-parse", "-q", "--verify", f"refs/heads/{branch}"],
+                            capture_output=True).returncode == 0
+    git(top, "switch", "-q", *([branch] if exists else ["-c", branch, start]))
+    (top / name).write_text(f"{branch} in {top.name}\n")
+    git(top, "add", name)
+    git(top, "commit", "-q", "-m", f"{branch}: {name}")
+    git(top, "switch", "-q", had)
+    return git(top, "rev-parse", f"{branch}~1").strip(), git(top, "rev-parse", branch).strip()
+
+
+def merged_in(top: Path, onto: str, branch: str) -> None:
+    """`branch` merged --no-ff into `onto` in `top`, which is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    git(top, "switch", "-q", onto)
+    git(top, "merge", "-q", "--no-ff", "-m", f"{branch} merged", branch)
+    git(top, "switch", "-q", had)
+
+
+def pages(toy: Path) -> list[str]:
+    """The specs of every page `dispatch review` asked diffview for, in order, one line each."""
+    handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
+    return [line.partition(" --notes ")[0] for line in handed if not line.startswith("--serve")]
+
+
+def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_after_its_merge(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P4`: one page, a section per repo the round committed in: the
+    code repo, `Backend` nested in the project, and `jarvis` beside it, whose PR merges at origin
+    while its own `main` is behind. Each range names its repo, and is the same range before and
+    after the merge."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    seed = listed_repo(toy.parent / "jarvis-seed", "main")
+    git(toy.parent, "clone", "-q", "--bare", str(seed), str(toy.parent / "jarvis.git"))
+    jarvis = toy.parent / "jarvis"
+    git(toy.parent, "clone", "-q", str(toy.parent / "jarvis.git"), str(jarvis))
+    jarvis = jarvis.resolve()
+    # origin moves on after the clone, and the ticket branch is cut from there: a range against the
+    # stale local `main` alone would start a commit early
+    (seed / "later").write_text("later\n")
+    git(seed, "add", "later")
+    git(seed, "commit", "-q", "-m", "jarvis moves on")
+    git(seed, "push", "-q", str(toy.parent / "jarvis.git"), "main")
+    git(jarvis, "fetch", "-q")
+    listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n[jarvis]\npath = "{jarvis}"\n',
+            "Backend, jarvis")
+
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "Backend": built_on(backend, "ticket/warm-preset", "development", "warm.py"),
+              "jarvis": built_on(jarvis, "ticket/warm-preset", "origin/main", "warm.rs")}
+    assert rounds["jarvis"][0] != git(jarvis, "rev-parse", "main").strip()
+    ranges = [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
+    page = (f"{toy}@{rounds['code'][0]}..{rounds['code'][1]} {backend}@{rounds['Backend'][0]}..{rounds['Backend'][1]} "
+            f"{jarvis}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    assert pages(toy) == [page]
+    assert "-o " + str(agent / "diffviews" / "warm-preset.html") in (toy.parent / "bin" / "diffview.args").read_text()
+
+    for top, onto in ((toy, "main"), (agent, "main"), (backend, "development")):
+        merged_in(top, onto, "ticket/warm-preset")
+    # the PR's merge, at origin, which `jarvis` has fetched and its own `main` has not taken in
+    git(jarvis, "switch", "-q", "-c", "pr", "origin/main")
+    git(jarvis, "merge", "-q", "--no-ff", "-m", "Merge pull request #1", "ticket/warm-preset")
+    git(jarvis, "push", "-q", "origin", "pr:main")
+    git(jarvis, "switch", "-q", "main")
+
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    got = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "get", "warm-preset", "diff"],
+                         cwd=toy, capture_output=True, text=True)
+    assert got.stdout.split() == ranges, got.stdout
+    assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
+
+
+def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
+    """A child built on its parent ticket's branch: in `Backend` its base is the parent's branch
+    there, which is ahead of the integration branch. A round merged into it is recorded; the next
+    round, in `Backend` alone and unmerged, renders after it on the same page, and is recorded once
+    it merges."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    git(backend, "branch", "lamp-ui")
+    built_on(backend, "lamp-ui", "development", "ui.py")  # the parent's branch, ahead of development
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "Backend")
+
+    first = {"code": built_on(toy, "ticket/warm-preset", "lamp-ui", "warm.txt"),
+             "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+             "Backend": built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")}
+    git(worktree, "merge", "-q", "--no-ff", "-m", "warm-preset merged", "ticket/warm-preset")
+    merged_in(agent, "main", "ticket/warm-preset")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review", "ruled with its parent"
+    recorded = [f"{at}@{cut}..{tip}" for at, (cut, tip) in first.items()]
+    get = [str(SKILL.parent / "tracker" / "tracker.py"), "get", "warm-preset", "diff"]
+    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == recorded
+
+    # sent back: the resumed worker's next round touches Backend alone
+    again = built_on(backend, "ticket/warm-preset", "", "warmer.py")
+    assert again[0] == first["Backend"][1]
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    sections = [f"{worktree}@{first['code'][0]}..{first['code'][1]}",
+                f"{backend}@{first['Backend'][0]}..{first['Backend'][1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == recorded, "unmerged, unrecorded"
+
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == [
+        *recorded, f"Backend@{again[0]}..{again[1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+
+
+def test_a_page_review_did_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path with no
+    notes file beside it is a session's, rendered by hand, and the render that would replace it
+    does not happen; the rest of the review does, and the exit status says it was not whole."""
+    agent = toy / "agent"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("status: open", "status: claimed", 1))
+    git(agent, "commit", "-q", "-am", "warm-preset claimed")
+    built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    built_on(agent, "ticket/warm-preset", "main", "warm.md")
+    by_hand = agent / "diffviews" / "warm-preset.html"
+    by_hand.parent.mkdir(parents=True)
+    by_hand.write_text("the Backend diff, rendered by hand\n")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "did not render it" in said.stderr, said.stderr
+    assert by_hand.read_text() == "the Backend diff, rendered by hand\n"
+    assert not (toy.parent / "bin" / "diffview.args").exists()
+    assert status_of(toy, "warm-preset") == "review"
+
+
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
     """The version skew a host is left in when an older plugin staged it: its config carries no
     agent repo, and every command on that host says which one it is."""

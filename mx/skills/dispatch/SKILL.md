@@ -6,7 +6,7 @@ allowed-tools: Bash(${CLAUDE_SKILL_DIR}/dispatch --help), Bash(${CLAUDE_SKILL_DI
 
 # Dispatch
 
-You are the **single orchestrator** of one ticket's child tickets: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until none are left open. One worker works one ticket; dispatch orchestrates N workers. You are the only writer of a ticket file here, the only holder of the branches the workers merge into, and the one that writes `done`, on the user's accept. A project is two repos, the code repo and the agent repo it holds at `agent/` (`/mx:tracker`), and a ticket is worked in both: `dispatch` cuts, pushes and fetches a `ticket/<slug>` branch in each, and you merge both.
+You are the **single orchestrator** of one ticket's child tickets: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until none are left open. One worker works one ticket; dispatch orchestrates N workers. You are the only writer of a ticket file here, the only holder of the branches the workers merge into, and the one that writes `done`, on the user's accept. A ticket is worked in the code repo, the agent repo it holds at `agent/` (`/mx:tracker`), and the listed repos its `repos:` names: `dispatch` cuts, pushes and fetches a `ticket/<slug>` branch in the first two, `dispatch review` reads the branch in each listed repo too, and you merge every one.
 
 Dispatch is the one way tickets are worked, at any size: every ticket goes to a worker, and a ticket with no child tickets is one worker's whole job. The `blocked-by` DAG is what makes independence explicit.
 
