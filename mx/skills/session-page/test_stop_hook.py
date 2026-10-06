@@ -39,7 +39,7 @@ import session_page
 import stop_hook
 import turn_review
 from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
-from session_page import PAGE, PREVIOUS, SESSIONS, continued_from, render_session
+from session_page import PAGE, PREVIOUS, SESSIONS, render_session
 from stop_hook import decide
 from test_reading import messages_of
 
@@ -1121,48 +1121,51 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
 
 
 # ---- pages across handoffs ----------------------------------------------------
+# The link is written by the handoff skill's pickup command, run here as the agent runs it; the
+# Stop hook renders the fresh session's page from it.
 
+PICKUP = Path(__file__).resolve().parents[1] / "handoff" / "pickup.py"
 BEFORE = "46944b2a-c996-4889-b308-48c1d884a675"  # the session that wrote the handoff
+CONTINUATION = f"session: {BEFORE}\npurpose: continuation"
 
 
-def handoff_read(path: str, front: str, start: int = 1) -> dict:
-    """The transcript entry Claude Code writes for a Read of `path`, the file returned as read; a
-    handoff's frontmatter is `front`."""
-    content = f"---\n{front}\n---\n\n# Carry the ledger work on\n"
-    return {"type": "user", "timestamp": "2026-10-05T09:00:05.000Z",
-            "message": {"role": "user", "content": [{"tool_use_id": "toolu_1", "type": "tool_result", "content": content}]},
-            "toolUseResult": {"type": "text", "file": {"filePath": path, "content": content, "startLine": start}}}
+def pick_up(project: Path, front: str, session: str = FRESH, name: str = "2026-10-05-ledger.md") -> subprocess.CompletedProcess:
+    """A handoff of frontmatter `front` committed in the project's agent repo, and picked up there
+    by `session` through the command."""
+    agent = project / "agent"
+    if not (agent / ".git").exists():
+        git(agent, "init", "-q")
+    (agent / "handoffs").mkdir(exist_ok=True)
+    (agent / "handoffs" / name).write_text(f"---\n{front}\n---\n\n# Carry the ledger work on\n")
+    git(agent, "add", "handoffs")
+    git(agent, "commit", "-q", "-m", "hand off")
+    identity = {f"GIT_{who}_{what}": value for who in ("AUTHOR", "COMMITTER") for what, value in (("NAME", "t"), ("EMAIL", "t@t"))}
+    done = subprocess.run([str(PICKUP), str(agent / "handoffs" / name)], cwd=project, capture_output=True, text=True,
+                          timeout=120, env={**os.environ, **identity, "CLAUDE_CODE_SESSION_ID": session})
+    assert done.returncode == 0, done.stderr
+    return done
 
 
-HANDOFF = "/srv/helferline/agent/handoffs/2026-10-05-ledger.md"
-PICKUP = "git -C /srv/helferline/agent rm handoffs/2026-10-05-ledger.md && git -C /srv/helferline/agent commit -m 'pick up the ledger handoff'"
-
-
-def bash(command: str, error: bool = False, call: str = "toolu_2") -> list[dict]:
-    """The transcript entries Claude Code writes for a Bash call of `command` and its result."""
-    return [{"type": "assistant", "timestamp": "2026-10-05T09:00:06.000Z",
-             "message": {"role": "assistant", "content": [{"type": "tool_use", "id": call, "name": "Bash", "input": {"command": command}}]}},
-            {"type": "user", "timestamp": "2026-10-05T09:00:07.000Z",
-             "message": {"role": "user", "content": [{"tool_use_id": call, "type": "tool_result", "content": "", "is_error": error}]}}]
+def transcript_of(session: str) -> Path:
+    """Where Claude Code keeps the session's transcript, under the check's own config directory."""
+    return Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / "-srv-helferline" / f"{session}.jsonl"
 
 
 @pytest.fixture
 def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture) -> Callable[..., Path]:
-    """The session `BEFORE`, which has a page and its transcript beside the fresh session's, and a
-    way to have the fresh session's first turn read a handoff, as a frontmatter, and end on a reply.
-    Hands back the directory of `BEFORE`."""
+    """The session `BEFORE`, which has a page and its transcript where Claude Code keeps it, and a
+    way to have the fresh session pick up a handoff of the frontmatter given and end its first turn
+    on a reply. Hands back the directory of `BEFORE`; the last pickup's output is `handed_over.done`."""
     directory, said = first_turn
     before = directory.parent / BEFORE
-    theirs = said.parent / f"{BEFORE}.jsonl"
+    theirs = transcript_of(BEFORE)
+    theirs.parent.mkdir(parents=True, exist_ok=True)
     theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": BEFORE}) + "\n")
     run(payload(before, theirs, reply="Writing the handoff."))
     capsys.readouterr()
 
-    def read(front: str, path: str = HANDOFF, then: list[dict] | None = None, **entry: object) -> Path:
-        """The handoff at `path` read, and `then` after it: by default the `git rm` that picks it up."""
-        with said.open("a") as f:
-            for e in [handoff_read(path, front, **entry), *(bash(PICKUP) if then is None else then)]:
-                f.write(json.dumps(e) + "\n")
+    def read(front: str, **pickup: str) -> Path:
+        read.done = pick_up(directory.parents[len(SESSIONS.parts)], front, **pickup)
         run(payload(directory, said, reply="On it."))
         capsys.readouterr()
         return before
@@ -1177,11 +1180,11 @@ def links_to(page: Path) -> list[str]:
 def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(
     handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
 ) -> None:
-    """pages-link-across-handoffs#P1: a session that read a continuation handoff and then `git rm`'d
-    it gets `previous`, naming the session that wrote the handoff; its page links to that one's,
-    and that one's, rendered again, links forward; each link resolves on disk."""
+    """pages-link-across-handoffs#P1, read through the pickup command: the session that picked up a
+    continuation handoff gets `previous`, naming the session that wrote the handoff; its page links
+    to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
     directory, _ = first_turn
-    before = handed_over(f"session: {BEFORE}\npurpose: continuation")
+    before = handed_over(CONTINUATION)
     assert (directory / PREVIOUS).read_text().strip() == BEFORE
     assert links_to(directory / PAGE) == [BEFORE]
     assert links_to(before / PAGE) == [FRESH]
@@ -1189,130 +1192,111 @@ def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_befor
 
 
 NO_LINK = {
-    "a fork's handoff": (f"session: {BEFORE}\npurpose: fork", {}),
-    "a handoff the session wrote itself": (f"session: {FRESH}\npurpose: continuation", {}),
-    "a file outside agent/handoffs": (f"session: {BEFORE}\npurpose: continuation", {"path": "/srv/helferline/agent/tickets/ledger.md"}),
-    "a read that starts past the frontmatter": (f"session: {BEFORE}\npurpose: continuation", {"start": 40}),
-    "a session id that is no id": ("session: ../../etc\npurpose: continuation", {}),
-    "frontmatter that is not YAML": (f"session: [{BEFORE}\npurpose: continuation", {}),
-    "a handoff only read": (f"session: {BEFORE}\npurpose: continuation", {"then": []}),
-    "a git rm of another handoff": (f"session: {BEFORE}\npurpose: continuation", {"then": bash("git rm agent/handoffs/2026-10-04-ledger.md")}),
-    "a plain rm": (f"session: {BEFORE}\npurpose: continuation", {"then": bash("rm agent/handoffs/2026-10-05-ledger.md")}),
+    "a fork's handoff": f"session: {BEFORE}\npurpose: fork",
+    "a handoff the session wrote itself": f"session: {FRESH}\npurpose: continuation",
+    "a session id that is no id": "session: ../../etc\npurpose: continuation",
+    "frontmatter that is not YAML": f"session: [{BEFORE}\npurpose: continuation",
 }
 
 
-@pytest.mark.parametrize("front, entry", NO_LINK.values(), ids=NO_LINK)
+@pytest.mark.parametrize("front", NO_LINK.values(), ids=NO_LINK)
 def test_a_handoff_that_continues_no_other_session_links_nothing(
-    front: str, entry: dict, handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+    front: str, handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
 ) -> None:
-    """pages-link-across-handoffs#P2, and the reads that are no pickup of another session's handoff."""
+    """pages-link-across-handoffs#P2, and the handoffs that name no other session by a safe id."""
     directory, _ = first_turn
-    before = handed_over(front, **entry)
+    before = handed_over(front)
+    assert not (directory / PREVIOUS).exists()
+    assert links_to(directory / PAGE) == links_to(before / PAGE) == []
+
+
+def handoff_read(path: str, front: str) -> dict:
+    """The transcript entry Claude Code writes for a Read of `path`, the file returned as read; a
+    handoff's frontmatter is `front`."""
+    content = f"---\n{front}\n---\n\n# Carry the ledger work on\n"
+    return {"type": "user", "timestamp": "2026-10-05T09:00:05.000Z",
+            "message": {"role": "user", "content": [{"tool_use_id": "toolu_1", "type": "tool_result", "content": content}]},
+            "toolUseResult": {"type": "text", "file": {"filePath": path, "content": content, "startLine": 1}}}
+
+
+def bash(command: str) -> list[dict]:
+    """The transcript entries Claude Code writes for a Bash call of `command` and its result."""
+    return [{"type": "assistant", "timestamp": "2026-10-05T09:00:06.000Z",
+             "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "Bash", "input": {"command": command}}]}},
+            {"type": "user", "timestamp": "2026-10-05T09:00:07.000Z",
+             "message": {"role": "user", "content": [{"tool_use_id": "toolu_2", "type": "tool_result", "content": ""}]}}]
+
+
+def test_a_handoff_picked_up_without_the_command_links_nothing(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
+) -> None:
+    """handoff-pickup-command's Decisions: the Stop hook reads no pickup out of the transcript, so a
+    continuation handoff read and `git rm`'d by hand writes no `previous`."""
+    directory, said = first_turn
+    before = handed_over(f"session: {BEFORE}\npurpose: fork")
+    handoff = directory.parents[len(SESSIONS.parts)] / "agent" / "handoffs" / "2026-10-06-ledger.md"
+    with said.open("a") as f:
+        for e in [handoff_read(str(handoff), CONTINUATION), *bash(f"git rm {handoff} && git commit -m 'pick up'")]:
+            f.write(json.dumps(e) + "\n")
+    run(payload(directory, said, reply="Carrying on."))
     assert not (directory / PREVIOUS).exists()
     assert links_to(directory / PAGE) == links_to(before / PAGE) == []
 
 
 def test_previous_is_written_once(handed_over: Callable[..., Path], first_turn: tuple[Path, Path]) -> None:
-    """A `previous` already there stays, whatever handoff the session reads after it was written."""
+    """A `previous` already there stays, whatever handoff the session picks up after it was written."""
     directory, _ = first_turn
     handed_over(f"session: {BEFORE}\npurpose: fork")
     earlier = "0d1e2f3a-0000-0000-0000-000000000000"
     (directory / PREVIOUS).write_text(earlier + "\n")
-    handed_over(f"session: {BEFORE}\npurpose: continuation")
+    handed_over(CONTINUATION, name="2026-10-06-ledger.md")
     assert (directory / PREVIOUS).read_text().strip() == earlier
-
-
-CONTINUATION = f"session: {BEFORE}\npurpose: continuation"
-
-PATH_FORMS = {
-    "the absolute path": f"git rm {HANDOFF}",
-    "relative to the agent repo, through -C": PICKUP,
-    "relative to the project": "git rm -q agent/handoffs/2026-10-05-ledger.md",
-    "from inside the handoffs directory": "cd agent/handoffs && git rm 2026-10-05-ledger.md",
-    "quoted, from a sibling directory": "git rm '../agent/handoffs/2026-10-05-ledger.md'",
-    "one of several, in a script": "git status\ngit rm --cached agent/handoffs/old.md agent/handoffs/2026-10-05-ledger.md; git commit -m 'rm handoffs'",
-}
-
-
-@pytest.mark.parametrize("command", PATH_FORMS.values(), ids=PATH_FORMS)
-def test_a_git_rm_names_the_handoff_in_any_path_form(command: str) -> None:
-    assert continued_from([handoff_read(HANDOFF, CONTINUATION), *bash(command)], FRESH) == BEFORE
-
-
-def test_an_absolute_path_with_shell_word_breaks_in_it_names_the_handoff() -> None:
-    handoff = "/home/u/work@2+x:y/agent/handoffs/2026-10-05-ledger.md"
-    assert continued_from([handoff_read(handoff, CONTINUATION), *bash(f"git rm {handoff}")], FRESH) == BEFORE
-
-
-def test_a_git_rm_whose_chained_commit_failed_is_a_pickup() -> None:
-    """The rm took before the commit failed, and the retry commits without naming the handoff."""
-    assert continued_from([handoff_read(HANDOFF, CONTINUATION), *bash(PICKUP, error=True)], FRESH) == BEFORE
-
-
-def test_a_git_rm_before_the_read_is_no_pickup() -> None:
-    assert continued_from([*bash(PICKUP), handoff_read(HANDOFF, CONTINUATION)], FRESH) == ""
-
-
-def test_of_two_continuation_handoffs_picked_up_the_first_read_is_the_predecessor() -> None:
-    other = "0d1e2f3a-0000-0000-0000-000000000000"
-    reads = [handoff_read(f"/p/agent/handoffs/{n}.md", f"session: {s}\npurpose: continuation") for n, s in ((1, BEFORE), (2, other))]
-    both = bash("git rm /p/agent/handoffs/1.md /p/agent/handoffs/2.md")
-    assert continued_from([*reads, *both], FRESH) == BEFORE
-    assert continued_from([*reads[::-1], *both], FRESH) == other
-
-
-def test_a_handoff_only_read_gives_way_to_one_picked_up_after_it() -> None:
-    """A session that reads a handoff to look at it and then picks up another continues the other."""
-    other = "0d1e2f3a-0000-0000-0000-000000000000"
-    entries = [handoff_read("/p/agent/handoffs/1.md", CONTINUATION),
-               handoff_read("/p/agent/handoffs/2.md", f"session: {other}\npurpose: continuation"), *bash("git rm agent/handoffs/2.md")]
-    assert continued_from(entries, FRESH) == other
+    assert f"already names {earlier}" in handed_over.done.stderr
 
 
 def test_a_predecessor_with_no_page_is_recorded_and_not_linked(
-    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], attended: Path,
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
 ) -> None:
     """A handoff written by a session that has no page here, one from before every session had one
-    or from another machine: `previous` names it, the page links nowhere, and the log says why."""
+    or from another machine: `previous` names it, the page links nowhere, and the pickup says why."""
     directory, _ = first_turn
     gone = "0d1e2f3a-0000-0000-0000-000000000000"
     handed_over(f"session: {gone}\npurpose: continuation")
     assert (directory / PREVIOUS).read_text().strip() == gone
     assert links_to(directory / PAGE) == []
-    assert [(e["previous"], e["rendered"]) for e in logged(attended, "previous")] == [(gone, "no session directory")]
+    assert "no session directory" in handed_over.done.stderr
 
 
 def test_a_handoff_two_sessions_picked_up_links_forward_to_both(
     handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture,
 ) -> None:
     """One handoff split into several: the page before links forward to every session that picked
-    it up."""
-    directory, said = first_turn
-    front = f"session: {BEFORE}\npurpose: continuation"
-    before = handed_over(front)
+    up one of them."""
+    directory, _ = first_turn
+    before = handed_over(CONTINUATION)
     second = "0a0b0c0d-0000-0000-0000-000000000000"
-    theirs = said.parent / f"{second}.jsonl"
-    theirs.write_text("".join(json.dumps(e) + "\n" for e in [FIRST_PROMPT | {"sessionId": second}, handoff_read(HANDOFF, front), *bash(PICKUP)]))
+    theirs = transcript_of(second)
+    theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": second}) + "\n")
+    pick_up(directory.parents[len(SESSIONS.parts)], CONTINUATION, session=second, name="2026-10-05-ledger-bank.md")
     run(payload(directory.parent / second, theirs, reply="On it."))
     capsys.readouterr()
     assert links_to(before / PAGE) == sorted([FRESH, second])
 
 
-def test_a_predecessor_with_no_transcript_beside_it_is_logged_and_links_forward_at_its_next_render(
+def test_a_predecessor_with_no_transcript_is_said_and_links_forward_at_its_next_render(
     handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
-    capsys: pytest.CaptureFixture, attended: Path,
+    capsys: pytest.CaptureFixture,
 ) -> None:
-    """pages-link-across-handoffs' Decisions: with no transcript there, the hook logs that and the
-    forward link waits for the predecessor's next render."""
-    directory, said = first_turn
-    theirs = said.parent / f"{BEFORE}.jsonl"
+    """pages-link-across-handoffs' Decisions: with no transcript to render it from, the pickup says
+    so and the forward link waits for the predecessor's next render."""
+    directory, _ = first_turn
+    theirs = transcript_of(BEFORE)
     kept = theirs.read_text()
     theirs.unlink()
-    before = handed_over(f"session: {BEFORE}\npurpose: continuation")
+    before = handed_over(CONTINUATION)
     assert links_to(directory / PAGE) == [BEFORE]
     assert links_to(before / PAGE) == []
-    [entry] = logged(attended, "previous")
-    assert entry["previous"] == BEFORE and entry["rendered"].startswith(f"no transcript at {theirs}")
+    assert "no transcript under" in handed_over.done.stderr
     theirs.write_text(kept)
     run(payload(before, theirs, reply="Still here."))
     capsys.readouterr()

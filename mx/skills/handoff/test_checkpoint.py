@@ -178,8 +178,8 @@ def handoff(repo: Path, name: str, session: str, purpose: str = "continuation") 
 
 def pickup_line(path: Path) -> str:
     """The line the handoff skill has the user type, with the path filled in: what the hook says."""
-    line = next(l for l in SKILL.read_text().splitlines() if l.startswith("Continue from <absolute path>."))
-    return line.replace("<absolute path>", str(path))
+    line = next(l for l in SKILL.read_text().splitlines() if l.startswith("Continue from <absolute path>:"))
+    return line.replace("<base directory>", str(SCRIPT.parent)).replace("<absolute path>", str(path))
 
 
 def test_after_clear_the_fresh_session_is_handed_the_continuation_the_cleared_one_wrote(tmp_path: Path) -> None:
