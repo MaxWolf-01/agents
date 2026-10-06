@@ -1983,6 +1983,33 @@ def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path,
     assert run(listed, "set", "nps-tests", "status=done").code == 0
 
 
+@pytest.mark.parametrize("hinge", [True, False])
+def test_p6_a_hinge_in_a_listed_repo_is_done_once_merged_into_its_parents_branch_there(listed: Path, hinge: bool) -> None:
+    """A listed repo is measured as the code repo is: a hinge, ruled alone, is done once its work is
+    in its parent ticket's branch there; any other child of a top-level ticket waits for the parent's
+    accept to bring it to the integration branch. Both the range and the ticket branch are read."""
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    first, last = tip(backend), tip(committed(backend, "nps shape"))
+    git(backend, "checkout", "-q", "nps")
+    ticket(listed / "agent" / "tickets", "nps", status="claimed")
+    in_review(listed, "nps-shape", parent="nps", hinge="true" if hinge else None, repos="[Backend]",
+              diff=f"[Backend@{first}..{last}]")
+
+    said = run(listed, "set", "nps-shape", "status=done")
+    onto = "nps in Backend" if hinge else "Backend's integration branch development"
+    assert said.code == 1 and f"is not in {onto}" in said.err, said.said
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    said = run(listed, "set", "nps-shape", "status=done")
+    assert (said.code == 0) is hinge, said.said
+    if not hinge:
+        assert "is not in Backend's integration branch development" in said.err, said.said
+        git(backend, "checkout", "-q", "development")
+        git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
+        assert run(listed, "set", "nps-shape", "status=done").code == 0
+
+
 def test_a_ticket_branch_in_a_repo_the_ticket_does_not_name_is_not_read(listed: Path) -> None:
     """P5's other half, read by the done check: a ticket's repos are the ones it names."""
     quartz = listed.parent / "quartz"

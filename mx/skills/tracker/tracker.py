@@ -139,8 +139,10 @@ def repos() -> int:
         path = "Backend"              # from the project root, or absolute, `~` expanded
         integration = "development"   # the branch tickets merge into and are done on
 
-    A repo with no `integration` is done on the branch its `origin/HEAD` names. A ticket is done on
-    a listed repo once its work there is in that branch, locally or at `origin`. A list this cannot
+    A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
+    in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
+    its parent ticket's branch for a hinge, and the integration branch, locally or at `origin`, for
+    a top-level ticket and any other child of one. A list this cannot
     read whole is refused with the reason: TOML that does not parse, a table with no `path`, a path
     that is no git repo's root, an integration branch the repo does not have."""
     root = tracker_root(Path.cwd())
@@ -515,20 +517,29 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
 
 
 def unlanded_listed(ticket: Ticket, tracker: Tracker) -> str | None:
-    """Why the ticket's work in a listed repo is not in that repo's integration branch, or None once
-    it is: a range `diff:` records there whose last commit the branch does not hold, or a branch of
-    the ticket's in one of its `repos:` not merged into it. Done means merged there, whichever
-    parent ticket's branch the work passed through on the way."""
+    """Why the ticket's work in a listed repo has not reached the branch the user's accept merges it
+    into there, or None once it has: a range `diff:` records there whose last commit that branch
+    does not hold, or a branch of the ticket's in one of its `repos:` not merged into it. The branch
+    is `accepted_into`'s, the repo's integration branch standing in for the branch this runs on."""
     for written, name, last in listed_ranges(ticket):
         repo = resolved(tracker.root, name)
         if tried(repo.path, "cat-file", "-e", f"{last}^{{commit}}").returncode != 0:
             return f"`{written}`'s last commit {last} is no commit of {repo.name} at {repo.path}; fetch it, or record the range the work landed as"
-        if not in_integration(repo, last):
-            return f"`{written}`'s last commit {last} is not in {repo.name}'s integration branch {repo.integration}, at {repo.path}; done follows its merge"
+        if where := unreached(repo, last, ticket, tracker):
+            return f"`{written}`'s last commit {last} is not in {where}, at {repo.path}; done follows its merge"
     for repo, branch in listed_branches(ticket, tracker):
-        if not in_integration(repo, branch):
-            return f"{branch} is not merged into {repo.name}'s integration branch {repo.integration}, at {repo.path}; done follows its merge"
+        if where := unreached(repo, branch, ticket, tracker):
+            return f"{branch} is not merged into {where}, at {repo.path}; done follows its merge"
     return None
+
+
+def unreached(repo: Listed, tip: str, ticket: Ticket, tracker: Tracker) -> str | None:
+    """The branch of `repo` the ticket's accept merges into, named for a refusal, where `tip` has
+    not reached it; None where it has."""
+    onto = accepted_into(repo.path, ticket, tracker, repo.integration) or repo.integration
+    if onto == repo.integration:
+        return None if in_integration(repo, tip) else f"{repo.name}'s integration branch {onto}"
+    return None if reached(repo.path, tip, onto) else f"{onto} in {repo.name}"
 
 
 def listed_ranges(ticket: Ticket) -> list[tuple[str, str, str]]:
@@ -549,21 +560,23 @@ def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]
     return found
 
 
-def accepted_into(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
+def accepted_into(top: Path, ticket: Ticket, tracker: Tracker, base: str = "") -> str | None:
     """The branch the user's accept merges the ticket's work into, in `top`. Where its parent ticket
     has a branch there: the parent's branch for a hinge, ruled alone, and for a parent ticket, ruled
     at its close-out; for any other child, the branch above the parent's, which the parent's accept
-    brings it to: the grandparent's branch, or the branch this runs on. None where that would be the
-    parent's branch itself. Where the parent has no branch, the branch this runs on."""
+    brings it to: the grandparent's branch, or the base. None where that would be the parent's
+    branch itself. Where the parent has no branch, the base. The base is the branch this runs on,
+    or the integration branch of a listed repo, which nothing runs on."""
+    base = base or head(top)
     parent = ticket.parent and parent_branch(top, ticket.parent)
     if not parent:
-        return head(top)
+        return base
     if ticket.hinge or tracker.children(ticket.slug):
         return parent
     grand = tracker.tickets[ticket.parent].parent if ticket.parent in tracker.tickets else None
     if grand and (above := parent_branch(top, grand)):
         return above
-    return None if head(top) == parent else head(top)
+    return None if base == parent else base
 
 
 def branch_of(top: Path, ticket: Ticket, tracker: Tracker) -> str | None:
