@@ -409,7 +409,7 @@ def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newes
     assert ["no message of yours" in b for b in bodies] == [True, False, False]
     assert [re.search(r'class="v-meta date">(.*?)<', b).group(1) for b in bodies] == [
         f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
-    assert '<h2 class="v-meta" id="turns">turns</h2>' in page
+    assert 'id="turns"' not in page
 
 
 def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Path) -> None:
