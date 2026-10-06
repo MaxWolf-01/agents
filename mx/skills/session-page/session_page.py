@@ -887,8 +887,7 @@ def assemble(session: Session, now: datetime) -> str:
       <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
     </div>
   </section>{top}
-  <section class="turns" aria-labelledby="turns">
-    <div class="divider"><h2 class="v-meta" id="turns">turns</h2></div>
+  <section class="turns" aria-label="turns">
     {body}
   </section>{column(newest_first)}
 </main>
@@ -921,7 +920,7 @@ def column(newest_first: list[Turn]) -> str:
     </section>""" for t in newest_first if t.artefacts)
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="divider"><h2 class="v-meta" id="column-title">artefacts · by turn</h2></div>{groups or '<p class="v-meta">none yet</p>'}
+    <h2 class="v-meta" id="column-title">artefacts · by turn</h2>{groups or '<p class="v-meta">none yet</p>'}
   </aside>"""
 
 
