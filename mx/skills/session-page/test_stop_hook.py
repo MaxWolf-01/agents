@@ -1177,8 +1177,9 @@ def links_to(page: Path) -> list[str]:
 def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(
     handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
 ) -> None:
-    """pages-link-across-handoffs#P1: a session that read a continuation handoff and then `git rm`'d it
-    gets `previous`, naming the session that wrote the handoff; its page links to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
+    """pages-link-across-handoffs#P1: a session that read a continuation handoff and then `git rm`'d
+    it gets `previous`, naming the session that wrote the handoff; its page links to that one's,
+    and that one's, rendered again, links forward; each link resolves on disk."""
     directory, _ = first_turn
     before = handed_over(f"session: {BEFORE}\npurpose: continuation")
     assert (directory / PREVIOUS).read_text().strip() == BEFORE
@@ -1195,7 +1196,6 @@ NO_LINK = {
     "a session id that is no id": ("session: ../../etc\npurpose: continuation", {}),
     "frontmatter that is not YAML": (f"session: [{BEFORE}\npurpose: continuation", {}),
     "a handoff only read": (f"session: {BEFORE}\npurpose: continuation", {"then": []}),
-    "a git rm that failed": (f"session: {BEFORE}\npurpose: continuation", {"then": bash(PICKUP, error=True)}),
     "a git rm of another handoff": (f"session: {BEFORE}\npurpose: continuation", {"then": bash("git rm agent/handoffs/2026-10-04-ledger.md")}),
     "a plain rm": (f"session: {BEFORE}\npurpose: continuation", {"then": bash("rm agent/handoffs/2026-10-05-ledger.md")}),
 }
@@ -1237,6 +1237,16 @@ PATH_FORMS = {
 @pytest.mark.parametrize("command", PATH_FORMS.values(), ids=PATH_FORMS)
 def test_a_git_rm_names_the_handoff_in_any_path_form(command: str) -> None:
     assert continued_from([handoff_read(HANDOFF, CONTINUATION), *bash(command)], FRESH) == BEFORE
+
+
+def test_an_absolute_path_with_shell_word_breaks_in_it_names_the_handoff() -> None:
+    handoff = "/home/u/work@2+x:y/agent/handoffs/2026-10-05-ledger.md"
+    assert continued_from([handoff_read(handoff, CONTINUATION), *bash(f"git rm {handoff}")], FRESH) == BEFORE
+
+
+def test_a_git_rm_whose_chained_commit_failed_is_a_pickup() -> None:
+    """The rm took before the commit failed, and the retry commits without naming the handoff."""
+    assert continued_from([handoff_read(HANDOFF, CONTINUATION), *bash(PICKUP, error=True)], FRESH) == BEFORE
 
 
 def test_a_git_rm_before_the_read_is_no_pickup() -> None:

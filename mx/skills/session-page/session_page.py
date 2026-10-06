@@ -657,13 +657,14 @@ def started_in(entries: list[dict]) -> Path | None:
 
 def continued_from(entries: list[dict], own: str) -> str:
     """The session that wrote the first continuation handoff this session picked up: read, and then
-    removed with a `git rm` that succeeded. A handoff only read is no pickup. Only a read from the
+    named in a `git rm`. A handoff only read is no pickup. Only a read from the
     file's first line counts, since the frontmatter is what names the session. The id comes from the
     `session:` of that frontmatter as the read returned it, so the removed handoff still names it. A
     handoff is a file directly under an `agent/handoffs/`; one this session wrote itself, or a fork's,
     names none. Empty where no pickup names one."""
+    removed = list(removals(entries))
     for at, path, session in handoff_reads(entries, own):
-        if any(names(path, removed) for removed in removals(entries[at + 1:])):
+        if any(names(path, argument) for when, argument in removed if when > at):
             return session
     return ""
 
@@ -689,22 +690,22 @@ def handoff_reads(entries: list[dict], own: str) -> Iterator[tuple[int, Path, st
             yield at, path, front["session"]
 
 
-def removals(entries: list[dict]) -> Iterator[str]:
-    """Each path a Bash call that succeeded handed to `git rm`, as the command spelled it. A command
-    is split at `&&`, `;`, `|` and newlines; within a part, every argument after `rm` that follows
-    a `git` and is no option counts, so `git -C agent rm …` does too."""
-    failed = {block.get("tool_use_id") for entry in entries for block in content_blocks(entry)
-              if block.get("type") == "tool_result" and block.get("is_error")}
-    for entry in entries:
+def removals(entries: list[dict]) -> Iterator[tuple[int, str]]:
+    """Each path a Bash call handed to `git rm`, as the index of the call's entry and the path as the
+    command spelled it. A call that ended in an error counts too: `git rm … && git commit …` fails
+    when the commit does, after the rm took. A command is split at `&&`, `;`, `|` and newlines;
+    within a part, every argument after `rm` that follows a `git` and is no option counts, so
+    `git -C agent rm …` does too."""
+    for at, entry in enumerate(entries):
         if entry.get("type") != "assistant":
             continue
         for block in content_blocks(entry):
             command = (block.get("input") or {}).get("command") if block.get("name") == "Bash" else None
-            if block.get("type") != "tool_use" or not isinstance(command, str) or block.get("id") in failed:
+            if block.get("type") != "tool_use" or not isinstance(command, str):
                 continue
             try:
                 lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-                lexer.whitespace = " \t\r"
+                lexer.whitespace, lexer.whitespace_split = " \t\r", True
                 tokens = list(lexer)
             except ValueError:
                 continue
@@ -712,13 +713,14 @@ def removals(entries: list[dict]) -> Iterator[str]:
             for token in tokens + [";"]:
                 if token and set(token) <= set("&;|\n()"):
                     if "git" in part and "rm" in part[part.index("git"):]:
-                        yield from (a for a in part[part.index("rm", part.index("git")) + 1:] if not a.startswith("-"))
+                        yield from ((at, a) for a in part[part.index("rm", part.index("git")) + 1:] if not a.startswith("-"))
                     part = []
                 else:
                     part.append(token)
 
 
 def content_blocks(entry: dict) -> list[dict]:
+    """The blocks of an entry's message content; none where its content is a plain string."""
     content = (entry.get("message") or {}).get("content") if isinstance(entry.get("message"), dict) else None
     return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
 
