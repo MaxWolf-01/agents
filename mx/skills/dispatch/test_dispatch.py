@@ -283,7 +283,9 @@ def stage_runner(state: Path) -> None:
 def mx(tmp_path: Path) -> Path:
     """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
     shaped like a real one, whose leaf the lines that name the install print."""
-    (tmp_path / "mx" / "installed").mkdir(parents=True, exist_ok=True)
+    rules = tmp_path / "mx" / "installed" / "skills" / "session-page"
+    rules.mkdir(parents=True, exist_ok=True)
+    shutil.copy(SKILL.parent / "session-page" / "RULES.md", rules)
     return tmp_path / "mx" / "installed"
 
 
@@ -842,6 +844,54 @@ def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
     assert done.returncode == 1
     assert (state / "run-1.status").read_text().startswith(
         "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
+    assert not (bin_dir / "claude.calls").exists(), "claude ran"
+
+
+def test_a_worker_is_told_the_asking_rule_from_its_one_home(tmp_path: Path) -> None:
+    """`asking-rule-has-one-home`: worker-prompt.md names the asking rule as appended below it, so
+    the runner appends that section of the install's RULES.md, and the prompt carries no copy."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
+    section = rules[rules.index("## What the user decides"):].strip()
+    rule = section.splitlines()[-1]
+
+    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                   cwd=tmp_path, capture_output=True, text=True, timeout=60,
+                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+
+    assert section in (bin_dir / "claude.calls").read_text()
+    assert rule not in (SKILL / "worker-prompt.md").read_text()
+
+
+def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path: Path) -> None:
+    """A worker told the rule is appended below its prompt, with nothing there, would ask the user
+    by no rule at all; the status line names the section that is missing."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    plugin = mx(tmp_path)
+    rules = plugin / "skills" / "session-page" / "RULES.md"
+    rules.write_text(rules.read_text().replace("## What the user decides", "## Something else"))
+
+    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60,
+                          env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(plugin)})
+
+    assert done.returncode == 1
+    assert (state / "run-1.status").read_text().startswith(
+        "attempts=0 exit=1 report=no session=- error=no '## What the user decides' section in")
     assert not (bin_dir / "claude.calls").exists(), "claude ran"
 
 
