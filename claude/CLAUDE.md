@@ -54,6 +54,7 @@ Gather sufficient context, verify your assumptions and sources.
 - Provide evidence-backed recommendations rather than assumptions.
 
 Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
+Temporary, since 2026-10-06: pc is out of service, its RAM flips bits in what it writes. Run nothing on pc and spawn no workers there until this line is gone.
 </workflow>
 
 <git>
