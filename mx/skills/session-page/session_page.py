@@ -972,8 +972,9 @@ def unanswered(t: Turn | Chat) -> bool:
 
 
 def when(t: Turn | Chat) -> str:
-    """The turn's date, and its time to the minute where the transcript has it."""
-    return f"{t.date} {t.written.astimezone():%H:%M}" if t.written else t.date
+    """The turn's date and time to the minute, from the transcript where it has the turn, which
+    keeps the two on one clock; the record's own date where it hasn't."""
+    return f"{t.written.astimezone():%Y-%m-%d %H:%M}" if t.written else t.date
 
 
 def turn_section(t: Turn, settled: dict[str, Settled], open_: bool, hint: bool) -> str:
@@ -1023,7 +1024,7 @@ def you(t: Turn | Chat, hint: bool) -> str:
         return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'
     messages = t.messages
     if not messages:
-        return '' if not hint else '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
+        return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>' if hint else ''
     lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
