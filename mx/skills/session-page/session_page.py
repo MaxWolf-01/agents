@@ -656,17 +656,28 @@ def started_in(entries: list[dict]) -> Path | None:
 
 
 def continued_from(entries: list[dict], own: str) -> str:
-    """The session that wrote the first continuation handoff this session read. Only a read from
-    the file's first line counts, since the frontmatter is what names the session. The id comes from
-    the `session:` of that frontmatter as the read returned it, so a handoff since removed still
-    names it. A handoff is a file directly under an `agent/handoffs/`; one this session wrote itself,
-    or a fork's, names none. Empty where no read names one."""
-    for entry in entries:
+    """The session that wrote the first continuation handoff this session picked up: read, and then
+    removed with a `git rm` that succeeded. A handoff only read is no pickup. Only a read from the
+    file's first line counts, since the frontmatter is what names the session. The id comes from the
+    `session:` of that frontmatter as the read returned it, so the removed handoff still names it. A
+    handoff is a file directly under an `agent/handoffs/`; one this session wrote itself, or a fork's,
+    names none. Empty where no pickup names one."""
+    for at, path, session in handoff_reads(entries, own):
+        if any(names(path, removed) for removed in removals(entries[at + 1:])):
+            return session
+    return ""
+
+
+def handoff_reads(entries: list[dict], own: str) -> Iterator[tuple[int, Path, str]]:
+    """Each Read of a continuation handoff another session wrote, as the index of its entry, the
+    file's path and the `session:` its frontmatter names."""
+    for at, entry in enumerate(entries):
         read = entry.get("toolUseResult")
         file = read.get("file") if isinstance(read, dict) else None
         if not isinstance(file, dict) or not isinstance(file.get("filePath"), str) or not isinstance(file.get("content"), str):
             continue
-        if Path(file["filePath"]).parent.parts[-2:] != ("agent", "handoffs") or file.get("startLine", 1) != 1:
+        path = Path(file["filePath"])
+        if path.parent.parts[-2:] != ("agent", "handoffs") or file.get("startLine", 1) != 1:
             continue
         m = re.match(r"---\n(.*?)\n---(?:\n|$)", file["content"], re.S)
         try:
@@ -675,8 +686,52 @@ def continued_from(entries: list[dict], own: str) -> str:
             continue
         if isinstance(front, dict) and front.get("purpose") == "continuation" and isinstance(front.get("session"), str) \
                 and re.fullmatch(r"[\w-]+", front["session"]) and front["session"] != own:
-            return front["session"]
-    return ""
+            yield at, path, front["session"]
+
+
+def removals(entries: list[dict]) -> Iterator[str]:
+    """Each path a Bash call that succeeded handed to `git rm`, as the command spelled it. A command
+    is split at `&&`, `;`, `|` and newlines; within a part, every argument after `rm` that follows
+    a `git` and is no option counts, so `git -C agent rm …` does too."""
+    failed = {block.get("tool_use_id") for entry in entries for block in content_blocks(entry)
+              if block.get("type") == "tool_result" and block.get("is_error")}
+    for entry in entries:
+        if entry.get("type") != "assistant":
+            continue
+        for block in content_blocks(entry):
+            command = (block.get("input") or {}).get("command") if block.get("name") == "Bash" else None
+            if block.get("type") != "tool_use" or not isinstance(command, str) or block.get("id") in failed:
+                continue
+            try:
+                lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+                lexer.whitespace = " \t\r"
+                tokens = list(lexer)
+            except ValueError:
+                continue
+            part: list[str] = []
+            for token in tokens + [";"]:
+                if token and set(token) <= set("&;|\n()"):
+                    if "git" in part and "rm" in part[part.index("git"):]:
+                        yield from (a for a in part[part.index("rm", part.index("git")) + 1:] if not a.startswith("-"))
+                    part = []
+                else:
+                    part.append(token)
+
+
+def content_blocks(entry: dict) -> list[dict]:
+    content = (entry.get("message") or {}).get("content") if isinstance(entry.get("message"), dict) else None
+    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+
+def names(path: Path, argument: str) -> bool:
+    """Whether a `git rm` argument names the file at the absolute `path`: the same path, or one
+    relative to wherever the command ran, which `path` then ends with once its leading `./` and
+    `../` are dropped."""
+    given = Path(argument)
+    if given.is_absolute():
+        return given == path
+    parts = list(itertools.dropwhile(lambda p: p in (".", ".."), given.parts))
+    return bool(parts) and list(path.parts[-len(parts):]) == parts
 
 
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
