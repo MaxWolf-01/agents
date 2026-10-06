@@ -142,9 +142,9 @@ def repos() -> int:
     A repo with no `integration` integrates on the branch its `origin/HEAD` names. A ticket's work
     in a listed repo has landed once it is in the branch the ticket's accept merges it into there:
     its parent ticket's branch for a hinge, and the integration branch, locally or at `origin`, for
-    a top-level ticket and any other child of one. A list this cannot
-    read whole is refused with the reason: TOML that does not parse, a table with no `path`, a path
-    that is no git repo's root, an integration branch the repo does not have."""
+    a top-level ticket and any other child of one. A list this cannot read whole is refused with
+    the reason: TOML that does not parse, a table with no `path`, a path that is no git repo's
+    root, an integration branch the repo does not have."""
     root = tracker_root(Path.cwd())
     for one in [resolved(root, name) for name in repo_list(root)]:  # all read before a line is printed
         print(f"{one.name}\t{one.path}\t{one.integration}")
@@ -478,8 +478,8 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not reached the branch the user's accept merges it into
-    (`accepted_into`), or None once it has, in every repo holding a branch of it, and why its work
-    in a listed repo is not in that repo's integration branch (`unlanded_listed`). A parent
+    (`accepted_into`), or None once it has, in every repo holding a branch of it, the listed repos
+    among them (`unlanded_listed`). A parent
     ticket's own branch has reached it only with every child done or in review merged into that
     branch, since the parent's accept takes them in with it. A ticket with no code, no range
     recorded and no branch in any of its repos, is done once every child ticket is; a ticket the
@@ -551,9 +551,11 @@ def listed_ranges(ticket: Ticket) -> list[tuple[str, str, str]]:
 
 
 def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]]:
-    """The ticket's branch in each listed repo its `repos:` names, where that repo has one."""
+    """The ticket's branch in each listed repo it or a ticket under it names in `repos:`, where that
+    repo has one: a parent ticket's own branch there carries its children's work into the
+    integration branch, whether or not the parent names the repo itself."""
     found = []
-    for name in ticket.repos:
+    for name in dict.fromkeys([*ticket.repos, *(one for under in descendants(ticket.slug, tracker) for one in under.repos)]):
         repo = resolved(tracker.root, name)
         if branch := branch_of(repo.path, ticket, tracker):
             found.append((repo, branch))

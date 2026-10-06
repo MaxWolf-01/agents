@@ -1987,7 +1987,8 @@ def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path,
 def test_p6_a_hinge_in_a_listed_repo_is_done_once_merged_into_its_parents_branch_there(listed: Path, hinge: bool) -> None:
     """A listed repo is measured as the code repo is: a hinge, ruled alone, is done once its work is
     in its parent ticket's branch there; any other child of a top-level ticket waits for the parent's
-    accept to bring it to the integration branch. Both the range and the ticket branch are read."""
+    accept to bring it to the integration branch. The range is what refuses here; the ticket branch
+    alone is the check after this one."""
     backend = listed / "Backend"
     git(backend, "branch", "nps", "development")
     git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
@@ -2008,6 +2009,38 @@ def test_p6_a_hinge_in_a_listed_repo_is_done_once_merged_into_its_parents_branch
         git(backend, "checkout", "-q", "development")
         git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
         assert run(listed, "set", "nps-shape", "status=done").code == 0
+
+
+def test_p6_a_hinges_ticket_branch_alone_is_measured_against_its_parents_branch(listed: Path) -> None:
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    committed(backend, "nps shape")
+    git(backend, "checkout", "-q", "nps")
+    ticket(listed / "agent" / "tickets", "nps", status="claimed")
+    in_review(listed, "nps-shape", parent="nps", hinge="true", repos="[Backend]")
+    said = run(listed, "set", "nps-shape", "status=done")
+    assert said.code == 1 and "ticket/nps-shape is not merged into nps in Backend" in said.err, said.said
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    assert run(listed, "set", "nps-shape", "status=done").code == 0
+
+
+def test_p6_a_parent_waits_for_its_branch_in_a_repo_only_its_children_name(listed: Path) -> None:
+    """A hinge done on its parent's branch in Backend leaves that work short of Backend's integration
+    branch, and the parent naming no repo of its own is what carries it there."""
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    committed(backend, "nps shape")
+    git(backend, "checkout", "-q", "nps")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    in_review(listed, "nps")
+    ticket(listed / "agent" / "tickets", "nps-shape", status="done", parent="nps", hinge="true", repos="[Backend]")
+    said = run(listed, "set", "nps", "status=done")
+    assert said.code == 1 and "nps is not merged into Backend's integration branch development" in said.err, said.said
+    git(backend, "checkout", "-q", "development")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
+    assert run(listed, "set", "nps", "status=done").code == 0
 
 
 def test_a_ticket_branch_in_a_repo_the_ticket_does_not_name_is_not_read(listed: Path) -> None:
