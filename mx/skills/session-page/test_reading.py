@@ -409,7 +409,6 @@ def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newes
     assert ["no message of yours" in b for b in bodies] == [True, False, False]
     assert [re.search(r'class="v-meta date">(.*?)<', b).group(1) for b in bodies] == [
         f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
-    assert 'id="turns"' not in page
 
 
 def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Path) -> None:
@@ -455,3 +454,10 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
+
+
+def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
+    page = render_session(worked_example, transcript, now=NOW)
+    turns = re.search(r'<section class="turns"[^>]*>(.*?)<(?:details|article)', page, re.S).group(1)
+    assert turns.strip() == ""
+    assert re.search(r'<aside class="column"[^>]*>\s*<h2 class="v-meta" id="column-title">artefacts · by turn</h2>', page)
