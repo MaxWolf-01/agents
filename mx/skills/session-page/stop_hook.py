@@ -6,9 +6,10 @@
 """Stop hook: what the end of a turn does to the session page.
 
 It reads the Stop hook JSON on stdin; `decide` answers with a Verb over the session's own
-directory, and `main` applies it. A session's first turn that ends on a reply creates its directory,
-holding that reply as a chat turn, so every session someone sits at has a page from then on. The prose review of the turn's record ran when the agent
-wrote it (write_hook.py), so it is over by the time the turn ends.
+directory, and `main` applies it. A session's first turn that ends on a reply creates its
+directory, holding that reply as a chat turn, so every session someone sits at has a page from then
+on. The prose review of the turn's record ran when the agent wrote it (write_hook.py), so it is over
+by the time the turn ends.
 
 It leaves alone a session nobody reads the page of: DISPATCH_WORKLOG set (a dispatched worker), or
 CLAUDE_CODE_SESSION_ATTENDED set to 0 (a print-mode session).
@@ -106,7 +107,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
       once per turn: a turn a Stop hook already continued renders, so an agent that keeps writing
       it through the shell is not held in a loop.
     - Otherwise the page renders. Where this turn wrote no record and ended on a reply, the reply
-      is written first as a chat turn (`session_page.CHAT`), whatever its length, which takes no
+      is written first as a chat turn (`session_page.CHAT`), which takes no
       number of the agent's records; `main` creates the session's directory for it where there is
       none yet. Where this turn wrote a record, the render comes with the line the user sees under
       the agent's recap (`shown`, short of its link) and the record's artefacts, and where that

@@ -7,8 +7,9 @@
 The seam is the hook at its input: the hook's JSON and the session directory in, its decision out,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
-and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs' Properties, over the worked example in `fixtures/`, whose records a check
-corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
+and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs'
+Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time.
+The prose reviewer, which the hook never calls, is stubbed by conftest.py.
 The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
 for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
 """
@@ -38,7 +39,7 @@ import session_page
 import stop_hook
 import turn_review
 from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
-from session_page import PAGE, SESSIONS, render_session
+from session_page import PAGE, PREVIOUS, SESSIONS, continued_from, render_session
 from stop_hook import decide
 from test_reading import messages_of
 
@@ -162,7 +163,7 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
 
 # ---- properties -------------------------------------------------------------
 
-# A reply longer than three lines, which a session with a page once was sent back for.
+# A reply of several lines, an answer that would fill a turn record.
 LONG = "\n".join(f"Line {n} of an answer that belongs on the page." for n in range(1, 6))
 TWENTY_LINES = "\n".join(f"Line {n} of where the work stands." for n in range(1, 21))
 
@@ -1166,7 +1167,7 @@ def test_a_session_that_read_a_continuation_handoff_links_to_the_page_before_and
     links to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
     directory, _ = first_turn
     before = handed_over(f"session: {BEFORE}\npurpose: continuation")
-    assert (directory / "previous").read_text().strip() == BEFORE
+    assert (directory / PREVIOUS).read_text().strip() == BEFORE
     assert links_to(directory / PAGE) == [BEFORE]
     assert links_to(before / PAGE) == [FRESH]
     assert (directory / PAGE).parent.joinpath(f"../{BEFORE}/{PAGE}").resolve() == (before / PAGE).resolve()
@@ -1177,6 +1178,8 @@ NO_LINK = {
     "a handoff the session wrote itself": (f"session: {FRESH}\npurpose: continuation", {}),
     "a file outside agent/handoffs": (f"session: {BEFORE}\npurpose: continuation", {"path": "/srv/helferline/agent/tickets/ledger.md"}),
     "a read that starts past the frontmatter": (f"session: {BEFORE}\npurpose: continuation", {"start": 40}),
+    "a session id that is no id": ("session: ../../etc\npurpose: continuation", {}),
+    "frontmatter that is not YAML": (f"session: [{BEFORE}\npurpose: continuation", {}),
 }
 
 
@@ -1187,16 +1190,55 @@ def test_a_handoff_that_continues_no_other_session_links_nothing(
     """pages-link-across-handoffs#P2, and the reads that are no pickup of another session's handoff."""
     directory, _ = first_turn
     before = handed_over(front, **entry)
-    assert not (directory / "previous").exists()
+    assert not (directory / PREVIOUS).exists()
     assert links_to(directory / PAGE) == links_to(before / PAGE) == []
 
 
 def test_previous_is_written_once(handed_over: Callable[..., Path], first_turn: tuple[Path, Path]) -> None:
-    """A later read of another session's handoff leaves the first pickup the page's predecessor."""
+    """A `previous` already there stays, whatever handoff the session reads after it was written."""
     directory, _ = first_turn
+    handed_over(f"session: {BEFORE}\npurpose: fork")
+    earlier = "0d1e2f3a-0000-0000-0000-000000000000"
+    (directory / PREVIOUS).write_text(earlier + "\n")
     handed_over(f"session: {BEFORE}\npurpose: continuation")
-    handed_over("session: 0d1e2f3a-0000-0000-0000-000000000000\npurpose: continuation")
-    assert (directory / "previous").read_text().strip() == BEFORE
+    assert (directory / PREVIOUS).read_text().strip() == earlier
+
+
+def test_of_two_continuation_handoffs_read_the_first_is_the_predecessor() -> None:
+    other = "0d1e2f3a-0000-0000-0000-000000000000"
+    reads = [handoff_read(f"/p/agent/handoffs/{n}.md", f"session: {s}\npurpose: continuation") for n, s in ((1, BEFORE), (2, other))]
+    assert continued_from(reads, FRESH) == BEFORE
+    assert continued_from(reads[::-1], FRESH) == other
+
+
+def test_a_predecessor_with_no_page_is_recorded_and_not_linked(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], attended: Path,
+) -> None:
+    """A handoff written by a session that has no page here, one from before every session had one
+    or from another machine: `previous` names it, the page links nowhere, and the log says why."""
+    directory, _ = first_turn
+    gone = "0d1e2f3a-0000-0000-0000-000000000000"
+    handed_over(f"session: {gone}\npurpose: continuation")
+    assert (directory / PREVIOUS).read_text().strip() == gone
+    assert links_to(directory / PAGE) == []
+    assert [(e["previous"], e["rendered"]) for e in logged(attended, "previous")] == [(gone, "no session directory")]
+
+
+def test_a_handoff_two_sessions_picked_up_links_forward_to_both(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+) -> None:
+    """One handoff split into several: the page before links forward to every session that picked
+    it up."""
+    directory, said = first_turn
+    front = f"session: {BEFORE}\npurpose: continuation"
+    before = handed_over(front)
+    second = "0a0b0c0d-0000-0000-0000-000000000000"
+    theirs = said.parent / f"{second}.jsonl"
+    theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": second}) + "\n"
+                      + json.dumps(handoff_read("/srv/helferline/agent/handoffs/2026-10-05-ledger.md", front)) + "\n")
+    run(payload(directory.parent / second, theirs, reply="On it."))
+    capsys.readouterr()
+    assert links_to(before / PAGE) == sorted([FRESH, second])
 
 
 def test_a_predecessor_with_no_transcript_beside_it_is_logged_and_links_forward_at_its_next_render(

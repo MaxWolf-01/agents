@@ -11,8 +11,9 @@ the shape the show skill gives them (../show/SKILL.md, The session page), and `p
 Stop hook writes where the session picked up another's continuation handoff. Any of them may be
 missing: a session's first turns are often chat turns alone, and `session.md` comes with the first
 record. The page shows the title, links to the pages of the sessions before and after it across a
-handoff, the brief and resume command, the questions no later turn answered or superseded, then the turns
-newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
+handoff, the brief and resume command, the questions no later turn answered or superseded, then the
+turns newest first, each with the user's messages it answered and what other sessions sent
+meanwhile, read from the transcript.
 Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
 no artefact there.
 
@@ -134,6 +135,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
               for t, said_before, sent_before in zip(timeline, messages, peers)}
     session = str(front.get("session", directory.name))
     root = directory.parents[len(SESSIONS.parts)]
+    previous = predecessor(directory)
     return Session(
         id=session,
         name=registered_name(session),
@@ -146,7 +148,7 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=root,
-        previous=previous if (previous := predecessor(directory)) and (directory.parent / previous / PAGE).exists() else "",
+        previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
         following=successors(directory),
     )
 
@@ -654,10 +656,11 @@ def started_in(entries: list[dict]) -> Path | None:
 
 
 def continued_from(entries: list[dict], own: str) -> str:
-    """The session that wrote the first continuation handoff the transcript shows read whole from
-    its start, by the `session:` of the handoff's frontmatter as the read returned it, so a handoff
-    since removed still names it. A handoff is a file directly under an `agent/handoffs/`; one this
-    session wrote itself, or a fork's, names none. Empty where no read names one."""
+    """The session that wrote the first continuation handoff this session read. Only a read from
+    the file's first line counts, since the frontmatter is what names the session. The id comes from
+    the `session:` of that frontmatter as the read returned it, so a handoff since removed still
+    names it. A handoff is a file directly under an `agent/handoffs/`; one this session wrote itself,
+    or a fork's, names none. Empty where no read names one."""
     for entry in entries:
         read = entry.get("toolUseResult")
         file = read.get("file") if isinstance(read, dict) else None
@@ -837,7 +840,7 @@ def assemble(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
     waiting = open_questions(session)
     timeline = in_order(list(session.turns), list(session.chats))
-    dates = sorted({t.date for t in timeline})
+    dates = sorted({when(t)[:10] for t in timeline})
     span = "" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
     turns = len(timeline)
     top = f"""
@@ -847,8 +850,8 @@ def assemble(session: Session, now: datetime) -> str:
   </section>""" if waiting else ""
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
     shown = list(reversed(timeline))
-    hinted = [unanswered(t) and not (i and unanswered(shown[i - 1])) for i, t in enumerate(shown)]
-    body = "".join(chat_row(t, hint) if isinstance(t, Chat) else turn_section(t, session.settled, t is newest_first[0], hint)
+    hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
+    body = "".join(chat_row(t, hint=hint) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0], hint=hint)
                    for t, hint in zip(shown, hinted))
     title = inline(session.title)
     name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
