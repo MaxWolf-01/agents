@@ -11,7 +11,8 @@ transcribed here rather than imported, so a rule the command reads differently f
 
 Under "properties" at the end sit the executable Properties of
 `agent/tickets/ticket-file-contract.md`, P1 to P4 and P6, and P2 and P3 of
-`agent/tickets/speculative-first.md`; those tickets are their oracle. The corpus
+`agent/tickets/speculative-first.md`; those tickets are their oracle. Under "listed repos" at the
+very end sit P2 and P6 of `agent/tickets/tickets-land-in-listed-repos.md`. The corpus
 beside this file is the board-orients feature converted to the one-ticket model by hand: real ticket
 files, the shapes their writers actually wrote.
 """
@@ -1776,6 +1777,306 @@ def test_a_bullet_a_writer_wrapped_without_indenting_it_is_read_whole(tickets: P
     path = ticket(tickets, "one-flow", "## Comments\n\n- [D1] Assumptions\n  - A1 `mx/x.py:1`: the call and\nwhy it was made.\n")
     read = json.loads(run(repo, "data", str(path)).out)["tickets"][0]
     assert [note["text"] for note in read["assumptions"]] == ["the call and why it was made."]
+
+
+# ---- listed repos ----------------------------------------------------------
+# A project lists the repos its tickets land in beside the code repo and the agent repo, in
+# `agent/repos.toml` (`tickets-land-in-listed-repos`, Decisions). The oracle is the TOML each check
+# writes and git's own answer about the toy repos it builds.
+
+
+def a_repo(at: Path, branch: str = "main") -> Path:
+    """A repo one commit deep at `at`, on `branch`."""
+    at.mkdir(parents=True, exist_ok=True)
+    git(at, "init", "-q", "-b", branch, ".")
+    for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
+        git(at, "config", key, value)
+    return committed(at, "first")
+
+
+def committed(at: Path, what: str) -> Path:
+    """`at` with one more commit, on the branch it has out."""
+    (at / "work.txt").write_text(what + "\n")
+    git(at, "add", "-A")
+    git(at, "commit", "-q", "-m", what)
+    return at
+
+
+def tip(at: Path, ref: str = "HEAD") -> str:
+    return git(at, "rev-parse", ref).strip()
+
+
+@pytest.fixture
+def listed(split: Path) -> Path:
+    """The split project with two listed repos: `Backend` nested in it by a relative path and
+    integrating on `development`, and `quartz` beside it by an absolute one, integrating on what its
+    `origin/HEAD` names. Answers the code repo's root."""
+    backend = a_repo(split / "Backend")
+    git(backend, "branch", "development")
+    quartz = a_repo(split.parent / "quartz")
+    git(quartz, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(quartz, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    (split / "agent" / "repos.toml").write_text(
+        f'[Backend]\npath = "Backend"\nintegration = "development"\n\n[quartz]\npath = "{quartz}"\n')
+    return split
+
+
+def test_the_repo_list_is_printed_one_repo_a_line_with_its_path_and_integration_branch(listed: Path) -> None:
+    said = run(listed, "repos")
+    assert said.code == 0, said.said
+    assert said.out.splitlines() == [
+        f"Backend\t{(listed / 'Backend').resolve()}\tdevelopment",
+        f"quartz\t{(listed.parent / 'quartz').resolve()}\tmain",
+    ], "a relative path is read from the project root, and origin/HEAD fills in the branch the file leaves out"
+    assert run(listed / "agent" / "tickets", "repos").out == said.out, "read from anywhere in the project"
+
+
+def test_a_project_with_no_repo_list_lists_nothing(split: Path) -> None:
+    assert run(split, "repos") == Run(0, "", "")
+
+
+def test_a_listed_repo_at_a_home_relative_path_is_found_there(split: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(split.parent))
+    a_repo(split.parent / "jarvis")
+    (split / "agent" / "repos.toml").write_text('[jarvis]\npath = "~/jarvis"\nintegration = "main"\n')
+    assert run(split, "repos").out == f"jarvis\t{(split.parent / 'jarvis').resolve()}\tmain\n"
+
+
+@pytest.mark.parametrize("written, reason", [
+    ("[Backend\npath = 'Backend'\n", "is not TOML"),
+    ("[Backend]\nintegration = 'development'\n", "`[Backend]` has no `path`"),
+    ("Backend = 'Backend'\n", "`Backend` is no table"),
+    ("[Backend]\npath = 'Backend'\nbranch = 'development'\n", "declares branch"),
+    ("[code]\npath = 'Backend'\n", "`[code]` is what a range calls the project's code repo"),
+    ("[Backend]\npath = 'nowhere'\nintegration = 'main'\n", "is no git repo's root"),
+    ("[Backend]\npath = 'docs'\nintegration = 'main'\n", "is no git repo's root"),
+    ("[Backend]\npath = 'Backend'\nintegration = 'release'\n", "integration release is no branch of"),
+    ("[Backend]\npath = 'Backend'\n", "has no origin/HEAD to read it from"),
+])
+def test_a_repo_list_that_cannot_be_read_whole_is_refused_with_the_reason(split: Path, written: str, reason: str) -> None:
+    """`docs` is a directory of the code repo, which a git command run there would answer for."""
+    a_repo(split / "Backend")
+    (split / "docs").mkdir()
+    (split / "agent" / "repos.toml").write_text(written)
+    said = run(split, "repos")
+    assert said.code == 1 and reason in said.err and said.out == "", said.said
+
+
+def test_a_ticket_names_its_listed_repos_and_every_read_carries_them(listed: Path) -> None:
+    tickets = listed / "agent" / "tickets"
+    ticket(tickets, "one-flow")
+    assert run(listed, "set", "one-flow", "repos+=Backend", "repos+=quartz").code == 0
+    assert run(listed, "get", "one-flow", "repos").out.split() == ["Backend", "quartz"]
+    assert json.loads(run(listed, "data", "one-flow").out)["tickets"][0]["repos"] == ["Backend", "quartz"]
+    said = run(listed, "new", "map-columns", "--priority", "2", "--size", "S", "--repos", "quartz")
+    assert said.code == 0, said.said
+    assert run(listed, "get", "map-columns", "repos").out == "quartz\n"
+
+
+def test_a_repo_a_ticket_names_that_the_list_does_not_hold_is_refused_at_its_line(listed: Path) -> None:
+    tickets = listed / "agent" / "tickets"
+    path = ticket(tickets, "one-flow", repos="[Backend, Helix]")
+    said = run(listed, "check", str(path))
+    assert said.code == 1 and f"{path}:{line_of(path, 'repos:')}: `repos: Helix` names no repo" in said.out, said.said
+    assert "it lists Backend, quartz" in said.out
+    before = path.read_text()
+    assert run(listed, "set", "one-flow", "repos+=Unity").code == 1
+    assert path.read_text() == before
+
+
+def test_with_no_repo_list_every_repo_a_ticket_names_is_refused(split: Path) -> None:
+    path = ticket(split / "agent" / "tickets", "one-flow", repos="[Backend]")
+    said = run(split, "check", str(path))
+    assert said.code == 1 and "the project lists none at" in said.out, said.said
+
+
+def test_a_ticket_naming_a_repo_is_refused_with_the_reason_a_broken_list_cannot_be_read(split: Path) -> None:
+    (split / "agent" / "repos.toml").write_text("[Backend\n")
+    path = ticket(split / "agent" / "tickets", "one-flow", repos="[Backend]")
+    said = run(split, "check", str(path))
+    assert said.code == 1 and "cannot be read" in said.out and "is not TOML" in said.out, said.said
+    assert run(split, "check", str(ticket(split / "agent" / "tickets", "map-columns"))).code == 0, \
+        "a ticket naming no listed repo never reads the list"
+
+
+@given(name=st.from_regex(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,11}\Z"))
+@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+def test_p2_every_range_resolves_to_exactly_one_repo(listed: Path, name: str) -> None:
+    """`tickets-land-in-listed-repos#P2`: a range is accepted exactly where its repo is `code`,
+    `agent` or a name the list holds, and a refusal says a listed name would do."""
+    path = ticket(fresh(listed / "agent" / "tickets"), "one-flow", diff=f"[{name}@4f2a91c..8b3ce07]")
+    said = run(listed, "check", str(path))
+    assert (said.code == 0) is (name in ("code", "agent", "Backend", "quartz")), (name, said.said)
+    if said.code:
+        assert "names no repo" in said.out and "a repo repos.toml lists" in said.out, said.out
+
+
+def test_a_range_that_is_no_range_says_a_listed_name_may_carry_it(split: Path) -> None:
+    path = ticket(split / "agent" / "tickets", "one-flow", diff="[quartz@main]")
+    said = run(split, "check", str(path))
+    assert said.code == 1 and "in a repo repos.toml lists by that name" in said.out and "never as a branch name" in said.out, said.said
+
+
+def in_review(listed: Path, slug: str, **meta: object) -> Path:
+    """A ticket waiting in review, committed in the agent repo, as an accept finds it."""
+    path = ticket(listed / "agent" / "tickets", slug, status="review", **meta)
+    git(listed / "agent", "add", "-A")
+    git(listed / "agent", "commit", "-q", "-m", slug)
+    return path
+
+
+def test_p6_done_waits_for_a_ranges_last_commit_to_reach_its_repos_integration_branch(listed: Path) -> None:
+    """The dotfiles case: the work was built in quartz on a branch since deleted, and the range is
+    recorded by hand. Done is refused until the range's last commit is in quartz's integration
+    branch, and a merge there counts locally or at origin."""
+    quartz = listed.parent / "quartz"
+    first = tip(quartz)
+    git(quartz, "checkout", "-q", "-b", "media")
+    last = tip(committed(quartz, "content media ignored"))
+    git(quartz, "checkout", "-q", "main")
+    in_review(listed, "quartz-ignores-media", diff=f"[quartz@{first}..{last}]")
+
+    said = run(listed, "set", "quartz-ignores-media", "status=done")
+    assert said.code == 1 and f"{last} is not in quartz's integration branch main" in said.err, said.said
+    git(quartz, "update-ref", "refs/remotes/origin/main", last)
+    assert run(listed, "set", "quartz-ignores-media", "status=done").code == 0, "a PR merged at origin counts"
+
+
+def test_p6_a_local_merge_into_the_integration_branch_lands_the_range(listed: Path) -> None:
+    backend = listed / "Backend"
+    first = tip(backend)
+    git(backend, "checkout", "-q", "-b", "nps-tests")
+    last = tip(committed(backend, "nps tests"))
+    git(backend, "checkout", "-q", "main")
+    in_review(listed, "nps-tests", diff=f"[Backend@{first}..{last}]")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests into main", "nps-tests")
+    said = run(listed, "set", "nps-tests", "status=done")
+    assert said.code == 1 and "integration branch development" in said.err, "main is not where Backend integrates"
+    git(backend, "checkout", "-q", "development")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests landed", "nps-tests")
+    assert run(listed, "set", "nps-tests", "status=done").code == 0
+
+
+def test_p6_a_range_whose_commit_the_repo_does_not_hold_is_refused_as_unfetched(listed: Path) -> None:
+    in_review(listed, "nps-tests", diff=f"[Backend@{tip(listed / 'Backend')}..{'a' * 40}]")
+    said = run(listed, "set", "nps-tests", "status=done")
+    assert said.code == 1 and "is no commit of Backend" in said.err and "fetch it" in said.err, said.said
+
+
+@pytest.mark.parametrize("own", ["ticket/nps-tests", "nps-tests"])
+def test_p6_done_waits_for_the_tickets_branch_in_each_of_its_repos(listed: Path, own: str) -> None:
+    """The ticket's own branch in a repo its `repos:` names, `ticket/<slug>`, or a parent ticket's
+    branch named by its slug alone, has to be in that repo's integration branch."""
+    backend = listed / "Backend"
+    in_review(listed, "nps-tests", repos="[Backend, quartz]")
+    if own == "nps-tests":
+        ticket(listed / "agent" / "tickets", "nps-shape", status="done", parent="nps-tests")
+    git(backend, "checkout", "-q", "-b", own, "development")
+    committed(backend, "nps tests")
+    git(backend, "checkout", "-q", "main")
+
+    said = run(listed, "set", "nps-tests", "status=done")
+    assert said.code == 1 and f"{own} is not merged into Backend's integration branch development" in said.err, said.said
+    assert str(backend.resolve()) in said.err
+    git(backend, "checkout", "-q", "development")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-tests landed", own)
+    assert run(listed, "set", "nps-tests", "status=done").code == 0
+
+
+@pytest.mark.parametrize("hinge", [True, False])
+def test_p6_a_hinge_in_a_listed_repo_is_done_once_merged_into_its_parents_branch_there(listed: Path, hinge: bool) -> None:
+    """A listed repo is measured as the code repo is: a hinge, ruled alone, is done once its work is
+    in its parent ticket's branch there; any other child of a top-level ticket waits for the parent's
+    accept to bring it to the integration branch. The range is what refuses here; the ticket branch
+    alone is the check after this one."""
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    first, last = tip(backend), tip(committed(backend, "nps shape"))
+    git(backend, "checkout", "-q", "nps")
+    ticket(listed / "agent" / "tickets", "nps", status="claimed")
+    in_review(listed, "nps-shape", parent="nps", hinge="true" if hinge else None, repos="[Backend]",
+              diff=f"[Backend@{first}..{last}]")
+
+    said = run(listed, "set", "nps-shape", "status=done")
+    onto = "nps in Backend" if hinge else "Backend's integration branch development"
+    assert said.code == 1 and f"is not in {onto}" in said.err, said.said
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    said = run(listed, "set", "nps-shape", "status=done")
+    assert (said.code == 0) is hinge, said.said
+    if not hinge:
+        assert "is not in Backend's integration branch development" in said.err, said.said
+        git(backend, "checkout", "-q", "development")
+        git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
+        assert run(listed, "set", "nps-shape", "status=done").code == 0
+
+
+def test_p6_a_hinges_ticket_branch_alone_is_measured_against_its_parents_branch(listed: Path) -> None:
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    committed(backend, "nps shape")
+    git(backend, "checkout", "-q", "nps")
+    ticket(listed / "agent" / "tickets", "nps", status="claimed")
+    in_review(listed, "nps-shape", parent="nps", hinge="true", repos="[Backend]")
+    said = run(listed, "set", "nps-shape", "status=done")
+    assert said.code == 1 and "ticket/nps-shape is not merged into nps in Backend" in said.err, said.said
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    assert run(listed, "set", "nps-shape", "status=done").code == 0
+
+
+def test_p6_a_parent_waits_for_its_branch_in_a_repo_only_its_children_name(listed: Path) -> None:
+    """A hinge done on its parent's branch in Backend leaves that work short of Backend's integration
+    branch, and the parent naming no repo of its own is what carries it there."""
+    backend = listed / "Backend"
+    git(backend, "branch", "nps", "development")
+    git(backend, "checkout", "-q", "-b", "ticket/nps-shape", "nps")
+    committed(backend, "nps shape")
+    git(backend, "checkout", "-q", "nps")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps-shape into nps", "ticket/nps-shape")
+    in_review(listed, "nps")
+    ticket(listed / "agent" / "tickets", "nps-shape", status="done", parent="nps", hinge="true", repos="[Backend]")
+    said = run(listed, "set", "nps", "status=done")
+    assert said.code == 1 and "nps is not merged into Backend's integration branch development" in said.err, said.said
+    git(backend, "checkout", "-q", "development")
+    git(backend, "merge", "-q", "--no-ff", "-m", "nps landed", "nps")
+    assert run(listed, "set", "nps", "status=done").code == 0
+
+
+def test_a_ticket_branch_in_a_repo_the_ticket_does_not_name_is_not_read(listed: Path) -> None:
+    """P5's other half, read by the done check: a ticket's repos are the ones it names."""
+    quartz = listed.parent / "quartz"
+    git(quartz, "branch", "ticket/nps-tests")
+    git(quartz, "checkout", "-q", "ticket/nps-tests")
+    committed(quartz, "unrelated")
+    git(quartz, "checkout", "-q", "main")
+    in_review(listed, "nps-tests", repos="[Backend]")
+    assert run(listed, "set", "nps-tests", "status=done").code == 0
+
+
+@pytest.mark.parametrize("repos", [None, "[Backend]"])
+def test_a_ticket_with_no_code_reaches_done_from_review_on_the_ruling(listed: Path, repos: str | None) -> None:
+    """No range and no ticket branch in any of its repos: a decision, or a design built as its
+    children, is done on the user's ruling with no `needs-user` to say so."""
+    in_review(listed, "pick-a-format", repos=repos)
+    said = run(listed, "set", "pick-a-format", "status=done")
+    assert said.code == 0, said.said
+
+
+def test_a_listed_range_answers_for_its_own_repo_and_not_for_a_range_in_the_code_repo(listed: Path) -> None:
+    """A range recorded in the code repo with no branch there to read is refused as before, however
+    far the ticket's work in a listed repo has landed."""
+    quartz = listed.parent / "quartz"
+    in_review(listed, "nps-tests", diff=f"[code@{'a' * 7}..{'b' * 7}, quartz@{tip(quartz)}..{tip(quartz)}]")
+    said = run(listed, "set", "nps-tests", "status=done")
+    assert said.code == 1 and "no branch ticket/nps-tests in" in said.err, said.said
+
+
+def test_a_ticket_with_no_code_still_waits_for_its_children(listed: Path) -> None:
+    in_review(listed, "one-flow")
+    ticket(listed / "agent" / "tickets", "map-columns", status="review", parent="one-flow")
+    said = run(listed, "set", "one-flow", "status=done")
+    assert said.code == 1 and "map-columns not done" in said.err, said.said
 
 
 if __name__ == "__main__":
