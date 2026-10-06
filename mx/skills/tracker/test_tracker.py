@@ -1779,10 +1779,6 @@ def test_a_bullet_a_writer_wrapped_without_indenting_it_is_read_whole(tickets: P
     assert [note["text"] for note in read["assumptions"]] == ["the call and why it was made."]
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 # ---- listed repos ----------------------------------------------------------
 # A project lists the repos its tickets land in beside the code repo and the agent repo, in
 # `agent/repos.toml` (`tickets-land-in-listed-repos`, Decisions). The oracle is the TOML each check
@@ -2007,8 +2003,21 @@ def test_a_ticket_with_no_code_reaches_done_from_review_on_the_ruling(listed: Pa
     assert said.code == 0, said.said
 
 
+def test_a_listed_range_answers_for_its_own_repo_and_not_for_a_range_in_the_code_repo(listed: Path) -> None:
+    """A range recorded in the code repo with no branch there to read is refused as before, however
+    far the ticket's work in a listed repo has landed."""
+    quartz = listed.parent / "quartz"
+    in_review(listed, "nps-tests", diff=f"[code@{'a' * 7}..{'b' * 7}, quartz@{tip(quartz)}..{tip(quartz)}]")
+    said = run(listed, "set", "nps-tests", "status=done")
+    assert said.code == 1 and "no branch ticket/nps-tests in" in said.err, said.said
+
+
 def test_a_ticket_with_no_code_still_waits_for_its_children(listed: Path) -> None:
     in_review(listed, "one-flow")
     ticket(listed / "agent" / "tickets", "map-columns", status="review", parent="one-flow")
     said = run(listed, "set", "one-flow", "status=done")
     assert said.code == 1 and "map-columns not done" in said.err, said.said
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

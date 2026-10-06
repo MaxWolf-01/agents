@@ -485,11 +485,13 @@ def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     if why := unlanded_listed(ticket, tracker):
         return why
     branches = [(top, branch_of(top, ticket, tracker)) for top in repos_of(tracker)]
+    coded = bool(ticket.meta.get("diff"))
+    # work in a listed repo answers for that repo alone, never for a range in the code or agent repo
+    built_here = coded and len(listed_ranges(ticket)) < len(ticket.meta["diff"])
     built_listed = bool(listed_branches(ticket, tracker) or listed_ranges(ticket))
-    if all(branch is None for _, branch in branches) and not built_listed:
+    if all(branch is None for _, branch in branches) and (built_here or not built_listed):
         children = tracker.children(ticket.slug)
         pending = [child.slug for child in children if child.status != "done"]
-        coded = bool(ticket.meta.get("diff"))
         if ticket.needs_user or (not pending and (children or not coded)):
             return None
         nowhere = f"no branch ticket/{ticket.slug} in {' or '.join(str(top) for top, _ in branches)}"
@@ -649,6 +651,8 @@ def repo_list(root: Path) -> dict[str, dict]:
 
 @functools.cache
 def tables(path: Path, text: str) -> dict[str, dict]:
+    """The repo list's text read and held to its keys, once per text: a read of the whole tracker
+    checks every ticket against it."""
     try:
         parsed = tomllib.loads(text)
     except tomllib.TOMLDecodeError as broken:
@@ -1205,7 +1209,7 @@ def repo_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
     except Refused as unread:
         return [Refusal(ticket.path, at(ticket, named[0][0]), f"{file} cannot be read, so no repo a ticket names resolves: {unread}")]
     lists = f"it lists {', '.join(listing)}" if listing else f"the project lists none at {file}"
-    return [Refusal(ticket.path, at(ticket, key), f"`{written}` names no repo; {'a range lands in `code`, `agent` or' if key == 'diff' else 'a ticket names'} a repo {REPO_LIST} lists, one per repo, and {lists}")
+    return [Refusal(ticket.path, at(ticket, key), f"`{written}` names no repo; {'a range lands in `code`, `agent` or a repo ' + REPO_LIST + ' lists, one per repo' if key == 'diff' else 'a ticket names a repo ' + REPO_LIST + ' lists'}, and {lists}")
             for key, written, name in named if name not in listing]
 
 
