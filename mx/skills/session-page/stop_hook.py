@@ -28,7 +28,7 @@ whose turn wrote a record shows the user one line of the hook's own under it, as
 the questions waiting on them and a link to the hub's tab at the session's unit, or to the page's
 file where no hub answers.
 
-A render whose session has read a continuation handoff another session wrote, and has no
+A render whose session has picked up a continuation handoff another session wrote, and has no
 `previous` yet, writes that session's id there and renders that session's page again, from its own
 transcript beside this one, so the page before links forward to this one.
 
