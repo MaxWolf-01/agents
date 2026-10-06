@@ -4,7 +4,7 @@
 # ///
 """What the turn review reads its rules and the record's shape from. Run: uv run test_turn_review.py
 
-The seam is `turn_review`'s readers of the catalogue and the show skill, whose output the reviewer's
+The seam is `turn_review`'s readers of the catalogue and the session page's rules (RULES.md), whose output the reviewer's
 system prompt is built from. The oracles are the catalogue's own published selection command and
 the renderer's reader of a turn record.
 """
@@ -59,11 +59,11 @@ def test_selected_rule_blocks_come_whole() -> None:
     assert turn_review.chat_rules(CATALOGUE_FIXTURE) == SELECTED
 
 
-SKILL_FIXTURE = """## The session page
+RULES_FIXTURE = """# The session page
 
 Prose before the shape.
 
-### The turn record
+## The turn record
 
 The shape's prose.
 
@@ -81,24 +81,24 @@ The example's own section.
 
 - A rule about the record.
 
-## Who builds it
+## Another section
 
 After the shape.
 """
 
 
 def test_the_shape_runs_to_the_next_heading_past_the_example_records_own() -> None:
-    shape = turn_review.record_shape(SKILL_FIXTURE)
+    shape = turn_review.record_shape(RULES_FIXTURE)
     assert shape.startswith("The shape's prose.") and shape.endswith("- A rule about the record.")
     assert "# A headline inside the example" in shape and "## Details" in shape
     assert "Prose before" not in shape and "After the shape" not in shape
 
 
-def test_the_turn_record_the_show_skill_gives_the_agent_parses(tmp_path: Path) -> None:
+def test_the_turn_record_the_rules_give_the_agent_parses(tmp_path: Path) -> None:
     """The oracle is the renderer's own reader: the example record the agent is shown is a record
-    it accepts, and it uses every part a record can hold, so the skill and the parser cannot drift
+    it accepts, and it uses every part a record can hold, so the rules and the parser cannot drift
     apart unnoticed."""
-    shape = turn_review.record_shape(turn_review.SHOW.read_text())
+    shape = turn_review.record_shape(turn_review.RULES.read_text())
     example = re.search(r"```markdown\n(.*?)```", shape, re.S).group(1)
     record = tmp_path / "07.md"
     record.write_text(example)

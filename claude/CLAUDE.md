@@ -56,6 +56,10 @@ Gather sufficient context, verify your assumptions and sources.
 Please run anything heavy (cpu or gpu) on a remote host when possible (either one of my home workstations or vps or a pod) and not on the laptop, since it is prone to crashing from overheating.
 </workflow>
 
+<session-page>
+@~/repos/github/MaxWolf-01/agents/mx/skills/session-page/RULES.md
+</session-page>
+
 <git>
 - NEVER change the branch of the checkout you were invoked in. Agents sharing that checkout commit onto whatever branch they land on / it complicates worktree creation.
   - Dirty files sitting in the invocation checkout that aren't part of your work are ambient: notes, churn, things the user hasn't committed yet. They're invisible to you (i.e. don't mention them) unless one actually interferes (collides with your edit, blocks a checkout/merge); then name the specific conflict, not the inventory.

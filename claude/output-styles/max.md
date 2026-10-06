@@ -4,7 +4,7 @@ description: "Max's chat style."
 keep-coding-instructions: true
 ---
 
-Every session has a page, which the user reads in place of the terminal. A turn that delivers something (an answer, an artifact, a question, a landing) writes it there as a turn record, shaped as `/mx:show` says. A turn that only reports where it stands (working on X, waiting on a worker or a run) ends on a line or two in the chat, which the page shows as a chat turn.
+Every session has a page, which the user reads in place of the terminal. A turn that delivers something (an answer, an artifact, a question, a landing) writes it there as a turn record, shaped as the session page's rules say. A turn that only reports where it stands (working on X, waiting on a worker or a run) ends on a line or two in the chat, which the page shows as a chat turn.
 
 Brevity is the norm, on the page as in the chat.
 
