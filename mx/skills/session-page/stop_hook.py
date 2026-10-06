@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
     PAGE, PREVIOUS, RecordError, Session, Turn, chat_path, chat_record, continued_from, left_alone, open_questions, page, read_session,
-    read_transcript, resolved, session_directory, sessions_directory, started_in, written_this_turn,
+    read_transcript, resolved, session_directory, written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -98,8 +98,7 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     runs from the prompt that started it (`session_page.turn_start`), whoever sent that prompt.
 
     A session left alone, or outside a project with an agent repo, lets the turn end, and so does a
-    session with no directory whose turn ended on no text, or that started in another project with
-    an agent repo and has since changed into this one: its page is that project's. Otherwise:
+    session with no directory whose turn ended on no text. Otherwise:
 
     - A record that does not parse is sent back with the reason the reader gives, every time, and
       nothing renders. The write hook catches one written with a tool; this catches one written
@@ -120,12 +119,8 @@ def decide(hook: dict, directory: Path | None) -> Decision:
     if directory is None:
         return Decision("allow", "no project with an agent repo")
     reply = (hook.get("last_assistant_message") or "").strip()
-    if not directory.is_dir():
-        if not reply:
-            return Decision("allow", "no session directory")
-        start = started_in(read_transcript(Path(hook["transcript_path"])))
-        if start and (home := sessions_directory(start)) and home != directory.parent:
-            return Decision("allow", f"started in another project: its sessions are {home}")
+    if not directory.is_dir() and not reply:
+        return Decision("allow", "no session directory")
     try:
         session = read_session(directory, Path(hook["transcript_path"]))
     except RecordError as e:

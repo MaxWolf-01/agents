@@ -8,7 +8,8 @@ The seam is the hook at its input: the hook's JSON and the session directory in,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
 and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs'
-Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
+Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time.
+The prose reviewer, which the hook never calls, is stubbed by conftest.py.
 The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
 for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
 """
@@ -216,20 +217,6 @@ def test_a_first_turn_that_ends_on_no_text_creates_nothing(
     directory, said = first_turn
     run(payload(directory, said, reply=reply))
     assert not directory.parent.exists()
-    assert capsys.readouterr().out == ""
-
-
-def test_a_session_that_started_in_another_project_starts_no_page_in_this_one(
-    first_turn: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-) -> None:
-    """A session started in a project with an agent repo and since changed into this one has its
-    page in the project it started in, so its reply here creates nothing."""
-    directory, said = first_turn
-    home = tmp_path / "home"
-    (home / "agent" / "tickets").mkdir(parents=True)
-    said.write_text(json.dumps(FIRST_PROMPT | {"cwd": str(home)}) + "\n")
-    run(payload(directory, said, reply="On it."))
-    assert not directory.parent.exists() and not (home / SESSIONS).exists()
     assert capsys.readouterr().out == ""
 
 
