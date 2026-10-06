@@ -212,21 +212,18 @@ def test_a_record_whose_write_did_not_parse_is_reviewed_once_the_edit_that_fixes
     assert [e["decision"] for e in logged(attended, "decision")] == ["feedback"]
 
 
-def test_the_record_an_answer_in_the_chat_is_moved_into_is_reviewed_on_its_write(
+def test_a_record_reviewed_on_its_write_renders_as_reviewed_when_the_turn_ends(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], str],
     monkeypatch: pytest.MonkeyPatch, attended: Path,
 ) -> None:
-    """The Stop hook sends a long answer back to the page; the record the agent then writes in the
-    continued turn is reviewed on its write, and the next stop renders it as reviewed."""
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, reply=LONG))))
-    stop_hook.main()
-    assert "05.md" in json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    """The record a turn writes is reviewed on its write, and the stop that follows renders it as
+    reviewed."""
     record = worked_example / "turns" / "05.md"
     record.write_text(PIVOTAL_05)
     monkeypatch.setattr(turn_review, "review", reviewer(finding("a pivotal addition")))
     assert str(record) in run(wrote(record, unrecorded))
     with_write(unrecorded, "Write", record)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, stop_hook_active=True))))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(stopped(worked_example, unrecorded, reply=LONG))))
     stop_hook.main()
     assert "systemMessage" in json.loads(capsys.readouterr().out)
     assert logged(attended, "verb")[-1]["why"] == "record reviewed this turn"
