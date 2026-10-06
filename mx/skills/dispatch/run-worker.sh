@@ -55,7 +55,7 @@ rules=$plugin/skills/session-page/RULES.md
 asking_rule=$(awk '/^## What the user decides$/ { on = 1; print; next } on && /^#{1,2} / { exit } on' "$rules" 2> /dev/null)
 if [ -z "$asking_rule" ]; then
     printf 'attempts=0 exit=1 report=no session=- error=%s\n' \
-        "no '## What the user decides' section in $rules" | tee "$here/$run_id.status" >&2
+        "no '## What the user decides' section in $rules; is this host's mx older than the dispatcher's?" | tee "$here/$run_id.status" >&2
     exit 1
 fi
 # Kept from the worker, so a `dispatch-ctl` it runs lists the host's mx for itself.

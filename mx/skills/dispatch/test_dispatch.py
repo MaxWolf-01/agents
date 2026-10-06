@@ -859,15 +859,15 @@ def test_a_worker_is_told_the_asking_rule_from_its_one_home(tmp_path: Path) -> N
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
     rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
-    section = rules[rules.index("## What the user decides"):].strip()
-    rule = section.splitlines()[-1]
+    section = re.split(r"\n#{1,2} ", rules[rules.index("## What the user decides"):])[0].strip()
+    prompt = (SKILL / "worker-prompt.md").read_text()
 
     subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
                    cwd=tmp_path, capture_output=True, text=True, timeout=60,
                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
 
     assert section in (bin_dir / "claude.calls").read_text()
-    assert rule not in (SKILL / "worker-prompt.md").read_text()
+    assert not [clause for clause in re.split(r"[.:;]", section.splitlines()[-1]) if len(clause) > 20 and clause.strip() in prompt]
 
 
 def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path: Path) -> None:
@@ -892,6 +892,7 @@ def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path:
     assert done.returncode == 1
     assert (state / "run-1.status").read_text().startswith(
         "attempts=0 exit=1 report=no session=- error=no '## What the user decides' section in")
+    assert "older than" in (state / "run-1.status").read_text()
     assert not (bin_dir / "claude.calls").exists(), "claude ran"
 
 
