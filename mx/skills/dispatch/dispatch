@@ -711,9 +711,8 @@ review() {
 
     out=$diffviews/$id
     if [ ${#specs[@]} -eq 0 ]; then
-        # A page an older dispatch rendered over the agent range would stay linked from the board.
-        # diffview's state file beside it keeps the user's comments, so it stays.
-        rm -f "$out.html" "$out.notes.json"
+        # A page already at $out.html stays: nothing marks it as one this command rendered, and the
+        # board's link makes the path the one a session picks for a page it renders by hand.
         echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
     else
         mkdir -p "$(dirname "$out")"
