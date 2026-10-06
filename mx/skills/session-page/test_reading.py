@@ -111,6 +111,9 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     page = render_session(worked_example, unwritten, now=NOW)
     shown, section = messages_of(page), sections_of(page)["03"]
     assert shown["03"] == [] and "no Write call for this turn's record" in section
+    dates = {key: re.search(r'class="v-meta date">(.*?)<', text).group(1) for key, text in sections_of(page).items()}
+    assert dates["03"] == "2026-09-23"  # session-page-turns-decluttered: the record's date alone
+    assert all(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", d) for key, d in dates.items() if key != "03")
     assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
     assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
 
@@ -362,6 +365,27 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     assert '<div class="prose brief"></div>' in page
     assert f'data-cmd="cd &#x27;/srv/help line&#x27; &amp;&amp; claude --resume {FRESH}"' in page
     assert "1 turn · 2026-10-05 · " in html_text(page)
+
+
+def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newest(tmp_path: Path) -> None:
+    """session-page-turns-decluttered: the first chat turn answers the prompt, the two after it have
+    no message before them and form a run, whose newest alone carries the hint; each row shows its
+    time to the minute."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    (directory / "turns").mkdir(parents=True)
+    times = [datetime(2026, 10, 5, 9, m, tzinfo=UTC) for m in (1, 5)] + [datetime(2026, 10, 5, 23, 59, tzinfo=UTC)]
+    for at in times:
+        chat_path(directory / "turns", at).write_text(chat_record("Still building.", at))
+    said = tmp_path / "t.jsonl"
+    said.write_text(json.dumps(STARTED) + "\n")
+    page = render_session(directory, said, now=NOW)
+    rows = re.findall(r'<article class="turn chat[^"]*" id="([^"]+)".*?</article>', page, re.S)
+    bodies = re.findall(r'<article class="turn chat.*?</article>', page, re.S)
+    assert rows == [chat_path(directory / "turns", at).stem for at in reversed(times)]
+    assert ["no message of yours" in b for b in bodies] == [True, False, False]
+    assert [re.search(r'class="v-meta date">(.*?)<', b).group(1) for b in bodies] == [
+        f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
+    assert '<h2 class="v-meta" id="turns">turns</h2>' in page
 
 
 def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_example: Path, transcript: Path) -> None:
