@@ -323,5 +323,57 @@ def test_a_chat_turns_record_that_does_not_read_is_refused_at_its_line(
     assert str(refused.value).startswith(f"{record}:{line}: ")
 
 
+# ---- a page with no session.md ----------------------------------------------
+
+FRESH = "8e0f1c22-0000-0000-0000-000000000000"
+STARTED = {"type": "user", "message": {"role": "user", "content": "Carry on from the handoff."},
+           "timestamp": "2026-10-05T09:00:00.000Z", "cwd": "/srv/help line", "sessionId": FRESH}
+AI_TITLE = {"type": "ai-title", "aiTitle": "Helferline <handoff> continued", "sessionId": FRESH}
+RENAMED = {"type": "custom-title", "customTitle": "helferline: lost page", "sessionId": FRESH}
+# Each is what the transcript holds besides the first prompt, and the title the page shows: a
+# `/rename` over Claude Code's own title, whichever came later, the last of each kind, and the
+# session id's first eight where it has neither.
+TITLES = {
+    "Claude Code's own title": ([AI_TITLE], "Helferline <handoff> continued"),
+    "a rename before a newer title of its own": ([RENAMED, AI_TITLE | {"aiTitle": "Something newer"}], "helferline: lost page"),
+    "the last of two renames": ([RENAMED, RENAMED | {"customTitle": "helferline: found"}], "helferline: found"),
+    "no title yet": ([], "session 8e0f1c22"),
+}
+
+
+@pytest.mark.parametrize("entries, title", TITLES.values(), ids=TITLES)
+def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_claude_codes_title(
+    entries: list[dict], title: str, tmp_path: Path,
+) -> None:
+    """every-session-gets-a-page#P5: no session.md and no numbered record, one chat turn, and the
+    page renders it, titled as the hub's rail titles the session, with no brief, and a resume
+    command that changes to the directory the session started in."""
+    directory = tmp_path / "agent" / "sessions" / FRESH
+    at = datetime(2026, 10, 5, 9, 1, tzinfo=UTC)
+    chat = chat_path(directory / "turns", at)
+    chat.parent.mkdir(parents=True)
+    chat.write_text(chat_record("On it: reading the handoff.", at))
+    said = tmp_path / "t.jsonl"
+    said.write_text("".join(json.dumps(e) + "\n" for e in [STARTED, *entries]))
+    page = render_session(directory, said, now=NOW)
+    assert html.unescape(re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)) == title
+    assert html.unescape(re.search(r"<title>(.*?) · session page</title>", page).group(1)) == title
+    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == [chat.stem]
+    assert '<div class="prose brief"></div>' in page
+    assert f'data-cmd="cd &#x27;/srv/help line&#x27; &amp;&amp; claude --resume {FRESH}"' in page
+    assert "1 turn · 2026-10-05 · " in html_text(page)
+
+
+def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_example: Path, transcript: Path) -> None:
+    """every-session-gets-a-page#P5's other half: session.md written and the turn ended on no text,
+    so neither a numbered record nor a chat turn exists, and the page still renders."""
+    for record in (worked_example / "turns").iterdir():
+        record.unlink()
+    page = render_session(worked_example, transcript, now=NOW)
+    assert "Leading words for showing" in re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)
+    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == []
+    assert " 0 turns · rendered " in html_text(page)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
