@@ -317,8 +317,8 @@ def test_a_session_record_that_does_not_parse_is_answered_on_its_edit(
 def test_the_first_paged_turns_session_record_is_parsed_before_any_turn_record_exists(
     broken: bool, worked_example: Path, writing: Path, run: Callable[[dict], str],
 ) -> None:
-    """The show skill has the first paged turn write session.md before its turn record, so a
-    session with no turn record yet is one still being written: only session.md is answered for."""
+    """every-session-gets-a-page#P5: the reader takes a directory with no numbered record, so a
+    session.md written before any turn record is parsed and answered for like any other record."""
     for record in (worked_example / "turns").iterdir():
         record.unlink()
     session = worked_example / "session.md"
