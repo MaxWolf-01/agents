@@ -27,6 +27,10 @@ whose turn wrote a record shows the user one line of the hook's own under it, as
 the questions waiting on them and a link to the hub's tab at the session's unit, or to the page's
 file where no hub answers.
 
+A render whose session has read a continuation handoff another session wrote, and has no
+`previous` yet, writes that session's id there and renders that session's page again, from its own
+transcript beside this one, so the page before links forward to this one.
+
 Every decision is one JSON line in `turn_review.LOG`, beside the review's own: the verb, why the
 hook took that path, and the session directory it resolved.
 """
@@ -47,8 +51,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import turn_review  # noqa: E402
 from session_page import (  # noqa: E402
-    PAGE, RecordError, Session, Turn, chat_path, chat_record, left_alone, open_questions, page, read_session, resolved, session_directory,
-    written_this_turn,
+    PAGE, PREVIOUS, RecordError, Session, Turn, chat_path, chat_record, continued_from, left_alone, open_questions, page, read_session,
+    read_transcript, resolved, session_directory, written_this_turn,
 )
 
 Verb = Literal["render", "send back", "allow"]
@@ -224,6 +228,21 @@ def exclude_sessions(sessions: Path) -> str:
     return f"added {line} to {exclude}"
 
 
+def render_previous(directory: Path, transcript: Path) -> str:
+    """Render the page of the session whose directory is `directory` again, from its transcript in
+    the same projects directory as `transcript`, and say what came of that."""
+    if not directory.is_dir():
+        return "no session directory"
+    theirs = transcript.parent / f"{directory.name}.jsonl"
+    if not theirs.exists():
+        return f"no transcript at {theirs}: its page links forward from its next render"
+    try:
+        (directory / PAGE).write_text(page(read_session(directory, theirs), datetime.now()))
+    except RecordError as e:
+        return f"not rendered: {e}"
+    return "rendered"
+
+
 def main() -> None:
     hook = json.load(sys.stdin)
     session_id = hook["session_id"]
@@ -235,6 +254,9 @@ def main() -> None:
         if decision.chat:
             decision.chat[0].parent.mkdir(parents=True, exist_ok=True)
             decision.chat[0].write_text(decision.chat[1])
+        if not (directory / PREVIOUS).exists() and (before := continued_from(read_transcript(Path(hook["transcript_path"])), session_id)):
+            (directory / PREVIOUS).write_text(before + "\n")
+            turn_review.log(session_id, previous=before, rendered=render_previous(directory.parent / before, Path(hook["transcript_path"])))
         (directory / PAGE).write_text(page(read_session(directory, Path(hook["transcript_path"])), datetime.now()))
         unit = hub_unit(session_id)
         opened = open_in_browser(str(directory / PAGE), session_id) if unit or first else "not reopened: no hub answers"

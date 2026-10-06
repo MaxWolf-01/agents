@@ -7,9 +7,11 @@
 
 The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
 recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in
-the shape the show skill gives them (../show/SKILL.md, The session page). Any of them may be
+the shape the show skill gives them (../show/SKILL.md, The session page), and `previous`, which the
+Stop hook writes where the session picked up another's continuation handoff. Any of them may be
 missing: a session's first turns are often chat turns alone, and `session.md` comes with the first
-record. The page shows the title, brief and resume command, the questions no later turn answered or superseded, then the turns
+record. The page shows the title, links to the pages of the sessions before and after it across a
+handoff, the brief and resume command, the questions no later turn answered or superseded, then the turns
 newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
 Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
 no artefact there.
@@ -38,6 +40,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
+# In a session's directory, the id of the session whose continuation handoff it picked up, which the
+# Stop hook writes once. The link forward from that session's page is read from it, not written.
+PREVIOUS = "previous"
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
@@ -141,7 +146,25 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
         root=root,
+        previous=previous if (previous := predecessor(directory)) and (directory.parent / previous / PAGE).exists() else "",
+        following=successors(directory),
     )
+
+
+def predecessor(directory: Path) -> str:
+    """The session `directory`'s `previous` names; empty where it names none."""
+    try:
+        return (directory / PREVIOUS).read_text().strip()
+    except OSError:
+        return ""
+
+
+def successors(directory: Path) -> tuple[str, ...]:
+    """The sessions beside `directory` whose `previous` names it, by id: one handoff split into
+    several has several. Only the render that writes their own page writes `previous`."""
+    return tuple(sorted(
+        d.name for d in directory.parent.iterdir() if d != directory and d.is_dir() and predecessor(d) == directory.name
+    )) if directory.parent.is_dir() else ()
 
 
 def registered_name(session: str) -> str:
@@ -307,6 +330,8 @@ class Session:
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
     described: datetime | None = None  # when the transcript last shows session.md written
+    previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
+    following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
 
 
 # ---- reading the records ----------------------------------------------------
@@ -628,6 +653,29 @@ def started_in(entries: list[dict]) -> Path | None:
     return next((Path(e["cwd"]) for e in entries if isinstance(e.get("cwd"), str) and e["cwd"]), None)
 
 
+def continued_from(entries: list[dict], own: str) -> str:
+    """The session that wrote the first continuation handoff the transcript shows read whole from
+    its start, by the `session:` of the handoff's frontmatter as the read returned it, so a handoff
+    since removed still names it. A handoff is a file directly under an `agent/handoffs/`; one this
+    session wrote itself, or a fork's, names none. Empty where no read names one."""
+    for entry in entries:
+        read = entry.get("toolUseResult")
+        file = read.get("file") if isinstance(read, dict) else None
+        if not isinstance(file, dict) or not isinstance(file.get("filePath"), str) or not isinstance(file.get("content"), str):
+            continue
+        if Path(file["filePath"]).parent.parts[-2:] != ("agent", "handoffs") or file.get("startLine", 1) != 1:
+            continue
+        m = re.match(r"---\n(.*?)\n---(?:\n|$)", file["content"], re.S)
+        try:
+            front = yaml.load(m.group(1), Loader=yaml.BaseLoader) if m else None
+        except yaml.YAMLError:
+            continue
+        if isinstance(front, dict) and front.get("purpose") == "continuation" and isinstance(front.get("session"), str) \
+                and re.fullmatch(r"[\w-]+", front["session"]) and front["session"] != own:
+            return front["session"]
+    return ""
+
+
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
     """What the user said, with when, oldest first: their own prompts and the ones they queued
     mid-turn, and none of what Claude Code writes as the user (images, task notifications, other
@@ -828,6 +876,7 @@ def assemble(session: Session, now: datetime) -> str:
   <section class="intro">
     <h1 class="v-title">{title}</h1>
     <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(span)} · " if span else ""}rendered {now:%Y-%m-%d %H:%M}</p>
+{handoffs(session)}
     <div class="prose brief">{block(session.brief)}</div>
     <div class="actions">
       <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
@@ -844,6 +893,17 @@ def assemble(session: Session, now: datetime) -> str:
 </body>
 </html>
 """
+
+
+def handoffs(session: Session) -> str:
+    """The links to the page of the session this one continued from and to each that continued
+    from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
+    sessions directory. Nothing where neither is there."""
+    def to(other: str) -> str:
+        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{esc(other[:8])}</a>'
+    parts = ([f"continues {to(session.previous)}"] if session.previous else []) + (
+        [f"continued in {', '.join(to(s) for s in session.following)}"] if session.following else [])
+    return f'\n    <p class="v-meta handoffs" id="handoffs">{" · ".join(parts)}</p>' if parts else ""
 
 
 def column(newest_first: list[Turn]) -> str:

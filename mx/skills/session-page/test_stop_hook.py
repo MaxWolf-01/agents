@@ -7,7 +7,7 @@
 The seam is the hook at its input: the hook's JSON and the session directory in, its decision out,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
-and turns-end-on-their-recap's P3 and every-session-gets-a-page's Properties, over the worked example in `fixtures/`, whose records a check
+and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs' Properties, over the worked example in `fixtures/`, whose records a check
 corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
 The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
 for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
@@ -1117,6 +1117,105 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     run(payload(worked_example, transcript))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
+
+
+# ---- pages across handoffs ----------------------------------------------------
+
+BEFORE = "46944b2a-c996-4889-b308-48c1d884a675"  # the session that wrote the handoff
+
+
+def handoff_read(path: str, front: str, start: int = 1) -> dict:
+    """The transcript entry Claude Code writes for a Read of `path`, the file returned as read; a
+    handoff's frontmatter is `front`."""
+    content = f"---\n{front}\n---\n\n# Carry the ledger work on\n"
+    return {"type": "user", "timestamp": "2026-10-05T09:00:05.000Z",
+            "message": {"role": "user", "content": [{"tool_use_id": "toolu_1", "type": "tool_result", "content": content}]},
+            "toolUseResult": {"type": "text", "file": {"filePath": path, "content": content, "startLine": start}}}
+
+
+@pytest.fixture
+def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture) -> Callable[..., Path]:
+    """The session `BEFORE`, which has a page and its transcript beside the fresh session's, and a
+    way to have the fresh session's first turn read a handoff, as a frontmatter, and end on a reply.
+    Hands back the directory of `BEFORE`."""
+    directory, said = first_turn
+    before = directory.parent / BEFORE
+    theirs = said.parent / f"{BEFORE}.jsonl"
+    theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": BEFORE}) + "\n")
+    run(payload(before, theirs, reply="Writing the handoff."))
+    capsys.readouterr()
+
+    def read(front: str, path: str = "/srv/helferline/agent/handoffs/2026-10-05-ledger.md", **entry: object) -> Path:
+        with said.open("a") as f:
+            f.write(json.dumps(handoff_read(path, front, **entry)) + "\n")
+        run(payload(directory, said, reply="On it."))
+        capsys.readouterr()
+        return before
+
+    return read
+
+
+def links_to(page: Path) -> list[str]:
+    return re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())
+
+
+def test_a_session_that_read_a_continuation_handoff_links_to_the_page_before_and_back(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """pages-link-across-handoffs#P1: `previous` names the session that wrote the handoff, its page
+    links to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
+    directory, _ = first_turn
+    before = handed_over(f"session: {BEFORE}\npurpose: continuation")
+    assert (directory / "previous").read_text().strip() == BEFORE
+    assert links_to(directory / PAGE) == [BEFORE]
+    assert links_to(before / PAGE) == [FRESH]
+    assert (directory / PAGE).parent.joinpath(f"../{BEFORE}/{PAGE}").resolve() == (before / PAGE).resolve()
+
+
+NO_LINK = {
+    "a fork's handoff": (f"session: {BEFORE}\npurpose: fork", {}),
+    "a handoff the session wrote itself": (f"session: {FRESH}\npurpose: continuation", {}),
+    "a file outside agent/handoffs": (f"session: {BEFORE}\npurpose: continuation", {"path": "/srv/helferline/agent/tickets/ledger.md"}),
+    "a read that starts past the frontmatter": (f"session: {BEFORE}\npurpose: continuation", {"start": 40}),
+}
+
+
+@pytest.mark.parametrize("front, entry", NO_LINK.values(), ids=NO_LINK)
+def test_a_handoff_that_continues_no_other_session_links_nothing(
+    front: str, entry: dict, handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """pages-link-across-handoffs#P2, and the reads that are no pickup of another session's handoff."""
+    directory, _ = first_turn
+    before = handed_over(front, **entry)
+    assert not (directory / "previous").exists()
+    assert links_to(directory / PAGE) == links_to(before / PAGE) == []
+
+
+def test_previous_is_written_once(handed_over: Callable[..., Path], first_turn: tuple[Path, Path]) -> None:
+    """A later read of another session's handoff leaves the first pickup the page's predecessor."""
+    directory, _ = first_turn
+    handed_over(f"session: {BEFORE}\npurpose: continuation")
+    handed_over("session: 0d1e2f3a-0000-0000-0000-000000000000\npurpose: continuation")
+    assert (directory / "previous").read_text().strip() == BEFORE
+
+
+def test_a_predecessor_with_no_transcript_beside_it_is_logged_and_links_forward_at_its_next_render(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
+    capsys: pytest.CaptureFixture, attended: Path,
+) -> None:
+    directory, said = first_turn
+    theirs = said.parent / f"{BEFORE}.jsonl"
+    kept = theirs.read_text()
+    theirs.unlink()
+    before = handed_over(f"session: {BEFORE}\npurpose: continuation")
+    assert links_to(directory / PAGE) == [BEFORE]
+    assert links_to(before / PAGE) == []
+    [entry] = logged(attended, "previous")
+    assert entry["previous"] == BEFORE and entry["rendered"].startswith(f"no transcript at {theirs}")
+    theirs.write_text(kept)
+    run(payload(before, theirs, reply="Still here."))
+    capsys.readouterr()
+    assert links_to(before / PAGE) == [FRESH]
 
 
 if __name__ == "__main__":
