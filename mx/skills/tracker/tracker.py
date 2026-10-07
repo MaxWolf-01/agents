@@ -479,17 +479,16 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
     """Why the ticket's work has not reached the branch the user's accept merges it into
     (`accepted_into`), or None once it has, in every repo holding a branch of it, the listed repos
-    among them (`unlanded_listed`). A parent
-    ticket's own branch has reached it only with every child done or in review merged into that
-    branch, since the parent's accept takes them in with it. A ticket with no code, no range
-    recorded and no branch in any of its repos, is done once every child ticket is; a ticket the
-    user is in the loop for is done at the ruling itself."""
+    among them (`unlanded_listed`). A parent ticket's own branch has reached it only with every
+    child done or in review merged into that branch, since the parent's accept takes them in with
+    it. A ticket with no code, no range recorded and no branch in any of its repos, is done once
+    every child ticket is; a ticket the user is in the loop for is done at the ruling itself."""
     if why := unlanded_listed(ticket, tracker):
         return why
     branches = [(top, branch_of(top, ticket, tracker)) for top in repos_of(tracker)]
     coded = bool(ticket.meta.get("diff"))
-    # work in a listed repo answers for that repo alone, never for a range in the code or agent repo
-    built_here = coded and len(listed_ranges(ticket)) < len(ticket.meta["diff"])
+    # a range in a listed repo says nothing of the code and agent repos, where only their own count
+    built_here = any(found.group(1) in OWN_REPOS for found in ranges(ticket))
     built_listed = bool(listed_branches(ticket, tracker) or listed_ranges(ticket))
     if all(branch is None for _, branch in branches) and (built_here or not built_listed):
         children = tracker.children(ticket.slug)
@@ -545,9 +544,13 @@ def unreached(repo: Listed, tip: str, ticket: Ticket, tracker: Tracker) -> str |
 def listed_ranges(ticket: Ticket) -> list[tuple[str, str, str]]:
     """(the range as written, the listed repo it names, its last commit), for every `diff:` range
     in a listed repo."""
+    return [(found.group(0), found.group(1), found.group(2)) for found in ranges(ticket) if found.group(1) not in OWN_REPOS]
+
+
+def ranges(ticket: Ticket) -> list[re.Match]:
+    """Every `diff:` range that reads as one, matched: its group 1 the repo it names, 2 its last commit."""
     written = ticket.meta.get("diff")
-    return [(str(one), found.group(1), found.group(2)) for one in (written if isinstance(written, list) else [])
-            if (found := RANGE.fullmatch(str(one))) and found.group(1) not in OWN_REPOS]
+    return [found for one in (written if isinstance(written, list) else []) if (found := RANGE.fullmatch(str(one)))]
 
 
 def listed_branches(ticket: Ticket, tracker: Tracker) -> list[tuple[Listed, str]]:
@@ -678,7 +681,7 @@ def tables(path: Path, text: str) -> dict[str, dict]:
             said.append(f"{path}: `{name}` is no table; a listed repo is `[{name}]` with its `path` under it")
         elif not REPO_NAME.fullmatch(name):
             said.append(f"{path}: `[{name}]` is no name a range can carry; a listed repo's name is letters, digits, `-` and `_`")
-        elif name in ("code", "agent"):
+        elif name in OWN_REPOS:
             said.append(f"{path}: `[{name}]` is what a range calls the project's {name} repo; a listed repo takes another name")
         elif not isinstance(table.get("path"), str) or not table["path"]:
             said.append(f"{path}: `[{name}]` has no `path`; it says where the repo is, from the project root or absolute")
@@ -1214,6 +1217,8 @@ def reference_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
 def repo_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
     """Every repo the ticket names is on the repo list: each `repos:` entry, and the repo of every
     `diff:` range that names neither the code repo nor the agent repo."""
+    to_name = {"repos": f"a ticket names a repo {REPO_LIST} lists",
+               "diff": f"a range lands in `code`, `agent` or a repo {REPO_LIST} lists, one per repo"}
     named = [("repos", f"repos: {name}", name) for name in ticket.repos]
     named += [("diff", f"diff: {written}", name) for written, name, _ in listed_ranges(ticket)]
     if not named:
@@ -1224,7 +1229,7 @@ def repo_refusals(ticket: Ticket, tracker: Tracker) -> list[Refusal]:
     except Refused as unread:
         return [Refusal(ticket.path, at(ticket, named[0][0]), f"{file} cannot be read, so no repo a ticket names resolves: {unread}")]
     lists = f"it lists {', '.join(listing)}" if listing else f"the project lists none at {file}"
-    return [Refusal(ticket.path, at(ticket, key), f"`{written}` names no repo; {'a range lands in `code`, `agent` or a repo ' + REPO_LIST + ' lists, one per repo' if key == 'diff' else 'a ticket names a repo ' + REPO_LIST + ' lists'}, and {lists}")
+    return [Refusal(ticket.path, at(ticket, key), f"`{written}` names no repo; {to_name[key]}, and {lists}")
             for key, written, name in named if name not in listing]
 
 

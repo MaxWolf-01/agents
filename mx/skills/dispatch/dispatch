@@ -78,8 +78,8 @@
 #            worklog went silent for --stall (2), --deadline passed (5), or
 #            the host stayed unreachable for two minutes.
 #   fetch    brings the ticket/<slug> branches from the host into the two
-#            repos here and each listed repo the ticket names, replacing an
-#            earlier fetch of them (ticket branches get
+#            repos here and each listed repo the ticket names or the host
+#            still holds for it, replacing an earlier fetch of them (ticket branches get
 #            rebased). The worker's report is a file on the agent branch, so it arrives with
 #            it, and the host's run log lines come with it too (`run-log pull`),
 #            as they do on a cleanup; a pull that fails is said and stops nothing.
@@ -118,7 +118,9 @@
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
-#            the parent with its range, `code@<sha>..<sha>`. Refuses before
+#            the parent with its range, `code@<sha>..<sha>`, and
+#            `<name>@<sha>..<sha>` in each listed repo holding its branch
+#            <slug>, against the branch above it there. Refuses before
 #            that merge, and writes nothing when the tracker refuses any one
 #            of them. One commit; then `tracker retire` takes out the trees it
 #            finished, and every child's run is retired.
@@ -132,11 +134,15 @@
 #            `<name>@<merge>^..<merge>` for a squash, the rebased commits for a
 #            rebase merge, appended where the ticket records none there yet. A
 #            merge commit brought the ticket's commits in as they were, and its
-#            ranges stay. Deletes that repo's ticket/<slug> here once the pull
-#            request carried its tip, commits the ticket, and renders the review
+#            ranges stay. Deletes the ticket's branch in that repo here, a
+#            parent ticket's own <slug> and ticket/<slug> otherwise, once the
+#            pull request carried its tip, commits the ticket, and renders the review
 #            page over the new ranges, replacing the one review rendered before;
 #            `dispatch review` then records the code and agent repos' ranges and
-#            writes `done`. A pull request not merged, or in no listed repo,
+#            writes `done`. A parent ticket's pull request carries the work of
+#            the tickets under it too, so each of them has its ranges in that
+#            repo replaced and its ticket/<slug> there deleted the same way, for
+#            the parent's `accept`. A pull request not merged, or in no listed repo,
 #            changes nothing and says why. The exit status is nonzero for a pull
 #            request not merged, for a ticket branch holding commits its pull
 #            request did not carry, and for a page left as it is. GitHub is only
@@ -144,10 +150,14 @@
 #   A ticket that is done has nothing left to resume, so the `done` retires
 #   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
 #   both ticket/<slug> branches here, and the deletion of each listed repo's
-#   once it has merged there. A retirement that fails is said, with
+#   once it has merged there. The run stays on its host while a listed repo
+#   the host holds for the ticket and its repos: no longer names has a
+#   branch missing here or not merged; on a local host, only one not merged
+#   keeps it. A retirement that fails is said, with
 #   the command that tries again, and the exit status is nonzero; the
 #   `done` stands. `ctl cleanup` stays for a build that is not landing: a
-#   redo, a reject, a session that cannot be recovered.
+#   redo, a reject, a session that cannot be recovered; and for a run a
+#   `done` kept, once the work it held is merged or let go.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
 #            scratch dir whose probe failed an `unreadable` one, a
@@ -259,10 +269,10 @@ ticket_listed() { # <slug>
     done
 }
 
-# The remote a listed repo here pushes to and fetches from on <host>. The project's name is in it,
-# since the repo may be another project's code repo, whose own remote for the host names that
-# project's bare repo.
-listed_remote() { echo "${1//[@.]/-}-$repo"; } # <host>
+# The remote a repo here pushes to and fetches from on <host>, by the name its range carries. A
+# listed repo's has the project's name in it, since the repo may be another project's code repo,
+# whose own remote for the host names that project's bare repo.
+remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
 # Every command runs on the branch ticket branches cut from and merge back
 # into: a parent ticket's, or the integration branch.
@@ -427,7 +437,7 @@ stage() { # <host> [setup-command]
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
         run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
     else
-        remote=${h//[@.]/-}
+        remote=$(remote_of code "$h")
         git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
         git -C "$agent_top" remote get-url "$remote" >/dev/null 2>&1 ||
             run git -C "$agent_top" remote add "$remote" "$h:repos/dispatch/$repo-agent.git"
@@ -448,7 +458,7 @@ push_to() { # <host>
     # The agent repo first: a fuzz run's host restarts on the code repo's push
     # and finds the agent repo's tip current by then.
     for at in agent code; do
-        run git -C "$(repo_at "$at")" push -q "${1//[@.]/-}" "$(base_at "$at")" ||
+        run git -C "$(repo_at "$at")" push -q "$(remote_of "$at" "$1")" "$(base_at "$at")" ||
             { echo "dispatch: pushing $(base_at "$at") of the $at repo to $1 failed" >&2; rc=1; }
     done
     return $rc
@@ -459,11 +469,13 @@ push_to() { # <host>
 # branch.
 push_listed() { # <host>
     [ "$1" = local ] && return 0
-    local name top remote rc=0
+    local name top remote url rc=0
     for name in "${ticket_repos[@]}"; do
-        top=${listed_top[$name]} remote=$(listed_remote "$1")
-        git -C "$top" remote get-url "$remote" > /dev/null 2>&1 ||
-            run git -C "$top" remote add "$remote" "$1:repos/dispatch/$repo-$name.git"
+        top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
+        git -C "$top" remote get-url "$remote" > /dev/null 2>&1 || run git -C "$top" remote add "$remote" "$url"
+        # The push below is forced, so it goes to no remote of that name the repo had for another use.
+        [ "$(git -C "$top" remote get-url "$remote")" = "$url" ] ||
+            { echo "dispatch: $name's remote $remote at $top is not $url, so nothing is pushed there" >&2; rc=1; continue; }
         # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
         # base may change between two pushes, where the two have parted.
         run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
@@ -490,7 +502,7 @@ stage_listed() { # <host> <slug>
     listed_brief= listed_args=()
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
-    listed_brief="Your worktree holds the listed repos your ticket names, each on \`ticket/$2\`, cut from the branch named here; that branch is yours as the other two are, and your work in that repo is committed on it:"
+    listed_brief="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
@@ -537,7 +549,7 @@ push() {
     rc=0
     for h in $hosts; do
         push_to "$h" || rc=1
-        # A subshell each, so a ticket whose repos: cannot be read stops no other push.
+        # A subshell each, so a ticket whose listed repos cannot be read stops no other push.
         for slug in $(runs_on "$h"); do
             ( ticket_listed "$slug" && push_listed "$h" ) || rc=1
         done
@@ -691,19 +703,25 @@ fetch() {
     locate; ticket_host "$1"
     branch=ticket/$1
     ticket_listed "$1"
-    tops=("$repo_root" "$agent_top")
-    for name in "${ticket_repos[@]}"; do tops+=("${listed_top[$name]}"); done
+    names=(code agent "${ticket_repos[@]}")
     if [ "$host" = local ]; then
-        for top in "${tops[@]}"; do
-            git -C "$top" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $top"
+        for at in "${names[@]}"; do
+            git -C "$(repo_at "$at")" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $(repo_at "$at")"
         done
         echo "local host: $branch is already here, in every repo"
     else
-        for top in "${tops[@]}"; do
-            remote=${host//[@.]/-}
-            [ "$top" = "$repo_root" ] || [ "$top" = "$agent_top" ] || remote=$(listed_remote "$host")
-            run git -C "$top" fetch -q "$remote" "+$branch:$branch" ||
-                die "fetching $branch from $host into $top failed"
+        # A listed repo the host still holds for the ticket, which its repos: no longer names, too:
+        # the host's cleanup deletes that branch with the run, and its work may be nowhere else.
+        for name in $(on_host "$host" cat "$(scratch_dir "$host")/repos-$1" 2> /dev/null | cut -f1); do
+            [[ " ${names[*]} " != *" $name "* ]] || continue
+            [ ${#listed_top[@]} -gt 0 ] || listed "$("$tracker" get "$1" parent 2>/dev/null)"
+            [ -n "${listed_top[$name]-}" ] || die "$host holds $branch of $name for $1, which \`tracker repos\` does not list"
+            echo "dispatch: $1's repos: no longer names $name, whose $branch $host still holds, so it is fetched too" >&2
+            names+=("$name")
+        done
+        for at in "${names[@]}"; do
+            run git -C "$(repo_at "$at")" fetch -q "$(remote_of "$at" "$host")" "+$branch:$branch" ||
+                die "fetching $branch from $host into $(repo_at "$at") failed"
         done
     fi
     pull_runs "$host"
@@ -837,9 +855,10 @@ names_file() { awk -v p="$1" '$0 == p || substr($0, length($0) - length(p)) == "
 # spec extends: the same repo, a start that begins the spec's start SHA, and an end
 # that begins the spec's end SHA or is an ancestor of it. The extended range is an
 # unmerged round grown since its last render by new commits on top of its tip, an
-# amend's or a resumed round's; one whose tip was rewritten extends nothing. diffview writes each source into the page's JSON as
-# `"spec": "<repo root>@<a>..<b>"`, its ends pinned to short SHAs, where a spec here
-# carries full ones. A page that shows no source is no diffview page, and none of these.
+# amend's or a resumed round's; one whose tip was rewritten extends nothing.
+# diffview writes each source into the page's JSON as `"spec": "<repo root>@<a>..<b>"`,
+# its ends pinned to short SHAs, where a spec here carries full ones. A page that
+# shows no source is no diffview page, and none of these.
 covers() { # <page> <spec...>
     local page=$1 shown source range a b spec found
     shift
@@ -1001,7 +1020,8 @@ review() {
             rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
         done
         # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
-        if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
+        up=$("$tracker" get "$id" parent 2>/dev/null)
+        if [ "$up" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
             now=review landed="$id merged into $base, for its ruling with it"
         else
             now=done landed="$id landed" retiring=1
@@ -1022,16 +1042,32 @@ review() {
     [ -z "$retiring" ] || retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
-    [ -z "$retiring" ] || retire "$id" || return 1
+    # shellcheck disable=SC2086
+    [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
     [ -z "$kept" ]
 }
 
 # What a done ticket's run left, on its host and here. The run is found under $base, the branch it
 # was spawned from, which `accept` sets to the parent's for each child.
-retire() { # <slug>
+retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: names>...]
     local h top name tip
     h=$(host_of "$1")
     if [ -n "$h" ]; then
+        # The host's cleanup deletes the branch of each listed repo it holds for the ticket. One its
+        # repos: names was fetched, and merged or landed, before this `done`; one it no longer names
+        # was in no round, so its branch has to be here, and merged, first.
+        for name in $(on_host "$h" cat "$(scratch_dir "$h")/repos-$1" 2> /dev/null | cut -f1); do
+            [[ " ${*:3} " != *" $name "* ]] || continue
+            [ ${#listed_top[@]} -gt 0 ] || listed "$2"
+            top=${listed_top[$name]-}
+            if ! tip=$(git -C "${top:-/}" rev-parse -q --verify "refs/heads/ticket/$1" 2> /dev/null); then
+                [ "$h" = local ] && [ -n "$top" ] && continue  # cut in that checkout, and deleted from it since
+                echo "dispatch: $1 is done, and ticket/$1 in $name, which $h holds, is not here, so its run stays; \`dispatch fetch $1\` brings it" >&2
+                return 1
+            fi
+            is_merged "$name" "$tip" ||
+                { echo "dispatch: $1 is done, and ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so its run on $h stays; \`dispatch ctl cleanup $1\` retires it once that work is merged or let go" >&2; return 1; }
+        done
         run on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" cleanup "$1" ||
             { echo "dispatch: $1 is done, and its cleanup on $h failed; \`dispatch ctl cleanup $1\` from $base tries again" >&2; return 1; }
         pull_runs "$h"
@@ -1045,12 +1081,17 @@ retire() { # <slug>
     # In every listed repo the caller has read the list of (`listed`): the ticket file that names its
     # repos may be retired by now. A listed repo's checkout here has whatever branch out, so `-d`
     # would read the merge off that; the merge is read off the branch it lands in instead.
+    local rc=0
     for name in "${!listed_top[@]}"; do
         tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/ticket/$1") || continue
-        is_merged "$name" "$tip" ||
-            { echo "dispatch: ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so it stays" >&2; return 1; }
-        run git -C "${listed_top[$name]}" branch -q -D "ticket/$1" || return 1
+        if ! is_merged "$name" "$tip"; then
+            echo "dispatch: ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so it stays" >&2
+            rc=1
+        else
+            run git -C "${listed_top[$name]}" branch -q -D "ticket/$1" || rc=1
+        fi
     done
+    return $rc
 }
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
@@ -1066,10 +1107,20 @@ accept() { # <slug>
     range=$(range_of code "$tip") || exit 1
     read=$("$tracker" data) || exit 1
     ruled=$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .slug')
-    # Each child merged its listed repos into this ticket's branch there, which is where retire reads
-    # the merge.
-    [ -z "$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .repos[]?')" ] ||
+    fields=(status=done)
+    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
+    # The ticket's own branch in each listed repo is measured against the branch above it there, as
+    # its code range is. Each child merged its listed repos into this ticket's branch there, which is
+    # where retire reads the merge.
+    if [ -n "$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?')" ]; then
+        listed "$("$tracker" get "$id" parent 2>/dev/null)"
+        for name in $(printf '%s\n' "${!listed_top[@]}" | sort); do
+            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
+            mine=$(range_of "$name" "$own") || exit 1
+            [ -z "$mine" ] || rounds_of "$id" | grep -qxF "$name@$mine" || fields+=("diff+=$name@$mine")
+        done
         listed "$id"
+    fi
     paths=("$tickets/$id.md")
     for child in $ruled; do paths+=("$tickets/$child.md"); done
     # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
@@ -1078,8 +1129,6 @@ accept() { # <slug>
     for child in $ruled; do
         run "$tracker" set "$child" status=done || put_back
     done
-    fields=(status=done)
-    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
     run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     retire_trees
@@ -1087,7 +1136,10 @@ accept() { # <slug>
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
     # retired by its own `review`, so only the children in review come up here.
     rc=0
-    for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
+    for child in $ruled; do
+        # shellcheck disable=SC2046
+        ( base=$id; retire "$child" "$id" $(printf '%s\n' "$read" | jq -r --arg c "$child" '.tickets[] | select(.slug == $c) | .repos[]?') ) || rc=1
+    done
     return $rc
 }
 
@@ -1111,8 +1163,6 @@ landed() { # <slug>
     round_of "$id" $named
     page_specs "$id"
     shown=("${specs[@]}")
-    declare -gA on_github=() landed_in=() rewritten=() held=() carried=()
-    order=()
     for name in "${!listed_top[@]}"; do
         url=$(git -C "${listed_top[$name]}" config --get remote.origin.url) &&
             at=$(github_of "$url") && on_github[$at]=$name
@@ -1120,41 +1170,19 @@ landed() { # <slug>
     rc=0
     for ref in $refs; do pr_landed "$ref" || rc=1; done
 
-    # Each rewritten repo's ranges replaced where the first of them stood, or appended where the
-    # ticket carries none there yet: a squashed branch never merged, so no review recorded it.
-    rounds=$(rounds_of "$id")
-    ranges=() placed=()
-    for r in $rounds; do
-        name=${r%%@*}
-        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
-        # shellcheck disable=SC2206
-        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
-    done
-    for name in "${order[@]}"; do
-        # shellcheck disable=SC2206
-        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
-            ranges+=(${landed_in[$name]})
-    done
     changed=
-    if [ "${ranges[*]}" != "$(echo $rounds)" ]; then
-        joined=$(printf '%s, ' "${ranges[@]}")
-        run "$tracker" set "$id" "diff=[${joined%, }]" || exit 1
-        commit_ticket "$id" "$id: the ranges that landed on GitHub"
-        changed=1
-    fi
-    # A ticket branch whose tip the pull request carried has landed whole, as commits it no longer
-    # holds; left here, the done check would find it unmerged for good.
+    # A parent ticket's pull request carries its own branch, named by its slug alone as the done
+    # check reads it, and with it the work the tickets under it merged into that branch: theirs is
+    # recorded and deleted the same way, so the parent's accept finds them landed.
+    under=$("$tracker" data | jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)') || exit 1
+    record_landed "$id" append
+    for slug in $under; do record_landed "$slug"; done
     for name in "${order[@]}"; do
         [ -n "${rewritten[$name]-}" ] && [ -z "${held[$name]-}" ] || continue
-        tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/ticket/$id") || continue
-        if [[ " ${carried[$name]} " != *" $tip "* ]]; then
-            echo "dispatch: ticket/$id in $name holds commits its pull request did not carry, so it stays, and done waits for them" >&2
-            rc=1
-        elif run git -C "${listed_top[$name]}" branch -q -D "ticket/$id"; then
-            changed=1
-        else
-            rc=1
-        fi
+        own=ticket/$id
+        [ -z "$under" ] || ! git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id" > /dev/null || own=$id
+        drop_carried "$name" "$own"
+        for slug in $under; do drop_carried "$name" "ticket/$slug"; done
     done
     if [ -z "$changed" ]; then
         [ "$rc" -ne 0 ] || echo "dispatch: $id's record already holds what landed, so nothing changes" >&2
@@ -1177,6 +1205,51 @@ github_of() { # <url>
     u=${u//:/\/}
     printf '%s\n' "${u#"${u%/*/*}/"}" | tr '[:upper:]' '[:lower:]'
 }
+
+# <slug>'s `diff:` with the ranges in each repo a pull request rewrote replaced by what landed there,
+# where the first of them stood, written and committed where that changes it, which sets `changed`.
+# With `append`, a repo the ticket records no range in gets what landed too: a squashed branch never
+# merged, so no review recorded it.
+record_landed() { # <slug> [append]
+    local rounds ranges=() placed=() r name joined
+    mapfile -t rounds < <(rounds_of "$1")
+    for r in "${rounds[@]}"; do
+        name=${r%%@*}
+        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
+        # shellcheck disable=SC2206
+        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
+    done
+    for name in "${order[@]}"; do
+        [ -n "${2-}" ] || break
+        # shellcheck disable=SC2206
+        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
+            ranges+=(${landed_in[$name]})
+    done
+    [ "${ranges[*]}" != "${rounds[*]}" ] || return 0
+    joined=$(printf '%s, ' "${ranges[@]}")
+    run "$tracker" set "$1" "diff=[${joined%, }]" || exit 1
+    commit_ticket "$1" "$1: the ranges that landed on GitHub"
+    changed=1
+}
+
+# <branch> in the listed repo <name>, deleted where the pull request carried its tip: it landed
+# whole, as commits it no longer holds, and left here the done check would find it unmerged for good.
+# One holding commits the pull request did not carry stays, and sets `rc`; a deletion sets `changed`.
+drop_carried() { # <name> <branch>
+    local tip
+    tip=$(git -C "${listed_top[$1]}" rev-parse -q --verify "refs/heads/$2") || return 0
+    if [[ " ${carried[$1]} " != *" $tip "* ]]; then
+        echo "dispatch: $2 in $1 holds commits its pull request did not carry, so it stays, and done waits for them" >&2
+        rc=1
+    elif run git -C "${listed_top[$1]}" branch -q -D "$2"; then
+        changed=1
+    else
+        rc=1
+    fi
+}
+
+declare -A on_github=() landed_in=() rewritten=() held=() carried=()
+order=()
 
 # What GitHub says <ref>'s pull request landed as, in the listed repo whose origin it is on: its
 # range in `landed_in`, with `rewritten` set for a squash or a rebase merge, and the commits it

@@ -101,13 +101,20 @@ def git(at: Path, *args: str) -> str:
     return done.stdout
 
 
+def initialised(at: Path, branch: str = "main") -> Path:
+    """A new repo at `at`, on `branch`, with no commit yet."""
+    at.mkdir(parents=True, exist_ok=True)
+    git(at, "init", "-q", "-b", branch, ".")
+    git(at, "config", "user.email", "checks@example.com")
+    git(at, "config", "user.name", "checks")
+    git(at, "config", "commit.gpgsign", "false")  # a check that moves HOME takes the signing key with it
+    return at
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """An empty repo with a tracker in it, one commit deep."""
-    git(tmp_path, "init", "-q", "-b", "main", ".")
-    git(tmp_path, "config", "user.email", "checks@example.com")
-    git(tmp_path, "config", "user.name", "checks")
-    git(tmp_path, "config", "commit.gpgsign", "false")  # a check that moves HOME takes the signing key with it
+    initialised(tmp_path)
     (tmp_path / "agent" / "tickets").mkdir(parents=True)
     (tmp_path / "README.md").write_text("the repo\n")
     git(tmp_path, "add", "README.md")
@@ -127,9 +134,7 @@ def split(tmp_path: Path) -> Path:
     code = tmp_path / "lamp"
     (code / "agent" / "tickets").mkdir(parents=True)
     for at in (code, code / "agent"):
-        git(tmp_path, "init", "-q", "-b", "main", str(at))
-        for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
-            git(at, "config", key, value)
+        initialised(at)
     (code / ".gitignore").write_text("/agent/\n")
     (code / "src.txt").write_text("the lamp\n")
     git(code, "add", "-A")
@@ -1787,11 +1792,7 @@ def test_a_bullet_a_writer_wrapped_without_indenting_it_is_read_whole(tickets: P
 
 def a_repo(at: Path, branch: str = "main") -> Path:
     """A repo one commit deep at `at`, on `branch`."""
-    at.mkdir(parents=True, exist_ok=True)
-    git(at, "init", "-q", "-b", branch, ".")
-    for key, value in (("user.email", "checks@example.com"), ("user.name", "checks"), ("commit.gpgsign", "false")):
-        git(at, "config", key, value)
-    return committed(at, "first")
+    return committed(initialised(at, branch), "first")
 
 
 def committed(at: Path, what: str) -> Path:
@@ -1848,6 +1849,8 @@ def test_a_listed_repo_at_a_home_relative_path_is_found_there(split: Path, monke
     ("Backend = 'Backend'\n", "`Backend` is no table"),
     ("[Backend]\npath = 'Backend'\nbranch = 'development'\n", "declares branch"),
     ("[code]\npath = 'Backend'\n", "`[code]` is what a range calls the project's code repo"),
+    ('["a b"]\npath = "Backend"\n', "is no name a range can carry"),
+    ("[Backend]\npath = 'Backend'\nintegration = 3\n", "integration is no branch name"),
     ("[Backend]\npath = 'nowhere'\nintegration = 'main'\n", "is no git repo's root"),
     ("[Backend]\npath = 'docs'\nintegration = 'main'\n", "is no git repo's root"),
     ("[Backend]\npath = 'Backend'\nintegration = 'release'\n", "integration release is no branch of"),
@@ -1899,7 +1902,7 @@ def test_a_ticket_naming_a_repo_is_refused_with_the_reason_a_broken_list_cannot_
         "a ticket naming no listed repo never reads the list"
 
 
-@given(name=st.from_regex(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,11}\Z"))
+@given(name=st.sampled_from(["code", "agent", "Backend", "quartz"]) | st.from_regex(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,11}\Z"))
 @settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p2_every_range_resolves_to_exactly_one_repo(listed: Path, name: str) -> None:
     """`tickets-land-in-listed-repos#P2`: a range is accepted exactly where its repo is `code`,
@@ -2061,6 +2064,7 @@ def test_a_ticket_with_no_code_reaches_done_from_review_on_the_ruling(listed: Pa
     in_review(listed, "pick-a-format", repos=repos)
     said = run(listed, "set", "pick-a-format", "status=done")
     assert said.code == 0, said.said
+    assert run(listed, "get", "pick-a-format", "status").out == "done\n"
 
 
 def test_a_listed_range_answers_for_its_own_repo_and_not_for_a_range_in_the_code_repo(listed: Path) -> None:
