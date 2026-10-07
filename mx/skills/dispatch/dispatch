@@ -87,21 +87,20 @@
 #            agent repo, one page with a section per range of code, in the code
 #            repo and each listed repo, and serves it; says the ticket gets no
 #            page when no round of it carries code, and leaves a page at that
-#            path it did not render as it is, exiting nonzero once the rest is
-#            done (the record of what it rendered is <slug>.rendered beside the
-#            page); re-renders the board; and writes the ticket's status:
-#            `review` while any of its branches is unmerged, `done` once all
-#            have merged, with the round's ranges in the `diff:` frontmatter,
-#            `code@<sha>..<sha>`, `agent@<sha>..<sha>` and `<name>@<sha>..<sha>`
-#            in each listed repo where its branch committed. A listed repo's
-#            branch merges into the parent ticket's branch there where it has
-#            one, and into the repo's integration branch, locally or at origin,
-#            otherwise. A child ticket merged into its parent ticket's branch,
-#            which this is, gets its ranges and stays `review` unless it is a
-#            hinge: it is ruled with the parent, and `accept` writes its `done`.
-#            One commit either way, and none when the ticket already says so. A
-#            `done` retires the ticket's run (below), and `tracker retire` takes
-#            out the trees it finished.
+#            path that shows a source this render does not as it is, exiting
+#            nonzero once the rest is done; re-renders the board; and writes the
+#            ticket's status: `review` while any of its branches is unmerged,
+#            `done` once all have merged, with the round's ranges in the `diff:`
+#            frontmatter, `code@<sha>..<sha>`, `agent@<sha>..<sha>` and
+#            `<name>@<sha>..<sha>` in each listed repo where its branch
+#            committed. A listed repo's branch merges into the parent ticket's
+#            branch there where it has one, and into the repo's integration
+#            branch, locally or at origin, otherwise. A child ticket merged into
+#            its parent ticket's branch, which this is, gets its ranges and
+#            stays `review` unless it is a hinge: it is ruled with the parent,
+#            and `accept` writes its `done`. One commit either way, and none
+#            when the ticket already says so. A `done` retires the ticket's run
+#            (below), and `tracker retire` takes out the trees it finished.
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
@@ -646,9 +645,27 @@ notes_of() { # <slug>
     }'
 }
 
-# The sources a diffview page shows, as the JSON inside it spells each one's spec,
-# one a line; nothing for a page that is no diffview page or no file at all.
-shown() { grep -o '"spec": "[^"]*"' "$1" 2>/dev/null | sed 's/^"spec": "//; s/"$//'; } # <page>
+# Whether every source the diffview page at <page> shows is one of <specs>: the same
+# repo, and a range whose ends both start the SHAs the spec names. diffview writes
+# each source into the page's JSON as `"spec": "<repo root>@<a>..<b>"`, its ends
+# pinned to short SHAs, where a spec here carries full ones. A page that shows no
+# source is no diffview page, and none of these.
+covers() { # <page> <spec...>
+    local page=$1 shown source range a b spec found
+    shift
+    shown=$(grep -o '"spec": "[^"]*"' "$page" | sed 's/^"spec": "//; s/"$//')
+    [ -n "$shown" ] || return 1
+    while read -r source; do
+        range=${source##*@} a=${range%%..*} b=${range#*..} found=
+        [ -n "$a" ] && [ -n "$b" ] || return 1
+        for spec; do
+            [ "$(realpath "${spec%@*}")" = "${source%@*}" ] || continue
+            range=${spec##*@}
+            [[ ${range%%..*} == "$a"* && ${range#*..} == "$b"* ]] && { found=1; break; }
+        done
+        [ -n "$found" ] || return 1
+    done <<< "$shown"
+}
 
 # The commit ranges a ticket's rounds have landed as, one per line; nothing
 # before the first of them lands.
@@ -770,26 +787,23 @@ review() {
         esac
     done
 
-    # What proves a page at $out.html is this command's: the sources it shows, which
-    # diffview writes into the page with each range pinned to SHAs, are the ones the
-    # record beside it says the last render here showed. A page with no record, or
-    # other sources, is somebody else's (a session's, rendered by hand at the path
-    # the board links) and stays as it is, whatever the ticket carries. Sources and
-    # not bytes, because diffview rewrites its own page once the summary is written.
+    # A page at $out.html is this command's to replace when it shows nothing this
+    # render would not: every source in it is one of these specs. Any other page is
+    # somebody else's (a session's, rendered by hand at the path the board links)
+    # and stays as it is, whatever the ticket carries.
     out=$diffviews/$id
     kept=
     if [ ${#specs[@]} -eq 0 ]; then
         echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
-    elif [ -e "$out.html" ] && { [ ! -e "$out.rendered" ] || [ "$(shown "$out.html")" != "$(cat "$out.rendered")" ]; }; then
-        echo "dispatch: $out.html shows sources other than the page this command last rendered there, so it leaves that page as it is; move it aside and run review again for $id's page" >&2
+    elif [ -e "$out.html" ] && ! covers "$out.html" "${specs[@]}"; then
+        echo "dispatch: $out.html shows sources this review of $id does not render, so it leaves that page as it is; move it aside and run review again for $id's page" >&2
         kept=1
     else
         mkdir -p "$(dirname "$out")"
         # The tracker's own copy, which the import above has brought the worker's
         # closing comment and its assumptions into.
         notes_of "$id" > "$out.notes.json" || exit 1
-        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html" || exit 1
-        shown "$out.html" > "$out.rendered"
+        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
         run diffview --serve "$diffviews"
     fi
     # After the page, which reads the ticket's notes from its file

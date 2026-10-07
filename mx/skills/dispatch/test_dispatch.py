@@ -196,7 +196,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
     what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
     spawn hands its runner in place of the one the host's claude lists. The page it writes carries
-    each source's spec in its JSON, as diffview's does."""
+    each source's spec in its JSON with both ends pinned to short SHAs, as diffview's does."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
@@ -205,7 +205,8 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
         '[ "$1" = --serve ] && exit 0\n'
         'out=; page=\n'
         'while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; --notes) shift 2 ;;'
-        ' *) page="$page{\\"spec\\": \\"$1\\"}, "; shift ;; esac; done\n'
+        ' *) r=${1##*@}; page="$page{\\"spec\\": \\"${1%@*}@$(printf %.7s "${r%%..*}")..$(printf %.7s "${r#*..}")\\"}, "; shift ;;'
+        ' esac; done\n'
         'printf \'{"sources": [%s]}\\n\' "$page" > "$out"\n')
     (bin_dir / "diffview").chmod(0o755)
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
@@ -1340,45 +1341,68 @@ def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carr
     assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
 
 
-def test_a_page_review_did_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
-    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path that
-    shows sources other than the ones `review` last rendered there is a session's, rendered by hand,
-    and the render that would replace it does not happen; the rest of the review does, and the exit
-    status says it was not whole. Its own page, rewritten by diffview with the sources unchanged
-    (the summary landing), it renders again."""
+def claimed_with_code(toy: Path) -> tuple[str, str]:
+    """warm-preset claimed, its round one commit in the code repo and one in the agent repo: the
+    code range's (start, end)."""
     agent = toy / "agent"
     path = tracked(toy) / "warm-preset.md"
     path.write_text(path.read_text().replace("status: open", "status: claimed", 1))
     git(agent, "commit", "-q", "-am", "warm-preset claimed")
-    cut, tip = built_on(toy, "ticket/warm-preset", "main", "warm.txt")
     built_on(agent, "ticket/warm-preset", "main", "warm.md")
-    page = agent / "diffviews" / "warm-preset.html"
-    page.parent.mkdir(parents=True)
-    by_hand = '{"sources": [{"spec": "/elsewhere/Backend@1234567..89abcde"}]}\n'
+    return built_on(toy, "ticket/warm-preset", "main", "warm.txt")
 
-    def refused() -> None:
+
+def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path that
+    shows a source this review does not render is a session's, rendered by hand, and the render
+    that would replace it does not happen; the rest of the review does, and the exit status says it
+    was not whole. A page over the review's own sources is replaced, diffview's rewrite of it when
+    its summary lands included."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+
+    def refused(by_hand: str) -> None:
+        page.write_text(by_hand)
         said = run(toy, "review", "warm-preset")
         assert said.returncode != 0
         assert "leaves that page as it is" in said.stderr, said.stderr
         assert page.read_text() == by_hand
         assert status_of(toy, "warm-preset") == "review"
 
-    page.write_text(by_hand)  # before review ever rendered here
-    refused()
+    elsewhere = '{"spec": "/elsewhere/Backend@1234567..89abcde"}'
+    refused("the Backend diff, as a note\n")  # no diffview page at all
+    refused('{"sources": [' + elsewhere + "]}\n")
     assert not (toy.parent / "bin" / "diffview.args").exists()
 
     page.unlink()  # moved aside, as the refusal says
     assert run(toy, "review", "warm-preset").returncode == 0
     ours = page.read_text()
-    assert f"{toy}@{cut}..{tip}" in ours
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in ours
 
     page.write_text(ours.replace("]}", "]} <p>the summary, landed</p>"))  # diffview's own rewrite
     assert run(toy, "review", "warm-preset").returncode == 0
     assert len(pages(toy)) == 2
 
-    page.write_text(by_hand)  # a session's render over it, with the Backend diff the ticket lacks
-    refused()
+    # a session's render over it: the review's own source, and the Backend diff the ticket lacks
+    refused(ours.replace("]}", ", " + elsewhere + "]}"))
+    # the same source with an end the ticket's range does not have
+    refused(ours.replace(f"..{tip[:7]}", f"..{cut[:7]}"))
     assert len(pages(toy)) == 2
+
+
+def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_again(toy: Path) -> None:
+    """A page `dispatch review` rendered before it kept any record of its renders, over the range
+    the ticket's round has now: nothing on it is lost to a render over that range, so it is
+    replaced with no move by hand."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+    page.write_text('<script>{"sources": [{"label": "lamp", "spec": "' + f"{toy}@{cut[:9]}..{tip[:9]}" + '"}]}</script>\n')
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}"]
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
 
 
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
