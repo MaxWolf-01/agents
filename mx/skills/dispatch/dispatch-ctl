@@ -291,6 +291,7 @@ init() {
 }
 
 checkout() {
+    listed_free || exit 1
     run git -C "$git_dir" worktree add "$worktree" -b "$branch" "$base" || exit 1
     # Inside the code worktree, where every checkout of the project keeps it, so
     # the paths a worker reads and writes are the ones its ticket names.
@@ -303,6 +304,17 @@ checkout() {
         remove_worktrees
         die "setup command failed in $worktree; the log above is its tail"
     fi
+}
+
+# Whether every listed repo still to be cut is free of <branch>: one there
+# already is somebody's (on a local host the repo is the user's own checkout),
+# and an unwound spawn deletes the branches it cut, so it must have cut them all.
+listed_free() {
+    [ -f "$listed" ] || return 0
+    while IFS=$'\t' read -r -u 3 held dir _ at; do
+        [ -d "$at" ] || ! git -C "$dir" show-ref --verify -q "refs/heads/$branch" ||
+            { echo "dispatch-ctl: $held already has $branch in $dir, which this spawn did not cut" >&2; return 1; }
+    done 3< "$listed"
 }
 
 # Each listed repo the record names, cut where it is missing: a respawn finds the
@@ -378,7 +390,11 @@ spawn() {
     # Before the checkout: a host with no mx fails here in seconds, with no
     # worktree to unwind and without waiting on the update lock.
     find_plugin
-    if [ -d "$worktree" ]; then cut_listed || die "could not cut $branch in a listed repo of $slug"; else checkout; fi
+    if [ -d "$worktree" ]; then
+        { listed_free && cut_listed; } || die "could not cut $branch in a listed repo of $slug"
+    else
+        checkout
+    fi
     update_claude
     run_id=$name-$(date +%s)
 

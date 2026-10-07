@@ -57,14 +57,12 @@
 #            remote host, so a ticket branch cuts from its current tip; a
 #            local host cuts from these checkouts.
 #            A spawn of a ticket naming listed repos stages each of them and
-#            no other repo on the list: `dispatch-ctl repos` records it on the
-#            host, where it gets a bare repo of its own, and its base is pushed
-#            there, which is the parent ticket's branch in that repo where it
-#            has one, and otherwise the integration branch, origin's where
-#            that is ahead of the local one. The spawn cuts ticket/<slug> in
-#            each: a repo inside the project at the same path inside the
-#            ticket worktree, any other beside it as <name>-<slug>. The brief
-#            names each path, between the message and the context.
+#            no other repo on the list, placed as `dispatch-ctl repos` says.
+#            Its base is the parent ticket's branch in that repo where it has
+#            one, and otherwise its integration branch, origin's where that is
+#            ahead of the local one; a remote host is pushed that base. The
+#            brief names each repo's path, between the message and the
+#            context.
 #            --setup-cmd is the project's own setup line, run in every ticket
 #            worktree on that host before its worker starts. The staged one
 #            stays until another --setup-cmd replaces it; with none ever given,
@@ -442,18 +440,19 @@ push_listed() { # <host>
         top=${listed_top[$name]} remote=$(listed_remote "$1")
         git -C "$top" remote get-url "$remote" > /dev/null 2>&1 ||
             run git -C "$top" remote add "$remote" "$1:repos/dispatch/$repo-$name.git"
-        run git -C "$top" push -q "$remote" "${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
+        # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
+        # base may change between two pushes, where the two have parted.
+        run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
             { echo "dispatch: pushing ${cut_from[$name]} of $name to $1 failed" >&2; rc=1; }
     done
     return $rc
 }
 
-# The listed repos <slug> names, recorded on the host its spawn goes to and their bases pushed
-# there, so the spawn cuts each where the brief says it is: a repo inside the project at the same
-# path inside the ticket worktree, any other beside the worktree, `<name>-<slug>`. A local host cuts
-# from the repos' own checkouts. The brief's lines for them go in `listed_brief`.
+# The listed repos <slug> names, recorded on the host its spawn goes to (`dispatch-ctl repos`) and
+# their bases pushed there; a local host cuts from the repos' own checkouts. The place is the
+# repo's path inside the project, where it has one. The brief's lines for them go in `listed_brief`.
 stage_listed() { # <host> <slug>
-    local name top place project args=()
+    local name top place project from args=()
     listed_brief=
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
@@ -462,12 +461,14 @@ stage_listed() { # <host> <slug>
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=
         case $top in "$project"/*) place=${top#"$project"/} ;; esac
-        if [ "$1" = local ]; then args+=("$name" "${cut_from[$name]}" "$place" "$top")
-        else args+=("$name" "${cut_from[$name]#origin/}" "$place" ""); fi
+        # The base by the name it has where the worker is: origin's branch arrives on a remote host
+        # under the integration branch's own name.
+        if [ "$1" = local ]; then from=${cut_from[$name]} args+=("$name" "$from" "$place" "$top")
+        else from=${cut_from[$name]#origin/} args+=("$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
-            listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`${cut_from[$name]#origin/}\`"
+            listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
         else
-            listed_brief+=$'\n'"- $name: \`../$name-$2\`, beside your worktree, from \`${cut_from[$name]#origin/}\`"
+            listed_brief+=$'\n'"- $name: \`../$name-$2\`, beside your worktree, from \`$from\`"
         fi
     done
     run on_host "$1" bash "$(scratch_dir "$1")/dispatch-ctl" repos "$2" "${args[@]}" || return 1
@@ -503,9 +504,9 @@ push() {
     rc=0
     for h in $hosts; do
         push_to "$h" || rc=1
+        # A subshell each, so a ticket whose repos: cannot be read stops no other push.
         for slug in $(runs_on "$h"); do
-            ticket_listed "$slug"
-            push_listed "$h" || rc=1
+            ( ticket_listed "$slug" && push_listed "$h" ) || rc=1
         done
     done
     return $rc

@@ -105,7 +105,7 @@ The contract itself is [`worker-prompt.md`](worker-prompt.md), which the runner 
 
 ```
 Work the ticket <slug>; its context is under this message.
-You own only this worktree and the branches it holds, the code repo's and the agent repo's at `agent/`, both cut from <base>, and those of the listed repos named below; every other branch, and every ticket file, is the orchestrator's.
+You own only this worktree and the two branches it holds, the code repo's and the agent repo's at `agent/`, both cut from <base>, and the branch of each listed repo named below; every other branch, and every ticket file, is the orchestrator's.
 Your final act, once the implementation is committed and verified: commit your report at agent/show/<slug>/report.md.
 ```
 

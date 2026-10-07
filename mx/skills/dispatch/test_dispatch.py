@@ -1570,6 +1570,50 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
         assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
 
 
+def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and_keeps_it(
+        toy: Path, staged: Path) -> None:
+    """On a local host a listed repo is the user's own checkout, and a `ticket/<slug>` there that
+    this spawn did not cut is somebody's work: the spawn stops before cutting anything, and that
+    branch keeps its commit."""
+    repos = staged_listed(toy)
+    _, theirs = built_on(repos["jarvis"], "ticket/warm-preset", "main", "theirs.rs")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode != 0
+    assert "jarvis already has ticket/warm-preset" in said.stderr, said.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    assert not git(repos["Backend"], "branch", "--list", "ticket/warm-preset")
+
+
+def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged_there(toy: Path) -> None:
+    """A child of lamp-ui whose work is in `Backend` alone, merged there into lamp-ui's branch, which
+    has merged into the integration branch: the accept that writes the child's `done` deletes its
+    fetched branch in `Backend`, and leaves the parent's own branch there."""
+    tickets = tracked(toy)
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    (toy / "agent" / "repos.toml").write_text('[Backend]\npath = "Backend"\nintegration = "development"\n')
+    for slug, parent in (("lamp-ui", ""), ("warm-preset", "lamp-ui")):
+        path = ticket(tickets, slug, status="review", parent=parent)
+        if parent:
+            path.write_text(path.read_text().replace("status: review", "status: review\nrepos: [Backend]", 1))
+    git(toy / "agent", "add", "-A")
+    git(toy / "agent", "commit", "-q", "-m", "the tree, for its ruling")
+    built_on(backend, "lamp-ui", "development", "ui.py")
+    built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    merged_in(backend, "development", "lamp-ui")
+    built_on(toy, "lamp-ui", "main", "ui.txt")
+    merged_in(toy, "main", "lamp-ui")
+
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert git(backend, "branch", "--list", "lamp-ui")
+
+
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
     """The version skew a host is left in when an older plugin staged it: its config carries no
     agent repo, and every command on that host says which one it is."""
