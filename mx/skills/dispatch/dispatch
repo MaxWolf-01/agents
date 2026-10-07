@@ -649,8 +649,8 @@ notes_of() { # <slug>
 # Whether every source the diffview page at <page> shows is one of <specs>, or one a
 # spec extends: the same repo, a start that begins the spec's start SHA, and an end
 # that begins the spec's end SHA or is an ancestor of it. The extended range is an
-# unmerged round grown since its last render, by an amend or a resumed round's next
-# commits. diffview writes each source into the page's JSON as
+# unmerged round grown since its last render by new commits on top of its tip, an
+# amend's or a resumed round's; one whose tip was rewritten extends nothing. diffview writes each source into the page's JSON as
 # `"spec": "<repo root>@<a>..<b>"`, its ends pinned to short SHAs, where a spec here
 # carries full ones. A page that shows no source is no diffview page, and none of these.
 covers() { # <page> <spec...>
@@ -794,10 +794,10 @@ review() {
         esac
     done
 
-    # A page at $out.html is this command's to replace when it shows nothing this
-    # render would not: every source in it is one of these specs. Any other page is
-    # somebody else's (a session's, rendered by hand at the path the board links)
-    # and stays as it is, whatever the ticket carries.
+    # A page at $out.html is this command's to replace when this render loses
+    # nothing it shows: every source in it is one these specs show or extend
+    # (`covers`). Any other page is somebody else's (a session's, rendered by hand
+    # at the path the board links) and stays as it is, whatever the ticket carries.
     out=$diffviews/$id
     kept=
     if [ ${#specs[@]} -eq 0 ]; then

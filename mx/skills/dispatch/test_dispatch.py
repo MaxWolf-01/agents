@@ -1389,6 +1389,9 @@ def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said
     # the same source with an end off the ticket's branch: a commit beside it, not under it
     _, beside = built_on(toy, "elsewhere", "main", "cool.txt")
     refused(ours.replace(f"..{tip[:7]}", f"..{beside[:7]}"))
+    # the same source running past the ticket's tip, which the render would cut short
+    _, beyond = built_on(toy, "beyond", tip, "warmest.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beyond[:7]}"))
     assert len(pages(toy)) == 2
 
 
