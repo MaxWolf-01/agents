@@ -6,7 +6,7 @@ allowed-tools: Bash(${CLAUDE_SKILL_DIR}/dispatch --help), Bash(${CLAUDE_SKILL_DI
 
 # Dispatch
 
-You are the **single orchestrator** of one ticket's child tickets: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until none are left open. One worker works one ticket; dispatch orchestrates N workers. You are the only writer of a ticket file here, the only holder of the branches the workers merge into, and the one that writes `done`, on the user's accept. A ticket is worked in the code repo, the agent repo it holds at `agent/` (`/mx:tracker`), and the listed repos its `repos:` names: `dispatch` cuts, pushes and fetches a `ticket/<slug>` branch in the first two, `dispatch review` reads the branch in each listed repo too, and you merge every one.
+You are the **single orchestrator** of one ticket's child tickets: compute the frontier, fan a **wave** of workers out, integrate tickets as they **land**, repeat until none are left open. One worker works one ticket; dispatch orchestrates N workers. You are the only writer of a ticket file here, the only holder of the branches the workers merge into, and the one that writes `done`, on the user's accept. A ticket is worked in the code repo, the agent repo it holds at `agent/` (`/mx:tracker`), and the listed repos its `repos:` names: `dispatch` cuts, fetches and reviews a `ticket/<slug>` branch in each, a worker host receiving only the listed repos its ticket names, and you merge every one.
 
 Dispatch is the one way tickets are worked, at any size: every ticket goes to a worker, and a ticket with no child tickets is one worker's whole job. The `blocked-by` DAG is what makes independence explicit.
 
@@ -105,7 +105,7 @@ The contract itself is [`worker-prompt.md`](worker-prompt.md), which the runner 
 
 ```
 Work the ticket <slug>; its context is under this message.
-You own only this worktree and the two branches it holds, the code repo's and the agent repo's at `agent/`, both cut from <base>; every other branch, and every ticket file, is the orchestrator's.
+You own only this worktree and the two branches it holds, the code repo's and the agent repo's at `agent/`, both cut from <base>, and the branch of each listed repo named below; every other branch, and every ticket file, is the orchestrator's.
 Your final act, once the implementation is committed and verified: commit your report at agent/show/<slug>/report.md.
 ```
 

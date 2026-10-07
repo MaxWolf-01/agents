@@ -1427,6 +1427,282 @@ def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_a
     assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
 
 
+# The building stub in a worktree holding `Backend` nested in it and `jarvis` beside it, as a spawn
+# of a ticket naming both places them: a commit in each, then the report.
+BUILDING_LISTED = BUILDING.replace(
+    'mkdir -p "agent/show/$slug"',
+    """for at in Backend "../jarvis-$slug"; do
+    printf 'warm\\n' > "$at/warm.txt"
+    git -C "$at" add warm.txt
+    git -C "$at" commit -q -m "$slug: warm in $at"
+done
+mkdir -p "agent/show/$slug\"""",
+)
+
+
+def staged_listed(toy: Path) -> dict[str, Path]:
+    """The toy listing three repos, and warm-preset claimed naming two of them: `Backend` nested in
+    the project, `jarvis` beside it, cloned from a bare origin that has moved on since its own
+    `main` was last pulled, and `secrets`, which warm-preset does not name. Answers each repo's
+    checkout here, and jarvis's origin and the repo that feeds it."""
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    repos = {"Backend": listed_repo(toy / "Backend", "development").resolve(),
+             "seed": listed_repo(toy.parent / "jarvis-seed", "main"),
+             "secrets": listed_repo(toy.parent / "secrets", "main").resolve(),
+             "origin": toy.parent / "jarvis.git"}
+    git(toy.parent, "clone", "-q", "--bare", str(repos["seed"]), str(repos["origin"]))
+    git(toy.parent, "clone", "-q", str(repos["origin"]), str(toy.parent / "jarvis"))
+    repos["jarvis"] = (toy.parent / "jarvis").resolve()
+    moved_on(repos)
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n\n'
+            f'[jarvis]\npath = "{repos["jarvis"]}"\n\n[secrets]\npath = "{repos["secrets"]}"\nintegration = "main"\n', "Backend, jarvis")
+    return repos
+
+
+def moved_on(repos: dict[str, Path]) -> str:
+    """jarvis's origin one commit further, fetched into the checkout here and not merged into its
+    `main`: the new `origin/main`."""
+    seed = repos["seed"]
+    (seed / "later").write_text(git(seed, "rev-parse", "HEAD"))
+    git(seed, "add", "later")
+    git(seed, "commit", "-q", "-m", "jarvis moves on")
+    git(seed, "push", "-q", str(repos["origin"]), "main")
+    git(repos["jarvis"], "fetch", "-q")
+    return git(repos["jarvis"], "rev-parse", "origin/main").strip()
+
+
+def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_branches_back(
+        toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P5`: the host gets a bare repo for each repo warm-preset names
+    and none for `secrets`, which the project lists and the ticket does not; the host's directory
+    listing is the oracle. Each is cut where the brief says, from its base: `Backend` inside the
+    ticket worktree at the path the project keeps it at, from its integration branch, and `jarvis`
+    beside it, from origin's `main`, which is ahead of the local one. The fetch brings each branch
+    back, `push` sends each base again once it moves, the cleanup takes each worktree and branch off
+    the host, and the landing's `done` deletes the fetched branches here."""
+    repos = staged_listed(toy)
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    jarvis_base = git(repos["jarvis"], "rev-parse", "origin/main").strip()
+    assert jarvis_base != git(repos["jarvis"], "rev-parse", "main").strip()
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+    assert said.returncode == 0, said.stdout + said.stderr
+    waited(toy, state)
+    assert sorted(p.name for p in hosted.iterdir()) == [
+        "jarvis-warm-preset", "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
+    for at, cut in ((hosted / "lamp-warm-preset" / "Backend", git(repos["Backend"], "rev-parse", "development")),
+                    (hosted / "jarvis-warm-preset", jarvis_base)):
+        assert git(at, "branch", "--show-current").strip() == "ticket/warm-preset", at
+        assert git(at, "rev-parse", "HEAD~1").strip() == cut.strip(), at
+    (brief,) = state.glob("*.brief")
+    assert "- Backend: `Backend/` in your worktree, from `development`" in brief.read_text()
+    assert "- jarvis: `../jarvis-warm-preset`, beside your worktree, from `main`" in brief.read_text()
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    for name in ("Backend", "jarvis"):
+        assert git(repos[name], "log", "-1", "--format=%s", "ticket/warm-preset").strip().startswith("warm-preset: warm in"), name
+    reviewed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert reviewed.returncode == 0, reviewed.stderr
+    assert [spec.partition("@")[0] for spec in pages(toy)[-1].split()] == [str(toy), str(repos["Backend"]), str(repos["jarvis"])]
+
+    later = moved_on(repos)
+    pushed = subprocess.run([str(staged), "push"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert pushed.returncode == 0, pushed.stderr
+    assert git(hosted / "lamp-jarvis.git", "rev-parse", "main").strip() == later
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert sorted(p.name for p in hosted.iterdir()) == ["lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp.git"]
+    for bare in ("lamp-Backend.git", "lamp-jarvis.git"):
+        assert not git(hosted / bare, "branch", "--list", "ticket/warm-preset"), bare
+
+    # the landing: its `done` deletes the fetched branches here, each once it has merged
+    for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development"), (repos["jarvis"], "main")):
+        merged_in(top, onto, "ticket/warm-preset")
+    landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    for name in ("Backend", "jarvis"):
+        assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
+
+
+def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path, staged: Path) -> None:
+    """A child of lamp-ui, dispatched from lamp-ui's worktree onto this machine: `Backend` is cut
+    from lamp-ui's branch there, which is ahead of its integration branch, into the ticket worktree,
+    and `jarvis` from origin's `main` beside it, each from the checkout the repo list names. The
+    fetch finds every branch here already, and the cleanup takes the worktrees and the branches out
+    of those checkouts."""
+    repos = staged_listed(toy)
+    _, parents = built_on(repos["Backend"], "lamp-ui", "development", "ui.py")
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    state = toy.parent / "home" / ".local" / "state" / "dispatch" / "lamp-lamp-ui"
+    env = environment(toy)
+
+    subprocess.run([str(staged), "prompt", "warm-preset"], cwd=worktree, input="Work it.\n", text=True, check=True, env=env)
+    said = subprocess.run([str(staged), "ctl", "--host", "local", "--setup-cmd", "true", "spawn", "warm-preset", "sonnet"],
+                          cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert said.returncode == 0, said.stdout + said.stderr
+    waited(toy, state)
+    held = {"Backend": toy.parent / "lamp-warm-preset" / "Backend", "jarvis": toy.parent / "jarvis-warm-preset"}
+    for name, cut in (("Backend", parents), ("jarvis", git(repos["jarvis"], "rev-parse", "origin/main").strip())):
+        assert git(held[name], "rev-parse", "--path-format=absolute", "--git-common-dir").strip() == str(repos[name] / ".git")
+        assert git(repos[name], "rev-parse", "ticket/warm-preset~1").strip() == cut, name
+    (brief,) = state.glob("*.brief")
+    assert "- Backend: `Backend/` in your worktree, from `lamp-ui`" in brief.read_text()
+
+    fetched = subprocess.run([str(staged), "fetch", "warm-preset"], cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert fetched.returncode == 0, fetched.stderr
+    assert "already here, in every repo" in fetched.stdout
+
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=worktree, capture_output=True, text=True, env=env, timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not any(at.exists() for at in held.values())
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    for name in ("Backend", "jarvis", "secrets"):
+        assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
+
+
+def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
+    `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
+    naming it; while its worktree carries a commit the spawn stops instead, with that commit kept. A
+    ticket that names none any more leaves the host holding no listed worktree and no record, and
+    that spawn makes no host call a ticket that never named a repo would not make."""
+    repos = staged_listed(toy)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    path = tracked(toy) / "warm-preset.md"
+
+    def respawn(names: str, refused: bool = False) -> subprocess.CompletedProcess:
+        path.write_text(re.sub(r"repos: \[[^]]*\]\n", f"repos: [{names}]\n" if names else "", path.read_text()))
+        git(toy / "agent", "commit", "-q", "--allow-empty", "-am", f"warm-preset names [{names}]")
+        before = set(state.glob("*.status"))
+        said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+        assert (said.returncode != 0) == refused, said.stdout + said.stderr
+        for _ in range(60):
+            if refused or set(state.glob("*.status")) - before:
+                break
+            time.sleep(0.5)
+        else:
+            pytest.fail("no status line 30s after the respawn")
+        return said
+
+    respawn("Backend, jarvis")
+    assert (hosted / "jarvis-warm-preset").is_dir()
+
+    built_on(hosted / "jarvis-warm-preset", "ticket/warm-preset", "", "warm.rs")
+    said = respawn("Backend", refused=True)
+    assert "no longer names jarvis, whose worktree here carries work" in said.stderr, said.stderr
+    assert git(hosted / "jarvis-warm-preset", "log", "-1", "--format=%s").strip() == "ticket/warm-preset: warm.rs"
+    git(hosted / "jarvis-warm-preset", "reset", "-q", "--hard", "HEAD~1")  # fetched, and let go
+
+    respawn("Backend")
+    assert sorted(p.name for p in hosted.iterdir()) == [
+        "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
+    assert not git(hosted / "lamp-jarvis.git", "branch", "--list", "ticket/warm-preset")
+    assert (hosted / "lamp-warm-preset" / "Backend").is_dir()
+    assert [line.split("\t")[0] for line in (state / "repos-warm-preset").read_text().splitlines()] == ["Backend"]
+    newest = max(state.glob("*.brief"), key=lambda brief: brief.stat().st_mtime_ns).read_text()
+    assert "- Backend: `Backend/` in your worktree" in newest and "jarvis" not in newest
+
+    said = respawn("")
+    assert not (hosted / "lamp-warm-preset" / "Backend").exists()
+    assert not git(hosted / "lamp-Backend.git", "branch", "--list", "ticket/warm-preset")
+    assert not (state / "repos-warm-preset").exists()
+    calls = [line.split("dispatch-ctl ")[1] for line in said.stderr.splitlines()
+             if line.startswith("+ on_host agent@far bash") or line.startswith("+ on_host agent@far env")]
+    assert calls == ["spawn warm-preset sonnet"], said.stderr
+
+
+def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_only_its_own_commits(
+        toy: Path) -> None:
+    """`jarvis`'s ticket branch is cut from origin's `main`, which is ahead of the local one, and the
+    session merges it into the local `main`. The range recorded for `jarvis` starts at the ticket's
+    own fork point, not at the merge's first parent, so it holds the ticket's commit alone, and the
+    page over the range before the merge is review's to render again."""
+    repos = staged_listed(toy)
+    agent = toy / "agent"
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "jarvis": built_on(repos["jarvis"], "ticket/warm-preset", "origin/main", "warm.rs")}
+    assert rounds["jarvis"][0] == git(repos["jarvis"], "rev-parse", "origin/main").strip()
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+
+    for top in (toy, agent, repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
+    jarvis = f"{repos['jarvis']}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}"
+    assert pages(toy)[-1].split()[-1] == jarvis
+    assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
+
+
+def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and_keeps_it(
+        toy: Path, staged: Path) -> None:
+    """On a local host a listed repo is the user's own checkout, and a `ticket/<slug>` there that
+    this spawn did not cut is somebody's work: the spawn stops before cutting anything, and that
+    branch keeps its commit, through the next spawn once `repos:` drops the repo and through the
+    cleanup after it."""
+    repos = staged_listed(toy)
+    _, theirs = built_on(repos["jarvis"], "ticket/warm-preset", "main", "theirs.rs")
+
+    said = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert said.returncode != 0
+    assert "jarvis already has ticket/warm-preset" in said.stderr, said.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
+    assert not (toy.parent / "lamp-warm-preset").exists()
+    assert not git(repos["Backend"], "branch", "--list", "ticket/warm-preset")
+
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: [Backend, jarvis]", "repos: [Backend]"))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset names Backend alone")
+    again = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert again.returncode == 0, again.stderr
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True,
+                             env=environment(toy), timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
+
+
+def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged_there(toy: Path) -> None:
+    """A child of lamp-ui whose work is in `Backend` alone, merged there into lamp-ui's branch, which
+    has merged into the integration branch: the accept that writes the child's `done` deletes its
+    fetched branch in `Backend`, and leaves the parent's own branch there."""
+    tickets = tracked(toy)
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    (toy / "agent" / "repos.toml").write_text('[Backend]\npath = "Backend"\nintegration = "development"\n')
+    for slug, parent in (("lamp-ui", ""), ("warm-preset", "lamp-ui")):
+        path = ticket(tickets, slug, status="review", parent=parent)
+        if parent:
+            path.write_text(path.read_text().replace("status: review", "status: review\nrepos: [Backend]", 1))
+    git(toy / "agent", "add", "-A")
+    git(toy / "agent", "commit", "-q", "-m", "the tree, for its ruling")
+    built_on(backend, "lamp-ui", "development", "ui.py")
+    built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    merged_in(backend, "development", "lamp-ui")
+    built_on(toy, "lamp-ui", "main", "ui.txt")
+    merged_in(toy, "main", "lamp-ui")
+
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert git(backend, "branch", "--list", "lamp-ui")
+
+
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
     """The version skew a host is left in when an older plugin staged it: its config carries no
     agent repo, and every command on that host says which one it is."""
