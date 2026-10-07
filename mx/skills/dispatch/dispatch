@@ -58,8 +58,8 @@
 #            local host cuts from these checkouts.
 #            A spawn of a ticket naming listed repos stages each of them and
 #            no other repo on the list, placed as `dispatch-ctl spawn`'s
-#            --repo says, and the host forgets any repo an earlier spawn of it
-#            was given and this one is not.
+#            --repo says. A repo an earlier spawn of the ticket was given and
+#            this one is not loses its worktree and branch on the host.
 #            Its base is the parent ticket's branch in that repo where it has
 #            one, and otherwise its integration branch, origin's where that is
 #            ahead of the local one; a remote host is pushed that base. The
@@ -451,10 +451,10 @@ push_listed() { # <host>
 }
 
 # The listed repos <slug> names, their bases pushed to a remote host's bare repos (`dispatch-ctl
-# bare`); a local host cuts from the repos' own checkouts. Each travels to the spawn as a --repo
-# group in `listed_args`, so a ticket that names none sends none and the host's record of the last
-# spawn's is emptied with no call of its own. The place is the repo's path inside the project, where
-# it has one. The brief's lines for them go in `listed_brief`.
+# bare`); a local host cuts from the repos' own checkouts. Each repo travels to the spawn as a
+# --repo group in `listed_args`. A ticket that names none sends none, and the spawn call empties the
+# host's record of them; no other call is made. The place is the repo's path inside the project,
+# where it has one. The brief's lines for them go in `listed_brief`.
 stage_listed() { # <host> <slug>
     local name top place project from
     listed_brief= listed_args=()
@@ -699,9 +699,11 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
-# `fork` moved to <commit> where it is none yet or an ancestor of it: of the points a tip shares
-# with its bases, the newest. Nothing changes for no commit, which unrelated histories give.
-newer() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
+# Sets the caller's `fork` to <commit> where `fork` is empty or an ancestor of it, so that of the
+# points a tip shares with its bases `fork` ends on the newest. Where two have parted, neither the
+# other's ancestor, the first one seen stays. An empty <commit>, which unrelated histories give,
+# changes nothing.
+advance_fork() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
 
 # <repo, by the name its range carries> <tip> → <from>..<tip>, whether or not the ticket branch has
 # merged yet, and nothing at all for a branch that committed nothing, which is what a round
@@ -710,9 +712,10 @@ newer() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-anc
 # merge-base against them is the answer; after it, the tip is an ancestor of the
 # base it merged into and merge-base would return the tip itself, so that base's
 # point comes from the merge commit that brought it in. A base the tip has not
-# reached still counts: origin's integration branch, where the session merged
-# into a local one behind it, holds the fork the merge's first parent lags. SHAs
-# on both ends, because cleanup deletes the branch while its commits survive.
+# reached still counts. Where the session merged into a local integration branch
+# behind origin's, the merge's first parent is older than the fork, and origin's
+# branch still holds the fork. SHAs on both ends, because cleanup deletes the
+# branch while its commits survive.
 range_of() { # <repo> <tip>
     local at=$1 tip=$2 top fork= onto merge
     top=$(repo_at "$1")
@@ -724,11 +727,11 @@ range_of() { # <repo> <tip>
     fi
     for onto in $bases; do
         merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-        [ -z "$merge" ] || newer "$(git -C "$top" merge-base "$merge^1" "$tip")"
+        [ -z "$merge" ] || advance_fork "$(git -C "$top" merge-base "$merge^1" "$tip")"
     done
     if [ -n "$fork" ]; then
         for onto in $(base_at "$at"); do
-            grep -qxF -- "$onto" <<< "$bases" || newer "$(git -C "$top" merge-base "$tip" "$onto")"
+            grep -qxF -- "$onto" <<< "$bases" || advance_fork "$(git -C "$top" merge-base "$tip" "$onto")"
         done
         echo "$fork..$tip"
         return 0

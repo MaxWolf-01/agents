@@ -63,12 +63,13 @@
 #             ticket worktree, where a repo nested in the project sits in every
 #             checkout of it; an empty one puts the repo beside the worktree,
 #             as <worktrees-dir>/<name>-<slug>. An empty git dir is its `bare`
-#             repo; a local orchestrator passes the repo's own checkout. Every
-#             spawn records the repos it is given as all <slug>'s worktree
-#             holds, none when it is given none, and removes the worktree and
-#             branch of each repo the record held and no longer does, so a
-#             repo dropped from `repos:` leaves the worktree at the next spawn;
-#             its bare repo stays. A resume keeps the record.
+#             repo; a local orchestrator passes the repo's own checkout. Each
+#             spawn replaces the record of <slug>'s listed repos with the ones
+#             it is given, and empties it when given none. A repo the record
+#             held and this spawn is not given loses its worktree and branch
+#             here; its bare repo stays. Where that worktree carries work, a
+#             commit past its base or a change not committed, the spawn stops
+#             first and changes nothing. A resume keeps the record.
 #   wait      blocks until the current run of <slug> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
@@ -342,12 +343,14 @@ bare() {
     done
 }
 
-# The record rewritten from this spawn's --repo groups, and every worktree the old
-# one held that the new one does not removed with its branch: what the worker
-# holds is what its ticket names now, and a record that forgot a worktree would
-# leave it for no cleanup to find.
+# The record rewritten from this spawn's --repo groups. Each worktree the old
+# record held and the new one does not is removed with its branch, so the worker
+# holds what its ticket names now; a record that forgot a worktree would leave it
+# where no cleanup finds it. A dropped worktree carrying work (a commit its base
+# does not have, a change not committed) stops the spawn first, with nothing
+# changed: that work may exist nowhere else.
 relist() {
-    local part n dir from at kept=
+    local part n dir from at kept= held=
     part=$(mktemp "$listed.XXXXXX")
     set -- "${repos_given[@]}"
     while [ $# -gt 0 ]; do
@@ -358,6 +361,15 @@ relist() {
         shift 4
     done
     if [ -f "$listed" ]; then
+        while IFS=$'\t' read -r -u 3 n dir from at; do
+            grep -qxF -- "$at" <<< "$kept" || [ ! -d "$at" ] ||
+                { [ -z "$(git -C "$at" status --porcelain)" ] && [ -z "$(git -C "$dir" rev-list -1 "$from..$branch" 2>/dev/null)" ]; } ||
+                held+=" $n"
+        done 3< "$listed"
+        if [ -n "$held" ]; then
+            rm -f "$part"
+            die "$slug no longer names$held, whose worktree here carries work: fetch it, then \`dispatch ctl cleanup $slug\` and spawn again, or name the repo again"
+        fi
         while IFS=$'\t' read -r -u 3 n dir from at; do
             grep -qxF -- "$at" <<< "$kept" || drop_listed "$dir" "$at"
         done 3< "$listed"
@@ -386,7 +398,7 @@ set_up() {
 
 # `--effort <level>` and `--repo <name> <base> <place> <git-dir>` after the
 # positional arguments; what is left is positional.
-take_effort() {
+take_options() {
     positional=() repos_given=()
     while [ $# -gt 0 ]; do
         case $1 in
@@ -399,7 +411,7 @@ take_effort() {
 }
 
 spawn() {
-    take_effort "$@"; set -- "${positional[@]}"
+    take_options "$@"; set -- "${positional[@]}"
     load; names "$1"
     model=$2 session_id=${3:-}
     [ -f "$prompt" ] || die "no prompt at $prompt"
@@ -547,7 +559,7 @@ stop() {
 }
 
 resume() {
-    take_effort "$@"; set -- "${positional[@]}"
+    take_options "$@"; set -- "${positional[@]}"
     load; names "$1"
     current_run "$name"
     [ -n "$run_id" ] || die "no run of $name to resume; spawn it"
@@ -561,6 +573,7 @@ resume() {
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
     # The session id is the harness's own, and means nothing to another one.
     [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
+    [ ${#repos_given[@]} -eq 0 ] || die "a resume keeps the listed repos its spawn recorded; --repo is a spawn's"
     resuming=1
     spawn "$1" "$2" "$session"
 }
@@ -613,8 +626,13 @@ remove_jobs() {
     done
 }
 
+# A listed repo's worktree and branch, removed as remove_worktrees removes the
+# other two, where this host cut them. With no worktree there was no cut: a spawn
+# that refused over a branch the repo already had leaves that repo in the record,
+# and the branch is whoever made it's.
 drop_listed() { # <git dir> <worktree>
-    [ -d "$2" ] && run git -C "$1" worktree remove --force "$2"
+    [ -d "$2" ] || return 0
+    run git -C "$1" worktree remove --force "$2"
     git -C "$1" show-ref --verify -q "refs/heads/$branch" && run git -C "$1" branch -D "$branch"
     return 0
 }

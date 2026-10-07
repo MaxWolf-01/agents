@@ -1572,28 +1572,37 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
 def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
     """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
     `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
-    naming it; a ticket that names none any more leaves the host holding no listed worktree and no
-    record. That last spawn makes no host call a ticket that never named a repo would not make."""
+    naming it; while its worktree carries a commit the spawn stops instead, with that commit kept. A
+    ticket that names none any more leaves the host holding no listed worktree and no record, and
+    that spawn makes no host call a ticket that never named a repo would not make."""
     repos = staged_listed(toy)
     remote, env = fake_remote(toy)
     hosted = remote / "repos" / "dispatch"
     state = remote / ".local" / "state" / "dispatch" / "lamp-main"
     path = tracked(toy) / "warm-preset.md"
 
-    def respawn(names: str) -> subprocess.CompletedProcess:
+    def respawn(names: str, refused: bool = False) -> subprocess.CompletedProcess:
         path.write_text(re.sub(r"repos: \[[^]]*\]\n", f"repos: [{names}]\n" if names else "", path.read_text()))
         git(toy / "agent", "commit", "-q", "--allow-empty", "-am", f"warm-preset names [{names}]")
         before = set(state.glob("*.status"))
         said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
-        assert said.returncode == 0, said.stdout + said.stderr
+        assert (said.returncode != 0) == refused, said.stdout + said.stderr
         for _ in range(60):
-            if set(state.glob("*.status")) - before:
+            if refused or set(state.glob("*.status")) - before:
                 break
             time.sleep(0.5)
+        else:
+            pytest.fail("no status line 30s after the respawn")
         return said
 
     respawn("Backend, jarvis")
     assert (hosted / "jarvis-warm-preset").is_dir()
+
+    built_on(hosted / "jarvis-warm-preset", "ticket/warm-preset", "", "warm.rs")
+    said = respawn("Backend", refused=True)
+    assert "no longer names jarvis, whose worktree here carries work" in said.stderr, said.stderr
+    assert git(hosted / "jarvis-warm-preset", "log", "-1", "--format=%s").strip() == "ticket/warm-preset: warm.rs"
+    git(hosted / "jarvis-warm-preset", "reset", "-q", "--hard", "HEAD~1")  # fetched, and let go
 
     respawn("Backend")
     assert sorted(p.name for p in hosted.iterdir()) == [
@@ -1643,7 +1652,8 @@ def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and
         toy: Path, staged: Path) -> None:
     """On a local host a listed repo is the user's own checkout, and a `ticket/<slug>` there that
     this spawn did not cut is somebody's work: the spawn stops before cutting anything, and that
-    branch keeps its commit."""
+    branch keeps its commit, through the next spawn once `repos:` drops the repo and through the
+    cleanup after it."""
     repos = staged_listed(toy)
     _, theirs = built_on(repos["jarvis"], "ticket/warm-preset", "main", "theirs.rs")
 
@@ -1653,6 +1663,16 @@ def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and
     assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
     assert not (toy.parent / "lamp-warm-preset").exists()
     assert not git(repos["Backend"], "branch", "--list", "ticket/warm-preset")
+
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("repos: [Backend, jarvis]", "repos: [Backend]"))
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset names Backend alone")
+    again = spawn(toy, staged, "warm-preset", "Work it.\n")
+    assert again.returncode == 0, again.stderr
+    cleaned = subprocess.run([str(staged), "ctl", "cleanup", "warm-preset"], cwd=toy, capture_output=True, text=True,
+                             env=environment(toy), timeout=180)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert git(repos["jarvis"], "rev-parse", "ticket/warm-preset").strip() == theirs
 
 
 def test_a_parents_accept_deletes_its_childs_branch_in_a_listed_repo_once_merged_there(toy: Path) -> None:
