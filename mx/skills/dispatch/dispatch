@@ -1004,6 +1004,22 @@ review() {
         echo "dispatch: $id is $status, so the report on $branch was not imported; a report lands once, on the build that is claimed" >&2
     fi
 
+    # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
+    # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
+    # the round read again, since origin's base has been fetched and a deleted branch is in no round.
+    # The page a review rendered before that may be replaced by the one over what landed.
+    unmerged=() shown=() asked=0
+    for one in "${tips[@]}"; do
+        case ${one% *} in code | agent) ;; *) is_merged "${one% *}" "${one#* }" || unmerged+=("${one% *}") ;; esac
+    done
+    if [ ${#unmerged[@]} -gt 0 ]; then
+        page_specs "$id"
+        shown=("${specs[@]}")
+        land_on_github "$id" "${unmerged[@]}" || asked=1
+        # shellcheck disable=SC2086
+        round_of "$id" $named
+    fi
+
     # The status follows the branches: waiting for the ruling while any is unmerged, done once
     # all are, when the ranges are final too. `tracker` writes both, and refuses a landing the
     # tracker's transitions do not allow. A round whose branches carry no commit at all built
@@ -1037,14 +1053,14 @@ review() {
 
     # Read after the write above, so the round that just landed is in the list once.
     page_specs "$id"
-    render_page "$id"
+    render_page "$id" "${shown[@]}"
     # After the page, which reads the ticket's notes from its file
     [ -z "$retiring" ] || retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     # shellcheck disable=SC2086
     [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
-    [ -z "$kept" ]
+    [ -z "$kept" ] && [ "$asked" -eq 0 ]
 }
 
 # What a done ticket's run left, on its host and here. The run is found under $base, the branch it
@@ -1114,6 +1130,16 @@ accept() { # <slug>
     # where retire reads the merge.
     if [ -n "$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?')" ]; then
         listed "$("$tracker" get "$id" parent 2>/dev/null)"
+        # Its pull request squashed or rebased on GitHub leaves its own branch unmerged for good, as
+        # a ticket branch is in `review`: what landed is recorded on it and on the tickets under it
+        # first, and the branches it carried deleted, so the range read below is none and the done
+        # check finds them landed. A refusal of that check is the exit when it cannot be recorded.
+        unmerged=()
+        for name in "${!listed_top[@]}"; do
+            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
+            is_merged "$name" "$own" || unmerged+=("$name")
+        done
+        [ ${#unmerged[@]} -eq 0 ] || land_on_github "$id" "${unmerged[@]}"
         for name in $(printf '%s\n' "${!listed_top[@]}" | sort); do
             own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
             mine=$(range_of "$name" "$own") || exit 1
@@ -1143,34 +1169,31 @@ accept() { # <slug>
     return $rc
 }
 
-# The ticket's record of a listed repo whose pull request GitHub merged by squash or rebase, whose
-# ticket branch therefore never reaches the integration branch: its ranges there become the commits
-# that landed, its branch here goes once the pull request carried its tip, and the page is rendered
-# over the new ranges. GitHub is only read, through `gh pr view` and a fetch from origin.
-landed() { # <slug>
-    locate
-    id=$1
-    [ -f "$tickets/$id.md" ] || die "no ticket at $tickets/$id.md"
+# What a squash or a rebase merge on GitHub landed as, recorded in place of what the ticket branch
+# carried: such a merge leaves the branch unmerged for good and its commits on no integration
+# branch, so neither the range read off the branch nor the done check would ever hold. GitHub is
+# asked about <slug>'s `gh:` pull requests in <names>, the listed repos whose branch is unmerged,
+# and nothing else: a ticket whose listed branches have all merged asks it nothing. Each repo a
+# squash or a rebase rewrote has its ranges replaced by what landed (`record_landed`) and the branches
+# the pull request carried deleted (`drop_carried`). Sets `changed` where it wrote a range or deleted
+# a branch; nonzero for a pull request it could not read, and for a branch holding commits its pull
+# request did not carry. A pull request not merged yet is said and changes nothing.
+land_on_github() { # <slug> <name...>
+    local id=$1 refs ref url at name under own rc=0
+    shift
     refs=$("$tracker" get "$id" gh 2>/dev/null)
-    [ -n "$refs" ] || die "$id's gh: names no pull request, so there is no merge on GitHub to read"
-    listed "$("$tracker" get "$id" parent 2>/dev/null)"
-    named=$("$tracker" get "$id" repos 2>/dev/null)
-    for name in $named; do
-        [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
-    done
-    # The page as a review renders it now, which is what the render below may replace.
-    # shellcheck disable=SC2086
-    round_of "$id" $named
-    page_specs "$id"
-    shown=("${specs[@]}")
+    [ -n "$refs" ] || return 0
     for name in "${!listed_top[@]}"; do
         url=$(git -C "${listed_top[$name]}" config --get remote.origin.url) &&
             at=$(github_of "$url") && on_github[$at]=$name
     done
-    rc=0
-    for ref in $refs; do pr_landed "$ref" || rc=1; done
-
-    changed=
+    for ref in $refs; do
+        at=${ref%#*}
+        name=${on_github[${at,,}]-}
+        # A pull request in a listed repo whose branch merged has nothing left to say.
+        [ -z "$name" ] || [[ " $* " == *" $name "* ]] || continue
+        pr_landed "$ref" || rc=1
+    done
     # A parent ticket's pull request carries its own branch, named by its slug alone as the done
     # check reads it, and with it the work the tickets under it merged into that branch: theirs is
     # recorded and deleted the same way, so the parent's accept finds them landed.
@@ -1184,15 +1207,6 @@ landed() { # <slug>
         drop_carried "$name" "$own"
         for slug in $under; do drop_carried "$name" "ticket/$slug"; done
     done
-    if [ -z "$changed" ]; then
-        [ "$rc" -ne 0 ] || echo "dispatch: $id's record already holds what landed, so nothing changes" >&2
-        return $rc
-    fi
-    # shellcheck disable=SC2086
-    round_of "$id" $named
-    page_specs "$id"
-    render_page "$id" "${shown[@]}"
-    [ -z "$kept" ] || rc=1
     return $rc
 }
 
@@ -1253,8 +1267,9 @@ order=()
 
 # What GitHub says <ref>'s pull request landed as, in the listed repo whose origin it is on: its
 # range in `landed_in`, with `rewritten` set for a squash or a rebase merge, and the commits it
-# carried in `carried`. A pull request that has not landed sets `held`, so that repo's ranges stay as
-# they are, and returns nonzero; one in no listed repo is said and changes nothing.
+# carried in `carried`. A pull request not merged yet, or one GitHub or origin cannot vouch for, sets
+# `held`, so that repo's ranges stay as they are; only the second returns nonzero, since the first
+# is every review before the team merges. One in no listed repo is said and changes nothing.
 pr_landed() { # <ref>
     local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind
     name=${on_github[${repo,,}]-}
@@ -1265,7 +1280,7 @@ pr_landed() { # <ref>
         { echo "dispatch: GitHub did not answer for $1, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
     merge=$(jq -r '.mergeCommit.oid // empty' <<< "$said")
     [ -n "$merge" ] ||
-        { echo "dispatch: $1 is $(jq -r '.state | ascii_downcase' <<< "$said") and not merged, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+        { echo "dispatch: $1 is $(jq -r '.state | ascii_downcase' <<< "$said") and not merged, so $name's ranges stay as recorded" >&2; held[$name]=1; return 0; }
     onto=$(jq -r .baseRefName <<< "$said")
     { run git -C "$top" fetch -q origin "+refs/heads/$onto:refs/remotes/origin/$onto" &&
         git -C "$top" merge-base --is-ancestor "$merge" "origin/$onto"; } ||
@@ -1664,7 +1679,6 @@ case $cmd in
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
     accept)  shift; accept "$@" ;;
-    landed)  shift; landed "$@" ;;
     ps)      shift; ps_ "$@" ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;
