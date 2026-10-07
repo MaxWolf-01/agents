@@ -195,12 +195,19 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     """What every command here runs in: a HOME of its own, a `diffview` that records the
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
     what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
-    spawn hands its runner in place of the one the host's claude lists."""
+    spawn hands its runner in place of the one the host's claude lists. The page it writes carries
+    each source's spec in its JSON with both ends pinned to short SHAs, as diffview's does."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
-        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
+        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n'
+        '[ "$1" = --serve ] && exit 0\n'
+        'out=; page=\n'
+        'while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; --notes) shift 2 ;;'
+        ' *) r=${1##*@}; page="$page{\\"spec\\": \\"${1%@*}@$(printf %.7s "${r%%..*}")..$(printf %.7s "${r#*..}")\\"}, "; shift ;;'
+        ' esac; done\n'
+        'printf \'{"sources": [%s]}\\n\' "$page" > "$out"\n')
     (bin_dir / "diffview").chmod(0o755)
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
@@ -244,6 +251,12 @@ def waited(toy: Path, state: Path | None = None) -> Path:
 
 def status_of(toy: Path, slug: str) -> str:
     return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
+
+
+def ranges_of(toy: Path, slug: str) -> list[str]:
+    """The ticket's `diff:` ranges, as the tracker reads them."""
+    return subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "get", slug, "diff"],
+                          cwd=toy, capture_output=True, text=True).stdout.split()
 
 
 def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
@@ -1176,6 +1189,242 @@ def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> No
     assert status_of(toy, "warm-preset") == "review"
     assert by_hand.read_text() == "the code in a repo dispatch does not read\n"
     assert not (toy.parent / "bin" / "diffview.args").exists()
+
+
+# `tickets-land-in-listed-repos`: a ticket's round lands in the listed repos its `repos:` names
+# beside the code repo and the agent repo. The oracle is each toy repo's own history, read with git:
+# a round is one commit per branch, so a range is that commit's parent and the commit.
+
+
+def listed_repo(at: Path, branch: str) -> Path:
+    """A repo for the toy's repo list, with one commit on `branch`."""
+    git(at.parent, "init", "-q", "-b", branch, str(at))
+    (at / "README").write_text(f"{at.name}\n")
+    git(at, "add", "-A")
+    git(at, "commit", "-q", "-m", f"{at.name} begins")
+    return at
+
+
+def listing(toy: Path, slug: str, toml: str, repos: str) -> None:
+    """The toy's repo list as `toml`, and `slug` claimed and naming `repos` in its `repos:`."""
+    agent = toy / "agent"
+    (agent / "repos.toml").write_text(toml)
+    path = tracked(toy) / f"{slug}.md"
+    path.write_text(path.read_text().replace("status: open", f"status: claimed\nrepos: [{repos}]", 1))
+    git(agent, "add", "-A")
+    git(agent, "commit", "-q", "-m", f"the repo list, and {slug} claimed")
+
+
+def built_on(top: Path, branch: str, start: str, name: str) -> tuple[str, str]:
+    """One commit on `branch` in `top`, cut from `start` unless it exists: (its parent, itself).
+    `top` is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    exists = subprocess.run(["git", "-C", str(top), "rev-parse", "-q", "--verify", f"refs/heads/{branch}"],
+                            capture_output=True).returncode == 0
+    git(top, "switch", "-q", *([branch] if exists else ["-c", branch, start]))
+    (top / name).write_text(f"{branch} in {top.name}\n")
+    git(top, "add", name)
+    git(top, "commit", "-q", "-m", f"{branch}: {name}")
+    git(top, "switch", "-q", had)
+    return git(top, "rev-parse", f"{branch}~1").strip(), git(top, "rev-parse", branch).strip()
+
+
+def merged_in(top: Path, onto: str, branch: str) -> None:
+    """`branch` merged --no-ff into `onto` in `top`, which is left on the branch it had out."""
+    had = git(top, "branch", "--show-current").strip()
+    git(top, "switch", "-q", onto)
+    git(top, "merge", "-q", "--no-ff", "-m", f"{branch} merged", branch)
+    git(top, "switch", "-q", had)
+
+
+def pages(toy: Path) -> list[str]:
+    """The specs of every page `dispatch review` asked diffview for, in order, one line each."""
+    handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
+    return [line.partition(" --notes ")[0] for line in handed if not line.startswith("--serve")]
+
+
+def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_after_its_merge(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P4`: one page, a section per repo the round committed in: the
+    code repo, `Backend` nested in the project, and `jarvis` beside it, whose PR merges at origin
+    while its own `main` is behind. Each range names its repo, and is the same range before and
+    after the merge."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    seed = listed_repo(toy.parent / "jarvis-seed", "main")
+    git(toy.parent, "clone", "-q", "--bare", str(seed), str(toy.parent / "jarvis.git"))
+    jarvis = toy.parent / "jarvis"
+    git(toy.parent, "clone", "-q", str(toy.parent / "jarvis.git"), str(jarvis))
+    jarvis = jarvis.resolve()
+    # origin moves on after the clone, and the ticket branch is cut from there: a range against the
+    # stale local `main` alone would start a commit early
+    (seed / "later").write_text("later\n")
+    git(seed, "add", "later")
+    git(seed, "commit", "-q", "-m", "jarvis moves on")
+    git(seed, "push", "-q", str(toy.parent / "jarvis.git"), "main")
+    git(jarvis, "fetch", "-q")
+    listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n[jarvis]\npath = "{jarvis}"\n',
+            "Backend, jarvis")
+
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "Backend": built_on(backend, "ticket/warm-preset", "development", "warm.py"),
+              "jarvis": built_on(jarvis, "ticket/warm-preset", "origin/main", "warm.rs")}
+    assert rounds["jarvis"][0] != git(jarvis, "rev-parse", "main").strip()
+    ranges = [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
+    page = (f"{toy}@{rounds['code'][0]}..{rounds['code'][1]} {backend}@{rounds['Backend'][0]}..{rounds['Backend'][1]} "
+            f"{jarvis}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review"
+    assert pages(toy) == [page]
+    assert "-o " + str(agent / "diffviews" / "warm-preset.html") in (toy.parent / "bin" / "diffview.args").read_text()
+
+    for top, onto in ((toy, "main"), (agent, "main"), (backend, "development")):
+        merged_in(top, onto, "ticket/warm-preset")
+    # the PR's merge, at origin, which `jarvis` has fetched and its own `main` has not taken in
+    git(jarvis, "switch", "-q", "-c", "pr", "origin/main")
+    git(jarvis, "merge", "-q", "--no-ff", "-m", "Merge pull request #1", "ticket/warm-preset")
+    git(jarvis, "push", "-q", "origin", "pr:main")
+    git(jarvis, "switch", "-q", "main")
+
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == ranges
+    assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
+
+
+def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
+    """A child built on its parent ticket's branch: in `Backend` its base is the parent's branch
+    there, which is ahead of the integration branch. A round merged into it is recorded; the next
+    round, in `Backend` alone and unmerged, renders after it on the same page, and is recorded once
+    it merges."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
+    git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    git(backend, "branch", "lamp-ui")
+    built_on(backend, "lamp-ui", "development", "ui.py")  # the parent's branch, ahead of development
+    worktree = toy.parent / "lamp-lamp-ui"
+    git(toy, "worktree", "add", "-q", str(worktree), "-b", "lamp-ui")
+    listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "Backend")
+
+    first = {"code": built_on(toy, "ticket/warm-preset", "lamp-ui", "warm.txt"),
+             "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+             "Backend": built_on(backend, "ticket/warm-preset", "lamp-ui", "warm.py")}
+    git(worktree, "merge", "-q", "--no-ff", "-m", "warm-preset merged", "ticket/warm-preset")
+    merged_in(agent, "main", "ticket/warm-preset")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "review", "ruled with its parent"
+    recorded = [f"{at}@{cut}..{tip}" for at, (cut, tip) in first.items()]
+    assert ranges_of(toy, "warm-preset") == recorded
+
+    # sent back: the resumed worker's next round touches Backend alone
+    again = built_on(backend, "ticket/warm-preset", "", "warmer.py")
+    assert again[0] == first["Backend"][1]
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    sections = [f"{worktree}@{first['code'][0]}..{first['code'][1]}",
+                f"{backend}@{first['Backend'][0]}..{first['Backend'][1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+    assert ranges_of(toy, "warm-preset") == recorded, "unmerged, unrecorded"
+
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    said = run(worktree, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [*recorded, f"Backend@{again[0]}..{again[1]}"]
+    assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
+
+
+def claimed_with_code(toy: Path) -> tuple[str, str]:
+    """warm-preset claimed, its round one commit in the code repo and one in the agent repo: the
+    code range's (start, end)."""
+    agent = toy / "agent"
+    path = tracked(toy) / "warm-preset.md"
+    path.write_text(path.read_text().replace("status: open", "status: claimed", 1))
+    git(agent, "commit", "-q", "-am", "warm-preset claimed")
+    built_on(agent, "ticket/warm-preset", "main", "warm.md")
+    return built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+
+
+def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
+    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path that
+    shows a source this review does not render is a session's, rendered by hand, and the render
+    that would replace it does not happen; the rest of the review does, and the exit status says it
+    was not whole. A page over the review's own sources is replaced, diffview's rewrite of it when
+    its summary lands included."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+
+    def refused(by_hand: str) -> None:
+        page.write_text(by_hand)
+        said = run(toy, "review", "warm-preset")
+        assert said.returncode != 0
+        assert "leaves that page as it is" in said.stderr, said.stderr
+        assert page.read_text() == by_hand
+        assert status_of(toy, "warm-preset") == "review"
+
+    elsewhere = '{"spec": "/elsewhere/Backend@1234567..89abcde"}'
+    refused("the Backend diff, as a note\n")  # no diffview page at all
+    refused('{"sources": [' + elsewhere + "]}\n")
+    assert not (toy.parent / "bin" / "diffview.args").exists()
+
+    page.unlink()  # moved aside, as the refusal says
+    assert run(toy, "review", "warm-preset").returncode == 0
+    ours = page.read_text()
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in ours
+
+    page.write_text(ours.replace("]}", "]} <p>the summary, landed</p>"))  # diffview's own rewrite
+    assert run(toy, "review", "warm-preset").returncode == 0
+    assert len(pages(toy)) == 2
+
+    # a session's render over it: the review's own source, and the Backend diff the ticket lacks
+    refused(ours.replace("]}", ", " + elsewhere + "]}"))
+    # the same source with an end off the ticket's branch: a commit beside it, not under it
+    _, beside = built_on(toy, "elsewhere", "main", "cool.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beside[:7]}"))
+    # the same source running past the ticket's tip, which the render would cut short
+    _, beyond = built_on(toy, "beyond", tip, "warmest.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beyond[:7]}"))
+    assert len(pages(toy)) == 2
+
+
+def test_a_round_grown_before_its_merge_renders_its_own_page_again(toy: Path) -> None:
+    """An amend, or a resumed round fetched before its merge: the round records no range yet, so its
+    page showed the range to the tip it had, and the range now runs from the same start to a tip
+    that tip is an ancestor of. Nothing on the page is lost to the render over the longer range."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    first = run(toy, "review", "warm-preset")
+    assert first.returncode == 0, first.stderr
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
+
+    grown, later = built_on(toy, "ticket/warm-preset", "", "warmer.txt")
+    assert grown == tip
+    again = run(toy, "review", "warm-preset")
+    assert again.returncode == 0, again.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}", f"{toy}@{cut}..{later}"]
+    assert f"{toy}@{cut[:7]}..{later[:7]}" in page.read_text()
+
+
+def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_again(toy: Path) -> None:
+    """A page over the ticket's own range, its ends pinned to SHAs of another length than
+    diffview's and other JSON around them, as an earlier `dispatch review` left it: nothing on it is
+    lost to a render over that range, so it is replaced with no move by hand."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+    page.write_text('<script>{"sources": [{"label": "lamp", "spec": "' + f"{toy}@{cut[:9]}..{tip[:9]}" + '"}]}</script>\n')
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}"]
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
 
 
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:
