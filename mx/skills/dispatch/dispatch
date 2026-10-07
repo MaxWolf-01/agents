@@ -1,146 +1,63 @@
 #!/usr/bin/env bash
-# The orchestrator's side of one dispatch: the steps with an ordering that
-# matters and nothing in them to judge, and the one door to the worker hosts.
-# Runs here, on the branch ticket branches cut from and merge back into: the
-# branch a parent ticket is built on, in that worktree, or the repo's
-# integration branch, in the checkout you are in, for a ticket with no parent
-# ticket. A project is two repos, this one and the agent repo it holds at
-# `agent/`, and everything below does both: a ticket branch is cut, pushed,
-# fetched and merged in each. `dispatch-ctl` is its counterpart on a worker
-# host, reached through `ctl`.
+# The orchestrator's side of dispatch and its one door to the worker hosts. Run
+# it on the branch ticket branches cut from and merge back into: a parent
+# ticket's, or the integration branch for a ticket with no parent. A ticket's
+# branch is ticket/<slug> in the code repo, in the agent repo at `agent/`, and
+# in each listed repo its `repos:` names (`tracker repos --help`).
 #
-# Usage: dispatch claim <slug>
-#        dispatch prompt <slug> < message-file
-#        dispatch ctl [--host <host>] [--setup-cmd <command>] <dispatch-ctl args...>
-#        dispatch wait <slug> [--stall SECS] [--deadline SECS]
-#        dispatch fetch <slug>
-#        dispatch push
-#        dispatch review <slug>
-#        dispatch accept <slug>
-#        dispatch ps [--color]
-#        dispatch attach <worker>
-#        dispatch peek <worker> [lines]
-#        dispatch fuzz <verb>
-#   <slug> is the ticket's id, and names its file in the tracker (`tracker root`).
-#   claim    flips <slug> to claimed and commits that in the agent repo's main
-#            checkout, where every ticket file is written. Refuses a ticket
-#            already claimed, which is one in somebody's hands; every other
-#            transition is `tracker set`'s to allow or refuse, and its refusal
-#            names the rule.
-#   prompt   writes stdin as <slug>'s message, here; the spawn that follows
-#            sends it with the ticket's context under it (`tracker context`:
-#            the ticket's body and every ancestor's, the one assembly a
-#            review's --spec reads too), and keeps what it sent beside the
-#            message. A resume sends the message alone: the context is in the
-#            conversation it resumes.
-#   ctl      runs `dispatch-ctl <args>` on a host, from this branch's scratch
-#            dir there, with DISPATCH_PERMISSION_MODE passed along when set;
-#            `dispatch ctl --help` is that script's reference. DISPATCH_RUNNER,
-#            when set, is a runner file here: a spawn or resume copies it into
-#            the scratch dir as `runner` and runs the worker on that copy.
-#            --host names the host, user@host or `local` for this machine, and
-#            a spawn is where you name it: the run is recorded here, so wait,
-#            fetch, log, stop, resume and cleanup find a ticket's host from
-#            the slug; `cleanup` forgets the run it just removed; `resume`
-#            claims a review ticket again, as `claim` would.
-#            `probe` with no --host polls every host this branch still has a run
-#            on, each line behind its host; one that cannot answer says so in
-#            place of its workers.
-#            The first spawn on a host stages it: the git remotes, this plugin
-#            version's dispatch-ctl, runner, worker prompt and the tracker's
-#            commit hook in this branch's scratch dir there, and `dispatch-ctl
-#            init`. A later spawn finds
-#            them staged and skips that; one that finds a version other than
-#            this plugin's stages again, so no worker starts on a stale
-#            contract. Every spawn then pushes this branch of both repos to a
-#            remote host, so a ticket branch cuts from its current tip; a
-#            local host cuts from these checkouts.
-#            --setup-cmd is the project's own setup line, run in every ticket
-#            worktree on that host before its worker starts. The staged one
-#            stays until another --setup-cmd replaces it; with none ever given,
-#            spawn uses `make install` (under `nix develop -c` where a
-#            flake.nix exists).
-#   wait     blocks until the current run of <slug> ends and prints its
-#            probe line (`dispatch-ctl wait`, whose flags pass straight
-#            through), riding out a dropped connection to its host on the way.
-#            Exit 0 on `exited`; nonzero when the run is `gone` (1), the
-#            worklog went silent for --stall (2), --deadline passed (5), or
-#            the host stayed unreachable for two minutes.
-#   fetch    brings both ticket/<slug> branches from the host into the two
-#            repos here, replacing an earlier fetch of them (ticket branches get
-#            rebased). The worker's report is a file on the agent branch, so it arrives with
-#            it, and the host's run log lines come with it too (`run-log pull`),
-#            as they do on a cleanup; a pull that fails is said and stops nothing.
-#   push     this branch, from both repos, to every host still holding a run of
-#            it, and to the fuzz host when this is the branch it fuzzes, so a
-#            worker resumed to rebase finds the tips it is rebasing onto. A
-#            host that refuses the push is reported and the rest still get it;
-#            the exit status is nonzero when any did not.
-#   review   once a ticket's branches are fetched, before or after their merge
-#            alike: imports the report the agent branch carries at
-#            agent/show/<slug>/report.md into the ticket, once per report;
-#            refuses an agent branch that wrote a ticket file, whatever else it
-#            left; projects the
-#            ticket's assumptions anchored in code into the review page's
-#            notes; renders agent/diffviews/<slug>.html in the agent repo,
-#            over the ticket's code ranges alone, and serves it, or says the
-#            ticket gets no page when no round of it carries code; re-renders
-#            the board; and writes the ticket's status: `review` while either
-#            branch is unmerged, `done` with the round's two ranges in the
-#            `diff:` frontmatter, `code@<sha>..<sha>` and `agent@<sha>..<sha>`,
-#            once both have merged. A child ticket merged into its parent
-#            ticket's branch, which this is, gets its ranges and stays
-#            `review` unless it is a hinge: it is ruled with the parent, and
-#            `accept` writes its `done`. One commit either way, and none when
-#            the ticket already says so. A `done` retires the ticket's run
-#            (below), and `tracker retire` takes out the trees it finished.
-#   accept   the user's accept of a parent ticket ruled whole, once its branch
-#            <slug> has merged --no-ff into this one, the branch above it:
-#            writes `done` on every child ticket of it in `review`, then on
-#            the parent with its range, `code@<sha>..<sha>`. Refuses before
-#            that merge, and writes nothing when the tracker refuses any one
-#            of them. One commit; then `tracker retire` takes out the trees it
-#            finished, and every child's run is retired.
-#   A ticket that is done has nothing left to resume, so the `done` retires
-#   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
-#   both ticket/<slug> branches here. A retirement that fails is said, with
-#   the command that tries again, and the exit status is nonzero; the
-#   `done` stands. `ctl cleanup` stays for a build that is not landing: a
-#   redo, a reject, a session that cannot be recovered.
-#   ps       one row per worker on every worker host, under a header naming
-#            the columns. A host that did not answer is an `unreachable` row, a
-#            scratch dir whose probe failed an `unreadable` one, a
-#            `worker-hosts --targets` that failed an `incomplete` one, and any
-#            of them makes the exit status nonzero. A count per state closes
-#            it, running and exited always there, zero or not. In color on a terminal, or with --color, which `watch` needs
-#            (`watch -c dispatch ps --color`); NO_COLOR turns it off. In color a
-#            running worker's IDLE turns yellow at 15 minutes. For a human
-#            looking in; the orchestrator's own view is `dispatch ctl probe`.
-#   attach   opens a worker's tmux session, as the user that runs it there.
-#            A Ctrl-C in it ends the run the way `ctl stop` does, resumable.
-#            Whatever is typed into the pane while the runner runs, the pane's
-#            shell runs once the runner exits.
-#   peek     prints the last <lines> (default 100) of a worker's pane.
-#   fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help
-#   ps, attach and peek ask every host `worker-hosts --targets` publishes and
-#   every host this repo's runs and fuzz run name, all at once, and read
-#   every scratch dir on each, whichever repo and branch it is for. They
-#   change nothing, so they run from any branch and any directory in a repo.
-#   <worker> is a ticket's slug, or its session's name, exactly; `fuzz` is a
-#   repo's fuzz run. One held on two hosts, or in two repos, resolves to
-#   nothing: its candidates are listed, each with a `<host>/<slug>` or
-#   `<host>/<session>` form to type.
+# claim <slug>    before the spawn. Writes `claimed`, committed in the agent repo.
+#                 Exit 1: already claimed, or the tracker refused (rule printed).
+# prompt <slug> < <file>
+#                 before a spawn or a resume: stdin is the worker's message. A
+#                 spawn sends the ticket's context and its listed repos' paths
+#                 under it; a resume sends it alone.
+# ctl [--host <host>] [--setup-cmd <cmd>] <dispatch-ctl args>
+#                 runs dispatch-ctl on a worker host (`dispatch ctl --help`). A
+#                 spawn names the host, user@host or `local`; later commands
+#                 find it from the slug, and `probe` with no --host asks every
+#                 host this branch has a run on. --setup-cmd replaces the line
+#                 each new worktree there runs first (default `make install`,
+#                 under `nix develop -c` with a flake.nix). `resume` claims a
+#                 ticket in `review` again; `cleanup` forgets the run.
+#                 Exit 1: the ticket needs the user, has no message, or the
+#                 host could not be staged (named).
+# wait <slug> [--stall SECS] [--deadline SECS]
+#                 after a spawn or resume, as a background task. Prints the
+#                 run's probe line when it ends. Exit 0 exited; 1 gone, or the
+#                 host unreachable for two minutes; 2 worklog silent for
+#                 --stall; 5 --deadline passed. The worker runs on.
+# fetch <slug>    once the worker exited. Brings every ticket/<slug> branch here,
+#                 over an earlier fetch. Exit 1: a branch did not come (named).
+# push            after this branch moved under workers that must rebase onto
+#                 it. Pushes it to every host with a run of it, and the fuzz
+#                 host when it fuzzes this branch. Exit 1: a host refused
+#                 (named); the rest have it.
+# review <slug>   after every fetch and every merge. Imports the worker's
+#                 report, renders agent/diffviews/<slug>.html, writes `review`,
+#                 or `done` once every branch is merged (a squashed or rebased
+#                 PR is read from GitHub), each repo's range in `diff:`; a
+#                 `done` retires the run. A child merged into its parent's
+#                 branch stays in `review` for the parent's ruling, unless it
+#                 is a hinge. Exit 1: the branch wrote a ticket file; a page it
+#                 didn't render is in the way (named); a PR it could not read,
+#                 or a branch holding commits its PR did not carry; the tracker
+#                 refused, or the run did not retire (reason printed).
+# accept <slug>   once a parent ticket's branch merged --no-ff into this one, on
+#                 the user's accept. Writes `done`, with its ranges, on it and
+#                 every child of it in `review`, in one commit, and retires
+#                 their runs; a squashed or rebased PR of its branch is read as
+#                 `review` reads one. Exit 1: not merged yet, or the tracker
+#                 refused one, and nothing is written.
+# ps [--color]    every worker on every host, for a human; the orchestrator's
+#                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
+# attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
+# peek <worker> [lines]
+#                 the last lines of a worker's pane, 100 by default.
+# fuzz <verb>     the repo's fuzz run: dispatch fuzz --help.
+# <worker> is a slug or a session name; one held twice lists the forms to type.
 #
-# A ticket branch merges into this branch with --no-ff, in each repo; that merge
-# commit is how `review` finds a ticket's range after the merge (its second
-# parent is the ticket tip). No code merges above a parent ticket's branch
-# before the user has ruled: a hinge, and a ticket with no parent ticket's
-# branch to merge into, merge only on the accept, and until then render
-# unmerged, the tracker carrying the ticket's status and nothing else of it; any
-# other child merges into its parent's branch on the orchestrator's read, and
-# its parent's accept takes it up. The agent repo holds no parent ticket's
-# branch, so that child's agent branch merges into the branch it has out, at
-# the same read.
+# Env: DISPATCH_PERMISSION_MODE reaches the worker; DISPATCH_RUNNER is a runner
+# file here that a spawn or resume runs the worker on (`dispatch ctl --help`).
 set -u
 
 skill=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -156,6 +73,8 @@ tracker=$skill/../tracker/tracker.py
 # come back here then (`run-log --help`).
 run_log=$skill/../run-log/run-log
 
+# Every command that changes something is echoed before it runs, so a transcript shows the
+# primitives, and any step this script got wrong can be redone by hand.
 run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
@@ -168,10 +87,60 @@ retire_trees() {
         echo "dispatch: the done is committed, and \`tracker retire\` refused; run it again once that is fixed" >&2
 }
 
-# The two repos a round lands in, by the name its `diff:` range carries, and the branch each one's
-# ticket branches cut from and merge back into.
-repo_at() { [ "$1" = agent ] && echo "$agent_top" || echo "$repo_root"; } # code | agent
-base_at() { [ "$1" = agent ] && echo "$agent_base" || echo "$base"; }     # code | agent
+# The repos a round lands in, by the name its `diff:` range carries, and the branch each one's
+# ticket branches cut from and merge back into. A listed repo's are `listed_top` and `listed_onto`,
+# which `listed` fills.
+repo_at() { case $1 in code) echo "$repo_root" ;; agent) echo "$agent_top" ;; *) echo "${listed_top[$1]-}" ;; esac; }
+base_at() { case $1 in code) echo "$base" ;; agent) echo "$agent_base" ;; *) echo "${listed_onto[$1]-}" ;; esac; }
+declare -A listed_top=() listed_onto=()
+
+# Every repo on the project's list, read through `tracker repos`, its one reader. Its base is the
+# parent ticket's branch there where the repo has one, and its integration branch otherwise, both
+# its own and origin's where it has both: a merge on this machine is local, and a PR's is at origin.
+# Space-separated, since a ref name holds no space.
+listed() { # <parent slug, or nothing>
+    local list name path integration ref refs
+    list=$("$tracker" repos) || exit 1
+    while IFS=$'\t' read -r name path integration; do
+        [ -n "$name" ] || continue
+        listed_top[$name]=$path
+        if [ -n "$1" ] && git -C "$path" rev-parse -q --verify "refs/heads/$1" > /dev/null; then
+            listed_onto[$name]=$1
+            continue
+        fi
+        refs=
+        for ref in "$integration" "origin/$integration"; do
+            git -C "$path" rev-parse -q --verify "$ref^{commit}" > /dev/null && refs+=" $ref"
+        done
+        listed_onto[$name]=${refs# }
+    done <<< "$list"
+}
+
+# The listed repos <slug>'s `repos:` names, in `ticket_repos`, each with `listed_top` filled and the one ref
+# its ticket branch cuts from in `cut_from`; nothing at all for a ticket that names none, whose
+# project may list none.
+declare -A cut_from=()
+ticket_listed() { # <slug>
+    local name refs
+    ticket_repos=() cut_from=()
+    read -r -a ticket_repos <<< "$("$tracker" get "$1" repos 2>/dev/null | tr '\n' ' ')"
+    [ ${#ticket_repos[@]} -gt 0 ] || return 0
+    listed "$("$tracker" get "$1" parent 2>/dev/null)"
+    for name in "${ticket_repos[@]}"; do
+        [ -n "${listed_top[$name]-}" ] || die "$1's repos: names $name, which \`tracker repos\` does not list"
+        # Of a local integration branch and origin's, the one ahead, and the local one where the two
+        # have parted: a PR merges at origin, which a local branch may not have taken in yet.
+        read -r -a refs <<< "${listed_onto[$name]}"
+        cut_from[$name]=${refs[0]}
+        [ ${#refs[@]} -lt 2 ] || ! git -C "${listed_top[$name]}" merge-base --is-ancestor "${refs[0]}" "${refs[1]}" ||
+            cut_from[$name]=${refs[1]}
+    done
+}
+
+# The remote a repo here pushes to and fetches from on <host>, by the name its range carries. A
+# listed repo's has the project's name in it, since the repo may be another project's code repo,
+# whose own remote for the host names that project's bare repo.
+remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
 # Every command runs on the branch ticket branches cut from and merge back
 # into: a parent ticket's, or the integration branch.
@@ -290,6 +259,11 @@ host_of() { # <name> → the host it last ran on, nothing when it never has
     awk -F'\t' -v f="$base" -v n="$1" '$1 == f && $2 == n { h = $3 } END { if (h != "") print h }' "$runs"
 }
 
+runs_on() { # <host> → every ticket this branch has a run of there
+    [ -f "$runs" ] || return 0
+    awk -F'\t' -v f="$base" -v h="$1" '$1 == f { at[$2] = $3 } END { for (n in at) if (at[n] == h) print n }' "$runs"
+}
+
 hosts_used() { # every host this branch has a run on
     [ -f "$runs" ] || return 0
     awk -F'\t' -v f="$base" '$1 == f && !seen[$3]++ { print $3 }' "$runs"
@@ -304,7 +278,10 @@ ticket_host() { # <slug>
 
 # What a host runs a worker from, and `stamp`, the digest of the copy it holds:
 # a host staged by another plugin version is staged again rather than left to
-# start a worker on a contract this branch has moved past.
+# start a worker on a contract this branch has moved past. Staging is the git
+# remotes here, then this plugin's dispatch-ctl, runner, worker prompt, run-log
+# and the tracker's commit hook copied into this branch's scratch dir there, and
+# `dispatch-ctl init`.
 stage() { # <host> [setup-command]
     h=$1 cmd=${2:-}
     scratch=$(scratch_dir "$h")
@@ -331,7 +308,7 @@ stage() { # <host> [setup-command]
         copy_to "$h" "$scratch" "${files[@]}" || die "copy into $scratch failed"
         run bash "$scratch/dispatch-ctl" init "$repo" "$base" "$repo_root" "$(dirname "$repo_root")" "$agent_top" "$agent_base" || die "init failed"
     else
-        remote=${h//[@.]/-}
+        remote=$(remote_of code "$h")
         git remote get-url "$remote" >/dev/null 2>&1 || run git remote add "$remote" "$h:repos/dispatch/$repo.git"
         git -C "$agent_top" remote get-url "$remote" >/dev/null 2>&1 ||
             run git -C "$agent_top" remote add "$remote" "$h:repos/dispatch/$repo-agent.git"
@@ -352,10 +329,68 @@ push_to() { # <host>
     # The agent repo first: a fuzz run's host restarts on the code repo's push
     # and finds the agent repo's tip current by then.
     for at in agent code; do
-        run git -C "$(repo_at "$at")" push -q "${1//[@.]/-}" "$(base_at "$at")" ||
+        run git -C "$(repo_at "$at")" push -q "$(remote_of "$at" "$1")" "$(base_at "$at")" ||
             { echo "dispatch: pushing $(base_at "$at") of the $at repo to $1 failed" >&2; rc=1; }
     done
     return $rc
+}
+
+# The base of every listed repo `ticket_listed` read, to the bare repo of its own the host holds,
+# under the name of the branch it is there: origin's integration branch arrives as the integration
+# branch.
+push_listed() { # <host>
+    [ "$1" = local ] && return 0
+    local name top remote url rc=0
+    for name in "${ticket_repos[@]}"; do
+        top=${listed_top[$name]} remote=$(remote_of "$name" "$1") url=$1:repos/dispatch/$repo-$name.git
+        git -C "$top" remote get-url "$remote" > /dev/null 2>&1 || run git -C "$top" remote add "$remote" "$url"
+        # The push below is forced, so it goes to no remote of that name the repo had for another use.
+        [ "$(git -C "$top" remote get-url "$remote")" = "$url" ] ||
+            { echo "dispatch: $name's remote $remote at $top is not $url, so nothing is pushed there" >&2; rc=1; continue; }
+        # Forced: the host's copy is dispatch's own, and which of local and origin's branch is the
+        # base may change between two pushes, where the two have parted.
+        run git -C "$top" push -q "$remote" "+${cut_from[$name]}:refs/heads/${cut_from[$name]#origin/}" ||
+            { echo "dispatch: pushing ${cut_from[$name]} of $name to $1 failed" >&2; rc=1; }
+    done
+    return $rc
+}
+
+# A listed repo's path inside the project, which is also its path in a worker's worktree; nothing
+# for a repo outside the project, which a worker finds at `sibling_of`, beside its worktree.
+place_of() { # <name>
+    local project
+    project=$(realpath "$(dirname "$agent_top")")
+    case ${listed_top[$1]} in "$project"/*) echo "${listed_top[$1]#"$project"/}" ;; esac
+}
+sibling_of() { echo "../$1-$2"; } # <name> <slug>
+
+# The listed repos <slug> names, their bases pushed to a remote host's bare repos (`dispatch-ctl
+# bare`); a local host cuts from the repos' own checkouts. No other repo on the list reaches the
+# host (P5), and one an earlier spawn of the ticket was given and this one is not loses its
+# worktree and branch there (`dispatch-ctl spawn`'s --repo). Each repo travels to the spawn as a
+# --repo group in `listed_args`. A ticket that names none sends none, and the spawn call empties the
+# host's record of them; no other call is made. The brief's lines for them go in `listed_brief`.
+stage_listed() { # <host> <slug>
+    local name top place from
+    listed_brief= listed_args=()
+    ticket_listed "$2"
+    [ ${#ticket_repos[@]} -gt 0 ] || return 0
+    listed_brief="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
+    for name in "${ticket_repos[@]}"; do
+        top=${listed_top[$name]} place=$(place_of "$name")
+        # The base by the name it has where the worker is: origin's branch arrives on a remote host
+        # under the integration branch's own name.
+        if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
+        else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
+        if [ -n "$place" ]; then
+            listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
+        else
+            listed_brief+=$'\n'"- $name: \`$(sibling_of "$name" "$2")\`, beside your worktree, from \`$from\`"
+        fi
+    done
+    [ "$1" = local ] && return 0
+    run on_host "$1" bash "$(scratch_dir "$1")/dispatch-ctl" bare "${ticket_repos[@]}" || return 1
+    push_listed "$1"
 }
 
 claim() {
@@ -374,9 +409,10 @@ reclaim() { # <slug>
     commit_ticket "$1" "claim $1"
 }
 
-# One host down is one host's failure: the others still get the tip, and the
-# exit status says some did not, since this is what a worker waiting to rebase
-# is blocked on.
+# This branch of both repos, and the base of each listed repo a run's ticket names, to every host
+# holding a run of it, so a worker resumed to rebase finds the tips it rebases onto. One host down
+# is one host's failure: the others still get the tip, and the exit status says some did not,
+# since this is what a worker waiting to rebase is blocked on.
 push() {
     locate
     # The fuzz host holds the branch it fuzzes, and a push is what restarts it.
@@ -385,7 +421,13 @@ push() {
              } | sort -u)
     [ -n "$hosts" ] || { echo "no run recorded for $base: no host holds it yet"; return; }
     rc=0
-    for h in $hosts; do push_to "$h" || rc=1; done
+    for h in $hosts; do
+        push_to "$h" || rc=1
+        # A subshell each, so a ticket whose listed repos cannot be read stops no other push.
+        for slug in $(runs_on "$h"); do
+            ( ticket_listed "$slug" && push_listed "$h" ) || rc=1
+        done
+    done
     return $rc
 }
 
@@ -398,7 +440,7 @@ briefed() { # <subcommand> <slug> <message> → the file to copy
     if [ "$1" != spawn ]; then echo "$3"; return 0; fi
     composed=$state/prompts/$base/spawn/${3##*/}
     mkdir -p "$(dirname "$composed")" || return 1
-    { cat "$3"; echo; "$tracker" context "$2"; } > "$composed" || return 1
+    { cat "$3"; [ -z "${listed_brief:-}" ] || printf '\n%s\n' "$listed_brief"; echo; "$tracker" context "$2"; } > "$composed" || return 1
     echo "$composed"
 }
 
@@ -481,9 +523,12 @@ ctl() {
         esac
     fi
     scratch=$(scratch_dir "$host")
+    # Every spawn pushes this branch of both repos to a remote host, so a ticket branch cuts from
+    # its current tip; a local host cuts from these checkouts.
     if [ -n "$stages" ]; then
         stage "$host" "$setup_cmd"
         push_to "$host" || die "$host has no $base for $name to cut from"
+        stage_listed "$host" "$name" || die "$host has no base for $name to cut from in a listed repo"
         record_run "$name" "$host"
     fi
     if [ -n "$carries" ]; then
@@ -492,6 +537,7 @@ ctl() {
         carry=$(briefed "$sub" "$2" "$message") || die "could not assemble $2's brief; \`tracker context $2\` says why"
         copy_to "$host" "$scratch" "$carry"
     fi
+    # The permission mode travels only when set here; unset, the host's default holds.
     env=()
     [ -n "${DISPATCH_PERMISSION_MODE:-}" ] && env+=("DISPATCH_PERMISSION_MODE=$DISPATCH_PERMISSION_MODE")
     # A replacement runner travels with the command that starts a worker on it, as the message does.
@@ -508,6 +554,7 @@ ctl() {
     fi
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.
+    [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     [ "$sub" = resume ] && reclaim "$2"
@@ -529,18 +576,31 @@ wait_() {
     die "$host unreachable for two minutes; probe it when it is back and arm a new wait"
 }
 
+# Each fetch replaces the one before it, since a resumed worker rebases its ticket branches. The
+# worker's report is a file on the agent branch and arrives with it.
 fetch() {
     locate; ticket_host "$1"
     branch=ticket/$1
+    ticket_listed "$1"
+    names=(code agent "${ticket_repos[@]}")
     if [ "$host" = local ]; then
-        for top in "$repo_root" "$agent_top"; do
-            git -C "$top" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $top"
+        for at in "${names[@]}"; do
+            git -C "$(repo_at "$at")" rev-parse -q --verify "$branch" >/dev/null || die "no branch $branch in $(repo_at "$at")"
         done
-        echo "local host: $branch is already here, in both repos"
+        echo "local host: $branch is already here, in every repo"
     else
-        for top in "$repo_root" "$agent_top"; do
-            run git -C "$top" fetch -q "${host//[@.]/-}" "+$branch:$branch" ||
-                die "fetching $branch from $host into $top failed"
+        # A listed repo the host still holds for the ticket, which its repos: no longer names, too:
+        # the host's cleanup deletes that branch with the run, and its work may be nowhere else.
+        for name in $(on_host "$host" cat "$(scratch_dir "$host")/repos-$1" 2> /dev/null | cut -f1); do
+            [[ " ${names[*]} " != *" $name "* ]] || continue
+            [ ${#listed_top[@]} -gt 0 ] || listed "$("$tracker" get "$1" parent 2>/dev/null)"
+            [ -n "${listed_top[$name]-}" ] || die "$host holds $branch of $name for $1, which \`tracker repos\` does not list"
+            echo "dispatch: $1's repos: no longer names $name, whose $branch $host still holds, so it is fetched too" >&2
+            names+=("$name")
+        done
+        for at in "${names[@]}"; do
+            run git -C "$(repo_at "$at")" fetch -q "$(remote_of "$at" "$host")" "+$branch:$branch" ||
+                die "fetching $branch from $host into $(repo_at "$at") failed"
         done
     fi
     pull_runs "$host"
@@ -553,29 +613,62 @@ pull_runs() { # <host>
     run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
 }
 
-is_merged() { git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$(base_at "$1")"; } # code|agent <tip>
+# <repo> <tip> → each base it has merged into, of the one or two its repo has, one a line; nothing,
+# and exit 1, before the merge.
+merged_into() {
+    local onto found=1
+    for onto in $(base_at "$1"); do
+        git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$onto" && { echo "$onto"; found=0; }
+    done
+    return $found
+}
+is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
-# <repo, code or agent> <tip> → <from>..<tip>, whether or not the ticket branch has merged yet,
-# and nothing at all for a branch that committed nothing, which is what a round
-# that touched one of the two repos leaves in the other. Before the merge,
-# merge-base against this branch is the answer; after it, the tip is an ancestor
-# of this branch and merge-base would return the tip itself, so the start comes
-# from the merge commit that brought it in. SHAs on both ends, because cleanup
-# deletes the branch while its commits survive.
-range_of() { # code|agent <tip>
-    at=$1 tip=$2 top=$(repo_at "$1") onto=$(base_at "$1")
-    if ! is_merged "$at" "$tip"; then
-        echo "$(git -C "$top" merge-base "$onto" "$tip")..$tip"
+# Sets the caller's `fork` to <commit> where `fork` is empty or an ancestor of it, so that of the
+# points a tip shares with its bases `fork` ends on the newest. Where two have parted, neither the
+# other's ancestor, the first one seen stays. An empty <commit>, which unrelated histories give,
+# changes nothing.
+advance_fork() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
+
+# A ticket branch merges into the branch it cut from with --no-ff, in each repo (ADR 0001), and
+# that merge commit, whose second parent is the ticket's tip, is how its range is found after the
+# merge.
+# <repo, by the name its range carries> <tip> → <from>..<tip>, whether or not the ticket branch has
+# merged yet, and nothing at all for a branch that committed nothing, which is what a round
+# that touched one of its repos leaves in another. The start is the ticket's own fork point: the
+# newest point the tip shares with any of its repo's bases. Before the merge,
+# merge-base against them is the answer; after it, the tip is an ancestor of the
+# base it merged into and merge-base would return the tip itself, so that base's
+# point comes from the merge commit that brought it in. A base the tip has not
+# reached still counts. Where the session merged into a local integration branch
+# behind origin's, the merge's first parent is older than the fork, and origin's
+# branch still holds the fork. SHAs on both ends, because cleanup deletes the
+# branch while its commits survive.
+range_of() { # <repo> <tip>
+    local at=$1 tip=$2 top fork= onto merge
+    top=$(repo_at "$1")
+    if ! bases=$(merged_into "$at" "$tip"); then
+        # Against both of a listed repo's bases at once, the newest point the tip shares with either.
+        # shellcheck disable=SC2046
+        echo "$(git -C "$top" merge-base "$tip" $(base_at "$at"))..$tip"
         return 0
     fi
-    merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-    if [ -n "$merge" ]; then
-        echo "$(git -C "$top" merge-base "$merge^1" "$tip")..$tip"
-    elif [ -z "$(git -C "$top" rev-list -1 "$onto..$tip")" ]; then
-        return 0  # the branch carries nothing of its own, so it has no range
-    else
-        die "$tip is on $onto in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
+    for onto in $bases; do
+        merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
+        [ -z "$merge" ] || advance_fork "$(git -C "$top" merge-base "$merge^1" "$tip")"
+    done
+    if [ -n "$fork" ]; then
+        for onto in $(base_at "$at"); do
+            grep -qxF -- "$onto" <<< "$bases" || advance_fork "$(git -C "$top" merge-base "$tip" "$onto")"
+        done
+        echo "$fork..$tip"
+        return 0
     fi
+    for onto in $bases; do
+        [ -n "$(git -C "$top" rev-list -1 "$onto..$tip")" ] ||
+            return 0  # the branch carries nothing of its own, so it has no range
+    done
+    die "$tip is on ${bases//$'\n'/ and } in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
 }
 
 # The notes file is a pure projection of the ticket, rewritten whole on every
@@ -585,27 +678,152 @@ range_of() { # code|agent <tip>
 # refused with its file and line rather than dropped from the page, and however
 # the writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
-# A worker anchors from its worktree root, where the agent repo sits at
-# `agent/`, which the code repo ignores; the page renders the code repo alone,
-# so an assumption anchored under `agent/` has no file there and stays on the
-# ticket.
+# A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
+# repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
+# under the path its repo's section shows, the anchor with that prefix cut. An assumption anchored
+# in a repo with no section on the page, the agent repo's always, has no file there and stays on
+# the ticket. diffview places a note by path alone, in whichever section holds it, so where a
+# note's path also names a file in another repo's section the render says the note may show there;
+# the check below follows diffview's placement, and goes stale with it.
 notes_of() { # <slug>
+    local name place anchors='{}' notes i spec id repo path hit other
+    local -a shows=()
     # Its own status, taken before the pipe: a refusal prints to stderr and writes
     # nothing, and jq over an empty input exits 0, so a pipeline would answer that
     # a ticket no reader can read has no notes.
     read=$("$tracker" data "$1") || return 1
-    printf '%s\n' "$read" | jq '{
-        notes: [ .tickets[0].assumptions[]
-                 | select(.path | startswith("agent/") | not)
-                 | {id, path, text}
-                   + (if .line == null then {} else {line} end) ],
-        resolved: .tickets[0].resolved,
-    }'
+    for name in "${!listed_top[@]}"; do
+        place=$(place_of "$name")
+        anchors=$(jq -c --arg at "${place:-$(sibling_of "$name" "$1")}/" --arg name "$name" '. + {($at): $name}' <<< "$anchors")
+    done
+    notes=$(jq -c --argjson anchors "$anchors" '
+        [ .tickets[0].assumptions[]
+          | select(.path | startswith("agent/") | not)
+          | . as $a
+          | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
+          | {repo: ($in.value // "code"), id, path: .path[($in.key // "" | length):], text}
+            + (if .line == null then {} else {line} end)
+          | select(.repo | IN($ARGS.positional[])) ]' --args "${spec_repos[@]}" <<< "$read") || return 1
+    for i in "${!specs[@]}"; do
+        spec=${specs[i]}
+        shows[i]=$(git -C "${spec%@*}" diff --name-only -M "${spec##*@}")
+    done
+    while IFS=$'\t' read -r id repo path; do
+        hit=
+        for i in "${!specs[@]}"; do
+            names_file "$path" <<< "${shows[i]}" && hit+=" ${spec_repos[i]}"
+        done
+        # diffview's `attach_untouched`: a file no section changes joins the first section holding it.
+        if [ -z "$hit" ]; then
+            for i in "${!specs[@]}"; do
+                spec=${specs[i]}
+                git -C "${spec%@*}" cat-file -e "${spec##*..}:$path" 2> /dev/null && { hit=${spec_repos[i]}; break; }
+            done
+        fi
+        for other in $hit; do
+            [ "$other" != "$repo" ] || continue
+            echo "dispatch: A$id's \`$path\` in $repo also names a file the page's $other section shows, and diffview places a note by its path alone, so the note may show there" >&2
+            break
+        done
+    done < <(jq -r '.[] | [.id, .repo, .path] | @tsv' <<< "$notes")
+    jq --argjson notes "$notes" '{notes: [$notes[] | del(.repo)], resolved: .tickets[0].resolved}' <<< "$read"
+}
+
+# Whether one of the paths on stdin is <path>, or ends in `/<path>`, which is how diffview's page
+# matches a note on <path> to a changed file.
+names_file() { awk -v p="$1" '$0 == p || substr($0, length($0) - length(p)) == "/" p { found = 1 } END { exit !found }'; } # <path>
+
+# Whether every source the diffview page at <page> shows is one of <specs>, or one a
+# spec extends: the same repo, a start that begins the spec's start SHA, and an end
+# that begins the spec's end SHA or is an ancestor of it. The extended range is an
+# unmerged round grown since its last render by new commits on top of its tip, an
+# amend's or a resumed round's; one whose tip was rewritten extends nothing.
+# diffview writes each source into the page's JSON as `"spec": "<repo root>@<a>..<b>"`,
+# its ends pinned to short SHAs, where a spec here carries full ones. A page that
+# shows no source is no diffview page, and none of these.
+covers() { # <page> <spec...>
+    local page=$1 shown source range a b spec found
+    shift
+    shown=$(grep -o '"spec": "[^"]*"' "$page" | sed 's/^"spec": "//; s/"$//')
+    [ -n "$shown" ] || return 1
+    while read -r source; do
+        range=${source##*@} a=${range%%..*} b=${range#*..} found=
+        [ -n "$a" ] && [ -n "$b" ] || return 1
+        for spec; do
+            [ "$(realpath "${spec%@*}")" = "${source%@*}" ] || continue
+            range=${spec##*@}
+            [[ ${range%%..*} == "$a"* ]] || continue
+            if [[ ${range#*..} == "$b"* ]] || git -C "${source%@*}" merge-base --is-ancestor "$b" "${range#*..}" 2>/dev/null; then
+                found=1
+                break
+            fi
+        done
+        [ -n "$found" ] || return 1
+    done <<< "$shown"
 }
 
 # The commit ranges a ticket's rounds have landed as, one per line; nothing
 # before the first of them lands.
 rounds_of() { "$tracker" get "$1" diff 2>/dev/null; } # <slug>
+
+# <slug>'s round as its ticket branches hold it now, in the code repo, the agent repo and each listed
+# repo named: `tips`, `<repo> <sha>` per branch there is, and `written`, `<repo>@<range>` per branch
+# that committed something. The listed repos are read already (`listed`).
+round_of() { # <slug> <listed repo...>
+    local slug=$1 at tip range
+    shift
+    tips=() written=()
+    for at in code agent "$@"; do
+        tip=$(git -C "$(repo_at "$at")" rev-parse --verify -q "refs/heads/ticket/$slug") || continue
+        tips+=("$at $tip")
+        range=$(range_of "$at" "$tip") || exit 1
+        [ -z "$range" ] || written+=("$at@$range")
+    done
+}
+
+# The review page's sources, in `specs`, one section per round of code in each repo it landed in:
+# the rounds <slug> carries, then the round `round_of` read while it is unmerged (a proposal waiting
+# for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
+# off the page: what an agent branch carries, the report and the artefacts, reaches the user as
+# itself, through the board. `spec_repos` names the repo of each, as its range does.
+page_specs() { # <slug>
+    local rounds r top
+    rounds=$(rounds_of "$1")
+    specs=() spec_repos=()
+    for r in $rounds $(for round in "${written[@]}"; do printf '%s\n' "$rounds" | grep -qxF "$round" || echo "$round"; done); do
+        case $r in
+            agent@*) ;;
+            *@*) top=$(repo_at "${r%%@*}")
+                 [ -n "$top" ] || die "$1's range $r names no repo \`tracker repos\` lists"
+                 specs+=("$top@${r#*@}") spec_repos+=("${r%%@*}") ;;
+            # A range that names no repo is a round from before this ticket's
+            # tracker had two repos, and belongs to the code one.
+            *) specs+=("$repo_root@$r") spec_repos+=(code) ;;
+        esac
+    done
+}
+
+# agent/diffviews/<slug>.html over `specs`, served. A page at that path is this command's to replace
+# when this render loses nothing it shows: every source in it is one these specs, or the <spec>s
+# given, show or extend (`covers`). Any other page is somebody else's (a session's, rendered by hand
+# at the path the board links) and stays as it is, whatever the ticket carries; `kept` says so.
+render_page() { # <slug> [<spec the page may show>...]
+    local out=$diffviews/$1
+    kept=
+    if [ ${#specs[@]} -eq 0 ]; then
+        echo "dispatch: no round of $1 carries code, so it gets no review page; its artefacts are on the board" >&2
+    elif [ -e "$out.html" ] && ! covers "$out.html" "${specs[@]}" "${@:2}"; then
+        echo "dispatch: $out.html shows sources \`dispatch $cmd $1\` does not render, so it leaves that page as it is; move it aside and run \`dispatch $cmd $1\` again for its page" >&2
+        kept=1
+    else
+        mkdir -p "$(dirname "$out")"
+        # The tracker's own copy, which a review's import has brought the worker's
+        # closing comment and its assumptions into.
+        notes_of "$1" > "$out.notes.json" || exit 1
+        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
+        run diffview --serve "$diffviews"
+    fi
+}
 
 review() {
     locate
@@ -613,18 +831,27 @@ review() {
     ticket=$tickets/$id.md
     branch=ticket/$id
     [ -f "$ticket" ] || die "no ticket at $ticket"
-    # One round is two branches, one per repo, and a ticket's rounds are the pairs:
-    # `code@<range>` and `agent@<range>`, written together.
-    code_tip=$(git -C "$repo_root" rev-parse --verify -q "$branch") ||
+    # One round is a branch per repo, and a ticket's rounds are their ranges, written together:
+    # `code@<range>`, `agent@<range>`, and `<name>@<range>` in each listed repo its `repos:` names.
+    git -C "$repo_root" rev-parse --verify -q "$branch" > /dev/null ||
         die "no branch $branch in $repo_root; fetch it from the worker host first"
     agent_tip=$(git -C "$agent_top" rev-parse --verify -q "$branch") ||
         die "no branch $branch in $agent_top; fetch it from the worker host first"
-    code_range=$(range_of code "$code_tip") || exit 1
-    agent_range=$(range_of agent "$agent_tip") || exit 1
+    rounds=$(rounds_of "$id")
+    named=$("$tracker" get "$id" repos 2>/dev/null)
+    # The list is read only for a ticket that has a listed repo to read, so one repo on it that
+    # this machine lacks stops no other ticket's review.
+    if [ -n "$named" ] || printf '%s\n' "$rounds" | grep -qvE '^((code|agent)@|[0-9a-f]+\.\.|$)'; then
+        listed "$("$tracker" get "$id" parent 2>/dev/null)"
+    fi
+    for name in $named; do
+        [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
+        git -C "${listed_top[$name]}" rev-parse --verify -q "$branch" > /dev/null ||
+            echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2
+    done
+    # shellcheck disable=SC2086
+    round_of "$id" $named
     retiring=
-    written=()
-    [ -n "$code_range" ] && written+=("code@$code_range")
-    [ -n "$agent_range" ] && written+=("agent@$agent_range")
 
     # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
     # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
@@ -659,25 +886,45 @@ review() {
         echo "dispatch: $id is $status, so the report on $branch was not imported; a report lands once, on the build that is claimed" >&2
     fi
 
-    # The status follows the branches: waiting for the ruling while either is unmerged, done once
-    # both are, when the ranges are final too. `tracker` writes both, and refuses a landing the
+    # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
+    # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
+    # the round read again, since origin's base has been fetched and a deleted branch is in no round.
+    # The page a review rendered before that may be replaced by the one over what landed.
+    unmerged=() shown=() asked=0
+    for one in "${tips[@]}"; do
+        case ${one% *} in code | agent) ;; *) is_merged "${one% *}" "${one#* }" || unmerged+=("${one% *}") ;; esac
+    done
+    if [ ${#unmerged[@]} -gt 0 ]; then
+        page_specs "$id"
+        shown=("${specs[@]}")
+        land_on_github "$id" "${unmerged[@]}" || asked=1
+        # shellcheck disable=SC2086
+        round_of "$id" $named
+    fi
+
+    # The status follows the branches: waiting for the ruling while any is unmerged, done once
+    # all are, when the ranges are final too. `tracker` writes both, and refuses a landing the
     # tracker's transitions do not allow. A round whose branches carry no commit at all built
     # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
     # stopped before its first commit.
+    merged=1
+    for one in "${tips[@]}"; do is_merged "${one% *}" "${one#* }" || merged=; done
     if [ ${#written[@]} -eq 0 ]; then
-        echo "dispatch: neither branch of $id carries a commit, so this round built nothing to review" >&2
+        echo "dispatch: no branch of $id carries a commit, so this round built nothing to review" >&2
         return 0
-    elif is_merged code "$code_tip" && is_merged agent "$agent_tip"; then
+    elif [ -n "$merged" ]; then
         fields=()
         for round in "${written[@]}"; do
             rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
         done
         # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
-        if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
+        up=$("$tracker" get "$id" parent 2>/dev/null)
+        if [ "$up" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
             now=review landed="$id merged into $base, for its ruling with it"
         else
             now=done landed="$id landed" retiring=1
         fi
+        # One commit, and none when the ticket already says all of it.
         status=$("$tracker" get "$id" status)
         [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
         [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
@@ -687,55 +934,45 @@ review() {
         commit_ticket "$id" "$id for review"
     fi
 
-    # One section per round of code: the rounds the ticket carries, then this
-    # round's while it is unmerged (a proposal waiting for its ruling, or a
-    # resumed worker's next round fetched before its merge). Read after the
-    # write above, so the round that just landed is in the list once. The
-    # agent ranges stay off the page: what an agent branch carries, the report
-    # and the artefacts, reaches the user as itself, through the board.
-    rounds=$(rounds_of "$id")
-    specs=()
-    while read -r r; do
-        # A range that names no repo is a round from before this ticket's
-        # tracker had two repos, and belongs to the code one.
-        case $r in
-            code@*) specs+=("$repo_root@${r#code@}") ;;
-            *@* | '') ;;
-            *) specs+=("$repo_root@$r") ;;
-        esac
-    done <<< "$rounds"
-    for round in "${written[@]}"; do
-        [[ $round == code@* ]] || continue
-        printf '%s\n' "$rounds" | grep -qxF "$round" || specs+=("$repo_root@${round#code@}")
-    done
-
-    out=$diffviews/$id
-    if [ ${#specs[@]} -eq 0 ]; then
-        # A page an older dispatch rendered over the agent range would stay linked from the board.
-        # diffview's state file beside it keeps the user's comments, so it stays.
-        rm -f "$out.html" "$out.notes.json"
-        echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
-    else
-        mkdir -p "$(dirname "$out")"
-        # The tracker's own copy, which the import above has brought the worker's
-        # closing comment and its assumptions into.
-        notes_of "$id" > "$out.notes.json" || exit 1
-        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
-        run diffview --serve "$diffviews"
-    fi
+    # Read after the write above, so the round that just landed is in the list once.
+    page_specs "$id"
+    render_page "$id" "${shown[@]}"
     # After the page, which reads the ticket's notes from its file
     [ -z "$retiring" ] || retire_trees
+    # The board shows the status just written, and links the page.
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
-    [ -z "$retiring" ] || retire "$id"
+    # shellcheck disable=SC2086
+    [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
+    [ -z "$kept" ] && [ "$asked" -eq 0 ]
 }
 
-# What a done ticket's run left, on its host and here. The run is found under $base, the branch it
-# was spawned from, which `accept` sets to the parent's for each child.
-retire() { # <slug>
-    local h top
+# What a done ticket's run left, on its host and here, since a done ticket has nothing left to
+# resume: `ctl cleanup` on its host, then both ticket/<slug> branches here, and each listed repo's
+# once it has merged there. The run stays on its host while a listed repo the host holds for the
+# ticket, which its repos: no longer names, has a branch missing here or not merged; on a local
+# host only one not merged keeps it. A retirement that fails says so with the command that tries
+# again, and the `done` stands. The run is found under $base, the branch it was spawned from,
+# which `accept` sets to the parent's for each child.
+retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: names>...]
+    local h top name tip
     h=$(host_of "$1")
     if [ -n "$h" ]; then
+        # The host's cleanup deletes the branch of each listed repo it holds for the ticket. One its
+        # repos: names was fetched, and merged or landed, before this `done`; one it no longer names
+        # was in no round, so its branch has to be here, and merged, first.
+        for name in $(on_host "$h" cat "$(scratch_dir "$h")/repos-$1" 2> /dev/null | cut -f1); do
+            [[ " ${*:3} " != *" $name "* ]] || continue
+            [ ${#listed_top[@]} -gt 0 ] || listed "$2"
+            top=${listed_top[$name]-}
+            if ! tip=$(git -C "${top:-/}" rev-parse -q --verify "refs/heads/ticket/$1" 2> /dev/null); then
+                [ "$h" = local ] && [ -n "$top" ] && continue  # cut in that checkout, and deleted from it since
+                echo "dispatch: $1 is done, and ticket/$1 in $name, which $h holds, is not here, so its run stays; \`dispatch fetch $1\` brings it" >&2
+                return 1
+            fi
+            is_merged "$name" "$tip" ||
+                { echo "dispatch: $1 is done, and ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so its run on $h stays; \`dispatch ctl cleanup $1\` retires it once that work is merged or let go" >&2; return 1; }
+        done
         run on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" cleanup "$1" ||
             { echo "dispatch: $1 is done, and its cleanup on $h failed; \`dispatch ctl cleanup $1\` from $base tries again" >&2; return 1; }
         pull_runs "$h"
@@ -746,12 +983,27 @@ retire() { # <slug>
         git -C "$top" rev-parse -q --verify "refs/heads/ticket/$1" > /dev/null || continue
         run git -C "$top" branch -q -d "ticket/$1" || return 1
     done
+    # In every listed repo the caller has read the list of (`listed`): the ticket file that names its
+    # repos may be retired by now. A listed repo's checkout here has whatever branch out, so `-d`
+    # would read the merge off that; the merge is read off the branch it lands in instead.
+    local rc=0
+    for name in "${!listed_top[@]}"; do
+        tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/ticket/$1") || continue
+        if ! is_merged "$name" "$tip"; then
+            echo "dispatch: ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so it stays" >&2
+            rc=1
+        else
+            run git -C "${listed_top[$name]}" branch -q -D "ticket/$1" || rc=1
+        fi
+    done
+    return $rc
 }
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
-# one commit, or none of them. Before the merge up it refuses on its own; after it, `tracker`
-# refuses each ticket whose work has not reached the branch its accept merges into, and the files
-# already written are put back.
+# one commit, or none of them. The parent's ranges are its branch <slug> measured against this
+# branch, the one above it, in the code repo and in each listed repo holding a branch <slug>.
+# Before the merge up it refuses on its own; after it, `tracker` refuses each ticket whose work has
+# not reached the branch its accept merges into, and the files already written are put back.
 accept() { # <slug>
     locate
     id=$1
@@ -761,6 +1013,30 @@ accept() { # <slug>
     range=$(range_of code "$tip") || exit 1
     read=$("$tracker" data) || exit 1
     ruled=$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .slug')
+    fields=(status=done)
+    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
+    # The ticket's own branch in each listed repo is measured against the branch above it there, as
+    # its code range is. Each child merged its listed repos into this ticket's branch there, which is
+    # where retire reads the merge.
+    if [ -n "$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?')" ]; then
+        listed "$("$tracker" get "$id" parent 2>/dev/null)"
+        # Its pull request squashed or rebased on GitHub leaves its own branch unmerged for good, as
+        # a ticket branch is in `review`: what landed is recorded on it and on the tickets under it
+        # first, and the branches it carried deleted, so the range read below is none and the done
+        # check finds them landed. A refusal of that check is the exit when it cannot be recorded.
+        unmerged=()
+        for name in "${!listed_top[@]}"; do
+            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
+            is_merged "$name" "$own" || unmerged+=("$name")
+        done
+        [ ${#unmerged[@]} -eq 0 ] || land_on_github "$id" "${unmerged[@]}"
+        for name in $(printf '%s\n' "${!listed_top[@]}" | sort); do
+            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
+            mine=$(range_of "$name" "$own") || exit 1
+            [ -z "$mine" ] || rounds_of "$id" | grep -qxF "$name@$mine" || fields+=("diff+=$name@$mine")
+        done
+        listed "$id"
+    fi
     paths=("$tickets/$id.md")
     for child in $ruled; do paths+=("$tickets/$child.md"); done
     # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
@@ -769,8 +1045,6 @@ accept() { # <slug>
     for child in $ruled; do
         run "$tracker" set "$child" status=done || put_back
     done
-    fields=(status=done)
-    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
     run "$tracker" set "$id" "${fields[@]}" || put_back
     run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
     retire_trees
@@ -778,8 +1052,149 @@ accept() { # <slug>
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
     # retired by its own `review`, so only the children in review come up here.
     rc=0
-    for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
+    for child in $ruled; do
+        # shellcheck disable=SC2046
+        ( base=$id; retire "$child" "$id" $(printf '%s\n' "$read" | jq -r --arg c "$child" '.tickets[] | select(.slug == $c) | .repos[]?') ) || rc=1
+    done
     return $rc
+}
+
+# What a squash or a rebase merge on GitHub landed as, recorded in place of what the ticket branch
+# carried: such a merge leaves the branch unmerged for good and its commits on no integration
+# branch, so neither the range read off the branch nor the done check would ever hold. GitHub is
+# asked about <slug>'s `gh:` pull requests in <names>, the listed repos whose branch is unmerged,
+# and nothing else: a ticket whose listed branches have all merged asks it nothing. Each repo a
+# squash or a rebase rewrote has its ranges replaced by what landed (`record_landed`) and the branches
+# the pull request carried deleted (`drop_carried`). Sets `changed` where it wrote a range or deleted
+# a branch; nonzero for a pull request it could not read, and for a branch holding commits its pull
+# request did not carry. A pull request not merged yet is said and changes nothing.
+land_on_github() { # <slug> <name...>
+    local id=$1 refs ref url at name under own rc=0
+    shift
+    refs=$("$tracker" get "$id" gh 2>/dev/null)
+    [ -n "$refs" ] || return 0
+    for name in "${!listed_top[@]}"; do
+        url=$(git -C "${listed_top[$name]}" config --get remote.origin.url) &&
+            at=$(github_of "$url") && on_github[$at]=$name
+    done
+    for ref in $refs; do
+        at=${ref%#*}
+        name=${on_github[${at,,}]-}
+        # A pull request in a listed repo whose branch merged has nothing left to say.
+        [ -z "$name" ] || [[ " $* " == *" $name "* ]] || continue
+        pr_landed "$ref" || rc=1
+    done
+    # A parent ticket's pull request carries its own branch, named by its slug alone as the done
+    # check reads it, and with it the work the tickets under it merged into that branch: theirs is
+    # recorded and deleted the same way, so the parent's accept finds them landed.
+    under=$("$tracker" data | jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)') || exit 1
+    record_landed "$id" append
+    for slug in $under; do record_landed "$slug"; done
+    for name in "${order[@]}"; do
+        [ -n "${rewritten[$name]-}" ] && [ -z "${held[$name]-}" ] || continue
+        own=ticket/$id
+        [ -z "$under" ] || ! git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id" > /dev/null || own=$id
+        drop_carried "$name" "$own"
+        for slug in $under; do drop_carried "$name" "ticket/$slug"; done
+    done
+    return $rc
+}
+
+# The `owner/repo` a GitHub remote URL names, lower case: `git@github.com:o/r.git`,
+# `https://github.com/o/r`, `ssh://git@github.com/o/r.git`. Nothing for any other URL.
+github_of() { # <url>
+    local u=${1%/}
+    u=${u%.git}
+    [[ $u == *github.com[:/]*/* ]] || return 1
+    u=${u//:/\/}
+    printf '%s\n' "${u#"${u%/*/*}/"}" | tr '[:upper:]' '[:lower:]'
+}
+
+# <slug>'s `diff:` with the ranges in each repo a pull request rewrote replaced by what landed there,
+# where the first of them stood, written and committed where that changes it, which sets `changed`.
+# With `append`, a repo the ticket records no range in gets what landed too: a squashed branch never
+# merged, so no review recorded it.
+record_landed() { # <slug> [append]
+    local rounds ranges=() placed=() r name joined
+    mapfile -t rounds < <(rounds_of "$1")
+    for r in "${rounds[@]}"; do
+        name=${r%%@*}
+        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
+        # shellcheck disable=SC2206
+        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
+    done
+    for name in "${order[@]}"; do
+        [ -n "${2-}" ] || break
+        # shellcheck disable=SC2206
+        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
+            ranges+=(${landed_in[$name]})
+    done
+    [ "${ranges[*]}" != "${rounds[*]}" ] || return 0
+    joined=$(printf '%s, ' "${ranges[@]}")
+    run "$tracker" set "$1" "diff=[${joined%, }]" || exit 1
+    commit_ticket "$1" "$1: the ranges that landed on GitHub"
+    changed=1
+}
+
+# <branch> in the listed repo <name>, deleted where the pull request carried its tip: it landed
+# whole, as commits it no longer holds, and left here the done check would find it unmerged for good.
+# One holding commits the pull request did not carry stays, and sets `rc`; a deletion sets `changed`.
+drop_carried() { # <name> <branch>
+    local tip
+    tip=$(git -C "${listed_top[$1]}" rev-parse -q --verify "refs/heads/$2") || return 0
+    if [[ " ${carried[$1]} " != *" $tip "* ]]; then
+        echo "dispatch: $2 in $1 holds commits its pull request did not carry, so it stays, and done waits for them" >&2
+        rc=1
+    elif run git -C "${listed_top[$1]}" branch -q -D "$2"; then
+        changed=1
+    else
+        rc=1
+    fi
+}
+
+declare -A on_github=() landed_in=() rewritten=() held=() carried=()
+order=()
+
+# What GitHub says <ref>'s pull request landed as, in the listed repo whose origin it is on: its
+# range in `landed_in`, with `rewritten` set for a squash or a rebase merge, and the commits it
+# carried in `carried`. A pull request not merged yet, or one GitHub or origin cannot vouch for, sets
+# `held`, so that repo's ranges stay as they are; only the second returns nonzero, since the first
+# is every review before the team merges. One in no listed repo is said and changes nothing.
+pr_landed() { # <ref>
+    local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind
+    name=${on_github[${repo,,}]-}
+    [ -n "$name" ] || { echo "dispatch: $1 is in no repo \`tracker repos\` lists, none having $repo as its origin, so nothing changes for it" >&2; return 0; }
+    top=${listed_top[$name]}
+    [[ " ${order[*]} " == *" $name "* ]] || order+=("$name")
+    said=$(run gh pr view "$number" --repo "$repo" --json state,mergeCommit,commits,baseRefName) ||
+        { echo "dispatch: GitHub did not answer for $1, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+    merge=$(jq -r '.mergeCommit.oid // empty' <<< "$said")
+    [ -n "$merge" ] ||
+        { echo "dispatch: $1 is $(jq -r '.state | ascii_downcase' <<< "$said") and not merged, so $name's ranges stay as recorded" >&2; held[$name]=1; return 0; }
+    onto=$(jq -r .baseRefName <<< "$said")
+    { run git -C "$top" fetch -q origin "+refs/heads/$onto:refs/remotes/origin/$onto" &&
+        git -C "$top" merge-base --is-ancestor "$merge" "origin/$onto"; } ||
+        { echo "dispatch: $1's merge $merge is not on $onto as origin has it in $top, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+    carried[$name]+=" $(jq -r '[.commits[].oid] | join(" ")' <<< "$said")"
+    read -r -a parents <<< "$(git -C "$top" rev-list --parents -n 1 "$merge")"
+    if [ ${#parents[@]} -gt 2 ]; then
+        echo "dispatch: $1 merged with a merge commit, which brought its commits in as they were" >&2
+        landed_in[$name]+=" $name@$(git -C "$top" merge-base "${parents[1]}" "${parents[2]}")..${parents[2]}"
+        return 0
+    fi
+    # A rebase merge puts the pull request's commits on the branch one by one, each keeping the
+    # date it was authored; a squash is one commit, authored as it merged.
+    count=$(jq '.commits | length' <<< "$said")
+    if [ "$count" -gt 1 ] &&
+        [ "$(git -C "$top" log --first-parent --format=%at -n "$count" "$merge" | tac)" = "$(jq -r '.commits[].authoredDate | fromdateiso8601' <<< "$said")" ] &&
+        start=$(git -C "$top" rev-parse -q --verify "$merge~$count"); then
+        kind="a rebase merge of $count commits"
+    else
+        start=${parents[1]} kind="a squash merge"
+    fi
+    echo "dispatch: $1 landed in $name as $kind, $start..$merge" >&2
+    landed_in[$name]+=" $name@$start..$merge"
+    rewritten[$name]=1
 }
 
 # Usage: dispatch fuzz start [--host <host>]
@@ -958,7 +1373,9 @@ fleet() { # <published>
 }
 
 # Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
-# front), and `missing`, what went unread.
+# front), and `missing`, what went unread. Every scratch dir on every host is
+# read, whichever repo and branch it is for, so ps, attach and peek run from any
+# branch.
 gather() {
     local published= register_error= i rc
     self=$(id -un)@$(uname -n)
@@ -1009,6 +1426,11 @@ gather() {
     rm -rf "$answers"
 }
 
+# One row per worker under a header naming the columns, then a count per state, running and
+# exited always there, zero or not. A host that did not answer is an `unreachable` row, a scratch
+# dir whose probe failed an `unreadable` one, a `worker-hosts --targets` that failed an
+# `incomplete` one. In color on a terminal, or with --color, which `watch -c dispatch ps --color`
+# needs; NO_COLOR turns it off.
 ps_() {
     color=
     [ -t 1 ] && color=1
@@ -1082,8 +1504,9 @@ ps_() {
 }
 
 # Sets r_host, r_base, r_ticket, r_state and r_session from the one row
-# <worker> names: a slug or a session name, bare or behind `<host>/`. Exact,
-# since a fragment that matched would make `attach` a guess.
+# <worker> names: a slug or a session name, bare or behind `<host>/`; `fuzz` is a
+# repo's fuzz run. Exact, since a fragment that matched would make `attach` a
+# guess.
 resolve() { # <worker>
     [ $# -ge 1 ] || die "$cmd takes a worker: a ticket's slug, as \`dispatch ps\` lists them"
     gather
@@ -1113,6 +1536,9 @@ resolve() { # <worker>
     echo "$r_host  $r_base  $r_ticket  $r_state  $r_session" >&2
 }
 
+# The pane is opened as the user that runs it there. A Ctrl-C in it ends the run as `ctl stop`
+# does, resumable; whatever is typed into it while the runner runs, the pane's shell runs once the
+# runner exits.
 attach() {
     resolve "$@"
     if [ -n "${TMUX:-}" ]; then

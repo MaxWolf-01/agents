@@ -16,6 +16,11 @@
 #                             `dispatch-ctl` resolves it on the host
 #   RUN_LOG                   where each attempt's line goes (run-log, staged beside
 #                             this script); its own default unless set
+# A replacement runner (DISPATCH_RUNNER, staged as runner-<slug>) owes dispatch-ctl the same: these
+# arguments and that environment; worker-prompt.md from its directory in the worker's system
+# prompt, where a worker's whole contract lives; no retry once the worker has committed its report;
+# <run>.log created beside itself within seconds of starting; and, as its last act, <run>.status
+# there, one key=value line with `session=` and `report=`, written on TERM too, with exit=stopped.
 set -u
 
 message=$1
