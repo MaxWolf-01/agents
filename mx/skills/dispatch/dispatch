@@ -490,7 +490,7 @@ stage_listed() { # <host> <slug>
     listed_brief= listed_args=()
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
-    listed_brief="Your worktree holds the listed repos your ticket names, each on \`ticket/$2\`, cut from the branch named here; that branch is yours as the other two are, and your work in that repo is committed on it:"
+    listed_brief="The listed repos your ticket names are each on \`ticket/$2\`, cut from the branch named here, at the path given; that branch is yours as the other two are, and your work in that repo is committed on it:"
     for name in "${ticket_repos[@]}"; do
         top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
