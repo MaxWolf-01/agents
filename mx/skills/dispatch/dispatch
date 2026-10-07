@@ -681,7 +681,8 @@ range_of() { # <repo> <tip>
 # A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
 # repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
 # under the path its repo's section shows, the anchor with that prefix cut, and names that repo as
-# its source, so it lands in that repo's section whichever other section shows the same path. An
+# its source, so it lands in one of that repo's sections (a repo has one per round) whichever other
+# repo's section shows the same path. An
 # assumption anchored in a repo with no section on the page, the agent repo's always, has no file
 # there and stays on the ticket.
 notes_of() { # <slug>
