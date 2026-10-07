@@ -28,7 +28,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import SESSION
+from session_checks import SESSION
 from session_page import PAGE, render_session
 
 SHOW = Path(__file__).resolve().parents[1] / "show"
