@@ -197,7 +197,7 @@ names() {
     # The agent repo sits inside the code repo in every checkout of a project,
     # so a worker's copy of it sits inside the worktree it works in.
     agent_worktree=$worktree/agent
-    listed=$here/repos-$slug
+    repos_record=$here/repos-$slug
     prompt=$here/prompt-$slug.md
 }
 
@@ -315,22 +315,27 @@ checkout() {
 # already is somebody's (on a local host the repo is the user's own checkout),
 # and an unwound spawn deletes the branches it cut, so it must have cut them all.
 listed_free() {
-    [ -f "$listed" ] || return 0
+    [ -f "$repos_record" ] || return 0
     while IFS=$'\t' read -r -u 3 held dir _ at; do
-        [ -d "$at" ] || ! git -C "$dir" show-ref --verify -q "refs/heads/$branch" ||
+        cut_at "$dir" "$at" || ! git -C "$dir" show-ref --verify -q "refs/heads/$branch" ||
             { echo "dispatch-ctl: $held already has $branch in $dir, which this spawn did not cut" >&2; return 1; }
-    done 3< "$listed"
+    done 3< "$repos_record"
 }
 
 # Each listed repo the record names, cut where it is missing: a respawn finds the
 # rest where the spawn before it cut them. --no-track, since a base at origin
 # would otherwise make the worker's branch track the project's own remote.
 cut_listed() {
-    [ -f "$listed" ] || return 0
+    [ -f "$repos_record" ] || return 0
     while IFS=$'\t' read -r -u 3 _ dir from at; do
-        [ -d "$at" ] || run git -C "$dir" worktree add --no-track "$at" -b "$branch" "$from" || return 1
-    done 3< "$listed"
+        cut_at "$dir" "$at" || run git -C "$dir" worktree add --no-track "$at" -b "$branch" "$from" || return 1
+    done 3< "$repos_record"
 }
+
+# Whether <worktree> is a worktree of <git dir>, which a directory at that path does not say: a
+# nested repo's place may hold the empty directory of a submodule, or files the code repo tracks,
+# and `git worktree add` refuses one that is not empty. git records a worktree by its real path.
+cut_at() { git -C "$1" worktree list --porcelain 2> /dev/null | grep -qxF "worktree $(realpath -m "$2")"; } # <git dir> <worktree>
 
 # The bare repo a listed repo has on this host, when the orchestrator names none.
 bare_of() { echo "$(dirname "$git_dir")/$repo-$1.git"; } # <name>
@@ -351,7 +356,7 @@ bare() {
 # changed: that work may exist nowhere else.
 relist() {
     local part n dir from at kept= held=
-    part=$(mktemp "$listed.XXXXXX")
+    part=$(mktemp "$repos_record.XXXXXX")
     set -- "${repos_given[@]}"
     while [ $# -gt 0 ]; do
         dir=${4:-$(bare_of "$1")} at=$worktrees/$1-$slug
@@ -360,21 +365,21 @@ relist() {
         kept+=$at$'\n'
         shift 4
     done
-    if [ -f "$listed" ]; then
+    if [ -f "$repos_record" ]; then
         while IFS=$'\t' read -r -u 3 n dir from at; do
-            grep -qxF -- "$at" <<< "$kept" || [ ! -d "$at" ] ||
+            grep -qxF -- "$at" <<< "$kept" || ! cut_at "$dir" "$at" ||
                 { [ -z "$(git -C "$at" status --porcelain)" ] && [ -z "$(git -C "$dir" rev-list -1 "$from..$branch" 2>/dev/null)" ]; } ||
                 held+=" $n"
-        done 3< "$listed"
+        done 3< "$repos_record"
         if [ -n "$held" ]; then
             rm -f "$part"
             die "$slug no longer names$held, whose worktree here carries work: fetch it, then \`dispatch ctl cleanup $slug\` and spawn again, or name the repo again"
         fi
         while IFS=$'\t' read -r -u 3 n dir from at; do
             grep -qxF -- "$at" <<< "$kept" || drop_listed "$dir" "$at"
-        done 3< "$listed"
+        done 3< "$repos_record"
     fi
-    if [ -s "$part" ]; then mv "$part" "$listed"; else rm -f "$part" "$listed"; fi
+    if [ -s "$part" ]; then mv "$part" "$repos_record"; else rm -f "$part" "$repos_record"; fi
 }
 
 set_up() {
@@ -629,9 +634,9 @@ remove_jobs() {
 # A listed repo's worktree and branch, removed as remove_worktrees removes the
 # other two, where this host cut them. With no worktree there was no cut: a spawn
 # that refused over a branch the repo already had leaves that repo in the record,
-# and the branch is whoever made it's.
+# and that branch belongs to whoever made it, so it stays.
 drop_listed() { # <git dir> <worktree>
-    [ -d "$2" ] || return 0
+    cut_at "$1" "$2" || return 0
     run git -C "$1" worktree remove --force "$2"
     git -C "$1" show-ref --verify -q "refs/heads/$branch" && run git -C "$1" branch -D "$branch"
     return 0
@@ -645,9 +650,9 @@ drop_listed() { # <git dir> <worktree>
 # worktree go first, since a nested repo and the agent one live inside the code
 # worktree.
 remove_worktrees() {
-    if [ -f "$listed" ]; then
-        while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$listed"
-        run rm "$listed"
+    if [ -f "$repos_record" ]; then
+        while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$repos_record"
+        run rm "$repos_record"
     fi
     [ -d "$agent_worktree" ] && run git -C "$agent_dir" worktree remove --force "$agent_worktree"
     git -C "$agent_dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$agent_dir" branch -D "$branch"
@@ -667,7 +672,7 @@ fuzz_names() {
     branch=fuzz/$base
     worktree=$worktrees/$repo-$base-fuzz
     agent_worktree=$worktree/agent
-    listed=  # the fuzz run's worktree is the project's two repos alone
+    repos_record=  # the fuzz run's worktree is the project's two repos alone
     db=$here/fuzz.hypothesis
     # A local host's repo is the user's own checkout, whose hooks are theirs.
     hook=
