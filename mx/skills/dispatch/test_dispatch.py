@@ -1297,6 +1297,54 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
     assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
 
 
+def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_section(toy: Path) -> None:
+    """`assumption-notes-reach-listed-repos`: a worker anchors from its worktree root, where nested
+    `Backend` sits at its place and `jarvis` beside it as `../jarvis-<slug>`, and each note reaches
+    the page under the path its repo's own tree has. diffview matches a note by path alone, so
+    where another repo's section also shows that path (the same file changed in two repos, or an
+    untouched file that joins the first section holding one) the review says the note may show
+    there. A note in a listed repo with no section on the page stays on the ticket, as an agent
+    one does."""
+    agent = toy / "agent"
+    (toy / ".gitignore").write_text("/agent/\n/Backend/\n/Helix/\n")
+    git(toy, "commit", "-q", "-am", "Backend and Helix are repos of their own")
+    backend = listed_repo(toy / "Backend", "development").resolve()
+    listed_repo(toy / "Helix", "main")
+    jarvis = listed_repo(toy.parent / "jarvis", "main").resolve()
+    listing(toy, "warm-preset", f'[Backend]\npath = "Backend"\nintegration = "development"\n\n'
+            f'[Helix]\npath = "Helix"\nintegration = "main"\n\n[jarvis]\npath = "{jarvis}"\nintegration = "main"\n',
+            "Backend, jarvis")
+    for top, start, name in ((toy, "main", "warm.txt"), (toy, "main", "shared.txt"),
+                             (backend, "development", "warm.py"), (backend, "development", "shared.txt"),
+                             (jarvis, "main", "warm.rs")):
+        built_on(top, "ticket/warm-preset", start, name)
+    git(agent, "switch", "-q", "-c", "ticket/warm-preset")
+    (agent / "show" / "warm-preset").mkdir(parents=True)
+    (agent / "show" / "warm-preset" / "report.md").write_text(
+        "## Comments\n\nThe warm preset lands in three repos, unmerged.\n\n- [D1] **Assumptions**\n"
+        "  - A1 `warm.txt:1`: in the code repo.\n"
+        "  - A2 `Backend/warm.py:1`: in the nested repo.\n"
+        "  - A3 `../jarvis-warm-preset/warm.rs:1`: in the sibling repo.\n"
+        "  - A4 `Backend/shared.txt:1`: a path the code repo's section shows too.\n"
+        "  - A5 `agent/show/warm-preset/report.md:1`: in the agent repo.\n"
+        "  - A6 `Backend/README:1`: untouched, and Backend's is the first section holding a README.\n"
+        "  - A7 `../jarvis-warm-preset/README:1`: untouched, and Backend's section holds one first.\n"
+        "  - A8 `Helix/README:1`: in a listed repo this ticket's page has no section for.\n")
+    git(agent, "add", "show")
+    git(agent, "commit", "-q", "-m", "warm-preset: the report")
+    git(agent, "switch", "-q", "main")
+
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())["notes"]
+    assert [(one["id"], one["path"], one["line"]) for one in notes] == [
+        (1, "warm.txt", 1), (2, "warm.py", 1), (3, "warm.rs", 1), (4, "shared.txt", 1), (6, "README", 1), (7, "README", 1)]
+    warned = [line for line in said.stderr.splitlines() if "diffview places a note by its path alone" in line]
+    assert len(warned) == 2, said.stderr
+    assert "A4's `shared.txt` in Backend" in warned[0] and "code section" in warned[0], warned
+    assert "A7's `README` in jarvis" in warned[1] and "Backend section" in warned[1], warned
+
+
 def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
     """A child built on its parent ticket's branch: in `Backend` its base is the parent's branch
     there, which is ahead of the integration branch. A round merged into it is recorded; the next
