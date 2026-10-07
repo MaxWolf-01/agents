@@ -1392,9 +1392,9 @@ def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said
 
 
 def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_again(toy: Path) -> None:
-    """A page `dispatch review` rendered before it kept any record of its renders, over the range
-    the ticket's round has now: nothing on it is lost to a render over that range, so it is
-    replaced with no move by hand."""
+    """A page over the ticket's own range, its ends pinned to SHAs of another length than
+    diffview's and other JSON around them, as an earlier `dispatch review` left it: nothing on it is
+    lost to a render over that range, so it is replaced with no move by hand."""
     cut, tip = claimed_with_code(toy)
     page = toy / "agent" / "diffviews" / "warm-preset.html"
     page.parent.mkdir(parents=True)

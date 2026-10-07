@@ -86,8 +86,8 @@
 #            review page's notes; renders agent/diffviews/<slug>.html in the
 #            agent repo, one page with a section per range of code, in the code
 #            repo and each listed repo, and serves it; says the ticket gets no
-#            page when no round of it carries code, and leaves a page at that
-#            path that shows a source this render does not as it is, exiting
+#            page when no round of it carries code; leaves a page at that path
+#            alone when it shows a source this render does not show, and exits
 #            nonzero once the rest is done; re-renders the board; and writes the
 #            ticket's status: `review` while any of its branches is unmerged,
 #            `done` once all have merged, with the round's ranges in the `diff:`
