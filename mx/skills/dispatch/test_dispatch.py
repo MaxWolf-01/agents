@@ -1522,7 +1522,6 @@ def test_a_remote_host_receives_the_listed_repos_a_ticket_names_and_gives_their_
         assert not git(hosted / bare, "branch", "--list", "ticket/warm-preset"), bare
 
     # the landing: its `done` deletes the fetched branches here, each once it has merged
-    git(repos["jarvis"], "merge", "-q", "--ff-only", "origin/main")
     for top, onto in ((toy, "main"), (toy / "agent", "main"), (repos["Backend"], "development"), (repos["jarvis"], "main")):
         merged_in(top, onto, "ticket/warm-preset")
     landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
@@ -1568,6 +1567,76 @@ def test_a_local_host_cuts_the_listed_repos_from_their_checkouts_here(toy: Path,
     assert not (toy.parent / "lamp-warm-preset").exists()
     for name in ("Backend", "jarvis", "secrets"):
         assert not git(repos[name], "branch", "--list", "ticket/warm-preset"), name
+
+
+def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, staged: Path) -> None:
+    """`tickets-land-in-listed-repos#P5` across spawns: `jarvis` named by mistake and dropped from
+    `repos:` leaves the worker's tree at the next spawn, worktree and branch, and the brief stops
+    naming it; a ticket that names none any more leaves the host holding no listed worktree and no
+    record. That last spawn makes no host call a ticket that never named a repo would not make."""
+    repos = staged_listed(toy)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    path = tracked(toy) / "warm-preset.md"
+
+    def respawn(names: str) -> subprocess.CompletedProcess:
+        path.write_text(re.sub(r"repos: \[[^]]*\]\n", f"repos: [{names}]\n" if names else "", path.read_text()))
+        git(toy / "agent", "commit", "-q", "--allow-empty", "-am", f"warm-preset names [{names}]")
+        before = set(state.glob("*.status"))
+        said = spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env)
+        assert said.returncode == 0, said.stdout + said.stderr
+        for _ in range(60):
+            if set(state.glob("*.status")) - before:
+                break
+            time.sleep(0.5)
+        return said
+
+    respawn("Backend, jarvis")
+    assert (hosted / "jarvis-warm-preset").is_dir()
+
+    respawn("Backend")
+    assert sorted(p.name for p in hosted.iterdir()) == [
+        "lamp-Backend.git", "lamp-agent.git", "lamp-jarvis.git", "lamp-warm-preset", "lamp.git"]
+    assert not git(hosted / "lamp-jarvis.git", "branch", "--list", "ticket/warm-preset")
+    assert (hosted / "lamp-warm-preset" / "Backend").is_dir()
+    assert [line.split("\t")[0] for line in (state / "repos-warm-preset").read_text().splitlines()] == ["Backend"]
+    newest = max(state.glob("*.brief"), key=lambda brief: brief.stat().st_mtime_ns).read_text()
+    assert "- Backend: `Backend/` in your worktree" in newest and "jarvis" not in newest
+
+    said = respawn("")
+    assert not (hosted / "lamp-warm-preset" / "Backend").exists()
+    assert not git(hosted / "lamp-Backend.git", "branch", "--list", "ticket/warm-preset")
+    assert not (state / "repos-warm-preset").exists()
+    calls = [line.split("dispatch-ctl ")[1] for line in said.stderr.splitlines()
+             if line.startswith("+ on_host agent@far bash") or line.startswith("+ on_host agent@far env")]
+    assert calls == ["spawn warm-preset sonnet"], said.stderr
+
+
+def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_only_its_own_commits(
+        toy: Path) -> None:
+    """`jarvis`'s ticket branch is cut from origin's `main`, which is ahead of the local one, and the
+    session merges it into the local `main`. The range recorded for `jarvis` starts at the ticket's
+    own fork point, not at the merge's first parent, so it holds the ticket's commit alone, and the
+    page over the range before the merge is review's to render again."""
+    repos = staged_listed(toy)
+    agent = toy / "agent"
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "jarvis": built_on(repos["jarvis"], "ticket/warm-preset", "origin/main", "warm.rs")}
+    assert rounds["jarvis"][0] == git(repos["jarvis"], "rev-parse", "origin/main").strip()
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+
+    for top in (toy, agent, repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert ranges_of(toy, "warm-preset") == [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
+    jarvis = f"{repos['jarvis']}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}"
+    assert pages(toy)[-1].split()[-1] == jarvis
+    assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
 
 
 def test_a_spawn_that_finds_its_branch_in_a_listed_repo_already_cuts_nothing_and_keeps_it(

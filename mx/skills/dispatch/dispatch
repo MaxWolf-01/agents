@@ -57,7 +57,9 @@
 #            remote host, so a ticket branch cuts from its current tip; a
 #            local host cuts from these checkouts.
 #            A spawn of a ticket naming listed repos stages each of them and
-#            no other repo on the list, placed as `dispatch-ctl repos` says.
+#            no other repo on the list, placed as `dispatch-ctl spawn`'s
+#            --repo says, and the host forgets any repo an earlier spawn of it
+#            was given and this one is not.
 #            Its base is the parent ticket's branch in that repo where it has
 #            one, and otherwise its integration branch, origin's where that is
 #            ahead of the local one; a remote host is pushed that base. The
@@ -448,12 +450,14 @@ push_listed() { # <host>
     return $rc
 }
 
-# The listed repos <slug> names, recorded on the host its spawn goes to (`dispatch-ctl repos`) and
-# their bases pushed there; a local host cuts from the repos' own checkouts. The place is the
-# repo's path inside the project, where it has one. The brief's lines for them go in `listed_brief`.
+# The listed repos <slug> names, their bases pushed to a remote host's bare repos (`dispatch-ctl
+# bare`); a local host cuts from the repos' own checkouts. Each travels to the spawn as a --repo
+# group in `listed_args`, so a ticket that names none sends none and the host's record of the last
+# spawn's is emptied with no call of its own. The place is the repo's path inside the project, where
+# it has one. The brief's lines for them go in `listed_brief`.
 stage_listed() { # <host> <slug>
-    local name top place project from args=()
-    listed_brief=
+    local name top place project from
+    listed_brief= listed_args=()
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
     project=$(realpath "$(dirname "$agent_top")")
@@ -463,15 +467,16 @@ stage_listed() { # <host> <slug>
         case $top in "$project"/*) place=${top#"$project"/} ;; esac
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
         # under the integration branch's own name.
-        if [ "$1" = local ]; then from=${cut_from[$name]} args+=("$name" "$from" "$place" "$top")
-        else from=${cut_from[$name]#origin/} args+=("$name" "$from" "$place" ""); fi
+        if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
+        else from=${cut_from[$name]#origin/} listed_args+=(--repo "$name" "$from" "$place" ""); fi
         if [ -n "$place" ]; then
             listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
         else
             listed_brief+=$'\n'"- $name: \`../$name-$2\`, beside your worktree, from \`$from\`"
         fi
     done
-    run on_host "$1" bash "$(scratch_dir "$1")/dispatch-ctl" repos "$2" "${args[@]}" || return 1
+    [ "$1" = local ] && return 0
+    run on_host "$1" bash "$(scratch_dir "$1")/dispatch-ctl" bare "${ticket_repos[@]}" || return 1
     push_listed "$1"
 }
 
@@ -632,6 +637,7 @@ ctl() {
     fi
     # Echoed like every other primitive, so the transcript says which host this
     # ticket's command went to.
+    [ "$sub" != spawn ] || set -- "$@" "${listed_args[@]}"
     run on_host "$host" env "${env[@]}" bash "$scratch/dispatch-ctl" "$@" || return
     [ -n "$forgets" ] && { pull_runs "$host"; forget_run "$name"; }
     [ "$sub" = resume ] && reclaim "$2"
@@ -693,15 +699,23 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
+# `fork` moved to <commit> where it is none yet or an ancestor of it: of the points a tip shares
+# with its bases, the newest. Nothing changes for no commit, which unrelated histories give.
+newer() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
+
 # <repo, by the name its range carries> <tip> → <from>..<tip>, whether or not the ticket branch has
 # merged yet, and nothing at all for a branch that committed nothing, which is what a round
-# that touched one of its repos leaves in another. Before the merge,
-# merge-base against this branch is the answer; after it, the tip is an ancestor
-# of this branch and merge-base would return the tip itself, so the start comes
-# from the merge commit that brought it in, on whichever base holds one. SHAs on
-# both ends, because cleanup deletes the branch while its commits survive.
+# that touched one of its repos leaves in another. The start is the ticket's own fork point: the
+# newest point the tip shares with any of its repo's bases. Before the merge,
+# merge-base against them is the answer; after it, the tip is an ancestor of the
+# base it merged into and merge-base would return the tip itself, so that base's
+# point comes from the merge commit that brought it in. A base the tip has not
+# reached still counts: origin's integration branch, where the session merged
+# into a local one behind it, holds the fork the merge's first parent lags. SHAs
+# on both ends, because cleanup deletes the branch while its commits survive.
 range_of() { # <repo> <tip>
-    at=$1 tip=$2 top=$(repo_at "$1")
+    local at=$1 tip=$2 top fork= onto merge
+    top=$(repo_at "$1")
     if ! bases=$(merged_into "$at" "$tip"); then
         # Against both of a listed repo's bases at once, the newest point the tip shares with either.
         # shellcheck disable=SC2046
@@ -710,8 +724,15 @@ range_of() { # <repo> <tip>
     fi
     for onto in $bases; do
         merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-        [ -z "$merge" ] || { echo "$(git -C "$top" merge-base "$merge^1" "$tip")..$tip"; return 0; }
+        [ -z "$merge" ] || newer "$(git -C "$top" merge-base "$merge^1" "$tip")"
     done
+    if [ -n "$fork" ]; then
+        for onto in $(base_at "$at"); do
+            grep -qxF -- "$onto" <<< "$bases" || newer "$(git -C "$top" merge-base "$tip" "$onto")"
+        done
+        echo "$fork..$tip"
+        return 0
+    fi
     for onto in $bases; do
         [ -n "$(git -C "$top" rev-list -1 "$onto..$tip")" ] ||
             return 0  # the branch carries nothing of its own, so it has no range

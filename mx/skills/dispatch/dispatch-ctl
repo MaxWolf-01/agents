@@ -3,7 +3,7 @@
 # two repos there, worker panes, runs, state files. A project is a code repo
 # with its `agent/` a git repo of its own inside it, and a worker holds both, so
 # every branch, worktree and bare repo below comes in a pair, plus one for each
-# listed repo its ticket names (`repos` below). Runs on the worker
+# listed repo its ticket names (`--repo` under spawn). Runs on the worker
 # host from the scratch dir of the branch the ticket branches cut from, <base>
 # below: the branch the parent ticket is built on, or the repo's integration
 # branch for a ticket with no parent ticket. `dispatch` (beside this file in the
@@ -11,8 +11,9 @@
 # commits, merges, pushes, fetches -- stays with the orchestrator.
 #
 # Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]
-#        dispatch-ctl repos <slug> [<name> <base> <place> <git-dir>]...
+#        dispatch-ctl bare <name>...
 #        dispatch-ctl spawn <slug> <model> [session-id] [--effort <level>]
+#                           [--repo <name> <base> <place> <git-dir>]...
 #        dispatch-ctl wait <slug> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <slug>
 #        dispatch-ctl resume <slug> <model> [--effort <level>]
@@ -35,24 +36,15 @@
 #             and the directory beside them. agent-base is the branch the agent
 #             repo's ticket branches cut from, which is the one its main
 #             checkout has out and rarely the code repo's <base>.
-#   repos     records the listed repos <slug>'s worktree holds, those its
-#             ticket's `repos:` names, four arguments each: its name on the
-#             project's repo list, the branch its ticket branch cuts from, its
-#             place, and its git dir. A place is a path inside the ticket
-#             worktree, where a repo nested in the project sits in every
-#             checkout of it; an empty one puts the repo beside the worktree,
-#             as <worktrees-dir>/<name>-<slug>. An empty git dir is a bare repo
-#             of its own beside the code repo's, <repo>-<name>.git, created
-#             when missing, which history reaches by push as it reaches the
-#             other two; a local orchestrator passes the repo's own checkout.
-#             Each spawn of <slug> records them again before it starts, and
-#             with none named nothing is recorded.
+#   bare      creates the bare repo of each listed repo named, when missing,
+#             beside the code repo's as <repo>-<name>.git: empty, never a
+#             clone, so history reaches it by push as it reaches the other two.
 #   spawn     finds the mx install the worker loads (DISPATCH_PLUGIN_DIR
 #             below; a host with no mx stops here), cuts ticket/<slug> from
 #             <base> in both repos when absent, the code one into
 #             <worktrees-dir>/<repo>-<slug> and the agent one into that
 #             worktree's `agent/`, where the project keeps it, and in each
-#             recorded listed repo from its own base, at its place; sets the code
+#             listed repo a --repo names (below); sets the code
 #             worktree up (the `setup` file's command, run as given; without
 #             that file `make install`, under `nix develop -c` where a
 #             flake.nix exists), runs `claude update`, then starts the worker
@@ -65,6 +57,18 @@
 #             the loop for is kept back. A session id resumes that conversation
 #             on the same file, which then holds the guidance. --effort is
 #             `high` unless given.
+#             --repo is one listed repo the ticket's `repos:` names: its name
+#             on the project's repo list, the branch its ticket branch cuts
+#             from, its place, and its git dir. A place is a path inside the
+#             ticket worktree, where a repo nested in the project sits in every
+#             checkout of it; an empty one puts the repo beside the worktree,
+#             as <worktrees-dir>/<name>-<slug>. An empty git dir is its `bare`
+#             repo; a local orchestrator passes the repo's own checkout. Every
+#             spawn records the repos it is given as all <slug>'s worktree
+#             holds, none when it is given none, and removes the worktree and
+#             branch of each repo the record held and no longer does, so a
+#             repo dropped from `repos:` leaves the worktree at the next spawn;
+#             its bare repo stays. A resume keeps the record.
 #   wait      blocks until the current run of <slug> ends, then prints its
 #             probe line: exit 0 on `exited`, 1 on `gone`. --stall ends the
 #             wait after SECS with nothing written to the worklog (exit 2),
@@ -136,7 +140,7 @@
 #                                --setup-cmd`)
 #   repos-<slug>                 the listed repos that ticket's worktree holds,
 #                                one line each: name TAB git dir TAB base TAB
-#                                worktree (repos)
+#                                worktree (spawn)
 #   runner-<slug>                the orchestrator's DISPATCH_RUNNER for that
 #                                ticket, when it gave one
 #   stamp                        which version of these scripts is staged here,
@@ -327,22 +331,38 @@ cut_listed() {
     done 3< "$listed"
 }
 
-repos() {
-    load; names "$1"; shift
-    [ $(($# % 4)) -eq 0 ] || die "repos takes <slug>, then <name> <base> <place> <git-dir> for each listed repo"
-    [ $# -gt 0 ] || { rm -f "$listed"; return 0; }
-    part=$(mktemp "$listed.XXXXXX")
-    while [ $# -gt 0 ]; do
-        dir=${4:-$(dirname "$git_dir")/$repo-$1.git}
+# The bare repo a listed repo has on this host, when the orchestrator names none.
+bare_of() { echo "$(dirname "$git_dir")/$repo-$1.git"; } # <name>
+
+bare() {
+    load
+    for one; do
         # Empty, never a clone, as init's two are.
-        [ -d "$dir" ] || run git init -q --bare "$dir" || { rm -f "$part"; die "could not create $dir"; }
-        at=$worktrees/$1-$slug
+        [ -d "$(bare_of "$one")" ] || run git init -q --bare "$(bare_of "$one")" || die "could not create $(bare_of "$one")"
+    done
+}
+
+# The record rewritten from this spawn's --repo groups, and every worktree the old
+# one held that the new one does not removed with its branch: what the worker
+# holds is what its ticket names now, and a record that forgot a worktree would
+# leave it for no cleanup to find.
+relist() {
+    local part n dir from at kept=
+    part=$(mktemp "$listed.XXXXXX")
+    set -- "${repos_given[@]}"
+    while [ $# -gt 0 ]; do
+        dir=${4:-$(bare_of "$1")} at=$worktrees/$1-$slug
         [ -z "$3" ] || at=$worktree/$3
         printf '%s\t%s\t%s\t%s\n' "$1" "$dir" "$2" "$at" >> "$part"
-        echo "listed $1  git=$dir  base=$2  worktree=$at"
+        kept+=$at$'\n'
         shift 4
     done
-    mv "$part" "$listed"
+    if [ -f "$listed" ]; then
+        while IFS=$'\t' read -r -u 3 n dir from at; do
+            grep -qxF -- "$at" <<< "$kept" || drop_listed "$dir" "$at"
+        done 3< "$listed"
+    fi
+    if [ -s "$part" ]; then mv "$part" "$listed"; else rm -f "$part" "$listed"; fi
 }
 
 set_up() {
@@ -364,12 +384,15 @@ set_up() {
     return 1
 }
 
-# `--effort <level>` after the positional arguments; what is left is positional.
+# `--effort <level>` and `--repo <name> <base> <place> <git-dir>` after the
+# positional arguments; what is left is positional.
 take_effort() {
-    positional=()
+    positional=() repos_given=()
     while [ $# -gt 0 ]; do
         case $1 in
             --effort) effort=${2:-}; [ -n "$effort" ] || die "--effort takes a level"; shift 2 ;;
+            --repo)   [ $# -ge 5 ] || die "--repo takes <name> <base> <place> <git-dir>"
+                      repos_given+=("$2" "$3" "$4" "$5"); shift 5 ;;
             *) positional+=("$1"); shift ;;
         esac
     done
@@ -390,6 +413,7 @@ spawn() {
     # Before the checkout: a host with no mx fails here in seconds, with no
     # worktree to unwind and without waiting on the update lock.
     find_plugin
+    [ -n "${resuming:-}" ] || relist
     if [ -d "$worktree" ]; then
         { listed_free && cut_listed; } || die "could not cut $branch in a listed repo of $slug"
     else
@@ -537,6 +561,7 @@ resume() {
     [ -n "$session" ] && [ "$session" != - ] || die "the status line of $name carries no session id; spawn afresh"
     # The session id is the harness's own, and means nothing to another one.
     [ -n "${DISPATCH_RUNNER:-}" ] || runner=$run_runner
+    resuming=1
     spawn "$1" "$2" "$session"
 }
 
@@ -588,6 +613,12 @@ remove_jobs() {
     done
 }
 
+drop_listed() { # <git dir> <worktree>
+    [ -d "$2" ] && run git -C "$1" worktree remove --force "$2"
+    git -C "$1" show-ref --verify -q "refs/heads/$branch" && run git -C "$1" branch -D "$branch"
+    return 0
+}
+
 # --force: the setup command left untracked files (node_modules, .venv) that a
 # plain remove refuses over, and the agent worktree is itself untracked inside
 # the code one. -D: a ticket branch merges into the base branch on the
@@ -597,10 +628,7 @@ remove_jobs() {
 # worktree.
 remove_worktrees() {
     if [ -f "$listed" ]; then
-        while IFS=$'\t' read -r -u 3 _ dir _ at; do
-            [ -d "$at" ] && run git -C "$dir" worktree remove --force "$at"
-            git -C "$dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$dir" branch -D "$branch"
-        done 3< "$listed"
+        while IFS=$'\t' read -r -u 3 _ dir _ at; do drop_listed "$dir" "$at"; done 3< "$listed"
         run rm "$listed"
     fi
     [ -d "$agent_worktree" ] && run git -C "$agent_dir" worktree remove --force "$agent_worktree"
@@ -768,7 +796,7 @@ fuzz() {
 cmd=${1:-}
 case $cmd in
     init)       shift; init "$@" ;;
-    repos)      shift; repos "$@" ;;
+    bare)       shift; bare "$@" ;;
     spawn)      shift; spawn "$@" ;;
     wait)       shift; wait_ "$@" ;;
     stop)       shift; stop "$@" ;;
