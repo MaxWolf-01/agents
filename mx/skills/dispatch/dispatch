@@ -94,7 +94,9 @@
 #            agent/show/<slug>/report.md into the ticket, once per report;
 #            refuses an agent branch that wrote a ticket file, whatever else it
 #            left; projects the ticket's assumptions anchored in code into the
-#            review page's notes; renders agent/diffviews/<slug>.html in the
+#            review page's notes, each on the file its repo's section shows,
+#            and says which may show on a file of the same path in another
+#            repo's section; renders agent/diffviews/<slug>.html in the
 #            agent repo, one page with a section per range of code, in the code
 #            repo and each listed repo, and serves it; says the ticket gets no
 #            page when no round of it carries code; leaves a page at that path
@@ -470,21 +472,27 @@ push_listed() { # <host>
     return $rc
 }
 
+# Where a worker finds a listed repo: <name>'s path inside the project, the same path in its
+# worktree, or nothing for a repo outside the project, which is `sibling_of` it, beside the worktree.
+place_of() { # <name>
+    local project
+    project=$(realpath "$(dirname "$agent_top")")
+    case ${listed_top[$1]} in "$project"/*) echo "${listed_top[$1]#"$project"/}" ;; esac
+}
+sibling_of() { echo "../$1-$2"; } # <name> <slug>
+
 # The listed repos <slug> names, their bases pushed to a remote host's bare repos (`dispatch-ctl
 # bare`); a local host cuts from the repos' own checkouts. Each repo travels to the spawn as a
 # --repo group in `listed_args`. A ticket that names none sends none, and the spawn call empties the
-# host's record of them; no other call is made. The place is the repo's path inside the project,
-# where it has one. The brief's lines for them go in `listed_brief`.
+# host's record of them; no other call is made. The brief's lines for them go in `listed_brief`.
 stage_listed() { # <host> <slug>
-    local name top place project from
+    local name top place from
     listed_brief= listed_args=()
     ticket_listed "$2"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
-    project=$(realpath "$(dirname "$agent_top")")
     listed_brief="Your worktree holds the listed repos your ticket names, each on \`ticket/$2\`, cut from the branch named here; that branch is yours as the other two are, and your work in that repo is committed on it:"
     for name in "${ticket_repos[@]}"; do
-        top=${listed_top[$name]} place=
-        case $top in "$project"/*) place=${top#"$project"/} ;; esac
+        top=${listed_top[$name]} place=$(place_of "$name")
         # The base by the name it has where the worker is: origin's branch arrives on a remote host
         # under the integration branch's own name.
         if [ "$1" = local ]; then from=${cut_from[$name]} listed_args+=(--repo "$name" "$from" "$place" "$top")
@@ -492,7 +500,7 @@ stage_listed() { # <host> <slug>
         if [ -n "$place" ]; then
             listed_brief+=$'\n'"- $name: \`$place/\` in your worktree, from \`$from\`"
         else
-            listed_brief+=$'\n'"- $name: \`../$name-$2\`, beside your worktree, from \`$from\`"
+            listed_brief+=$'\n'"- $name: \`$(sibling_of "$name" "$2")\`, beside your worktree, from \`$from\`"
         fi
     done
     [ "$1" = local ] && return 0
@@ -770,22 +778,60 @@ range_of() { # <repo> <tip>
 # refused with its file and line rather than dropped from the page, and however
 # the writer wrapped one it is read whole. The user's own comments live in
 # diffview's state file beside the page, which a render never touches.
-# A worker anchors from its worktree root, where the agent repo sits at
-# `agent/`, which the code repo ignores; the page renders no agent range, so an
-# assumption anchored under `agent/` has no file there and stays on the ticket.
+# A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
+# repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
+# under the path its repo's section shows, the anchor with that prefix cut. An assumption anchored
+# in a repo with no section on the page, the agent repo's always, has no file there and stays on
+# the ticket. diffview matches a note to a file by path alone, in whichever section holds it, so
+# where a note's path also names a file in another repo's section the render says the note may
+# show there.
 notes_of() { # <slug>
+    local name place anchors='{}' notes i spec id repo path hit other
+    local -a shows=()
     # Its own status, taken before the pipe: a refusal prints to stderr and writes
     # nothing, and jq over an empty input exits 0, so a pipeline would answer that
     # a ticket no reader can read has no notes.
     read=$("$tracker" data "$1") || return 1
-    printf '%s\n' "$read" | jq '{
-        notes: [ .tickets[0].assumptions[]
-                 | select(.path | startswith("agent/") | not)
-                 | {id, path, text}
-                   + (if .line == null then {} else {line} end) ],
-        resolved: .tickets[0].resolved,
-    }'
+    for name in "${!listed_top[@]}"; do
+        place=$(place_of "$name")
+        anchors=$(jq -c --arg at "${place:-$(sibling_of "$name" "$1")}/" --arg name "$name" '. + {($at): $name}' <<< "$anchors")
+    done
+    notes=$(jq -c --argjson anchors "$anchors" '
+        [ .tickets[0].assumptions[]
+          | select(.path | startswith("agent/") | not)
+          | . as $a
+          | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
+          | {repo: ($in.value // "code"), id, path: .path[($in.key // "" | length):], text}
+            + (if .line == null then {} else {line} end)
+          | select(.repo | IN($ARGS.positional[])) ]' --args "${spec_repos[@]}" <<< "$read") || return 1
+    for i in "${!specs[@]}"; do
+        spec=${specs[i]}
+        shows[i]=$(git -C "${spec%@*}" diff --name-only -M "${spec##*@}")
+    done
+    while IFS=$'\t' read -r id repo path; do
+        hit=
+        for i in "${!specs[@]}"; do
+            names_file "$path" <<< "${shows[i]}" && hit+=" ${spec_repos[i]}"
+        done
+        # A file no section changes joins the first section that holds it.
+        if [ -z "$hit" ]; then
+            for i in "${!specs[@]}"; do
+                spec=${specs[i]}
+                git -C "${spec%@*}" cat-file -e "${spec##*..}:$path" 2> /dev/null && { hit=${spec_repos[i]}; break; }
+            done
+        fi
+        for other in $hit; do
+            [ "$other" != "$repo" ] || continue
+            echo "dispatch: A$id's \`$path\` in $repo also names a file the page's $other section shows, and diffview places a note by its path alone, so the note may show there" >&2
+            break
+        done
+    done < <(jq -r '.[] | [.id, .repo, .path] | @tsv' <<< "$notes")
+    jq --argjson notes "$notes" '{notes: [$notes[] | del(.repo)], resolved: .tickets[0].resolved}' <<< "$read"
 }
+
+# Whether one of the paths on stdin is <path>, or ends in `/<path>`: the files a note on <path> can
+# land on, as diffview matches them.
+names_file() { awk -v p="$1" '$0 == p || substr($0, length($0) - length(p)) == "/" p { found = 1 } END { exit !found }'; } # <path>
 
 # Whether every source the diffview page at <page> shows is one of <specs>, or one a
 # spec extends: the same repo, a start that begins the spec's start SHA, and an end
@@ -838,20 +884,20 @@ round_of() { # <slug> <listed repo...>
 # the rounds <slug> carries, then the round `round_of` read while it is unmerged (a proposal waiting
 # for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
 # off the page: what an agent branch carries, the report and the artefacts, reaches the user as
-# itself, through the board.
+# itself, through the board. `spec_repos` names the repo of each, as its range does.
 page_specs() { # <slug>
     local rounds r top
     rounds=$(rounds_of "$1")
-    specs=()
+    specs=() spec_repos=()
     for r in $rounds $(for round in "${written[@]}"; do printf '%s\n' "$rounds" | grep -qxF "$round" || echo "$round"; done); do
         case $r in
             agent@*) ;;
             *@*) top=$(repo_at "${r%%@*}")
                  [ -n "$top" ] || die "$1's range $r names no repo \`tracker repos\` lists"
-                 specs+=("$top@${r#*@}") ;;
+                 specs+=("$top@${r#*@}") spec_repos+=("${r%%@*}") ;;
             # A range that names no repo is a round from before this ticket's
             # tracker had two repos, and belongs to the code one.
-            *) specs+=("$repo_root@$r") ;;
+            *) specs+=("$repo_root@$r") spec_repos+=(code) ;;
         esac
     done
 }
