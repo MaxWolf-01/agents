@@ -2,7 +2,8 @@
 # The worker host's side of one dispatch: ticket worktrees and branches off the
 # two repos there, worker panes, runs, state files. A project is a code repo
 # with its `agent/` a git repo of its own inside it, and a worker holds both, so
-# every branch, worktree and bare repo below comes in a pair. Runs on the worker
+# every branch, worktree and bare repo below comes in a pair, plus one for each
+# listed repo its ticket names (`repos` below). Runs on the worker
 # host from the scratch dir of the branch the ticket branches cut from, <base>
 # below: the branch the parent ticket is built on, or the repo's integration
 # branch for a ticket with no parent ticket. `dispatch` (beside this file in the
@@ -10,6 +11,7 @@
 # commits, merges, pushes, fetches -- stays with the orchestrator.
 #
 # Usage: dispatch-ctl init <repo> <base> [git-dir] [worktrees-dir] [agent-dir] [agent-base]
+#        dispatch-ctl repos <slug> [<name> <base> <place> <git-dir>]...
 #        dispatch-ctl spawn <slug> <model> [session-id] [--effort <level>]
 #        dispatch-ctl wait <slug> [--stall SECS] [--deadline SECS]
 #        dispatch-ctl stop <slug>
@@ -33,11 +35,24 @@
 #             and the directory beside them. agent-base is the branch the agent
 #             repo's ticket branches cut from, which is the one its main
 #             checkout has out and rarely the code repo's <base>.
+#   repos     records the listed repos <slug>'s worktree holds, those its
+#             ticket's `repos:` names, four arguments each: its name on the
+#             project's repo list, the branch its ticket branch cuts from, its
+#             place, and its git dir. A place is a path inside the ticket
+#             worktree, where a repo nested in the project sits in every
+#             checkout of it; an empty one puts the repo beside the worktree,
+#             as <worktrees-dir>/<name>-<slug>. An empty git dir is a bare repo
+#             of its own beside the code repo's, <repo>-<name>.git, created
+#             when missing, which history reaches by push as it reaches the
+#             other two; a local orchestrator passes the repo's own checkout.
+#             Each spawn of <slug> records them again before it starts, and
+#             with none named nothing is recorded.
 #   spawn     finds the mx install the worker loads (DISPATCH_PLUGIN_DIR
 #             below; a host with no mx stops here), cuts ticket/<slug> from
 #             <base> in both repos when absent, the code one into
 #             <worktrees-dir>/<repo>-<slug> and the agent one into that
-#             worktree's `agent/`, where the project keeps it; sets the code
+#             worktree's `agent/`, where the project keeps it, and in each
+#             recorded listed repo from its own base, at its place; sets the code
 #             worktree up (the `setup` file's command, run as given; without
 #             that file `make install`, under `nix develop -c` where a
 #             flake.nix exists), runs `claude update`, then starts the worker
@@ -71,7 +86,8 @@
 #   cleanup   kills the pane and whatever its runs left running, the `job`s
 #             the worker started included (each whose cwd is in its worktree,
 #             under this process's JOB_STATE_DIR), forgets the run, removes
-#             both worktrees and both branches
+#             both worktrees and both branches, and each recorded listed
+#             repo's, and the record; the bare repos stay
 #   fuzz      the repo's fuzz run's host side, for `dispatch fuzz` and its hook
 # This host needs `git`, `tmux` and `jq` (the runner reads the models a worker
 # ran on out of its transcript, `spawn` the mx install out of `claude plugin
@@ -118,6 +134,9 @@
 #   setup                        the project's setup command, one line, when
 #                                the orchestrator gave one (`dispatch ctl
 #                                --setup-cmd`)
+#   repos-<slug>                 the listed repos that ticket's worktree holds,
+#                                one line each: name TAB git dir TAB base TAB
+#                                worktree (repos)
 #   runner-<slug>                the orchestrator's DISPATCH_RUNNER for that
 #                                ticket, when it gave one
 #   stamp                        which version of these scripts is staged here,
@@ -173,6 +192,7 @@ names() {
     # The agent repo sits inside the code repo in every checkout of a project,
     # so a worker's copy of it sits inside the worktree it works in.
     agent_worktree=$worktree/agent
+    listed=$here/repos-$slug
     prompt=$here/prompt-$slug.md
 }
 
@@ -275,12 +295,42 @@ checkout() {
     # Inside the code worktree, where every checkout of the project keeps it, so
     # the paths a worker reads and writes are the ones its ticket names.
     run git -C "$agent_dir" worktree add "$agent_worktree" -b "$branch" "$agent_base" || exit 1
+    # Before the setup, which may build what a nested repo holds.
+    cut_listed || { remove_worktrees; die "could not cut $branch in a listed repo of $slug"; }
     if ! set_up; then
         # Unwound, so the next spawn builds again instead of finding a worktree
         # and starting a worker in a tree that was never set up.
         remove_worktrees
         die "setup command failed in $worktree; the log above is its tail"
     fi
+}
+
+# Each listed repo the record names, cut where it is missing: a respawn finds the
+# rest where the spawn before it cut them. --no-track, since a base at origin
+# would otherwise make the worker's branch track the project's own remote.
+cut_listed() {
+    [ -f "$listed" ] || return 0
+    while IFS=$'\t' read -r -u 3 _ dir from at; do
+        [ -d "$at" ] || run git -C "$dir" worktree add --no-track "$at" -b "$branch" "$from" || return 1
+    done 3< "$listed"
+}
+
+repos() {
+    load; names "$1"; shift
+    [ $(($# % 4)) -eq 0 ] || die "repos takes <slug>, then <name> <base> <place> <git-dir> for each listed repo"
+    [ $# -gt 0 ] || { rm -f "$listed"; return 0; }
+    part=$(mktemp "$listed.XXXXXX")
+    while [ $# -gt 0 ]; do
+        dir=${4:-$(dirname "$git_dir")/$repo-$1.git}
+        # Empty, never a clone, as init's two are.
+        [ -d "$dir" ] || run git init -q --bare "$dir" || { rm -f "$part"; die "could not create $dir"; }
+        at=$worktrees/$1-$slug
+        [ -z "$3" ] || at=$worktree/$3
+        printf '%s\t%s\t%s\t%s\n' "$1" "$dir" "$2" "$at" >> "$part"
+        echo "listed $1  git=$dir  base=$2  worktree=$at"
+        shift 4
+    done
+    mv "$part" "$listed"
 }
 
 set_up() {
@@ -328,7 +378,7 @@ spawn() {
     # Before the checkout: a host with no mx fails here in seconds, with no
     # worktree to unwind and without waiting on the update lock.
     find_plugin
-    [ -d "$worktree" ] || checkout
+    if [ -d "$worktree" ]; then cut_listed || die "could not cut $branch in a listed repo of $slug"; else checkout; fi
     update_claude
     run_id=$name-$(date +%s)
 
@@ -526,9 +576,17 @@ remove_jobs() {
 # plain remove refuses over, and the agent worktree is itself untracked inside
 # the code one. -D: a ticket branch merges into the base branch on the
 # orchestrator's side and never here, so -d would refuse too; the orchestrator
-# has fetched both branches before this runs. The agent worktree goes first,
-# since it lives inside the other.
+# has fetched both branches before this runs. The listed repos' and the agent
+# worktree go first, since a nested repo and the agent one live inside the code
+# worktree.
 remove_worktrees() {
+    if [ -f "$listed" ]; then
+        while IFS=$'\t' read -r -u 3 _ dir _ at; do
+            [ -d "$at" ] && run git -C "$dir" worktree remove --force "$at"
+            git -C "$dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$dir" branch -D "$branch"
+        done 3< "$listed"
+        run rm "$listed"
+    fi
     [ -d "$agent_worktree" ] && run git -C "$agent_dir" worktree remove --force "$agent_worktree"
     git -C "$agent_dir" show-ref --verify -q "refs/heads/$branch" && run git -C "$agent_dir" branch -D "$branch"
     [ -d "$worktree" ] && run git -C "$git_dir" worktree remove --force "$worktree"
@@ -547,6 +605,7 @@ fuzz_names() {
     branch=fuzz/$base
     worktree=$worktrees/$repo-$base-fuzz
     agent_worktree=$worktree/agent
+    listed=  # the fuzz run's worktree is the project's two repos alone
     db=$here/fuzz.hypothesis
     # A local host's repo is the user's own checkout, whose hooks are theirs.
     hook=
@@ -693,6 +752,7 @@ fuzz() {
 cmd=${1:-}
 case $cmd in
     init)       shift; init "$@" ;;
+    repos)      shift; repos "$@" ;;
     spawn)      shift; spawn "$@" ;;
     wait)       shift; wait_ "$@" ;;
     stop)       shift; stop "$@" ;;
