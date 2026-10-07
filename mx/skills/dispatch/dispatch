@@ -135,9 +135,10 @@
 #            page over the new ranges, replacing the one review rendered before;
 #            `dispatch review` then records the code and agent repos' ranges and
 #            writes `done`. A pull request not merged, or in no listed repo,
-#            changes nothing and says why; the first, a ticket branch holding
-#            commits the pull request did not carry, and a page left as it is
-#            make the exit status nonzero. GitHub is only read.
+#            changes nothing and says why. The exit status is nonzero for a pull
+#            request not merged, for a ticket branch holding commits its pull
+#            request did not carry, and for a page left as it is. GitHub is only
+#            read.
 #   A ticket that is done has nothing left to resume, so the `done` retires
 #   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
 #   both ticket/<slug> branches here, and the deletion of each listed repo's
@@ -865,7 +866,7 @@ render_page() { # <slug> [<spec the page may show>...]
     if [ ${#specs[@]} -eq 0 ]; then
         echo "dispatch: no round of $1 carries code, so it gets no review page; its artefacts are on the board" >&2
     elif [ -e "$out.html" ] && ! covers "$out.html" "${specs[@]}" "${@:2}"; then
-        echo "dispatch: $out.html shows sources this $cmd of $1 does not render, so it leaves that page as it is; move it aside and run \`dispatch $cmd $1\` again for its page" >&2
+        echo "dispatch: $out.html shows sources \`dispatch $cmd $1\` does not render, so it leaves that page as it is; move it aside and run \`dispatch $cmd $1\` again for its page" >&2
         kept=1
     else
         mkdir -p "$(dirname "$out")"
@@ -1056,6 +1057,9 @@ landed() { # <slug>
     [ -n "$refs" ] || die "$id's gh: names no pull request, so there is no merge on GitHub to read"
     listed "$("$tracker" get "$id" parent 2>/dev/null)"
     named=$("$tracker" get "$id" repos 2>/dev/null)
+    for name in $named; do
+        [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
+    done
     # The page as a review renders it now, which is what the render below may replace.
     # shellcheck disable=SC2086
     round_of "$id" $named

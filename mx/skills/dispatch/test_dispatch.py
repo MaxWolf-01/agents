@@ -1868,11 +1868,23 @@ def test_a_pull_request_merged_with_a_merge_commit_leaves_the_record_as_review_w
     assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
     assert len(pages(toy)) == 1, "review's page alone"
 
-    git(backend, "fetch", "-q", "origin")
     done = run(toy, "review", "warm-preset")
     assert done.returncode == 0, done.stderr
     assert status_of(toy, "warm-preset") == "done"
     assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
+
+
+def test_a_ticket_branch_holding_commits_its_pull_request_did_not_carry_stays(toy: Path) -> None:
+    """A commit made on the ticket branch after its pull request merged never reached GitHub: the
+    range is still the squash's, the branch keeps that commit, and the exit status says done waits."""
+    backend = on_github(toy)
+    theirs, merge = merged_on_github(backend, "squash")
+    _, later = built_on(backend, "ticket/warm-preset", "", "warmest.py")
+    landed = run(toy, "landed", "warm-preset")
+    assert landed.returncode != 0
+    assert "holds commits its pull request did not carry" in landed.stderr, landed.stderr
+    assert git(backend, "rev-parse", "ticket/warm-preset").strip() == later
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
 
 
 def test_a_pull_request_not_merged_and_one_in_no_listed_repo_change_nothing_and_say_why(toy: Path) -> None:
