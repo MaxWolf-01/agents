@@ -1,6 +1,6 @@
 ---
 name: project-setup
-description: Set up a project's foundations, new or existing. Use when starting a new project, adding tooling (Makefile, linting, flake) to an existing repo, making a repo dispatchable, or when a project lacks a reproducible install.
+description: Set up a project's foundations, new or existing. Use when starting a new project, adding tooling (Makefile, linting, flake) to an existing repo, making a repo dispatchable, when a project has no `agent/` directory yet, or when a project lacks a reproducible install.
 ---
 
 # Project setup
