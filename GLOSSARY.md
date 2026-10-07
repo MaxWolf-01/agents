@@ -175,3 +175,21 @@ _Avoid_: context budget, token budget
 **Session page**:
 The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log
+
+### Retros
+
+**Retro**:
+A recurring review of one repo and its tracker that runs unattended and keeps a living report; a workflow retro or an architecture retro.
+_Avoid_: retrospective, post-mortem, review (a diff's)
+
+**Workflow retro**:
+The agents repo's retro: it reads the sessions of every repo for friction in the workflow, and adds an architecture pass over the agents repo.
+_Avoid_: agents retro, meta-analysis
+
+**Architecture retro**:
+The retro of any repo but the agents repo: an architecture pass over the code its recent commits touched, reading no session.
+_Avoid_: repo retro, architecture review
+
+**Living report**:
+A retro's one report for its repo, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.
+_Avoid_: weekly report, retro report
