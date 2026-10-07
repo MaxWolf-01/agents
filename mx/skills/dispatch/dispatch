@@ -139,7 +139,10 @@
 #            pull request carried its tip, commits the ticket, and renders the review
 #            page over the new ranges, replacing the one review rendered before;
 #            `dispatch review` then records the code and agent repos' ranges and
-#            writes `done`. A pull request not merged, or in no listed repo,
+#            writes `done`. A parent ticket's pull request carries the work of
+#            the tickets under it too, so each of them has its ranges in that
+#            repo replaced and its ticket/<slug> there deleted the same way, for
+#            the parent's `accept`. A pull request not merged, or in no listed repo,
 #            changes nothing and says why. The exit status is nonzero for a pull
 #            request not merged, for a ticket branch holding commits its pull
 #            request did not carry, and for a page left as it is. GitHub is only
@@ -147,12 +150,14 @@
 #   A ticket that is done has nothing left to resume, so the `done` retires
 #   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
 #   both ticket/<slug> branches here, and the deletion of each listed repo's
-#   once it has merged there. A listed repo the host holds for the ticket
-#   whose branch is not here, merged, keeps the run where it is, whatever
-#   the ticket's repos: names now. A retirement that fails is said, with
+#   once it has merged there. The run stays on its host while a listed repo
+#   the host holds for the ticket and its repos: no longer names has a
+#   branch missing here or not merged; on a local host, only one not merged
+#   keeps it. A retirement that fails is said, with
 #   the command that tries again, and the exit status is nonzero; the
 #   `done` stands. `ctl cleanup` stays for a build that is not landing: a
-#   redo, a reject, a session that cannot be recovered.
+#   redo, a reject, a session that cannot be recovered; and for a run a
+#   `done` kept, once the work it held is merged or let go.
 #   ps       one row per worker on every worker host, under a header naming
 #            the columns. A host that did not answer is an `unreachable` row, a
 #            scratch dir whose probe failed an `unreadable` one, a
@@ -1015,7 +1020,8 @@ review() {
             rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
         done
         # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
-        if [ "$("$tracker" get "$id" parent 2>/dev/null)" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
+        up=$("$tracker" get "$id" parent 2>/dev/null)
+        if [ "$up" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
             now=review landed="$id merged into $base, for its ruling with it"
         else
             now=done landed="$id landed" retiring=1
@@ -1036,28 +1042,31 @@ review() {
     [ -z "$retiring" ] || retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
-    [ -z "$retiring" ] || retire "$id" || return 1
+    # shellcheck disable=SC2086
+    [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
     [ -z "$kept" ]
 }
 
 # What a done ticket's run left, on its host and here. The run is found under $base, the branch it
 # was spawned from, which `accept` sets to the parent's for each child.
-retire() { # <slug>
+retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: names>...]
     local h top name tip
     h=$(host_of "$1")
     if [ -n "$h" ]; then
-        # The listed repos the host holds for the ticket, whose branches its cleanup deletes, a repo
-        # the ticket's repos: no longer names among them: each branch has to be here, and merged.
+        # The host's cleanup deletes the branch of each listed repo it holds for the ticket. One its
+        # repos: names was fetched, and merged or landed, before this `done`; one it no longer names
+        # was in no round, so its branch has to be here, and merged, first.
         for name in $(on_host "$h" cat "$(scratch_dir "$h")/repos-$1" 2> /dev/null | cut -f1); do
-            [ ${#listed_top[@]} -gt 0 ] || listed ""
+            [[ " ${*:3} " != *" $name "* ]] || continue
+            [ ${#listed_top[@]} -gt 0 ] || listed "$2"
             top=${listed_top[$name]-}
             if ! tip=$(git -C "${top:-/}" rev-parse -q --verify "refs/heads/ticket/$1" 2> /dev/null); then
                 [ "$h" = local ] && [ -n "$top" ] && continue  # cut in that checkout, and deleted from it since
-                echo "dispatch: $1 is done, and ticket/$1 in $name, which $h holds, is not here, so its run stays; \`dispatch fetch $1\`, then \`dispatch ctl cleanup $1\`" >&2
+                echo "dispatch: $1 is done, and ticket/$1 in $name, which $h holds, is not here, so its run stays; \`dispatch fetch $1\` brings it" >&2
                 return 1
             fi
             is_merged "$name" "$tip" ||
-                { echo "dispatch: $1 is done, and ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so its run on $h stays; merge it or let it go, then \`dispatch ctl cleanup $1\`" >&2; return 1; }
+                { echo "dispatch: $1 is done, and ticket/$1 in $name is not merged into ${listed_onto[$name]// / or }, so its run on $h stays; \`dispatch ctl cleanup $1\` retires it once that work is merged or let go" >&2; return 1; }
         done
         run on_host "$h" bash "$(scratch_dir "$h")/dispatch-ctl" cleanup "$1" ||
             { echo "dispatch: $1 is done, and its cleanup on $h failed; \`dispatch ctl cleanup $1\` from $base tries again" >&2; return 1; }
@@ -1127,7 +1136,10 @@ accept() { # <slug>
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
     # retired by its own `review`, so only the children in review come up here.
     rc=0
-    for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
+    for child in $ruled; do
+        # shellcheck disable=SC2046
+        ( base=$id; retire "$child" "$id" $(printf '%s\n' "$read" | jq -r --arg c "$child" '.tickets[] | select(.slug == $c) | .repos[]?') ) || rc=1
+    done
     return $rc
 }
 
@@ -1158,45 +1170,19 @@ landed() { # <slug>
     rc=0
     for ref in $refs; do pr_landed "$ref" || rc=1; done
 
-    # Each rewritten repo's ranges replaced where the first of them stood, or appended where the
-    # ticket carries none there yet: a squashed branch never merged, so no review recorded it.
-    mapfile -t rounds < <(rounds_of "$id")
-    ranges=() placed=()
-    for r in "${rounds[@]}"; do
-        name=${r%%@*}
-        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
-        # shellcheck disable=SC2206
-        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
-    done
-    for name in "${order[@]}"; do
-        # shellcheck disable=SC2206
-        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
-            ranges+=(${landed_in[$name]})
-    done
     changed=
-    if [ "${ranges[*]}" != "${rounds[*]}" ]; then
-        joined=$(printf '%s, ' "${ranges[@]}")
-        run "$tracker" set "$id" "diff=[${joined%, }]" || exit 1
-        commit_ticket "$id" "$id: the ranges that landed on GitHub"
-        changed=1
-    fi
-    # A ticket branch whose tip the pull request carried has landed whole, as commits it no longer
-    # holds; left here, the done check would find it unmerged for good. A parent ticket's is its own
-    # branch, named by its slug alone, as the done check reads it.
-    parent_of=$("$tracker" data | jq -r --arg p "$id" 'any(.tickets[]; .parent == $p)') || exit 1
+    # A parent ticket's pull request carries its own branch, named by its slug alone as the done
+    # check reads it, and with it the work the tickets under it merged into that branch: theirs is
+    # recorded and deleted the same way, so the parent's accept finds them landed.
+    under=$("$tracker" data | jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)') || exit 1
+    record_landed "$id" append
+    for slug in $under; do record_landed "$slug"; done
     for name in "${order[@]}"; do
         [ -n "${rewritten[$name]-}" ] && [ -z "${held[$name]-}" ] || continue
         own=ticket/$id
-        [ "$parent_of" != true ] || ! git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id" > /dev/null || own=$id
-        tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$own") || continue
-        if [[ " ${carried[$name]} " != *" $tip "* ]]; then
-            echo "dispatch: $own in $name holds commits its pull request did not carry, so it stays, and done waits for them" >&2
-            rc=1
-        elif run git -C "${listed_top[$name]}" branch -q -D "$own"; then
-            changed=1
-        else
-            rc=1
-        fi
+        [ -z "$under" ] || ! git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id" > /dev/null || own=$id
+        drop_carried "$name" "$own"
+        for slug in $under; do drop_carried "$name" "ticket/$slug"; done
     done
     if [ -z "$changed" ]; then
         [ "$rc" -ne 0 ] || echo "dispatch: $id's record already holds what landed, so nothing changes" >&2
@@ -1218,6 +1204,48 @@ github_of() { # <url>
     [[ $u == *github.com[:/]*/* ]] || return 1
     u=${u//:/\/}
     printf '%s\n' "${u#"${u%/*/*}/"}" | tr '[:upper:]' '[:lower:]'
+}
+
+# <slug>'s `diff:` with the ranges in each repo a pull request rewrote replaced by what landed there,
+# where the first of them stood, written and committed where that changes it, which sets `changed`.
+# With `append`, a repo the ticket records no range in gets what landed too: a squashed branch never
+# merged, so no review recorded it.
+record_landed() { # <slug> [append]
+    local rounds ranges=() placed=() r name joined
+    mapfile -t rounds < <(rounds_of "$1")
+    for r in "${rounds[@]}"; do
+        name=${r%%@*}
+        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
+        # shellcheck disable=SC2206
+        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
+    done
+    for name in "${order[@]}"; do
+        [ -n "${2-}" ] || break
+        # shellcheck disable=SC2206
+        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
+            ranges+=(${landed_in[$name]})
+    done
+    [ "${ranges[*]}" != "${rounds[*]}" ] || return 0
+    joined=$(printf '%s, ' "${ranges[@]}")
+    run "$tracker" set "$1" "diff=[${joined%, }]" || exit 1
+    commit_ticket "$1" "$1: the ranges that landed on GitHub"
+    changed=1
+}
+
+# <branch> in the listed repo <name>, deleted where the pull request carried its tip: it landed
+# whole, as commits it no longer holds, and left here the done check would find it unmerged for good.
+# One holding commits the pull request did not carry stays, and sets `rc`; a deletion sets `changed`.
+drop_carried() { # <name> <branch>
+    local tip
+    tip=$(git -C "${listed_top[$1]}" rev-parse -q --verify "refs/heads/$2") || return 0
+    if [[ " ${carried[$1]} " != *" $tip "* ]]; then
+        echo "dispatch: $2 in $1 holds commits its pull request did not carry, so it stays, and done waits for them" >&2
+        rc=1
+    elif run git -C "${listed_top[$1]}" branch -q -D "$2"; then
+        changed=1
+    else
+        rc=1
+    fi
 }
 
 declare -A on_github=() landed_in=() rewritten=() held=() carried=()

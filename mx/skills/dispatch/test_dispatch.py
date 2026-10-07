@@ -1909,24 +1909,25 @@ def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@githu
     return backend
 
 
-def merged_on_github(backend: Path, how: Literal["squash", "rebase", "merge"], number: int = 7) -> tuple[str, str]:
-    """warm-preset's pull request merged on `development` at origin as `how`, after a change of
+def merged_on_github(backend: Path, how: Literal["squash", "rebase", "merge"], number: int = 7,
+                     branch: str = "ticket/warm-preset") -> tuple[str, str]:
+    """`branch`'s pull request merged on `development` at origin as `how`, after a change of
     somebody else's, and `gh pr view` answering for it. Answers (that change, the tip of
     `development`)."""
     commits = [line.split("\t") for line in
-               git(backend, "log", "--reverse", "--format=%H\t%at\t%s", "development..ticket/warm-preset").splitlines()]
+               git(backend, "log", "--reverse", "--format=%H\t%at\t%s", f"development..{branch}").splitlines()]
     git(backend, "switch", "-q", "-c", "github", "development")
     (backend / "theirs.py").write_text("theirs\n")
     git(backend, "add", "theirs.py")
     git(backend, "commit", "-q", "-m", "somebody else's change")
     theirs = git(backend, "rev-parse", "HEAD").strip()
     if how == "squash":
-        git(backend, "merge", "-q", "--squash", "ticket/warm-preset")
+        git(backend, "merge", "-q", "--squash", branch)
         git(backend, "commit", "-q", "-m", f"Warm preset (#{number})")
     elif how == "rebase":
-        git(backend, "cherry-pick", "development..ticket/warm-preset")
+        git(backend, "cherry-pick", f"development..{branch}")
     elif how == "merge":
-        git(backend, "merge", "-q", "--no-ff", "-m", f"Merge pull request #{number}", "ticket/warm-preset")
+        git(backend, "merge", "-q", "--no-ff", "-m", f"Merge pull request #{number}", branch)
     git(backend, "push", "-q", "origin", "github:development")
     tip = git(backend, "rev-parse", "HEAD").strip()
     git(backend, "switch", "-q", "development")
@@ -2107,21 +2108,69 @@ def test_a_merge_commits_range_stands_beside_a_squash_in_the_same_repo(toy: Path
     assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}"]
 
 
-def test_a_parent_tickets_own_branch_its_pull_request_squashed_is_deleted_with_its_range_recorded(toy: Path) -> None:
-    """lamp-ui is warm-preset's parent, and its own branch in Backend, `lamp-ui` as dispatch cuts a
-    parent's, went to GitHub as #9 and was squashed: `landed` records the squash on lamp-ui and
-    deletes that branch, which the done check reads, and leaves warm-preset's own."""
+def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_for_its_accept(toy: Path) -> None:
+    """lamp-ui is warm-preset's parent. warm-preset's Backend branch merged into lamp-ui's there, its
+    range recorded as the review of that merge writes it, and lamp-ui's own branch, named by its
+    slug as dispatch cuts a parent's, went to GitHub as #9 and was squashed. `landed` records the
+    squash on both tickets and deletes both branches, which the done check reads, so the parent's
+    accept writes both `done`s."""
     backend = on_github(toy)
-    path = tracked(toy) / "lamp-ui.md"
-    path.write_text(path.read_text().replace("status: open", "status: review\nrepos: [Backend]\ngh: [helferline/Backend#9]", 1))
-    git(toy / "agent", "commit", "-q", "-am", "lamp-ui's pull request")
-    git(backend, "branch", "lamp-ui", "ticket/warm-preset")
-    theirs, merge = merged_on_github(backend, "squash", 9)
+    agent = toy / "agent"
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    git(backend, "branch", "lamp-ui", "development")
+    merged_in(backend, "lamp-ui", "ticket/warm-preset")
+    for slug, front in (("warm-preset", f"status: review\ndiff: [Backend@{fork}..{tip}]"),
+                        ("lamp-ui", "status: review\nrepos: [Backend]\ngh: [helferline/Backend#9]")):
+        path = tracked(toy) / f"{slug}.md"
+        path.write_text(re.sub(r"status: \w+", front, path.read_text(), count=1))
+    git(agent, "commit", "-q", "-am", "the tree, for its ruling")
+    theirs, merge = merged_on_github(backend, "squash", 9, branch="lamp-ui")
+
     landed = run(toy, "landed", "lamp-ui")
     assert landed.returncode == 0, landed.stderr
-    assert ranges_of(toy, "lamp-ui") == [f"Backend@{theirs}..{merge}"]
-    assert not git(backend, "branch", "--list", "lamp-ui")
-    assert git(backend, "branch", "--list", "ticket/warm-preset")
+    for slug in ("lamp-ui", "warm-preset"):
+        assert ranges_of(toy, slug) == [f"Backend@{theirs}..{merge}"], slug
+    assert not git(backend, "branch", "--list", "lamp-ui", "ticket/warm-preset")
+
+    built_on(toy, "lamp-ui", "main", "ui.txt")
+    merged_in(toy, "main", "lamp-ui")
+    accepted = run(toy, "accept", "lamp-ui")
+    assert accepted.returncode == 0, accepted.stderr
+
+
+def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_run_on_the_host(
+        toy: Path, staged: Path) -> None:
+    """Backend's branch was squashed into `development` and deleted here, its range the squash, as
+    `landed` leaves them; the host still holds Backend for the ticket. The `done` retires the run all
+    the same, since Backend is a repo the ticket names and its round has landed."""
+    repos = staged_listed(toy)
+    (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
+    remote, env = fake_remote(toy)
+    hosted = remote / "repos" / "dispatch"
+    state = remote / ".local" / "state" / "dispatch" / "lamp-main"
+    assert spawn(toy, staged, "warm-preset", "Work it.\n", host="agent@far", env=env).returncode == 0
+    waited(toy, state)
+    for command in ("fetch", "review"):
+        said = subprocess.run([str(staged), command, "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+        assert said.returncode == 0, said.stderr
+    for top in (toy, toy / "agent", repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    backend = repos["Backend"]
+    fork = git(backend, "rev-parse", "development").strip()
+    git(backend, "merge", "-q", "--squash", "ticket/warm-preset")
+    git(backend, "commit", "-q", "-m", "Warm preset (#7)")
+    git(backend, "branch", "-q", "-D", "ticket/warm-preset")
+    squash = git(backend, "rev-parse", "HEAD").strip()
+    subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "set", "warm-preset", f"diff+=Backend@{fork}..{squash}"],
+                   cwd=toy, check=True, capture_output=True)
+    git(toy / "agent", "commit", "-q", "-am", "warm-preset: the range that landed in Backend")
+    (toy / "agent" / "diffviews" / "warm-preset.html").unlink()  # `landed` renders it over that range
+
+    landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert not (hosted / "lamp-warm-preset").exists()
+    assert not (hosted / "jarvis-warm-preset").exists()
 
 
 def test_landed_leaves_a_page_it_did_not_render_as_it_is_and_says_so(toy: Path) -> None:
