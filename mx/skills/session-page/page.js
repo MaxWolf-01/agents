@@ -92,7 +92,7 @@ document.addEventListener("focusin", (e) => {
   if (b) { cur = blocks.indexOf(b); mark() }
 })
 
-// ---- the control to the newest turn: marked while a turn is in that the reader has not reached
+// ---- the control to the newest numbered turn: marked while it is one the reader has not reached
 
 // the id of the newest block that has been in view in this tab; null until one has
 let seen = null
@@ -100,13 +100,14 @@ const rank = (id) => { const i = blocks.findIndex((b) => b.id === id); return i 
 const reach = () => {
   const b = inView()
   if (b && (seen === null || blocks.indexOf(b) < rank(seen))) seen = b.id
-  const fresh = seen !== null && rank(seen) > 0
+  const fresh = seen !== null && turns.length > 0 && rank(seen) > rank(turns[0].id)
   newest.forEach((n) => n.classList.toggle("fresh", fresh))
 }
 const toNewest = () => {
   sheet(false)
-  if (turns[0]) turns[0].open = true
-  focusBlock(0)
+  if (!turns.length) return
+  turns[0].open = true
+  focusBlock(blocks.indexOf(turns[0]))
 }
 newest.forEach((n) => n.addEventListener("click", toNewest))
 
@@ -123,6 +124,11 @@ const fade = (box, head) => {
   const sizes = new ResizeObserver(update)
   sizes.observe(box)
   ;[...box.children].forEach((c) => sizes.observe(c))
+  // a child added later, the hub's group of pages no turn links, grows the box as much as one there from the start
+  new MutationObserver((changes) => {
+    changes.forEach((c) => c.addedNodes.forEach((n) => n.nodeType === 1 && sizes.observe(n)))
+    update()
+  }).observe(box, { childList: true })
   faded.push(update)
 }
 const refade = () => requestAnimationFrame(() => faded.forEach((u) => u()))

@@ -173,6 +173,11 @@ with sync_playwright() as pw:
                 page.keyboard.press(key)
             settle(page)
             out["typed"][" ".join(keys)] = {**page.evaluate(PLACE), "toast": page.text_content("#toast")}
+        # P4: the number of a turn that links nothing goes to it, and so does its headline
+        for target in ("#a07 .turn-ref", "#a08 .hl"):
+            page.click(target)
+            settle(page)
+            out[target] = page.evaluate(PLACE)
         # a window too short for the timeline to show every row: going to the oldest turn scrolls
         # its row into the timeline's view
         context, short = open_page(1280, 240)
@@ -341,7 +346,8 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
     """P6 on a page of twelve turns: t12 and t05 go at once, t9 too since no number extends 9, t1
     waits, as 10 to 12 extend it, until Enter goes to turn 01; t00 names no turn and goes nowhere.
     Each turn it goes to opens. In a window too short for the timeline, its row is scrolled into the
-    timeline's view."""
+    timeline's view. P4: a click on the number of a turn that links nothing, or on its headline in the
+    timeline, goes to that turn."""
     page, _ = long_session
     probed = probe(page, "number")
     seen = probed["typed"]
@@ -351,6 +357,9 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
     assert seen["t 1"]["cur"] == "t09" and seen["t 1"]["toast"] == "turn 1…", seen["t 1"]
     assert seen["Enter"]["cur"] == "t01" and "t01" in seen["Enter"]["open"], seen["Enter"]
     assert seen["t 0 0"]["cur"] == "t01" and seen["t 0 0"]["toast"] == "no turn 00", seen["t 0 0"]
+    for target, turn in (("#a07 .turn-ref", "t07"), ("#a08 .hl", "t08")):
+        at = probed[target]
+        assert at["anchor"] == turn and at["cur"] == turn and turn in at["open"], f"P4: {target} went to {at}"
     short = probed["short"]
     assert short["overflows"], "the timeline fits the short window, so nothing there needs scrolling"
     assert short["column"]["top"] <= short["row"]["top"] and short["row"]["bottom"] <= short["column"]["bottom"], short
@@ -358,7 +367,7 @@ def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -
 
 @pytest.mark.parametrize("width", WIDTHS)
 def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: int) -> None:
-    """P3, P7, P8 and the layout ANSWER.md rules, at each width the hub shows the page at: the
+    """P3, P7, P8 and the layout the ticket's Decisions bind, at each width the hub shows the page at: the
     window never scrolls and no pane shows a scrollbar; the band of questions sits over the turns
     with one rule between them, its first question open and every other one folded to its
     headline and the recommended option's words, all in view however long the open one is; the
