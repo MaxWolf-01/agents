@@ -30,7 +30,8 @@
 #                 over an earlier fetch. Exit 1: a branch did not come (named).
 # push            after this branch moved under workers that must rebase onto
 #                 it. Pushes it to every host with a run of it, and the fuzz
-#                 host. Exit 1: a host refused (named); the rest have it.
+#                 host when it fuzzes this branch. Exit 1: a host refused
+#                 (named); the rest have it.
 # review <slug>   after every fetch and every merge. Imports the worker's
 #                 report, renders agent/diffviews/<slug>.html, writes `review`,
 #                 or `done` once every branch is merged (a squashed or rebased
@@ -1000,9 +1001,9 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
 
 # The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
 # one commit, or none of them. The parent's ranges are its branch <slug> measured against this
-# branch, the one above it, in the code repo and in each listed repo holding a branch <slug>. Before the merge up it refuses on its own; after it, `tracker`
-# refuses each ticket whose work has not reached the branch its accept merges into, and the files
-# already written are put back.
+# branch, the one above it, in the code repo and in each listed repo holding a branch <slug>.
+# Before the merge up it refuses on its own; after it, `tracker` refuses each ticket whose work has
+# not reached the branch its accept merges into, and the files already written are put back.
 accept() { # <slug>
     locate
     id=$1
@@ -1504,8 +1505,8 @@ ps_() {
 
 # Sets r_host, r_base, r_ticket, r_state and r_session from the one row
 # <worker> names: a slug or a session name, bare or behind `<host>/`; `fuzz` is a
-# repo's fuzz run. Exact,
-# since a fragment that matched would make `attach` a guess.
+# repo's fuzz run. Exact, since a fragment that matched would make `attach` a
+# guess.
 resolve() { # <worker>
     [ $# -ge 1 ] || die "$cmd takes a worker: a ticket's slug, as \`dispatch ps\` lists them"
     gather

@@ -2006,6 +2006,13 @@ def only_read(toy: Path) -> None:
     assert all(call.startswith(("pr view ", "api graphql -f query=query ")) for call in calls), calls
 
 
+def round_ranges(toy: Path) -> list[str]:
+    """warm-preset's code and agent ranges as `on_github` built them: each a commit on its ticket
+    branch. Read before the review whose `done` deletes those branches."""
+    return [f"{name}@{git(top, 'rev-parse', 'ticket/warm-preset~1').strip()}..{git(top, 'rev-parse', 'ticket/warm-preset').strip()}"
+            for name, top in (("code", toy), ("agent", toy / "agent"))]
+
+
 def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path) -> None:
     """The squash is one commit on `development`, and the ticket's two commits on no branch there:
     the review after it records `Backend@<merge>^..<merge>`, which no branch could give it, deletes
@@ -2062,10 +2069,11 @@ def test_a_rebase_merges_commits_replace_the_range_the_ticket_recorded_there(toy
 
     theirs, merge = merged_on_github(backend, "rebase")
     assert git(backend, "rev-parse", f"{merge}~2").strip() == theirs
+    agent = round_ranges(toy)[1]
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     only_read(toy)
-    assert ranges_of(toy, "warm-preset")[:2] == [f"Backend@{theirs}..{merge}", code]
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", code, agent]
     assert status_of(toy, "warm-preset") == "done"
     assert not git(backend, "branch", "--list", "ticket/warm-preset")
     assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code.partition('@')[2]}"
@@ -2126,9 +2134,10 @@ def test_a_pull_request_is_read_in_the_repo_whose_origin_github_names_in_any_for
     `gh:` spells it, all name helferline/Backend."""
     backend = on_github(toy, url=url)
     theirs, merge = merged_on_github(backend, "squash")
+    rounds = round_ranges(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    assert ranges_of(toy, "warm-preset")[0] == f"Backend@{theirs}..{merge}"
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
 
 
 def test_a_merge_origin_does_not_hold_and_a_pull_request_github_does_not_answer_change_nothing(toy: Path) -> None:
@@ -2163,9 +2172,10 @@ def test_a_merge_commits_range_stands_beside_a_squash_in_the_same_repo(toy: Path
     git(backend, "switch", "-q", "development")
     answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": merge},
             "commits": [{"oid": other, "messageHeadline": "other", "authoredDate": AUTHORED[0]}]}, backend, 8)
+    rounds = round_ranges(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    assert ranges_of(toy, "warm-preset")[:2] == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}"]
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}", *rounds]
 
 
 def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_on_its_accept(toy: Path) -> None:
@@ -2243,10 +2253,11 @@ def test_a_review_over_what_landed_leaves_a_page_it_did_not_render_as_it_is_and_
     page = toy / "agent" / "diffviews" / "warm-preset.html"
     page.write_text('{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n')
     theirs, merge = merged_on_github(backend, "squash")
+    rounds = round_ranges(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode != 0
     assert "leaves that page as it is" in said.stderr, said.stderr
-    assert ranges_of(toy, "warm-preset")[0] == f"Backend@{theirs}..{merge}"
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
     assert status_of(toy, "warm-preset") == "done"
     assert page.read_text() == '{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n'
 
@@ -2395,18 +2406,11 @@ def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
 def test_each_help_states_the_interface_within_its_budget(script: str, budget: int) -> None:
     """`/mx:dispatch` loads both helps into every dispatcher's context, so each holds what a
     dispatcher acts on, in at most `budget` words as `wc -w` counts them; the mechanism is in
-    comments at the code. `landed` is folded into `review`, and gone."""
+    comments at the code."""
     said = subprocess.run([str(SKILL / script), "--help"], capture_output=True, text=True)
     assert said.returncode == 0, said.stderr
     words = subprocess.run(["wc", "-w"], input=said.stdout, capture_output=True, text=True, check=True)
     assert int(words.stdout) <= budget, f"{script} --help is {words.stdout.strip()} words"
-    assert "landed <slug>" not in said.stdout
-
-
-def test_landed_is_no_command(toy: Path) -> None:
-    said = run(toy, "landed", "warm-preset")
-    assert said.returncode != 0
-    assert "unknown command: landed" in said.stderr, said.stderr
 
 
 def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
