@@ -404,12 +404,20 @@ def artefacts(fragment: str) -> list[tuple[str, str]]:
 
 
 def column_of(page: str) -> list[tuple[str, list[tuple[str, str]]]]:
-    """The artefact column, read: each turn's group, in the order the column shows them, by the two
-    digits of its record, with its artefacts."""
+    """The timeline, read: each turn's row, in the order the timeline shows them, by the two digits
+    of its record, with its artefacts."""
     column = elements(page, COLUMN).get(COLUMN)
     assert column is not None, f"the page has no element with id {COLUMN!r}"
     groups = elements(column, r"a\d+")
     return [(key, artefacts(groups[f"a{key}"])) for key in re.findall(r'\bid="a(\d+)"', column)]
+
+
+def bare_rows(page: str) -> dict[str, str]:
+    """The timeline's compact rows, of the turns that link no artefact, each by the two digits of its
+    record, with the one line of text it shows after the number."""
+    rows = elements(elements(page, COLUMN)[COLUMN], r"a\d+")
+    return {key[1:]: re.sub(r"<[^>]+>", "", re.search(r'<a class="hl"[^>]*>(.*?)</a>', row).group(1))
+            for key, row in rows.items() if re.match(r'<section class="group bare"', row)}
 
 
 def keys_of(section: str) -> list[str]:
@@ -432,12 +440,13 @@ def with_links(record_text: str, items: list[str]) -> str:
     return record_text.replace("\n## Details\n", f"\n## Links\n\n{added}\n## Details\n", 1)
 
 
-# The worked example's artefacts, newest turn first, by the text and path its records give them.
+# The worked example's turns, newest first, with the text and path its records give each artefact.
 SHOWN = [
     ("04", [("How the pages fit together", "agent/show/session-page/round-3/pages.html"),
             ("The spec page", "agent/show/session-page/round-3/spec.html")]),
     ("03", [("Round 2 as a hand-built session page", "agent/show/session-page/round-2/index.html")]),
     ("02", [("The grid, the session page sketch and Q1 to Q3", "agent/show/session-page/round-1/index.html")]),
+    ("01", []),
 ]
 # Links a turn record may carry to ticket files, here and in another repo, which are no artefact.
 TICKET_LINKS = [
@@ -450,7 +459,7 @@ def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_an
     worked_example: Path, transcript: Path
 ) -> None:
     """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
-    whose record links it, newest turn first, a turn with none left out, each carrying the path it
+    whose record links it, newest turn first, a turn with none listed bare, each carrying the path it
     resolves to on this machine; and a ticket file the newest turn links is not listed, carries
     no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
     column's."""
@@ -469,7 +478,7 @@ def test_a_collapsed_turn_shows_its_artefacts_on_its_summary_line(worked_example
     """A collapsed turn shows its artefacts as chips: its summary line, which is all of it a
     collapsed turn shows, carries the column's group for it."""
     page = render_session(worked_example, transcript, now=NOW)
-    assert chips_of(page) == dict(column_of(page)) | {"01": []}
+    assert chips_of(page) == dict(column_of(page))
 
 
 # What a drawn turn links, and the path the hub finds each by from the repo root `root` and the
@@ -532,7 +541,7 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
 ) -> None:
     """session-pages-feed-the-hub#P2, over sessions whose turns link artefacts, ticket files and
     paths that only look like one: each turn's artefacts, in the order its record gives them, under
-    that turn's number, newest turn first, and nothing else."""
+    that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
     home = tmp_path_factory.mktemp("home")
     turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
     directory, transcript = write_session(scratch() / DRAWN, turns)
@@ -543,13 +552,13 @@ def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
     expected = []
     for number, paths in reversed(list(enumerate(linked, start=1))):
         listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]
-        if listed:
-            expected.append((f"{number:02d}", listed))
+        expected.append((f"{number:02d}", listed))
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("HOME", str(home))
         page = render_session(directory, transcript, now=NOW)
     assert column_of(page) == expected
-    assert all(chips_of(page)[key] == items for key, items in expected)
+    assert bare_rows(page) == {key: f"Round {int(key)}" for key, items in expected if not items}
+    assert chips_of(page) == dict(expected)
     marked = {target for _, items in expected for _, target in items}
     assert {target for _, target in artefacts(page)} == marked, "a ticket file carries the attribute the hub marks by"
 

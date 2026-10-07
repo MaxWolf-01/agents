@@ -14,8 +14,9 @@ title, links to the pages of the sessions before and after it across a handoff, 
 resume command, the questions no later turn answered or superseded, then the turns newest first,
 each with the user's messages it answered and what other sessions sent meanwhile, read from the
 transcript.
-Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
-no artefact there.
+The page is laid out in panes that each scroll on their own: the title and the questions above
+the turns, and beside them the timeline, every numbered turn newest first with the artefacts it
+links; a ticket file is no artefact there.
 
 Run as a command, it prints where a session's directory is.
 """
@@ -48,9 +49,9 @@ PREVIOUS = "previous"
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
-# The column beside the turns that lists every artefact of the session, and the attribute each link
-# to an artefact carries, wherever on the page it sits: the file it resolves to on this machine, or
-# its URL. The dotfiles' container hub finds the links it marks by these two names.
+# The timeline beside the turns, which lists every artefact of the session under its turn, and the
+# attribute each link to an artefact carries, wherever on the page it sits: the file it resolves to
+# on this machine, or its URL. The dotfiles' container hub finds the links it marks by these two names.
 COLUMN = "artefacts"
 ARTEFACT = "data-artefact"
 
@@ -788,11 +789,15 @@ UP = "../" * (len(SESSIONS.parts) + 1)  # from the page to the repo root
 ROOT: ContextVar[Path | None] = ContextVar("ROOT", default=None)  # the repo root of the page being rendered
 
 KEYS = [
-    ("j k", "next, previous block"),
+    ("j k", "next, previous turn"),
     ("o Enter", "open or close the turn"),
     ("O", "open or close every turn"),
     ("g g", "top"),
-    ("G", "last block"),
+    ("G", "last turn"),
+    ("n", "the newest turn"),
+    ("t 0 7", "turn 07, by the number it shows"),
+    ("[ ]", "previous, next question"),
+    ("q", "show or fold the questions"),
     ("1 to 9", "open the turn's nth artefact"),
     ("y", "copy the resume command"),
     ("?", "this list"),
@@ -821,10 +826,10 @@ def assemble(session: Session, now: datetime) -> str:
     span = "" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
     turns = len(timeline)
     top = f"""
-  <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-    <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(waiting)} question{'s' * (len(waiting) != 1)}</h2></div>
-    {''.join(open_question(t, q) for t, q in waiting)}
-  </section>""" if waiting else ""
+    <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
+      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(waiting)} question{'s' * (len(waiting) != 1)}</h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
+      {''.join(open_question(t, q, folded=i > 0) for i, (t, q) in enumerate(waiting))}
+    </section>""" if waiting else ""
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
     shown = list(reversed(timeline))
     hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
@@ -846,27 +851,32 @@ def assemble(session: Session, now: datetime) -> str:
 <script>{THEME}</script>
 </head>
 <body>
-<header class="page bar">
-  <span class="v-meta where">session page · {esc(session.repo.name)}</span>
+<header class="bar">
+  <span class="v-meta where">session page · {esc(session.repo.name)}</span>{newest_control(newest_first)}
+  <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(t.artefacts) for t in session.turns)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
     <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
     <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
   </button>
 </header>
-<main class="page">
-  <section class="intro">
-    <h1 class="v-title">{title}</h1>
-    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(span)} · " if span else ""}rendered {now:%Y-%m-%d %H:%M}</p>
+<main class="panes">
+  <div class="left">
+    <section class="intro">
+      <h1 class="v-title">{title}</h1>
+      <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(span)} · " if span else ""}rendered {now:%Y-%m-%d %H:%M} · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
 {handoffs(session)}
-    <div class="prose brief">{block(session.brief)}</div>
-    <div class="actions">
-      <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
+      <div class="prose brief">{block(session.brief)}</div>
+      <div class="actions">
+        <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
+      </div>
+    </section>{top}
+    <div class="pane" id="turns-pane">
+      <section class="turns" aria-label="turns">
+        {body}
+      </section>
     </div>
-  </section>{top}
-  <section class="turns" aria-label="turns">
-    {body}
-  </section>{column(newest_first)}
+  </div>{column(newest_first)}
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -888,17 +898,34 @@ def handoffs(session: Session) -> str:
 
 
 def column(newest_first: list[Turn]) -> str:
-    """Every artefact of the session, grouped under the number of the turn that linked it, in the
-    order of the turns beside it."""
-    groups = "".join(f"""
-    <section class="group" id="a{t.key}">
-      <a class="v-num turn-ref" href="#t{t.key}" title="{esc(strip_tags(inline(t.headline)))}">{t.key}</a>
-      <ol>{"".join(f'<li>{opening_key(i)}{artefact(link, "artefact")}</li>' for i, link in enumerate(t.artefacts, start=1))}</ol>
-    </section>""" for t in newest_first if t.artefacts)
+    """The timeline: every numbered turn in the order of the turns beside it, each under its
+    number, with the artefacts it linked, or its headline on one line where it linked none."""
+    rows = "".join(f"""
+    <section class="group{'' if t.artefacts else ' bare'}" id="a{t.key}">
+      <a class="v-num turn-ref" href="#t{t.key}" title="{esc(strip_tags(inline(t.headline)))}">{t.key}</a>{timeline_row(t)}
+    </section>""" for t in newest_first)
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <h2 class="v-meta" id="column-title">artefacts · by turn</h2>{groups or '<p class="v-meta">none yet</p>'}
+    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(newest_first)}</div>{rows or '<p class="v-meta">no turn yet</p>'}
   </aside>"""
+
+
+def timeline_row(t: Turn) -> str:
+    """What follows a turn's number in the timeline: its artefacts, or its muted headline."""
+    if not t.artefacts:
+        return f'<a class="hl" href="#t{t.key}" tabindex="-1">{esc(strip_tags(inline(t.headline)))}</a>'
+    items = "".join(f"<li>{opening_key(i)}{artefact(link, 'artefact')}</li>" for i, link in enumerate(t.artefacts, start=1))
+    return f"<ol>{items}</ol>"
+
+
+def newest_control(newest_first: list[Turn]) -> str:
+    """The control that takes the reader to the newest turn, showing its number, which the page
+    marks while a turn has arrived that the reader has not reached. It sits in the timeline's
+    head, and in the bar where the timeline is a sheet; nothing where there is no numbered turn."""
+    if not newest_first:
+        return ""
+    return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
+            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{newest_first[0].key}</span><kbd>n</kbd></button>')
 
 
 def opening_key(i: int) -> str:
@@ -918,16 +945,22 @@ def artefact(link: Link, cls: str) -> str:
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
-def open_question(turn: Turn, q: Question) -> str:
+def open_question(turn: Turn, q: Question, folded: bool) -> str:
+    """A question waiting on the user, as a row of the accordion: folded to its headline and the
+    words of the option recommended, or open in full, its body scrolling on its own."""
     detail = f'<p class="q-detail">{inline(q.detail)}</p>' if q.detail else ""
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
+    pick = next((o for o in q.options if o.picked), None)
+    pickline = f'<p class="pickline"><span class="v-num">{pick.letter}</span> · {esc(strip_tags(inline(pick.text)))}</p>' if pick else ""
     return f"""
-<article class="q blk" id="{q.tag.lower()}" tabindex="-1" data-block>
+<article class="q{' folded' if folded else ''}" id="{q.tag.lower()}" tabindex="-1">
   <span class="rail v-num">{q.tag}</span>
   <div class="q-main">
-    <h3 class="v-h3">{inline(q.headline)}</h3>
-    {detail}{options(q)}{why}
-    <p class="v-meta asked-in">asked in <a href="#t{turn.key}">turn {turn.key}</a></p>
+    <h3 class="v-h3">{inline(q.headline)}</h3>{pickline}
+    <div class="q-body">
+      {detail}{options(q)}{why}
+      <p class="v-meta asked-in">asked in <a href="#t{turn.key}">turn {turn.key}</a></p>
+    </div>
   </div>
 </article>"""
 

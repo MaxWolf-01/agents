@@ -460,4 +460,4 @@ def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_exampl
     page = render_session(worked_example, transcript, now=NOW)
     turns = re.search(r'<section class="turns"[^>]*>(.*?)<(?:details|article)', page, re.S).group(1)
     assert turns.strip() == ""
-    assert re.search(r'<aside class="column"[^>]*>\s*<h2 class="v-meta" id="column-title">artefacts · by turn</h2>', page)
+    assert re.search(r'<aside class="column"[^>]*>\s*<div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>', page)
