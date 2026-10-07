@@ -7,8 +7,9 @@
 The seam is the hook at its input: the hook's JSON and the session directory in, its decision out,
 with `main` applying that decision the way Claude Code runs it. The oracle is
 agent/tickets/session-page.md, its Properties and its Decisions on what the hook does with a turn,
-and turns-end-on-their-recap's P3, over the worked example in `fixtures/`, whose records a check
-corrupts one at a time. The prose reviewer, which the hook never calls, is stubbed by conftest.py.
+and turns-end-on-their-recap's P3, every-session-gets-a-page's and pages-link-across-handoffs'
+Properties, over the worked example in `fixtures/`, whose records a check corrupts one at a time.
+The prose reviewer, which the hook never calls, is stubbed by conftest.py.
 The browser is a stand-in `claude-browser` first on PATH that records what it was asked to open, and
 for which session; the hub is absent unless a check starts a stand-in of it on a port of its own.
 """
@@ -30,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -37,7 +39,7 @@ import session_page
 import stop_hook
 import turn_review
 from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
-from session_page import PAGE, SESSIONS, render_session
+from session_page import PAGE, PREVIOUS, SESSIONS, render_session
 from stop_hook import decide
 from test_reading import messages_of
 
@@ -161,30 +163,91 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
 
 # ---- properties -------------------------------------------------------------
 
-# A reply the page would have carried: longer than three lines, which is what sends the agent back
-# in a session that has a page.
+# A reply of several lines, an answer that would fill a turn record.
 LONG = "\n".join(f"Line {n} of an answer that belongs on the page." for n in range(1, 6))
+TWENTY_LINES = "\n".join(f"Line {n} of where the work stands." for n in range(1, 21))
 
-TURNS_THAT_NEEDED_NO_PAGE = {
-    "a one-line answer": {},
-    "an answer that would have needed a page": {"reply": LONG},
-    "a turn another hook sent back once already": {"reply": LONG, "stop_hook_active": True},
-    "a turn that said nothing": {"reply": ""},
-}
+FRESH = "8e0f1c22-0000-0000-0000-000000000000"  # a session that has no directory yet
+FIRST_PROMPT = {"type": "user", "message": {"role": "user", "content": "Carry on from the handoff."},
+                "timestamp": "2026-10-05T09:00:00.000Z", "cwd": "/srv/helferline", "sessionId": FRESH}
 
 
-@pytest.mark.parametrize("turn", TURNS_THAT_NEEDED_NO_PAGE.values(), ids=TURNS_THAT_NEEDED_NO_PAGE)
-def test_a_session_that_never_needed_a_page_writes_nothing_under_the_sessions_directory(
-    turn: dict, transcript: Path, tmp_path: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None]
+@pytest.fixture
+def first_turn(tmp_path: Path) -> tuple[Path, Path]:
+    """A fresh session's directory, not yet there, in a project with an agent repo that has never had
+    one, and the transcript of its first turn, which Claude Code has given a title of its own."""
+    (tmp_path / "agent" / "tickets").mkdir(parents=True)
+    said = tmp_path / "first.jsonl"
+    titled = {"type": "ai-title", "aiTitle": "Helferline handoff continued", "sessionId": FRESH}
+    said.write_text(json.dumps(FIRST_PROMPT) + "\n" + json.dumps(titled) + "\n")
+    return tmp_path / SESSIONS / FRESH, said
+
+
+FIRST_REPLIES = {"a one-line reply": "On it: reading the handoff.", "twenty lines": TWENTY_LINES}
+
+
+@pytest.mark.parametrize("reply", FIRST_REPLIES.values(), ids=FIRST_REPLIES)
+def test_a_sessions_first_turn_that_ends_on_a_reply_starts_its_page_with_that_reply(
+    reply: str, first_turn: tuple[Path, Path], browser: Path, capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """session-page#P3: no record has ever been written for this session, so the hook neither
-    creates its directory nor asks the agent for anything."""
-    sessions = tmp_path / SESSIONS
-    sessions.mkdir(parents=True)
-    (tmp_path / "agent" / "tickets").mkdir()  # a project with an agent repo, which has never had a record
-    run(payload(sessions / "8e0f1c22-0000-0000-0000-000000000000", transcript, **turn))
-    assert list(sessions.rglob("*")) == []
-    assert capsys.readouterr().out == ""  # nothing is sent back, so the turn ends here
+    """every-session-gets-a-page#P1 and P2: the hook creates the session's directory, writes the
+    reply as its first chat turn, renders the page titled as Claude Code titles the session, and
+    opens it as a first render does. Nothing is sent back, whatever the reply's length (P3)."""
+    directory, said = first_turn
+    run(payload(directory, said, reply=reply))
+    assert capsys.readouterr().out == ""
+    [chat] = chats(directory)
+    assert chat.read_text().split("---\n", 2)[2].strip() == reply
+    assert sorted(p.name for p in directory.iterdir()) == [PAGE, "turns"]
+    page = (directory / PAGE).read_text()
+    assert rows(page) == [chat.stem]
+    assert "<title>Helferline handoff continued · session page</title>" in page
+    assert opened(browser, 1) == [(FRESH, str(directory / PAGE))]
+    assert [e["excluded"] for e in logged(attended, "excluded")] == ["not in a git repository"]
+
+
+SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
+
+
+@pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
+def test_a_first_turn_that_ends_on_no_text_creates_nothing(
+    reply: str, first_turn: tuple[Path, Path], capsys: pytest.CaptureFixture, run: Callable[[dict], None],
+) -> None:
+    directory, said = first_turn
+    run(payload(directory, said, reply=reply))
+    assert not directory.parent.exists()
+    assert capsys.readouterr().out == ""
+
+
+LEFT_ALONE = {"a dispatched worker": ("DISPATCH_WORKLOG", "/w/log"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
+
+
+@pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
+def test_a_session_nobody_reads_the_page_of_never_gets_a_directory(
+    marker: str, value: str, first_turn: tuple[Path, Path], capsys: pytest.CaptureFixture,
+    run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """every-session-gets-a-page#P4: its first reply, long or short, leaves no trace under `sessions/`."""
+    monkeypatch.setenv(marker, value)
+    directory, said = first_turn
+    for reply in FIRST_REPLIES.values():
+        run(payload(directory, said, reply=reply))
+    assert not directory.parent.exists()
+    assert capsys.readouterr().out == ""
+
+
+@settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+@given(lines=st.lists(st.text(st.characters(categories=["L", "N", "P", "Zs"]), min_size=1).filter(str.strip), min_size=1, max_size=60))
+def test_a_reply_of_any_length_with_no_record_is_recorded_and_never_sent_back(
+    lines: list[str], worked_example: Path, unrecorded: Path,
+) -> None:
+    """every-session-gets-a-page#P2 and P3, over generated replies in a session that has a page and
+    a turn that wrote no record: the hook renders, and the chat turn it writes holds the reply."""
+    reply = "\n".join(lines)
+    decision = decide(payload(worked_example, unrecorded, reply=reply), worked_example)
+    assert (decision.verb, decision.why) == ("render", "chat reply recorded")
+    assert decision.chat[1].split("---\n", 2)[2].strip() == reply.strip()
 
 
 # The record the turn just wrote is 04.md, the one the Decisions have the hook validate; 03.md is
@@ -586,9 +649,7 @@ def test_a_host_that_cannot_open_the_page_still_renders_it_and_ends_the_turn(
     assert said in logged(attended, "opened")[0]["opened"]
 
 
-# ---- the sessions it leaves alone, and the answer in the chat ---------------
-
-LEFT_ALONE = {"a dispatched worker": ("DISPATCH_WORKLOG", "/w/log"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
+# ---- the sessions it leaves alone, and the reply in the chat ----------------
 
 
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
@@ -596,8 +657,7 @@ def test_a_session_nobody_reads_the_page_of_is_left_alone(
     marker: str, value: str, worked_example: Path, transcript: Path, stale_page: str,
     capsys: pytest.CaptureFixture, run: Callable[[dict], None], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Neither a broken record nor an answer in the chat sends the agent back, and the page stays
-    as it was."""
+    """Neither a broken record nor a long reply sends the agent back, and the page stays as it was."""
     monkeypatch.setenv(marker, value)
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "04.md").write_text("no frontmatter\n")
@@ -618,28 +678,13 @@ def test_a_session_nobody_reads_the_page_of_never_has_it_opened(
     assert logged(attended, "opened") == []
 
 
-FOUR_LINES = "\n".join(LONG.splitlines()[:4])
 THREE_LINES = "\n\n".join(LONG.splitlines()[:3])
-
-
-def test_an_answer_in_the_chat_with_no_record_is_sent_back_to_the_page(
-    worked_example: Path, unrecorded: Path, stale_page: str, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-) -> None:
-    """session-page's Decision on the Stop hook: in a session that has a page, a reply longer than
-    three lines with no record written this turn goes back, naming the record it belongs in, and the
-    page waits for that record."""
-    hook = payload(worked_example, unrecorded, reply=FOUR_LINES)
-    assert decide(hook, worked_example).verb == "send back"
-    (worked_example / PAGE).write_text(stale_page)
-    run(hook)
-    said = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert str(worked_example / "turns" / "05.md") in said
-    assert (worked_example / PAGE).read_text() == stale_page
 
 
 RENDERED = {
     "a long answer and a record": (False, LONG, False),
     "three lines and no record": (True, THREE_LINES, False),
+    "a long answer and no record": (True, LONG, False),
     "a long answer sent back once already": (True, LONG, True),
 }
 
@@ -649,7 +694,7 @@ def test_every_other_turn_of_a_session_with_a_page_renders_it(
     answered_in_chat: bool, reply: str, again: bool, worked_example: Path, transcript: Path, request: pytest.FixtureRequest,
     stale_page: str, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """The answer in the chat goes back once per turn, and only when it is longer than three lines."""
+    """every-session-gets-a-page#P3: no turn is sent back for the length of its reply."""
     turn = request.getfixturevalue("unrecorded") if answered_in_chat else transcript
     (worked_example / PAGE).write_text(stale_page)
     run(payload(worked_example, turn, reply=reply, stop_hook_active=again))
@@ -680,6 +725,7 @@ def test_a_turn_that_wrote_a_record_ends_on_the_hooks_line_naming_what_waits(
 UNRECORDED = {
     "a one-line answer": ("Yes, the second bank.", False),
     "three lines": (THREE_LINES, False),
+    "a long answer": (LONG, False),
     "a long answer sent back once already": (LONG, True),
 }
 
@@ -701,6 +747,7 @@ def test_a_turn_that_wrote_no_record_gets_no_line(
 ANSWERED_IN_THE_CHAT = {
     "a one-line answer": ("Yes, the second bank.", False),
     "three lines": (THREE_LINES, False),
+    "twenty lines": (TWENTY_LINES, False),
     "a long answer sent back once already": (LONG, True),
     "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
 }
@@ -746,9 +793,6 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     assert '<details class="turn blk" id="t04" data-block open>' in page
 
 
-SAID_NOTHING = {"no text": "", "only blank lines": "\n  \n"}
-
-
 @pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
 def test_a_turn_that_ends_on_no_text_writes_no_record_and_still_renders(
     reply: str, worked_example: Path, unrecorded: Path, stale_page: str, capsys: pytest.CaptureFixture,
@@ -759,15 +803,6 @@ def test_a_turn_that_ends_on_no_text_writes_no_record_and_still_renders(
     assert shown(capsys) == ""
     assert sorted(p.name for p in (worked_example / "turns").glob("*.md")) == NUMBERED
     assert (worked_example / PAGE).read_text() != stale_page
-
-
-def test_a_long_reply_sent_back_writes_no_chat_turn(
-    worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
-) -> None:
-    """The send-back for a long reply stays as it is: the turn the hook sends back has written nothing."""
-    run(payload(worked_example, unrecorded, reply=LONG))
-    assert str(worked_example / "turns" / "05.md") in said_back(capsys)
-    assert sorted(p.name for p in (worked_example / "turns").glob("*.md")) == NUMBERED
 
 
 def test_a_record_written_through_the_shell_is_the_turns_and_no_chat_turn_is_added(
@@ -783,18 +818,16 @@ def test_a_record_written_through_the_shell_is_the_turns_and_no_chat_turn_is_add
 def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
     worked_example: Path, unrecorded: Path, tmp_path: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
-    """D1's point: no record the agent writes can land on a chat turn. After one, the next turn's long
-    reply goes back to be moved onto 05, the number after the agent's 04, and a record 05 written
-    with Write is that turn's, shown under its recap above the chat turn, which keeps its reply."""
+    """D1's point: no record the agent writes can land on a chat turn. After one, the agent's next
+    record is 05, the number after its own 04, written with Write; it is that turn's, shown under
+    its recap above the chat turn, which keeps its reply."""
     run(payload(worked_example, unrecorded, reply="Yes, the second bank."))
     capsys.readouterr()
     [chat] = chats(worked_example)
     later = {"type": "user", "message": {"role": "user", "content": "And the third?"},
              "timestamp": (datetime.now(UTC) + timedelta(minutes=1)).isoformat()}
     next_turn = appended(unrecorded, tmp_path / "next.jsonl", later)
-    run(payload(worked_example, next_turn, reply=LONG))
     record = worked_example / "turns" / "05.md"
-    assert str(record) in said_back(capsys)
     record.write_text(RECORD_05)
     call = {"type": "tool_use", "id": "toolu_05", "name": "Write", "input": {"file_path": str(record)}}
     appended(next_turn, next_turn, {"type": "assistant", "message": {"role": "assistant", "content": [call]},
@@ -821,15 +854,16 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
     """stop-hook-reads-writes-from-the-transcript-only: a record counts as written this turn only by
-    its write call in the transcript, as the page pairs messages. One written through the shell,
-    with a long reply beside it, goes back once naming that record, to be written again with Write
-    (that ticket's D1), and the turn the Stop hook continued renders; written with Write, it carries
+    its write call in the transcript, as the page pairs messages. One written through the shell goes
+    back once naming that record, to be written again with Write (that ticket's D1), whatever the
+    reply beside it, and the turn the Stop hook continued renders; written with Write, it carries
     the user's message."""
     record = worked_example / "turns" / "05.md"
     record.write_text(RECORD_05)
-    run(payload(worked_example, unrecorded, reply=LONG))
-    said = said_back(capsys)
-    assert str(record) in said and "Write" in said and "06.md" not in said
+    for reply in ("Round 4 is on the page.", LONG):
+        run(payload(worked_example, unrecorded, reply=reply))
+        said = said_back(capsys)
+        assert str(record) in said and "Write" in said and "06.md" not in said
     run(payload(worked_example, unrecorded, reply=LONG, stop_hook_active=True))
     assert capsys.readouterr().out == ""
     assert "Round 4" in (worked_example / PAGE).read_text()
@@ -837,17 +871,18 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     assert messages_of(render_session(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
 
 
-def test_a_turn_that_answers_by_editing_an_earlier_record_is_sent_back_to_a_new_one(
+def test_a_turn_that_answers_by_editing_an_earlier_record_gets_its_reply_as_a_chat_turn(
     worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture, run: Callable[[dict], None],
 ) -> None:
     """stop-hook-reads-writes-from-the-transcript-only's D2: the page keeps a record's earliest write,
-    so an Edit of record 04 after the user spoke writes no record this turn, and the long reply goes
-    back to be moved onto 05."""
+    so an Edit of record 04 after the user spoke writes no record this turn, and the reply is
+    recorded as a chat turn."""
     record = worked_example / "turns" / "04.md"
     record.write_text(record.read_text() + "\n- Edited this turn to answer the question.\n")
     with_write(unrecorded, "Edit", record)
     run(payload(worked_example, unrecorded, reply=LONG))
-    assert str(worked_example / "turns" / "05.md") in said_back(capsys)
+    assert shown(capsys) == ""
+    assert len(chats(worked_example)) == 1
 
 
 # ---- no review at the turn's end --------------------------------------------
@@ -920,17 +955,16 @@ def appended(transcript: Path, out: Path, *entries: dict) -> Path:
 
 
 @pytest.mark.parametrize("start", TURN_STARTS.values(), ids=TURN_STARTS)
-def test_a_turn_the_user_did_not_start_still_sends_an_answer_in_the_chat_back(
+def test_a_turn_the_user_did_not_start_still_records_its_reply_as_a_chat_turn(
     start: dict, worked_example: Path, transcript: Path, tmp_path: Path,
 ) -> None:
     """This turn runs from the prompt that started it, whoever sent it: record 04, written in the
-    turn before, is no record of a turn a finished task or a hand-back started, so its long reply
-    goes back to be moved onto 05."""
+    turn before, is no record of a turn a finished task or a hand-back started, so its reply is
+    this turn's chat turn."""
     for record in (worked_example / "turns").iterdir():
         os.utime(record, (BEFORE_IT, BEFORE_IT))
     decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", start), reply=LONG), worked_example)
-    assert (decision.verb, decision.why) == ("send back", "answer in the chat")
-    assert str(worked_example / "turns" / "05.md") in decision.reason
+    assert (decision.verb, decision.why) == ("render", "chat reply recorded")
 
 
 def test_a_message_queued_after_the_record_was_written_leaves_it_this_turns(
@@ -951,13 +985,12 @@ def test_an_old_record_the_transcript_never_writes_is_no_record_of_this_turn(
     worked_example: Path, unrecorded: Path, tmp_path: Path,
 ) -> None:
     """Record 03, last changed before this turn began and with no Write call in the transcript, as
-    from before a /clear, is not taken for one written through the shell this turn: the long reply
-    goes back to be moved onto 05."""
+    from before a /clear, is not taken for one written through the shell this turn: the reply is
+    recorded as a chat turn."""
     without = tmp_path / "without-03.jsonl"
     without.write_text("".join(line for line in unrecorded.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
     decision = decide(payload(worked_example, without, reply=LONG), worked_example)
-    assert decision.why == "answer in the chat"
-    assert str(worked_example / "turns" / "05.md") in decision.reason and "03.md" not in decision.reason
+    assert decision.why == "chat reply recorded"
 
 
 # ---- the hook's log ---------------------------------------------------------
@@ -981,7 +1014,11 @@ def in_no_project(example: Path, transcript: Path, fixtures: pytest.FixtureReque
 
 
 def with_no_directory(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
-    return payload(example.parent / "8e0f1c22-0000-0000-0000-000000000000", transcript)
+    return payload(example.parent / FRESH, transcript)
+
+
+def first_reply(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
+    return payload(example.parent / FRESH, transcript, reply="On it.")
 
 
 def unparsed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
@@ -989,12 +1026,8 @@ def unparsed(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -
     return payload(example, transcript)
 
 
-def in_the_chat(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
-    return payload(example, fixtures.getfixturevalue("unrecorded"), reply=LONG)
-
-
 def through_the_shell(example: Path, transcript: Path, fixtures: pytest.FixtureRequest) -> dict:
-    hook = in_the_chat(example, transcript, fixtures)
+    hook = payload(example, fixtures.getfixturevalue("unrecorded"), reply=LONG)
     (example / "turns" / "05.md").write_text(RECORD_05)
     return hook
 
@@ -1018,14 +1051,14 @@ def not_reviewed(example: Path, transcript: Path, fixtures: pytest.FixtureReques
 
 
 # Each path the hook takes, and the line it logs for it: the verb, why, and whether it resolved a
-# session directory. The four that let a turn end are the ones that look the same from outside.
+# session directory. The four that allow are the ones that look the same from outside.
 PATHS = {
     "a dispatched worker": (worker, "allow", "dispatched worker", True),
     "a print-mode session": (print_mode, "allow", "print-mode session", True),
     "a directory in no project": (in_no_project, "allow", "no project with an agent repo", False),
-    "a session with no directory": (with_no_directory, "allow", "no session directory", True),
+    "a session with no directory that said nothing": (with_no_directory, "allow", "no session directory", True),
+    "a session's first reply": (first_reply, "render", "chat reply recorded", True),
     "a record that does not parse": (unparsed, "send back", "record does not parse", True),
-    "an answer in the chat": (in_the_chat, "send back", "answer in the chat", True),
     "a record written through the shell": (through_the_shell, "send back", "record written outside Write", True),
     "a turn that wrote no record": (no_record, "render", "no record written this turn", True),
     "a chat reply and no record": (chat_reply, "render", "chat reply recorded", True),
@@ -1050,8 +1083,7 @@ def test_every_decision_is_one_line_in_the_session_pages_log(
     assert entries == [{"ts": entries[0]["ts"], "session_id": hook["session_id"], "verb": verb, "why": why, "directory": directory}]
 
 
-SENT_BACK_AT_THE_END = {"a record that does not parse": unparsed, "an answer in the chat": in_the_chat,
-                        "a record written through the shell": through_the_shell}
+SENT_BACK_AT_THE_END = {"a record that does not parse": unparsed, "a record written through the shell": through_the_shell}
 
 
 @pytest.mark.parametrize("arrange", SENT_BACK_AT_THE_END.values(), ids=SENT_BACK_AT_THE_END)
@@ -1086,6 +1118,189 @@ def test_a_log_that_cannot_be_written_leaves_the_turn_as_it_would_have_been(
     run(payload(worked_example, transcript))
     assert shown(capsys)
     assert (worked_example / PAGE).read_text() != stale_page
+
+
+# ---- pages across handoffs ----------------------------------------------------
+# The link is written by the handoff skill's pickup command, run here as the agent runs it; the
+# Stop hook renders the fresh session's page from it.
+
+PICKUP = Path(__file__).resolve().parents[1] / "handoff" / "pickup.py"
+BEFORE = "46944b2a-c996-4889-b308-48c1d884a675"  # the session that wrote the handoff
+CONTINUATION = f"session: {BEFORE}\npurpose: continuation"
+
+
+def pick_up(project: Path, front: str, session: str = FRESH, name: str = "2026-10-05-ledger.md") -> subprocess.CompletedProcess:
+    """A handoff of frontmatter `front` committed in the project's agent repo, and picked up there
+    by `session` through the command."""
+    agent = project / "agent"
+    if not (agent / ".git").exists():
+        git(agent, "init", "-q")
+    (agent / "handoffs").mkdir(exist_ok=True)
+    (agent / "handoffs" / name).write_text(f"---\n{front}\n---\n\n# Carry the ledger work on\n")
+    git(agent, "add", "handoffs")
+    git(agent, "commit", "-q", "-m", "hand off")
+    identity = {f"GIT_{who}_{what}": value for who in ("AUTHOR", "COMMITTER") for what, value in (("NAME", "t"), ("EMAIL", "t@t"))}
+    done = subprocess.run([str(PICKUP), str(agent / "handoffs" / name)], cwd=project, capture_output=True, text=True,
+                          timeout=120, env={**os.environ, **identity, "CLAUDE_CODE_SESSION_ID": session})
+    assert done.returncode == 0, done.stderr
+    return done
+
+
+def transcript_of(session: str) -> Path:
+    """Where Claude Code keeps the session's transcript, under the check's own config directory."""
+    return Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / "-srv-helferline" / f"{session}.jsonl"
+
+
+@pytest.fixture
+def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture) -> Callable[..., Path]:
+    """The session `BEFORE`, which has a page and its transcript where Claude Code keeps it, and a
+    way to have the fresh session pick up a handoff of the frontmatter given and end its first turn
+    on a reply. Hands back the directory of `BEFORE`; the last pickup's output is `handed_over.done`."""
+    directory, said = first_turn
+    before = directory.parent / BEFORE
+    theirs = transcript_of(BEFORE)
+    theirs.parent.mkdir(parents=True, exist_ok=True)
+    theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": BEFORE}) + "\n")
+    run(payload(before, theirs, reply="Writing the handoff."))
+    capsys.readouterr()
+
+    def read(front: str, **pickup: str) -> Path:
+        read.done = pick_up(directory.parents[len(SESSIONS.parts)], front, **pickup)
+        run(payload(directory, said, reply="On it."))
+        capsys.readouterr()
+        return before
+
+    return read
+
+
+def links_to(page: Path) -> list[str]:
+    return re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())
+
+
+def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """pages-link-across-handoffs#P1, read through the pickup command: the session that picked up a
+    continuation handoff gets `previous`, naming the session that wrote the handoff; its page links
+    to that one's, and that one's, rendered again, links forward; each link resolves on disk."""
+    directory, _ = first_turn
+    before = handed_over(CONTINUATION)
+    assert (directory / PREVIOUS).read_text().strip() == BEFORE
+    assert links_to(directory / PAGE) == [BEFORE]
+    assert links_to(before / PAGE) == [FRESH]
+    assert (directory / PAGE).parent.joinpath(f"../{BEFORE}/{PAGE}").resolve() == (before / PAGE).resolve()
+
+
+NO_LINK = {
+    "a fork's handoff": f"session: {BEFORE}\npurpose: fork",
+    "a handoff the session wrote itself": f"session: {FRESH}\npurpose: continuation",
+    "a session id that is no id": "session: ../../etc\npurpose: continuation",
+    "frontmatter that is not YAML": f"session: [{BEFORE}\npurpose: continuation",
+}
+
+
+@pytest.mark.parametrize("front", NO_LINK.values(), ids=NO_LINK)
+def test_a_handoff_that_continues_no_other_session_links_nothing(
+    front: str, handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """pages-link-across-handoffs#P2, and the handoffs that name no other session by a safe id."""
+    directory, _ = first_turn
+    before = handed_over(front)
+    assert not (directory / PREVIOUS).exists()
+    assert links_to(directory / PAGE) == links_to(before / PAGE) == []
+
+
+def handoff_read(path: str, front: str) -> dict:
+    """The transcript entry Claude Code writes for a Read of `path`, the file returned as read; a
+    handoff's frontmatter is `front`."""
+    content = f"---\n{front}\n---\n\n# Carry the ledger work on\n"
+    return {"type": "user", "timestamp": "2026-10-05T09:00:05.000Z",
+            "message": {"role": "user", "content": [{"tool_use_id": "toolu_1", "type": "tool_result", "content": content}]},
+            "toolUseResult": {"type": "text", "file": {"filePath": path, "content": content, "startLine": 1}}}
+
+
+def bash(command: str) -> list[dict]:
+    """The transcript entries Claude Code writes for a Bash call of `command` and its result."""
+    return [{"type": "assistant", "timestamp": "2026-10-05T09:00:06.000Z",
+             "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "Bash", "input": {"command": command}}]}},
+            {"type": "user", "timestamp": "2026-10-05T09:00:07.000Z",
+             "message": {"role": "user", "content": [{"tool_use_id": "toolu_2", "type": "tool_result", "content": ""}]}}]
+
+
+def test_a_handoff_picked_up_without_the_command_links_nothing(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
+) -> None:
+    """handoff-pickup-command's Decisions: the Stop hook reads no pickup out of the transcript, so a
+    continuation handoff read and `git rm`'d by hand writes no `previous`."""
+    directory, said = first_turn
+    before = handed_over(f"session: {BEFORE}\npurpose: fork")
+    handoff = directory.parents[len(SESSIONS.parts)] / "agent" / "handoffs" / "2026-10-06-ledger.md"
+    with said.open("a") as f:
+        for e in [handoff_read(str(handoff), CONTINUATION), *bash(f"git rm {handoff} && git commit -m 'pick up'")]:
+            f.write(json.dumps(e) + "\n")
+    run(payload(directory, said, reply="Carrying on."))
+    assert not (directory / PREVIOUS).exists()
+    assert links_to(directory / PAGE) == links_to(before / PAGE) == []
+
+
+def test_previous_is_written_once(handed_over: Callable[..., Path], first_turn: tuple[Path, Path]) -> None:
+    """A `previous` already there stays, whatever handoff the session picks up after it was written."""
+    directory, _ = first_turn
+    handed_over(f"session: {BEFORE}\npurpose: fork")
+    earlier = "0d1e2f3a-0000-0000-0000-000000000000"
+    (directory / PREVIOUS).write_text(earlier + "\n")
+    handed_over(CONTINUATION, name="2026-10-06-ledger.md")
+    assert (directory / PREVIOUS).read_text().strip() == earlier
+    assert f"already names {earlier}" in handed_over.done.stderr
+
+
+def test_a_predecessor_with_no_page_is_recorded_and_not_linked(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path],
+) -> None:
+    """A handoff written by a session that has no page here, one from before every session had one
+    or from another machine: `previous` names it, the page links nowhere, and the pickup says why."""
+    directory, _ = first_turn
+    gone = "0d1e2f3a-0000-0000-0000-000000000000"
+    handed_over(f"session: {gone}\npurpose: continuation")
+    assert (directory / PREVIOUS).read_text().strip() == gone
+    assert links_to(directory / PAGE) == []
+    assert "no session directory" in handed_over.done.stderr
+
+
+def test_a_handoff_two_sessions_picked_up_links_forward_to_both(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None], capsys: pytest.CaptureFixture,
+) -> None:
+    """One handoff split into several: the page before links forward to every session that picked
+    up one of them."""
+    directory, _ = first_turn
+    before = handed_over(CONTINUATION)
+    second = "0a0b0c0d-0000-0000-0000-000000000000"
+    theirs = transcript_of(second)
+    theirs.write_text(json.dumps(FIRST_PROMPT | {"sessionId": second}) + "\n")
+    pick_up(directory.parents[len(SESSIONS.parts)], CONTINUATION, session=second, name="2026-10-05-ledger-bank.md")
+    run(payload(directory.parent / second, theirs, reply="On it."))
+    capsys.readouterr()
+    assert links_to(before / PAGE) == sorted([FRESH, second])
+
+
+def test_a_predecessor_with_no_transcript_is_said_and_links_forward_at_its_next_render(
+    handed_over: Callable[..., Path], first_turn: tuple[Path, Path], run: Callable[[dict], None],
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """pages-link-across-handoffs' Decisions: with no transcript to render it from, the pickup says
+    so and the forward link waits for the predecessor's next render."""
+    directory, _ = first_turn
+    theirs = transcript_of(BEFORE)
+    kept = theirs.read_text()
+    theirs.unlink()
+    before = handed_over(CONTINUATION)
+    assert links_to(directory / PAGE) == [BEFORE]
+    assert links_to(before / PAGE) == []
+    assert "no transcript under" in handed_over.done.stderr
+    theirs.write_text(kept)
+    run(payload(before, theirs, reply="Still here."))
+    capsys.readouterr()
+    assert links_to(before / PAGE) == [FRESH]
 
 
 if __name__ == "__main__":

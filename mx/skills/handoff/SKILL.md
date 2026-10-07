@@ -46,8 +46,8 @@ purpose: continuation | fork
 ---
 ```
 
-For a continuation from the current live session, the user only needs to `/clear`, then send any message. In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. Give the user the following line verbatim, so they also have the option to continue from a fresh `claude` started any other way (or if you split the handoff into N successors, N such lines): 
+For a continuation from the current live session, the user only needs to `/clear`, then send any message. In a project whose agent repo holds the handoff, the plugin's `SessionStart` hook puts that line in the fresh session's context, and the session acts on it at its first turn, which only the user's message starts. Give the user the following line verbatim, this skill's base directory and the handoff's path filled in, so they also have the option to continue from a fresh `claude` started any other way (or if you split the handoff into N successors, N such lines):
 ```
-Continue from <absolute path>. Read it in full first, then git rm it in the agent repo and commit: a handoff is retired once a session has picked it up.
+Continue from <absolute path>: first run `<base directory>/pickup.py <absolute path>`, which prints the handoff in full, retires it and links the session pages.
 ```
 

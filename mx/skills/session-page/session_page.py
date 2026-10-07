@@ -6,10 +6,14 @@
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
 The directory is `agent/sessions/<session-id>/`: `session.md`, one `turns/NN.md` per turn the agent
-recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in
-the shape the show skill gives them (../show/SKILL.md, The session page). The page shows the title,
-brief and resume command, the questions no later turn answered or superseded, then the turns
-newest first, each with the user's messages it answered and what other sessions sent meanwhile, read from the transcript.
+recorded and one `turns/chat-<time>.md` per turn the Stop hook recorded from a chat reply, in the
+shape RULES.md gives them, and `previous`, which the handoff skill's `pickup.py` writes where the
+session picked up another's continuation handoff. Any of them may be missing: a session's first
+turns are often chat turns alone, and `session.md` comes with the first record. The page shows the
+title, links to the pages of the sessions before and after it across a handoff, the brief and
+resume command, the questions no later turn answered or superseded, then the turns newest first,
+each with the user's messages it answered and what other sessions sent meanwhile, read from the
+transcript.
 Beside the turns, a column lists every artefact the turns link, grouped by turn; a ticket file is
 no artefact there.
 
@@ -37,6 +41,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
 
 PAGE = "index.html"  # the rendered page, in the session's own directory
+# In a session's directory, the id of the session whose continuation handoff it picked up, which the
+# handoff skill's `pickup.py` writes once. The link forward from that session's page is read from
+# it, not written.
+PREVIOUS = "previous"
 SESSIONS = Path("agent/sessions")  # where a session's directory sits, from the repo root
 
 QUESTIONS = "open-questions"  # the id of the block at the top: the questions waiting on the user
@@ -105,10 +113,15 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     is entries the transcript does not hold yet, read as though it ended on them: Claude Code writes
     a tool call there only after the call's PostToolUse hooks have run.
 
+    Where there is no `session.md` yet, the title is the one Claude Code keeps for the session
+    (`claude_title`), the brief is empty, and the resume command changes to the directory the
+    session started in.
+
     Raises RecordError where a record does not parse.
     """
     front, title, sections = read_record(
-        directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"})
+        directory / "session.md", required={"session", "repo"}, allowed={"session", "repo"}, sections={"Brief"},
+    ) if (directory / "session.md").exists() else ({}, "", {})
     turns = read_turns(directory / "turns")
     chats = read_chats(directory / "turns")
     settled = settle(turns)
@@ -121,20 +134,40 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
     messages, peers = pair(spoken, times), bucket(sent(entries), times)
     paired = {t.path: replace(t, messages=tuple(said_before), sent=tuple(sent_before))
               for t, said_before, sent_before in zip(timeline, messages, peers)}
-    session = str(front["session"])
+    session = str(front.get("session", directory.name))
+    root = directory.parents[len(SESSIONS.parts)]
+    previous = predecessor(directory)
     return Session(
         id=session,
         name=registered_name(session),
-        repo=Path(str(front["repo"])),
-        title=title,
+        repo=Path(str(front["repo"])) if "repo" in front else started_in(entries) or root,
+        title=title or claude_title(entries) or f"session {session[:8]}",
         brief=sections.get("Brief", (0, ""))[1],
         turns=tuple(paired[t.path] for t in turns),
         chats=tuple(paired[c.path] for c in chats),
         settled=settled,
         began=turn_start(entries),
         described=max((at for at, path in writes(entries) if path.parts[-2:] == (directory.name, "session.md")), default=None),
-        root=directory.parents[len(SESSIONS.parts)],
+        root=root,
+        previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
+        following=successors(directory),
     )
+
+
+def predecessor(directory: Path) -> str:
+    """The session `directory`'s `previous` names; empty where it names none."""
+    try:
+        return (directory / PREVIOUS).read_text().strip()
+    except OSError:
+        return ""
+
+
+def successors(directory: Path) -> tuple[str, ...]:
+    """The sessions beside `directory` whose `previous` names it, by id: one handoff split into
+    several has several."""
+    return tuple(sorted(
+        d.name for d in directory.parent.iterdir() if d != directory and d.is_dir() and predecessor(d) == directory.name
+    )) if directory.parent.is_dir() else ()
 
 
 def registered_name(session: str) -> str:
@@ -177,11 +210,6 @@ class RecordError(Exception):
 
     def __init__(self, path: Path, line: int | None, reason: str) -> None:
         super().__init__(f"{path}{f':{line}' if line is not None else ''}: {reason}")
-
-
-class NoTurnRecords(RecordError):
-    """A session directory whose `turns/` holds no record yet, as one does between the first paged
-    turn's write of `session.md` and its turn record. Raised once `session.md` has parsed."""
 
 
 # ---- what a session's directory holds ---------------------------------------
@@ -292,12 +320,12 @@ class Settled:
 
 @dataclass(frozen=True)
 class Session:
-    """A session's directory, read: `session.md` and the turn records in it, oldest first."""
+    """A session's directory, read: `session.md` where there is one, and the records in it, oldest first."""
 
     id: str
-    repo: Path
-    title: str  # session.md's H1
-    brief: str  # its `## Brief`
+    repo: Path  # where the resume command changes to
+    title: str  # session.md's H1, or Claude Code's title for the session where there is no session.md
+    brief: str  # its `## Brief`; empty where there is no session.md
     root: Path  # the repo root the directory sits under, which a record's paths are from
     name: str = ""  # its short name in Claude Code's session registry; empty where it has no entry
     turns: tuple[Turn, ...] = ()
@@ -305,6 +333,8 @@ class Session:
     settled: dict[str, Settled] = field(default_factory=dict)  # by question tag; the rest are open
     began: datetime | None = None  # when the newest turn began, as the transcript has it (turn_start)
     described: datetime | None = None  # when the transcript last shows session.md written
+    previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
+    following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
 
 
 # ---- reading the records ----------------------------------------------------
@@ -314,8 +344,6 @@ TAG = re.compile(r"Q\d+")
 
 def read_turns(turns: Path) -> list[Turn]:
     records = sorted((p for p in turns.glob("*.md") if re.fullmatch(r"\d+\.md", p.name)), key=lambda p: int(p.stem))
-    if not records:
-        raise NoTurnRecords(turns, None, "no turn records (turns/NN.md)")
     return [read_turn(path) for path in records]
 
 
@@ -613,6 +641,21 @@ def read_transcript(transcript: Path) -> list[dict]:
     return entries
 
 
+def claude_title(entries: list[dict]) -> str:
+    """The title Claude Code keeps for the session: the last one a `/rename` gave it, else the last
+    one it generated. Empty where it has neither yet. The dotfiles' container hub reads the same
+    two, for its rail."""
+    for kind, key in (("custom-title", "customTitle"), ("ai-title", "aiTitle")):
+        if titles := [str(e[key]) for e in entries if e.get("type") == kind and e.get(key)]:
+            return titles[-1]
+    return ""
+
+
+def started_in(entries: list[dict]) -> Path | None:
+    """The directory the session started in, as its first entry that carries one has it."""
+    return next((Path(e["cwd"]) for e in entries if isinstance(e.get("cwd"), str) and e["cwd"]), None)
+
+
 def said(entries: list[dict]) -> list[tuple[datetime, str]]:
     """What the user said, with when, oldest first: their own prompts and the ones they queued
     mid-turn, and none of what Claude Code writes as the user (images, task notifications, other
@@ -774,17 +817,19 @@ def assemble(session: Session, now: datetime) -> str:
     resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
     waiting = open_questions(session)
     timeline = in_order(list(session.turns), list(session.chats))
-    dates = sorted({t.date for t in timeline})
-    span = dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
-    turns = len(session.turns)
+    dates = sorted({when(t)[:10] for t in timeline})
+    span = "" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
+    turns = len(timeline)
     top = f"""
   <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
     <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(waiting)} question{'s' * (len(waiting) != 1)}</h2></div>
     {''.join(open_question(t, q) for t, q in waiting)}
   </section>""" if waiting else ""
     newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
-    body = "".join(chat_row(t) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0])
-                   for t in reversed(timeline))
+    shown = list(reversed(timeline))
+    hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
+    body = "".join(chat_row(t, hint=hint) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0], hint=hint)
+                   for t, hint in zip(shown, hinted))
     title = inline(session.title)
     name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
@@ -812,14 +857,14 @@ def assemble(session: Session, now: datetime) -> str:
 <main class="page">
   <section class="intro">
     <h1 class="v-title">{title}</h1>
-    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {esc(span)} · rendered {now:%Y-%m-%d %H:%M}</p>
+    <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(span)} · " if span else ""}rendered {now:%Y-%m-%d %H:%M}</p>
+{handoffs(session)}
     <div class="prose brief">{block(session.brief)}</div>
     <div class="actions">
       <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
     </div>
   </section>{top}
-  <section class="turns" aria-labelledby="turns">
-    <div class="divider"><h2 class="v-meta" id="turns">turns · newest first</h2></div>
+  <section class="turns" aria-label="turns">
     {body}
   </section>{column(newest_first)}
 </main>
@@ -829,6 +874,17 @@ def assemble(session: Session, now: datetime) -> str:
 </body>
 </html>
 """
+
+
+def handoffs(session: Session) -> str:
+    """The links to the page of the session this one continued from and to each that continued
+    from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
+    sessions directory. Nothing where neither is there."""
+    def to(other: str) -> str:
+        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{esc(other[:8])}</a>'
+    parts = ([f"continues {to(session.previous)}"] if session.previous else []) + (
+        [f"continued in {', '.join(to(s) for s in session.following)}"] if session.following else [])
+    return f'\n    <p class="v-meta handoffs" id="handoffs">{" · ".join(parts)}</p>' if parts else ""
 
 
 def column(newest_first: list[Turn]) -> str:
@@ -841,7 +897,7 @@ def column(newest_first: list[Turn]) -> str:
     </section>""" for t in newest_first if t.artefacts)
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="divider"><h2 class="v-meta" id="column-title">artefacts · by turn</h2></div>{groups or '<p class="v-meta">none yet</p>'}
+    <h2 class="v-meta" id="column-title">artefacts · by turn</h2>{groups or '<p class="v-meta">none yet</p>'}
   </aside>"""
 
 
@@ -889,7 +945,18 @@ def options(q: Question, answer: str | None = None) -> str:
     return f'<ol class="opts">{"".join(items)}</ol>'
 
 
-def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
+def unanswered(t: Turn | Chat) -> bool:
+    """Whether the transcript shows the turn and no message of the user's before it."""
+    return t.written is not None and not t.messages
+
+
+def when(t: Turn | Chat) -> str:
+    """The turn's date and time to the minute, from the transcript where it has the turn, which
+    keeps the two on one clock; the record's own date where it hasn't."""
+    return f"{t.written.astimezone():%Y-%m-%d %H:%M}" if t.written else t.date
+
+
+def turn_section(t: Turn, settled: dict[str, Settled], open_: bool, hint: bool) -> str:
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
     asked = "".join(asked_question(q, settled[q.tag]) for q in t.questions if q.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
@@ -898,25 +965,25 @@ def turn_section(t: Turn, settled: dict[str, Settled], open_: bool) -> str:
   <summary class="head">
     <span class="rail v-num">{t.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
-    <span class="v-meta date">{esc(t.date)}</span>{chips(t)}
+    <span class="v-meta date">{esc(when(t))}</span>{chips(t)}
   </summary>
   <div class="turn-body">
-    {you(t)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
+    {you(t, hint)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
   </div>
 </details>"""
 
 
-def chat_row(c: Chat) -> str:
+def chat_row(c: Chat, hint: bool) -> str:
     """A chat turn: one compact row with no number, the user's messages behind a click and the
     reply as it was, with nothing to open or close."""
     return f"""
 <article class="turn chat blk" id="{c.key}" tabindex="-1" data-block>
   <span class="rail"></span>
   <div class="chat-body">
-    {you(c)}{"".join(map(peer, c.sent))}
+    {you(c, hint)}{"".join(map(peer, c.sent))}
     <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(c.reply)}</div></div>
   </div>
-  <span class="v-meta date">{esc(c.date)}</span>
+  <span class="v-meta date">{esc(when(c))}</span>
 </article>"""
 
 
@@ -929,13 +996,14 @@ def chips(t: Turn) -> str:
     ) + "</span>")
 
 
-def you(t: Turn | Chat) -> str:
-    """The user's messages, under "you"."""
+def you(t: Turn | Chat, hint: bool) -> str:
+    """The user's messages, under "you". Of a run of turns with none before them, only the newest
+    says so (`hint`)."""
     if t.written is None:
         return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'
     messages = t.messages
     if not messages:
-        return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>'
+        return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>' if hint else ''
     lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
