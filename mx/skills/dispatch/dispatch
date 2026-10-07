@@ -680,14 +680,12 @@ range_of() { # <repo> <tip>
 # diffview's state file beside the page, which a render never touches.
 # A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
 # repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
-# under the path its repo's section shows, the anchor with that prefix cut. An assumption anchored
-# in a repo with no section on the page, the agent repo's always, has no file there and stays on
-# the ticket. diffview places a note by path alone, in whichever section holds it, so where a
-# note's path also names a file in another repo's section the render says the note may show there;
-# the check below follows diffview's placement, and goes stale with it.
+# under the path its repo's section shows, the anchor with that prefix cut, and names that repo as
+# its source, so it lands in that repo's section whichever other section shows the same path. An
+# assumption anchored in a repo with no section on the page, the agent repo's always, has no file
+# there and stays on the ticket.
 notes_of() { # <slug>
-    local name place anchors='{}' notes i spec id repo path hit other
-    local -a shows=()
+    local name place anchors='{}' sources='{}' at
     # Its own status, taken before the pipe: a refusal prints to stderr and writes
     # nothing, and jq over an empty input exits 0, so a pipeline would answer that
     # a ticket no reader can read has no notes.
@@ -696,56 +694,32 @@ notes_of() { # <slug>
         place=$(place_of "$name")
         anchors=$(jq -c --arg at "${place:-$(sibling_of "$name" "$1")}/" --arg name "$name" '. + {($at): $name}' <<< "$anchors")
     done
-    notes=$(jq -c --argjson anchors "$anchors" '
-        [ .tickets[0].assumptions[]
-          | select(.path | startswith("agent/") | not)
-          | . as $a
-          | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
-          | {repo: ($in.value // "code"), id, path: .path[($in.key // "" | length):], text}
-            + (if .line == null then {} else {line} end)
-          | select(.repo | IN($ARGS.positional[])) ]' --args "${spec_repos[@]}" <<< "$read") || return 1
-    for i in "${!specs[@]}"; do
-        spec=${specs[i]}
-        shows[i]=$(git -C "${spec%@*}" diff --name-only -M "${spec##*@}")
+    for at in "${spec_repos[@]}"; do
+        sources=$(jq -c --arg at "$at" --arg top "$(repo_at "$at")" '. + {($at): $top}' <<< "$sources")
     done
-    while IFS=$'\t' read -r id repo path; do
-        hit=
-        for i in "${!specs[@]}"; do
-            names_file "$path" <<< "${shows[i]}" && hit+=" ${spec_repos[i]}"
-        done
-        # diffview's `attach_untouched`: a file no section changes joins the first section holding it.
-        if [ -z "$hit" ]; then
-            for i in "${!specs[@]}"; do
-                spec=${specs[i]}
-                git -C "${spec%@*}" cat-file -e "${spec##*..}:$path" 2> /dev/null && { hit=${spec_repos[i]}; break; }
-            done
-        fi
-        for other in $hit; do
-            [ "$other" != "$repo" ] || continue
-            echo "dispatch: A$id's \`$path\` in $repo also names a file the page's $other section shows, and diffview places a note by its path alone, so the note may show there" >&2
-            break
-        done
-    done < <(jq -r '.[] | [.id, .repo, .path] | @tsv' <<< "$notes")
-    jq --argjson notes "$notes" '{notes: [$notes[] | del(.repo)], resolved: .tickets[0].resolved}' <<< "$read"
+    jq --argjson anchors "$anchors" --argjson sources "$sources" '
+        { notes: [ .tickets[0].assumptions[]
+                   | select(.path | startswith("agent/") | not)
+                   | . as $a
+                   | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
+                   | {source: $sources[$in.value // "code"], id, path: .path[($in.key // "" | length):], text}
+                     + (if .line == null then {} else {line} end)
+                   | select(.source != null) ],
+          resolved: .tickets[0].resolved }' <<< "$read"
 }
-
-# Whether one of the paths on stdin is <path>, or ends in `/<path>`, which is how diffview's page
-# matches a note on <path> to a changed file.
-names_file() { awk -v p="$1" '$0 == p || substr($0, length($0) - length(p)) == "/" p { found = 1 } END { exit !found }'; } # <path>
 
 # Whether every source the diffview page at <page> shows is one of <specs>, or one a
 # spec extends: the same repo, a start that begins the spec's start SHA, and an end
 # that begins the spec's end SHA or is an ancestor of it. The extended range is an
 # unmerged round grown since its last render by new commits on top of its tip, an
 # amend's or a resumed round's; one whose tip was rewritten extends nothing.
-# diffview writes each source into the page's JSON as `"spec": "<repo root>@<a>..<b>"`,
-# its ends pinned to short SHAs, where a spec here carries full ones. A page that
-# shows no source is no diffview page, and none of these.
+# diffview's --sources-of reads a page's sources as `<repo root>@<a>..<b>`, its ends
+# pinned to short SHAs, where a spec here carries full ones. A page it reads no
+# source off is no diffview page, and none of these.
 covers() { # <page> <spec...>
     local page=$1 shown source range a b spec found
     shift
-    shown=$(grep -o '"spec": "[^"]*"' "$page" | sed 's/^"spec": "//; s/"$//')
-    [ -n "$shown" ] || return 1
+    shown=$(diffview --sources-of "$page") && [ -n "$shown" ] || return 1
     while read -r source; do
         range=${source##*@} a=${range%%..*} b=${range#*..} found=
         [ -n "$a" ] && [ -n "$b" ] || return 1

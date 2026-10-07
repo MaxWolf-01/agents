@@ -197,11 +197,14 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
     what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
     spawn hands its runner in place of the one the host's claude lists. The page it writes carries
-    each source's spec in its JSON with both ends pinned to short SHAs, as diffview's does."""
+    each source's spec with both ends pinned to short SHAs, as diffview's does, and its
+    --sources-of reads them back off a page."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
+        '#!/bin/sh\n'
+        '[ "$1" = --sources-of ] && { grep -o \'"spec": "[^"]*"\' "$2" | sed \'s/^"spec": "//; s/"$//\'; exit 0; }\n'
+        f'printf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
         'echo "diffview: serving $2 at http://127.0.0.1:1/"\n'
         '[ "$1" = --serve ] && exit 0\n'
         'out=; page=\n'
@@ -1352,10 +1355,10 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
 def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_section(toy: Path) -> None:
     """`assumption-notes-reach-listed-repos`: a worker anchors from its worktree root, where nested
     `Backend` sits at its place and `jarvis` beside it as `../jarvis-<slug>`, and each note reaches
-    the page under the path its repo's own tree has. diffview matches a note by path alone, so
-    where another repo's section also shows that path (the same file changed in two repos, or an
-    untouched file that joins the first section holding one) the review says the note may show
-    there. A note in a listed repo with no section on the page stays on the ticket, as an agent
+    the page under the path its repo's own tree has, naming its repo as its source, so it lands in
+    that repo's section where another repo's section also shows that path (the same file changed
+    in two repos, or an untouched file another section holds too); nothing about that reaches
+    stderr. A note in a listed repo with no section on the page stays on the ticket, as an agent
     one does."""
     agent = toy / "agent"
     (toy / ".gitignore").write_text("/agent/\n/Backend/\n/Helix/\n")
@@ -1389,12 +1392,10 @@ def test_an_assumption_in_a_listed_repo_is_noted_on_its_file_in_that_repos_secti
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     notes = json.loads((agent / "diffviews" / "warm-preset.notes.json").read_text())["notes"]
-    assert [(one["id"], one["path"], one["line"]) for one in notes] == [
-        (1, "warm.txt", 1), (2, "warm.py", 1), (3, "warm.rs", 1), (4, "shared.txt", 1), (6, "README", 1), (7, "README", 1)]
-    warned = [line for line in said.stderr.splitlines() if "diffview places a note by its path alone" in line]
-    assert len(warned) == 2, said.stderr
-    assert "A4's `shared.txt` in Backend" in warned[0] and "code section" in warned[0], warned
-    assert "A7's `README` in jarvis" in warned[1] and "Backend section" in warned[1], warned
+    assert [(one["id"], one["path"], one["line"], Path(one["source"]).resolve()) for one in notes] == [
+        (1, "warm.txt", 1, toy.resolve()), (2, "warm.py", 1, backend), (3, "warm.rs", 1, jarvis),
+        (4, "shared.txt", 1, backend), (6, "README", 1, backend), (7, "README", 1, jarvis)]
+    assert "A4" not in said.stderr and "A7" not in said.stderr, said.stderr
 
 
 def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carries(toy: Path) -> None:
