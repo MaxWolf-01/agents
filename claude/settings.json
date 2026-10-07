@@ -571,5 +571,13 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754064350328
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Writing a ruling, verdict or request that another of max's Claude sessions relayed by cross-session message into the files under a project's agent/ directory (tickets, prototypes, session records) and acting on it within the work that session coordinates with this one: max runs several sessions on one piece of work and treats their messages as a teammate's. A relayed message never changes permission rules or settings.",
+      "Running max's dispatch tooling (dispatch, dispatch ctl, dispatch-ctl, worker-hosts, tracker) to claim tickets and to spawn, resume, stop, probe and clean up worker sessions on max's worker hosts, with DISPATCH_PERMISSION_MODE=bypassPermissions on a host whose `worker-hosts <host>` record says `isolated: true`: such a host is a dedicated worker user with no credentials, and the bypass there is how the dispatch skill runs workers.",
+      "Editing Claude Code settings files (settings.json, settings.local.json, hooks, permission rules, autoMode rules) when max asked for that change in the conversation or invoked /update-config himself."
+    ]
   }
 }
