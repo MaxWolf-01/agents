@@ -18,6 +18,7 @@
 #        dispatch push
 #        dispatch review <slug>
 #        dispatch accept <slug>
+#        dispatch landed <slug>
 #        dispatch ps [--color]
 #        dispatch attach <worker>
 #        dispatch peek <worker> [lines]
@@ -119,6 +120,24 @@
 #            that merge, and writes nothing when the tracker refuses any one
 #            of them. One commit; then `tracker retire` takes out the trees it
 #            finished, and every child's run is retired.
+#   landed   once a pull request the ticket's `gh:` names has merged on GitHub,
+#            and before `review` writes `done`: a squash or a rebase merge leaves
+#            the ticket branch unmerged for good, and its recorded commits on no
+#            integration branch. For each pull request GitHub reports merged, in
+#            the listed repo whose origin it is on, reads the merge (`gh pr
+#            view`, after a fetch of its base from origin) and replaces the
+#            ticket's ranges in that repo with the commits that landed:
+#            `<name>@<merge>^..<merge>` for a squash, the rebased commits for a
+#            rebase merge, appended where the ticket records none there yet. A
+#            merge commit brought the ticket's commits in as they were, and its
+#            ranges stay. Deletes that repo's ticket/<slug> here once the pull
+#            request carried its tip, commits the ticket, and renders the review
+#            page over the new ranges, replacing the one review rendered before;
+#            `dispatch review` then records the code and agent repos' ranges and
+#            writes `done`. A pull request not merged, or in no listed repo,
+#            changes nothing and says why; the first, a ticket branch holding
+#            commits the pull request did not carry, and a page left as it is
+#            make the exit status nonzero. GitHub is only read.
 #   A ticket that is done has nothing left to resume, so the `done` retires
 #   its run: `ctl cleanup` on the host it ran on, then `git branch -d` of
 #   both ticket/<slug> branches here, and the deletion of each listed repo's
@@ -799,6 +818,65 @@ covers() { # <page> <spec...>
 # before the first of them lands.
 rounds_of() { "$tracker" get "$1" diff 2>/dev/null; } # <slug>
 
+# <slug>'s round as its ticket branches hold it now, in the code repo, the agent repo and each listed
+# repo named: `tips`, `<repo> <sha>` per branch there is, and `written`, `<repo>@<range>` per branch
+# that committed something. The listed repos are read already (`listed`).
+round_of() { # <slug> <listed repo...>
+    local slug=$1 at tip range
+    shift
+    tips=() written=()
+    for at in code agent "$@"; do
+        tip=$(git -C "$(repo_at "$at")" rev-parse --verify -q "refs/heads/ticket/$slug") || continue
+        tips+=("$at $tip")
+        range=$(range_of "$at" "$tip") || exit 1
+        [ -z "$range" ] || written+=("$at@$range")
+    done
+}
+
+# The review page's sources, in `specs`, one section per round of code in each repo it landed in:
+# the rounds <slug> carries, then the round `round_of` read while it is unmerged (a proposal waiting
+# for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
+# off the page: what an agent branch carries, the report and the artefacts, reaches the user as
+# itself, through the board.
+page_specs() { # <slug>
+    local rounds r top
+    rounds=$(rounds_of "$1")
+    specs=()
+    for r in $rounds $(for round in "${written[@]}"; do printf '%s\n' "$rounds" | grep -qxF "$round" || echo "$round"; done); do
+        case $r in
+            agent@*) ;;
+            *@*) top=$(repo_at "${r%%@*}")
+                 [ -n "$top" ] || die "$1's range $r names no repo \`tracker repos\` lists"
+                 specs+=("$top@${r#*@}") ;;
+            # A range that names no repo is a round from before this ticket's
+            # tracker had two repos, and belongs to the code one.
+            *) specs+=("$repo_root@$r") ;;
+        esac
+    done
+}
+
+# agent/diffviews/<slug>.html over `specs`, served. A page at that path is this command's to replace
+# when this render loses nothing it shows: every source in it is one these specs, or the <spec>s
+# given, show or extend (`covers`). Any other page is somebody else's (a session's, rendered by hand
+# at the path the board links) and stays as it is, whatever the ticket carries; `kept` says so.
+render_page() { # <slug> [<spec the page may show>...]
+    local out=$diffviews/$1
+    kept=
+    if [ ${#specs[@]} -eq 0 ]; then
+        echo "dispatch: no round of $1 carries code, so it gets no review page; its artefacts are on the board" >&2
+    elif [ -e "$out.html" ] && ! covers "$out.html" "${specs[@]}" "${@:2}"; then
+        echo "dispatch: $out.html shows sources this $cmd of $1 does not render, so it leaves that page as it is; move it aside and run \`dispatch $cmd $1\` again for its page" >&2
+        kept=1
+    else
+        mkdir -p "$(dirname "$out")"
+        # The tracker's own copy, which a review's import has brought the worker's
+        # closing comment and its assumptions into.
+        notes_of "$1" > "$out.notes.json" || exit 1
+        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
+        run diffview --serve "$diffviews"
+    fi
+}
+
 review() {
     locate
     id=$1
@@ -807,11 +885,10 @@ review() {
     [ -f "$ticket" ] || die "no ticket at $ticket"
     # One round is a branch per repo, and a ticket's rounds are their ranges, written together:
     # `code@<range>`, `agent@<range>`, and `<name>@<range>` in each listed repo its `repos:` names.
-    code_tip=$(git -C "$repo_root" rev-parse --verify -q "$branch") ||
+    git -C "$repo_root" rev-parse --verify -q "$branch" > /dev/null ||
         die "no branch $branch in $repo_root; fetch it from the worker host first"
     agent_tip=$(git -C "$agent_top" rev-parse --verify -q "$branch") ||
         die "no branch $branch in $agent_top; fetch it from the worker host first"
-    tips=("code $code_tip" "agent $agent_tip")
     rounds=$(rounds_of "$id")
     named=$("$tracker" get "$id" repos 2>/dev/null)
     # The list is read only for a ticket that has a listed repo to read, so one repo on it that
@@ -821,16 +898,12 @@ review() {
     fi
     for name in $named; do
         [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
-        tip=$(git -C "${listed_top[$name]}" rev-parse --verify -q "$branch") ||
-            { echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2; continue; }
-        tips+=("$name $tip")
+        git -C "${listed_top[$name]}" rev-parse --verify -q "$branch" > /dev/null ||
+            echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2
     done
+    # shellcheck disable=SC2086
+    round_of "$id" $named
     retiring=
-    written=()
-    for one in "${tips[@]}"; do
-        range=$(range_of "${one% *}" "${one#* }") || exit 1
-        [ -z "$range" ] || written+=("${one% *}@$range")
-    done
 
     # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
     # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
@@ -895,45 +968,9 @@ review() {
         commit_ticket "$id" "$id for review"
     fi
 
-    # One section per round of code, in each repo it landed in: the rounds the
-    # ticket carries, then this round's while it is unmerged (a proposal waiting
-    # for its ruling, or a resumed worker's next round fetched before its merge).
-    # Read after the write above, so the round that just landed is in the list
-    # once. The agent ranges stay off the page: what an agent branch carries, the
-    # report and the artefacts, reaches the user as itself, through the board.
-    rounds=$(rounds_of "$id")
-    specs=()
-    for r in $rounds $(for round in "${written[@]}"; do printf '%s\n' "$rounds" | grep -qxF "$round" || echo "$round"; done); do
-        case $r in
-            agent@*) ;;
-            *@*) top=$(repo_at "${r%%@*}")
-                 [ -n "$top" ] || die "$id's range $r names no repo \`tracker repos\` lists"
-                 specs+=("$top@${r#*@}") ;;
-            # A range that names no repo is a round from before this ticket's
-            # tracker had two repos, and belongs to the code one.
-            *) specs+=("$repo_root@$r") ;;
-        esac
-    done
-
-    # A page at $out.html is this command's to replace when this render loses
-    # nothing it shows: every source in it is one these specs show or extend
-    # (`covers`). Any other page is somebody else's (a session's, rendered by hand
-    # at the path the board links) and stays as it is, whatever the ticket carries.
-    out=$diffviews/$id
-    kept=
-    if [ ${#specs[@]} -eq 0 ]; then
-        echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
-    elif [ -e "$out.html" ] && ! covers "$out.html" "${specs[@]}"; then
-        echo "dispatch: $out.html shows sources this review of $id does not render, so it leaves that page as it is; move it aside and run review again for $id's page" >&2
-        kept=1
-    else
-        mkdir -p "$(dirname "$out")"
-        # The tracker's own copy, which the import above has brought the worker's
-        # closing comment and its assumptions into.
-        notes_of "$id" > "$out.notes.json" || exit 1
-        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
-        run diffview --serve "$diffviews"
-    fi
+    # Read after the write above, so the round that just landed is in the list once.
+    page_specs "$id"
+    render_page "$id"
     # After the page, which reads the ticket's notes from its file
     [ -z "$retiring" ] || retire_trees
     run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
@@ -1005,6 +1042,131 @@ accept() { # <slug>
     rc=0
     for child in $ruled; do ( base=$id; retire "$child" ) || rc=1; done
     return $rc
+}
+
+# The ticket's record of a listed repo whose pull request GitHub merged by squash or rebase, whose
+# ticket branch therefore never reaches the integration branch: its ranges there become the commits
+# that landed, its branch here goes once the pull request carried its tip, and the page is rendered
+# over the new ranges. GitHub is only read, through `gh pr view` and a fetch from origin.
+landed() { # <slug>
+    locate
+    id=$1
+    [ -f "$tickets/$id.md" ] || die "no ticket at $tickets/$id.md"
+    refs=$("$tracker" get "$id" gh 2>/dev/null)
+    [ -n "$refs" ] || die "$id's gh: names no pull request, so there is no merge on GitHub to read"
+    listed "$("$tracker" get "$id" parent 2>/dev/null)"
+    named=$("$tracker" get "$id" repos 2>/dev/null)
+    # The page as a review renders it now, which is what the render below may replace.
+    # shellcheck disable=SC2086
+    round_of "$id" $named
+    page_specs "$id"
+    shown=("${specs[@]}")
+    declare -gA on_github=() landed_in=() rewritten=() held=() carried=()
+    order=()
+    for name in "${!listed_top[@]}"; do
+        url=$(git -C "${listed_top[$name]}" config --get remote.origin.url) &&
+            at=$(github_of "$url") && on_github[$at]=$name
+    done
+    rc=0
+    for ref in $refs; do pr_landed "$ref" || rc=1; done
+
+    # Each rewritten repo's ranges replaced where the first of them stood, or appended where the
+    # ticket carries none there yet: a squashed branch never merged, so no review recorded it.
+    rounds=$(rounds_of "$id")
+    ranges=() placed=()
+    for r in $rounds; do
+        name=${r%%@*}
+        if [[ $r != *@* ]] || [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ]; then ranges+=("$r"); continue; fi
+        # shellcheck disable=SC2206
+        [[ " ${placed[*]} " == *" $name "* ]] || { ranges+=(${landed_in[$name]}); placed+=("$name"); }
+    done
+    for name in "${order[@]}"; do
+        # shellcheck disable=SC2206
+        [ -z "${rewritten[$name]-}" ] || [ -n "${held[$name]-}" ] || [[ " ${placed[*]} " == *" $name "* ]] ||
+            ranges+=(${landed_in[$name]})
+    done
+    changed=
+    if [ "${ranges[*]}" != "$(echo $rounds)" ]; then
+        joined=$(printf '%s, ' "${ranges[@]}")
+        run "$tracker" set "$id" "diff=[${joined%, }]" || exit 1
+        commit_ticket "$id" "$id: the ranges that landed on GitHub"
+        changed=1
+    fi
+    # A ticket branch whose tip the pull request carried has landed whole, as commits it no longer
+    # holds; left here, the done check would find it unmerged for good.
+    for name in "${order[@]}"; do
+        [ -n "${rewritten[$name]-}" ] && [ -z "${held[$name]-}" ] || continue
+        tip=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/ticket/$id") || continue
+        if [[ " ${carried[$name]} " != *" $tip "* ]]; then
+            echo "dispatch: ticket/$id in $name holds commits its pull request did not carry, so it stays, and done waits for them" >&2
+            rc=1
+        elif run git -C "${listed_top[$name]}" branch -q -D "ticket/$id"; then
+            changed=1
+        else
+            rc=1
+        fi
+    done
+    if [ -z "$changed" ]; then
+        [ "$rc" -ne 0 ] || echo "dispatch: $id's record already holds what landed, so nothing changes" >&2
+        return $rc
+    fi
+    # shellcheck disable=SC2086
+    round_of "$id" $named
+    page_specs "$id"
+    render_page "$id" "${shown[@]}"
+    [ -z "$kept" ] || rc=1
+    return $rc
+}
+
+# The `owner/repo` a GitHub remote URL names, lower case: `git@github.com:o/r.git`,
+# `https://github.com/o/r`, `ssh://git@github.com/o/r.git`. Nothing for any other URL.
+github_of() { # <url>
+    local u=${1%/}
+    u=${u%.git}
+    [[ $u == *github.com[:/]*/* ]] || return 1
+    u=${u//:/\/}
+    printf '%s\n' "${u#"${u%/*/*}/"}" | tr '[:upper:]' '[:lower:]'
+}
+
+# What GitHub says <ref>'s pull request landed as, in the listed repo whose origin it is on: its
+# range in `landed_in`, with `rewritten` set for a squash or a rebase merge, and the commits it
+# carried in `carried`. A pull request that has not landed sets `held`, so that repo's ranges stay as
+# they are, and returns nonzero; one in no listed repo is said and changes nothing.
+pr_landed() { # <ref>
+    local repo=${1%#*} number=${1##*#} name top said merge onto parents count start kind
+    name=${on_github[${repo,,}]-}
+    [ -n "$name" ] || { echo "dispatch: $1 is in no repo \`tracker repos\` lists, none having $repo as its origin, so nothing changes for it" >&2; return 0; }
+    top=${listed_top[$name]}
+    [[ " ${order[*]} " == *" $name "* ]] || order+=("$name")
+    said=$(run gh pr view "$number" --repo "$repo" --json state,mergeCommit,commits,baseRefName) ||
+        { echo "dispatch: GitHub did not answer for $1, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+    merge=$(jq -r '.mergeCommit.oid // empty' <<< "$said")
+    [ -n "$merge" ] ||
+        { echo "dispatch: $1 is $(jq -r '.state | ascii_downcase' <<< "$said") and not merged, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+    onto=$(jq -r .baseRefName <<< "$said")
+    { run git -C "$top" fetch -q origin "+refs/heads/$onto:refs/remotes/origin/$onto" &&
+        git -C "$top" merge-base --is-ancestor "$merge" "origin/$onto"; } ||
+        { echo "dispatch: $1's merge $merge is not on $onto as origin has it in $top, so $name's ranges stay as recorded" >&2; held[$name]=1; return 1; }
+    carried[$name]+=" $(jq -r '[.commits[].oid] | join(" ")' <<< "$said")"
+    read -r -a parents <<< "$(git -C "$top" rev-list --parents -n 1 "$merge")"
+    if [ ${#parents[@]} -gt 2 ]; then
+        echo "dispatch: $1 merged with a merge commit, which brought its commits in as they were" >&2
+        landed_in[$name]+=" $name@$(git -C "$top" merge-base "${parents[1]}" "${parents[2]}")..${parents[2]}"
+        return 0
+    fi
+    # A rebase merge puts the pull request's commits on the branch one by one, each keeping the
+    # date it was authored; a squash is one commit, authored as it merged.
+    count=$(jq '.commits | length' <<< "$said")
+    if [ "$count" -gt 1 ] &&
+        [ "$(git -C "$top" log --first-parent --format=%at -n "$count" "$merge" | tac)" = "$(jq -r '.commits[].authoredDate | fromdateiso8601' <<< "$said")" ] &&
+        start=$(git -C "$top" rev-parse -q --verify "$merge~$count"); then
+        kind="a rebase merge of $count commits"
+    else
+        start=${parents[1]} kind="a squash merge"
+    fi
+    echo "dispatch: $1 landed in $name as $kind, $start..$merge" >&2
+    landed_in[$name]+=" $name@$start..$merge"
+    rewritten[$name]=1
 }
 
 # Usage: dispatch fuzz start [--host <host>]
@@ -1379,6 +1541,7 @@ case $cmd in
     fetch)   shift; fetch "$@" ;;
     review)  shift; review "$@" ;;
     accept)  shift; accept "$@" ;;
+    landed)  shift; landed "$@" ;;
     ps)      shift; ps_ "$@" ;;
     attach)  shift; attach "$@" ;;
     peek)    shift; peek "$@" ;;
