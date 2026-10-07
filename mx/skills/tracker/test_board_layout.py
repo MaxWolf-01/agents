@@ -71,9 +71,6 @@ from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
-# Every check here starts a browser.
-pytestmark = pytest.mark.full_path
-
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
@@ -155,6 +152,7 @@ def named(found: dict[int, list[dict]]) -> str:
     )
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("view", VIEWS)
 @pytest.mark.parametrize("width", WIDTHS)
 def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int, view: str) -> None:
@@ -174,6 +172,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
     """A width where the defect goes unreported is a width the Property is not checked at, whatever
@@ -359,6 +358,7 @@ def probe(page: Path, width: int, env: dict[str, str]) -> dict:
 
 # the row beside the graph panel, the row on its own, and the row reflowed; and the first of them
 # with no graph engine to draw with
+@pytest.mark.full_path
 @pytest.mark.parametrize(("width", "offline"), [(1500, False), (1100, False), (920, False), (1500, True)])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, offline: bool, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
@@ -634,6 +634,7 @@ def graph_probe(page: Path, env: dict[str, str]) -> dict:
     return json.loads(done.stdout)
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("offline", [False, True])
 def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, offline: bool, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criteria, which are all about what a browser does: the whole
@@ -805,6 +806,7 @@ print(json.dumps(out))
 """
 
 
+@pytest.mark.full_path
 def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criterion: the preview and both full size views say the graph could
     not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
@@ -888,6 +890,7 @@ print(json.dumps(out))
 """
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), ("/chunk-SP2CHFBE.mjs", "could not load"),
                                                ("/render-FL5BWEWF.mjs", "could not be drawn")])
 def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:

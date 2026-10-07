@@ -19,7 +19,7 @@ Read `GLOSSARY.md` if the project has one, so test names carry the domain's word
 
 **The fast suite** is `make test`: in-process, with no browser, no network and no sleeps. Every session and every worker runs it on every change, and the three jobs live in it.
 
-**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a Makefile target of their own, and run deliberately: by the session landing a change that reaches their path, on a host that has what they drive, and before a release. A landing's show is usually the output of such a run, so its runnable script (`/mx:show`, A runnable artifact) is the natural home for one: the check and the demonstration are the same run.
+**Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and by the session landing a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched. A landing's show is usually the output of such a run, so its runnable script (`/mx:show`, A runnable artifact) is the natural home for one: the check and the demonstration are the same run.
 
 ## The seam
 
