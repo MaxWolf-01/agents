@@ -87,20 +87,21 @@
 #            agent repo, one page with a section per range of code, in the code
 #            repo and each listed repo, and serves it; says the ticket gets no
 #            page when no round of it carries code; leaves a page at that path
-#            alone when it shows a source this render does not show, and exits
-#            nonzero once the rest is done; re-renders the board; and writes the
-#            ticket's status: `review` while any of its branches is unmerged,
-#            `done` once all have merged, with the round's ranges in the `diff:`
-#            frontmatter, `code@<sha>..<sha>`, `agent@<sha>..<sha>` and
-#            `<name>@<sha>..<sha>` in each listed repo where its branch
-#            committed. A listed repo's branch merges into the parent ticket's
-#            branch there where it has one, and into the repo's integration
-#            branch, locally or at origin, otherwise. A child ticket merged into
-#            its parent ticket's branch, which this is, gets its ranges and
-#            stays `review` unless it is a hinge: it is ruled with the parent,
-#            and `accept` writes its `done`. One commit either way, and none
-#            when the ticket already says so. A `done` retires the ticket's run
-#            (below), and `tracker retire` takes out the trees it finished.
+#            alone when it shows a source this render neither shows nor extends
+#            (an unmerged round grown since), and exits nonzero once the rest is
+#            done; re-renders the board; and writes the ticket's status:
+#            `review` while any of its branches is unmerged, `done` once all
+#            have merged, with the round's ranges in the `diff:` frontmatter,
+#            `code@<sha>..<sha>`, `agent@<sha>..<sha>` and `<name>@<sha>..<sha>`
+#            in each listed repo where its branch committed. A listed repo's
+#            branch merges into the parent ticket's branch there where it has
+#            one, and into the repo's integration branch, locally or at origin,
+#            otherwise. A child ticket merged into its parent ticket's branch,
+#            which this is, gets its ranges and stays `review` unless it is a
+#            hinge: it is ruled with the parent, and `accept` writes its `done`.
+#            One commit either way, and none when the ticket already says so. A
+#            `done` retires the ticket's run (below), and `tracker retire` takes
+#            out the trees it finished.
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
@@ -645,11 +646,13 @@ notes_of() { # <slug>
     }'
 }
 
-# Whether every source the diffview page at <page> shows is one of <specs>: the same
-# repo, and a range whose ends both start the SHAs the spec names. diffview writes
-# each source into the page's JSON as `"spec": "<repo root>@<a>..<b>"`, its ends
-# pinned to short SHAs, where a spec here carries full ones. A page that shows no
-# source is no diffview page, and none of these.
+# Whether every source the diffview page at <page> shows is one of <specs>, or one a
+# spec extends: the same repo, a start that begins the spec's start SHA, and an end
+# that begins the spec's end SHA or is an ancestor of it. The extended range is an
+# unmerged round grown since its last render, by an amend or a resumed round's next
+# commits. diffview writes each source into the page's JSON as
+# `"spec": "<repo root>@<a>..<b>"`, its ends pinned to short SHAs, where a spec here
+# carries full ones. A page that shows no source is no diffview page, and none of these.
 covers() { # <page> <spec...>
     local page=$1 shown source range a b spec found
     shift
@@ -661,7 +664,11 @@ covers() { # <page> <spec...>
         for spec; do
             [ "$(realpath "${spec%@*}")" = "${source%@*}" ] || continue
             range=${spec##*@}
-            [[ ${range%%..*} == "$a"* && ${range#*..} == "$b"* ]] && { found=1; break; }
+            [[ ${range%%..*} == "$a"* ]] || continue
+            if [[ ${range#*..} == "$b"* ]] || git -C "${source%@*}" merge-base --is-ancestor "$b" "${range#*..}" 2>/dev/null; then
+                found=1
+                break
+            fi
         done
         [ -n "$found" ] || return 1
     done <<< "$shown"

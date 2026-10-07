@@ -1386,9 +1386,28 @@ def test_a_page_showing_sources_review_does_not_render_is_left_as_it_is_and_said
 
     # a session's render over it: the review's own source, and the Backend diff the ticket lacks
     refused(ours.replace("]}", ", " + elsewhere + "]}"))
-    # the same source with an end the ticket's range does not have
-    refused(ours.replace(f"..{tip[:7]}", f"..{cut[:7]}"))
+    # the same source with an end off the ticket's branch: a commit beside it, not under it
+    _, beside = built_on(toy, "elsewhere", "main", "cool.txt")
+    refused(ours.replace(f"..{tip[:7]}", f"..{beside[:7]}"))
     assert len(pages(toy)) == 2
+
+
+def test_a_round_grown_before_its_merge_renders_its_own_page_again(toy: Path) -> None:
+    """An amend, or a resumed round fetched before its merge: the round records no range yet, so its
+    page showed the range to the tip it had, and the range now runs from the same start to a tip
+    that tip is an ancestor of. Nothing on the page is lost to the render over the longer range."""
+    cut, tip = claimed_with_code(toy)
+    page = toy / "agent" / "diffviews" / "warm-preset.html"
+    first = run(toy, "review", "warm-preset")
+    assert first.returncode == 0, first.stderr
+    assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
+
+    grown, later = built_on(toy, "ticket/warm-preset", "", "warmer.txt")
+    assert grown == tip
+    again = run(toy, "review", "warm-preset")
+    assert again.returncode == 0, again.stderr
+    assert pages(toy) == [f"{toy}@{cut}..{tip}", f"{toy}@{cut}..{later}"]
+    assert f"{toy}@{cut[:7]}..{later[:7]}" in page.read_text()
 
 
 def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_again(toy: Path) -> None:
