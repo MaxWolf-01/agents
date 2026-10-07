@@ -2391,6 +2391,24 @@ def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
         assert said.stdout.startswith(first), said.stdout
 
 
+@pytest.mark.parametrize(("script", "budget"), [("dispatch", 600), ("dispatch-ctl", 400)])
+def test_each_help_states_the_interface_within_its_budget(script: str, budget: int) -> None:
+    """`/mx:dispatch` loads both helps into every dispatcher's context, so each holds what a
+    dispatcher acts on, in at most `budget` words as `wc -w` counts them; the mechanism is in
+    comments at the code. `landed` is folded into `review`, and gone."""
+    said = subprocess.run([str(SKILL / script), "--help"], capture_output=True, text=True)
+    assert said.returncode == 0, said.stderr
+    words = subprocess.run(["wc", "-w"], input=said.stdout, capture_output=True, text=True, check=True)
+    assert int(words.stdout) <= budget, f"{script} --help is {words.stdout.strip()} words"
+    assert "landed <slug>" not in said.stdout
+
+
+def test_landed_is_no_command(toy: Path) -> None:
+    said = run(toy, "landed", "warm-preset")
+    assert said.returncode != 0
+    assert "unknown command: landed" in said.stderr, said.stderr
+
+
 def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
     """DISPATCH_RUNNER set on the orchestrator reaches a remote host and is the one its worker runs.
     It is renamed after the ticket whatever its own name: this one is called `manifest`, the file
@@ -2744,7 +2762,7 @@ def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
         assert said.stdout.startswith("Usage: dispatch fuzz start")
         assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
     assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
-            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help"]
+            if line.lstrip().startswith("fuzz ")] == ["fuzz <verb>     the repo's fuzz run: dispatch fuzz --help."]
 
 
 def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
