@@ -195,12 +195,18 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     """What every command here runs in: a HOME of its own, a `diffview` that records the
     arguments `dispatch review` hands it, since the review page is diffview's and the ranges are
     what dispatch has to get right, and DISPATCH_PLUGIN_DIR at an mx directory of its own, which a
-    spawn hands its runner in place of the one the host's claude lists."""
+    spawn hands its runner in place of the one the host's claude lists. The page it writes carries
+    each source's spec in its JSON, as diffview's does."""
     bin_dir = toy.parent / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "diffview").write_text(
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{bin_dir / "diffview.args"}"\n'
-        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n')
+        'echo "diffview: serving $2 at http://127.0.0.1:1/"\n'
+        '[ "$1" = --serve ] && exit 0\n'
+        'out=; page=\n'
+        'while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; --notes) shift 2 ;;'
+        ' *) page="$page{\\"spec\\": \\"$1\\"}, "; shift ;; esac; done\n'
+        'printf \'{"sources": [%s]}\\n\' "$page" > "$out"\n')
     (bin_dir / "diffview").chmod(0o755)
     (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
     (bin_dir / "claude").chmod(0o755)
@@ -244,6 +250,12 @@ def waited(toy: Path, state: Path | None = None) -> Path:
 
 def status_of(toy: Path, slug: str) -> str:
     return (tracked(toy) / f"{slug}.md").read_text().split("status: ")[1].split("\n")[0]
+
+
+def ranges_of(toy: Path, slug: str) -> list[str]:
+    """The ticket's `diff:` ranges, as the tracker reads them."""
+    return subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "get", slug, "diff"],
+                          cwd=toy, capture_output=True, text=True).stdout.split()
 
 
 def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
@@ -1280,9 +1292,7 @@ def test_a_round_in_listed_repos_gets_one_page_and_names_each_range_before_and_a
     landed = run(toy, "review", "warm-preset")
     assert landed.returncode == 0, landed.stderr
     assert status_of(toy, "warm-preset") == "done"
-    got = subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "get", "warm-preset", "diff"],
-                         cwd=toy, capture_output=True, text=True)
-    assert got.stdout.split() == ranges, got.stdout
+    assert ranges_of(toy, "warm-preset") == ranges
     assert pages(toy) == [page, page], "the same sections, read off the recorded ranges"
 
 
@@ -1311,8 +1321,7 @@ def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carr
     assert said.returncode == 0, said.stderr
     assert status_of(toy, "warm-preset") == "review", "ruled with its parent"
     recorded = [f"{at}@{cut}..{tip}" for at, (cut, tip) in first.items()]
-    get = [str(SKILL.parent / "tracker" / "tracker.py"), "get", "warm-preset", "diff"]
-    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == recorded
+    assert ranges_of(toy, "warm-preset") == recorded
 
     # sent back: the resumed worker's next round touches Backend alone
     again = built_on(backend, "ticket/warm-preset", "", "warmer.py")
@@ -1322,36 +1331,54 @@ def test_a_childs_later_round_in_a_listed_repo_renders_beside_the_rounds_it_carr
     sections = [f"{worktree}@{first['code'][0]}..{first['code'][1]}",
                 f"{backend}@{first['Backend'][0]}..{first['Backend'][1]}"]
     assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
-    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == recorded, "unmerged, unrecorded"
+    assert ranges_of(toy, "warm-preset") == recorded, "unmerged, unrecorded"
 
     merged_in(backend, "lamp-ui", "ticket/warm-preset")
     said = run(worktree, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
-    assert subprocess.run(get, cwd=toy, capture_output=True, text=True).stdout.split() == [
-        *recorded, f"Backend@{again[0]}..{again[1]}"]
+    assert ranges_of(toy, "warm-preset") == [*recorded, f"Backend@{again[0]}..{again[1]}"]
     assert pages(toy)[-1] == " ".join([*sections, f"{backend}@{again[0]}..{again[1]}"])
 
 
 def test_a_page_review_did_not_render_is_left_as_it_is_and_said(toy: Path) -> None:
-    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path with no
-    notes file beside it is a session's, rendered by hand, and the render that would replace it
-    does not happen; the rest of the review does, and the exit status says it was not whole."""
+    """`tickets-land-in-listed-repos#P3` for a ticket with code: a page at the ticket's path that
+    shows sources other than the ones `review` last rendered there is a session's, rendered by hand,
+    and the render that would replace it does not happen; the rest of the review does, and the exit
+    status says it was not whole. Its own page, rewritten by diffview with the sources unchanged
+    (the summary landing), it renders again."""
     agent = toy / "agent"
     path = tracked(toy) / "warm-preset.md"
     path.write_text(path.read_text().replace("status: open", "status: claimed", 1))
     git(agent, "commit", "-q", "-am", "warm-preset claimed")
-    built_on(toy, "ticket/warm-preset", "main", "warm.txt")
+    cut, tip = built_on(toy, "ticket/warm-preset", "main", "warm.txt")
     built_on(agent, "ticket/warm-preset", "main", "warm.md")
-    by_hand = agent / "diffviews" / "warm-preset.html"
-    by_hand.parent.mkdir(parents=True)
-    by_hand.write_text("the Backend diff, rendered by hand\n")
+    page = agent / "diffviews" / "warm-preset.html"
+    page.parent.mkdir(parents=True)
+    by_hand = '{"sources": [{"spec": "/elsewhere/Backend@1234567..89abcde"}]}\n'
 
-    said = run(toy, "review", "warm-preset")
-    assert said.returncode != 0
-    assert "did not render it" in said.stderr, said.stderr
-    assert by_hand.read_text() == "the Backend diff, rendered by hand\n"
+    def refused() -> None:
+        said = run(toy, "review", "warm-preset")
+        assert said.returncode != 0
+        assert "leaves that page as it is" in said.stderr, said.stderr
+        assert page.read_text() == by_hand
+        assert status_of(toy, "warm-preset") == "review"
+
+    page.write_text(by_hand)  # before review ever rendered here
+    refused()
     assert not (toy.parent / "bin" / "diffview.args").exists()
-    assert status_of(toy, "warm-preset") == "review"
+
+    page.unlink()  # moved aside, as the refusal says
+    assert run(toy, "review", "warm-preset").returncode == 0
+    ours = page.read_text()
+    assert f"{toy}@{cut}..{tip}" in ours
+
+    page.write_text(ours.replace("]}", "]} <p>the summary, landed</p>"))  # diffview's own rewrite
+    assert run(toy, "review", "warm-preset").returncode == 0
+    assert len(pages(toy)) == 2
+
+    page.write_text(by_hand)  # a session's render over it, with the Backend diff the ticket lacks
+    refused()
+    assert len(pages(toy)) == 2
 
 
 def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) -> None:

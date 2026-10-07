@@ -82,26 +82,26 @@
 #            alike: imports the report the agent branch carries at
 #            agent/show/<slug>/report.md into the ticket, once per report;
 #            refuses an agent branch that wrote a ticket file, whatever else it
-#            left; projects the
-#            ticket's assumptions anchored in code into the review page's
-#            notes; renders agent/diffviews/<slug>.html in the agent repo, one
-#            page with a section per range of code, in the code repo and each
-#            listed repo, and serves it; says the ticket gets no page when no
-#            round of it carries code, and leaves a page at that path with no
-#            <slug>.notes.json beside it, which it did not render, as it is,
-#            exiting nonzero once the rest is done; re-renders the board; and
-#            writes the ticket's status: `review` while any of its branches is
-#            unmerged, `done` once all have merged, with the round's ranges in
-#            the `diff:` frontmatter, `code@<sha>..<sha>`, `agent@<sha>..<sha>`
-#            and `<name>@<sha>..<sha>` in each listed repo where its branch
-#            committed. A listed repo's branch merges into the parent ticket's
-#            branch there where it has one, and into the repo's integration
-#            branch, locally or at origin, otherwise. A child ticket merged
-#            into its parent ticket's branch, which this is, gets its ranges and stays
-#            `review` unless it is a hinge: it is ruled with the parent, and
-#            `accept` writes its `done`. One commit either way, and none when
-#            the ticket already says so. A `done` retires the ticket's run
-#            (below), and `tracker retire` takes out the trees it finished.
+#            left; projects the ticket's assumptions anchored in code into the
+#            review page's notes; renders agent/diffviews/<slug>.html in the
+#            agent repo, one page with a section per range of code, in the code
+#            repo and each listed repo, and serves it; says the ticket gets no
+#            page when no round of it carries code, and leaves a page at that
+#            path it did not render as it is, exiting nonzero once the rest is
+#            done (the record of what it rendered is <slug>.rendered beside the
+#            page); re-renders the board; and writes the ticket's status:
+#            `review` while any of its branches is unmerged, `done` once all
+#            have merged, with the round's ranges in the `diff:` frontmatter,
+#            `code@<sha>..<sha>`, `agent@<sha>..<sha>` and `<name>@<sha>..<sha>`
+#            in each listed repo where its branch committed. A listed repo's
+#            branch merges into the parent ticket's branch there where it has
+#            one, and into the repo's integration branch, locally or at origin,
+#            otherwise. A child ticket merged into its parent ticket's branch,
+#            which this is, gets its ranges and stays `review` unless it is a
+#            hinge: it is ruled with the parent, and `accept` writes its `done`.
+#            One commit either way, and none when the ticket already says so. A
+#            `done` retires the ticket's run (below), and `tracker retire` takes
+#            out the trees it finished.
 #   accept   the user's accept of a parent ticket ruled whole, once its branch
 #            <slug> has merged --no-ff into this one, the branch above it:
 #            writes `done` on every child ticket of it in `review`, then on
@@ -585,14 +585,14 @@ pull_runs() { # <host>
     run bash "$run_log" pull "$1" || echo "dispatch: the run log on $1 could not be pulled; run-log pull $1 tries again" >&2
 }
 
-# <repo> <tip> → the base it has merged into, of the one or two its repo has; nothing, and exit 1,
-# before the merge.
+# <repo> <tip> → each base it has merged into, of the one or two its repo has, one a line; nothing,
+# and exit 1, before the merge.
 merged_into() {
-    local onto
+    local onto found=1
     for onto in $(base_at "$1"); do
-        git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$onto" && { echo "$onto"; return 0; }
+        git -C "$(repo_at "$1")" merge-base --is-ancestor "$2" "$onto" && { echo "$onto"; found=0; }
     done
-    return 1
+    return $found
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
@@ -601,24 +601,25 @@ is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 # that touched one of its repos leaves in another. Before the merge,
 # merge-base against this branch is the answer; after it, the tip is an ancestor
 # of this branch and merge-base would return the tip itself, so the start comes
-# from the merge commit that brought it in. SHAs on both ends, because cleanup
-# deletes the branch while its commits survive.
+# from the merge commit that brought it in, on whichever base holds one. SHAs on
+# both ends, because cleanup deletes the branch while its commits survive.
 range_of() { # <repo> <tip>
     at=$1 tip=$2 top=$(repo_at "$1")
-    if ! onto=$(merged_into "$at" "$tip"); then
+    if ! bases=$(merged_into "$at" "$tip"); then
         # Against both of a listed repo's bases at once, the newest point the tip shares with either.
         # shellcheck disable=SC2046
         echo "$(git -C "$top" merge-base "$tip" $(base_at "$at"))..$tip"
         return 0
     fi
-    merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-    if [ -n "$merge" ]; then
-        echo "$(git -C "$top" merge-base "$merge^1" "$tip")..$tip"
-    elif [ -z "$(git -C "$top" rev-list -1 "$onto..$tip")" ]; then
-        return 0  # the branch carries nothing of its own, so it has no range
-    else
-        die "$tip is on $onto in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
-    fi
+    for onto in $bases; do
+        merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
+        [ -z "$merge" ] || { echo "$(git -C "$top" merge-base "$merge^1" "$tip")..$tip"; return 0; }
+    done
+    for onto in $bases; do
+        [ -n "$(git -C "$top" rev-list -1 "$onto..$tip")" ] ||
+            return 0  # the branch carries nothing of its own, so it has no range
+    done
+    die "$tip is on ${bases//$'\n'/ and } in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
 }
 
 # The notes file is a pure projection of the ticket, rewritten whole on every
@@ -644,6 +645,10 @@ notes_of() { # <slug>
         resolved: .tickets[0].resolved,
     }'
 }
+
+# The sources a diffview page shows, as the JSON inside it spells each one's spec,
+# one a line; nothing for a page that is no diffview page or no file at all.
+shown() { grep -o '"spec": "[^"]*"' "$1" 2>/dev/null | sed 's/^"spec": "//; s/"$//'; } # <page>
 
 # The commit ranges a ticket's rounds have landed as, one per line; nothing
 # before the first of them lands.
@@ -765,22 +770,26 @@ review() {
         esac
     done
 
-    # A page this command rendered has the notes file it wrote beside it, so a page
-    # at $out.html without one is somebody else's: a session's, rendered by hand at
-    # the path the board links. That page stays as it is, whatever the ticket carries.
+    # What proves a page at $out.html is this command's: the sources it shows, which
+    # diffview writes into the page with each range pinned to SHAs, are the ones the
+    # record beside it says the last render here showed. A page with no record, or
+    # other sources, is somebody else's (a session's, rendered by hand at the path
+    # the board links) and stays as it is, whatever the ticket carries. Sources and
+    # not bytes, because diffview rewrites its own page once the summary is written.
     out=$diffviews/$id
     kept=
     if [ ${#specs[@]} -eq 0 ]; then
         echo "dispatch: no round of $id carries code, so it gets no review page; its artefacts are on the board" >&2
-    elif [ -e "$out.html" ] && [ ! -e "$out.notes.json" ]; then
-        echo "dispatch: $out.html has no $out.notes.json beside it, so this command did not render it and leaves it as it is; move it aside and run review again for $id's page" >&2
+    elif [ -e "$out.html" ] && { [ ! -e "$out.rendered" ] || [ "$(shown "$out.html")" != "$(cat "$out.rendered")" ]; }; then
+        echo "dispatch: $out.html shows sources other than the page this command last rendered there, so it leaves that page as it is; move it aside and run review again for $id's page" >&2
         kept=1
     else
         mkdir -p "$(dirname "$out")"
         # The tracker's own copy, which the import above has brought the worker's
         # closing comment and its assumptions into.
         notes_of "$id" > "$out.notes.json" || exit 1
-        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html"
+        run diffview "${specs[@]}" --notes "$out.notes.json" -o "$out.html" || exit 1
+        shown "$out.html" > "$out.rendered"
         run diffview --serve "$diffviews"
     fi
     # After the page, which reads the ticket's notes from its file
