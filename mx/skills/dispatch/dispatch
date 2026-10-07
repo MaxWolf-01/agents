@@ -472,8 +472,8 @@ push_listed() { # <host>
     return $rc
 }
 
-# Where a worker finds a listed repo: <name>'s path inside the project, the same path in its
-# worktree, or nothing for a repo outside the project, which is `sibling_of` it, beside the worktree.
+# A listed repo's path inside the project, which is also its path in a worker's worktree; nothing
+# for a repo outside the project, which a worker finds at `sibling_of`, beside its worktree.
 place_of() { # <name>
     local project
     project=$(realpath "$(dirname "$agent_top")")
@@ -782,9 +782,9 @@ range_of() { # <repo> <tip>
 # repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
 # under the path its repo's section shows, the anchor with that prefix cut. An assumption anchored
 # in a repo with no section on the page, the agent repo's always, has no file there and stays on
-# the ticket. diffview matches a note to a file by path alone, in whichever section holds it, so
-# where a note's path also names a file in another repo's section the render says the note may
-# show there.
+# the ticket. diffview places a note by path alone, in whichever section holds it, so where a
+# note's path also names a file in another repo's section the render says the note may show there;
+# the check below follows diffview's placement, and goes stale with it.
 notes_of() { # <slug>
     local name place anchors='{}' notes i spec id repo path hit other
     local -a shows=()
@@ -813,7 +813,7 @@ notes_of() { # <slug>
         for i in "${!specs[@]}"; do
             names_file "$path" <<< "${shows[i]}" && hit+=" ${spec_repos[i]}"
         done
-        # A file no section changes joins the first section that holds it.
+        # diffview's `attach_untouched`: a file no section changes joins the first section holding it.
         if [ -z "$hit" ]; then
             for i in "${!specs[@]}"; do
                 spec=${specs[i]}
@@ -829,8 +829,8 @@ notes_of() { # <slug>
     jq --argjson notes "$notes" '{notes: [$notes[] | del(.repo)], resolved: .tickets[0].resolved}' <<< "$read"
 }
 
-# Whether one of the paths on stdin is <path>, or ends in `/<path>`: the files a note on <path> can
-# land on, as diffview matches them.
+# Whether one of the paths on stdin is <path>, or ends in `/<path>`, which is how diffview's page
+# matches a note on <path> to a changed file.
 names_file() { awk -v p="$1" '$0 == p || substr($0, length($0) - length(p)) == "/" p { found = 1 } END { exit !found }'; } # <path>
 
 # Whether every source the diffview page at <page> shows is one of <specs>, or one a
