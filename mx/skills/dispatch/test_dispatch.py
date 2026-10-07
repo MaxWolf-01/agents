@@ -1906,7 +1906,7 @@ def test_a_review_reads_the_list_for_a_range_in_a_listed_repo_the_ticket_does_no
     assert pages(toy) == [f"{backend}@{cut}..{tip} {toy}@{code[0]}..{code[1]}"]
 
 
-# `dispatch landed` against GitHub as two fakes: `gh` answers `pr view` from a file per pull request
+# `dispatch review` against GitHub as two fakes: `gh` answers `pr view` from a file per pull request
 # and records every call, and the listed repo's origin is a bare repo here, which git reaches through
 # the GitHub URL the repo names as its origin. The oracle is the history the check writes there as
 # GitHub would: a squash, a rebase or a merge commit on `development`, after a change of somebody
@@ -1926,10 +1926,10 @@ AUTHORED = ("2026-10-01T09:00:00Z", "2026-10-01T11:30:00Z")
 
 def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@github.com:helferline/Backend.git") -> Path:
     """`Backend` nested in the toy, cloned from `Backend.git` here, whose URL git rewrites from
-    GitHub's `helferline/Backend`; warm-preset claimed naming it, with `gh` in its `gh:`. Its round is
+    GitHub's `helferline/Backend`; warm-preset in `review` naming it, with `gh` in its `gh:`. Its round is
     a commit in the code repo and the agent repo, both merged into `main`, and two in Backend on
     `ticket/warm-preset`, authored at AUTHORED, pushed for its pull request. `url` is its origin's
-    URL, in any form GitHub gives one. Answers Backend."""
+    URL, in any form GitHub gives one. GitHub says #7 is open. Answers Backend."""
     agent = toy / "agent"
     (toy / ".gitignore").write_text("/agent/\n/Backend/\n")
     git(toy, "commit", "-q", "-am", "Backend is a repo of its own")
@@ -1941,8 +1941,9 @@ def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@githu
     assert git(backend, "config", "--get", "remote.origin.url").strip() == url
     listing(toy, "warm-preset", '[Backend]\npath = "Backend"\nintegration = "development"\n', "Backend")
     path = tracked(toy) / "warm-preset.md"
-    path.write_text(path.read_text().replace("repos: [Backend]", f"repos: [Backend]\ngh: [{gh}]", 1))
-    git(agent, "commit", "-q", "-am", "warm-preset's pull request")
+    path.write_text(path.read_text().replace("repos: [Backend]", f"repos: [Backend]\ngh: [{gh}]", 1)
+                    .replace("status: claimed", "status: review", 1))
+    git(agent, "commit", "-q", "-am", "warm-preset's pull request, its build in review")
     for top in (toy, agent):
         built_on(top, "ticket/warm-preset", "main", "warm.txt")
         merged_in(top, "main", "ticket/warm-preset")
@@ -1957,6 +1958,7 @@ def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@githu
     (toy.parent / "bin" / "gh").write_text(FAKE_GH)
     (toy.parent / "bin" / "gh").chmod(0o755)
     (toy.parent / "bin" / "gh.answers").mkdir()
+    answer({"state": "OPEN", "baseRefName": "development", "mergeCommit": None, "commits": []}, backend)
     return backend
 
 
@@ -1979,7 +1981,9 @@ def merged_on_github(backend: Path, how: Literal["squash", "rebase", "merge"], n
         git(backend, "cherry-pick", f"development..{branch}")
     elif how == "merge":
         git(backend, "merge", "-q", "--no-ff", "-m", f"Merge pull request #{number}", branch)
+    seen = git(backend, "rev-parse", "origin/development").strip()
     git(backend, "push", "-q", "origin", "github:development")
+    git(backend, "update-ref", "refs/remotes/origin/development", seen)  # what this clone saw before GitHub merged
     tip = git(backend, "rev-parse", "HEAD").strip()
     git(backend, "switch", "-q", "development")
     git(backend, "branch", "-q", "-D", "github")
@@ -1995,43 +1999,61 @@ def answer(said: dict, backend: Path, number: int = 7) -> None:
 
 
 def only_read(toy: Path) -> None:
-    """`tickets-land-in-listed-repos#P7`: every call of `gh` was a read: `landed`'s `pr view`, and the
-    query of the board a review renders."""
+    """`tickets-land-in-listed-repos#P7`: every call of `gh` was a read: review's `pr view`, and the
+    query of the board it renders."""
     calls = (toy.parent / "bin" / "gh.calls").read_text().splitlines()
     assert any(call.startswith("pr view ") for call in calls), calls
     assert all(call.startswith(("pr view ", "api graphql -f query=query ")) for call in calls), calls
 
 
+def round_ranges(toy: Path) -> list[str]:
+    """warm-preset's code and agent ranges as `on_github` built them: each a commit on its ticket
+    branch. Read before the review whose `done` deletes those branches."""
+    return [f"{name}@{git(top, 'rev-parse', 'ticket/warm-preset~1').strip()}..{git(top, 'rev-parse', 'ticket/warm-preset').strip()}"
+            for name, top in (("code", toy), ("agent", toy / "agent"))]
+
+
 def test_a_squashed_pull_requests_commit_is_the_tickets_range_there_and_the_ticket_reaches_done(toy: Path) -> None:
     """The squash is one commit on `development`, and the ticket's two commits on no branch there:
-    `landed` records `Backend@<merge>^..<merge>`, which no review could, deletes the ticket branch the
-    pull request carried, and renders the page over the new range in place of review's. The review
-    after it records the code and agent repos' ranges and writes `done`, which the tracker's done
-    check allows. Origin's refs are as GitHub left them."""
+    the review after it records `Backend@<merge>^..<merge>`, which no branch could give it, deletes
+    the ticket branch the pull request carried, records the code and agent repos' ranges, writes
+    `done`, which the tracker's done check allows, and renders the page over what landed in place of
+    the one it rendered before. Origin's refs are as GitHub left them."""
     backend = on_github(toy)
     said = run(toy, "review", "warm-preset")
     assert said.returncode == 0, said.stderr
     assert status_of(toy, "warm-preset") == "review", "the pull request is open"
+    assert "helferline/Backend#7 is open and not merged" in said.stderr, said.stderr
     code, agent = (git(top, "rev-parse", "ticket/warm-preset~1", "ticket/warm-preset").split() for top in (toy, toy / "agent"))
     fork = git(backend, "rev-parse", "development").strip()
     assert pages(toy) == [f"{toy}@{code[0]}..{code[1]} {backend}@{fork}..{git(backend, 'rev-parse', 'ticket/warm-preset').strip()}"]
 
     theirs, merge = merged_on_github(backend, "squash")
     origin = git(toy.parent / "Backend.git", "for-each-ref")
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
-    only_read(toy)
-    assert git(toy.parent / "Backend.git", "for-each-ref") == origin
-    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
-    assert not git(backend, "branch", "--list", "ticket/warm-preset")
-    assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code[0]}..{code[1]}"
-
     done = run(toy, "review", "warm-preset")
     assert done.returncode == 0, done.stderr
+    only_read(toy)
+    assert git(toy.parent / "Backend.git", "for-each-ref") == origin
     assert status_of(toy, "warm-preset") == "done"
     assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", f"code@{code[0]}..{code[1]}",
                                             f"agent@{agent[0]}..{agent[1]}"]
-    assert pages(toy)[-1] == pages(toy)[-2]
+    assert not git(backend, "branch", "--list", "ticket/warm-preset")
+    assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code[0]}..{code[1]}"
+
+
+def test_a_review_asks_github_nothing_once_every_listed_branch_has_merged(toy: Path) -> None:
+    """Backend's branch merged --no-ff into `development` here, as in max's own repos: the ticket
+    names a pull request all the same, and the review that writes `done` reads it off the merge and
+    calls no `gh pr view`."""
+    backend = on_github(toy)
+    fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
+    merged_in(backend, "development", "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
+    calls = toy.parent / "bin" / "gh.calls"
+    assert not calls.exists() or "pr view" not in calls.read_text()
 
 
 def test_a_rebase_merges_commits_replace_the_range_the_ticket_recorded_there(toy: Path) -> None:
@@ -2047,67 +2069,62 @@ def test_a_rebase_merges_commits_replace_the_range_the_ticket_recorded_there(toy
 
     theirs, merge = merged_on_github(backend, "rebase")
     assert git(backend, "rev-parse", f"{merge}~2").strip() == theirs
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
+    agent = round_ranges(toy)[1]
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
     only_read(toy)
-    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", code]
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", code, agent]
+    assert status_of(toy, "warm-preset") == "done"
     assert not git(backend, "branch", "--list", "ticket/warm-preset")
     assert pages(toy)[-1] == f"{backend}@{theirs}..{merge} {toy}@{code.partition('@')[2]}"
 
 
-def test_a_pull_request_merged_with_a_merge_commit_leaves_the_record_as_review_writes_it(toy: Path) -> None:
-    """A merge commit brings the ticket's own commits in, so `landed` changes nothing: no range, no
-    branch, no page. The review after it records Backend's range as the ticket branch's, from its
-    fork, and writes `done`."""
+def test_a_pull_request_merged_with_a_merge_commit_is_recorded_as_its_branch(toy: Path) -> None:
+    """A merge commit brings the ticket's own commits in as they were: the review reads origin's
+    `development`, which now holds the ticket branch, records Backend's range from its fork, and
+    writes `done`."""
     backend = on_github(toy)
     fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
     assert run(toy, "review", "warm-preset").returncode == 0
     merged_on_github(backend, "merge")
-    ticket_before = (tracked(toy) / "warm-preset.md").read_text()
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
-    only_read(toy)
-    assert "merge commit" in landed.stderr
-    assert (tracked(toy) / "warm-preset.md").read_text() == ticket_before
-    assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
-    assert len(pages(toy)) == 1, "review's page alone"
-
     done = run(toy, "review", "warm-preset")
     assert done.returncode == 0, done.stderr
+    only_read(toy)
+    assert "merge commit" in done.stderr
     assert status_of(toy, "warm-preset") == "done"
     assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
 
 
 def test_a_ticket_branch_holding_commits_its_pull_request_did_not_carry_stays(toy: Path) -> None:
     """A commit made on the ticket branch after its pull request merged never reached GitHub: the
-    range is still the squash's, the branch keeps that commit, and the exit status says done waits."""
+    range is still the squash's, the branch keeps that commit, the ticket stays in `review`, and the
+    exit status says done waits."""
     backend = on_github(toy)
     theirs, merge = merged_on_github(backend, "squash")
     _, later = built_on(backend, "ticket/warm-preset", "", "warmest.py")
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode != 0
-    assert "holds commits its pull request did not carry" in landed.stderr, landed.stderr
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "holds commits its pull request did not carry" in said.stderr, said.stderr
     assert git(backend, "rev-parse", "ticket/warm-preset").strip() == later
     assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
+    assert status_of(toy, "warm-preset") == "review"
 
 
 def test_a_pull_request_not_merged_and_one_in_no_listed_repo_change_nothing_and_say_why(toy: Path) -> None:
-    """An open pull request leaves Backend's record and branch as they are and the exit status
-    nonzero, since `done` waits on it; a reference to a repo the project does not list is said and
-    asks GitHub nothing."""
+    """An open pull request is every review before the team merges: Backend's record and branch stay
+    as they are and the ticket waits in `review`. A reference to a repo the project does not list is
+    said and asks GitHub nothing."""
     backend = on_github(toy, gh="helferline/Backend#7, helferline/Helix#3")
     tip = git(backend, "rev-parse", "ticket/warm-preset").strip()
-    answer({"state": "OPEN", "baseRefName": "development", "mergeCommit": None, "commits": []}, backend)
-    ticket_before = (tracked(toy) / "warm-preset.md").read_text()
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode != 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
     only_read(toy)
-    assert "helferline/Backend#7 is open and not merged" in landed.stderr, landed.stderr
-    assert "helferline/Helix#3 is in no repo" in landed.stderr, landed.stderr
+    assert "helferline/Backend#7 is open and not merged" in said.stderr, said.stderr
+    assert "helferline/Helix#3 is in no repo" in said.stderr, said.stderr
     assert "helferline/Helix" not in (toy.parent / "bin" / "gh.calls").read_text()
-    assert (tracked(toy) / "warm-preset.md").read_text() == ticket_before
+    assert status_of(toy, "warm-preset") == "review"
+    assert ranges_of(toy, "warm-preset") == []
     assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
-    assert not (toy.parent / "bin" / "diffview.args").exists()
 
 
 @pytest.mark.parametrize("url", ["git@github.com:helferline/Backend.git", "https://github.com/Helferline/backend",
@@ -2117,26 +2134,27 @@ def test_a_pull_request_is_read_in_the_repo_whose_origin_github_names_in_any_for
     `gh:` spells it, all name helferline/Backend."""
     backend = on_github(toy, url=url)
     theirs, merge = merged_on_github(backend, "squash")
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
-    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
 
 
 def test_a_merge_origin_does_not_hold_and_a_pull_request_github_does_not_answer_change_nothing(toy: Path) -> None:
     """#7 is reported merged as a commit `development` at origin does not hold, and GitHub answers
-    nothing for #8: Backend's record and branch stay as they are, each is said, and the exit status
-    is nonzero."""
+    nothing for #8: Backend's record and branch stay as they are, each is said, the ticket waits in
+    `review`, and the exit status is nonzero."""
     backend = on_github(toy, gh="helferline/Backend#7, helferline/Backend#8")
     tip = git(backend, "rev-parse", "ticket/warm-preset").strip()
     _, nowhere = built_on(backend, "nowhere", "development", "nowhere.py")
     answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": nowhere}, "commits": []}, backend)
-    ticket_before = (tracked(toy) / "warm-preset.md").read_text()
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode != 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
     only_read(toy)
-    assert f"merge {nowhere} is not on development as origin has it" in landed.stderr, landed.stderr
-    assert "GitHub did not answer for helferline/Backend#8" in landed.stderr, landed.stderr
-    assert (tracked(toy) / "warm-preset.md").read_text() == ticket_before
+    assert f"merge {nowhere} is not on development as origin has it" in said.stderr, said.stderr
+    assert "GitHub did not answer for helferline/Backend#8" in said.stderr, said.stderr
+    assert ranges_of(toy, "warm-preset") == []
+    assert status_of(toy, "warm-preset") == "review"
     assert git(backend, "rev-parse", "ticket/warm-preset").strip() == tip
 
 
@@ -2154,17 +2172,18 @@ def test_a_merge_commits_range_stands_beside_a_squash_in_the_same_repo(toy: Path
     git(backend, "switch", "-q", "development")
     answer({"state": "MERGED", "baseRefName": "development", "mergeCommit": {"oid": merge},
             "commits": [{"oid": other, "messageHeadline": "other", "authoredDate": AUTHORED[0]}]}, backend, 8)
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
-    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}"]
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{squash}", f"Backend@{squash}..{other}", *rounds]
 
 
-def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_for_its_accept(toy: Path) -> None:
+def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_on_its_accept(toy: Path) -> None:
     """lamp-ui is warm-preset's parent. warm-preset's Backend branch merged into lamp-ui's there, its
     range recorded as the review of that merge writes it, and lamp-ui's own branch, named by its
-    slug as dispatch cuts a parent's, went to GitHub as #9 and was squashed. `landed` records the
-    squash on both tickets and deletes both branches, which the done check reads, so the parent's
-    accept writes both `done`s."""
+    slug as dispatch cuts a parent's, went to GitHub as #9 and was squashed. The parent's accept
+    records the squash on both tickets, deletes both branches, which the done check reads, and writes
+    both `done`s."""
     backend = on_github(toy)
     agent = toy / "agent"
     fork, tip = git(backend, "rev-parse", "development", "ticket/warm-preset").split()
@@ -2177,22 +2196,23 @@ def test_a_parents_squashed_pull_request_lands_it_and_the_tickets_under_it_for_i
     git(agent, "commit", "-q", "-am", "the tree, for its ruling")
     theirs, merge = merged_on_github(backend, "squash", 9, branch="lamp-ui")
 
-    landed = run(toy, "landed", "lamp-ui")
-    assert landed.returncode == 0, landed.stderr
-    for slug in ("lamp-ui", "warm-preset"):
-        assert ranges_of(toy, slug) == [f"Backend@{theirs}..{merge}"], slug
-    assert not git(backend, "branch", "--list", "lamp-ui", "ticket/warm-preset")
-
     built_on(toy, "lamp-ui", "main", "ui.txt")
     merged_in(toy, "main", "lamp-ui")
     accepted = run(toy, "accept", "lamp-ui")
     assert accepted.returncode == 0, accepted.stderr
+    only_read(toy)
+    assert not git(backend, "branch", "--list", "lamp-ui", "ticket/warm-preset")
+    landed = lambda slug: git(agent, "show", f"HEAD~1:tickets/{slug}.md")  # noqa: E731  # retired since
+    for slug in ("lamp-ui", "warm-preset"):
+        assert "status: done" in landed(slug), slug
+        assert f"Backend@{theirs}..{merge}" in landed(slug), slug
+    assert f"Backend@{fork}..{tip}" not in landed("warm-preset")
 
 
 def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_run_on_the_host(
         toy: Path, staged: Path) -> None:
-    """Backend's branch was squashed into `development` and deleted here, its range the squash, as
-    `landed` leaves them; the host still holds Backend for the ticket. The `done` retires the run all
+    """Backend's branch was squashed into `development` here and deleted, its range the squash,
+    recorded by hand; the host still holds Backend for the ticket. The `done` retires the run all
     the same, since Backend is a repo the ticket names and its round has landed."""
     repos = staged_listed(toy)
     (staged.parent / "run-worker.sh").write_text(BUILDING_LISTED)
@@ -2215,7 +2235,7 @@ def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_r
     subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "set", "warm-preset", f"diff+=Backend@{fork}..{squash}"],
                    cwd=toy, check=True, capture_output=True)
     git(toy / "agent", "commit", "-q", "-am", "warm-preset: the range that landed in Backend")
-    (toy / "agent" / "diffviews" / "warm-preset.html").unlink()  # `landed` renders it over that range
+    (toy / "agent" / "diffviews" / "warm-preset.html").unlink()  # the page over what landed is a new one
 
     landed = subprocess.run([str(staged), "review", "warm-preset"], cwd=toy, capture_output=True, text=True, env=env, timeout=180)
     assert landed.returncode == 0, landed.stderr
@@ -2224,19 +2244,21 @@ def test_a_ticket_whose_branch_in_a_listed_repo_landed_as_a_squash_retires_its_r
     assert not (hosted / "jarvis-warm-preset").exists()
 
 
-def test_landed_leaves_a_page_it_did_not_render_as_it_is_and_says_so(toy: Path) -> None:
+def test_a_review_over_what_landed_leaves_a_page_it_did_not_render_as_it_is_and_says_so(toy: Path) -> None:
     """A page at the ticket's path showing a source neither the review before the landing nor the
-    landing renders, one a session rendered by hand: `landed` records the ranges and leaves that page,
-    and the exit status says so."""
+    one after it renders, one a session rendered by hand: the review records what landed, writes
+    `done`, leaves that page, and the exit status says so."""
     backend = on_github(toy)
     assert run(toy, "review", "warm-preset").returncode == 0
     page = toy / "agent" / "diffviews" / "warm-preset.html"
     page.write_text('{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n')
     theirs, merge = merged_on_github(backend, "squash")
-    landed = run(toy, "landed", "warm-preset")
-    assert landed.returncode != 0
-    assert "leaves that page as it is" in landed.stderr, landed.stderr
-    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}"]
+    rounds = round_ranges(toy)
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode != 0
+    assert "leaves that page as it is" in said.stderr, said.stderr
+    assert ranges_of(toy, "warm-preset") == [f"Backend@{theirs}..{merge}", *rounds]
+    assert status_of(toy, "warm-preset") == "done"
     assert page.read_text() == '{"sources": [{"spec": "/elsewhere@1234567..89abcde"}]}\n'
 
 
@@ -2378,6 +2400,17 @@ def test_dispatch_ctl_help_needs_no_repo(tmp_path: Path) -> None:
         said = subprocess.run([str(DISPATCH), *args], cwd=tmp_path, capture_output=True, text=True)
         assert said.returncode == 0, said.stderr
         assert said.stdout.startswith(first), said.stdout
+
+
+@pytest.mark.parametrize(("script", "budget"), [("dispatch", 600), ("dispatch-ctl", 400)])
+def test_each_help_states_the_interface_within_its_budget(script: str, budget: int) -> None:
+    """`/mx:dispatch` loads both helps into every dispatcher's context, so each holds what a
+    dispatcher acts on, in at most `budget` words as `wc -w` counts them; the mechanism is in
+    comments at the code."""
+    said = subprocess.run([str(SKILL / script), "--help"], capture_output=True, text=True)
+    assert said.returncode == 0, said.stderr
+    words = subprocess.run(["wc", "-w"], input=said.stdout, capture_output=True, text=True, check=True)
+    assert int(words.stdout) <= budget, f"{script} --help is {words.stdout.strip()} words"
 
 
 def test_a_remote_spawn_runs_the_runner_it_was_given(toy: Path, staged: Path) -> None:
@@ -2733,7 +2766,7 @@ def test_the_fuzz_verbs_reference_is_their_own_help() -> None:
         assert said.stdout.startswith("Usage: dispatch fuzz start")
         assert all(f"  {verb} " in said.stdout for verb in ("start", "stop", "clean", "check", "patch")), said.stdout
     assert [line for line in subprocess.run([str(DISPATCH), "--help"], capture_output=True, text=True).stdout.splitlines()
-            if line.lstrip().startswith("fuzz ")] == ["  fuzz     the repo's fuzz run, restarted by each push to its host: dispatch fuzz --help"]
+            if line.lstrip().startswith("fuzz ")] == ["fuzz <verb>     the repo's fuzz run: dispatch fuzz --help."]
 
 
 def test_a_project_that_sets_its_own_database_is_refused_and_left_undesignated(fuzzable: Path) -> None:
