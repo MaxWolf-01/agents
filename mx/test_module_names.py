@@ -1,5 +1,5 @@
 """Every module the checks under mx import by its bare name names one file. Run: pytest
-test_module_names.py.
+test_module_names.py, or `make check`.
 
 A skill's checks put their own directory on the import path, and a run collects several skills'
 checks into one process, so two files of one name shadow each other: whichever directory went on
