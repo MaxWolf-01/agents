@@ -27,14 +27,13 @@ import tyro
 class Args:
     pngs: Annotated[list[Path], tyro.conf.Positional]
     """The PNG files to compress, each rewritten in place."""
-    level: int = 4
-    """oxipng's optimisation level, 0 to 6; past 4 it takes longer for no gain on these figures."""
 
 
 def main(args: Args) -> None:
     for png in args.pngs:
         before = png.stat().st_size
-        oxipng.optimize(png, level=args.level, strip=oxipng.StripChunks.safe())
+        # past level 4, oxipng takes longer for no gain on these figures
+        oxipng.optimize(png, level=4, strip=oxipng.StripChunks.safe())
         print(f"{png.name}: {before // 1024} KB -> {os.path.getsize(png) // 1024} KB")
 
 
