@@ -30,7 +30,7 @@ import turn_review
 import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
-from conftest import SPOKEN_AFTER, UNATTENDED, unreachable
+from session_checks import SPOKEN_AFTER, UNATTENDED, unreachable
 from test_stop_hook import LEFT_ALONE, LONG, TURN_STARTS, UNPARSEABLE, appended, logged, with_write
 from test_stop_hook import payload as stopped
 from test_turn_review import CATALOGUE_FIXTURE, RULES_FIXTURE

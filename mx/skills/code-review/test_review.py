@@ -307,11 +307,10 @@ def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo
     assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
 
 
-def test_light_mode_without_a_spec_says_there_is_none_to_judge_against(repo):
+def test_light_mode_without_a_spec_carries_no_spec_part(repo):
     assert run(repo, "--light").returncode == 0
     brief = (review_dir(repo) / "briefs" / "light.md").read_text()
     assert "## Spec:" not in brief
-    assert "invent no requirement for it" in brief
     assert not (review_dir(repo) / "ticket.md").exists()
 
 
@@ -340,6 +339,28 @@ def test_the_light_reviewer_of_a_diff_with_tests_reads_what_the_tests_reviewer_d
     given = sources(review_dir(repo) / "briefs" / "light.md")
     assert [path.name for path in given[-2:]] == ["TEST-SMELLS.md", "testing-jobs.md"]
     assert not any(path.parent.name == "testing" for path in given), "the whole testing skill was handed over"
+
+
+@pytest.mark.parametrize(("touches_tests", "args", "brief", "handed"), [
+    (True, ("--axes", "standards"), "standards", True),
+    (True, ("--axes", "standards,tests", "--spec", "SPEC"), "standards", False),
+    (False, ("--light",), "light", False),
+    (False, ("--axes", "standards"), "standards", False),
+])
+def test_the_test_sources_go_to_whoever_reads_the_tests_when_no_tests_axis_runs(repo, touches_tests, args, brief, handed):
+    """The light or standards reviewer of a diff that touches tests reads them in the Tests
+    reviewer's place; beside a Tests axis, or on a diff with no test in it, nobody else needs the
+    baseline (`/mx:code-review`, What binds the review)."""
+    if not touches_tests:
+        commit(repo, "docs/notes.md", "a diff that touches no test\n")
+
+    assert run(repo, *(spec(repo) if arg == "SPEC" else arg for arg in args)).returncode == 0
+
+    given = [path.name for path in sources(review_dir(repo) / "briefs" / f"{brief}.md")]
+    if handed:
+        assert given[-2:] == ["TEST-SMELLS.md", "testing-jobs.md"]
+    else:
+        assert not {"TEST-SMELLS.md", "testing-jobs.md"} & set(given)
 
 
 def test_a_spec_given_as_a_file_is_read_as_the_file(repo):

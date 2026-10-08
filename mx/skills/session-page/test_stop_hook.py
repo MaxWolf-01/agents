@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import session_page
 import stop_hook
 import turn_review
-from conftest import BEFORE_IT, SPOKEN_AFTER, unreachable
+from session_checks import BEFORE_IT, SPOKEN_AFTER, unreachable
 from session_page import PAGE, PREVIOUS, SESSIONS, render_session
 from stop_hook import decide
 from test_reading import messages_of

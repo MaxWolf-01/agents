@@ -1,4 +1,4 @@
-# Machine-Consumable Output
+# Machine-consumable output
 
 The branch of [`tyro-cli`](SKILL.md) for a CLI whose output a program or an agent reads as well as a human.
 

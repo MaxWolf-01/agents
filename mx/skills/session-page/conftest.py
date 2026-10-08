@@ -7,7 +7,6 @@ import os
 import shutil
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -15,13 +14,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 
 import turn_review  # noqa: E402
+from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED  # noqa: E402
 from session_page import SESSIONS  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
-SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of
-# the sessions the hooks leave alone are marked in the environment, and the suite runs in one of
-# them whenever a dispatched worker verifies its branch
-UNATTENDED = ("DISPATCH_WORKLOG", "CLAUDE_CODE_SESSION_ATTENDED")
 
 
 @pytest.fixture(autouse=True)
@@ -44,12 +40,6 @@ def registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     (config / "sessions").mkdir(parents=True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     return config / "sessions"
-
-
-def unreachable(system: str, prompt: str) -> list[dict]:
-    """A reviewer stand-in for a check where no model call may be made. It fails the check through
-    `pytest.fail`, which the review's fail-open handler does not catch."""
-    pytest.fail("the reviewer was called where no model call may be made")
 
 
 @pytest.fixture
@@ -83,14 +73,6 @@ def stale_page() -> str:
     """A page in the session's directory from the turn before, which a render replaces and a turn
     the hook sends back leaves standing."""
     return "<html>the page the turn before rendered</html>"
-
-
-# The worked example's transcript ends with record 4's Write call, after the last prompt: that
-# turn wrote its record. A prompt after it, with the records last touched before it, is a turn
-# that wrote none.
-SPOKEN_AFTER = {"type": "user", "message": {"role": "user", "content": "And the ledger's second bank?"},
-                "timestamp": "2026-09-23T01:35:00.000Z"}
-BEFORE_IT = datetime(2026, 9, 23, 1, 31, tzinfo=UTC).timestamp()
 
 
 @pytest.fixture

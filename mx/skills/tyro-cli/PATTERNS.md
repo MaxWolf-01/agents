@@ -1,8 +1,8 @@
-# Past a flat dataclass
+# Subcommands, nested configs and tyro.conf
 
 The branch of [`tyro-cli`](SKILL.md) for a CLI that outgrows Pattern 1: subcommands, nested configs, and the `tyro.conf` features beyond a plain field.
 
-## Pattern 2a: Decorator Subcommands (preferred for extensible CLIs)
+## Pattern 2a: decorator subcommands (preferred for extensible CLIs)
 
 `tyro.extras.SubcommandApp`: click-inspired decorator API. Works with 1+ subcommands (unlike Union which needs 2+).
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 - `description` goes on `.cli()`, not `SubcommandApp()`.
 - `OmitArgPrefixes` avoids `--args.` prefix from the function parameter name.
 
-## Pattern 2b: Union Subcommands (static multi-command tools)
+## Pattern 2b: union subcommands (static multi-command tools)
 
 When subcommands are known at type-definition time and you want pure type-based dispatch.
 
@@ -63,11 +63,11 @@ if __name__ == "__main__":
     cmd = tyro.cli(Cmd, description=__doc__)
 ```
 
-### Subcommand Argument Ordering
+### Subcommand argument ordering
 
 Arguments before the subcommand selector go to the parent parser. Arguments after go to the subcommand. Use `tyro.conf.CascadeSubcommandArgs` to relax this constraint if mixing shared args with subcommands.
 
-## Pattern 3: Nested Dataclasses (hierarchical configs)
+## Pattern 3: nested dataclasses (hierarchical configs)
 
 When arguments naturally group into subsections. Creates dot-prefixed flags like `--optimizer.lr`.
 
@@ -90,7 +90,7 @@ config = tyro.cli(Config)
 
 **`OmitArgPrefixes` with nested dataclasses** can cause name collisions if nested structs share field names. Only use it for flat, single-dataclass CLIs.
 
-## Useful Features Reference
+## Useful features reference
 
 | Feature | Usage | When |
 |---|---|---|

@@ -17,7 +17,7 @@ How each part wears the tokens; `demo.html` renders every line, and its styleshe
 - **Contents**: the `v-meta` word "contents" over `v-small` muted links, the current one in accent.
 - **Steps, definitions, footnotes**: step numbers in `v-num` muted, in a margin column beside the text; a term in `v-h3` with its definition in muted under a hairline; footnotes as a list under a hairline, numbers in accent.
 - **Overlay** (dialog, menu, tooltip, toast): the same ground, a hairline, radius `--radius`. The dialog backdrop is strong at 40% and does the layering; a highlighted menu item is wash with accent text.
-- **Chart**: the form is `dataviz`'s, the paint the page's ink. Grid lines are edge, the baseline muted, the data body ink, and the one series that carries the point accent with the wash under it.
+- **Chart**: `dataviz` picks the form and the house paints it. Grid lines are edge, the baseline muted, the data body ink, and the one series that carries the point accent with the wash under it.
 - **Two-valued data** (hit and miss, added and removed): the first value sits on `wash`, the second on accent-2 at 18%, its line number or marker in accent-2 at weight 500. Green and red stay outside the palette, for the one case where a convention outranks it, such as a diff.
 - **Diagram**: the figure skin in `/mx:show`'s `SVG-FIGURES.md`.
 - **Motion**: colour transitions at 150ms, overlays fade at 200ms, nothing else moves.

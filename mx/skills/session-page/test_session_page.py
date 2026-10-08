@@ -32,7 +32,7 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import SESSION
+from session_checks import SESSION
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
