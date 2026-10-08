@@ -2,7 +2,7 @@ PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 HOOKS := mx/hooks/hooks.json
 
-.PHONY: check test test-all version release-patch release-minor release-major
+.PHONY: check test test-all test-full-path version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -18,16 +18,28 @@ check:
 JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --with pytest --with pytest-xdist --with hypothesis --with libcst --with tyro --with mutmut~=3.8.0 --with coverage --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider -n $(JOBS)
+UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider
+PYTEST = $(UV_PYTEST) -n $(JOBS)
+# The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
+# the command line. Never read from the environment, so an exported TESTS cannot narrow a release.
+TESTS = mx/
 
-# The test files this tree's changes since BASE reach (tools/affected_tests.py says how).
+# The test files this tree's changes since BASE reach (tools/affected_tests.py says how), less
+# their full-path checks. The recipe then prints the test-full-path command that runs those.
+# pytest exits 5 when it ran nothing: every test it collected was a full-path check.
 test:
 	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
-	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; \
-	else echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; $(PYTEST) $$tests; fi
+	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; exit 0; fi; \
+	echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; \
+	$(PYTEST) -m 'not full_path' $$tests || [ $$? -eq 5 ] || exit 1; \
+	full=$$($(UV_PYTEST) -q --co -m full_path $$tests 2>/dev/null | sed -n 's/::.*//p' | sort -u); \
+	[ -z "$$full" ] || echo "+ full-path checks reached: make test-full-path TESTS=\"$$(echo $$full)\""
 
 test-all:
-	$(PYTEST) mx/
+	$(PYTEST) -m 'not full_path' mx/
+
+test-full-path:
+	$(PYTEST) -m full_path $(TESTS)
 
 version:
 	@jq -r .version $(PLUGIN)
@@ -36,7 +48,7 @@ release-patch: PART = patch
 release-minor: PART = minor
 release-major: PART = major
 
-release-patch release-minor release-major: check test-all
+release-patch release-minor release-major: check test-all test-full-path
 	@V=$$(jq -r .version $(PLUGIN)); \
 	NEW=$$(echo $$V | awk -F. -v part=$(PART) '{ \
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \

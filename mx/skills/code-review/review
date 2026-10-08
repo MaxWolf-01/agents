@@ -172,13 +172,13 @@ for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; 
 done
 bullets() { for f in "$@"; do [ -f "$f" ] || die "$f, a standards source, is not there"; printf -- '- %s\n' "$(realpath "$f")"; done; }
 standards=$(bullets "${sources[@]}") || exit 1
-# The test-smell baseline is the Tests axis's own source, and a standards
-# source for whoever reads the tests when no Tests axis runs: the one light
-# reviewer, or a standards reviewer on a diff with no spec behind it.
-test_smells=$(bullets "$skill/TEST-SMELLS.md") || exit 1
+# The test-smell baseline and /mx:testing are the Tests axis's own sources, and
+# standards sources for whoever reads the tests when no Tests axis runs: the one
+# light reviewer, or a standards reviewer on a diff with no spec behind it.
+test_sources=$(bullets "$skill/TEST-SMELLS.md" "$skill/../testing/SKILL.md") || exit 1
 case " $axis_list " in
     *" tests "*) ;;
-    *) [ -n "$tests" ] && standards=$standards$'\n'$test_smells ;;
+    *) [ -n "$tests" ] && standards=$standards$'\n'$test_sources ;;
 esac
 
 dir=$root/agent/reviews/$range
@@ -260,7 +260,7 @@ render() { # <axis>
                # Full messages, so the one reviewer gets the author's account
                # of the work as orientation over the diff.
                commits=$(git log "$base..$head") ;;
-        tests) sources_block=$test_smells ;;
+        tests) sources_block=$test_sources ;;
     esac
     text=
     for part in $parts; do

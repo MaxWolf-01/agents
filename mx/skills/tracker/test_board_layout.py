@@ -101,8 +101,11 @@ The first two touch nothing in common and can run as one wave."""
 def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
+    # 60s: the suite runs a browser per core, and under that load the board has taken past 20s to
+    # load with nothing wrong with it.
     done = subprocess.run(
-        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root())],
+        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root()),
+         "--patience", "60"],
         capture_output=True, text=True,
     )
     # A run that never got as far as findings is its own failure, said here rather than left to a
@@ -149,6 +152,7 @@ def named(found: dict[int, list[dict]]) -> str:
     )
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("view", VIEWS)
 @pytest.mark.parametrize("width", WIDTHS)
 def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int, view: str) -> None:
@@ -168,6 +172,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
     """A width where the defect goes unreported is a width the Property is not checked at, whatever
@@ -353,6 +358,7 @@ def probe(page: Path, width: int, env: dict[str, str]) -> dict:
 
 # the row beside the graph panel, the row on its own, and the row reflowed; and the first of them
 # with no graph engine to draw with
+@pytest.mark.full_path
 @pytest.mark.parametrize(("width", "offline"), [(1500, False), (1100, False), (920, False), (1500, True)])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, offline: bool, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
@@ -628,6 +634,7 @@ def graph_probe(page: Path, env: dict[str, str]) -> dict:
     return json.loads(done.stdout)
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("offline", [False, True])
 def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, offline: bool, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criteria, which are all about what a browser does: the whole
@@ -799,6 +806,7 @@ print(json.dumps(out))
 """
 
 
+@pytest.mark.full_path
 def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criterion: the preview and both full size views say the graph could
     not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
@@ -882,6 +890,7 @@ print(json.dumps(out))
 """
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), ("/chunk-SP2CHFBE.mjs", "could not load"),
                                                ("/render-FL5BWEWF.mjs", "could not be drawn")])
 def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:

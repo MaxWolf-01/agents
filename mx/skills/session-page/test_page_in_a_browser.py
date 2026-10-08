@@ -31,6 +31,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from conftest import SESSION
 from session_page import PAGE, render_session
 
+# Every check here starts a browser.
+pytestmark = pytest.mark.full_path
+
 SHOW = Path(__file__).resolve().parents[1] / "show"
 
 ARTEFACTS = (

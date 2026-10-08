@@ -1,12 +1,12 @@
-"""The test files a change can reach: `make test` runs these, `make test-all` runs every one.
+"""The test files a change can reach, which `make test` runs.
 
 A change is every file that differs between the working tree and its merge-base with $BASE
 (default master), committed or not, untracked included. A test file reaches every file it names,
 and every file those name in turn: a Python import of a module beside the importer, or a quoted
 string or a word ending in a file extension that is some file's name under mx/. A name several
 files share resolves to the one beside the naming file when there is one, else to all of them, so
-an ambiguous name runs more tests, never fewer. A change outside mx/skills/ other than prose
-(this script, the Makefile, mx/bin, mx/hooks) reaches every test.
+an ambiguous name runs more tests, never fewer. A change to what runs the tests or wraps what they
+test reaches every test (`reaches_every_test` says which files those are).
 
 Prints one test path per line, nothing when no test is reached.
 """
@@ -79,9 +79,9 @@ def reach(test: Path, by_name: dict[str, list[Path]]) -> set[Path]:
 
 
 def reaches_every_test(path: Path) -> bool:
-    """What runs the tests or wraps what they test: the Makefile, this script, and mx/ outside its
-    skills (the bin wrappers, the hooks, the plugin manifest)."""
-    return (path == ROOT / "Makefile" or path.is_relative_to(ROOT / "tools")
+    """What runs the tests or wraps what they test: the Makefile, pytest.ini, this script, and mx/
+    outside its skills (the bin wrappers, the hooks, the plugin manifest)."""
+    return (path in (ROOT / "Makefile", ROOT / "pytest.ini") or path.is_relative_to(ROOT / "tools")
             or (path.is_relative_to(MX) and not path.is_relative_to(MX / "skills")))
 
 

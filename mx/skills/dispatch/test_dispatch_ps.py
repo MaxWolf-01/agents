@@ -12,9 +12,7 @@ is a finished run, a live runner process a running one, neither is `gone`), and
 `agent/tickets/dispatch-ps.md` for the rest: P1 a host that did not answer is a row and a nonzero
 exit; P2 a register that fails is an `incomplete` row and a nonzero exit; P3 a worker resolves
 exactly, and a slug held twice resolves to nothing; P4 an empty worklog reads apart from an absent
-one; P5 a Ctrl-C in a worker's pane leaves the status line a resume needs. The fuzz run's row answers
-to `agent/tickets/fuzz-run-on-integration-branch.md`'s P5, that a run whose workers have died reads
-apart from one that is fuzzing, and to `job --help`'s State for the files it reads.
+one; P5 a Ctrl-C in a worker's pane leaves the status line a resume needs.
 """
 
 import hashlib
@@ -25,7 +23,6 @@ import shutil
 import subprocess
 import time
 from collections.abc import Iterator
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -225,6 +222,7 @@ def test_a_probe_that_fails_over_a_manifest_is_a_row_not_an_empty_scratch_dir(tm
     assert "exit 3" in row[7]
 
 
+@pytest.mark.full_path
 def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, str]):
     d = scratch(tmp_path, "agents", "master")
     finished(d, spawned(d, "hypofuzz-default"))
@@ -232,76 +230,6 @@ def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, s
 
     (row,) = rows(tmp_path, tmux)
     assert row[6] == "y", "cleanup has not run, so the finished worker's scrollback is still there"
-
-
-def fuzzing(env: dict[str, str], d: Path, *, idle: int, pid: int, status: str = "") -> None:
-    """The repo's fuzz run as `dispatch-ctl fuzz start` leaves it: its database in the scratch dir,
-    its newest example written <idle> seconds ago, an older one an hour before that, and a patch a
-    `fuzz check` wrote just now; and the files `job` keeps for it, with <status> once it ended."""
-    db = d / "fuzz.hypothesis"
-    examples = db / "examples" / "04e6b3400353b141"
-    examples.mkdir(parents=True)
-    (db / "patches").mkdir()
-    for name, age in (("a1", idle + 3600), ("b2", idle)):
-        (examples / name).write_text("zzz")
-        os.utime(examples / name, (time.time() - age, time.time() - age))
-    for path in (examples, db / "examples", db):
-        os.utime(path, (time.time() - idle - 3600, time.time() - idle - 3600))
-    (db / "patches" / "2026-09-28--ce3d4dce.patch").write_text("a patch\n")
-    config = dict(line.split("=", 1) for line in (d / "config").read_text().splitlines())
-    job = Path(env["JOB_STATE_DIR"]) / f"fuzz-{config['repo']}"
-    job.mkdir(parents=True)
-    started = datetime.fromtimestamp(time.time() - 7200, timezone.utc).isoformat(timespec="seconds")
-    cwd = f"{config['worktrees']}/{config['repo']}-{config['base']}-fuzz"
-    (job / "meta").write_text(f"pid={pid}\nstarted={started}\ncwd={cwd}\nawake=0\ncmd=make fuzz\n")
-    (job / "log").write_text("1 passed in 3.02s\n")
-    if status:
-        (job / "status").write_text(status + "\n")
-
-
-@pytest.fixture
-def live_pid() -> Iterator[int]:
-    """A process that stays up for the check, as a fuzz job's runner does."""
-    live = subprocess.Popen(["sleep", "30"])
-    yield live.pid
-    live.kill()
-
-
-def test_a_fuzz_run_is_idle_for_as_long_as_its_examples_have_gone_unwritten(
-        tmp_path: Path, tmux: dict[str, str], live_pid: int):
-    """A run whose workers died writes nothing more to its database, however long its job runs
-    on, and a `fuzz check` of it writes only a patch."""
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=5400, pid=live_pid)
-    session(tmux, "job-fuzz-agents")
-
-    (row,) = rows(tmp_path, tmux)
-    assert row[:3] == ["agents/master", "fuzz", "running"]
-    assert 5400 <= int(row[4]) < 5460, "idle since the newest example, not the job's start or the patch"
-    assert 7200 <= int(row[3]) < 7260
-    assert row[5:7] == ["job-fuzz-agents", "y"]
-    assert row[7] == "1 passed in 3.02s"
-
-
-def test_a_database_an_earlier_integration_branch_left_is_no_run(
-        tmp_path: Path, tmux: dict[str, str], live_pid: int):
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=60, pid=live_pid)
-    (scratch(tmp_path, "agents", "main") / "fuzz.hypothesis" / "examples").mkdir(parents=True)
-
-    assert [row[:3] for row in rows(tmp_path, tmux)] == [["agents/master", "fuzz", "running"]]
-
-
-@pytest.mark.parametrize("status, state", [("exit=0 ended=2026-09-28T07:40:33+00:00 secs=4", "exited"),
-                                           ("", "gone")])
-def test_a_fuzz_run_that_ended_reads_as_ended(tmp_path: Path, tmux: dict[str, str], status: str, state: str):
-    """A run that ended, and a killed runner, which leaves no status line."""
-    dead = subprocess.Popen(["true"])
-    dead.wait()
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=60, pid=dead.pid, status=status)
-
-    (row,) = rows(tmp_path, tmux)
-    assert row[:3] == ["agents/master", "fuzz", state]
-    assert row[6] == "n"
-    assert row[7] == (status or "(runner dead without a status line)")
 
 
 # --- the commands over those rows --------------------------------------------
@@ -403,6 +331,7 @@ def test_peek_without_a_worker_says_so(home: Path, tmux: dict[str, str]):
     assert "takes a worker" in out.stderr
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("worker", ["hypofuzz-default", "dispatch-agents-hypofuzz-default",
                                     "local/hypofuzz-default", "local/dispatch-agents-hypofuzz-default"])
 def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker: str):
@@ -413,10 +342,11 @@ def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker
     assert "hypofuzz-default" in out.stderr
 
 
-@pytest.mark.parametrize("fragment", ["hypofuzz", "fuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
+@pytest.mark.full_path
+@pytest.mark.parametrize("fragment", ["hypofuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
                                       "agents/master/hypofuzz-default"])
 def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fragment: str):
-    """P3: a fragment that matched would make attach a guess, and `fuzz` is a worker of its own."""
+    """P3: a fragment that matched would make attach a guess."""
     session(tmux, "dispatch-agents-hypofuzz-default")
 
     out = dispatch(tmux, home, "peek", fragment)
@@ -424,6 +354,7 @@ def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fra
     assert "no worker called" in out.stderr
 
 
+@pytest.mark.full_path
 def test_a_slug_that_is_only_a_number_is_still_a_name(home: Path, tmux: dict[str, str]):
     """`1` and `01` are equal numbers and different names; a slug is a name."""
     d = scratch(home / ROOT, "jarvis", "main")
@@ -481,6 +412,7 @@ def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: 
     assert "hypofuzz-default" in out.stdout, "the scratch dir beside it is still read"
 
 
+@pytest.mark.full_path
 def test_a_pane_that_cannot_be_read_is_a_failed_peek_not_an_empty_one(home: Path, tmux: dict[str, str]):
     """The session can end between the read that resolved it and the capture."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -536,6 +468,7 @@ def test_this_machine_is_one_host_under_both_its_names(home: Path, tmux: dict[st
     assert ssh_calls(home) == []
 
 
+@pytest.mark.full_path
 def test_peek_prints_the_last_lines_of_the_workers_pane(home: Path, tmux: dict[str, str]):
     session(tmux, "dispatch-agents-hypofuzz-default", "seq 1 40; sleep 30")
     time.sleep(0.5)
@@ -544,16 +477,6 @@ def test_peek_prints_the_last_lines_of_the_workers_pane(home: Path, tmux: dict[s
     assert out.returncode == 0, out.stderr
     assert out.stdout.splitlines() == ["38", "39", "40"]
     assert "hypofuzz-default" in out.stderr, "which worker it is goes to stderr, so the pane pipes clean"
-
-
-def test_the_fuzz_run_is_named_like_any_other_worker(home: Path, tmux: dict[str, str], live_pid: int):
-    fuzzing(tmux, home / ROOT / "agents-master", idle=60, pid=live_pid)
-    session(tmux, "job-fuzz-agents", "printf 'Failing test case\\n'; sleep 30")
-    time.sleep(0.5)
-
-    out = dispatch(tmux, home, "peek", "fuzz")
-    assert out.returncode == 0, out.stderr
-    assert "Failing test case" in out.stdout
 
 
 def test_a_worker_whose_session_is_gone_is_not_attached_to(home: Path, tmux: dict[str, str]):
@@ -580,6 +503,7 @@ cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec "$REMOTE_SHELL" -c "$*"
 """
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
 def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
         tmp_path: Path, home: Path, tmux: dict[str, str], shell: str):
@@ -620,6 +544,7 @@ def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
     assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default:"
 
 
+@pytest.mark.full_path
 def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: dict[str, str]):
     """Inside the caller's own tmux, a plain attach refuses to nest; TMUX unset, it nests."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -637,6 +562,7 @@ def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: 
     assert "prefix twice" in out.stderr
 
 
+@pytest.mark.full_path
 def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: dict[str, str]):
     """P5, what attach invites: a Ctrl-C leaves the status line a resume needs, rather than killing
     the runner before its last act."""

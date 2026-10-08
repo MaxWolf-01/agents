@@ -60,6 +60,7 @@ def restless(tmp_path: Path) -> Iterator[Callable[..., str]]:
         lint.wait()
 
 
+@pytest.mark.full_path
 def test_a_run_that_kills_its_browsers_leaves_a_concurrent_runs_alive(tmp_path: Path, restless) -> None:
     """Two runs on one host at once, one named by MX_RUN and one by the directory it ran in: the
     first kills its browsers, and the second's browser is untouched, as is a shell whose command
@@ -84,6 +85,7 @@ def test_a_run_that_kills_its_browsers_leaves_a_concurrent_runs_alive(tmp_path: 
         bystander.wait()
 
 
+@pytest.mark.full_path
 def test_a_run_is_mx_run_where_set_and_the_working_directory_where_not(tmp_path: Path, restless) -> None:
     """`browsers` with no run names the one its caller is in, the same way a launch does."""
     named = restless(f"named-{tmp_path.name}")
