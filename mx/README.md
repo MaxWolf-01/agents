@@ -8,6 +8,16 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 </picture>
 
 <details>
+<summary><b>The whole workflow as one map: the routes work takes, and the stops that are yours</b></summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/workflow-map.png">
+  <img alt="The mx workflow as a transit map: every intent enters at the gate and leaves on one of five coloured routes. Fog goes through grilling rounds and child tickets that need you, rival shapes through prototypes or concept figures judged side by side, and both end at the ticket. One sensible shape goes from the ticket through dispatch to one worker, which builds, tests, reviews its own branch and commits its report, then to the landing, where the orchestrator reads the diff, imports the report and sorts the calls, and your ruling. Work bigger than one worker is cut into child tickets, built by a worker per child in waves, landed, a hinge ruled alone, closed out with the full suite, the review one level up and the debrief, and ruled whole. Loose work skips the brief and the worker and ends at the review page. A review-session line runs from the landing through QA, the review session and the board's needs-me group back into dispatch, and to grilling for a reopened decision. The ten orange stops are the only places you are asked, and a key under the map says what each asks of you" src="assets/workflow-map-light.png">
+</picture>
+
+</details>
+
+<details>
 <summary><b>The whole cycle, from an intent to shipped work</b></summary>
 
 <picture>
@@ -23,6 +33,16 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
   <img alt="Ticket state: an agent files a ticket proposed and a session with you files it open; proposed is on the frontier and claimed like an open ticket; dispatch claim writes claimed, dispatch review writes review by importing the report the worker committed, since a worker writes no ticket file; a child that is no hinge waits in review merged into its parent's branch and unblocks its siblings; your ruling (accept, amend, redo or reject) on the calls that are yours leads to done, written by the orchestrator once your accept is merged, and tracker retire takes a finished tree out of the tracker; beside it the board: the needs-me group with each row's open questions under it, what a row asks of you, one dependency graph per tree with its frontier and proposed tickets drawn dashed, the briefing, an opened row's sessions and artefacts, and the review pages" src="assets/ticket-state-light.png">
+</picture>
+
+</details>
+
+<details>
+<summary><b>A ticket's flow: where each status is written, and by which command</b></summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-flow.png">
+  <img alt="A ticket's flow as a status chart threaded through four rows of place: a session you sit at, the tracker file in the agent repo, the orchestrator holding the branch the tickets merge into, and the worker hosts; the five statuses sit on one rail in the tracker row, proposed, open, claimed, review and done, and each status is written by a line from the command that types it, in its row: tracker new files a proposal from the orchestrator or an open ticket from your session, tracker set status=open rules a proposal before its build, dispatch claim writes claimed, a proposal claimed as it stands like an open ticket, dispatch review writes review once the worker's report is fetched, and dispatch review or dispatch accept writes done after your accept is merged, tracker retire then taking a finished tree out; below, a wave of workers spawned by dispatch ctl spawn, one per ticket on its host, each building, testing, reviewing its own branch and committing its report last, one stopped or blocked and resumed with guidance or continue while it stays claimed, one gone and sent back to open; dashed tracks lead back: amend resumes the worker from review into claimed, redo cleans the run up and resets the ticket to open for a fresh worker, a lost session resets it to open, reject drops it, and nothing moves back from done, a decision reopened once code reads it being filed as a new ticket that supersedes it; orange marks only your ruling on a build in review and the needs-user tickets whose questions wait in the needs-me group" src="assets/ticket-flow-light.png">
 </picture>
 
 </details>
