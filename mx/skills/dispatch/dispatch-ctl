@@ -36,7 +36,8 @@
 # cleanup <slug>  kills the pane and the `job`s the worker started, removes
 #                 the ticket's worktrees and branches, forgets the run.
 # init, bare      staging, which `dispatch` runs itself.
-# A host needs git, tmux and jq; init also curl and a logged-in claude.
+# A host needs git, tmux and jq; init also curl and claude, and a spawn a
+# claude logged in there.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto)

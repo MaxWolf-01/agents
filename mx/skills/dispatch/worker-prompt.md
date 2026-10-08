@@ -66,7 +66,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 <tools>
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
-`job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. `job wait --deadline <secs>` ends the wait whatever the command is doing.
+`job` (`/mx:tmux`) runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. `job wait --deadline <secs>` ends the wait whatever the command is doing.
 
 A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's (`browsers --help`).
 
