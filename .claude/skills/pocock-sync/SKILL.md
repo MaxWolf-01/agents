@@ -18,10 +18,11 @@ description: Review upstream mattpocock/skills changes since the recorded baseli
 
 ## Mapping (mx ← upstream)
 
-Same-named: grilling, grill-with-docs, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
+Same-named: grilling, code-review, codebase-design, diagnosing-bugs, improve-codebase-architecture, prototype, research, handoff, wait-what, to-questionnaire, wizard, writing-for-agents.
 
 Dissolved:
 - implement → the worker contract in `mx/skills/dispatch/worker-prompt.md`, which every ticket worker starts with; upstream changes to implement's process map onto that prompt, its review hand-off onto code-review.
+- grill-with-docs → grilling, which runs with `/mx:domain-modelling` in a repo; upstream changes to grill-with-docs map onto grilling's rounds, its docs side onto domain-modelling.
 - to-spec → grilling writes the design into the ticket round by round; upstream changes to to-spec's design sections map onto `mx/skills/grilling/DESIGN.md`, to its frontmatter or section order onto `mx/skills/tracker/SKILL.md`'s The ticket file, and to its process onto grilling's rounds.
 - to-tickets → cutting a ticket into child tickets, `mx/skills/tracker/SLICING.md`; upstream changes to its slicing rules map there.
 - wayfinder → grilling spans sessions through child tickets the user is in the loop for; upstream changes to wayfinder's map body map onto `mx/skills/tracker/SKILL.md`'s The ticket file for the shape and `mx/skills/grilling/DESIGN.md` for the design sections, to its charting or work-through process onto grilling's Across sessions. Its ticket types map onto nothing: mx has one kind of ticket.

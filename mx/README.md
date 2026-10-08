@@ -93,7 +93,7 @@ Every ticket's demo is at the same path, `agent/show/<slug>/demo`, so `fd -t x '
 
 ## The main flow: intent → ship
 
-The gate picks the first thing you judge: the session drafts the ticket, builds it when the intent has one sensible shape, prototypes the rivals when it has several, and grills it when no brief can be written yet (`/mx:grill-with-docs`: relentless interview; each round delivers the design whole and writes it to the ticket; glossary terms and ADRs land as residue). Then the cut into child tickets (tracer-bullet vertical slices with blocking edges, as soon as the interview has no question left for you; `/mx:tracker`) → `/mx:dispatch` works them: a fresh worker per ticket, its contract the prompt dispatch appends to it (testing inside, code-review at the end), serial or in waves, the board as the standing view. Work that is one slice stays one ticket and is dispatched as it is.
+The gate picks the first thing you judge: the session drafts the ticket, builds it when the intent has one sensible shape, prototypes the rivals when it has several, and grills it when no brief can be written yet (`/mx:grilling`: relentless interview; each round delivers the design whole and writes it to the ticket; glossary terms and ADRs land as residue). Then the cut into child tickets (tracer-bullet vertical slices with blocking edges, as soon as the interview has no question left for you; `/mx:tracker`) → `/mx:dispatch` works them: a fresh worker per ticket, its contract the prompt dispatch appends to it (testing inside, code-review at the end), serial or in waves, the board as the standing view. Work that is one slice stays one ticket and is dispatched as it is.
 
 **`/mx:orient` is the map**: the gate, the question that routes an intent to loose work or a ticket, the main flow, its on-ramps, and when to reach for what.
 
@@ -120,7 +120,7 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | | |
 | --- | --- |
 | `/mx:orient` | the router; start here |
-| `/mx:grill-with-docs`, `/mx:grilling` | sharpen a plan by interview; the design lands in the ticket as it settles |
+| `/mx:grilling` | sharpen a plan by interview; the design lands in the ticket as it settles |
 | `/mx:domain-modelling`, `/mx:codebase-design` | vocabulary layers: domain language + ADRs, deep-module design |
 | `/mx:testing`, `/mx:code-review` | what makes a test worth keeping, and when the full-path checks run; four-axis review |
 | `/mx:dispatch` | work a ticket and its children: one orchestrator, a fresh worker per ticket, serial or in waves |
