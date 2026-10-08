@@ -1,6 +1,6 @@
 ---
 name: tmux
-description: "Run commands in tmux whenever they might not come back on their own or need eyes on them: builds, test suites, training runs, servers, anything over the network, anything worth observing mid-run (progress logs, monitoring output), and anything interactive (sudo prompts, REPLs, wizards), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish; the human can attach and step in at any time."
+description: "Run commands in tmux whenever they might not come back on their own, are worth watching mid-run, or are interactive (sudo prompts, REPLs), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish."
 ---
 
 # tmux

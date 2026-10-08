@@ -24,7 +24,7 @@ List any **floors**, prototypes (or aspects of one) the user promoted to minimum
 
 **Type every deferral.** A decision left to build time behaves differently by kind: an interchangeable part behind a settled seam (which test runner) defers safely; anything user-visible defers to agent taste; and a deferred dependency pick can silently defer the *capability* itself (no markdown library chosen → nothing renders markdown). For each deferred item, name what happens if nobody decides it.
 
-**Testing seams.** Existing seams over new ones, the highest seam possible; new seams proposed at the highest point they can sit. The fewer seams across the codebase, the better; the ideal number is one. Per seam, name its **oracle** (`GLOSSARY.md`) in one phrase, and the existing tests there as the pattern the new ones follow. A seam whose only available answer is what the code returns today says so, and the reviewer reads its tests knowing it.
+**Testing seams.** Where the work's tests enter, chosen by `/mx:testing`'s rule (The seam), existing seams over new ones. Per seam, name its **oracle** (`GLOSSARY.md`) in one phrase, and the existing tests there as the pattern the new ones follow. A seam whose only available answer is what the code returns today says so, and the reviewer reads its tests knowing it.
 
 **Out of scope.** The decisions against, and a rival design that lost with what it would have cost.
 

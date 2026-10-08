@@ -2,7 +2,7 @@
 
 A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
 
-Two other tools own neighbouring ground. **Charts belong to `dataviz`**: anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), including all the color decisions. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
+Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **is `dataviz`'s, painted as `/mx:house-style`'s `PARTS.md` says**. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
 
 This file has two layers and they do not bind equally.
 
@@ -42,11 +42,11 @@ The exception is a radial layout. Spokes running from a ring of nodes into a sha
 
 **Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. This single constraint does more than any other to stop a figure reading as machine-generated, because near-alignment is what the eye catches. The house skin uses 4.
 
-**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span, since Newsreader runs wider than a grotesk in lowercase) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
+**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
 
 **Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
-**Lint the render, then look at it, before showing anyone.** `render-lint figure.html --crops /tmp/lint` measures every text against its box once the page has stopped moving and lists what escapes, overlaps, crowds or a box cuts off, with a PNG per finding; a 5px overflow is invisible in a page-sized screenshot and plain in its crop. Zero fatal findings is the floor, and a figure it calls unmeasurable is one that never comes to rest, which is the figure to fix rather than a finding to chase. `render-lint --help` is the reference for the kinds and the exit codes. Then the eye, for what geometry cannot judge (rhythm, weight, whether it explains the thing):
+**Lint the render, then look at it, before showing anyone.** `render-lint figure.html --crops /tmp/lint` writes a PNG per finding, so a 5px overflow that a page-sized screenshot hides is plain in its crop; its `--help` says what it reports. Then the eye, for what geometry cannot judge (rhythm, weight, whether it explains the thing):
 
 ```bash
 chromium --headless --mx-run="${MX_RUN:-$PWD}" --disable-gpu --hide-scrollbars --window-size=1400,900 \
@@ -77,9 +77,9 @@ The house style on a figure. Load `/mx:house-style` and inline its `tokens.css` 
 | zone fill; a banner ramps the same mix 6% to 22% | `wash-ink` |
 | a security boundary, a caution | `accent-2` |
 
-The scheme is `data-theme="day"` or `"night"` on the root, read from `?theme=` for a screenshot, and the toggle is the house one: a sun by day and a moon by night, on the page's header row, right-aligned with the content. `demo.html` in the house-style skill carries both to copy. Initialize from `matchMedia('(prefers-color-scheme: dark)')` when the query is absent. Render both schemes and look at both; a standalone `.svg` has no script, so it gets both renders and no toggle.
+The scheme, its `?theme=` reading and the toggle are the house's, copied from its `demo.html`. A standalone `.svg` has no script, so it gets both renders and no toggle.
 
-**The accent is editorial, not a signalling system.** One meaning per figure, however many marks carry it, chosen as the thing the reader should look at first. If you want the accent to mean four things, you have not yet decided what the figure is about. Everything else is ink or muted.
+**The accent goes on the thing the reader should look at first.**
 
 Node treatments: focal is `wash` on `accent`; a service or step is `ground-2` on `body`; a store is `ground-2` on `muted`; an external system is unfilled on `muted`; an optional or async node is unfilled on `edge` dashed `4,3`; a security boundary is unfilled on `accent-2` dashed `4,4`. Four weights come from the stroke colour and from whether the box is filled at all; every stroke is a hairline.
 
@@ -87,7 +87,7 @@ Strokes 0.8 / 1 / 1.2. Radius 4 on tags, 6 on nodes, 8 on containers. Never a `b
 
 ### Type
 
-The house roles, at figure sizes. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions) and for labels; a node's name is not data. Labels are lowercase.
+The house roles, at figure sizes. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions) and for labels; a node's name is not data.
 
 | Role | Family | Size |
 |---|---|---|
@@ -103,7 +103,7 @@ The house roles, at figure sizes. Mono is for content that *is* technical (ports
 
 These are floors, not targets: a label that does not fit gets a wider box, never a smaller size.
 
-A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished. Small text ported from a grotesk is re-measured downward: Newsreader runs wider in lowercase at the same size.
+A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished.
 
 The font link is the one in the house-style `demo.html` head.
 
@@ -131,7 +131,7 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 
 **Phase banner**: a chevron strip across the top naming the stages the figure moves through, so the horizontal axis carries meaning without a single arrow. Each segment is a polygon `x,4 x+188,4 x+200,18 x+188,32 x,32 x+12,18`, the leading notch omitted on the first. Darken or lighten successive segments slightly to imply direction.
 
-**Boundary box**: a rounded rect with a hairline stroke and a 2%-ink wash enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (sentence case, see Type) sitting in a paper-colored mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
+**Boundary box**: a rounded rect with a hairline stroke and a `wash-ink` fill enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (see Type) sitting in a `ground` mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
 
 **Cross-cutting bar**: a full-width bar for something everything depends on: auth, logging, orchestration, a scheduler. Inside a boundary box it spans the interior; outside and below, it reads as ambient infrastructure. Connect it with dashed arrows, since its relationship to each node is the same and drawing all of them would be noise.
 
@@ -165,7 +165,7 @@ Everything else is layout convention, a few lines each.
 
 ## Icons
 
-77 monochrome icons in `icons/`, named after their file. 55 outlined generics from Tabler: server, database, cloud, user, users, lock, key, shield-lock, git-branch, git-merge, terminal, robot, rocket, package, bucket, world, bug, bolt, the `device-*` and `file-type-*` sets, and `brand-{aws,azure,docker,github,terraform}`. 22 filled brand marks from Simple Icons: kubernetes, postgresql, sqlite, oracle, microsoftsqlserver, minio, nginx, keycloak, gitea, googlecloud, python, r, jupyter, trino, redash, tableau, powerbi, qgis, and the Apache set (airflow, hive, nifi, superset). Tabler is MIT, Simple Icons is CC0.
+Monochrome icons in `icons/`, one per file and named by it: outlined generics from Tabler and filled brand marks from Simple Icons, their licences in `icons/LICENSES.md`.
 
 Every Tabler icon is a 24×24 stroked path already set to `currentColor`, so it inherits whatever skin is active. Simple Icons are 24×24 filled paths; set `fill="currentColor"` explicitly, as SVG defaults to black. Paste the paths inline inside a `<g transform="translate(x,y) scale(s)">`; the file stays self-contained, no external images.
 

@@ -26,7 +26,7 @@ _Avoid_: Client, buyer, account
 ## Rules
 
 - **Be opinionated.** When multiple words exist for the same concept, pick the best one and list the others under `_Avoid_`.
-- **Keep definitions tight.** One or two sentences, at most 40 words. Define what it IS, not what it does.
+- **Keep definitions tight.** `glossary-lint` holds the caps. Define what it IS, not what it does.
 - **The name carries its qualifier.** A term is read in tickets, commits and code, away from its subheading, so when its bare word means something else elsewhere in the system, the qualifier goes into the name: "NPS window", not "Window" under an NPS heading.
 - **Code names go on the `_In code_` line.** The identifier the code uses for the term (a table, a type, a status value) goes there and nowhere in the definition, so the definition survives a rename. Omit the line when the code has no name of its own for the term.
 - **Definitions survive redesign.** The mechanism behind a term (formula, composition, parameters) lives in the design doc or ADR that decided it. Test each clause: would a change to the mechanism force an edit here? If yes, cut it and let the entry name the concept's role instead.
@@ -37,7 +37,7 @@ _Avoid_: Client, buyer, account
 
 ## Single vs multi-context repos
 
-**Single context (most repos):** One `GLOSSARY.md` at the repo root.
+**Single context (most repos):** One `GLOSSARY.md` and one `decisions/` at the repo root.
 
 **Multiple contexts:** A `GLOSSARY-MAP.md` at the repo root lists the contexts, where they live, and how they relate to each other:
 
@@ -56,3 +56,5 @@ _Avoid_: Client, buyer, account
 - **Fulfillment → Billing**: Fulfillment emits `ShipmentDispatched` events; Billing consumes them to generate invoices
 - **Ordering ↔ Billing**: Shared types for `CustomerId` and `Money`
 ```
+
+Each context keeps its own `decisions/` beside its `GLOSSARY.md`; the root's holds the system-wide ones.
