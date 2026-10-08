@@ -6,7 +6,7 @@ Cut as soon as the grilling's frontier is empty (`/mx:grilling`), ratified or no
 
 ## 1. Read the code first
 
-Understand the current state of the code before slicing. Ticket titles and bodies use the vocabulary of `GLOSSARY.md` and respect the ADRs in `decisions/` for the area being touched. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
+Understand the current state of the code before slicing. Look for prefactoring that makes the implementation easier: make the change easy, then make the easy change.
 
 ## 2. Draft the slices
 
@@ -23,13 +23,13 @@ Give each its **blocking edges**: the tickets that must be done before it can st
 
 **Mark the hinges.** A slice is a **hinge** when the slices it blocks would have to be rewritten, not amended, were it wrong: an interface or data shape they consume. The user rules on a hinge alone before its dependents start; every other slice is ruled with the ticket being cut, at its close-out, and its dependents build on it unruled. Test each blocking edge: if the blocker came back wrong, would the fix to the dependent be an amend? Then it is no hinge.
 
-**Properties stay on the ticket being cut.** Every slice reads them through its ancestry and cites one as `<slug>#P<n>`; no slice copies one. Each slice's review checks them, reading the ancestry with the diff.
+**Properties stay on the ticket being cut.** Every slice reads them through its ancestry; no slice copies one. Each slice's review checks them, reading the ancestry with the diff.
 
 A property no single slice can make hold means the cut is wrong: merge the slices, or split the property at the seam.
 
 **Stamp floors.** A slice building a surface with a promoted floor (the ticket's Decisions) carries it as an acceptance criterion: "the prototype at `<path>` is the quality floor: match it or consciously beat it; its incidental slop is not the target; name deviations in the closing comment."
 
-**A part whose question you can state now, but whose answer nobody holds, is a child ticket like any other**: its acceptance criteria say what is decided, the answer lands in the Decisions of the ticket being cut, and every slice that needs the answer is blocked by it. One the user has to be in the loop for carries `needs-user`. A part whose question cannot yet be phrased stays in Fog, sliced once an answer sharpens it.
+**A part whose question you can state now, but whose answer nobody holds, is a child ticket like any other**: its acceptance criteria say what is decided, the answer lands in the Decisions of the ticket being cut, and every slice that needs the answer is blocked by it. One the user has to be in the loop for carries `needs-user`. Fog stays uncut (`/mx:grilling`, Fog and scope).
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change (rename a column, retype a shared symbol) whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand-contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket; green is promised only there.
 

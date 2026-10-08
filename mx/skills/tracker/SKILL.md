@@ -13,7 +13,7 @@ The `tracker` command owns every mechanical operation on those files, read and w
 
 ## The ticket file
 
-All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s. Four of them are judgments rather than bookkeeping:
+All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s; `tracker new --help` says what the ones a ticket is filed with hold. Four of them are judgments rather than bookkeeping:
 
 - **priority**: the agent's reading of how soon the ticket matters to the user, never their chore to rank.
 - **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
@@ -28,7 +28,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## Decisions`**: the calls, each carrying the **call mark** that says who settled it.
 - **`## Testing seams`**: the seams the work is tested at, and their oracles.
 - **`## Out of scope`**: what this ticket will not do, each with its reason.
-- **`## Fog`**: in-scope work whose question cannot yet be stated.
+- **`## Fog`**: `/mx:grilling`, Fog and scope.
 - **`## Acceptance criteria`**, always: `- [ ]` items, what the work has to hold to be done.
 - **`## Questions`**: the calls only the user can make, below.
 - **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in `agent/research/` (`/mx:research`).
@@ -53,11 +53,11 @@ A question is open, and shows in the board's needs-me group, until a `Ruled <dat
 
 ## The tree
 
-A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Properties are read through the same ancestry and cited `<slug>#P<n>` from any descendant. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
+A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
 
-Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file: every write this command makes is refused from a `ticket/<slug>` branch, which is what a worker holds either repo on, `dispatch review` refuses a ticket branch that wrote one, and the commit hook refuses one staged there. What a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and the commit hook refuses that commit where the import would refuse the report.
+Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
 
-**A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. Only a hinge is ruled alone, before its dependents start. From the parent's review page the user can still amend, redo or reject a single child.
+**A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. A hinge is ruled alone (SLICING.md, Mark the hinges). From the parent's review page the user can still amend, redo or reject a single child.
 
 ## State
 
@@ -66,10 +66,10 @@ Which status may follow which is `tracker`'s, refused by the rule it names. What
 - **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It is on the frontier and built like an open ticket, so what waits is the ruling and not the build; its brief says what it was cut from.
 - **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already; silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
-- **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. A child that is no hinge waits merged into its parent's branch, once the orchestrator's read passed it, and unblocks its siblings, since the parent ruled whole is where a wrong one is caught; a hinge, and any ticket outside a parent's branch, unblocks nothing, so a dependent never builds on a guess it cannot amend.
+- **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. Which tickets in review unblock their dependents is `tracker frontier --help`'s.
 - **done**: the user's accept, given or standing, and nothing less: the ticket's work has reached the branch the user's accept merges it into, its parent's branch for a hinge, the branch above its parent for any other child, which the parent's accept brings it to. A listed repo is read the same way, its integration branch standing in for the branch the work lands on. A ticket with no code (no range in `diff:` and no branch in any of its repos) is done on the user's ruling once every child ticket is; a ticket the user is in the loop for (`needs-user`), with no branch to merge, at the ruling itself. Each travels the same statuses to get there.
 
-The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. What the ruling asks of the user is the calls `/mx:dispatch`'s sort finds theirs to make, each shown to them, with the review page as the drill-down. A build carrying none merges into its parent ticket's branch on their **standing yes**, with nothing put to them; a yes they gave at the start of a tree ("all your calls, just go") carries work that far too, and no further. A merge into the integration branch waits for the user's word on that work (ship, merge, accept, or the like), given after they were shown it, or up front for a change they named themselves; an amend that only applies their comments is that word. While the user is in a review of the work with you, nothing merges, on any yes, until they end it. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's CLAUDE.md, the tool's config.
+The ruling has four outcomes: **accept** the build, **amend** it with the user's comments, **redo** it from the ticket, or **reject** the ticket with it. `/mx:dispatch` runs each one. What the ruling asks of the user is the calls `/mx:dispatch`'s sort finds theirs to make, each shown to them, with the review page as the drill-down. A build carrying none merges into its parent ticket's branch on their **standing yes**, with nothing put to them; a yes they gave at the start of a tree ("all your calls, just go") carries work that far too, and no further. A merge into the integration branch waits for the user's word on that work (their global CLAUDE.md says what counts as one); an amend that only applies their comments is that word. While the user is in a review of the work with you, nothing merges, on any yes, until they end it. A reason for a rejection that the next build must know goes where rules live: an ADR, the project's CLAUDE.md, the tool's config.
 
 Two facts carry **provenance**: whether the user wanted the ticket at all is its status, and whose framing it carries is inline, an approach an agent sketched saying so ("options sketched by agent <date>, frame unconfirmed") while unmarked framing reads as agent-sketched. Acceptance criteria that keep the option space open ("options outside this list count") leave the session working the ticket the problem, not the menu it arrived with.
 
@@ -81,10 +81,10 @@ While nothing is built on a ticket's answer, a later decision that overturns it 
 
 ## Retire
 
-A **finished tree** leaves the live tracker: a top-level ticket and every ticket under it done, and no ticket that stays citing their properties. `tracker retire` takes out every one there is, with the show directories, prototypes and research notes its tickets own, in a commit of its own, and runs once a `done` is committed: dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
+A **finished tree** leaves the live tracker through `tracker retire`, whose `--help` says what a finished tree is and what goes with it. Dispatch runs it after its landings, and a session that writes a `done` itself runs it after that commit. What a README, a PR or the build still needs is promoted out of `agent/show/` before the `done` (`/mx:show`, Promotion). `git log --diff-filter=D -- tickets show prototypes`, run in the agent repo, is where retired work is read afterwards.
 
 Loose work has no ticket to retire: its show directory and the prototypes it made are the agent repo's, committed in that repo's own checkout on the branch it has out, as a ticket's files are, and `git -C agent rm`'d there once the code branch they served has merged.
 
 ## Board
 
-The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows. Every link on it is relative, so the page opens served from any origin and as a file. The human runs `board`, which opens the page from the diffview server over the agent repo, where a review page opened from it saves its comments. A board opened as a file opens its review pages as files, which save nothing. The tab follows every tracker change on its own; a session renders once, without opening a tab, after it changes tracker state, so the page on disk is current for whoever opens it next.
+The board is the tracker as one page, `agent/board.html` beside it (gitignored); `board --help` says what it shows and how it is served. The human runs `board`. A session that changes tracker state renders once after it, `board --no-watch --no-open`, so the page on disk is current for whoever opens it next.
