@@ -86,10 +86,13 @@ A **phase** is a chunk of work inside a session (the grilling, the implementatio
 
 ## Standalone
 
-- **`/mx:grilling`** off the main flow too: a plan, a design or a decision with no repo under it, or no build to follow.
+- **`/mx:grilling`**: off the main flow too, for a plan, a design or a decision with no repo under it, or no build to follow.
 - **`/mx:research`**: investigate a question against **primary sources**; the findings land in the ticket that asked, detail too long for it in `agent/research/`. Research feeds the thinking, it doesn't replace it.
 - **`/mx:to-questionnaire`**: when what's blocking you isn't in your head or the codebase but in **someone else's**, write them a questionnaire to fill in. The inverse of grilling: it interviews you about the **send** (who it's going to, what you need back) and aims the questions at the gap. What comes back is material for `/mx:grilling`.
 - **`/mx:wizard`**: for the steps only a **human** can take: provisioning infrastructure, credentials and CI secrets, an unfamiliar third-party dashboard, a one-off migration. Generates an interactive bash script that opens each URL, captures each value, and writes it where it belongs. Model-invoked: the agent reaches for it when it hits a wall only you can pass; anything the agent can do itself, it should.
 - **`/mx:wait-what`**: the corrective for a message that didn't land: the agent re-pitches what it just said with the context you were missing, in plain language, using the `GLOSSARY.md` vocabulary.
-- **`/mx:codex`** when a second opinion should come from another model family; **`/mx:review-pr`** for a PR on GitHub, where `/mx:code-review` takes a local branch; **`/mx:recap`** when the thread of the work in flight is lost.
-- **`/mx:writing-for-agents`** for what an agent reads; **`/mx:writing-for-humans`** for what a person reads cold, and the cheap standalone de-slop pass on a file (`/mx:code-review` carries its rules on every diff).
+- **`/mx:codex`**: a second opinion from another model family.
+- **`/mx:review-pr`**: a review of a PR on GitHub, where `/mx:code-review` takes a local branch.
+- **`/mx:recap`**: where the work in flight stands, when its thread is lost.
+- **`/mx:writing-for-agents`**: the rules for what an agent reads.
+- **`/mx:writing-for-humans`**: the rules for what a person reads cold, and the cheap standalone de-slop pass on a file (`/mx:code-review` carries its rules on every diff).

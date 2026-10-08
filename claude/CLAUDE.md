@@ -88,7 +88,7 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 
 *This is most relevant when you are *not* told you are running in auto-mode (so I'm not unnecessarily prompted for giving you permission), though best-practices (paralell vs. independent tool calls) and caution still apply.*
 
-- A chained command (`&&`, `||`, `;`) is checked segment by segment: it runs unapproved when every segment would alone, and one segment that needs approval prompts for the whole call, which blocks async execution and stalls the agent; a command that may prompt goes in a call of its own.
+- A chained command (`&&`, `||`, `;`) is checked segment by segment. It runs unapproved when every segment would alone; one segment that needs approval prompts for the whole call, which blocks async execution and stalls the agent. A command that may prompt goes in a call of its own.
   - `cd` passes only into the session's working directory and below; a `cd` anywhere else prompts. Reach outside with absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
 - Read-only commands are auto-approved in ~/.claude/settings.json.

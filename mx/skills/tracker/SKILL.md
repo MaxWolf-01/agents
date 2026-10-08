@@ -28,7 +28,7 @@ All of a ticket's metadata is frontmatter, and the fields are `tracker get --hel
 - **`## Decisions`**: the calls, each carrying the **call mark** that says who settled it.
 - **`## Testing seams`**: the seams the work is tested at, and their oracles.
 - **`## Out of scope`**: what this ticket will not do, each with its reason.
-- **`## Fog`**: `/mx:grilling`, Fog and scope.
+- **`## Fog`**: in-scope work whose question cannot yet be stated (`/mx:grilling`, Fog and scope).
 - **`## Acceptance criteria`**, always: `- [ ]` items, what the work has to hold to be done.
 - **`## Questions`**: the calls only the user can make, below.
 - **`## Comments`**, always, at the bottom: notes, follow-up conversation and a worker's closing comment. A research finding lands in the ticket that asked for it, here or in the design sections, its detail in `agent/research/` (`/mx:research`).
