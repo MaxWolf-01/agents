@@ -295,14 +295,14 @@ def test_a_spec_given_as_a_slug_that_names_no_ticket_is_refused_before_any_revie
 
 def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo):
     """One reviewer, and the ticket's context in its brief: a small ticketed diff is read against
-    what the ticket asked for rather than on its own terms."""
+    what the ticket asked for rather than on its own terms, by the spec axis's own brief."""
     ticketed(repo)
 
     done = run(repo, "--light", "--spec", "lamp-presets")
 
     assert done.returncode == 0, done.stderr
     brief = (review_dir(repo) / "briefs" / "light.md").read_text()
-    assert "## What the work was asked for" in brief
+    assert "## Spec: does it faithfully implement what was asked for?" in brief
     assert str(review_dir(repo) / "ticket.md") in brief
     assert (review_dir(repo) / "ticket.md").read_text().startswith("## lamp-presets")
 
@@ -310,9 +310,23 @@ def test_light_mode_judges_the_diff_against_the_ticket_when_it_is_given_one(repo
 def test_light_mode_without_a_spec_says_there_is_none_to_judge_against(repo):
     assert run(repo, "--light").returncode == 0
     brief = (review_dir(repo) / "briefs" / "light.md").read_text()
-    assert "## What the work was asked for" not in brief
+    assert "## Spec:" not in brief
     assert "invent no requirement for it" in brief
     assert not (review_dir(repo) / "ticket.md").exists()
+
+
+def test_the_tests_reviewer_reads_the_test_smells_and_the_three_jobs_and_no_more_of_testing(repo):
+    """The rest of /mx:testing restates the test-smell baseline for whoever writes a test, so the
+    reviewer of one is handed the baseline and the three jobs its brief asks about."""
+    assert run(repo, "--axes", "tests", "--spec", spec(repo)).returncode == 0
+
+    brief = (review_dir(repo) / "briefs" / "tests.md").read_text()
+    sources = [line[2:] for line in brief.splitlines() if line.startswith("- /")]
+    assert [Path(s).name for s in sources] == ["TEST-SMELLS.md", "testing-jobs.md"]
+    jobs = Path(sources[1]).read_text()
+    assert "1. **It holds a behaviour the user relies on**" in jobs
+    assert "3. **It states an invariant of a seam**" in jobs
+    assert "## " not in jobs and "name: testing" not in jobs
 
 
 def test_a_spec_given_as_a_file_is_read_as_the_file(repo):

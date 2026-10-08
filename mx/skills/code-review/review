@@ -22,9 +22,9 @@
 #            and whatever discussion the reviewers should not reopen. The spec
 #            and tests axes both read it, so both need it.
 #   --light  one reviewer over the correctness and standards briefs joined,
-#            reporting as the `light` axis. With --spec it takes that brief's
-#            third part too, so one reviewer judges the diff against what was
-#            asked for as well.
+#            reporting as the `light` axis. With --spec it takes the spec
+#            brief too, so one reviewer judges the diff against what was asked
+#            for as well.
 #   --effort every reviewer's effort, `medium` by default.
 #   --model  every reviewer's model, `opus` by default.
 #   --minutes every reviewer's time budget, which its brief states and it
@@ -161,26 +161,6 @@ for axis in $axis_list; do
     esac
 done
 
-# Everything that documents how code is written here: the baselines this
-# workflow carries, and the repo's own, which it reads at the root and nowhere
-# else.
-sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
-[ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
-[ -n "$formats" ] && sources+=("$skill/../domain-modelling/GLOSSARY-FORMAT.md" "$skill/../domain-modelling/ADR-FORMAT.md")
-for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
-    [ -f "$root/$f" ] && sources+=("$root/$f")
-done
-bullets() { for f in "$@"; do [ -f "$f" ] || die "$f, a standards source, is not there"; printf -- '- %s\n' "$(realpath "$f")"; done; }
-standards=$(bullets "${sources[@]}") || exit 1
-# The test-smell baseline and /mx:testing are the Tests axis's own sources, and
-# standards sources for whoever reads the tests when no Tests axis runs: the one
-# light reviewer, or a standards reviewer on a diff with no spec behind it.
-test_sources=$(bullets "$skill/TEST-SMELLS.md" "$skill/../testing/SKILL.md") || exit 1
-case " $axis_list " in
-    *" tests "*) ;;
-    *) [ -n "$tests" ] && standards=$standards$'\n'$test_sources ;;
-esac
-
 dir=$root/agent/reviews/$range
 mkdir -p "$dir/briefs" || die "cannot create $dir/briefs"
 # The ticket and its ancestry as one file, assembled the one way a worker's
@@ -198,6 +178,32 @@ fi
 # take it knows nothing of an earlier run is alive in the range.
 exec 9>"$dir/.lock"
 flock -n 9 || die "a review of $range is running: its processes hold $dir/.lock (fuser -v $dir/.lock names them)"
+
+# Everything that documents how code is written here: the baselines this
+# workflow carries, and the repo's own, which it reads at the root and nowhere
+# else.
+sources=("$skill/SMELLS.md" "$skill/../writing-for-humans/SKILL.md" "$skill/../writing-for-humans/CATALOGUE.md")
+[ -n "$process" ] && sources+=("$skill/../writing-for-agents/SKILL.md")
+[ -n "$formats" ] && sources+=("$skill/../domain-modelling/GLOSSARY-FORMAT.md" "$skill/../domain-modelling/ADR-FORMAT.md")
+for f in CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md PRINCIPLES.md; do
+    [ -f "$root/$f" ] && sources+=("$root/$f")
+done
+bullets() { for f in "$@"; do [ -f "$f" ] || die "$f, a standards source, is not there"; printf -- '- %s\n' "$(realpath "$f")"; done; }
+standards=$(bullets "${sources[@]}") || exit 1
+# The test-smell baseline and the opening section of /mx:testing, the three jobs
+# a test does, are the Tests axis's own sources, and standards sources for
+# whoever reads the tests when no Tests axis runs: the one light reviewer, or a
+# standards reviewer on a diff with no spec behind it. The rest of /mx:testing
+# is the generator's half of the test-smell baseline, and stays out.
+testing_jobs=$dir/briefs/testing-jobs.md
+awk '/^---$/ && n < 2 { n++; next } n < 2 { next } /^## / { exit } { print }' \
+    "$skill/../testing/SKILL.md" > "$testing_jobs" && [ -s "$testing_jobs" ] ||
+    die "cannot take the three jobs from $skill/../testing/SKILL.md"
+test_sources=$(bullets "$skill/TEST-SMELLS.md" "$testing_jobs") || exit 1
+case " $axis_list " in
+    *" tests "*) ;;
+    *) [ -n "$tests" ] && standards=$standards$'\n'$test_sources ;;
+esac
 
 # The Tests axis is the one that runs what it reads, so it gets a checkout of
 # the pinned tip to itself, inside its report directory: it mutates code there
@@ -244,7 +250,7 @@ done < <(checkouts)
 [ ! -e "$checkout" ] || rm -rf "$checkout"
 
 # The brief a reviewer reads, whole: the preamble, the axis's own template, and
-# for the light axis both briefs it folds together. The templates hold every
+# for the light axis the briefs it folds together. The templates hold every
 # word of it; substituted in are this review's range, sources and paths.
 render() { # <axis>
     local axis=$1 parts part text one sources_block commits left
@@ -254,9 +260,10 @@ render() { # <axis>
     case $axis in
         light) parts="preamble correctness standards light"
                # The one reviewer judges the diff against what was asked for
-               # too, where the caller named it; with no --spec that part is
-               # left out, and the brief's own words say which of the two it is.
-               [ -z "$spec" ] || parts="$parts asked"
+               # too, where the caller named it, on the spec axis's brief; with
+               # no --spec that part is left out, and the brief's own words say
+               # which of the two it is.
+               [ -z "$spec" ] || parts="$parts spec"
                # Full messages, so the one reviewer gets the author's account
                # of the work as orientation over the diff.
                commits=$(git log "$base..$head") ;;
