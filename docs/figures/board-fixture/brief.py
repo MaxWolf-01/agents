@@ -14,7 +14,6 @@ that the briefing stops describing it; it costs one model run and needs a Claude
     brief.py                       # rebuild the demo repo, ask, and write briefing.json
 """
 
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,8 +32,10 @@ OUT = Path(__file__).parent / "briefing.json"
 
 def main() -> None:
     build.build_repo()
-    roots = board.tracker_roots(build.REPO / "agent" / "tickets")
-    state = board.briefing_state(roots, build.REPO)
+    # the demo's own transcripts, read the way the board's render reads them; the model run itself
+    # keeps this machine's config, which is where its login is
+    board.TRANSCRIPTS = build.CLAUDE / "projects"
+    state = board.briefing_state(build.AGENT / "tickets", build.AGENT)
     said = briefing.first(state, build.REPO, datetime.now(timezone.utc))
     if not said:
         sys.exit(f"the briefing session answered nothing: {briefing.missing()}")

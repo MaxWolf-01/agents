@@ -44,14 +44,14 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/board-overview.png">
-  <img alt="The board: the needs-me group at the top, holding a build to rule on, a prototype decision and a slice stopped on a question, each with its open question under the row and a copy button beside it, and each row carrying what it asks of you, your time on it and its priority; the frontier and the claimed work below; beside the rows a briefing written on this tracker, saying where things stand and naming three picks with a reason each and which of them can run as one wave, over a preview of the whole tracker's dependency graph across two features" src="assets/board-overview-light.png">
+  <img alt="The board: the needs-me group at the top, holding two builds to rule on (a test fix, and a whole tree at its close-out with its four child tickets folded under it and a child's question carried up), a prototype hinge and a ticket you work through together, and a slice stopped on a question, each open question under its row with a copy button beside it, and each row carrying what it asks of you, your time on it and its priority; the frontier and the claimed work below, a parent ticket with its merged child folded under it; beside the rows a briefing written on this tracker, saying where things stand and naming three picks with a reason each and that all three can run at once, over a preview of the whole tracker's dependency graph across two trees" src="assets/board-overview-light.png">
 </picture>
 
-One tree of tickets, the other hidden by its chip; a ticket opened to its brief, its question and its criteria, and the tree's graph beside the rows:
+One tree of tickets, the rest hidden by their chips; a ticket opened to its question, the sessions that worked on it, its artefacts and its criteria, and the tree's graph beside the rows:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/board-feature.png">
-  <img alt="One feature on the board, the other hidden by its chip: the needs-me group with a question under each of its three rows, one of them opened to that question with its detail, what to build, and its acceptance criteria as a checklist; below it the frontier, a claimed research ticket, a blocked slice and a proposed ticket, and the feature's dependency graph beside the rows" src="assets/board-feature-light.png">
+  <img alt="One tree on the board, the other tree and the loose tickets hidden by their chips: a hinge prototype in the needs-me group opened to its question with its detail, the two sessions that committed on it each with a button copying the command that resumes it, its show directory with a runnable script and a button copying the command that runs it, and its acceptance criteria as a checklist; below it a slice stopped on a question, the frontier, the claimed work, a blocked slice and a proposed ticket, and the tree's dependency graph beside the rows with the opened ticket marked" src="assets/board-feature-light.png">
 </picture>
 
 </details>
@@ -61,7 +61,7 @@ One tree of tickets, the other hidden by its chip; a ticket opened to its brief,
 
 Every landed ticket gets one, rendered by `dispatch review` and linked from its row on the board: side-by-side diff, keyboard-driven, comments you leave export as markdown to paste back to the agent that wrote the code. The agent's own notes arrive on the page as `AGENT` blocks, anchored to the lines they explain, including on a file the diff left alone deliberately.
 
-<img alt="A review page: the file tree with an untouched-but-noted file, a side-by-side diff of the importer, and an inline agent note explaining why rejected lines are reported per line rather than per file" src="assets/review-page.png">
+<img alt="A review page: the file tree with an untouched-but-noted file, a side-by-side diff of the importer turning a stub into the parse report, and an inline agent note explaining why rejected lines are reported per line rather than per file" src="assets/review-page.png">
 
 </details>
 

@@ -8,14 +8,9 @@ size: S
 
 ## Brief
 
-`export_csv` writes the format the importer now reads, and nothing has called it since the account
-screen was rewritten. Deleting it is a few lines; being sure nothing calls it is the work.
-
-## What to build
-
-Cut from a worker's closing comment on `csv-import/02`: `export_csv` and every test of it go, once
-nothing in the tree imports it.
+`export_csv` writes the format the importer now reads, and nothing on the account screen has called it
+since it was rewritten. Deleting it is a few lines; being sure nothing calls it is the work.
 
 ## Acceptance criteria
 
-- [ ] `export_csv` and its tests are gone, and nothing imports it
+- [ ] `export_csv` and its tests are gone, and nothing in the tree imports it.
