@@ -28,13 +28,15 @@
 # probe           a line per ticket: `running` with the worklog's last line,
 #                 `exited` with the status line (attempts, exit code, report=,
 #                 session id, models), or `gone`: the runner died with no
-#                 status line (a killed pane, a rebooted host).
+#                 status line (a killed pane, a rebooted host). report=yes
+#                 is a report this round committed, one differing from the
+#                 report the round started with.
 # log <slug> [lines]
 #                 the status line and the worklog's last lines, 20 by default.
 # cleanup <slug>  kills the pane and the `job`s the worker started, removes
 #                 the ticket's worktrees and branches, forgets the run.
 # init, bare      staging, which `dispatch` runs itself.
-# A host needs git, tmux and jq; init also curl and claude.
+# A host needs git, tmux and jq; init also curl and a logged-in claude.
 #
 # Env:
 #   DISPATCH_PERMISSION_MODE  the worker's permission mode (default auto)
