@@ -1,6 +1,6 @@
 ---
 name: codex
-description: "Second opinion from a different model (OpenAI Codex). Use when exploring different design choices (more diversity with heterogenous models), debugging hard problems, or when the user wants a second perspective, you want second perspective, are stuck, ..."
+description: "Second opinion from a different model family (OpenAI Codex). Use when exploring design choices, debugging a hard problem, when stuck, or when the user wants a second perspective."
 ---
 
 # Codex: Second Opinion
