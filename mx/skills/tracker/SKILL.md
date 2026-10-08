@@ -13,7 +13,7 @@ The `tracker` command owns every mechanical operation on those files, read and w
 
 ## The ticket file
 
-All of a ticket's metadata is frontmatter, and the fields are `tracker new --help`'s. Four of them are judgments rather than bookkeeping:
+All of a ticket's metadata is frontmatter, and the fields are `tracker get --help`'s; `tracker new --help` says what the ones a ticket is filed with hold. Four of them are judgments rather than bookkeeping:
 
 - **priority**: the agent's reading of how soon the ticket matters to the user, never their chore to rank.
 - **size**: the user's own time on it, never the agent's. XS under 15 minutes, S about 20, M about an hour, L half a day, XL several sessions.
@@ -55,7 +55,7 @@ A question is open, and shows in the board's needs-me group, until a `Ruled <dat
 
 A ticket's **context** is its own body and every ancestor's, so a parent ticket says once what its children are slices of and a child ticket never repeats it. Renaming a ticket is a string replace of its slug across the tracker, read over as a diff; no command does it, since the slug is unique.
 
-Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`); a worker opens no ticket file, and what it has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`; `tracker check --help` says what the commit hook refuses of either.
+Every ticket file is written and committed in the agent repo's main checkout, on the branch it has out, so a ticket change needs no branch or merge of its own. The writers are the sessions working with the user and the orchestrator of a build (`/mx:dispatch`). A worker opens no ticket file, and `tracker` refuses every write from a `ticket/<slug>` branch; what a worker has to say reaches its ticket when the orchestrator imports the report it committed at `agent/show/<slug>/report.md`, and `tracker check --help` says what the commit hook refuses of either.
 
 **A parent ticket is ruled whole**, with its children, at its close-out: the full suite, the review one level up, the debrief (`/mx:dispatch`). A parent that is itself a child is ruled whole at its own close-out. A hinge is ruled alone (SLICING.md, Mark the hinges). From the parent's review page the user can still amend, redo or reject a single child.
 
