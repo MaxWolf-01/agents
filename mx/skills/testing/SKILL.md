@@ -13,7 +13,7 @@ Agents write the code and the user reads little of it, so a test earns its place
 
 A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite that sometimes fails for no reason gets rerun until it passes, and its failures stop being read.
 
-Read `GLOSSARY.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
+Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
