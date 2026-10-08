@@ -2,7 +2,7 @@
 
 A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
 
-Two other tools own neighbouring ground. **Charts belong to `dataviz`**: anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), including all the color decisions. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
+Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **takes its form from `dataviz` and its colours from the house**, as `/mx:house-style`'s `PARTS.md` paints a chart. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
 
 This file has two layers and they do not bind equally.
 
@@ -131,7 +131,7 @@ These compose freely over any node-and-arrow layout, and most good figures are t
 
 **Phase banner**: a chevron strip across the top naming the stages the figure moves through, so the horizontal axis carries meaning without a single arrow. Each segment is a polygon `x,4 x+188,4 x+200,18 x+188,32 x,32 x+12,18`, the leading notch omitted on the first. Darken or lighten successive segments slightly to imply direction.
 
-**Boundary box**: a rounded rect with a hairline stroke and a 2%-ink wash enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (sentence case, see Type) sitting in a paper-colored mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
+**Boundary box**: a rounded rect with a hairline stroke and a `wash-ink` fill enclosing what is inside one cluster, VPC, process, or trust zone, with a zone label (see Type) sitting in a `ground` mask on the top edge. Leave ≥16px between the label and the first enclosed node. Three per figure at most; past that you wanted lanes.
 
 **Cross-cutting bar**: a full-width bar for something everything depends on: auth, logging, orchestration, a scheduler. Inside a boundary box it spans the interior; outside and below, it reads as ambient infrastructure. Connect it with dashed arrows, since its relationship to each node is the same and drawing all of them would be noise.
 
