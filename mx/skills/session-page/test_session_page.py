@@ -323,8 +323,8 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A path a record writes as code is a link the user clicks rather than text they copy: from
-    the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a bare
-    word, a command, and code already inside a link stay code."""
+    the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a
+    `~name` that names no user, a bare word, a command, and code already inside a link stay code."""
     root, home = tmp_path / "repo", tmp_path / "home"
     (root / "mx").mkdir(parents=True)
     (root / "mx" / "tool.py").write_text("")
@@ -336,7 +336,7 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
     directory, transcript = write_session(root / "agent" / "sessions" / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
     (directory / "turns" / "01.md").write_text(
         "---\ndate: 2026-09-21\n---\n\n# Paths\n\n## Links\n\n- [The `mx/tool.py` listing](mx/tool.py): the code\n\n"
-        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `claude -p mx/tool.py` "
+        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `~ubuntu.26.04~resolute`, `claude -p mx/tool.py` "
         "and [`mx/tool.py`](mx/tool.py).\n"
     )
     section = sections_of(render_session(directory, transcript, now=NOW))["01"]
