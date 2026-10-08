@@ -9,33 +9,7 @@ Actively build and sharpen the project's domain model as you design. This is the
 
 ## File structure
 
-Most repos have a single context:
-
-```
-/
-├── GLOSSARY.md
-├── decisions/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
-
-If a `GLOSSARY-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
-
-```
-/
-├── GLOSSARY-MAP.md
-├── decisions/                        ← system-wide decisions
-├── src/
-│   ├── ordering/
-│   │   ├── GLOSSARY.md
-│   │   └── decisions/                ← context-specific decisions
-│   └── billing/
-│       ├── GLOSSARY.md
-│       └── decisions/
-```
-
-With several contexts, work in the one the current topic belongs to; ask when that is unclear.
+A repo has one context or several; [GLOSSARY-FORMAT.md](./GLOSSARY-FORMAT.md) gives each layout. With several contexts, work in the one the current topic belongs to; ask when that is unclear.
 
 Create files lazily, only when you have something to write. If no `GLOSSARY.md` exists, create one when the first term is resolved. If no `decisions/` exists, create it when the first ADR is needed.
 
@@ -61,7 +35,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 When a term is resolved, update `GLOSSARY.md` right there. Don't batch these up; capture them as they happen. Use the format in [GLOSSARY-FORMAT.md](./GLOSSARY-FORMAT.md). An entry is written when `glossary-lint` passes on the file.
 
-`GLOSSARY.md` is a glossary and nothing else. Right after a decision settles, the freshly-agreed mechanism feels like the definition. It isn't: the ADR or design doc you just wrote is its home. Touch an entry only when the term's meaning moved, not its implementation.
+`GLOSSARY.md` is a glossary and nothing else: right after a decision settles, the freshly agreed mechanism feels like the definition, so test the entry against the format's **Definitions survive redesign**.
 
 ### Offer ADRs sparingly
 
