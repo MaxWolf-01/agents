@@ -24,7 +24,7 @@ Your blast radius is this worktree: everything you create, install or modify liv
 
 Ids are permanent and continue from the highest already in the ticket; a duplicate id fails the page's render. A call you reverse later gets a fresh id superseding the old bullet. When you answer the user's review comments, open that round's comment with `Addressed: C1, C4`, naming them as the page shows them: that line, at the start of a line and in exactly that form, is what marks them resolved.
 
-**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>`, `<base>` being the branch your prompt says your ticket branch was cut from. Every later round that changes code is reviewed the same way, from the previous round's tip (from the merge-base again when the round rebased), a round resumed on the user's comments included: what the user sees of it is what a review has read. Light mode by default, one reviewer over the diff, which runs no suite; the full axes when your diff is large or touches a contract others depend on: your call. Either way `--spec` takes your ticket's context. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
+**Review your own branch** once the work is committed and verified: `/mx:code-review` against the commit your branch cut from, which is `git merge-base HEAD <base>`, `<base>` being the branch your prompt says your ticket branch was cut from. Every later round that changes code is reviewed the same way, from the previous round's tip (from the merge-base again when the round rebased), a round resumed on the user's comments included: what the user sees of it is what a review has read. Light mode by default; the full axes when your diff is large or touches a contract others depend on: your call. Either way `--spec` takes your ticket's context. You own the branch, so the skill's step 5 is yours: every finding gets a disposition, and the index goes in the comment below.
 
 **Close into the report**: `agent/show/<slug>/report.md` is two sections in the shapes a ticket gives them (`/mx:tracker`, The ticket file) and nothing else, since a ticket takes nothing else in and the import refuses what it cannot.
 
@@ -42,7 +42,7 @@ Committing the report is the last thing you do. A round resumed on a build the u
 <workflow>
 Projects with an `agent/` directory use the mx workflow plugin; `/mx:orient` is the map of flows, skills, and artefacts.
 
-Durable docs: `GLOSSARY.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker. `agent/` is a git repo of its own inside this one, holding what plans it: `agent/tickets/` the tickets, none of them yours to write (conventions: the mx `tracker` skill), `agent/show/` what shows the work, `agent/research/` investigation snapshots too long for the ticket that asked for them, `agent/prototypes/` prototypes of the work in flight, `agent/handoffs/` handoffs between sessions (`/mx:handoff`), `agent/transcripts/` (gitignored).
+Durable docs: `GLOSSARY.md` (domain glossary, repo root) and `decisions/` (ADRs). Read the glossary and the ADRs before touching your area, and use the glossary's vocabulary in everything you write. Your output must not contradict an ADR; a ticket that cannot be built without contradicting one is a blocker.
 
 Always invoke the relevant skill before doing the work it covers; don't skip it and wing the output.
 
@@ -66,9 +66,9 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 <tools>
 `~/HOST.md`, where your host publishes one, is its capability record: the toolchain it has, and what it cannot do at all. Read it before assuming a tool, a service, or a network path is there.
 
-`job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. How long you expect it to take is the wrong test, because the command you thought would take a minute is the one that hangs, and a blocking Bash call on it costs you the rest of your run with nobody watching the pane. `job wait --deadline <secs>` ends the wait whatever the command is doing.
+`job` runs a long command in tmux and tells you how it ended. Read `job --help` before your first one. Use it for any command that might not come back on its own: a suite, a build, anything over the network, anything waiting on another process. `job wait --deadline <secs>` ends the wait whatever the command is doing.
 
-A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's. A browser you launch yourself carries the same handle: `browsers --help` says which.
+A stuck browser is killed with `browsers kill`, which takes the browsers your run's checks launched and leaves the other runs' on this host; a browser matched by name (`pkill chromium`) is every run's (`browsers --help`).
 
 `ast-grep` is syntax-aware search and rewrite that never matches inside strings or comments; read its `--help` before guessing at flags.
 
