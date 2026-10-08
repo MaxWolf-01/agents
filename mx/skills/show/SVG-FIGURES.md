@@ -2,7 +2,7 @@
 
 A figure whose coordinates you place yourself: one self-contained HTML file, inline SVG and CSS, no build step, and the few lines of JS the scheme toggle needs, nothing more. Opens in a browser, screenshots cleanly, diffs as text. Reach for it when the picture *is* the artifact.
 
-Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **takes its form from `dataviz` and its colours from the house**, as `/mx:house-style`'s `PARTS.md` paints a chart. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
+Two other tools own neighbouring ground. **A chart**, anything where the reader compares quantities (bar, line, scatter, heatmap, stat tile, dashboard), **is `dataviz`'s, painted as `/mx:house-style`'s `PARTS.md` says**. **Mermaid solves layout for you**; here you solve it yourself, buying control and paying in effort. Under ~9 nodes that trade is worth it, above it usually not.
 
 This file has two layers and they do not bind equally.
 
