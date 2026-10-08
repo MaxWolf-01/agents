@@ -77,6 +77,18 @@ The worker's last act is its report: its closing comment, the questions only you
 
 </details>
 
+<details>
+<summary><b>The session page, in the hub tab</b></summary>
+
+Every session you sit at answers on its session page: the questions waiting on you at the top, the turns below, newest first, each linking the artefacts it made. The [container hub](https://github.com/MaxWolf-01/dotfiles/blob/master/bin/container-hub), a local server in the dotfiles and not part of mx, gathers every session's pages in one browser tab: a rail with one unit per session, its state and the headline of its newest turn, and the selected session's page in a sidebar, with the pages its turns opened in panes beside it, figures and shows on one side, review pages on the other. The input box under the session page types into that session's terminal. Screenshots of fictional sessions, rebuilt by [`docs/figures/hub-fixture/build.py`](../docs/figures/hub-fixture/build.py).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/hub.png">
+  <img alt="The container hub: a rail of five sessions, each numbered with its state mark (one blocked in its terminal in red, two that need you with a filled dot, one idle with a hollow dot, one working with a turning ring), the headline of its newest turn under its title, and its context use; beside it the selected session's page, with the question waiting on you at the top, its two options, the pick and why, and the newest turn below with your message and what landed; then the turn's artefacts open in two panes, a figure comparing what a shared link could carry in one and the review page of the landed slice, with an agent's note on the diff, in the other" src="assets/hub-light.png">
+</picture>
+
+</details>
+
 ## Artefacts
 
 | Object            | Location                             | Lifecycle                                                             | Content                                                                                                                                                             |
