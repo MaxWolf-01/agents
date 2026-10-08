@@ -1166,7 +1166,7 @@ def href(path: str) -> str:
     its file URL, and a URL stays as it is."""
     if URL.match(path):
         return path
-    local = Path(path).expanduser()
+    local = expanded(path)
     return local.as_uri() if local.is_absolute() else UP + path
 
 
@@ -1175,13 +1175,20 @@ def resolved(path: str, root: Path) -> str:
     joined to `root`, an absolute or `~` path as it is; a URL as it is."""
     if URL.match(path):
         return path
-    local = Path(file_part(path)).expanduser()
+    local = expanded(file_part(path))
     return os.path.normpath(local if local.is_absolute() else root / local)
 
 
 def file_part(path: str) -> str:
     """A link's path short of its fragment or query: the file it points at."""
     return re.split(r"[#?]", path)[0]
+
+
+def expanded(path: str) -> Path:
+    """`path` with a leading `~` made the home directory. `~name` stays as written: in a record it
+    is more often text such as a package version (`~ubuntu.26.04~resolute`) than another user's
+    home, and pathlib raises on a user it cannot find."""
+    return Path(path).expanduser() if re.match(r"~(/|$)", path) else Path(path)
 
 
 def path_target(text: str) -> str | None:
@@ -1193,7 +1200,7 @@ def path_target(text: str) -> str | None:
     path = re.sub(r":\d+(?::\d+)?$", "", text.strip())
     if root is None or re.search(r"\s", path) or not ("/" in path or Path(path).suffix):
         return None
-    local = Path(path).expanduser()
+    local = expanded(path)
     try:
         found = (local if local.is_absolute() else root / local).exists()
     except OSError:  # a name too long for the filesystem
