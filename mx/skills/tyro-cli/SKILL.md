@@ -22,7 +22,7 @@ All Python CLI scripts use tyro for argument parsing, never argparse, click, or 
 # ///
 ```
 
-Place at the top of the file. The script is then runnable via `uv run script.py --help`.
+Place at the top of the file. The script is then runnable via `uv run script.py --help`. Converting a script that already exists, `dependencies` lists every third-party package its imports need, and its code stays as it is: moving its parsing to tyro is a change of its own.
 
 ### Shebang for PEP 723 scripts
 
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
 ```
 
-### Past Pattern 1
+### Subcommands, nested configs, machine output
 
 - Subcommands, nested configs, positional or repeated args, short aliases, the rest of `tyro.conf`: [PATTERNS.md](PATTERNS.md).
 - Output a program or an agent reads (`--plain`, `--json`, a JSON schema in `--help`): [OUTPUT.md](OUTPUT.md).
