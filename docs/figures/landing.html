@@ -28,6 +28,9 @@ svg{display:block; width:100%; height:auto;}
 .alt{fill:none; stroke:var(--accent); stroke-width:1; opacity:.55;}
 .alt-sep{stroke:var(--accent); stroke-width:.8; stroke-dasharray:5 4; opacity:.4;}
 .tab{fill:var(--accent-tint); stroke:var(--accent); stroke-width:.8;}
+.frag{fill:none; stroke:var(--muted); stroke-width:1; opacity:.5;}
+.frag-sep{stroke:var(--muted); stroke-width:.8; stroke-dasharray:5 4; opacity:.4;}
+.frag-tab{fill:var(--paper2); stroke:var(--muted); stroke-width:.8;}
 .m-muted{fill:var(--muted);}
 .m-accent{fill:var(--accent);}
 text{fill:var(--ink);}
@@ -39,6 +42,7 @@ text{fill:var(--ink);}
 .mono-note{font:400 9px 'Geist Mono',monospace; fill:var(--soft);}
 .band{font:500 9px 'Geist Mono',monospace; letter-spacing:.16em; fill:var(--muted);}
 .ruling{font:600 9px 'Geist Mono',monospace; letter-spacing:.12em; fill:var(--accent);}
+.guard{font:600 9px 'Geist Mono',monospace; letter-spacing:.12em; fill:var(--muted);}
 .rule{stroke:var(--rule); stroke-width:1;}
 .legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
 .topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
@@ -51,12 +55,13 @@ text{fill:var(--ink);}
   <p class="eyebrow">mx workflow &middot; a landing</p>
   <button class="scheme"></button>
 </header>
-<h1>A landing: the demo the worker writes, the session that stages it, the ruling that ends it.</h1>
-<p class="dek">The worker leaves one executable <code>demo</code> file beside its slice and pastes its own run into the closing
-comment. The orchestrator renders the review page from the unmerged branch and stages that file in a tmux session, the command
-typed and the Enter withheld. Nothing runs on your machine, and nothing merges, before you say so.</p>
+<h1>A landing: the worker's report, the calls that are yours, the ruling</h1>
+<p class="dek">The worker builds, tests, reviews its own branch and commits a report. The orchestrator reads the diff,
+renders the review page and sorts the build's calls. A build that carries no call yours to make merges on your standing
+yes, the accept you gave in advance, as far as its parent ticket's branch. One that carries some waits in <code>review</code>,
+and each of those calls is put to you with a show built around them.</p>
 
-<svg viewBox="0 0 1200 976" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 1460" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
@@ -67,9 +72,20 @@ typed and the Enter withheld. Nothing runs on your machine, and nothing merges, 
   </defs>
 
   <!-- lifelines -->
-  <line class="life" x1="180" y1="72" x2="180" y2="896"/>
-  <line class="life" x1="600" y1="72" x2="600" y2="896"/>
-  <line class="life-you" x1="1020" y1="72" x2="1020" y2="896"/>
+  <line class="life" x1="180" y1="72" x2="180" y2="1384"/>
+  <line class="life" x1="600" y1="72" x2="600" y2="1384"/>
+  <line class="life-you" x1="1020" y1="72" x2="1020" y2="1384"/>
+
+  <!-- fragments and band rules, under every arrow and label -->
+  <rect class="frag" x="392" y="648" width="708" height="332" rx="8"/>
+  <line class="frag-sep" x1="392" y1="812" x2="1100" y2="812"/>
+  <rect class="alt" x="100" y="1084" width="1000" height="292" rx="8"/>
+  <line class="alt-sep" x1="100" y1="1168" x2="1100" y2="1168"/>
+  <line class="alt-sep" x1="100" y1="1240" x2="1100" y2="1240"/>
+  <line class="alt-sep" x1="100" y1="1304" x2="1100" y2="1304"/>
+  <line class="rule" x1="60" y1="106" x2="1140" y2="106"/>
+  <line class="rule" x1="60" y1="352" x2="1140" y2="352"/>
+  <line class="rule" x1="60" y1="1012" x2="1140" y2="1012"/>
 
   <!-- participants -->
   <rect class="card" x="60" y="20" width="240" height="52" rx="6"/>
@@ -77,104 +93,144 @@ typed and the Enter withheld. Nothing runs on your machine, and nothing merges, 
   <text class="who" x="180" y="60" text-anchor="middle">ONE TICKET, ITS OWN BRANCH, ANY HOST</text>
   <rect class="card" x="480" y="20" width="240" height="52" rx="6"/>
   <text class="name" x="600" y="44" text-anchor="middle">Orchestrator</text>
-  <text class="who" x="600" y="60" text-anchor="middle">THE FEATURE BRANCH, YOUR MACHINE</text>
+  <text class="who" x="600" y="60" text-anchor="middle">HOLDS THE BRANCH THE TICKET MERGES INTO</text>
   <rect class="card-you" x="900" y="20" width="240" height="52" rx="6"/>
   <text class="name" x="1020" y="44" text-anchor="middle">You</text>
-  <text class="who" x="1020" y="60" text-anchor="middle">QA AND THE RULING</text>
+  <text class="who" x="1020" y="60" text-anchor="middle">THE CALLS YOURS TO MAKE, THE RULING</text>
 
   <!-- band: the build -->
-  <line class="rule" x1="60" y1="106" x2="1140" y2="106"/>
   <rect class="mask" x="56" y="97" width="236" height="18"/>
   <text class="band" x="60" y="110">THE BUILD &middot; WHILE YOU ARE AWAY</text>
 
   <path class="flow" d="M 180,138 H 210 V 158 H 186" marker-end="url(#arrow)"/>
-  <text class="msg" x="224" y="142">build, self-review</text>
-  <text class="note" x="224" y="156">the acceptance criteria, then a review in fresh context</text>
+  <text class="msg" x="224" y="142">build it, test it</text>
+  <text class="note" x="224" y="156">/mx:testing; typecheck as it goes, the full suite once at the end</text>
 
   <path class="flow" d="M 180,190 H 210 V 210 H 186" marker-end="url(#arrow)"/>
-  <text class="msg" x="224" y="194">write the demo: <tspan class="mono">agent/show/&lt;slug&gt;/demo</tspan></text>
-  <text class="note" x="224" y="208">one executable file, no arguments; what it produces lands beside it</text>
+  <text class="msg" x="224" y="194"><tspan class="mono">/mx:code-review</tspan> of its own branch</text>
+  <text class="note" x="224" y="208">from the commit the branch was cut from; every finding gets a disposition</text>
 
   <path class="flow" d="M 180,242 H 210 V 262 H 186" marker-end="url(#arrow)"/>
-  <text class="msg" x="224" y="246">run it</text>
-  <text class="note" x="224" y="260">the command and that run's output are pasted, not written from the head</text>
+  <text class="msg" x="224" y="246">write the report</text>
+  <text class="note" x="224" y="260">the closing comment: what landed, the acceptance criteria it meets</text>
+  <text class="note" x="224" y="272">its assumptions, each anchored to the line it concerns, shown there on the review page</text>
+  <text class="note" x="224" y="284">its questions: the calls only you can make</text>
 
-  <path class="flow" d="M 184,296 H 594" marker-end="url(#arrow)"/>
-  <rect class="mask" x="248" y="278" width="420" height="16"/>
-  <text class="msg" x="256" y="290">the report: what landed &middot; Demo &middot; Details &middot; its calls in <tspan class="mono">## Questions</tspan></text>
+  <path class="flow" d="M 184,320 H 594" marker-end="url(#arrow)"/>
+  <rect class="mask" x="208" y="302" width="364" height="16"/>
+  <text class="msg" x="216" y="314">committed last: <tspan class="mono">agent/show/&lt;slug&gt;/report.md</tspan></text>
 
   <!-- band: the landing -->
-  <line class="rule" x1="60" y1="328" x2="1140" y2="328"/>
-  <rect class="mask" x="56" y="319" width="150" height="18"/>
-  <text class="band" x="60" y="332">THE LANDING</text>
+  <rect class="mask" x="56" y="343" width="128" height="18"/>
+  <text class="band" x="60" y="356">THE LANDING</text>
 
-  <path class="flow" d="M 600,360 H 630 V 380 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="364"><tspan class="mono">dispatch review</tspan></text>
-  <text class="note" x="644" y="378">the review page, rendered from the branch nothing has merged</text>
+  <path class="flow" d="M 600,384 H 630 V 404 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="388"><tspan class="mono">dispatch ctl probe</tspan>, <tspan class="mono">dispatch fetch</tspan></text>
+  <text class="note" x="644" y="402">a report this round committed is the worker's finished signal</text>
 
-  <path class="flow" d="M 600,412 H 630 V 432 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="416">the ticket's worktree, beside the feature's</text>
-  <text class="note" x="644" y="430">the demo staged in a tmux session named after the ticket: the command typed, no Enter</text>
+  <path class="flow" d="M 600,436 H 630 V 456 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="440">read the diff against the ticket and its ancestry</text>
+  <text class="note" x="644" y="454">it holds the whole tree; what the brief missed goes back on resume</text>
 
-  <path class="flow-you" d="M 604,466 H 1014" marker-end="url(#arrow-you)"/>
-  <rect class="mask" x="664" y="448" width="300" height="16"/>
-  <text class="msg" x="672" y="460">the page open, the message naming the session</text>
+  <path class="flow" d="M 600,488 H 630 V 508 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="492"><tspan class="mono">dispatch review &lt;slug&gt;</tspan></text>
+  <text class="note" x="644" y="506">imports the closing comment, questions and assumptions into the ticket,</text>
+  <text class="note" x="644" y="518">renders the review page, and puts the build in review</text>
+
+  <path class="flow" d="M 600,544 H 630 V 564 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="548">a child that is no hinge: merged into its parent's branch</text>
+  <text class="note" x="644" y="562">on this read, <tspan class="mono-note">--no-ff</tspan>; its siblings build on it unruled</text>
+  <text class="note" x="644" y="574">its calls are sorted with the parent's, at the parent's close-out</text>
+
+  <path class="flow" d="M 600,600 H 630 V 620 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="604">sort the build's calls</text>
+  <text class="note" x="644" y="618">each call already yours, the agent's, or yours to make</text>
+  <text class="note" x="644" y="630">for a hinge, a ticket from the integration branch, a parent at its close-out</text>
+
+  <!-- the sort -->
+  <rect class="frag-tab" x="392" y="648" width="80" height="24" rx="4"/>
+  <text class="guard" x="404" y="664">THE SORT</text>
+
+  <text class="guard" x="404" y="692">NOTHING YOURS</text>
+  <text class="guard" x="404" y="704">TO MAKE</text>
+  <path class="flow" d="M 600,684 H 630 V 704 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="688">merge <tspan class="mono">--no-ff</tspan> and verify, on a yes you already gave</text>
+  <text class="note" x="644" y="702">a hinge: your standing yes, as far as its parent's branch</text>
+  <text class="note" x="644" y="714">the integration branch: your word up front, or the merge waits for it</text>
+
+  <path class="flow" d="M 600,740 H 630 V 760 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="744">a fork builds the landing's show</text>
+  <text class="note" x="644" y="758">none where the diff alone makes the change plain at a glance</text>
+
+  <path class="flow" d="M 604,792 H 1014" marker-end="url(#arrow)"/>
+  <rect class="mask" x="664" y="774" width="300" height="16"/>
+  <text class="msg" x="672" y="786">one line: what landed, the show, the review page</text>
+
+  <text class="ruling" x="404" y="840">CALLS YOURS</text>
+  <text class="ruling" x="404" y="852">TO MAKE</text>
+  <path class="flow" d="M 600,836 H 630 V 856 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="840">each call a <tspan class="mono">[Dn]</tspan> question on its ticket</text>
+  <text class="note" x="644" y="854">the choice the build made, and the alternative;</text>
+  <text class="note" x="644" y="866">the board's needs-me group holds it until you rule</text>
+
+  <path class="flow" d="M 600,892 H 630 V 912 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="896">a fork builds the show around those calls</text>
+  <text class="note" x="644" y="910">top down: the intent, how the parts fit, the code diff last</text>
+
+  <path class="flow-you" d="M 604,944 H 1014" marker-end="url(#arrow-you)"/>
+  <rect class="mask" x="664" y="926" width="300" height="16"/>
+  <text class="msg" x="672" y="938">each call on the session page</text>
+  <rect class="mask" x="664" y="950" width="340" height="14"/>
+  <text class="note" x="672" y="960">with the smallest artefact that shows it, the show and the review page linked</text>
 
   <!-- band: the ruling -->
-  <line class="rule" x1="60" y1="498" x2="1140" y2="498"/>
-  <rect class="mask" x="56" y="489" width="128" height="18"/>
-  <text class="band" x="60" y="502">THE RULING</text>
+  <rect class="mask" x="56" y="1003" width="128" height="18"/>
+  <text class="band" x="60" y="1016">THE RULING</text>
 
-  <path class="flow-you" d="M 1020,530 H 990 V 550 H 1014" marker-end="url(#arrow-you)"/>
-  <text class="msg" x="976" y="534" text-anchor="end">Enter, when you choose</text>
-  <text class="note" x="976" y="548" text-anchor="end">the demo runs on your machine and opens what it produces</text>
-
-  <path class="flow-you" d="M 1016,584 H 606" marker-end="url(#arrow-you)"/>
-  <rect class="mask" x="748" y="566" width="152" height="16"/>
-  <text class="msg" x="756" y="578">the ruling, one of four</text>
+  <path class="flow-you" d="M 1016,1048 H 606" marker-end="url(#arrow-you)"/>
+  <rect class="mask" x="740" y="1030" width="160" height="16"/>
+  <text class="msg" x="748" y="1042">your ruling, one of four</text>
+  <rect class="mask" x="664" y="1054" width="340" height="14"/>
+  <text class="note" x="672" y="1064">on the calls shown, or as a line in chat; <tspan class="mono-note">tracker rule</tspan> records each answer</text>
 
   <!-- the four rulings -->
-  <rect class="alt" x="100" y="608" width="1000" height="234" rx="8"/>
-  <rect class="tab" x="100" y="608" width="84" height="20" rx="4"/>
-  <text class="ruling" x="112" y="622">RULING</text>
+  <rect class="tab" x="100" y="1084" width="84" height="24" rx="4"/>
+  <text class="ruling" x="112" y="1100">RULING</text>
 
-  <text class="ruling" x="112" y="654">ACCEPT</text>
-  <path class="flow" d="M 600,646 H 630 V 666 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="650"><tspan class="mono">merge --no-ff</tspan>, then the project's verification</text>
-  <text class="note" x="644" y="664">the ticket is done, and its dependents join the frontier</text>
-  <line class="alt-sep" x1="100" y1="680" x2="1100" y2="680"/>
+  <text class="ruling" x="112" y="1134">ACCEPT</text>
+  <path class="flow" d="M 600,1126 H 630 V 1146 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="1130">merge <tspan class="mono">--no-ff</tspan> in every repo, then the project's verification</text>
+  <text class="note" x="644" y="1144">green: <tspan class="mono-note">dispatch review</tspan> writes done and retires the worker's run</text>
+  <text class="note" x="644" y="1156">red, or a conflict: the worker rebases onto the branch and reports again</text>
 
-  <text class="ruling" x="112" y="708">AMEND</text>
-  <path class="flow" d="M 596,710 H 186" marker-end="url(#arrow)"/>
-  <rect class="mask" x="248" y="692" width="308" height="16"/>
-  <text class="msg" x="256" y="704">your comments on the page, as guidance on resume</text>
-  <rect class="mask" x="248" y="714" width="308" height="14"/>
-  <text class="note" x="256" y="724">the same branch revises and reports again</text>
-  <line class="alt-sep" x1="100" y1="742" x2="1100" y2="742"/>
+  <text class="ruling" x="112" y="1198">AMEND</text>
+  <path class="flow" d="M 596,1200 H 186" marker-end="url(#arrow)"/>
+  <rect class="mask" x="248" y="1182" width="308" height="16"/>
+  <text class="msg" x="256" y="1194">your comments on the page, as guidance on resume</text>
+  <rect class="mask" x="248" y="1206" width="324" height="26"/>
+  <text class="note" x="256" y="1216">the worker revises on the same branches and reports again;</text>
+  <text class="note" x="256" y="1228">a revision that only applies them is accepted with no second round</text>
 
-  <text class="ruling" x="112" y="764">REDO</text>
-  <path class="flow" d="M 600,756 H 630 V 776 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="760">the build discarded, the ticket kept</text>
-  <text class="note" x="644" y="774">back to open with your reason, for a fresh worker</text>
-  <line class="alt-sep" x1="100" y1="790" x2="1100" y2="790"/>
+  <text class="ruling" x="112" y="1266">REDO</text>
+  <path class="flow" d="M 600,1258 H 630 V 1278 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="1262">the build discarded, the ticket kept</text>
+  <text class="note" x="644" y="1276">its run cleaned up, its branches deleted, back to open with your reason</text>
+  <text class="note" x="644" y="1288">the show rebuilt without it; a fresh worker takes the ticket</text>
 
-  <text class="ruling" x="112" y="812">REJECT</text>
-  <path class="flow" d="M 600,804 H 630 V 824 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="808">the ticket and its build go together</text>
-  <text class="note" x="644" y="822">the reason is the commit message that removes it</text>
-
-  <path class="flow" d="M 600,868 H 630 V 888 H 606" marker-end="url(#arrow)"/>
-  <text class="msg" x="644" y="872">the demo session killed, the worktree removed</text>
-  <text class="note" x="644" y="886">on every ruling but amend, whose next fetch unstages it</text>
+  <text class="ruling" x="112" y="1330">REJECT</text>
+  <path class="flow" d="M 600,1322 H 630 V 1342 H 606" marker-end="url(#arrow)"/>
+  <text class="msg" x="644" y="1326">the ticket and its build go together</text>
+  <text class="note" x="644" y="1340"><tspan class="mono-note">tracker drop</tspan>, your reason in the commit message</text>
+  <text class="note" x="644" y="1352">its run cleaned up, its branches deleted, the show rebuilt without it</text>
 
   <!-- legend -->
-  <line class="rule" x1="60" y1="928" x2="1140" y2="928"/>
-  <line class="flow" x1="60" y1="952" x2="100" y2="952" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="108" y="955">a message between parties</text>
-  <path class="flow" d="M 300,944 H 320 V 958 H 306" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="344" y="955">work a party does on its own</text>
-  <line class="flow-you" x1="600" y1="952" x2="640" y2="952" marker-end="url(#arrow-you)"/>
-  <text class="legend-text" x="648" y="955">where your attention is asked for</text>
+  <line class="rule" x1="60" y1="1412" x2="1140" y2="1412"/>
+  <line class="flow" x1="60" y1="1436" x2="100" y2="1436" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="108" y="1439">a message between parties</text>
+  <path class="flow" d="M 300,1428 H 320 V 1442 H 306" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="344" y="1439">work a party does on its own</text>
+  <line class="flow-you" x1="600" y1="1436" x2="640" y2="1436" marker-end="url(#arrow-you)"/>
+  <text class="legend-text" x="648" y="1439">where your attention is asked for</text>
 </svg>
 <script>
 const root = document.documentElement, button = document.querySelector('.scheme');
