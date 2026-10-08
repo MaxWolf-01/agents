@@ -42,7 +42,7 @@ The exception is a radial layout. Spokes running from a ring of nodes into a sha
 
 **Pick a grid and hold it.** Every coordinate, size, and gap a multiple of one number, with stroke widths and opacities exempt. This single constraint does more than any other to stop a figure reading as machine-generated, because near-alignment is what the eye catches. The house skin uses 4.
 
-**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span, since Newsreader runs wider than a grotesk in lowercase) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
+**Text is placed by measurement, never by eye.** Every text block sits one inset (12px) from its box on every side, on baselines at fixed offsets from the box top (name +24, role +41, detail +58 in an 80px node), so every node in the figure reads on the same rhythm. Compute a label's width before placing it (≈0.6em per character in the mono; measure the serif with a hidden span) and check it against the space it has. An arrow label is centred on its segment, 8px above the line, with ≥4px clear of both boxes; a segment too short for its label gets widened, the label never gets pushed onto a box. Text that touches a border, crowds a corner, or lands on a different baseline than its neighbour is what makes a figure look thrown together, whatever else is right about it.
 
 **Budget the figure before drawing it.** Around 9 nodes and 12 connectors is where a diagram stops being readable at a glance. Past that you have two figures, an overview and a detail, not one dense one. Type-specific ceilings that bite earlier: 5 sequence lifelines, 5 swimlane lanes, 6 layers, 3 venn circles, 4 tree or org-chart levels, 5 radar axes.
 
@@ -77,9 +77,9 @@ The house style on a figure. Load `/mx:house-style` and inline its `tokens.css` 
 | zone fill; a banner ramps the same mix 6% to 22% | `wash-ink` |
 | a security boundary, a caution | `accent-2` |
 
-The scheme is `data-theme="day"` or `"night"` on the root, read from `?theme=` for a screenshot, and the toggle is the house one: a sun by day and a moon by night, on the page's header row, right-aligned with the content. `demo.html` in the house-style skill carries both to copy. Initialize from `matchMedia('(prefers-color-scheme: dark)')` when the query is absent. Render both schemes and look at both; a standalone `.svg` has no script, so it gets both renders and no toggle.
+The scheme, its `?theme=` reading and the toggle are the house's, copied from its `demo.html`. A standalone `.svg` has no script, so it gets both renders and no toggle.
 
-**The accent is editorial, not a signalling system.** One meaning per figure, however many marks carry it, chosen as the thing the reader should look at first. If you want the accent to mean four things, you have not yet decided what the figure is about. Everything else is ink or muted.
+**The accent goes on the thing the reader should look at first.**
 
 Node treatments: focal is `wash` on `accent`; a service or step is `ground-2` on `body`; a store is `ground-2` on `muted`; an external system is unfilled on `muted`; an optional or async node is unfilled on `edge` dashed `4,3`; a security boundary is unfilled on `accent-2` dashed `4,4`. Four weights come from the stroke colour and from whether the box is filled at all; every stroke is a hairline.
 
@@ -87,7 +87,7 @@ Strokes 0.8 / 1 / 1.2. Radius 4 on tags, 6 on nodes, 8 on containers. Never a `b
 
 ### Type
 
-The house roles, at figure sizes. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions) and for labels; a node's name is not data. Labels are lowercase.
+The house roles, at figure sizes. Mono is for content that *is* technical (ports, paths, URLs, field types, state transitions) and for labels; a node's name is not data.
 
 | Role | Family | Size |
 |---|---|---|
@@ -103,7 +103,7 @@ The house roles, at figure sizes. Mono is for content that *is* technical (ports
 
 These are floors, not targets: a label that does not fit gets a wider box, never a smaller size.
 
-A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished. Small text ported from a grotesk is re-measured downward: Newsreader runs wider in lowercase at the same size.
+A node carries a name, a role, and a detail, one line each, and a label is a name, not a clause: `pc` with the role line `backup hub`, never `pc — backup hub`; `repos, docs, config`, never `repos · docs · config`. Grey is for the one detail line; a card that is mostly grey text reads as unfinished.
 
 The font link is the one in the house-style `demo.html` head.
 

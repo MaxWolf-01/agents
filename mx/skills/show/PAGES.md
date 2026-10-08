@@ -4,10 +4,9 @@ An HTML page as the artifact: side-by-side panels, an interactive figure, prose 
 
 ## Page-level additions to the skin
 
-- Body text is the house body role at the measure; a dense comparison page may set `--size-body` down, as the skill allows. Headings are `v-h2` and `v-h3`. Sentence case in prose, lowercase labels.
+- Body text is the house body role at the measure; a dense comparison page may set `--size-body` down, as the skill allows. Headings are `v-h2` and `v-h3`. Sentence case in prose.
 - One content column, `--page` wide, left-aligned. Everything on the 4px grid. A table wider than the measure takes the page width.
 - Structure encodes information. A border, a rule, a number, a label exists because it separates or orders something the reader needs told apart; numbering (`01 / 02`) only when the content is a sequence.
-- One emphasized element per page, in the accent. Everything else ink, muted, soft.
 - Motion only in answer to the reader's action (open, expand, confirm), and it shows what changed. No entrance animations, no hover transitions on every card.
 - Quality floor: usable at 700px wide, visible keyboard focus, `prefers-reduced-motion` honoured, both schemes with the toggle.
 - Selector specificity: one class per block, no element selectors that can cancel a class's spacing.
