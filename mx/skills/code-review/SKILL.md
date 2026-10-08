@@ -11,7 +11,7 @@ Review of the diff between `HEAD` and a fixed point, along four axes:
 - **Spec**: does it faithfully implement the originating ticket / issue / spec?
 - **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? It runs the suite rather than only reading it, which makes it the one axis that executes the tip under review.
 
-The axes run as separate reviewers so they don't pollute each other's context, and their reports are read by the session or worker that owns the branch (step 5). [`review`](review), beside this file, runs them (step 4).
+The axes run as separate reviewers so they don't pollute each other's context, and their reports are read by the session or worker that owns the branch (step 5). [`review`](review) runs them (step 4).
 
 ## Process
 
@@ -31,11 +31,11 @@ Look for what the work was ordered by, in this order:
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 
-Where no order was found, run **light** (below), which takes none. With one in hand, run light too unless the diff is large or touches a contract others depend on; then the axes. Your call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
+Where no order was found, run **light** (below), which takes none. With one in hand, run light unless the diff is large or touches a contract others depend on, in which case run the axes. The call is yours, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
 ### 3. What binds the review
 
-The standards sources are the script's to gather, by what the diff touches, and the brief it writes for each axis is the record of which ones bound this review. Two are this skill's own: [`SMELLS.md`](SMELLS.md), the **smell baseline**, a fixed set of code smells the Standards axis applies to every diff even when the repo documents nothing; and [`TEST-SMELLS.md`](TEST-SMELLS.md), the **test-smell baseline**, read by the Tests axis, or by whoever reads the tests when no Tests axis runs. A glossary entry or an ADR the diff touches is checked against its format: the agent that wrote it has just settled the mechanism behind it and reads that as the definition, and the reviewer reads it cold.
+The standards sources are the script's to gather, by what the diff touches, and the brief it writes for each axis is the record of which ones bound this review. Two are this skill's own: [`SMELLS.md`](SMELLS.md), the **smell baseline**, a fixed set of code smells the Standards axis applies to every diff even when the repo documents nothing; and [`TEST-SMELLS.md`](TEST-SMELLS.md), the **test-smell baseline**, read by the Tests axis, or by whoever reads the tests when no Tests axis runs. The Standards reviewer checks a glossary entry or an ADR the diff touches against its format: the agent that wrote it has just settled the mechanism behind it and reads that as the definition, and the reviewer reads it cold.
 
 ### 4. Run the reviewers
 
