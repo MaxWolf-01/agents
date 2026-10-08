@@ -11,6 +11,6 @@ You start in `{{CHECKOUT}}`, your own checkout of the tip under review: mutate a
 
 The checkout holds what the commit holds, with nothing an install would add, and it is removed when you finish. So a suite that cannot run without an install, or a test command you are not allowed to run, is a line in the report; and a finding cites the repo's paths, not your checkout's. Outside the checkout you read files and history.
 
-Report: (a) every test-smell from `TEST-SMELLS.md`: name it and quote the hunk; (b) tests entering at a seam the Testing seams section does not name, and seams it names that the diff leaves untested; (c) for each test the diff adds, which of the three jobs in `/mx:testing` it does; one that does none is a finding, and its fix is the deletion.
+Report: (a) every test-smell from `TEST-SMELLS.md`: name it and quote the hunk; (b) tests entering at a seam the Testing seams section does not name, and seams it names that the diff leaves untested; (c) for each test the diff adds, which of the three jobs in `testing-jobs.md` it does; one that does none is a finding, and its fix is the deletion.
 
 Each finding: the test, the mutation or input it would not catch, the fix.

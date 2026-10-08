@@ -9,11 +9,11 @@ Agents write the code and the user reads little of it, so a test earns its place
 
 1. **It holds a behaviour the user relies on**, at a seam the next agent will touch, so that agent's change cannot break it unnoticed. It states the behaviour, never the bytes or the internals: a test that fails on a refactor that kept the behaviour is a defect of the test.
 2. **It is the regression test for a bug that reached the user or a live run.** A bug a reviewer only imagined earns no test.
-3. **It states an invariant of a seam**, as a property test, where stating it is how the seam gets clear (Property tests, below).
+3. **It states an invariant of a seam**, as a property test, where stating it is how the seam gets clear.
 
 A test doing none of them is deleted. A test that flakes is fixed or deleted the day it flakes: a suite that sometimes fails for no reason gets rerun until it passes, and its failures stop being read.
 
-Read `GLOSSARY.md` if the project has one, so test names carry the domain's words, and respect ADRs in the area you touch.
+Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
