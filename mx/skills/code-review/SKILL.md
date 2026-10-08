@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: "Review the changes since a fixed point (a commit, branch or tag). Use when the user asks to review a branch or work in progress, to \"review since X\", or for a \"light review\"."
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/review --help)
 ---
 
 Review of the diff between `HEAD` and a fixed point, along four axes:
@@ -10,7 +11,7 @@ Review of the diff between `HEAD` and a fixed point, along four axes:
 - **Spec**: does it faithfully implement the originating ticket / issue / spec?
 - **Tests**: do the tests it touches enter at the agreed seams, take their expectations from an oracle, and use inputs that can discriminate a bug? It runs the suite rather than only reading it, which makes it the one axis that executes the tip under review.
 
-The axes run as separate reviewers so they don't pollute each other's context, and their reports are read by the session or worker that owns the branch (step 5). [`review`](review), beside this file, runs them; this skill is the judgment around that script.
+The axes run as separate reviewers so they don't pollute each other's context, and their reports are read by the session or worker that owns the branch (step 5). [`review`](review), beside this file, runs them (step 4).
 
 ## Process
 
@@ -30,22 +31,21 @@ Look for what the work was ordered by, in this order:
 
 It travels to the reviewers as a file, so a fetched issue body or text the user pasted is written to one. Anything else the reviewers must not reopen goes in that file too: linked issues, a PR's prior review discussion.
 
-Where no order was found, run **light** (below), which takes none. With one in hand, the axes are the default for a large diff or one touching a contract others depend on; for a small diff that touches no such contract, light mode's single reviewer reads the same source for less, and what it costs is the axes' separation and the Tests axis, the one that runs the suite. The reviewer's call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
+Where no order was found, run **light** (below), which takes none. With one in hand, run light too unless the diff is large or touches a contract others depend on; then the axes. Your call, and the worker contract reads it the same way ([`worker-prompt.md`](../dispatch/worker-prompt.md)).
 
 ### 3. What binds the review
 
-The standards sources are the script's to gather, and the brief it writes for each axis is the record of which ones bound this review:
-
-- [`SMELLS.md`](SMELLS.md), beside this file, the **smell baseline**: a fixed set of code smells the Standards axis applies to every diff, even when the repo documents nothing.
-- [`TEST-SMELLS.md`](TEST-SMELLS.md), beside it, the **test-smell baseline**, and `/mx:testing` (its `SKILL.md`), which says what job a test does: the Tests axis's own sources, and standards sources for whoever reads the tests when no Tests axis runs, the one light reviewer included.
-- `/mx:writing-for-humans` (its `SKILL.md` and, beside it, [`CATALOGUE.md`](../writing-for-humans/CATALOGUE.md), the catalogue of prose tells the reviewer cites by rule id), for **every** diff: their rules bind all artifact text wherever it lives (code comments, docstrings, UI strings, help text, docs, READMEs).
-- `/mx:writing-for-agents` (its `SKILL.md`), when the diff touches process documents (skills, `AGENTS.md`/`CLAUDE.md`, commands, output styles, prompt templates).
-- [`GLOSSARY-FORMAT.md`](../domain-modelling/GLOSSARY-FORMAT.md) and [`ADR-FORMAT.md`](../domain-modelling/ADR-FORMAT.md), when the diff touches a glossary (`GLOSSARY.md`, `GLOSSARY-MAP.md`) or an ADR (`decisions/`): each entry or record is checked against its format's rules, and `glossary-lint` runs on every touched glossary. The agent that wrote an entry has just settled the mechanism behind it and reads that as the definition; the reviewer reads the entry cold.
-- The repo's own standards documents, at its root and only there: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, `PRINCIPLES.md`.
+The standards sources are the script's to gather, by what the diff touches, and the brief it writes for each axis is the record of which ones bound this review. Two are this skill's own: [`SMELLS.md`](SMELLS.md), the **smell baseline**, a fixed set of code smells the Standards axis applies to every diff even when the repo documents nothing; and [`TEST-SMELLS.md`](TEST-SMELLS.md), the **test-smell baseline**, read by the Tests axis, or by whoever reads the tests when no Tests axis runs. A glossary entry or an ADR the diff touches is checked against its format: the agent that wrote it has just settled the mechanism behind it and reads that as the definition, and the reviewer reads it cold.
 
 ### 4. Run the reviewers
 
-`review`, beside this file and on `PATH`, does the mechanics: the range, each axis's brief from the templates in [`briefs/`](briefs), the axes as `claude -p` reviewers, and the reports under the range they read. `review --help` is its reference. It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). A zero exit means every report landed; a nonzero one names the axis that left none, and the command to re-run it. The judgment it leaves you is `--effort` and `--minutes`, the budget each reviewer paces its work to, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. A brief that needs changing is one file in `briefs/`. For a cross-model review, run the same briefs through `/mx:codex` instead.
+`review`, beside this file and on `PATH`, runs them:
+
+```text
+!`${CLAUDE_SKILL_DIR}/review --help`
+```
+
+It takes minutes and narrates one line per reviewer, so run it where you can watch it (`/mx:tmux`). The judgment it leaves you is `--effort` and `--minutes`, higher for a large diff; `run-log report --site review` shows what past rounds cost and took per axis and effort. For a cross-model review, run the same briefs through `/mx:codex` instead.
 
 ### 5. Aggregate
 
@@ -67,7 +67,7 @@ A clean diff gets one line: the range, and that the axes came back empty.
 
 ## Light mode
 
-`--light` folds the correctness and standards briefs into one reviewer, which judges the diff against `--spec` as well where one is given. What it buys is cost; what it costs is the axes' separation and the Tests axis, so nobody runs the suite. The right trade for a diff small enough that one reader sees all of it, and for work nothing ordered. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
+What `--light` buys is cost; what it costs is the axes' separation and the Tests axis, so nobody runs the suite. The right trade for a diff small enough that one reader sees all of it, and for work nothing ordered. Step 5 runs as written: one report to read, the same three dispositions, the same delivery.
 
 ## Why separate axes
 
