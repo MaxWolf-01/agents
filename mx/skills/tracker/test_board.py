@@ -7,8 +7,8 @@
 Three seams: the tracker loader (a fixture tracker on disk in, ticket state out), the graph
 sources (which tickets become nodes, in which class, joined by which edges), and the rendered
 page (groups, rows, the attributes the page's script matches against the graph sources). The
-oracle is the tracker skill and the board's --help: the frontier is open, unblocked,
-unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
+oracle is the tracker skill, the board's --help and the docstrings beside the code that draws the
+page: the frontier is open, unblocked, unclaimed; a proposed ticket is not open whatever blocks it; a build in review waits for the
 user's ruling in its own group and unblocks nothing until the accept writes done, save a sibling
 merged into the branch of the parent ticket the two share, no hinge; a gh reference
 is a link to GitHub; a row copies the absolute path of the file it was read from; a review page

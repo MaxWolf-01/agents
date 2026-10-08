@@ -11,136 +11,40 @@ Run `board` from anywhere inside the repo: it finds the tracker the way the
 keeps re-rendering until Ctrl-C. --no-watch --no-open is the
 one-shot form: render the page and exit.
 
-Reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
+It reads every ticket of the tracker (agent/tickets/<slug>.md, flat) through the
 one command that parses one, `tracker` beside this script, and writes one
-self-contained page beside the tracker, agent/board.html. The page is the
-tickets as rows grouped by state: needs me, frontier, claimed, blocked,
-proposed, done folded.
-
-Needs me holds every ticket whose next step is the user's own time: a build to
-rule on, a ticket stopped on a question, and a ticket at p1 or p2 the user is in
-the loop for that nobody has taken up (board.needs_me). A parent ticket is ruled
-whole, so at its close-out it is one needs-me row with its child tickets folded
-under it. While it is still being built, a child in review merged into its
-branch folds under its row wherever that row is: it waits for the close-out,
-not on the user. A hinge, ruled alone, is a row of its own with a mark saying
-so (board.folded).
-A needs-me row's open questions show under it while the row is folded, a parent
-ticket at its close-out asking its child tickets' with its own, each with a
-button that copies it, one that copies the row's own, and one on the group
-that copies every question on the board; each button says on hover what it will
-copy. A build in review carries the worker's questions and closing comment in
-the tracker's own copy, where `dispatch review` imported them from the worker's
-report.
-
-A row reads left to right in fixed columns: the tree the ticket is part of (the
-top-level ticket its ancestry runs to), its own slug, what the row asks of the
-user (to rule on, your answer, with you, build), the ticket's short name with
-its review page and the
-pull requests and issues its `gh` list names, each in the look of the state
-GitHub gives it and saying that state on hover, the ticket brief under the name
-with the open questions under that, the user's time on it, the priority as a
-word, and what it waits on. The name is the ticket's H1, the brief its `##
-Brief` section, the questions its `## Questions` section, the priority and the
-size its frontmatter, which every ticket declares. Rows sort by priority, then by
-the user's time, within each group. Every
-mark says on hover what it means. Below a width the time, the priority and the
-blockers move under the name. A click on a row's slug copies the absolute
-path of the ticket file the row was read from.
-
-An opened row reads as blocks rather than the ticket's whole text: its
-questions, each with the detail the row has no room for, the ruling that
-answered it and, while it is unanswered, a button that copies it, the sessions
-that worked on it, its artefacts, then the ticket's own sections in the order
-the file writes them, with the comments folded away as history. The artefacts
-are read from the ticket's show directory, agent/show/<slug>/: every file in it
-as a link, and each one that runs on a button that copies the command that runs
-it from the code repo's root. The sessions are read from the `Session:` trailer
-on every commit that changed the ticket file, or an earlier path of it, on
-every branch, and named by their transcript under $CLAUDE_CONFIG_DIR/projects;
-one with no transcript on this machine, a worker on another host, is left out,
-and each of the rest carries a button that copies the command resuming it and,
-where one has been rendered, a link to its session page, read from
-agent/sessions/<session-id>/ in the agent repo of the project the session ran
-in; a page in another project's agent repo, which the board's server does not
-serve, is not linked. The brief is not repeated there: it is on the row.
-
-The page wears the house style in both schemes: it follows the system's, the
-switch in the top bar pins one, and ?theme=day|night on the address pins one for
-a screenshot. One pill per tree in the top bar hides and shows that tree's rows,
-each counting its done tickets out of all of them, proposed included, with one
-more for the tickets in no tree; a filter box
-narrows the rows to a word. An optional source the render did without is said
-once at the top of the page. A graph panel, beside the rows on a wide window and
-above them on a narrow one, shows the dependency graph of the tree of the row
-under the cursor with that ticket marked, or the whole tracker's graph with the
-edges between trees, hidden trees left out. A
-graph draws only tickets that wait on something or are waited on: a ticket with
-no edge is a row, not a node. A proposed ticket, one the user has not ruled on,
-keeps its status whatever blocks it and is drawn dashed.
-
-Over that panel sits the board briefing: where things stand and three next
-picks, written by a `claude -p` session that was given the tracker as the board
-reads it and explored the repo from there, with the time it was written beside
-it. A watching board sends each change of a ticket's status to that same
-session, as a note of what changed, five minutes after the last status to move
-and at most one briefing every ten minutes, and the session rewrites the
-briefing or leaves it standing; a ticket edited without its status moving is
-re-rendered and not sent, and so is one whose status goes back to what the
-session was last told. It retires after an hour idle or twenty pings, and the
-next change starts a fresh one. The session and its briefing live in a
-cache file beside the page. Until a briefing has been written the column holds
-the board's own count of what waits and the frontier by priority, then by what
-accepting it unlocks, then by the user's time; a machine with no claude, or one
-whose last run of it answered nothing, stays there and the page says so once.
-
-That panel is a preview. The `full` button, or ?graph on the address, opens the
-same graph at its own size over the board; `window` opens it in a window of its
-own, to sit beside the board. Both scroll and drag to pan, and both carry the
-tree and whole-tracker switch. A click on a node in the overlay closes it on
-that ticket's row; a click on a node in the window leaves the window where it is
-and moves the board to that row.
-
-One board per tracker, showing what is actionable now. It reads one directory:
+self-contained page beside the tracker, agent/board.html: the tickets as rows
+grouped by where they stand, needs me first, with their dependency graph and a
+briefing on where things stand. One directory holds every ticket it shows:
 every ticket file is written and committed in the agent repo's main checkout,
 claims and review flips included, so a build is on the board from its claim
-onward.
+onward. Besides the tracker it reads the commits that changed each ticket file
+and the transcripts of the sessions that made them, each ticket's show
+directory, GitHub through `gh` for the pull requests and issues the tickets
+name, and a `claude -p` session that writes the briefing; it renders without any
+of these it cannot reach, and the page says so once.
 
 Every link the page writes is relative to it, so it opens wherever the page is
 opened: served from any origin, or as a file. `board` opens the page served,
 from the diffview server over the whole agent repo (`diffview --serve
 agent/`), and while it watches it brings that server back on the same port
-whenever it exits, so an open tab keeps answering; a served tab whose server
-stops answering says so at the top. Where no diffview is
-installed or its server does not answer, it opens the file. A ticket row links
-its diffview review page when one has been rendered: agent/diffviews/<slug>.html
-beside the tracker, gitignored, so the link appears only on the machine that
-rendered it. Served, a review page opened from the board saves the comments
-written on it; opened as a file, the board opens its review pages as files,
-read-only, and says so at the top. --no-open starts no server.
-
-Every pull request and issue the rows name is resolved in one `gh api graphql`
-query per render, GitHub giving issues and pull requests one number space per
-repository, and the answer is cached beside the page for five minutes, so a
-watching board asks once a window however often it re-renders. Without `gh`,
-its auth or the network the references stay bare links and the page says why
-once.
+whenever it exits, so an open tab keeps answering. Where no diffview is
+installed or its server does not answer, it opens the file. Served, a review
+page opened from the board saves the comments written on it; opened as a file,
+the board opens its review pages as files, read-only. --no-open starts no
+server.
 
 Watching means: every few seconds it looks for a change under the tracker and
-re-renders on one. It also re-renders on the three things that move with no
-file under the tracker moving: a briefing the session has rewritten, GitHub's
-answer running past the five minutes it is cached for, and a run of the model
-that answered nothing, which the page says once. One watcher per board:
-several of them write the same page from the same tracker, and share GitHub's
-answer through the cache beside it, but each keeps its own briefing schedule, so
-a second one pays for every briefing again and resumes the session while the
+re-renders on one, and an open tab reloads itself when what it shows has
+changed. It also re-renders on the three things that move with no file under
+the tracker moving: a briefing the session has rewritten, GitHub's answer
+running past the five minutes it is cached for, and a run of the model that
+answered nothing. Each change of a ticket's status is sent to the briefing
+session, which spends a run of the model on it, at the cadence briefing.py
+beside this script sets. One watcher per board: several of them write the same
+page from the same tracker, but each keeps its own briefing schedule, so a
+second one pays for every briefing again and resumes the session while the
 first is in it.
-
-The page polls a sidecar stamp file (written beside the HTML) every 5s and
-reloads, keeping scroll position, open sections, the cursor and the hidden
-trees, only when content actually changed: one open tab stays current
-across renders without flicker. The page and its stamp file are gitignored,
-like agent/diffviews.
 
 Examples:
 
@@ -1699,6 +1603,16 @@ def render_page(
     log: str, stamp: str, stamp_src: str, gh: github.Answer = github.NOTHING,
     said: "briefing.Briefing | None" = None,
 ) -> str:
+    """The board as one page. The rows sit in their groups (GROUPS, done folded), each sorted by
+    sort_key. The top bar carries a pill per tree that hides and shows its rows, a filter box that
+    narrows the rows to a word, and the scheme switch, which pins one of the house style's two
+    schemes where the page otherwise follows the system's (`?theme=day|night` on the address pins
+    one for a screenshot). The side column, beside the rows on a wide window and above them on a
+    narrow one, holds the briefing over a preview of the dependency graph: the tree of the row under
+    the cursor with that ticket marked, or the whole tracker's graph with the edges between trees,
+    hidden trees left out. The preview's `full` button, or `?graph` on the address, opens the same
+    graph at its own size over the board (OVERLAY); `window` opens it in a window of its own beside
+    the board (GRAPH_WINDOW)."""
     rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
     ranked: dict[str, list[tuple[tuple, str, Ticket]]] = {state: [] for state, _ in GROUPS}
     kids = folded_under(tickets)
