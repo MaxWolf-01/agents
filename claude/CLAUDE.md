@@ -88,8 +88,8 @@ Please run anything heavy (cpu or gpu) on a remote host when possible (either on
 
 *This is most relevant when you are *not* told you are running in auto-mode (so I'm not unnecessarily prompted for giving you permission), though best-practices (paralell vs. independent tool calls) and caution still apply.*
 
-- Don't chain shell commands (`&&`, `||`, `;`); every chained command requires manual approval, which blocks async execution and stalls the agent. One command per Bash call is the default.
-  - `cd dir && command` is the most common violation. Use absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
+- A chained command (`&&`, `||`, `;`) is checked segment by segment: it runs unapproved when every segment would alone, and one segment that needs approval prompts for the whole call, which blocks async execution and stalls the agent.
+  - `cd` passes only into the session's working directory and below; a `cd` anywhere else prompts. Reach outside with absolute paths or tool flags (`git -C <path> <subcommand>`, `npm --prefix <path> <script>`) instead.
   - Independent commands → parallel tool calls. Dependent commands → sequential tool calls.
 - Read-only commands are auto-approved in ~/.claude/settings.json.
 - For `gh api`: Always use `-X GET` explicitly (e.g., `gh api -X GET repos/owner/repo`); this is the only form that's auto-approved. POST/PUT/DELETE will prompt.
