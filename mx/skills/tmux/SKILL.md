@@ -1,6 +1,6 @@
 ---
 name: tmux
-description: "Run commands in tmux whenever they might not come back on their own, are worth watching mid-run, or are interactive (sudo prompts, REPLs), locally or on a remote host. Reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish."
+description: "Run commands in tmux whenever they might not come back on their own, are worth watching mid-run, or are interactive (sudo prompts, REPLs), locally or on a remote host. Always reach for this instead of a fire-and-forget Bash call in those cases, and before writing any loop or background command that waits for something to finish."
 ---
 
 # tmux
