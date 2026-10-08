@@ -165,7 +165,7 @@ Everything else is layout convention, a few lines each.
 
 ## Icons
 
-77 monochrome icons in `icons/`, named after their file. 55 outlined generics from Tabler: server, database, cloud, user, users, lock, key, shield-lock, git-branch, git-merge, terminal, robot, rocket, package, bucket, world, bug, bolt, the `device-*` and `file-type-*` sets, and `brand-{aws,azure,docker,github,terraform}`. 22 filled brand marks from Simple Icons: kubernetes, postgresql, sqlite, oracle, microsoftsqlserver, minio, nginx, keycloak, gitea, googlecloud, python, r, jupyter, trino, redash, tableau, powerbi, qgis, and the Apache set (airflow, hive, nifi, superset). Tabler is MIT, Simple Icons is CC0.
+Monochrome icons in `icons/`, one per file and named by it: outlined generics from Tabler and filled brand marks from Simple Icons, their licences in `icons/LICENSES.md`.
 
 Every Tabler icon is a 24×24 stroked path already set to `currentColor`, so it inherits whatever skin is active. Simple Icons are 24×24 filled paths; set `fill="currentColor"` explicitly, as SVG defaults to black. Paste the paths inline inside a `<g transform="translate(x,y) scale(s)">`; the file stays self-contained, no external images.
 
