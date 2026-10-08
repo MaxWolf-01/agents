@@ -96,7 +96,6 @@ own and write no ticket file. Nothing moves back from <code>done</code>.</p>
   <path class="back" d="M 836,372 V 356 Q 836,348 828,348 H 624 Q 616,348 616,356 V 370" marker-end="url(#arrow)"/>
   <path class="back" d="M 556,372 V 356 Q 556,348 548,348 H 336 Q 328,348 328,356 V 370" marker-end="url(#arrow)"/>
   <path class="rail-by" d="M 96,428 V 452 Q 96,460 104,460 H 156 a 8,8 0 0,1 16,0 H 512 Q 520,460 520,452 V 430" marker-end="url(#arrow-ink)"/>
-  <path class="back" d="M 1156,400 H 1168 Q 1176,400 1176,392 V 20 Q 1176,12 1168,12 H 20 Q 12,12 12,20 V 392 Q 12,400 20,400 H 46" marker-end="url(#arrow)"/>
   <path class="tick" d="M 200,140 V 398" marker-end="url(#arrow)"/>
   <path class="tick" d="M 248,228 V 370" marker-end="url(#arrow)"/>
   <path class="tick-you" d="M 916,208 V 370" marker-end="url(#arrow-accent)"/>
@@ -174,7 +173,6 @@ own and write no ticket file. Nothing moves back from <code>done</code>.</p>
   <text class="cmdlabel" x="948" y="455">tracker drop</text>
   <text class="cmdlabel" x="1124" y="442" text-anchor="end">tracker</text>
   <text class="cmdlabel" x="1124" y="455" text-anchor="end">retire</text>
-  <rect class="mask" x="291" y="4" width="618" height="16"/>
   <text class="msg-soft" x="600" y="16" text-anchor="middle">nothing moves back from done; a decision reopened once code reads it is filed as a new ticket that supersedes it</text>
   <text class="name" x="40" y="84">Rule on a proposal</text>
   <text class="note" x="40" y="100">before it is built; one already</text>
@@ -207,9 +205,9 @@ own and write no ticket file. Nothing moves back from <code>done</code>.</p>
   <text class="note" x="1008" y="100">file each finding as a new</text>
   <text class="note" x="1008" y="113">ticket, with blocking edges</text>
   <text class="name" x="1008" y="138">Reopen a decision</text>
-  <text class="note" x="1008" y="154">a new ticket supersedes it;</text>
-  <text class="note" x="1008" y="167">the old one gets a one-line</text>
-  <text class="note" x="1008" y="180">forward pointer</text>
+  <text class="note" x="1008" y="154">a new ticket supersedes it,</text>
+  <text class="note" x="1008" y="167">filed open like any you ask for;</text>
+  <text class="note" x="1008" y="180">the old one gets a forward pointer</text>
   <circle class="dot" cx="164" cy="578" r="2.5"/>
   <text class="cmd" x="40" y="592">tracker new &lt;slug&gt;</text>
   <text class="note" x="40" y="608">files what it reads: a punt or</text>
@@ -248,6 +246,8 @@ own and write no ticket file. Nothing moves back from <code>done</code>.</p>
   <text class="note" x="792" y="660">is no hinge into its parent&#x27;s branch</text>
   <text class="note" x="792" y="673">(--no-ff), which unblocks its</text>
   <text class="note" x="792" y="686">siblings before any ruling</text>
+  <text class="note" x="792" y="708">a parent goes in at its close-out:</text>
+  <text class="cmd" x="792" y="724">tracker set &lt;slug&gt; status=review</text>
   <circle class="dot" cx="1052" cy="578" r="2.5"/>
   <text class="cmd" x="1008" y="592">dispatch review &lt;slug&gt;</text>
   <text class="note" x="1008" y="608">or, for a parent and its children:</text>
@@ -280,15 +280,15 @@ own and write no ticket file. Nothing moves back from <code>done</code>.</p>
   <text class="host" x="416" y="958">ticket/c  on local</text>
   <text class="chipname" x="460" y="984" text-anchor="middle">build, test</text>
   <text class="chipname" x="576" y="984" text-anchor="middle">gone</text>
-  <text class="note" x="648" y="974">the probe says gone; the</text>
-  <text class="note" x="648" y="987">ticket goes back to open,</text>
-  <text class="note" x="648" y="1000">for a fresh worker</text>
+  <text class="note" x="648" y="974">the probe says gone: dispatch</text>
+  <text class="note" x="648" y="987">ctl cleanup, and the ticket goes</text>
+  <text class="note" x="648" y="1000">back to open for a fresh worker</text>
   <text class="note" x="792" y="824">A resume continues the worker&#x27;s own conversation on</text>
   <text class="note" x="792" y="837">the same branches, after an amend, a cleared blocker,</text>
   <text class="note" x="792" y="850">or a branch that moved under it.</text>
   <text class="note" x="792" y="876">Writing done retires the run, on its host and here.</text>
-  <text class="note" x="792" y="889">On a redo or a reject, dispatch ctl cleanup removes</text>
-  <text class="note" x="792" y="902">the run&#x27;s worktrees and branches.</text>
+  <text class="note" x="792" y="889">On a redo, a reject or a lost session, dispatch ctl</text>
+  <text class="note" x="792" y="902">cleanup removes the run&#x27;s worktrees and branches.</text>
 
   <!-- legend -->
   <line class="rule" x1="24" y1="1064" x2="1192" y2="1064"/>
