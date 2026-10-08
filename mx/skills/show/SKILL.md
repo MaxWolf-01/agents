@@ -45,7 +45,7 @@ The rows are examples, not the boundary. Media craft below is the open set, and 
 
 ## A landing's show
 
-Every landing (`/mx:dispatch`) comes with its review page and one show, a build that puts no call to the user included, read whenever the user looks. A change the diff alone makes plain at a glance (a typo, a renamed variable) goes without one, and the landing says so in a line. The show is for the user's understanding of what was built, and where the landing puts calls to the user, it is built around them, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
+Every landing (`/mx:dispatch`) comes with its review page and one show, a build that puts no call to the user included, read whenever the user looks. A change its code diff makes plain at a glance (What a reader can be shown) goes without one, and the landing says so in a line. The show is for the user's understanding of what was built, and where the landing puts calls to the user, it is built around them, as far as their ruling needs it. Demonstrating that the tests are green or that it runs is not the show's job: the tests and the review already did that, and a build that does not run has no show to be made of it. Its reader has the product sense and none of the weeds: technical, did not build it, and wants to understand it, told accurately and never sold.
 
 - **One per landing.** A tree's show covers every child ticket in review, and goes to the parent ticket's directory; a tick that brings another to review rebuilds it rather than adding a second, so it is whole when the user sits down to rule: on a hinge alone, and on the rest with the parent ticket at its close-out. A standalone ticket's goes to its own.
 - **Built by a fork** of the session landing the work (invoke `mx:fork`): it holds the conversation the user's questions came from, and its build loop stays out of that session's window.
@@ -81,7 +81,7 @@ How a row's medium gets made. An open set, not a menu; combining media is normal
 - **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side.
 - **Runnable code**: the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
 - **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Read `PAGES.md`.
-- **LaTeX/TikZ**: publication-grade figures. TeX Live is fully installed: just compile, `pdftoppm` to PNG to inspect.
+- **LaTeX/TikZ**: publication-grade figures.
 - **Animation**: a process unfolding over time. Interactive JS (the reader steps and scrubs) usually beats a linear video; manim is the option for math-heavy scenes when video is the right form.
 
 ## Produce and present
@@ -90,8 +90,8 @@ How a row's medium gets made. An open set, not a menu; combining media is normal
 - Anything opened in a browser wears the house style (`/mx:house-style`: tokens, type, parts, and the scheme toggle) unless the artifact has a reason to look otherwise, and ships both color schemes; the reader's system setting is the default, not a constraint. Look at both before presenting.
 - A script a page loads from outside itself names an exact version (`mermaid@11.17.2`, never `@11`) and carries its `integrity` hash: a classic script in its `<script src integrity crossorigin>`, a module and every chunk it imports in an import map's `integrity` entries. Where a package ships a one-file classic build, load that: it needs one pin. Every page an agent opens is served from one local origin together with every agent directory, so a script changed at its CDN could read them all and send them off; the browser refuses a file whose hash does not match. jsDelivr lists each file's hash, which goes after `sha256-`, at `https://data.jsdelivr.com/v1/packages/npm/<package>@<version>?structure=flat`. An update is a deliberate edit of version and hash together.
 - A page names the session the reader resumes to get back to the conversation behind it: `session <first 8 of the id>` in its `v-meta` line, as a button that copies `claude --resume <id>`, the id being `${MX_ORIGIN_SESSION:-$CLAUDE_CODE_SESSION_ID}` read in the shell.
-- Look at your own render before presenting: Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
-- Present it as a link in the turn record that asked for it ([the session page's rules](../session-page/RULES.md)). Where there is no page, open it (`claude-browser` where it exists, else `xdg-open`) and give one line on what it shows and its absolute path.
+- Look at your own render before presenting: `render-lint` an HTML page first (its `--help` says what it reports) and fix every fatal finding, then Read the PNG, run what runs, open the page. Done means you have seen it explain the thing *and* it looks good; an ugly artifact obscures what it was meant to clarify.
+- Present it as a link in the turn record that asked for it ([the session page's rules](../session-page/RULES.md)). Where there is no page, open it and give one line on what it shows and its absolute path.
 
 ## Who builds it
 
