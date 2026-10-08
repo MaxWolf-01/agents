@@ -22,7 +22,7 @@ All Python CLI scripts use tyro for argument parsing, never argparse, click, or 
 # ///
 ```
 
-Place at the top of the file. The script is then runnable via `uv run script.py --help`. Converting a script that already exists, `dependencies` lists every third-party package its imports need, and its code stays as it is: moving its parsing to tyro is a change of its own.
+Place at the top of the file. The script is then runnable via `uv run script.py --help`. When converting a script that already exists, list in `dependencies` every third-party package its imports need, and leave its code as it is: moving its parsing to tyro is a change of its own.
 
 ### Shebang for PEP 723 scripts
 
