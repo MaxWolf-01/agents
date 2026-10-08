@@ -4,7 +4,7 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/one-flow.png">
-  <img alt="One flow in three rows, by how much of the design lands on disk: a dictated change with no brief and no worker, a standalone ticket built by a fresh worker, and a spec sliced into tickets and dispatched; the build starts once no question is left for you and never waits for you to ratify a call, and orange chips mark where your attention is asked for: a round's open questions, and the demo and review page of every landing" src="assets/one-flow-light.png">
+  <img alt="One flow in three rows, by how much of the design lands on disk: the gate drafts the ticket first and sends fog to grilling, rival shapes to a prototype and one sensible shape to the build; a loose change has no brief, no worker and no agent review; a ticket goes to a fresh worker that reviews its own branch, light by default; work bigger than one worker is grilled, cut into child tickets, built a worker per ticket, reviewed per ticket and once more one level up, and ruled whole at its close-out, a hinge alone; one orchestrator sorts each build's calls, and orange chips mark your only stations: a grilling round's open questions, the calls a landing shows you with its review page and show, QA, and the board's needs-me group" src="assets/one-flow-light.png">
 </picture>
 
 <details>
@@ -12,17 +12,17 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
-  <img alt="The full mx cycle: sharpen the idea, spec, tickets, dispatch the tickets one worker each, review the whole tree and debrief, drive each landed slice, review session; the board carries every ticket, and feedback rails return new and proposed tickets, reopened decisions and new ideas, over the durable docs" src="assets/full-cycle-light.png">
+  <img alt="The full mx cycle: sharpen the intent by grilling, each round written into the ticket and questions that outlast a session leaving as child tickets; once the frontier is empty, cut the ticket into child tickets; dispatch them, one orchestrator and a worker per ticket; close out with the full suite, the review one level up and the debrief; each landed slice comes with its review page, one show and your QA; the review session feeds new and proposed tickets, reopened decisions and new ideas back, the board carries every ticket, and GLOSSARY.md and decisions/ hold the durable docs" src="assets/full-cycle-light.png">
 </picture>
 
 </details>
 
 <details>
-<summary><b>Every ticket holds one state, and each transition has exactly one writer</b></summary>
+<summary><b>Every ticket holds one state, and each transition has one writer</b></summary>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ticket-state.png">
-  <img alt="Ticket state: proposed, open, claimed, review, done, retired, with the one writer of each transition; a proposed ticket waits off the frontier for a triage, a build in review waits on your ruling and your accept writes done through the merge, and the board renders every state, the dependency graph with its frontier, the needs-me group a ticket's open questions feed, and what each row asks of you" src="assets/ticket-state-light.png">
+  <img alt="Ticket state: an agent files a ticket proposed and a session with you files it open; proposed is on the frontier and claimed like an open ticket; dispatch claim writes claimed, dispatch review writes review by importing the report the worker committed, since a worker writes no ticket file; a child that is no hinge waits in review merged into its parent's branch and unblocks its siblings; your ruling (accept, amend, redo or reject) on the calls that are yours leads to done, written by the orchestrator once your accept is merged, and tracker retire takes a finished tree out of the tracker; beside it the board: the needs-me group with each row's open questions under it, what a row asks of you, one dependency graph per tree with its frontier and proposed tickets drawn dashed, the briefing, an opened row's sessions and artefacts, and the review pages" src="assets/ticket-state-light.png">
 </picture>
 
 </details>
@@ -32,7 +32,7 @@ File-based tickets, domain glossary + ADRs, research artefacts, and session cont
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/session-boundary.png">
-  <img alt="Grilling across sessions: rounds rewrite the spec draft; a session that ends with the frontier open files decision tickets; a fresh session reads the spec top-down, claims one, grills it as a round and rewrites the sections it names; an empty frontier cuts the tickets, and the calls you have not ruled on travel with them" src="assets/session-boundary-light.png">
+  <img alt="Grilling across sessions: an idea too foggy to brief enters a grilling round, a turn on the session page with the design whole and the frontier's questions; each round rewrites the ticket, whose sections hold the design and whose calls carry call marks; a session that ends with the frontier open files the open questions as child tickets that need you, each naming the sections its answers may rewrite; a fresh session reads the ticket top-down with its open child tickets, claims one, grills it as a round, and the answer lands on the parent marked (you, &lt;slug&gt;); once the frontier is empty the ticket is read whole and cut into child tickets, or built as it stands, and the calls you have not ruled on travel with them" src="assets/session-boundary-light.png">
 </picture>
 
 </details>

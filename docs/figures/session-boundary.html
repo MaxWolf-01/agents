@@ -44,105 +44,119 @@ text{fill:var(--ink);}
   <p class="eyebrow">mx workflow &middot; grilling across sessions</p>
   <button class="scheme"></button>
 </header>
-<h1>Planning that spans sessions: the spec carries the design, decision tickets carry the open questions.</h1>
-<p class="dek">Every grilling writes the spec round by round, so a session boundary is not a fork in the flow. A session
-that ends with questions open files them as decision tickets; the next session claims one, grills it, and rewrites
-the spec sections it names. Whether the frontier drains in one session or twelve is discovered, not declared; when
-it is empty the tickets are cut and the build starts, and the calls you have not ruled on travel with them.</p>
+<h1>Planning that spans sessions: the ticket carries the design, child tickets carry the open questions.</h1>
+<p class="dek">A grilling writes its design into the ticket round by round, so a later session reads the design
+from the file. A session that ends with questions open files them as child tickets that need you; a fresh session
+claims one, grills it, and lands the answer on the parent ticket. How many sessions the frontier takes is
+discovered, not declared. Once it is empty the ticket is cut, or built as it stands, and the calls you have not
+ruled on travel with it.</p>
 
-<svg viewBox="0 0 1200 740" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 40 1200 800" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
     </marker>
   </defs>
 
+  <!-- connectors: entry and exit -->
+  <path class="flow" d="M 288,144 H 600 Q 608,144 608,152 V 166" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 688,172 V 132 Q 688,124 696,124 H 874" marker-end="url(#arrow)"/>
   <!-- connectors: the loop -->
-  <path class="flow" d="M 736,216 H 948 Q 956,216 956,224 V 324" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 956,424 V 592 Q 956,600 948,600 H 748" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 536,600 H 356 Q 348,600 348,592 V 224 Q 348,216 356,216 H 540" marker-end="url(#arrow)"/>
-  <!-- entry and exit -->
-  <path class="flow" d="M 264,144 H 588 Q 596,144 596,152 V 172" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 660,176 V 152 Q 660,144 668,144 H 932" marker-end="url(#arrow)"/>
-  <!-- spokes: spec reads and writes -->
-  <path class="spoke" d="M 640,256 V 300" marker-end="url(#arrow)"/>
-  <path class="spoke" d="M 640,552 V 492" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 768,224 H 996 Q 1004,224 1004,232 V 330" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 1004,480 V 672 Q 1004,680 996,680 H 786" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 516,680 H 408 Q 400,680 400,672 V 232 Q 400,224 408,224 H 522" marker-end="url(#arrow)"/>
+  <!-- spokes: the ticket written and read -->
+  <path class="spoke" d="M 648,276 V 314" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 648,568 V 610" marker-end="url(#arrow)"/>
 
   <!-- nodes -->
-  <rect class="card" x="64" y="96" width="200" height="96" rx="6"/>
-  <rect class="card" x="936" y="96" width="208" height="96" rx="6"/>
-  <rect class="card" x="544" y="176" width="192" height="80" rx="6"/>
-  <rect class="card" x="848" y="328" width="240" height="96" rx="6"/>
-  <rect class="card" x="536" y="552" width="208" height="96" rx="6"/>
-  <rect class="hub" x="528" y="304" width="224" height="184" rx="8"/>
-  <line class="hub-rule" x1="544" y1="420" x2="736" y2="420"/>
+  <rect class="card" x="64" y="96" width="224" height="96" rx="6"/>
+  <rect class="card" x="880" y="64" width="264" height="120" rx="6"/>
+  <rect class="card" x="528" y="172" width="240" height="104" rx="6"/>
+  <rect class="hub" x="864" y="336" width="280" height="144" rx="6"/>
+  <rect class="card" x="516" y="616" width="264" height="128" rx="6"/>
+  <rect class="hub" x="504" y="320" width="288" height="248" rx="8"/>
+  <line class="hub-rule" x1="520" y1="444" x2="776" y2="444"/>
 
   <!-- labels -->
   <!-- idea -->
   <text class="name" x="80" y="120">Idea</text>
-  <text class="cmd" x="80" y="136">/mx:grilling, at any size</text>
-  <text class="note" x="80" y="154">a big one fans out breadth-first:</text>
-  <text class="note" x="80" y="168">the frontier and the fog visible</text>
-  <text class="note" x="80" y="182">from round one</text>
-  <!-- gate -->
-  <text class="name" x="952" y="120">Cut the tickets</text>
-  <text class="cmd" x="952" y="136">the gate, then /mx:to-tickets</text>
-  <text class="note" x="952" y="154">unconfirmed calls walked where you</text>
-  <text class="note" x="952" y="168">are there; the rest travel into the</text>
-  <text class="note" x="952" y="182">tickets, for the review pages</text>
+  <text class="cmd" x="80" y="136">/mx:grilling</text>
+  <text class="note" x="80" y="154">fog: no brief can be written yet;</text>
+  <text class="note" x="80" y="168">a big one's first round fans out</text>
+  <text class="note" x="80" y="182">breadth-first, so fog and frontier show</text>
+  <!-- cut -->
+  <text class="name" x="896" y="88">Read whole, then cut</text>
+  <text class="cmd" x="896" y="104">/mx:tracker, SLICING.md</text>
+  <text class="note" x="896" y="122">read whole once if several sessions wrote it,</text>
+  <text class="note" x="896" y="136">then cut into child tickets, or built as it</text>
+  <text class="note" x="896" y="150">stands when it is one slice. Calls you have</text>
+  <text class="note" x="896" y="164">not ruled on stay marked and travel with them</text>
   <!-- round -->
-  <text class="name" x="560" y="200">Grilling round</text>
-  <text class="note" x="560" y="218">the design whole + the frontier's</text>
-  <text class="note" x="560" y="232">questions; you answer by number</text>
-  <!-- tickets -->
-  <text class="name" x="864" y="352">Decision tickets</text>
-  <text class="cmd" x="864" y="368">grill &middot; prototype &middot; research &middot; legwork</text>
-  <text class="note" x="864" y="386">one per open question, filed on the</text>
-  <text class="note" x="864" y="400">tracker, each naming the spec</text>
-  <text class="note" x="864" y="414">sections its answer may rewrite</text>
+  <text class="name" x="544" y="196">Grilling round</text>
+  <text class="cmd" x="544" y="212">a turn on the session page</text>
+  <text class="note" x="544" y="230">the design whole, sketched past the</text>
+  <text class="note" x="544" y="244">frontier, then the frontier's questions,</text>
+  <text class="note" x="544" y="258">Q1, Q2; you answer by number</text>
+  <!-- child tickets -->
+  <text class="name" x="880" y="360">Child tickets that need you</text>
+  <text class="cmd" x="880" y="376">filed open, needs-user</text>
+  <text class="note" x="880" y="394">the questions still open, those sharing context</text>
+  <text class="note" x="880" y="408">in one ticket, sized to a session; each keeps</text>
+  <text class="note" x="880" y="422">the options and the pick as the last round put</text>
+  <text class="note" x="880" y="436">them, and names the sections its answers may</text>
+  <text class="note" x="880" y="450">rewrite. The parent's (open → Qn) becomes</text>
+  <text class="note" x="880" y="464">(open → &lt;slug&gt;)</text>
   <!-- fresh session -->
-  <text class="name" x="552" y="576">Fresh session</text>
-  <text class="note" x="552" y="594">reads the spec top-down + the open</text>
-  <text class="note" x="552" y="608">tickets; claims one, grills it as a</text>
-  <text class="note" x="552" y="622">round; the answer rewrites the</text>
-  <text class="note" x="552" y="636">sections the ticket names</text>
-  <!-- hub -->
-  <text class="name" x="548" y="328">The spec draft</text>
-  <text class="hubrow" x="548" y="350">PROBLEM &middot; SOLUTION</text>
-  <text class="hubrow" x="548" y="368">DECISIONS &middot; WHO SETTLED EACH</text>
-  <text class="hubrow" x="548" y="386">FOG &middot; NOT YET STATABLE</text>
-  <text class="hubrow" x="548" y="404">OUT OF SCOPE &middot; WITH REASONS</text>
-  <text class="name" x="548" y="442">Outlives every session</text>
-  <text class="hubrow" x="548" y="460">REWRITTEN PER ROUND</text>
-  <text class="hubrow" x="548" y="478">READ TOP-DOWN BY THE NEXT</text>
+  <text class="name" x="532" y="640">Fresh session</text>
+  <text class="note" x="532" y="658">reads the ticket top-down: Brief, the marks,</text>
+  <text class="note" x="532" y="672">Fog, and its open child tickets; claims one,</text>
+  <text class="note" x="532" y="686">reads its Comments, grills it as a round.</text>
+  <text class="note" x="532" y="700">The answer lands on the parent marked</text>
+  <text class="note" x="532" y="714">(you, &lt;slug&gt;), the reasoning in the child</text>
+  <text class="note" x="532" y="728">ticket's Comments</text>
+  <!-- hub: the ticket -->
+  <text class="name" x="520" y="344">The ticket</text>
+  <text class="cmd" x="520" y="360">agent/tickets/&lt;slug&gt;.md</text>
+  <text class="hubrow" x="520" y="380">BRIEF, USER STORIES, PROPERTIES</text>
+  <text class="hubrow" x="520" y="396">DECISIONS, EACH WITH ITS CALL MARK</text>
+  <text class="hubrow" x="520" y="412">TESTING SEAMS, OUT OF SCOPE, FOG</text>
+  <text class="hubrow" x="520" y="428">ACCEPTANCE CRITERIA</text>
+  <text class="name" x="520" y="468">Call marks</text>
+  <text class="cmd" x="520" y="486">(you, rN)</text>
+  <text class="note" x="612" y="486">you settled it in round N</text>
+  <text class="cmd" x="520" y="500">(you, &lt;slug&gt;)</text>
+  <text class="note" x="612" y="500">answered in a child ticket</text>
+  <text class="cmd" x="520" y="514">(my call)</text>
+  <text class="note" x="612" y="514">the agent's, yours to veto</text>
+  <text class="cmd" x="520" y="528">(open → Qn)</text>
+  <text class="note" x="612" y="528">put to a question this round</text>
+  <text class="cmd" x="520" y="542">(fog)</text>
+  <text class="note" x="612" y="542">no question can be stated yet</text>
 
   <!-- arrow labels -->
-  <rect class="mask" x="748" y="120" width="96" height="18" rx="4"/>
-  <text class="al" x="796" y="132" text-anchor="middle">FRONTIER EMPTY</text>
-  <rect class="mask" x="752" y="190" width="176" height="18" rx="4"/>
-  <text class="al-accent" x="840" y="202" text-anchor="middle">SESSION ENDS &middot; FRONTIER OPEN</text>
-  <rect class="mask" x="964" y="500" width="64" height="16" rx="4"/>
-  <text class="al" x="968" y="511">CLAIM ONE</text>
-  <rect class="mask" x="652" y="270" width="72" height="16" rx="4"/>
-  <text class="al" x="656" y="281">EACH ROUND</text>
-  <rect class="mask" x="652" y="514" width="100" height="16" rx="4"/>
-  <text class="al" x="656" y="525">NAMED SECTIONS</text>
-  <text class="al" x="336" y="400" text-anchor="end">A ROUND LIKE</text>
-  <text class="al" x="336" y="412" text-anchor="end">ANY OTHER</text>
+  <rect class="mask" x="736" y="104" width="104" height="14" rx="4"/>
+  <text class="al" x="788" y="114" text-anchor="middle">FRONTIER EMPTY</text>
+  <rect class="mask" x="800" y="204" width="168" height="14" rx="4"/>
+  <text class="al" x="884" y="214" text-anchor="middle">SESSION ENDS, FRONTIER OPEN</text>
+  <text class="al" x="1016" y="584">CLAIM ONE</text>
+  <text class="al" x="660" y="298">REWRITTEN EACH ROUND</text>
+  <text class="al" x="660" y="592">READ TOP-DOWN</text>
+  <text class="al" x="388" y="448" text-anchor="end">A ROUND LIKE</text>
+  <text class="al" x="388" y="460" text-anchor="end">ANY OTHER</text>
 
   <!-- aside -->
-  <text class="aside" x="80" y="600">sessions come and go;</text>
-  <text class="aside" x="80" y="616">the spec keeps every decision.</text>
+  <text class="aside" x="80" y="664">A question is Qn on the session page,</text>
+  <text class="aside" x="80" y="680">Dn once a ticket holds it.</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="688" x2="1136" y2="688"/>
-  <line class="flow" x1="64" y1="712" x2="104" y2="712" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="112" y="715">the loop: one session or many</text>
-  <line class="spoke" x1="336" y1="712" x2="376" y2="712"/>
-  <text class="legend-text" x="384" y="715">spec reads &amp; writes</text>
-  <rect class="hub" x="568" y="706" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="600" y="715">the one planning artefact</text>
-  <text class="legend-text" x="832" y="715">legwork = manual work that unblocks a decision</text>
+  <line class="rule" x1="64" y1="784" x2="1144" y2="784"/>
+  <line class="flow" x1="64" y1="808" x2="104" y2="808" marker-end="url(#arrow)"/>
+  <text class="legend-text" x="112" y="811">the loop: one session or many</text>
+  <line class="spoke" x1="336" y1="808" x2="376" y2="808"/>
+  <text class="legend-text" x="384" y="811">the ticket written and read</text>
+  <rect class="hub" x="584" y="802" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="616" y="811">a ticket on disk: outlives every session</text>
 </svg>
 <script>
 const root = document.documentElement, button = document.querySelector('.scheme');

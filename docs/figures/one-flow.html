@@ -54,9 +54,9 @@ text{fill:var(--ink);}
   <button class="scheme"></button>
 </header>
 <h1>The mx flow, from intent to landing</h1>
-<p class="dek">Every piece of work enters as an intent in chat and one question routes it into one of three rows: nothing to decide, a ticket, a spec. A build waits on its own branch for the user's ruling. The orange chips mark where the user's attention is asked for.</p>
+<p class="dek">Every piece of work enters as an intent in chat. The gate picks the first thing you judge; one question sets how much of the design lands on disk, and so who builds it. Nothing leaves the branch it was built on, or a child ticket its parent's branch, before your ruling. The orange chips mark your stations.</p>
 
-<svg viewBox="0 0 1200 724" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 736" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
@@ -82,10 +82,10 @@ text{fill:var(--ink);}
   <line class="rule" x1="64" y1="56" x2="1164" y2="56"/>
   <line class="rule" x1="344" y1="200" x2="1164" y2="200"/>
   <line class="rule" x1="344" y1="344" x2="1164" y2="344"/>
-  <line class="rule" x1="64" y1="560" x2="1164" y2="560"/>
+  <line class="rule" x1="64" y1="568" x2="1164" y2="568"/>
 
   <!-- connectors -->
-  <path class="flow" d="M 164,176 V 240" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 164,196 V 240" marker-end="url(#arrow)"/>
   <path class="flow" d="M 252,260 H 296 Q 304,260 304,252 V 144 Q 304,136 312,136 H 356" marker-end="url(#arrow)"/>
   <path class="flow" d="M 252,280 H 356" marker-end="url(#arrow)"/>
   <path class="flow" d="M 252,300 H 296 Q 304,300 304,308 V 416 Q 304,424 312,424 H 356" marker-end="url(#arrow)"/>
@@ -100,12 +100,12 @@ text{fill:var(--ink);}
   <path class="flow" d="M 932,424 H 968" marker-end="url(#arrow)"/>
 
   <!-- nodes: chat column -->
-  <rect class="card" x="76" y="96" width="176" height="80" rx="6"/>
+  <rect class="card" x="76" y="96" width="176" height="100" rx="6"/>
   <rect class="card-test" x="76" y="240" width="176" height="80" rx="6"/>
-  <rect class="bar" x="76" y="340" width="176" height="52" rx="4"/>
-  <rect class="bar" x="76" y="404" width="176" height="64" rx="4"/>
+  <rect class="bar" x="76" y="344" width="176" height="68" rx="4"/>
+  <rect class="bar" x="76" y="424" width="176" height="80" rx="4"/>
 
-  <!-- nodes: row 1, no brief -->
+  <!-- nodes: row 1, loose -->
   <rect class="card-ghost" x="356" y="96" width="176" height="80" rx="6"/>
   <rect class="card-ghost" x="556" y="96" width="176" height="80" rx="6"/>
   <rect class="card-ghost" x="756" y="96" width="176" height="80" rx="6"/>
@@ -117,20 +117,20 @@ text{fill:var(--ink);}
   <rect class="card" x="756" y="240" width="176" height="80" rx="6"/>
   <rect class="card" x="968" y="240" width="188" height="80" rx="6"/>
 
-  <!-- nodes: row 3, a spec -->
+  <!-- nodes: row 3, child tickets -->
   <rect class="card" x="356" y="384" width="176" height="80" rx="6"/>
-  <rect class="card-ghost" x="556" y="368" width="176" height="80" rx="6"/>
-  <rect class="card-ghost" x="556" y="376" width="176" height="80" rx="6"/>
+  <rect class="card-ghost" x="556" y="368" width="176" height="16" rx="6"/>
+  <rect class="card-ghost" x="556" y="376" width="176" height="16" rx="6"/>
   <rect class="card" x="556" y="384" width="176" height="80" rx="6"/>
   <rect class="card" x="756" y="384" width="176" height="80" rx="6"/>
   <rect class="card" x="968" y="384" width="188" height="80" rx="6"/>
-  <rect class="bar" x="556" y="480" width="376" height="60" rx="4"/>
+  <rect class="bar" x="556" y="480" width="600" height="64" rx="4"/>
 
   <!-- dials strip -->
-  <rect class="bar" x="76" y="600" width="176" height="44" rx="4"/>
-  <rect class="bar" x="356" y="600" width="176" height="44" rx="4"/>
-  <rect class="bar" x="556" y="600" width="176" height="44" rx="4"/>
-  <rect class="bar" x="756" y="600" width="176" height="44" rx="4"/>
+  <rect class="bar" x="76" y="608" width="176" height="56" rx="4"/>
+  <rect class="bar" x="356" y="608" width="176" height="56" rx="4"/>
+  <rect class="bar" x="556" y="608" width="176" height="56" rx="4"/>
+  <rect class="bar" x="756" y="608" width="176" height="56" rx="4"/>
 
   <!-- labels: banner -->
   <text class="eb" x="204" y="22" text-anchor="middle">CHAT</text>
@@ -140,126 +140,134 @@ text{fill:var(--ink);}
   <text class="eb" x="1058" y="22" text-anchor="middle">LAND</text>
 
   <!-- labels: row eyebrows -->
-  <text class="eb" x="356" y="84">NO: NOTHING TO DECIDE</text>
-  <text class="eb" x="356" y="228">YES, AND A TICKET SAYS IT ALL</text>
-  <text class="eb" x="356" y="372">YES, AND IT NEEDS A DOCUMENT</text>
+  <text class="eb" x="356" y="84">NO: THE INSTRUCTION IS THE CHANGE</text>
+  <text class="eb" x="356" y="228">YES: ONE WORKER'S WORTH</text>
+  <text class="eb" x="356" y="372">YES, MORE THAN ONE WORKER</text>
 
   <!-- labels: chat column -->
-  <text class="name" x="88" y="120">Intent in chat</text>
-  <text class="cmd" x="88" y="137">any size, any repo</text>
-  <text class="note" x="88" y="154">grilled as deep as it needs;</text>
-  <text class="note" x="88" y="167">open questions wait for you</text>
+  <text class="name" x="88" y="120">The gate</text>
+  <text class="cmd" x="88" y="137">draft the ticket first</text>
+  <text class="q" x="88" y="156">fog &#8594; grill it</text>
+  <text class="q" x="88" y="170">rival shapes &#8594; prototype</text>
+  <text class="q" x="88" y="184">one sensible shape &#8594; build</text>
   <use href="#you" x="196" y="104"/>
 
-  <text class="name" x="88" y="264">Loose, ticket or spec?</text>
+  <text class="name" x="88" y="264">Loose, or a ticket?</text>
   <text class="q" x="88" y="282">Would a stranger need a brief</text>
   <text class="q" x="88" y="295">to build this right?</text>
-  <text class="cmd" x="88" y="311">one decision, the agent's</text>
+  <text class="cmd" x="88" y="311">the agent answers it</text>
 
-  <text class="al" x="88" y="356">TURN REVIEW</text>
-  <text class="note" x="88" y="370">a model reads each turn record's prose</text>
-  <text class="note" x="88" y="383">for slop and tells before it renders</text>
+  <text class="al" x="88" y="360">TURN REVIEW</text>
+  <text class="note" x="88" y="374">a model reviews each answer's prose</text>
+  <text class="note" x="88" y="387">on the session page while the turn</text>
+  <text class="note" x="88" y="400">runs; findings go back to the agent</text>
 
-  <text class="al" x="88" y="420">SPECULATIVE BUILD</text>
-  <text class="note" x="88" y="434">starts once the agent has no question</text>
-  <text class="note" x="88" y="447">left for you; its calls build unratified</text>
-  <text class="note" x="88" y="460">you rule on the result, not the text</text>
+  <text class="al" x="88" y="440">THE BUILD NEVER WAITS</text>
+  <text class="note" x="88" y="454">it starts once no question is left</text>
+  <text class="note" x="88" y="467">for you; calls you have not ruled on</text>
+  <text class="note" x="88" y="480">stay marked in the ticket, and the</text>
+  <text class="note" x="88" y="493">landing shows those that are yours</text>
 
   <!-- labels: row 1 -->
   <text class="name" x="368" y="120">No brief</text>
   <text class="cmd" x="368" y="137">loose</text>
-  <text class="note" x="368" y="154">dictated or mechanical:</text>
-  <text class="note" x="368" y="167">a keybinding, a version bump</text>
+  <text class="note" x="368" y="154">a stranger could apply it from</text>
+  <text class="note" x="368" y="167">the chat line: a version bump</text>
 
   <text class="name" x="568" y="120">This session</text>
   <text class="cmd" x="568" y="137">no worker</text>
-  <text class="note" x="568" y="154">the chat is the context</text>
-  <text class="note" x="568" y="167">commits with the loose trailer</text>
+  <text class="note" x="568" y="154">commits on its own branch,</text>
+  <text class="note" x="568" y="167">with the loose trailer</text>
 
   <text class="name" x="768" y="120">No agent review</text>
-  <text class="cmd" x="768" y="137">nothing to find</text>
-  <text class="note" x="768" y="154">no judgment went in;</text>
-  <text class="note" x="768" y="167">the per-batch rule is gone</text>
+  <text class="cmd" x="768" y="137">skipped</text>
+  <text class="note" x="768" y="154">the change was dictated</text>
+  <text class="note" x="768" y="167">and needed no judgment</text>
 
-  <text class="name" x="980" y="120">Demo, review page</text>
-  <text class="cmd" x="980" y="137">the thing, then the diff</text>
-  <text class="note" x="980" y="154">you rule;</text>
-  <text class="note" x="980" y="167">then it merges</text>
-  <use href="#you" x="1104" y="104"/>
+  <text class="name" x="980" y="120">Review page, show</text>
+  <text class="cmd" x="980" y="137">agent/show/&lt;branch&gt;/</text>
+  <text class="note" x="980" y="154">you read it over the code branch;</text>
+  <text class="note" x="980" y="167">the session lands its own work</text>
+  <use href="#you" x="1100" y="104"/>
 
   <!-- labels: row 2 -->
-  <text class="name" x="368" y="264">Standalone ticket</text>
+  <text class="name" x="368" y="264">A ticket</text>
   <text class="cmd" x="368" y="281">agent/tickets/&lt;slug&gt;.md</text>
-  <text class="note" x="368" y="298">written cold, built at once</text>
-  <text class="note" x="368" y="311">on the board; you need not read it</text>
+  <text class="note" x="368" y="298">filed and dispatched at once,</text>
+  <text class="note" x="368" y="311">with no permission asked</text>
 
   <text class="name" x="568" y="264">A fresh worker</text>
   <text class="cmd" x="568" y="281">/mx:dispatch</text>
-  <text class="note" x="568" y="298">a fresh context window, own worktree</text>
-  <text class="note" x="568" y="311">the worker prompt is its whole contract</text>
+  <text class="note" x="568" y="298">own worktree, fresh context;</text>
+  <text class="note" x="568" y="311">builds, tests, commits a report</text>
 
   <text class="name" x="768" y="264">Light review</text>
-  <text class="cmd" x="768" y="281">/mx:code-review, light</text>
-  <text class="note" x="768" y="298">run by the worker, reports on disk</text>
-  <text class="note" x="768" y="311">fixed or declined by the worker</text>
+  <text class="cmd" x="768" y="281">/mx:code-review --light</text>
+  <text class="note" x="768" y="298">the worker reviews its own branch;</text>
+  <text class="note" x="768" y="311">full axes when the diff is large</text>
 
-  <text class="name" x="980" y="264">Demo, review page</text>
-  <text class="cmd" x="980" y="281">the thing, then the diff</text>
-  <text class="note" x="980" y="298">you rule on what was built;</text>
-  <text class="note" x="980" y="311">accept, amend, redo or reject</text>
-  <use href="#you" x="1104" y="248"/>
+  <text class="name" x="980" y="264">Your calls, then QA</text>
+  <text class="cmd" x="980" y="281">review page + one show</text>
+  <text class="note" x="980" y="298">accept, amend, redo or reject;</text>
+  <text class="note" x="980" y="311">drive it on your own machine</text>
+  <use href="#you" x="1100" y="248"/>
 
   <!-- labels: row 3 -->
-  <text class="name" x="368" y="408">Spec to tickets</text>
-  <text class="cmd" x="368" y="425">grilling, then to-tickets</text>
-  <text class="note" x="368" y="442">once no question is left for you;</text>
-  <text class="note" x="368" y="455">filed open, on the board</text>
+  <text class="name" x="368" y="408">Grilled, then cut</text>
+  <text class="cmd" x="368" y="425">/mx:grill-with-docs</text>
+  <text class="note" x="368" y="442">vertical slices, blocking edges;</text>
+  <text class="note" x="368" y="455">hinges marked, filed proposed</text>
 
   <text class="name" x="568" y="408">A worker per ticket</text>
   <text class="cmd" x="568" y="425">/mx:dispatch</text>
-  <text class="note" x="568" y="442">one per open ticket; own worktree</text>
-  <text class="note" x="568" y="455">one at a time or in waves</text>
+  <text class="note" x="568" y="442">one at a time or in waves;</text>
+  <text class="note" x="568" y="455">merged into the parent's branch</text>
 
-  <text class="name" x="768" y="408">Full review, twice</text>
+  <text class="name" x="768" y="408">Two levels of review</text>
   <text class="cmd" x="768" y="425">/mx:code-review</text>
-  <text class="note" x="768" y="442">per ticket, in the worker; whole</text>
-  <text class="note" x="768" y="455">feature once built; reports on disk</text>
+  <text class="note" x="768" y="442">each worker on its own branch;</text>
+  <text class="note" x="768" y="455">a full one on the parent's branch</text>
 
-  <text class="name" x="980" y="408">Demo, page, QA</text>
-  <text class="cmd" x="980" y="425">the thing, the diff, drive it</text>
-  <text class="note" x="980" y="442">accept, amend, redo, reject;</text>
-  <text class="note" x="980" y="455">findings become tickets</text>
-  <use href="#you" x="1104" y="392"/>
+  <text class="name" x="980" y="408">Close-out</text>
+  <text class="cmd" x="980" y="425">full suite, then debrief</text>
+  <text class="note" x="980" y="442">you rule it whole, a hinge earlier;</text>
+  <text class="note" x="980" y="455">QA findings are filed as tickets</text>
+  <use href="#you" x="1100" y="392"/>
 
-  <text class="al" x="568" y="497">ONE ORCHESTRATOR &middot; /mx:dispatch &middot; CLAIMS, SPAWNS, MERGES, LANDS</text>
-  <text class="note" x="568" y="512">what needs your ruling arrives with the landing, tagged, in the board's needs-me group</text>
-  <text class="note" x="568" y="527">a build waits on its own branch for your ruling; what depends on it starts after</text>
+  <text class="al" x="568" y="497">ONE ORCHESTRATOR PER TICKET OR TREE &middot; /mx:dispatch &middot; CLAIMS, SPAWNS, READS, MERGES</text>
+  <text class="note" x="568" y="514">it sorts each build's calls into three: already yours, the agent's, and yours to make</text>
+  <text class="note" x="568" y="529">only the last reach you, as questions on the ticket, in the board's needs-me group</text>
+  <use href="#you" x="1100" y="488"/>
 
   <!-- labels: dials -->
-  <text class="eb" x="64" y="584">THE FOUR DIALS, ONE PER COLUMN</text>
-  <text class="dial" x="88" y="618">grilling</text>
-  <text class="note" x="88" y="633">none, one question, an interview</text>
-  <text class="dial" x="368" y="618">on disk</text>
-  <text class="note" x="368" y="633">none, a ticket, a spec</text>
-  <text class="dial" x="568" y="618">worker</text>
-  <text class="note" x="568" y="633">this session, a worker on a host</text>
-  <text class="dial" x="768" y="618">review</text>
-  <text class="note" x="768" y="633">none, light, full</text>
-  <text class="note" x="980" y="618">the on-disk dial sets the other two:</text>
-  <text class="note" x="980" y="631">with a ticket or a spec, a worker builds</text>
-  <text class="note" x="980" y="644">and a reviewer reads</text>
+  <text class="eb" x="64" y="592">THE FOUR DIALS, ONE PER COLUMN</text>
+  <text class="dial" x="88" y="626">grilling</text>
+  <text class="note" x="88" y="641">none, one question,</text>
+  <text class="note" x="88" y="654">an interview over sessions</text>
+  <text class="dial" x="368" y="626">on disk</text>
+  <text class="note" x="368" y="641">none, a ticket,</text>
+  <text class="note" x="368" y="654">a ticket with child tickets</text>
+  <text class="dial" x="568" y="626">worker</text>
+  <text class="note" x="568" y="641">this session, or a fresh</text>
+  <text class="note" x="568" y="654">worker per ticket on a host</text>
+  <text class="dial" x="768" y="626">review</text>
+  <text class="note" x="768" y="641">none, light or full axes,</text>
+  <text class="note" x="768" y="654">and one level up at a close-out</text>
+  <text class="note" x="980" y="626">the on-disk dial sets the worker:</text>
+  <text class="note" x="980" y="639">with a ticket, a fresh worker builds</text>
+  <text class="note" x="980" y="652">it and reviews its own branch</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="672" x2="1164" y2="672"/>
-  <use href="#you" x="64" y="692"/>
-  <text class="legend-text" x="120" y="703">where your attention is asked for</text>
-  <rect class="card-ghost" x="424" y="694" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="456" y="703">no fresh unit: the session itself</text>
-  <rect class="card-ghost" x="668" y="690" width="20" height="14" rx="3"/>
-  <rect class="card" x="664" y="694" width="20" height="14" rx="3"/>
-  <text class="legend-text" x="696" y="703">a worker: one fresh context per ticket</text>
-  <rect class="bar" x="952" y="694" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="984" y="703">reviewers, orchestrator</text>
+  <line class="rule" x1="64" y1="684" x2="1164" y2="684"/>
+  <use href="#you" x="64" y="704"/>
+  <text class="legend-text" x="120" y="715">your stations, and no others</text>
+  <rect class="card-ghost" x="424" y="706" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="456" y="715">no fresh unit: the session itself</text>
+  <rect class="card-ghost" x="668" y="702" width="20" height="14" rx="3"/>
+  <rect class="card" x="664" y="706" width="20" height="14" rx="3"/>
+  <text class="legend-text" x="696" y="715">a worker: one fresh context per ticket</text>
+  <rect class="bar" x="952" y="706" width="24" height="12" rx="3"/>
+  <text class="legend-text" x="984" y="715">the orchestrator and side notes</text>
 </svg>
 <script>
 const root = document.documentElement, button = document.querySelector('.scheme');
