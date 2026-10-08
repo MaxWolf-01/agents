@@ -25,7 +25,7 @@ The cost of getting this wrong is one-way. Clear a _relevant_ context and you lo
 
 **3. Can the task be done AFK?** Is it scoped tightly enough to run with you away from the keyboard, no steering? Then send it to a **subagent** and leave this session untouched: `/mx:fork` when it needs the mental model built here (the fork inherits the transcript), a fresh background agent with a brief when it doesn't. Automated review is the standard case: the agent reads the diff and reports, and you aren't needed while it does.
 
-**4. Otherwise, `/mx:handoff`.** Relevant context, the next phase needs steering, and continuing doesn't fit: compact the conversation into a handoff file and open a fresh session on it. This is also the move whenever the work must **travel**: a new harness (Claude → Codex), a new directory or repo, a colleague, a side-quest forked mid-phase. `/mx:transcript` is its full-export variant.
+**4. Otherwise, `/mx:handoff`.** Relevant context, the next phase needs steering, and continuing doesn't fit: compact the conversation into a handoff file and open a fresh session on it. This is also the move whenever the work must **travel**: a new harness (Claude → Codex), a new directory or repo, a colleague, a side-quest forked mid-phase.
 
 What a handoff buys over the built-in `/compact` is **inspectability**: the file can be proofread and edited before it seeds the next session, where a compact summary is a black box; the failure mode is a fresh session confidently wrong about a decision the summary flattened. That is why `/compact` is not on this ladder, and why auto-compact is disabled.
 
