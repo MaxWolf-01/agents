@@ -8,6 +8,11 @@ Each run goes through the whole command, its model runs a stub `claude` on PATH 
 the run directory held when it started and writes what its stage owes. The same runs show that
 read-fresh is given no earlier report (P6), and that the later stages read the last runs' reports
 from git history.
+
+Two checks enter elsewhere. The run's batches: given a run directory's `sessions.jsonl` and digests,
+the names and contents `batches.json` gets, the oracle being the batch size's arithmetic. A run
+stopped or killed: the command run as a process of its own, sent a signal while its stage's stub
+runs, the oracle being whether the stub's processes still run, read from `/proc`.
 """
 
 import json
@@ -16,6 +21,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -32,13 +38,14 @@ WEEK = timedelta(weeks=1)
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
 # command line, one argument per line, and what the run directory held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
-# With $STUB_HANG set it starts a child and waits on it instead, recording both pids.
+# With $STUB_HANG set it starts a child and waits on it instead, recording both pids, and takes a
+# second to end on TERM, as a model run ending its work does; the child ends only by its own TERM.
 STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
 printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
 find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
-if [ -n "${STUB_HANG:-}" ]; then sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
+if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
@@ -98,6 +105,23 @@ def out(repo: Path, *args: str) -> str:
 def last_logged(tmp_path: Path) -> str:
     """The message of the run log's last line, after its time and run."""
     return (tmp_path / "data/agents/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
+
+
+def alive(pid: int) -> bool:
+    """Whether a process runs: it exists and is not a zombie waiting to be reaped."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except (FileNotFoundError, IndexError):
+        return False
+
+
+def eventually(check: Callable[[], bool], seconds: float = 30) -> bool:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if check():
+            return True
+        time.sleep(0.1)
+    return check()
 
 
 def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stays_staged(
@@ -188,23 +212,6 @@ def test_an_older_sample_bigger_than_a_batch_is_read_in_batches_of_its_own(tmp_p
     ]
 
 
-def alive(pid: int) -> bool:
-    """Whether a process runs: it exists and is not a zombie waiting to be reaped."""
-    try:
-        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
-    except (FileNotFoundError, IndexError):
-        return False
-
-
-def eventually(check, seconds: float = 30) -> bool:
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        if check():
-            return True
-        time.sleep(0.1)
-    return check()
-
-
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc, and the parent-death signal is Linux's")
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGKILL], ids=["stopped", "killed"])
 def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
@@ -220,6 +227,8 @@ def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
         started = [int(p) for p in pids.read_text().split()]
         run.send_signal(sig)
         run.wait(60)
+        if sig == signal.SIGTERM:  # a stopped run waits for its stage, which takes a second to end
+            assert not any(map(alive, started)), "the stage's model run and its child ended before the run did"
         assert eventually(lambda: not any(map(alive, started))), "the stage's model run and its child ended with the run"
     finally:
         run.kill()

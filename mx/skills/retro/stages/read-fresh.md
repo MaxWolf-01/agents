@@ -4,7 +4,7 @@ You run stage 2 of a workflow retro over max's Claude Code sessions from {{since
 
 Everything you read and write is in the run directory, `{{run}}`, your working directory:
 
-- `batches.json`: the session digests in batches, each a name, a list of digest paths and its size in characters: the period's in `batch-01`, `batch-02`, …, and the older sample's, where there is one, in `sample-01`, `sample-02`, …, which hold {{sample}}.
+- `batches.json`: the session digests in batches, each a name, a list of digest paths and its size in characters. The period's batches are `batch-01`, `batch-02`, …; the older sample's, where there is one, are `sample-01`, `sample-02`, …, and hold {{sample}}.
 - `sessions/` and `sample/`: one digest per session.
 - `git/<repo>.md`: each repo's commits in the period, its reverts, and where it has an agent repo, the tickets filed, every status change, the tickets deleted and the worker reports committed.
 

@@ -212,7 +212,7 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude:
             d = Digest.from_json(hit["digest"])
             if d.text and excluded(d.directories, exclude):  # a pattern added since the session was cached
                 d.text = ""
-                cached.write_text(json.dumps({"key": key, "digest": d.to_json()}))
+                cache_digest(cached, key, d)
             out.append(d)
         else:
             todo.append((t, records, key, cached))
@@ -222,11 +222,18 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude:
             if d is not None:
                 if excluded(d.directories, exclude):
                     d.text = ""
-                cached.write_text(json.dumps({"key": key, "digest": d.to_json()}))
+                cache_digest(cached, key, d)
                 out.append(d)
     finally:
-        pool.shutdown(cancel_futures=True)  # a run stopped meanwhile waits for the digests under way alone
+        pool.shutdown(cancel_futures=True)  # on a stop, the queued digests are cancelled and those under way finished
     return out
+
+
+def cache_digest(cached: Path, key: list, d: Digest) -> None:
+    """Write a cached digest whole or not at all: a run stopped mid-write leaves the old file or none."""
+    partial = cached.with_suffix(".partial")
+    partial.write_text(json.dumps({"key": key, "digest": d.to_json()}))
+    partial.replace(cached)
 
 
 class _Inline:
@@ -412,9 +419,9 @@ def flatten(content: object) -> str:
 
 def seen(record: dict[str, dict[str, list[str]]], key: str, at: datetime) -> None:
     """Note `key` as seen at `at`: the first and last time it was, per UTC day."""
-    days = record.setdefault(key, {})
-    first, last = days.get(at.astimezone(UTC).date().isoformat(), [stamp(at), stamp(at)])
-    days[at.astimezone(UTC).date().isoformat()] = [min(first, stamp(at)), max(last, stamp(at))]
+    days, day, now = record.setdefault(key, {}), at.astimezone(UTC).date().isoformat(), stamp(at)
+    first, last = days.get(day, [now, now])
+    days[day] = [min(first, now), max(last, now)]
 
 
 def parse_time(s: str) -> datetime:
@@ -507,9 +514,9 @@ PLUGIN = "mx/.claude-plugin/plugin.json"
 
 
 def versions(since: datetime, until: datetime, period: list[Digest], repos: list[Path]) -> str:
-    """The mx releases committed in the period, and the Claude Code versions and models the
-    period's sessions ran in the period, each with the first and last day it ran on there. A day
-    counts when an entry of that day falls in the period."""
+    """The mx releases committed in the period, and the Claude Code versions and models that ran in
+    it, each with the first and last day it ran on. A day counts when an entry of that day falls in
+    the period."""
     out = [f"# Versions since {stamp(since)}", "", "## mx releases", ""]
     for repo in repos:
         if (repo / PLUGIN).exists():

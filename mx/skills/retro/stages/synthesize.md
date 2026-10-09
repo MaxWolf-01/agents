@@ -8,7 +8,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 
 - `{{skills}}/retro/REPORT.md`, the report's shape and rules, and `{{skills}}/retro/LENSES.md`, what the retro looks for and how it weighs;
 - `previous/`: `current.md`, the report as it stands now with max's verdicts since the last run; `<date>.md`, the last runs' reports; `seed/`, where it exists, the reports a first run takes as its previous ones, with max's verdicts on them;
-- `notes/`, stage 2's fresh reading of the period; `follow-up.md`, what the period did to each standing finding; `deep/`, the deep-dives and the architecture pass;
+- `notes/`, stage 2's fresh reading of the period, and in `notes/sample-*.md` of the older sample, from before it; `follow-up.md`, what the period did to each standing finding; `deep/`, the deep-dives and the architecture pass;
 - `versions.md`.
 
 The digests (`sessions/`, `sample/`) and `git/` are there to check a quote against.

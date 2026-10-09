@@ -5,7 +5,7 @@ You run stage 3 of a workflow retro over max's Claude Code sessions from {{since
 The run directory, `{{run}}`, is your working directory and the only place you write. It holds:
 
 - `previous/`: the earlier reports. `current.md` is the report as it stands in the agent repo now, max's verdicts since the last run included; `<date>.md` are the last runs' reports, named for the end of their period; `seed/`, where it exists, holds the reports a first run takes as its previous ones, max's verdicts on them among them. With none of these, there is nothing to follow up: write `follow-up.md` saying so, and stop.
-- `notes/`: stage 2's notes on the period, read with no earlier report in view.
+- `notes/`: stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it.
 - `sessions/`, `sample/`: the digests the notes come from; `sample/` holds {{sample}}. `git/<repo>.md`: the period's commits, reverts, tickets and worker reports in each repo. `versions.md`.
 
 The report's shape and rules are `{{skills}}/retro/REPORT.md`; what the retro looks for and how it weighs, `{{skills}}/retro/LENSES.md`. Read both first. You may read the repos below and run git's read commands in them as `git -C <repo> <command>`:

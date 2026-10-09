@@ -4,7 +4,7 @@ You run stage 4 of a workflow retro over max's Claude Code sessions from {{since
 
 {{focus}}
 
-The run directory, `{{run}}`, is your working directory and the only place you write. It holds `notes/` (stage 2's fresh reading of the period), `follow-up.md` (stage 3: what the period did to each standing finding), `previous/` (the earlier reports), the digests in `sessions/` and `sample/`, `git/<repo>.md` and `versions.md`. What the retro looks for and how it weighs is `{{skills}}/retro/LENSES.md`; the report's rules are `{{skills}}/retro/REPORT.md`. Read both, then `follow-up.md` and every file in `notes/`.
+The run directory, `{{run}}`, is your working directory and the only place you write. It holds `notes/` (stage 2's fresh reading of the period, and in `notes/sample-*.md` of the older sample, from before it), `follow-up.md` (stage 3: what the period did to each standing finding), `previous/` (the earlier reports), the digests in `sessions/` and `sample/`, `git/<repo>.md` and `versions.md`. What the retro looks for and how it weighs is `{{skills}}/retro/LENSES.md`; the report's rules are `{{skills}}/retro/REPORT.md`. Read both, then `follow-up.md` and every file in `notes/`.
 
 You may read the repos below and run git's read commands in them as `git -C <repo> <command>`:
 
@@ -12,7 +12,7 @@ You may read the repos below and run git's read commands in them as `git -C <rep
 
 ## Steps
 
-1. Pick the patterns: one to three, by the weighing, from the fresh notes and the standing findings that recurred or came back. A focus max named is one of them. A pattern stage 2 saw in several sessions or batches outranks one seen once, and one that cost max outranks one that cost an agent the same.
+1. Pick the patterns: one to three, by the weighing, from the fresh notes and the standing findings that recurred or came back. A focus max named is one of them. A pattern stage 2 saw in several of the period's sessions outranks one seen once, and one the older sample shows too is no new one, and one that cost max outranks one that cost an agent the same.
 2. Spawn one subagent per pattern and one for the architecture pass, in parallel, each with its brief below and the paths it needs.
 3. When they return, check each wrote its file; spawn a fresh one for any that did not.
 

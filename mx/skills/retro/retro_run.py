@@ -23,7 +23,8 @@ the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when eit
 changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
 A run that ends without its commit, there or at a stage that failed or left out a file it owes,
 exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the stage it
-is in, and whatever that stage started, before it exits; one killed takes its stage down with it.
+is in, and whatever that stage started, before it exits; one stopped during the commit lets the
+commit finish. On Linux, a run killed outright takes its stage down with it.
 
 Examples:
 
@@ -42,7 +43,7 @@ import shutil
 import signal
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -126,12 +127,14 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
             if not stage.fresh and not (run / "previous").exists():
                 write_previous(run, agent, runs, seed)
             if failed := run_stage(stage, run, values, readable(repos, agent)):
-                log(f"stopped: {stage.name} {failed}; its output is {run / stage.name}.log")
+                log(f"failed: {stage.name} {failed}; its output is {run / stage.name}.log")
                 sys.exit(1)
             log(f"{stage.name} done")
     except Stopped as stop:
-        log(f"stopped: {stop.args[0].name} during {where}, which ended with it; the run's directory is {run}")
-        sys.exit(128 + stop.args[0])
+        log(f"stopped: {stop.signal.name} during {where}, which ended with it; the run's directory is {run}")
+        sys.exit(128 + stop.signal)
+    for s in STOP:  # the commit takes a moment, and one cut short leaves the agent repo half-changed
+        signal.signal(s, signal.SIG_IGN)
     committed, line = commit_report(agent, run, base, since, until)
     log(line)
     if not committed:
@@ -209,16 +212,19 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
     (run / "prompts").mkdir(exist_ok=True)
     (run / "prompts" / f"{stage.name}.md").write_text(prompt)
     with (run / f"{stage.name}.log").open("w") as out:
-        done = subprocess.Popen(launch(stage, run, dirs), cwd=run, stdin=subprocess.PIPE, stdout=out,
-                                stderr=subprocess.STDOUT, text=True, preexec_fn=dies_with(os.getpid()),
-                                env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0"})
+        # A session of its own, so a signal meant for the run (a closed terminal's HUP, a Ctrl-C) reaches
+        # the stage only through `end`, which `run-log` turns into the model run's end.
+        process = subprocess.Popen(launch(stage, run, dirs), cwd=run, stdin=subprocess.PIPE, stdout=out,
+                                   stderr=subprocess.STDOUT, text=True, start_new_session=True,
+                                   preexec_fn=dies_with(os.getpid()),
+                                   env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0"})
         try:
-            done.communicate(prompt)
+            process.communicate(prompt)
         except Stopped:
-            end(done)
+            end(process)
             raise
-    if done.returncode != 0:
-        return f"exited {done.returncode}"
+    if process.returncode != 0:
+        return f"exited {process.returncode}"
     batches = [b["name"] for b in json.loads((run / "batches.json").read_text())]
     owed = [p.format(batch=b) for p in stage.owes for b in (batches if "{batch}" in p else [""])]
     if missing := [p for p in owed if not (run / p).is_file() or not (run / p).stat().st_size]:
@@ -227,22 +233,25 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
 
 
 class Stopped(Exception):
-    """The run was sent one of STOP; its argument is the signal."""
+    def __init__(self, sig: signal.Signals) -> None:
+        super().__init__(sig)
+        self.signal = sig
 
 
+# What stops a run: `job stop` and a timer's stop send TERM, Ctrl-C INT, a closed terminal HUP.
 STOP = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 PR_SET_PDEATHSIG = 1
 LIBC = ctypes.CDLL(None) if sys.platform.startswith("linux") else None
 
 
 def on_stop(signum: int, _frame: object) -> None:
-    """Stop the run where it is; a second signal waits, so the stage under way ends whole."""
+    """Stop the run where it is. A second signal is ignored, so `end` ends the stage under way whole."""
     for s in STOP:
         signal.signal(s, signal.SIG_IGN)
     raise Stopped(signal.Signals(signum))
 
 
-def dies_with(parent: int):
+def dies_with(parent: int) -> Callable[[], None]:
     """For a stage's process: TERM when the run's process dies, SIGKILL included, through Linux's
     parent-death signal. `run-log` ends the model run on TERM, and `timeout`, which it runs the
     model under, passes the signal to every process the model started."""
