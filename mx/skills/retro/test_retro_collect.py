@@ -254,9 +254,12 @@ def test_the_older_sample_draws_from_two_to_eight_weeks_back_and_only_sessions_w
     assert not {silent.sid, too_old.sid, too_new.sid} & {p.stem for p in run.rglob("*.md")}
 
 
+IDENTITY = {"GIT_AUTHOR_NAME": "max", "GIT_AUTHOR_EMAIL": "max@example.org", "GIT_COMMITTER_NAME": "max",
+            "GIT_COMMITTER_EMAIL": "max@example.org", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+
+
 def git(repo: Path, *args: str, when: datetime | None = None) -> None:
-    env = {**os.environ, "GIT_AUTHOR_NAME": "max", "GIT_AUTHOR_EMAIL": "max@example.org", "GIT_COMMITTER_NAME": "max",
-           "GIT_COMMITTER_EMAIL": "max@example.org", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", **({"GIT_AUTHOR_DATE": when.isoformat(), "GIT_COMMITTER_DATE": when.isoformat()} if when else {})}
+    env = {**os.environ, **IDENTITY, **({"GIT_AUTHOR_DATE": when.isoformat(), "GIT_COMMITTER_DATE": when.isoformat()} if when else {})}
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
 
 

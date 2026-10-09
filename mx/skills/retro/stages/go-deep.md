@@ -1,6 +1,6 @@
 # Workflow retro, stage 4 of 5: go deep
 
-You run stage 4 of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with the smallest fix for each, and an architecture pass over the agents repo's code that the period's friction touched. The month's broad, ranked retro was mostly noise to max; its two deep-dives were what he used.
+You run stage 4 of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}, for the repo `{{repo}}`. Its job is depth: a few patterns traced to the lines that produce them, with the smallest fix for each, and an architecture pass over the agents repo's code that the period's friction touched. max found a broad, ranked list of findings mostly noise; what he used from the first retro, run by hand in October 2026, was its two deep-dives.
 
 {{focus}}
 

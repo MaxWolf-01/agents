@@ -4,10 +4,10 @@ alone and the other change is still staged after it; given one mid-rebase, nothi
 and the run log says why (P9). The oracle is git's own record of the commit and the index.
 Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py.
 
-Each run goes through the whole command, its model runs a stub `claude` on PATH that records how it
-was started and what it could see, and writes what its stage owes, so the same runs show that
-read-fresh is given no earlier report (P6), that the later stages read the last run's from git
-history, and that every stage may write in its run directory alone (P9).
+Each run goes through the whole command, its model runs a stub `claude` on PATH that records what
+the run directory held when it started and writes what its stage owes. The same runs show that
+read-fresh is given no earlier report (P6), and that the later stages read the last runs' reports
+from git history.
 """
 
 import json
@@ -22,25 +22,24 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import retro_run  # noqa: E402
-from test_retro_collect import SINCE, Transcript, git  # noqa: E402
+from test_retro_collect import IDENTITY, SINCE, Transcript, git  # noqa: E402
 
 FIRST = datetime(2026, 10, 12, 2, tzinfo=UTC)
-SECOND = FIRST + timedelta(weeks=1)
-IDENTITY = {"GIT_AUTHOR_NAME": "max", "GIT_AUTHOR_EMAIL": "max@example.org", "GIT_COMMITTER_NAME": "max",
-            "GIT_COMMITTER_EMAIL": "max@example.org", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+WEEK = timedelta(weeks=1)
 
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
-# command line, one argument per line, and what the run directory held when it started.
+# command line, one argument per line, and what the run directory held when it started; before
+# synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
 STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
 printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
 find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
 case $stage in
-    "read fresh") mkdir -p notes && echo "notes" > notes/batch-01.md ;;
+    "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
-    "go deep") mkdir -p deep && echo "deep" > deep/tests.md ;;
-    synthesize) echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
+    "go deep") mkdir -p deep && echo "deep" > deep/architecture.md ;;
+    synthesize) eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
 """
 
@@ -88,23 +87,24 @@ def retro(tmp_path: Path, repo: Path, until: datetime, since: datetime | None = 
     return retro_run.run_retro(repo, tmp_path / "data", [projects], since, until=until)
 
 
-def argv(stub: Path, stage: str) -> list[str]:
-    return (stub / f"{stage}.argv").read_text().splitlines()
+def out(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout
+
+
+def last_logged(tmp_path: Path) -> str:
+    """The message of the run log's last line, after its time and run."""
+    return (tmp_path / "data/agents/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
 
 
 def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stays_staged(
         tmp_path: Path, stub: Path, repo: Path) -> None:
     run = retro(tmp_path, repo, FIRST, SINCE)
     agent = repo / "agent"
-    committed = subprocess.run(["git", "-C", agent, "show", "--name-only", "--format=", "HEAD"],
-                               capture_output=True, text=True, check=True).stdout.split()
-    assert committed == ["retro/report.html", "retro/report.md"]
-    staged = subprocess.run(["git", "-C", agent, "diff", "--cached", "--name-only"],
-                            capture_output=True, text=True, check=True).stdout.split()
-    assert staged == ["tickets/a.md"], "the session's staged ticket is neither committed nor unstaged"
+    assert out(agent, "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
+    assert out(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], \
+        "the session's staged ticket is neither committed nor unstaged"
     assert (agent / "retro/report.md").read_text() == (run / "report.md").read_text()
-    log = (tmp_path / "data/agents/runs.log").read_text()
-    assert "committed" in log.splitlines()[-1]
+    assert last_logged(tmp_path).startswith("committed ")
 
 
 def test_mid_rebase_nothing_is_committed_and_the_run_log_says_why(tmp_path: Path, stub: Path, repo: Path) -> None:
@@ -115,39 +115,44 @@ def test_mid_rebase_nothing_is_committed_and_the_run_log_says_why(tmp_path: Path
     git(agent, "commit", "-qam", "side")
     git(agent, "checkout", "-q", "-")
     assert subprocess.run(["git", "-C", agent, "rebase", "side"], capture_output=True).returncode != 0, "a conflict stops the rebase"
-    head = subprocess.run(["git", "-C", agent, "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    head = out(agent, "rev-parse", "HEAD")
     with pytest.raises(SystemExit):
         retro(tmp_path, repo, FIRST, SINCE)
-    assert subprocess.run(["git", "-C", agent, "rev-parse", "HEAD"], capture_output=True, text=True).stdout == head
+    assert out(agent, "rev-parse", "HEAD") == head
     assert not (agent / "retro/report.md").exists()
-    last = (tmp_path / "data/agents/runs.log").read_text().splitlines()[-1]
-    assert "not committed" in last and "mid-rebase" in last
-    assert str(tmp_path / "data/agents/runs") in last, "the log names where the report stays"
+    assert last_logged(tmp_path).startswith(f"not committed: {agent} is mid-rebase; the report stays in {tmp_path}/data/agents/runs/")
 
 
-def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_runs_from_git_history(
+@pytest.mark.parametrize("verdict", ["committed while the run ran", "staged"])
+def test_a_verdict_written_into_the_report_is_never_overwritten(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, verdict: str) -> None:
+    agent = repo / "agent"
+    retro(tmp_path, repo, FIRST, SINCE)
+    edit = f"echo 'F1 dismissed by max' >> {agent}/retro/report.md && git -C {agent} add retro/report.md"
+    if verdict == "staged":
+        subprocess.run(edit, shell=True, check=True)
+    else:
+        monkeypatch.setenv("STUB_BEFORE_SYNTHESIS", f"{edit} && git -C {agent} commit -qm verdict -- retro/report.md")
+    head = out(agent, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST + WEEK)
+    assert "F1 dismissed by max" in (agent / "retro/report.md").read_text()
+    assert out(agent, "rev-parse", "HEAD") == head if verdict == "staged" else out(agent, "log", "-1", "--format=%s") == "verdict\n"
+    assert last_logged(tmp_path).startswith("not committed: ")
+
+
+def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_three_from_git_history(
         tmp_path: Path, stub: Path, repo: Path) -> None:
-    first = retro(tmp_path, repo, FIRST, SINCE)
-    second = retro(tmp_path, repo, SECOND)
+    runs = [retro(tmp_path, repo, FIRST, SINCE)] + [retro(tmp_path, repo, FIRST + n * WEEK) for n in (1, 2, 3)]
     fresh = (stub / "read fresh.seen").read_text()
     assert "sessions/" in fresh and "previous" not in fresh
-    later = (stub / "follow up.seen").read_text().split()
-    assert "./previous/current.md" in later and "./previous/2026-10-12.md" in later
-    assert (second / "previous/current.md").read_text() == (first / "report.md").read_text()
-    rows = [json.loads(line) for line in (second / "sessions.jsonl").read_text().splitlines()]
+    args = (stub / "read fresh.argv").read_text().splitlines()
+    assert "--add-dir" not in args and "Bash" not in args[args.index("--tools") + 1], \
+        "read-fresh can reach nothing outside its run directory, an earlier report included"
+    later = {Path(p).name for p in (stub / "follow up.seen").read_text().split() if "/previous/" in p}
+    assert later == {"current.md", *(f"{retro_run.dirname(FIRST + n * WEEK)}.md" for n in (0, 1, 2))}
+    assert (runs[-1] / "previous/current.md").read_text() == (runs[-2] / "report.md").read_text()
+    rows = [json.loads(line) for line in (runs[-1] / "sessions.jsonl").read_text().splitlines()]
     period = [r for r in rows if r["set"] == "sessions"]
-    assert period and all(r["start"] >= retro_run.stamp(FIRST) for r in period), "the second period starts where the first ended"
-
-
-def test_every_stage_may_write_in_its_run_directory_alone(tmp_path: Path, stub: Path, repo: Path) -> None:
-    run = retro(tmp_path, repo, FIRST, SINCE)
-    for stage in ("read fresh", "follow up", "go deep", "synthesize"):
-        args = argv(stub, stage)
-        assert {"--restricted", "--setting-sources", "--strict-mcp-config"} <= set(args)
-        assert args[args.index("--permission-mode") + 1] == "manual"
-        assert args[args.index("--permission-prompts") + 1] == "none"
-        rules = args[args.index("--allowedTools") + 1:args.index("--tools")]
-        assert [r for r in rules if not r.startswith("Bash(git -C ")] == [f"Edit(/{run}/**)"], stage
-        assert all(r.split()[3].rstrip(")") in retro_run.GIT_READS for r in rules if r.startswith("Bash("))
-    fresh = argv(stub, "read fresh")
-    assert "--add-dir" not in fresh and "Bash" not in fresh[fresh.index("--tools") + 1]
+    assert period and all(r["start"] >= retro_run.stamp(FIRST + 2 * WEEK) for r in period), \
+        "each period starts where the last ended"

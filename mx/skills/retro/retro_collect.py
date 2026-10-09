@@ -60,6 +60,7 @@ import session_page  # noqa: E402  what counts as the user's own message, as the
 SAMPLE_SIZE = 20
 SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the period's end
 PASTE_CLIP = 600  # pasted text in a message of the user's
+PROFILES = (Path.home() / ".claude/projects", Path.home() / ".claude-helferline/projects")  # each profile's transcripts
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
@@ -529,9 +530,16 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
 # ── command line ─────────────────────────────────────────────────────────────
 
 
+def read_list(path: Path) -> list[str]:
+    """A list file's entries, one per line, `#` starting a comment; exits when the file is missing."""
+    if not path.is_file():
+        sys.exit(f"{path} is missing")
+    return [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+
+
 def read_patterns(path: Path) -> list[str]:
     """The exclude file's patterns; exits when it holds none, so a run without its list fails closed."""
-    patterns = [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.startswith("#")]
+    patterns = read_list(path)
     if not patterns:
         sys.exit(f"{path} holds no pattern; a run reads no session without its exclusions")
     return patterns
@@ -550,8 +558,7 @@ class Sessions:
     session that worked in a matching directory, or under one, is never digested."""
     repos: list[Path] = field(default_factory=list)
     """The repos whose commits and tickets are collected, and whose agent repos hold session pages."""
-    projects: list[Path] = field(default_factory=lambda: [Path.home() / ".claude/projects",
-                                                         Path.home() / ".claude-helferline/projects"])
+    projects: list[Path] = field(default_factory=lambda: list(PROFILES))
     """Each profile's directory of transcripts."""
     cache: Path | None = None
     """Where digests are cached; by default `digest-cache` beside the run directory."""
