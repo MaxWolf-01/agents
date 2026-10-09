@@ -65,9 +65,9 @@ class Transcript:
             **({"toolDenialKind": denial} if denial else {})})
 
 
-def collect(tmp_path: Path, repos: list[Path] = (), seed: int = 0, exclude: list[str] = (ORG,)) -> Path:
+def collect(tmp_path: Path, repos: list[Path] = (), seed: int = 0, exclude: list[str] = (ORG,), since: datetime = SINCE) -> Path:
     run = tmp_path / "data" / "runs" / "1"
-    retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
+    retro_collect.collect_sessions(since, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
                                    list(repos), list(exclude), seed)
     return run
 
@@ -170,8 +170,19 @@ def test_a_session_that_started_before_the_period_holds_only_the_periods_days(tm
     assert "left out: 2026-10-02 to 2026-10-04" in digest
     assert "MAX: after" in digest
     assert "MAX: before" not in digest and "the day before" not in digest
-    [cached] = (tmp_path / "data" / "cache").glob(f"*{t.sid}.json")
-    assert "MAX: before" in json.loads(cached.read_text())["digest"]["text"]
+
+
+def test_the_cache_keeps_a_sessions_earlier_days_for_a_run_with_an_earlier_start(
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    t = Transcript(projects, "/home/u/repos/agents", SINCE - timedelta(days=3)).says("before")
+    t.at = SINCE + timedelta(hours=1)
+    t.says("after")
+    collect(tmp_path)
+    monkeypatch.setattr(retro_collect, "digest", fail_if_digested)
+
+    digest = (collect(tmp_path, since=SINCE - timedelta(days=4)) / "sessions" / f"{t.sid}.md").read_text()
+
+    assert "MAX: before" in digest and "MAX: after" in digest
 
 
 def test_a_session_whose_period_entries_draw_no_line_keeps_none_of_its_earlier_days(tmp_path: Path, projects: Path) -> None:
@@ -185,18 +196,33 @@ def test_a_session_whose_period_entries_draw_no_line_keeps_none_of_its_earlier_d
     assert "late on sunday" not in digest and "make test" not in digest
 
 
-def test_a_digested_session_is_read_from_the_cache_until_its_transcript_changes(tmp_path: Path, projects: Path) -> None:
+def fail_if_digested(*_: object) -> None:
+    raise AssertionError("digested again, not read from the cache")
+
+
+def test_a_digested_session_is_read_from_the_cache_until_its_transcript_changes(
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     t = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1)).says("first")
-    collect(tmp_path)
-    [cached] = (tmp_path / "data" / "cache").glob(f"*{t.sid}.json")
-    planted = json.loads(cached.read_text())
-    planted["digest"]["text"] = "FROM THE CACHE"
-    cached.write_text(json.dumps(planted))
+    first = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+    digest = retro_collect.digest
+    monkeypatch.setattr(retro_collect, "digest", fail_if_digested)
 
-    assert (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text() == "FROM THE CACHE"
+    assert (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text() == first
 
+    monkeypatch.setattr(retro_collect, "digest", digest)
     t.says("second")
     assert "MAX: second" in (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+
+
+def test_a_pattern_added_to_the_list_reaches_a_session_already_cached(tmp_path: Path, projects: Path) -> None:
+    moved = Transcript(projects, "/home/u/work/org", SINCE + timedelta(days=1)).says("start here")
+    moved.cwd = "/home/u/work/org/.worktrees/Later-x"
+    moved.says("MOVED-INTO-ORG")
+    assert "MOVED-INTO-ORG" in everything(collect(tmp_path))
+
+    run = collect(tmp_path, exclude=[ORG, "/home/u/work/org/.worktrees/Later-*"])
+
+    assert "MOVED-INTO-ORG" not in everything(run) and "MOVED-INTO-ORG" not in everything(tmp_path / "data" / "cache")
 
 
 def test_a_digest_carries_the_session_pages_turn_records(tmp_path: Path, projects: Path) -> None:

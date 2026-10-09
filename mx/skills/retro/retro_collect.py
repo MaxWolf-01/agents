@@ -10,7 +10,9 @@
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
   every Claude Code profile given, holding the period's days alone. A digest keeps the user's
   messages verbatim, pasted text clipped; every tool call's input, error and denial in full; the
-  model's text; and the session page's turn records. It keeps no tool output.
+  model's text; and the session page's turn records. It keeps no tool output. Beside them it
+  marks interrupts, rewinds, messages queued while the agent worked, hook send-backs, context
+  compactions and how long each turn took.
 - `sample/<id>.md`: digests of about 20 older sessions, from two to eight weeks before the end
   of the period, drawn at random, weighted to sessions with more of the user's messages.
 - `sessions.jsonl`: one row per digest above: id, profile, project, start, end, the user's
@@ -81,6 +83,8 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
     rows = []
     for where, chosen in (("sessions", period), ("sample", sample)):
         (run / where).mkdir(parents=True, exist_ok=True)
+        for stale in (run / where).glob("*.md"):  # a run again into the same directory replaces its digests
+            stale.unlink()
         for d in sorted(chosen, key=lambda d: d.start):
             (run / where / f"{d.sid}.md").write_text(d.since(since) if where == "sessions" else d.text)
             rows.append(dict(id=d.sid, set=where, profile=d.profile, project=d.cwd, start=stamp(d.start),
@@ -204,7 +208,11 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude:
         key = cache_key(t, records)
         cached = cache / f"{t.parent.parent.parent.name}-{t.stem}.json"
         if cached.exists() and (hit := json.loads(cached.read_text()))["key"] == key:
-            out.append(Digest.from_json(hit["digest"]))
+            d = Digest.from_json(hit["digest"])
+            if d.text and excluded(d.directories, exclude):  # a pattern added since the session was cached
+                d.text = ""
+                cached.write_text(json.dumps({"key": key, "digest": d.to_json()}))
+            out.append(d)
         else:
             todo.append((t, records, key, cached))
     with ProcessPoolExecutor(min(8, os.cpu_count() or 1)) if len(todo) > 4 else _Inline() as pool:
