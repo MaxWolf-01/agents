@@ -174,8 +174,8 @@ class Digest:
     messages: int
     text: str
     directories: list[str] = field(default_factory=list)  # every working directory, in order
-    versions: dict[str, list[str]] = field(default_factory=dict)  # Claude Code version: [first, last seen]
-    models: dict[str, list[str]] = field(default_factory=dict)  # model: [first, last seen]
+    versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
+    models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
     page_at: int = 0  # where in `text` the days end and the session page's records begin
 
@@ -242,7 +242,7 @@ def digest_job(args: tuple[Path, list[Path]]) -> Digest | None:
     return digest(*args)
 
 
-CACHE_FORMAT = 4  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 5  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -286,8 +286,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     day = None
     calls: dict[str, str] = {}
     parents: Counter = Counter()
-    versions: dict[str, list[str]] = {}
-    models: dict[str, list[str]] = {}
+    versions: dict[str, dict[str, list[str]]] = {}
+    models: dict[str, dict[str, list[str]]] = {}
     messages = 0
 
     def put(at: datetime | None, text: str) -> None:
@@ -410,9 +410,11 @@ def flatten(content: object) -> str:
     return str(content or "")
 
 
-def seen(record: dict[str, list[str]], key: str, at: datetime) -> None:
-    first, last = record.get(key, [stamp(at), stamp(at)])
-    record[key] = [min(first, stamp(at)), max(last, stamp(at))]
+def seen(record: dict[str, dict[str, list[str]]], key: str, at: datetime) -> None:
+    """Note `key` as seen at `at`: the first and last time it was, per UTC day."""
+    days = record.setdefault(key, {})
+    first, last = days.get(at.astimezone(UTC).date().isoformat(), [stamp(at), stamp(at)])
+    days[at.astimezone(UTC).date().isoformat()] = [min(first, stamp(at)), max(last, stamp(at))]
 
 
 def parse_time(s: str) -> datetime:
@@ -506,7 +508,8 @@ PLUGIN = "mx/.claude-plugin/plugin.json"
 
 def versions(since: datetime, until: datetime, period: list[Digest], repos: list[Path]) -> str:
     """The mx releases committed in the period, and the Claude Code versions and models the
-    period's sessions ran, each with when it was first and last seen."""
+    period's sessions ran in the period, each with the first and last day it ran on there. A day
+    counts when an entry of that day falls in the period."""
     out = [f"# Versions since {stamp(since)}", "", "## mx releases", ""]
     for repo in repos:
         if (repo / PLUGIN).exists():
@@ -514,16 +517,17 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
                 version = json.loads(git(repo, "show", f"{c['sha']}:{PLUGIN}")).get("version", "?")
                 out.append(f"- {version} ({c['date']}): {c['subject']}")
     for title, attr in (("Claude Code", "versions"), ("Models", "models")):
-        merged: dict[str, list[str]] = {}
+        ran: dict[str, set[str]] = {}
         sessions: Counter = Counter()
         for d in period:
-            for key, (first, last) in getattr(d, attr).items():
-                seen(merged, key, parse_time(first))
-                seen(merged, key, parse_time(last))
-                sessions[key] += 1
+            for key, days in getattr(d, attr).items():
+                inside = {day for day, (first, last) in days.items() if last >= stamp(since) and first <= stamp(until)}
+                if inside:
+                    ran.setdefault(key, set()).update(inside)
+                    sessions[key] += 1
         out += ["", f"## {title}", ""]
-        out += [f"- {k}: first seen {f}, last seen {l}, in {sessions[k]} sessions"
-                for k, (f, l) in sorted(merged.items(), key=lambda kv: kv[1][0])]
+        out += [f"- {k}: first seen {min(days)}, last seen {max(days)}, in {sessions[k]} sessions"
+                for k, days in sorted(ran.items(), key=lambda kv: min(kv[1]))]
     return "\n".join(out) + "\n"
 
 

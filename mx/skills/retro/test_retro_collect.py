@@ -185,6 +185,22 @@ def test_the_cache_keeps_a_sessions_earlier_days_for_a_run_with_an_earlier_start
     assert "MAX: before" in digest and "MAX: after" in digest
 
 
+def test_the_versions_are_those_that_ran_in_the_period_alone(tmp_path: Path, projects: Path) -> None:
+    t = Transcript(projects, "/home/u/repos/agents", datetime(2026, 8, 15, tzinfo=UTC))
+    t.add({"type": "user", "message": {"role": "user", "content": "in august"}, "origin": {"kind": "human"},
+           "version": "2.1.233"})
+    t.add({"type": "assistant", "message": {"model": "claude-fable-5", "role": "assistant",
+                                            "content": [{"type": "text", "text": "August."}]}, "version": "2.1.233"})
+    t.at = SINCE + timedelta(days=1)
+    t.says("back in october").answers("October.")
+
+    versions = (collect(tmp_path) / "versions.md").read_text()
+
+    assert "2.1.300: first seen 2026-10-06, last seen 2026-10-06, in 1 sessions" in versions
+    assert "claude-opus-5-5" in versions
+    assert "2.1.233" not in versions and "claude-fable-5" not in versions
+
+
 def test_a_session_whose_period_entries_draw_no_line_keeps_none_of_its_earlier_days(tmp_path: Path, projects: Path) -> None:
     t = Transcript(projects, "/home/u/repos/agents", SINCE - timedelta(days=1)).says("late on sunday")
     t.at = SINCE - timedelta(minutes=2)
