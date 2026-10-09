@@ -169,20 +169,27 @@ def readable(repos: list[Path], agent: Path) -> list[Path]:
 
 def write_batches(run: Path) -> None:
     """`batches.json`: the period's digests in batches of about BATCH_CHARS, a project's sessions
-    together and in order of their start; the older sample as one batch of its own."""
+    together and in order of their start, named `batch-01`, …; then the older sample's, in order of
+    their start, named `sample-01`, …"""
     rows = [json.loads(line) for line in (run / "sessions.jsonl").read_text().splitlines()]
+    period = sorted((r for r in rows if r["set"] == "sessions"), key=lambda r: (r["project"], r["start"]))
+    sample = sorted((r for r in rows if r["set"] == "sample"), key=lambda r: r["start"])
+    batches = pack(run, "batch", [f"sessions/{r['id']}.md" for r in period])
+    batches += pack(run, "sample", [f"sample/{r['id']}.md" for r in sample])
+    (run / "batches.json").write_text(json.dumps(batches, indent=1) + "\n")
+
+
+def pack(run: Path, prefix: str, digests: list[str]) -> list[dict]:
+    """The digests, in their order, in batches of at most BATCH_CHARS, but for a digest larger
+    than that, which is a batch of its own."""
     batches: list[dict] = []
-    for row in sorted((r for r in rows if r["set"] == "sessions"), key=lambda r: (r["project"], r["start"])):
-        path = f"sessions/{row['id']}.md"
+    for path in digests:
         size = (run / path).stat().st_size
         if not batches or batches[-1]["chars"] + size > BATCH_CHARS:
-            batches.append(dict(name=f"batch-{len(batches) + 1:02d}", digests=[], chars=0))
+            batches.append(dict(name=f"{prefix}-{len(batches) + 1:02d}", digests=[], chars=0))
         batches[-1]["digests"].append(path)
         batches[-1]["chars"] += size
-    sample = [f"sample/{r['id']}.md" for r in rows if r["set"] == "sample"]
-    if sample:
-        batches.append(dict(name="sample", digests=sample, chars=sum((run / p).stat().st_size for p in sample)))
-    (run / "batches.json").write_text(json.dumps(batches, indent=1) + "\n")
+    return batches
 
 
 def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path]) -> str:

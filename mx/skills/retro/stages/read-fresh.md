@@ -4,7 +4,7 @@ You run stage 2 of a workflow retro over max's Claude Code sessions from {{since
 
 Everything you read and write is in the run directory, `{{run}}`, your working directory:
 
-- `batches.json`: the period's session digests in batches, each a name, a list of digest paths and its size in characters. The batch named `sample`, where there is one, holds {{sample}}.
+- `batches.json`: the session digests in batches, each a name, a list of digest paths and its size in characters: the period's in `batch-01`, `batch-02`, …, and the older sample's, where there is one, in `sample-01`, `sample-02`, …, which hold {{sample}}.
 - `sessions/` and `sample/`: one digest per session.
 - `git/<repo>.md`: each repo's commits in the period, its reverts, and where it has an agent repo, the tickets filed, every status change, the tickets deleted and the worker reports committed.
 
@@ -17,7 +17,7 @@ The stage is done when `notes/` holds a file for every batch in `batches.json` a
 
 ## The reader's brief
 
-You read part of a workflow retro's period, from {{since}} to {{until}}, to find the friction worth fixing. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
+You read part of a workflow retro's period, from {{since}} to {{until}}, to find the friction worth fixing. A batch named `sample-…` holds older sessions instead, from before the period, read the same way: what they show tells the later stages whether a pattern is older than the period. Read every file you were given in full, in order, before you write; a digest longer than one read is read in parts, to its end. Then write your notes file, once.
 
 ### What to look for
 

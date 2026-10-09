@@ -156,3 +156,29 @@ def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_th
     period = [r for r in rows if r["set"] == "sessions"]
     assert period and all(r["start"] >= retro_run.stamp(FIRST + 2 * WEEK) for r in period), \
         "each period starts where the last ended"
+
+
+def test_an_older_sample_bigger_than_a_batch_is_read_in_batches_of_its_own(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    rows = []
+
+    def digest(where: str, sid: str, chars: int, start: str) -> None:
+        (run / where).mkdir(parents=True, exist_ok=True)
+        (run / where / f"{sid}.md").write_text("x" * chars)
+        rows.append(dict(id=sid, set=where, project="/home/u/repos/agents", start=start))
+
+    digest("sessions", "now", 1000, "2026-10-06T09:00:00Z")
+    third = retro_run.BATCH_CHARS // 3 + 1  # two fit in a batch, three do not
+    for day in (5, 4, 3, 2, 1):
+        digest("sample", f"day{day}", third, f"2026-09-0{day}T09:00:00Z")
+    (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+    retro_run.write_batches(run)
+
+    batches = json.loads((run / "batches.json").read_text())
+    assert [(b["name"], b["digests"]) for b in batches] == [
+        ("batch-01", ["sessions/now.md"]),
+        ("sample-01", ["sample/day1.md", "sample/day2.md"]),
+        ("sample-02", ["sample/day3.md", "sample/day4.md"]),
+        ("sample-03", ["sample/day5.md"]),
+    ]
