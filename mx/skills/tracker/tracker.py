@@ -7,7 +7,7 @@
 
 A ticket is `agent/tickets/<slug>.md`, flat, with an optional `parent: <slug>`; the slug is its id.
 A repo's `agent/` is a git repo of its own, holding the tickets, the show directories, the
-prototypes and the research of the repo it sits in; the tracker is its `tickets`, read in its main
+prototypes, the research and the retro's living report of the repo it sits in; the tracker is its `tickets`, read in its main
 checkout, which is where every ticket file is written. The ticket's body stays prose an agent
 writes in the file, and `check` is what holds it to the format: it runs over the staged files from
 the commit hook, and every read below refuses the same way, naming the file and the line.

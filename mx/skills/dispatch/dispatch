@@ -149,8 +149,8 @@ locate() {
     base=$(git branch --show-current)
     [ -n "$base" ] || die "detached HEAD; run this on the branch the ticket branches cut from"
     # A project is two repos: this one, and the agent repo it holds at `agent/`,
-    # where the tickets, the show directories, the prototypes and the research
-    # are. Every ticket change is committed in that repo's main checkout, and
+    # where the tickets, the show directories, the prototypes, the research and
+    # the retro's living report are. Every ticket change is committed in that repo's main checkout, and
     # never on a ticket branch of either.
     tickets=$("$tracker" root) || exit 1
     agent_top=$(dirname "$tickets")

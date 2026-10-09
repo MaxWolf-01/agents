@@ -88,6 +88,7 @@ Every ticket's demo is at the same path, `agent/show/<slug>/demo`, so `fd -t x '
 | Research          | `agent/research/NN-slug.md`          | committed; retired with the tickets citing it                         | detail too long for the ticket that asked, cited                                                                                                                    |
 | Prototype         | `agent/prototypes/<slug>/`           | committed; retired with the work it served                            | code that answered a design question + `ANSWER.md`                                                                                                                  |
 | Show              | `agent/show/<slug>/`, `<branch>/`    | committed with the round or the landing that made it; retired with the ticket or branch it served | an explanation carried by an artefact                                                                                                                               |
+| Retro             | `agent/retro/`                       | durable; rewritten whole by every retro run                           | the repo's living report and the page built from it                                                                                                              |
 
 `/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming, the board); the tracker lives in the agent repo, which is a git repo of its own at the project's `agent/`.
 
