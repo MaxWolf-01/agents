@@ -216,22 +216,22 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude:
             out.append(d)
         else:
             todo.append((t, records, key, cached))
-    with ProcessPoolExecutor(min(8, os.cpu_count() or 1)) if len(todo) > 4 else _Inline() as pool:
+    pool = ProcessPoolExecutor(min(8, os.cpu_count() or 1)) if len(todo) > 4 else _Inline()
+    try:
         for (t, records, key, cached), d in zip(todo, pool.map(digest_job, [(t, r) for t, r, _, _ in todo])):
             if d is not None:
                 if excluded(d.directories, exclude):
                     d.text = ""
                 cached.write_text(json.dumps({"key": key, "digest": d.to_json()}))
                 out.append(d)
+    finally:
+        pool.shutdown(cancel_futures=True)  # a run stopped meanwhile waits for the digests under way alone
     return out
 
 
 class _Inline:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return False
+    def shutdown(self, cancel_futures: bool = False) -> None:
+        pass
 
     @staticmethod
     def map(f, items):

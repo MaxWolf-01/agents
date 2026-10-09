@@ -12,8 +12,10 @@ from git history.
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,11 +32,13 @@ WEEK = timedelta(weeks=1)
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
 # command line, one argument per line, and what the run directory held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
+# With $STUB_HANG set it starts a child and waits on it instead, recording both pids.
 STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
 printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
 find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
+if [ -n "${STUB_HANG:-}" ]; then sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
@@ -182,3 +186,45 @@ def test_an_older_sample_bigger_than_a_batch_is_read_in_batches_of_its_own(tmp_p
         ("sample-02", ["sample/day3.md", "sample/day4.md"]),
         ("sample-03", ["sample/day5.md"]),
     ]
+
+
+def alive(pid: int) -> bool:
+    """Whether a process runs: it exists and is not a zombie waiting to be reaped."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except (FileNotFoundError, IndexError):
+        return False
+
+
+def eventually(check, seconds: float = 30) -> bool:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if check():
+            return True
+        time.sleep(0.1)
+    return check()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc, and the parent-death signal is Linux's")
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGKILL], ids=["stopped", "killed"])
+def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, sig: signal.Signals) -> None:
+    monkeypatch.setenv("STUB_HANG", "1")
+    pids = stub / "read fresh.pids"
+    run = subprocess.Popen([sys.executable, retro_run.__file__, str(repo), "--since", SINCE.isoformat(),
+                            "--data", str(tmp_path / "data"), "--projects", str(tmp_path / ".claude/projects")],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    started: list[int] = []
+    try:
+        assert eventually(pids.exists), "the read-fresh stage started its model run"
+        started = [int(p) for p in pids.read_text().split()]
+        run.send_signal(sig)
+        run.wait(60)
+        assert eventually(lambda: not any(map(alive, started))), "the stage's model run and its child ended with the run"
+    finally:
+        run.kill()
+        for pid in filter(alive, started):
+            os.kill(pid, signal.SIGKILL)
+    if sig == signal.SIGTERM:
+        assert run.returncode == 128 + signal.SIGTERM
+        assert last_logged(tmp_path).startswith("stopped: SIGTERM during read-fresh, which ended with it")

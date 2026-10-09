@@ -22,7 +22,8 @@ staged in the agent repo staged. It is not made, and the report stays in the run
 the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has
 changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
 A run that ends without its commit, there or at a stage that failed or left out a file it owes,
-exits 1, and its last line in the log says why.
+exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the stage it
+is in, and whatever that stage started, before it exits; one killed takes its stage down with it.
 
 Examples:
 
@@ -33,10 +34,12 @@ Examples:
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -106,21 +109,29 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
         sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
     base = blob(agent, "retro/report.md")
     log(f"started: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
-    retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos, exclude)
-    write_batches(run)
-    values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
-                  lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
-                  sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
-                         f"{retro_collect.SAMPLE_WINDOW[0].days // 7} to {retro_collect.SAMPLE_WINDOW[1].days // 7} "
-                         f"weeks before the period's end",
-                  focus=f'max named a focus for this run: "{focus}".' if focus else "max named no focus for this run.")
-    for stage in WORKFLOW:
-        if not stage.fresh and not (run / "previous").exists():
-            write_previous(run, agent, runs, seed)
-        if failed := run_stage(stage, run, values, readable(repos, agent)):
-            log(f"stopped: {stage.name} {failed}; its output is {run / stage.name}.log")
-            sys.exit(1)
-        log(f"{stage.name} done")
+    for s in STOP:
+        signal.signal(s, on_stop)
+    where = "collect"
+    try:
+        retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos, exclude)
+        write_batches(run)
+        values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
+                      lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
+                      sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
+                             f"{retro_collect.SAMPLE_WINDOW[0].days // 7} to {retro_collect.SAMPLE_WINDOW[1].days // 7} "
+                             f"weeks before the period's end",
+                      focus=f'max named a focus for this run: "{focus}".' if focus else "max named no focus for this run.")
+        for stage in WORKFLOW:
+            where = stage.name
+            if not stage.fresh and not (run / "previous").exists():
+                write_previous(run, agent, runs, seed)
+            if failed := run_stage(stage, run, values, readable(repos, agent)):
+                log(f"stopped: {stage.name} {failed}; its output is {run / stage.name}.log")
+                sys.exit(1)
+            log(f"{stage.name} done")
+    except Stopped as stop:
+        log(f"stopped: {stop.args[0].name} during {where}, which ended with it; the run's directory is {run}")
+        sys.exit(128 + stop.args[0])
     committed, line = commit_report(agent, run, base, since, until)
     log(line)
     if not committed:
@@ -198,8 +209,14 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
     (run / "prompts").mkdir(exist_ok=True)
     (run / "prompts" / f"{stage.name}.md").write_text(prompt)
     with (run / f"{stage.name}.log").open("w") as out:
-        done = subprocess.run(launch(stage, run, dirs), cwd=run, input=prompt, stdout=out, stderr=subprocess.STDOUT,
-                              text=True, env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0"})
+        done = subprocess.Popen(launch(stage, run, dirs), cwd=run, stdin=subprocess.PIPE, stdout=out,
+                                stderr=subprocess.STDOUT, text=True, preexec_fn=dies_with(os.getpid()),
+                                env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0"})
+        try:
+            done.communicate(prompt)
+        except Stopped:
+            end(done)
+            raise
     if done.returncode != 0:
         return f"exited {done.returncode}"
     batches = [b["name"] for b in json.loads((run / "batches.json").read_text())]
@@ -207,6 +224,44 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
     if missing := [p for p in owed if not (run / p).is_file() or not (run / p).stat().st_size]:
         return f"left out {', '.join(missing)}"
     return ""
+
+
+class Stopped(Exception):
+    """The run was sent one of STOP; its argument is the signal."""
+
+
+STOP = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+PR_SET_PDEATHSIG = 1
+LIBC = ctypes.CDLL(None) if sys.platform.startswith("linux") else None
+
+
+def on_stop(signum: int, _frame: object) -> None:
+    """Stop the run where it is; a second signal waits, so the stage under way ends whole."""
+    for s in STOP:
+        signal.signal(s, signal.SIG_IGN)
+    raise Stopped(signal.Signals(signum))
+
+
+def dies_with(parent: int):
+    """For a stage's process: TERM when the run's process dies, SIGKILL included, through Linux's
+    parent-death signal. `run-log` ends the model run on TERM, and `timeout`, which it runs the
+    model under, passes the signal to every process the model started."""
+    def arm() -> None:
+        if LIBC is not None:
+            LIBC.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+            if os.getppid() != parent:  # the run died before the signal was armed
+                os.kill(os.getpid(), signal.SIGTERM)
+    return arm
+
+
+def end(process: subprocess.Popen, grace: float = 60) -> None:
+    """TERM a stage's process and wait for it, KILL once `grace` seconds have passed."""
+    process.terminate()
+    try:
+        process.wait(grace)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 
 
 def launch(stage: Stage, run: Path, dirs: list[Path]) -> list[str]:
