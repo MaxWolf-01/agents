@@ -139,8 +139,10 @@ def ticket(root: Path, slug: str, status: str = "open", parent: str = "", needs_
 def tmux_dir(toy: Path) -> Path:
     """The socket directory of this check's own tmux server. A worker's session is named after the
     repo and the slug, the same in every check, so each check runs a server no other check or user
-    shares. Under /tmp and short, since a socket path over about a hundred bytes is refused."""
-    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy).encode()).hexdigest()[:12]}"
+    shares. Keyed on the check's temp dir, which holds the toy and every worktree beside it, so a
+    command run in a worktree lands on the server the toy's teardown takes down. Under /tmp and
+    short, since a socket path over about a hundred bytes is refused."""
+    return Path("/tmp") / f"dispatch-check-{hashlib.sha1(str(toy.parent).encode()).hexdigest()[:12]}"
 
 
 @pytest.fixture
