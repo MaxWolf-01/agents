@@ -536,12 +536,16 @@ def free_port() -> int:
 
 def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     """The graph's colours are baked into the SVG by mermaid, so the page hands it one classDef per
-    status, each named by house tokens the stylesheet declares as a light and a dark pair. That the
-    page's script is handed GRAPH_INK pins the format."""
+    status, each named by house tokens the stylesheet declares as a light and a dark pair. The ink
+    is read back out of the script it is handed to, where a build in review is drawn in the accent
+    on its wash, and a proposal and a context node with a dashed edge, a proposal's the longer."""
     declared = {prop.removeprefix("--") for selectors, said in style_rules(board.STYLE) if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
     assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
-    assert json.dumps(board.GRAPH_INK) in page_of(tracker), "the page's script draws in ink other than the board's"
+    handed = json.loads(re.search(r"classDefs = Object\.entries\((\{.*?\})\)", page_of(tracker)).group(1))
+    assert handed["review"] == ["wash", "accent", "strong", ""], "a build in review stands out from the rest of the graph"
+    assert (handed["proposed"][3], handed["ghost"][3]) == ("4 3", "2 3"), "a proposal and a context node lose their dashes"
+    assert {status for status, ink in handed.items() if ink[3]} == {"proposed", "ghost"}
     for status, (fill, stroke, text, _) in board.GRAPH_INK.items():
         assert {fill, stroke, text} <= declared, f"{status} is drawn in {sorted({fill, stroke, text} - declared)}, which the stylesheet does not declare"
 
@@ -891,6 +895,17 @@ def test_p2_every_mark_a_row_carries_says_in_four_words_or_more_what_it_means(de
     said = {(m.shows, m.says) for r in rows.values() for m in r.marks if m.kind == "chip"}
     assert {("parse-rows", "Waits on parse-rows, done."), ("map-columns", "Waits on map-columns, not done yet."),
             ("commit-import", "Waits on commit-import, not done yet.")} <= said
+
+
+def test_the_page_writes_every_mark_and_question_a_row_carries(demo: Demo) -> None:
+    """The demo tracker's rows as the page writes them: every mark a row carries, and the button of
+    every question it lists, is on the row's element, in the form the format checks above pin."""
+    for slug, row in view_of(demo.root, demo.repo).rows.items():
+        written = board.row_html(row)
+        for m in row.marks:
+            assert board.mark_html(m) in written, f"{slug}: the page drops its {m.kind} mark {m.shows!r}"
+        for c in [q.copy for q in row.questions] + ([row.copy_all] if row.copy_all else []):
+            assert board.copy_html(c) in written, f"{slug}: the page drops the {c.kind} button copying {c.shows!r}"
 
 
 # ---- questions and the needs-me group -------------------------------------

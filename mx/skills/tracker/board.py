@@ -1371,13 +1371,16 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
 # so a fact a row shows is worked out once.
 
 
+MarkKind = Literal["tree", "slug", "asks", "hinge", "kin", "rp", "gh", "time", "pri", "chip"]  # in the order a row shows them
+
+
 @dataclass(frozen=True)
 class Mark:
     """A row mark: the words it shows, and what it says it means on hover. `look` is what dresses
     it beyond its kind: what a row asks, a priority, the state GitHub gave a link, a blocker's
     status. `href` is where a mark that is a link goes."""
 
-    kind: Literal["tree", "slug", "asks", "hinge", "kin", "rp", "gh", "time", "pri", "chip"]  # in the order a row shows them
+    kind: MarkKind
     shows: str
     says: str
     look: str = ""
@@ -1520,7 +1523,7 @@ def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
     )
 
 
-def mark(r: Row, kind: str) -> Mark:
+def mark(r: Row, kind: MarkKind) -> Mark:
     """The row's first mark of `kind`: one every row wears (a tree, a slug, what it asks, the time,
     the priority), or one the caller knows this row has."""
     found = [m for m in r.marks if m.kind == kind]
@@ -1528,7 +1531,7 @@ def mark(r: Row, kind: str) -> Mark:
     return found[0]
 
 
-def wears(r: Row, kind: str) -> bool:
+def wears(r: Row, kind: MarkKind) -> bool:
     return any(m.kind == kind for m in r.marks)
 
 
@@ -1837,7 +1840,7 @@ def row_html(r: Row) -> str:
     row."""
     t = r.ticket
 
-    def some(*kinds: str) -> str:
+    def some(*kinds: MarkKind) -> str:
         return "".join(mark_html(m) for m in r.marks if m.kind in kinds)
 
     brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
