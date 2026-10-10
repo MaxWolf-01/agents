@@ -20,24 +20,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import session_page
 import turn_review
+from session_checks import CATALOGUE_FIXTURE, RULES_FIXTURE
 
 # ---- the catalogue's chat rules ---------------------------------------------
-
-CATALOGUE_FIXTURE = """# Tells
-
-Prose about the tags.
-
-## Content
-
-- `3` `both` **A rule.** Its first line.
-  Before: "indented continuation". After: "rides with its rule".
-
-- `51` `artifact` **A rule for files only.** Dropped.
-
-## Style
-
-- `13` `chat` **A rule for replies.** Kept.
-"""
 
 SELECTED = """- `3` `both` **A rule.** Its first line.
   Before: "indented continuation". After: "rides with its rule".
@@ -57,34 +42,6 @@ def test_the_rules_selected_are_the_ones_the_catalogue_documents() -> None:
 
 def test_selected_rule_blocks_come_whole() -> None:
     assert turn_review.chat_rules(CATALOGUE_FIXTURE) == SELECTED
-
-
-RULES_FIXTURE = """# The session page
-
-Prose before the shape.
-
-## The turn record
-
-The shape's prose.
-
-```markdown
----
-date: 2026-09-28
----
-
-# A headline inside the example
-
-## Details
-
-The example's own section.
-```
-
-- A rule about the record.
-
-## Another section
-
-After the shape.
-"""
 
 
 def test_the_shape_runs_to_the_next_heading_past_the_example_records_own() -> None:

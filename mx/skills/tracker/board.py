@@ -1234,6 +1234,17 @@ def drawn(shown: list[Ticket], all_of_them: dict[str, Ticket]) -> tuple[set[str]
     return live | ghost, ghost
 
 
+# A graph node's ink by its class, as house tokens: fill, stroke, text, and the stroke's dash
+# pattern where it has one. The work that wants the user wears the accent, the rest steps back to
+# the edge; ghost is a done ticket shown as context, and proposed is not ruled on: both dashed.
+GRAPH_INK = {
+    "review": ("wash", "accent", "strong", ""), "open": ("ground-2", "body", "body", ""),
+    "claimed": ("ground-2", "muted", "body", ""), "blocked": ("ground", "edge", "muted", ""),
+    "proposed": ("ground", "muted", "body", "4 3"), "done": ("ground", "edge", "muted", ""),
+    "ghost": ("ground", "edge", "muted", "2 3"),
+}
+
+
 def node_defs(ns: str, tickets: list[Ticket], drawing: set[str], ghost: set[str]) -> list[str]:
     lines = []
     for t in tickets:
@@ -1656,7 +1667,7 @@ def render_page(
     named = [tree for tree in trees if tree != ALONE]
     footmeta = f"{len(tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
     return PAGE.substitute(
-        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS,
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
         project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
         columns=row_columns(tickets, grouped),
         absences="".join(absences(tickets, gh, said)) + absence_note("board-server", UNSERVED, hidden=True),
@@ -2366,9 +2377,7 @@ ${viewjs}
 
   // Mermaid bakes the colours into the SVG, and a light-dark() token never resolves through
   // getPropertyValue, so every colour is read off a probe element in the scheme on show, and read
-  // again when the scheme switches. A status is drawn in the house ink: the work that wants the
-  // user wears the accent, the rest steps back to the edge. ghost = a done ticket shown as
-  // context, and proposed = not ruled on: both dashed.
+  // again when the scheme switches. A node's class names its tokens (board.GRAPH_INK).
   const probe = document.createElement("span");
   probe.style.display = "none";
   document.body.append(probe);
@@ -2379,16 +2388,11 @@ ${viewjs}
   let classDefs = "";
   function setupMermaid() {
     const ground = rgb("--ground");
-    const c = Object.fromEntries(["ground", "ground-2", "edge", "muted", "body", "strong", "accent", "wash"]
-      .map((n) => [n, hex(rgb("--" + n), ground)]));
-    const cls = {
-      review: [c.wash, c.accent, c.strong, ""], open: [c["ground-2"], c.body, c.body, ""],
-      claimed: [c["ground-2"], c.muted, c.body, ""], blocked: [c.ground, c.edge, c.muted, ""],
-      proposed: [c.ground, c.muted, c.body, ",stroke-dasharray:4 3"], done: [c.ground, c.edge, c.muted, ""],
-      ghost: [c.ground, c.edge, c.muted, ",stroke-dasharray:2 3"],
-    };
-    classDefs = Object.entries(cls).map(([s, [fill, stroke, text, extra]]) =>
-      "  classDef " + s + " fill:" + fill + ",stroke:" + stroke + ",color:" + text + extra).join("\n");
+    const ink = (token) => hex(rgb("--" + token), ground);
+    const c = Object.fromEntries(["ground", "edge", "muted", "body"].map((n) => [n, ink(n)]));
+    classDefs = Object.entries(${graphink}).map(([s, [fill, stroke, text, dash]]) =>
+      "  classDef " + s + " fill:" + ink(fill) + ",stroke:" + ink(stroke) + ",color:" + ink(text) +
+      (dash ? ",stroke-dasharray:" + dash : "")).join("\n");
     // SVG text labels, not HTML ones: mermaid switches an HTML label into wrapping
     // mode only when its measured width equals the wrap width exactly, and the
     // measurement misses by a fraction of a pixel at any page zoom other than 100%

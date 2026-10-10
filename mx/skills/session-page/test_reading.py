@@ -26,7 +26,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
-from test_session_page import sections_of
+from session_checks import html_text, messages_of, sections_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -50,22 +50,11 @@ def with_calls(transcript: Path, directory: Path, out: Path, calls: list[tuple[s
     return out
 
 
-def messages_of(page: str) -> dict[str, list[str]]:
-    """Each turn's messages from the user as the page shows them, by the two digits of its record."""
-    return {key: [html_text(m) for you in re.findall(r'<details class="said you">(.*?)</details>', section, re.S)
-                  for m in re.findall(r'<div class="msg">(.*?)</div>', you, re.S)]
-            for key, section in sections_of(page).items()}
-
-
 def sent_of(page: str) -> dict[str, list[tuple[str, str]]]:
     """Each turn's messages from other sessions as the page shows them: who, and what."""
     return {key: [(html_text(who), html_text(text)) for who, text in re.findall(
                 r'<details class="said peer">.*?<span class="v-meta who">(.*?)</span>.*?<div class="msg">(.*?)</div>', section, re.S)]
             for key, section in sections_of(page).items()}
-
-
-def html_text(fragment: str) -> str:
-    return html.unescape(re.sub(r"<[^>]+>", " ", fragment)).strip()
 
 
 def written(calls: dict[int, str]) -> list[tuple[str, int, str]]:
