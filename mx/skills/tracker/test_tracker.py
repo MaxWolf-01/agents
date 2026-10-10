@@ -1323,24 +1323,23 @@ def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(
 @example(tree=[HINGE, MERGED], up=False, nested=False, where="one-flow")
 @example(tree=[HINGE, MERGED], up=True, nested=True, where="one-flow")
 @settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
-def test_p2_a_landing_writes_done_exactly_where_the_accept_merges_the_ticket(
+def test_p2_a_landing_on_the_parents_branch_writes_done_on_a_hinge_alone(
     tickets: Path, repo: Path, tree: list[Leaf], up: bool, nested: bool, where: str
 ) -> None:
     """`speculative-first#P2` for the landing, over the trees the refusal side is checked on. A leaf
     is landed from the branch it merges into, the parent's: there a hinge comes out `done`, ruled
     alone, and every other leaf waits in `review` for the parent's ruling, as `/mx:tracker`'s State
-    has it; and no landing writes `done` where the refusal side would not take it. Merged into the
-    parent's branch and seen from main, a leaf carries no merge of its own on main, so its landing
-    there writes nothing."""
+    has it. Merged into the parent's branch and seen from main, a leaf carries no merge of its own
+    on main, so its landing there writes nothing. A merged hinge in these trees always reaches the
+    parent's branch, where its accept merges it, so none is refused here; the refusal is the
+    example checks' under "landing"."""
     grown(repo, tickets, tree, "review", up, nested, where)
-    reaching = accepted(tree, up, nested, where)
     for leaf in tree:
         said = run(repo, "land", leaf.slug, "--dry-run")
         assert said.code == 0, (leaf, said.said)
         status = json.loads(said.out)["tickets"][0]["status"]
         assert status == ("done" if leaf.merged and where == "one-flow" and leaf.hinge else "review"), \
             (leaf, up, nested, where, said.err)
-        assert status == "review" or reaching[leaf.slug], (leaf, up, nested, where)
 
 
 @given(tree=leaves(("open", "claimed", "review", "done")))

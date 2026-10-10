@@ -485,9 +485,9 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
     branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket that
     is no hinge, merged into its parent's branch: that one waits in `review` for its parent's ruling.
-    A `done` is held to the rule `set` holds every `done` to, that the work has reached the branch
-    the user's accept merges it into, and a merged round that rule refuses is refused whole, with
-    the reason, and nothing is written. Unmerged, the ticket waits in `review`. A round whose
+    A `done` here is held to the rule `set` holds every `done` to: the work has reached the branch
+    the user's accept merges it into. A merged round that rule refuses is refused with the reason,
+    and nothing is written. Unmerged, the ticket waits in `review`. A round whose
     branches carry no commit built nothing, and nothing is written.
 
     Prints the ticket as `data <slug>` does, as the landing left it, and the round beside it:
@@ -496,7 +496,8 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
          "round": [{"repo": "str", "tip": "str", "merged": bool, "range": "str|null"}]}
 
     A range is `<repo>@<first>..<last>`, from the ticket's own fork point, which a --no-ff merge
-    (ADR 0001) keeps findable once the branch has merged; none for a branch that committed nothing.
+    (ADR 0001) keeps findable once the branch has merged; none for a branch that committed nothing,
+    nor for a merged tip no merge of its own brought in, which git cannot tell from one.
 
     Args:
         slug: the ticket.
