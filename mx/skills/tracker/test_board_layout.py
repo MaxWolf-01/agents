@@ -436,9 +436,10 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 # What the graph does once a browser runs it, which is the only place it does anything: the side
 # column's preview, the same graph at full size over the board, and the same again in a window of
 # its own. Every move a reader makes is made here, and what the board did with it is read off the
-# board: the two keys, Escape's order, a click on the preview and on a node in it, a drag that pans
-# and the click it ends with, the switch in each view, a node clicked in each full size view, the
-# board re-rendering under the window, and the board going away.
+# board: the two keys and the buttons that do the same, Escape's order, a click on the preview and
+# on a node in it, a drag that pans and the click it ends with, the switch in each view, a node
+# clicked in each full size view, the board re-rendering under the window, and the board going
+# away.
 GRAPH_PROBE = ENGINE + r'''
 import json, os, shutil, sys
 from pathlib import Path
@@ -535,6 +536,23 @@ with sync_playwright() as pw:
     keys["esc_closed"] = not page.is_visible("#gfull")
     keys["row_still_open"] = page.evaluate(f"!!document.getElementById('{ROW}')?.open")
     out["keys"] = keys
+
+    # the buttons that do what the two keys do, clicked: the preview's `full` and `window`, and
+    # the overlay's `window`, which takes the overlay down as the window comes up
+    page.click("#gopen")
+    page.wait_for_selector("#gfull " + PAINTED)
+    buttons = {"full_opened": page.is_visible("#gfull")}
+    with page.expect_popup() as popped:
+        page.click("#gwinfull")
+    popped.value.wait_for_selector(".gfbody")
+    buttons |= {"overlay_closed": not page.is_visible("#gfull"), "from_overlay": popped.value.title()}
+    popped.value.close()
+    with page.expect_popup() as popped:
+        page.click("#gwinopen")
+    popped.value.wait_for_selector(".gfbody")
+    buttons["from_preview"] = popped.value.title()
+    popped.value.close()
+    out["buttons"] = buttons
 
     # the preview: a click opens the full size view, a click on a node in it goes to that row
     page.click(".side .g:not([hidden]) .mermaid" if drawn else "#gunloaded", position={"x": 3, "y": 3})
@@ -693,6 +711,13 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     keys = seen["keys"]
     assert keys["f_opened"] and keys["esc_closed"], f"f and Escape: {keys}"
     assert keys["row_still_open"], "Escape folded the row behind the overlay instead of closing the overlay"
+
+    buttons = seen["buttons"]
+    assert buttons["full_opened"], "the preview's full button did not open the overlay"
+    assert buttons["overlay_closed"], "the overlay's window button left the overlay over the board"
+    assert buttons["from_overlay"].endswith("dependencies") and buttons["from_preview"].endswith("dependencies"), (
+        f"a window button opened something other than the graph's window: {buttons}"
+    )
 
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
