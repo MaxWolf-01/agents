@@ -1271,7 +1271,8 @@ def unblock(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> list[Pat
 def run(cwd: Path, *args: str, aside: bool = False) -> None:
     """`args` run in `cwd`, said first. `aside` says both on stderr, for a command whose stdout is data."""
     print("+ " + " ".join(args), file=sys.stderr if aside else sys.stdout, flush=True)
-    done = subprocess.run(args, cwd=cwd, stdout=sys.stderr if aside else None)
+    # fd 2, not sys.stderr, which a caller running this in process may have swapped for a stream with no file
+    done = subprocess.run(args, cwd=cwd, stdout=2 if aside else None)
     if done.returncode != 0:
         raise Refused([f"{' '.join(args)} failed"])
 

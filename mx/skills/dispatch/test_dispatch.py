@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest"]
+# dependencies = ["pytest", "tyro", "pyyaml"]
 # ///
 """Checks for what `dispatch` and `dispatch-ctl` read and write on a ticket. Run: pytest test_dispatch.py
 
@@ -11,7 +11,9 @@ git repo of its own inside it that the code repo ignores. The oracles are
 `agent/tickets/ticket-file-contract.md` (P4, that a worker's brief is the ticket's body with every
 ancestor's, assembled by the one function; P7, that a worker writes no ticket file and reports
 instead; `needs-user` as the one field that keeps a ticket from a worker) and `/mx:tracker`'s Ticket
-state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands).
+state (a claim is taken from the frontier, and a claimed ticket is in somebody's hands). A ticket's
+ranges are read back through the tracker module, as `tracker data` prints them (`ranges_of`): the
+read is the oracle's, not the seam's, and in process it costs no tracker launch per check.
 
 `agent/tickets/dispatch-scripts-under-test.md` is where the rest of these scripts' coverage is
 argued; this file is the cases the ticket-file move made.
@@ -233,10 +235,10 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     # none, so every host runs the checks against this repo's own.
     (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
     (bin_dir / "tracker").chmod(0o755)
-    # A board that draws nothing, since no check reads the page, unless the check put the real one
-    # there (`on_github`).
+    # A board that draws nothing and keeps what it was asked to draw (`boards`), since no check reads
+    # the page, unless the check put the real one there (`on_github`).
     if not (bin_dir / "board").exists():
-        (bin_dir / "board").write_text("#!/bin/sh\n")
+        (bin_dir / "board").write_text(f'#!/bin/sh\necho "$*" >> "{bin_dir / "board.calls"}"\n')
         (bin_dir / "board").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
@@ -277,7 +279,7 @@ def status_of(toy: Path, slug: str) -> str:
 
 
 def ranges_of(toy: Path, slug: str) -> list[str]:
-    """The ticket's `diff:` ranges, as the tracker reads them."""
+    """The ticket's `diff:` ranges, as `tracker data` prints them."""
     read = tracker.tracker_of(tracker.tracker_root(toy))
     return tracker.as_data(read.ticket(slug), read)["diff"]
 
@@ -1222,6 +1224,12 @@ def merged_in(top: Path, onto: str, branch: str) -> None:
     git(top, "switch", "-q", had)
 
 
+def boards(toy: Path) -> list[str]:
+    """What dispatch asked the board to draw, once per run of it."""
+    calls = toy.parent / "bin" / "board.calls"
+    return calls.read_text().splitlines() if calls.exists() else []
+
+
 def pages(toy: Path) -> list[str]:
     """The specs of every page `dispatch review` asked diffview for, in order, one line each."""
     handed = (toy.parent / "bin" / "diffview.args").read_text().splitlines()
@@ -1456,6 +1464,7 @@ def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_a
     assert said.returncode == 0, said.stderr
     assert pages(toy) == [f"{toy}@{cut}..{tip}"]
     assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
+    assert boards(toy) == [f"{tracked(toy)} --no-watch --no-open"], "the board shows the status the review wrote"
 
 
 def test_a_merged_round_the_tracker_refuses_done_fails_the_review_and_says_why(toy: Path) -> None:
@@ -1665,6 +1674,27 @@ def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, s
     calls = [line.split("dispatch-ctl ")[1] for line in said.stderr.splitlines()
              if line.startswith("+ on_host agent@far bash") or line.startswith("+ on_host agent@far env")]
     assert calls == ["spawn warm-preset sonnet"], said.stderr
+
+
+def test_the_page_over_a_listed_repo_cut_from_origin_is_rendered_again_once_its_round_merges(toy: Path) -> None:
+    """`jarvis`'s ticket branch is cut from origin's `main`, which is ahead of the local one, and the
+    session merges it into the local `main`: the review that lands the round renders the page it
+    rendered before the merge, over the same ranges. Which range the merge gives `jarvis` is the
+    tracker's to say (test_tracker.py); rendering the page from what it says is dispatch's."""
+    repos = staged_listed(toy)
+    agent = toy / "agent"
+    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
+              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
+              "jarvis": built_on(repos["jarvis"], "ticket/warm-preset", "origin/main", "warm.rs")}
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    for top in (toy, agent, repos["jarvis"]):
+        merged_in(top, "main", "ticket/warm-preset")
+    landed = run(toy, "review", "warm-preset")
+    assert landed.returncode == 0, landed.stderr
+    assert status_of(toy, "warm-preset") == "done"
+    assert pages(toy)[-1].split()[-1] == f"{repos['jarvis']}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}"
+    assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
 
 
 @pytest.mark.full_path
@@ -1882,8 +1912,10 @@ def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@githu
     (toy.parent / "bin" / "gh").write_text(FAKE_GH)
     (toy.parent / "bin" / "gh").chmod(0o755)
     (toy.parent / "bin" / "gh.answers").mkdir()
-    # This repo's board, whose query of GitHub is one of the calls `only_read` reads.
-    (toy.parent / "bin" / "board").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "board.py"}" "$@"\n')
+    # This repo's board, whose query of GitHub is one of the calls `only_read` reads, keeping what it
+    # was asked to draw as the stub does.
+    (toy.parent / "bin" / "board").write_text(f'#!/bin/sh\necho "$*" >> "{toy.parent / "bin" / "board.calls"}"\n'
+                                              f'exec "{SKILL.parent / "tracker" / "board.py"}" "$@"\n')
     (toy.parent / "bin" / "board").chmod(0o755)
     answer({"state": "OPEN", "baseRefName": "development", "mergeCommit": None, "commits": []}, backend)
     return backend
@@ -1981,6 +2013,7 @@ def test_a_review_asks_github_nothing_once_every_listed_branch_has_merged(toy: P
     assert f"Backend@{fork}..{tip}" in ranges_of(toy, "warm-preset")
     calls = toy.parent / "bin" / "gh.calls"
     assert not calls.exists() or "pr view" not in calls.read_text()
+    assert len(boards(toy)) == 1, "the board ran, with its own query of GitHub"
 
 
 def test_a_rebase_merges_commits_replace_the_range_the_ticket_recorded_there(toy: Path) -> None:
