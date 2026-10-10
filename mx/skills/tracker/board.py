@@ -187,19 +187,37 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     """Write the page, and answer with the status every ticket on it is shown under: the watcher
     pings the briefing session on a status that moved, and the render is where the tracker is
     already read."""
+    reading = read(root, repo, out)
+    stamp = content_stamp(reading)
+    out.write_text(render_page(reading, stamp, out.name + ".stamp.js"))
+    Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
+    print(out)
+    return statuses(reading.tickets)
+
+
+@dataclass(frozen=True)
+class Reading:
+    """What one render reads: the page is written from this and nothing else, so everything it
+    shows is a format of it. `said` is the briefing the cache beside the page holds, None where no
+    session has written one."""
+
+    project: str  # the code repo's name, which the page is named after
+    tickets: list["Ticket"]
+    log: str  # the project's last commits
+    gh: github.Answer = github.NOTHING
+    said: "briefing.Briefing | None" = None
+
+
+def read(root: Path, repo: Path, out: Path) -> Reading:
+    """Everything a render of the page `out` reads, GitHub asked about the references the tickets
+    name where its cached answer will not do."""
     code = project(root)
     session_log.cache_clear()  # once per render: the sessions that committed on a ticket while the board watches
     tickets = load_tickets(root, repo, out.parent)
     log = git_log(code)
     out.parent.mkdir(parents=True, exist_ok=True)
     gh = github.resolve(gh_shown(tickets), github.cache_path(out))
-    said = briefing.Briefing.read(briefing.cache_path(out))
-    stamp = content_stamp(code.name, tickets, log, gh, said)
-    page = render_page(code.name, tickets, log, stamp, out.name + ".stamp.js", gh, said)
-    out.write_text(page)
-    Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
-    print(out)
-    return statuses(tickets)
+    return Reading(code.name, tickets, log, gh, briefing.Briefing.read(briefing.cache_path(out)))
 
 
 def statuses(tickets: list["Ticket"]) -> tuple[tuple[str, str], ...]:
@@ -406,7 +424,7 @@ def briefing_state(root: Path, repo: Path) -> str:
     tickets from the agent repo, the commits and the name from the project it plans, which is the
     repo that session reads for what the tickets cannot say."""
     code = project(root)
-    return state_of(code.name, load_tickets(root, repo, root.parent), git_log(code))
+    return state_of(code.name, view(load_tickets(root, repo, root.parent)), git_log(code))
 
 
 # ---- the board briefing ---------------------------------------------------
@@ -423,31 +441,33 @@ the brief, what it waits on, its open questions.
 """
 
 
-def state_of(project: str, tickets: list["Ticket"], log: str) -> str:
-    """The tracker written out for the briefing session: every ticket the board shows, as the board
+def state_of(project: str, board: "View", log: str) -> str:
+    """The tracker written out for the briefing session: every row the board shows, as the board
     shows it, under the tree it is part of, and the commits behind it.
 
     Nothing here is more than the board itself says. The file each line ends with is what the
     session reads for the rest, and the repo around it is what it is for."""
     written = [STATE.format(project=project)]
+    tickets = [r.ticket for r in board.rows.values()]
     for tree in trees_of(tickets):
-        written.append(f"## {tree}\n" + "".join(state_line(t) for t in in_tree(tickets, tree)))
+        written.append(f"## {tree}\n" + "".join(state_line(board.rows[t.slug]) for t in in_tree(tickets, tree)))
     return "\n".join(written + [f"## the last commits\n{log.strip()}\n"])
 
 
-def state_line(t: "Ticket") -> str:
-    """One ticket, as the board's own marks read it."""
+def state_line(r: "Row") -> str:
+    """One row, in the words of its own marks."""
+    t = r.ticket
     marks = [
-        t.slug, t.status, ASKS[asks_word(t)][0],
-        f"p{t.priority} {PRIORITY[t.priority][0]}", SIZES[t.size][0], t.title, str(t.path),
-    ] + (["a hinge"] if t.hinge else []) + ([f"folded under {t.under}"] if t.under else [])
+        t.slug, t.status, mark(r, "asks").shows, mark(r, "pri").shows, mark(r, "time").shows, t.title, str(t.path),
+    ] + (["a hinge"] if mark(r, "hinge") else []) + ([f"folded under {t.under}"] if t.under else [])
     said = " · ".join(marks) + "\n"
     if t.brief:
         said += f"  brief: {plain(t.brief)}\n"
-    if waits := blockers_of(t):
+    if waits := [m.shows for m in r.marks if m.kind == "chip"]:
         said += f"  waits on: {', '.join(waits)}\n"
-    for q in shown_questions(t.status, t.questions):
-        said += f"  asks: [{q.tag}] {plain(inline_md(q.headline))} {plain(inline_md(q.detail))}\n".rstrip() + "\n"
+    for q in r.asks:
+        if not q.of:  # a folded child's question is on its own line
+            said += f"  asks: [{q.tag}] {plain(q.headline)} {plain(q.detail)}\n".rstrip() + "\n"
     return said
 
 
@@ -488,22 +508,21 @@ BRIEFING_TIP = (
 )
 
 
-def fallback(tickets: list["Ticket"]) -> str:
+def fallback(board: "View") -> str:
     """What the board says where no model has written a briefing: the counts of what waits on the
     user and what is being worked on, and the next few by priority, then by what accepting them
     unlocks, then by the user's own time.
 
-    What waits is counted off the rows' own marks, so the sentence and the group under it say the
+    What waits is counted off the rows themselves, so the sentence and the group under it say the
     same thing: a ticket the board tags as a design session is one here whatever else it carries,
-    and a parent ticket at its close-out asks its folded child tickets' questions (questions_block)."""
+    and a parent ticket at its close-out asks its folded child tickets' questions (Row.asks)."""
+    tickets = [r.ticket for r in board.rows.values()]
     live = [t for t in tickets if t.status != "done"]
-    mine = [t for t in live if group_of(t) == "needs"]
-    kids = folded_under(tickets)
-    asked = [q for t in mine for one in ruled_with(t, kids) for q in shown_questions(one.status, one.questions)]
+    mine = [r for r in board.rows.values() if r.group == "needs"]
     waiting = {
-        ("build to rule on", "builds to rule on"): [t for t in mine if asks_word(t) == "review"],
-        ("question wanting a word", "questions wanting a word"): asked,
-        ("ticket wanting a session", "tickets wanting a session"): [t for t in mine if asks_word(t) == "session"],
+        ("build to rule on", "builds to rule on"): [r for r in mine if mark(r, "asks").look == "review"],
+        ("question wanting a word", "questions wanting a word"): [q for r in mine for q in r.asks],
+        ("ticket wanting a session", "tickets wanting a session"): [r for r in mine if mark(r, "asks").look == "session"],
     }
     counts = [
         f"{counted(len(held))} {one if len(held) == 1 else many}" for (one, many), held in waiting.items() if held
@@ -518,7 +537,7 @@ def fallback(tickets: list["Ticket"]) -> str:
     lead = f"{waits} {worked}"
     unlocks = waited_on(tickets)
     picks = sorted(
-        (t for t in live if group_of(t) in ("needs", "open")),
+        (t for t in live if board.rows[t.slug].group in ("needs", "open")),
         key=lambda t: (t.priority, -unlocks[t.slug], *sort_key(t)[1:]),
     )
     if not picks:
@@ -615,7 +634,7 @@ class Ticket:
     tree: str
     blocked_by: list[tuple[str, str]]  # (slug, status) per ticket it waits on
     gh: list[str]  # the pull requests and issues the ticket names, as owner/repo#number
-    body_html: str
+    blocks: tuple["Block", ...]  # what the ticket reads as opened, in the order the page shows them
     diffview: str | None
     priority: int  # 1 to 5, how soon it matters to the user
     size: str  # XS | S | M | L | XL, the user's time on it
@@ -709,7 +728,7 @@ def shown(
         blocked_by=blocked_by,
         freed=freed,
         gh=[str(ref) for ref in read.meta.get("gh") or []],
-        body_html=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked, here=here),
+        blocks=ticket_blocks(read, read.questions, path=read.path, status=status, worked=worked, here=here),
         diffview=review_page(whole.root, read.slug, here),
         path=read.path,
         priority=read.meta.get("priority"),
@@ -794,23 +813,15 @@ def render_body(md: str) -> str:
     return re.sub(r'href="(?:[\w./-]*/)?([a-z0-9][\w-]*)\.md"', r'href="#t-\1"', out)
 
 
-def content_stamp(
-    project: str, tickets: list[Ticket], log: str,
-    gh: github.Answer = github.NOTHING, said: "briefing.Briefing | None" = None,
-) -> str:
+def content_stamp(reading: Reading) -> str:
     # everything the page shows except the render timestamp: an unchanged board
     # keeps its stamp, so the open tab knows not to reload. A state GitHub gave a link, a briefing
     # a session rewrote and an absence the page says are the three of those that move without a
     # file under the tracker moving with them.
+    gh, said = reading.gh, reading.said
     key = repr((
-        project,
-        [(t.slug, t.title, t.status, t.needs_user, t.parent, t.tree, t.blocked_by, t.gh, t.body_html,
-          t.diffview, t.path, t.priority, t.size, t.brief, t.questions, t.freed, t.hinge, t.under) for t in tickets],
-        log,
-        sorted(gh.states.items()),
-        gh.missing,
-        said and (said.text, said.written),
-        absences(tickets, gh, said),
+        reading.project, reading.tickets, reading.log, sorted(gh.states.items()), gh.missing,
+        said and (said.text, said.written), absences(reading),
     ))
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
@@ -1016,23 +1027,98 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
 UNSERVED = "The server this page came from is not answering, so it stops following the tracker until it does."
 
 
-def absence_note(source: str, words: str, hidden: bool = False) -> str:
+@dataclass(frozen=True)
+class Absence:
     """An optional source the render did without, said once on the page: GitHub, the model, the
     transcripts. A server is one only the open page can tell it lacks, so the notes for the review
-    pages' and the board's own are written `hidden` and the page shows them."""
-    return f'<p class="absent" data-absent="{html.escape(source)}"{" hidden" if hidden else ""}>{html.escape(words)}</p>'
+    pages' and the board's own are `hidden` and the page shows them."""
+
+    source: str
+    words: str
+    hidden: bool = False
 
 
 # ---- an opened ticket -----------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Copy:
+    """A button that copies `text`: `word` is what the button itself says, `does` what its click
+    does, and `note` what the page says once it has."""
+
+    kind: str  # qcopy | qall | qgroup | resume | runcopy
+    word: str
+    does: str
+    text: str
+    note: str
+
+    @property
+    def shows(self) -> str:
+        """What it copies, as its hover words carry it: cut off with an ellipsis where it runs past
+        COPY_CAP."""
+        return self.text if len(self.text) <= COPY_CAP else self.text[:COPY_CAP].rstrip() + "…"
+
+
+COPY_CAP = 220  # how much of what it copies a button shows before the rest is an ellipsis
+
+
+@dataclass(frozen=True)
+class Asked:
+    """One question, as a row lists it or an opened ticket carries it. The headline, the detail and
+    the ruling are inline HTML; `says` is the question in full, which the row's headline carries on
+    hover since its column may cut it short. `copy` is None where no button copies it: a ruled
+    question, or one left on a done ticket. `of` is the slug of the folded child ticket a parent's
+    row asks it for, "" for the row's own."""
+
+    tag: str
+    headline: str
+    detail: str
+    ruling: str  # "Ruled <date>: <answer>", "" while it is open
+    says: str
+    copy: Copy | None
+    of: str = ""
+
+
+@dataclass(frozen=True)
+class Worked:
+    """A session that worked on the ticket, as an opened ticket lists it."""
+
+    title: str
+    when: str  # the days it committed on the ticket
+    page: str  # the link to its session page, "" where the board links none
+    resume: Copy
+
+
+@dataclass(frozen=True)
+class Artefact:
+    """A file of the ticket's show directory, as an opened ticket links it."""
+
+    name: str  # its path inside the show directory
+    href: str
+    run: Copy | None  # the button copying the command that runs it, for a file that runs
+
+
+@dataclass(frozen=True)
+class Block:
+    """One block of an opened ticket: its label, the ticket's own words in it, rendered, and the
+    questions, sessions or artefacts it lists. The comments are the block labelled `comments`,
+    which the page folds away as history; the words a ticket writes above its first heading are a
+    block with no label."""
+
+    label: str | None
+    prose: str = ""
+    asked: tuple[Asked, ...] = ()
+    worked: tuple[Worked, ...] = ()
+    artefacts: tuple[Artefact, ...] = ()
+
+
 def ticket_blocks(
     read: "tracker.Ticket", asked: Sequence[Question], path: Path, status: str, worked: Sequence[Session],
     here: Path,
-) -> str:
+) -> tuple[Block, ...]:
     """A ticket opened on the board, as blocks: its questions with the detail the row has no room
     for, the sessions that worked on it, the artefacts it produced, then its own sections in the
-    order the file writes them, the comments folded away as history.
+    order the file writes them, the comments last.
 
     The brief is not one of them. It is on the row, where it is read without opening anything, and
     a ticket says a thing once. The comments sink to the end whatever place the file gives them,
@@ -1046,10 +1132,11 @@ def ticket_blocks(
         elif word == "comments":
             history.append(text)
         else:
-            blocks.append(block(heading, prose(heading, text)))
+            blocks.append(Block(word or None, prose(heading, text)))
     front = [asked_block(asked, prose(None, "".join(said)), path, status),
              sessions_block(worked, path.parent.parent, here), artefacts_block(show_dir(path), project(path.parent), here)]
-    return "".join(filter(None, front + blocks)) + history_block("".join(history))
+    comments = "".join(history)
+    return tuple(filter(None, front + blocks)) + ((Block("comments", render_body(comments)),) if comments.strip() else ())
 
 
 def shown_sections(read: "tracker.Ticket", asked: Sequence[Question]) -> list[tuple[str | None, str]]:
@@ -1075,12 +1162,6 @@ def shown_sections(read: "tracker.Ticket", asked: Sequence[Question]) -> list[tu
     return [(heading, text) for heading, text in written if text.strip()]
 
 
-def block(label: str | None, inner: str) -> str:
-    """One block of an opened ticket: what it is, and the ticket's own words under it."""
-    words = f'<p class="label">{html.escape(label.lower())}</p>' if label else ""
-    return f'<section class="block">{words}{inner}</section>'
-
-
 # a criterion as markdown writes it, in a tight list (`<li>[ ] ...`) or a loose one (`<li><p>[ ] ...`)
 TICKED = re.compile(r"<li>\s*(<p>)?\s*\[([ xX])\]\s*")
 MET = {False: ("", "Not met yet."), True: (" met", "Met: whoever built it ticked the box.")}
@@ -1100,27 +1181,25 @@ def ticked(criterion: re.Match) -> str:
     return f'<li class="tick{which}" data-tip="{html.escape(words)}">{criterion.group(1) or ""}'
 
 
-def asked_block(asked: Sequence[Question], said: str, path: Path, status: str) -> str:
-    """Every question the ticket asks, the answered ones marked with the ruling that answered them
-    and every open one with the button that copies it: the row lists its questions only while it is
+def asked_block(asked: Sequence[Question], said: str, path: Path, status: str) -> Block | None:
+    """Every question the ticket asks, the answered ones with the ruling that answered them and
+    every open one with the button that copies it: the row lists its questions only while it is
     folded, so this block is where an opened ticket's questions are read and copied. `said` is
     whatever else its `## Questions` section says, which is the ticket's own and stands above them."""
     if not asked and not said:
-        return ""
+        return None
     copyable = set(shown_questions(status, asked))
-    items = "".join(
-        f'<li class="question{" ruled" if q.ruled else ""}">'
-        f'<span class="tag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span><div>'
-        f'<p class="head">{inline_md(q.headline)}</p>'
-        + (f'<p class="detail">{inline_md(q.detail)}</p>' if q.detail else "")
-        + (f'<p class="ruling">Ruled {q.ruled}: {inline_md(q.answer)}</p>' if q.ruled else "")
-        + "</div>"
-        + (copy_button("qcopy", "copy", QCOPY_TIP, copy_text(path, [q]), f"{q.tag} of {path.name}")
-           if q in copyable else "")
-        + "</li>"
-        for q in asked
+    return Block("questions", said, asked=tuple(asked_of(q, path, q in copyable) for q in asked))
+
+
+def asked_of(q: Question, path: Path, copyable: bool, of: str = "") -> Asked:
+    """One question of the ticket file at `path`, and the button copying it where it has one."""
+    return Asked(
+        tag=q.tag, headline=inline_md(q.headline), detail=inline_md(q.detail),
+        ruling=f"Ruled {q.ruled}: {inline_md(q.answer)}" if q.ruled else "", says=question_tip(q),
+        copy=Copy("qcopy", "copy", QCOPY_TIP, copy_text(path, [q]), f"{q.tag} of {path.name}") if copyable else None,
+        of=of,
     )
-    return block("questions", said + (f'<ul class="asked">{items}</ul>' if asked else ""))
 
 
 RESUME_TIP = "Click to copy the command that resumes this session in the directory it ran in."
@@ -1128,7 +1207,7 @@ PAGE_TIP = "This session's page: its turns, the questions it waits on you for, a
 WHEN_TIP = "When this session first committed on the ticket, and when it last did."
 
 
-def sessions_block(worked: Sequence[Session], agent: Path, here: Path) -> str:
+def sessions_block(worked: Sequence[Session], agent: Path, here: Path) -> Block | None:
     """The sessions that worked on the ticket, each with its session page where it has one and the
     command that resumes it. The label says on this machine because that is the list: a worker on
     another host is not in it (ticket_sessions), and a ticket no session has committed on has no
@@ -1138,18 +1217,13 @@ def sessions_block(worked: Sequence[Session], agent: Path, here: Path) -> str:
     repo, so a page in another project's has no link that opens there, and its session keeps only
     its resume button."""
     if not worked:
-        return ""
+        return None
     linked = {s.id: href(s.page, here) for s in worked if s.page and s.page.resolve().is_relative_to(agent.resolve())}
-    items = "".join(
-        f'<li><span class="stitle">{html.escape(session.title)}</span>'
-        f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(worked_on(session))}</span>'
-        + (f'<a class="spage" href="{html.escape(linked[session.id])}" target="_blank" '
-           f'data-tip="{html.escape(PAGE_TIP)}">page</a>' if session.id in linked else "")
-        + copy_button("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}")
-        + "</li>"
+    return Block("sessions on this machine", worked=tuple(
+        Worked(session.title, worked_on(session), linked.get(session.id, ""),
+               Copy("resume", "copy resume", RESUME_TIP, session.resume, f"the command resuming {session.title}"))
         for session in worked
-    )
-    return block("sessions on this machine", f'<ul class="sessions">{items}</ul>')
+    ))
 
 
 def worked_on(session: Session) -> str:
@@ -1160,21 +1234,18 @@ def worked_on(session: Session) -> str:
 RUN_TIP = "Click to copy the command that runs this file, to paste at the code repo's root."
 
 
-def artefacts_block(show: Path, code: Path, here: Path) -> str:
+def artefacts_block(show: Path, code: Path, here: Path) -> Block | None:
     """What the ticket produced to look at: every file in its show directory as a link, and each
     one that runs on a button that copies the command running it from the code repo's root."""
     files = artefacts(show)
     if not files:
-        return ""
-    items = "".join(
-        f'<li><a href="{html.escape(href(file, here))}" target="_blank">'
-        f'{html.escape(str(file.relative_to(show)))}</a>'
-        + (copy_button("runcopy", "copy command", RUN_TIP, shlex.quote(str(file.relative_to(code))),
-                       f"the command that runs {file.name}") if runs(file) else "")
-        + "</li>"
+        return None
+    return Block("artefacts", artefacts=tuple(
+        Artefact(str(file.relative_to(show)), href(file, here),
+                 Copy("runcopy", "copy command", RUN_TIP, shlex.quote(str(file.relative_to(code))),
+                      f"the command that runs {file.name}") if runs(file) else None)
         for file in files
-    )
-    return block("artefacts", f'<ul class="artefacts">{items}</ul>')
+    ))
 
 
 def artefacts(show: Path) -> list[Path]:
@@ -1194,15 +1265,6 @@ def show_dir(path: Path) -> Path:
     """Where a ticket's artefacts are (/mx:show): `agent/show/<slug>/`, beside the tracker the
     ticket was read from."""
     return path.parent.parent / "show" / path.stem
-
-
-def history_block(comments: str) -> str:
-    """The ticket's comments, folded: the conversation on it and a build's closing comment are what
-    happened, not what the ticket is, so they open only when the reader asks for them."""
-    if not comments.strip():
-        return ""
-    return ('<details class="history"><summary><span class="label">comments</span></summary>'
-            f'{render_body(comments)}</details>')
 
 
 # ---- graphs ---------------------------------------------------------------
@@ -1303,7 +1365,187 @@ def board_graph(tickets: list[Ticket]) -> dict | None:
     return parts
 
 
-# ---- page -----------------------------------------------------------------
+# ---- the rows -------------------------------------------------------------
+# What the page shows of the tickets, as values: every row with the marks it wears, the questions
+# it lists and the buttons that copy them, the groups the rows sit in, and the trees' pills. The
+# page ("page", below) and the briefing session's state (state_line) are both written from these,
+# so a fact a row shows is worked out once.
+
+
+@dataclass(frozen=True)
+class Mark:
+    """A row mark: the words it shows, and what it says it means on hover. `look` is what dresses
+    it beyond its kind: what a row asks, a priority, the state GitHub gave a link, a blocker's
+    status. `href` is where a mark that is a link goes."""
+
+    kind: str  # tree | slug | asks | hinge | kin | rp | gh | time | pri | chip, in the order a row shows them
+    shows: str
+    says: str
+    look: str = ""
+    href: str = ""
+
+
+@dataclass(frozen=True)
+class Row:
+    """One ticket as the board shows it. `group` is the group it sits in, FOLDED for a row folded
+    under its parent ticket's, and `kids` are the rows folded under it. `asks` are the open
+    questions it lists while folded, with `copy_all` copying them once there are two; `search` is
+    the words a filter finds it by, its folded rows' included. What it reads as opened is its
+    ticket's `blocks`."""
+
+    ticket: Ticket
+    group: str
+    marks: tuple[Mark, ...]
+    asks: tuple[Asked, ...]
+    copy_all: Copy | None
+    search: str
+    kids: tuple["Row", ...]
+
+
+@dataclass(frozen=True)
+class Group:
+    """One of the board's groups: its rows in the order it lists them, and the button copying every
+    question they ask, which only a group whose rows ask one has. The done group is `folded`."""
+
+    state: str
+    label: str
+    rows: tuple[Row, ...]
+    copy: Copy | None
+    folded: bool
+
+
+@dataclass(frozen=True)
+class Pill:
+    """A tree's pill in the top bar, which hides and shows its rows: its counts, said in full on
+    hover, whether any ticket in it waits on the user, and the dependency graph the side column
+    draws for it, None where nothing in it waits on anything."""
+
+    tree: str
+    says: str
+    done: int
+    total: int
+    waits: bool
+    graph: str | None
+
+
+@dataclass(frozen=True)
+class View:
+    """The board as values: every ticket's row by slug, the ones folded under another's included,
+    the groups that hold a row in the order the page shows them, and a pill per tree."""
+
+    rows: dict[str, Row]
+    groups: tuple[Group, ...]
+    pills: tuple[Pill, ...]
+
+
+def view(tickets: list[Ticket], gh: github.Answer = github.NOTHING) -> View:
+    """The rows of the board, from the tickets as load_tickets reads them and the states GitHub gave
+    the references they name. A group's rows are in sort_key order, and so are the rows folded
+    under one."""
+    kids = folded_under(tickets)
+    made: dict[str, Row] = {}
+
+    def row_of(t: Ticket) -> Row:
+        if t.slug not in made:
+            under = tuple(row_of(one) for one in sorted(kids.get(t.slug, []), key=sort_key))
+            made[t.slug] = shown_row(t, under, kids, gh.states)
+        return made[t.slug]
+
+    rows = {t.slug: row_of(t) for t in tickets}
+    groups = []
+    for state, label in GROUPS:
+        held = sorted((rows[t.slug] for t in tickets if rows[t.slug].group == state), key=lambda r: sort_key(r.ticket))
+        if held:
+            # the needs-me group's button copies what each of its rows asks (ruled_with)
+            asking = [one for r in held for one in (ruled_with(r.ticket, kids) if state == "needs" else [r.ticket])]
+            groups.append(Group(state, label, tuple(held), group_copy(asking), state == "done"))
+    return View(rows, tuple(groups), tuple(pill(tree, tickets) for tree in trees_of(tickets)))
+
+
+def shown_row(t: Ticket, under: tuple[Row, ...], kids: dict[str, list[Ticket]], gh: dict[str, str]) -> Row:
+    """One ticket's row, the rows folded under it already made. A parent ticket at its close-out
+    lists its folded child tickets' questions with its own, each under its ticket's slug, since the
+    user rules on them with it; a word that finds a folded row finds this one too, since it is the
+    row that holds it."""
+    asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with(t, kids)]
+    asked = [(one, questions) for one, questions in asked if questions]
+    count = sum(len(questions) for _, questions in asked)
+    copy_all = None if count < 2 else Copy(  # one question's own button already copies the ticket's whole list
+        "qall", f"copy all {count}", "Click to copy every open question on this row, each under the path of the file it is on.",
+        "\n\n".join(copy_text(one.path, questions) for one, questions in asked),
+        f"{count} questions of {asked[0][0].path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
+    )
+    return Row(
+        ticket=t, group=group_of(t), marks=marks_of(t, len(under), gh),
+        asks=tuple(asked_of(q, one.path, True, "" if one is t else one.slug) for one, questions in asked for q in questions),
+        copy_all=copy_all,
+        search=search_words(*(part for one in with_folded(t, kids) for part in ticket_words(one))),
+        kids=under,
+    )
+
+
+TREE_TIP = "The top-level ticket this one's work is part of. Its pill in the top bar hides and shows the tree's rows."
+REVIEW_TIP = "This build's review page: the diff, with a place to write on it (d)."
+FREED_TIP = "Builds on {ref}, in review and merged into the parent ticket's branch: this can start before you rule on it."
+UNKNOWN_REF = "A pull request or issue this ticket names, on GitHub."
+
+
+def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
+    """Every mark on a row, in the order the row shows them: the tree the ticket is part of, its
+    slug (a click copies the file's path), what the row asks of the user, its hinge mark, the
+    count of the `kin` child tickets folded under it, its review page and GitHub references, the
+    user's time, the priority, the blockers.
+
+    A GitHub reference wears the state GitHub gave it and says it in words. One GitHub was not asked
+    about is a bare link, and the page says why once (absences); one it was asked about and did
+    not answer for is bare too, and says nothing further."""
+    kind = asks_word(t)
+    word, meaning = ASKS[kind]
+    return (
+        Mark("tree", t.tree, TREE_TIP),
+        Mark("slug", t.slug, f"Click to copy the path of the file this row was read from (y):\n{t.path}"),
+        Mark("asks", word, meaning, look=kind),
+        *([Mark("hinge", "hinge", HINGE_TIP)] if t.hinge else []),
+        *([Mark("kin", f"{kin} child ticket{'s' if kin != 1 else ''}",
+                KIN_TIP["closed-out" if t.status == "review" else "merged"])] if kin else []),
+        *([Mark("rp", "review page", REVIEW_TIP, href=t.diffview)] if t.diffview else []),
+        # the issues URL serves a pull request too: GitHub redirects it to the pull page
+        *(Mark("gh", ref, github.SAYS.get(state, UNKNOWN_REF), look=state or "unknown",
+               href=f"https://github.com/{repo}/issues/{num}")
+          for ref in t.gh for repo, num in [ref.split("#")] for state in [gh.get(ref)]),
+        Mark("time", SIZES[t.size][0], SIZE_TIP),
+        Mark("pri", f"p{t.priority} {PRIORITY[t.priority][0]}", PRIORITY_TIP, look=f"p{t.priority}"),
+        *(Mark("chip", ref, FREED_TIP.format(ref=ref) if ref in t.freed
+               else f"Waits on {ref}, {'done' if status == 'done' else 'not done yet'}.", look=status, href=ref_anchor(ref))
+          for ref, status in t.blocked_by),
+    )
+
+
+def mark(r: Row, kind: str) -> Mark | None:
+    """The row's first mark of `kind`, None where it wears none."""
+    return next((m for m in r.marks if m.kind == kind), None)
+
+
+def ticket_words(t: Ticket) -> list[str]:
+    """What a filter finds a ticket by: its slug, its name, its brief, every word it reads as
+    opened, and the references it names."""
+    words = [t.slug, t.title, text_of(t.brief)]
+    for b in t.blocks:
+        words += [b.label or "", text_of(b.prose)]
+        words += [part for q in b.asked for part in (q.tag, text_of(q.headline), text_of(q.detail), text_of(q.ruling))]
+        words += [part for s in b.worked for part in (s.title, s.when)]
+        words += [a.name for a in b.artefacts]
+    return words + t.gh
+
+
+def search_words(*parts: str) -> str:
+    return re.sub(r"\s+", " ", " ".join(parts)).strip().lower()
+
+
+def text_of(markup: str) -> str:
+    """Rendered markup as the words in it, a tag standing for a space."""
+    return html.unescape(re.sub(r"<[^>]+>", " ", markup))
+
 
 def asks(status: str, needs_user: bool, open_question: bool) -> str:
     """Which of ASKS a row asks of the user, from what its ticket file says: a build in review asks
@@ -1329,88 +1571,9 @@ def asks_word(t: Ticket) -> str:
     return asks(t.status, t.needs_user, bool(open_questions(t.questions)))
 
 
-def asks_tag(t: Ticket) -> str:
-    kind = asks_word(t)
-    word, meaning = ASKS[kind]
-    return f'<span class="asks a-{kind}" data-tip="{html.escape(meaning)}">{word}</span>'
-
-
-def time_tag(t: Ticket) -> str:
-    return f'<span class="time" data-tip="{html.escape(SIZE_TIP)}">{SIZES[t.size][0]}</span>'
-
-
-def priority_tag(t: Ticket) -> str:
-    return f'<span class="pri p{t.priority}" data-tip="{html.escape(PRIORITY_TIP)}">p{t.priority} {PRIORITY[t.priority][0]}</span>'
-
-
 def sort_key(t: Ticket) -> tuple:
     """A row's place within its group: the priority first, then the user's time, then the name."""
     return (t.priority, SIZE_RANK[t.size], t.title.lower())
-
-
-def dep_chips(refs: list[tuple[str, str]], freed: Sequence[str]) -> str:
-    return "".join(
-        blocker_chip(ref, status, ref_anchor(ref), FREED_TIP.format(ref=html.escape(ref)) if ref in freed
-                     else f"Waits on {html.escape(ref)}, {'done' if status == 'done' else 'not done yet'}.")
-        for ref, status in refs
-    )
-
-
-FREED_TIP = "Builds on {ref}, in review and merged into the parent ticket's branch: this can start before you rule on it."
-
-
-def blocker_chip(ref: str, status: str, href: str, said: str) -> str:
-    return (f'<a class="chip {status}" href="{html.escape(href)}" onclick="event.stopPropagation()" '
-            f'data-tip="{said}">{html.escape(ref)}</a>')
-
-
-def review_link(address: str | None) -> str:
-    if not address:
-        return ""
-    return (f'<a class="rp" href="{html.escape(address)}" target="_blank" onclick="event.stopPropagation()" '
-            f'data-tip="This build&#39;s review page: the diff, with a place to write on it (d).">review page</a>')
-
-
-def gh_links(refs: Sequence[str], gh: dict[str, str]) -> str:
-    """The pull requests and issues a ticket names, each in the look of the state GitHub gave it and
-    saying that state in words on hover.
-
-    A reference GitHub was not asked about is the bare link it was before, and the page says why
-    once (absences). One it was asked about and did not answer for is bare too, and says nothing
-    further: the board asked and was answered, so there is no absence to report."""
-    # the issues URL serves a pull request too: GitHub redirects it to the pull page
-    return "".join(
-        f'<a class="gh {state or "unknown"}" href="https://github.com/{repo}/issues/{num}" target="_blank" '
-        f'onclick="event.stopPropagation()" data-tip="{html.escape(github.SAYS.get(state, UNKNOWN_REF))}">{html.escape(ref)}</a>'
-        for ref in refs for repo, num in [ref.split("#")] for state in [gh.get(ref)]
-    )
-
-
-UNKNOWN_REF = "A pull request or issue this ticket names, on GitHub."
-
-
-def search_text(*parts: str) -> str:
-    return html.escape(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", " ", p) for p in parts)).strip().lower(), quote=True)
-
-
-def row_open(t: Ticket, search: str) -> str:
-    """The element every row is: what the page's script matches a row on, and the file a click on
-    its slug copies."""
-    return (
-        f'<details class="ticket row-{t.status}" id="t-{t.slug}" data-tree="{html.escape(t.tree or ALONE)}" '
-        f'data-slug="{html.escape(t.slug)}" data-search="{search}" data-path="{html.escape(str(t.path))}"><summary>'
-    )
-
-
-def clipped(text: str) -> str:
-    """A mark's words, cut off with an ellipsis where its column is too narrow. The clipping sits on
-    this inner element, since a box that hides its overflow would hide its own hover words too."""
-    return clipped_html(html.escape(text))
-
-
-def clipped_html(markup: str) -> str:
-    """The same, for words already rendered: a question's headline carries code and emphasis."""
-    return f'<span class="clip">{markup}</span>'
 
 
 def open_questions(asked: Sequence[Question]) -> list[Question]:
@@ -1439,46 +1602,15 @@ def shown_questions(status: str, asked: Sequence[Question]) -> list[Question]:
     return [] if status == "done" else open_questions(asked)
 
 
-def questions_block(t: Ticket, kids: dict[str, list[Ticket]]) -> str:
-    """The open questions under a folded needs-me row: each one's tag and headline with a button
-    that copies it, and one that copies them all once there are two to copy. A parent ticket at its
-    close-out asks its folded child tickets' questions too, since the user rules on them with it;
-    each of those carries its ticket's slug beside the tag.
-
-    The page's style hides the list while the row is open, where the block below and the rows
-    folded under it carry the same questions, so an opened row shows each of them once."""
-    asked = [(one, shown_questions(one.status, one.questions)) for one in ruled_with(t, kids)]
-    asked = [(one, questions) for one, questions in asked if questions]
-    count = sum(len(questions) for _, questions in asked)
-    if not count:
-        return ""
-    lines = "".join(
-        f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">'
-        + (f'{html.escape(one.slug)} ' if one is not t else "") + f'{q.tag}</span>'
-        f'<span class="qhead" data-tip="{html.escape(question_tip(q))}">{clipped_html(inline_md(q.headline))}</span>'
-        + copy_button("qcopy", "copy", QCOPY_TIP, copy_text(one.path, [q]), f"{q.tag} of {one.path.name}")
-        + "</span>"
-        for one, questions in asked for q in questions
-    )
-    if count < 2:  # one question's own button already copies the ticket's whole list
-        return f'<span class="qs">{lines}</span>'
-    return f'<span class="qs">{lines}' + copy_button(
-        "qall", f"copy all {count}",
-        "Click to copy every open question on this row, each under the path of the file it is on.",
-        "\n\n".join(copy_text(one.path, questions) for one, questions in asked),
-        f"{count} questions of {asked[0][0].path.name}" if len(asked) == 1 else f"{count} questions of {t.slug}'s tree",
-    ) + "</span>"
-
-
-def group_copy(rows: Sequence[Ticket]) -> str:
+def group_copy(rows: Sequence[Ticket]) -> Copy | None:
     """The needs-me group's own copy button: every open question on the board at once, for pasting
-    into an editor. Empty for a group whose rows ask nothing, which is every other group."""
+    into an editor. None for a group whose rows ask nothing, which is every other group."""
     asked = [(t.path, shown_questions(t.status, t.questions)) for t in rows]
     asked = [(path, questions) for path, questions in asked if questions]
     if not asked:
-        return ""
+        return None
     count = sum(len(questions) for _, questions in asked)
-    return copy_button(
+    return Copy(
         "qgroup", f"copy all {count} question{'s' if count != 1 else ''}",
         "Click to copy every open question on the board, each under the path of the ticket it is on.",
         "\n\n".join(copy_text(path, questions) for path, questions in asked),
@@ -1508,46 +1640,6 @@ def question_tip(q: Question) -> str:
     return f"{q.headline}\n\n{q.detail}" if q.detail else q.headline
 
 
-COPY_CAP = 220  # how much of what it copies a button shows before the rest is an ellipsis
-
-
-def copy_button(variant: str, word: str, what: str, text: str, said: str) -> str:
-    """A button that copies `text` and says so: what it copies is its hover words, cut off where
-    they run long, and `said` is what the page's own note says once it has. It is a span, as the
-    row's number is, since the page handles the click itself."""
-    shown = text if len(text) <= COPY_CAP else text[:COPY_CAP].rstrip() + "\u2026"
-    return (f'<span class="copier {variant}" data-copy="{html.escape(text)}" data-copied="{html.escape(said)}" '
-            f'data-tip="{html.escape(what)}\n\n{html.escape(shown)}">{html.escape(word)}</span>')
-
-
-TREE_TIP = "The top-level ticket this one's work is part of. Its pill in the top bar hides and shows the tree's rows."
-
-
-def row(t: Ticket, gh: dict[str, str], kids: dict[str, list[Ticket]]) -> str:
-    """One ticket row, every mark in a fixed column: the tree the ticket is part of, its slug (a
-    click copies the file's path), what the row asks of the user, the name with its hinge mark,
-    the count of the child tickets folded under it, its review page and GitHub references, the
-    ticket brief under the name and, while the row is folded, the open questions the ticket asks
-    the user under that, the user's time, the priority, the blockers. Below a width the time, the
-    priority and the blockers move under the name. The rows folded under it (`kids`, by parent
-    slug), then the ticket's remaining text, fold under the row; a word that finds one of those
-    rows finds this one too, since it is the row that holds it."""
-    brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
-    under = sorted(kids.get(t.slug, []), key=sort_key)
-    inner = f'<div class="kids">{"".join(row(one, gh, kids) for one in under)}</div>' if under else ""
-    found = [part for one in with_folded(t, kids) for part in (one.slug, one.title, one.brief, one.body_html, *one.gh)]
-    return (
-        row_open(t, search_text(*found))
-        + f'<span class="tree" data-tip="{html.escape(TREE_TIP)}">{clipped(t.tree)}</span>'
-        f'<span class="slug" data-tip="Click to copy the path of the file this row was read from (y):\n{html.escape(str(t.path))}">{clipped(t.slug)}</span>'
-        f'{asks_tag(t)}'
-        f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
-        f'{hinge_tag(t)}{kin_tag(t, len(under))}{review_link(t.diffview)}{gh_links(t.gh, gh)}</span>{brief}{questions_block(t, kids)}</span>'
-        f'<span class="meta">{time_tag(t)}{priority_tag(t)}<span class="chips">{dep_chips(t.blocked_by, t.freed)}</span></span>'
-        f'</summary>{inner}<div class="body">{t.body_html}</div></details>'
-    )
-
-
 def folded_under(tickets: list[Ticket]) -> dict[str, list[Ticket]]:
     """The rows folded under each parent ticket's row, by the parent's slug (board.folded)."""
     kids: dict[str, list[Ticket]] = {}
@@ -1568,32 +1660,16 @@ def ruled_with(t: Ticket, kids: dict[str, list[Ticket]]) -> list[Ticket]:
     return with_folded(t, kids) if t.status == "review" else [t]
 
 
-def hinge_tag(t: Ticket) -> str:
-    return f'<span class="hinge" data-tip="{html.escape(HINGE_TIP)}">hinge</span>' if t.hinge else ""
-
-
-def kin_tag(t: Ticket, count: int) -> str:
-    """How many child tickets fold under a parent ticket's row, saying why they are there."""
-    if not count:
-        return ""
-    tip = KIN_TIP["closed-out" if t.status == "review" else "merged"]
-    return f'<span class="kin" data-tip="{html.escape(tip)}">{count} child ticket{"s" if count != 1 else ""}</span>'
-
-
-def tree_chip(tree: str, tickets: list[Ticket]) -> str:
-    """A tree's pill in the top bar: its counts, and the click that hides and shows its rows.
-
-    The done count is out of every ticket in the tree, proposed ones included, so a breakdown just
-    cut off a parent ticket reads 0/4."""
+def pill(tree: str, tickets: list[Ticket]) -> Pill:
+    """A tree's pill. The done count is out of every ticket in the tree, proposed ones included, so
+    a breakdown just cut off a parent ticket reads 0/4."""
     inside = in_tree(tickets, tree)
     counts = Counter(t.status for t in inside)
     bits = [f"{counts['done']}/{len(inside)} done"]
     bits += [f"{counts[s]} {s}" for s in ("open", "claimed", "review", "blocked", "proposed") if counts[s]]
-    # the dot says the tree holds work of the user's own; the counts above already say how much
-    dot = '<i class="dot"></i>' if any(group_of(t) == "needs" for t in inside) else ""
-    return (
-        f'<button class="treechip" data-tree="{html.escape(tree)}" title="{html.escape(" · ".join(bits))}">{dot}{html.escape(tree)} '
-        f'<span class="dim">{counts["done"]}/{len(inside)}</span></button>'
+    return Pill(
+        tree, " · ".join(bits), counts["done"], len(inside), any(group_of(t) == "needs" for t in inside),
+        tree_graph(tickets, "" if tree == ALONE else tree),
     )
 
 
@@ -1609,87 +1685,24 @@ def in_tree(tickets: list[Ticket], tree: str) -> list[Ticket]:
     return [t for t in tickets if (t.tree or ALONE) == tree]
 
 
-def render_page(
-    project: str, tickets: list[Ticket],
-    log: str, stamp: str, stamp_src: str, gh: github.Answer = github.NOTHING,
-    said: "briefing.Briefing | None" = None,
-) -> str:
-    """The board as one page. The rows sit in their groups (GROUPS, done folded), each sorted by
-    sort_key. The top bar carries a pill per tree that hides and shows its rows, a filter box that
-    narrows the rows to a word, and the scheme switch, which pins one of the house style's two
-    schemes where the page otherwise follows the system's (`?theme=day|night` on the address pins
-    one for a screenshot). The side column, beside the rows on a wide window and above them on a
-    narrow one, holds the briefing over a preview of the dependency graph: the tree of the row under
-    the cursor with that ticket marked, or the whole tracker's graph with the edges between trees,
-    hidden trees left out. The preview's `full` button, or `?graph` on the address, opens the same
-    graph at its own size over the board (OVERLAY); `window` opens it in a window of its own beside
-    the board (GRAPH_WINDOW)."""
-    rows: dict[str, list[str]] = {state: [] for state, _ in GROUPS}
-    ranked: dict[str, list[tuple[tuple, str, Ticket]]] = {state: [] for state, _ in GROUPS}
-    kids = folded_under(tickets)
-    for t in tickets:
-        if not t.under:
-            ranked[group_of(t)].append((sort_key(t), row(t, gh.states, kids), t))
-    ranked = {state: sorted(sortable, key=lambda ranks: ranks[0]) for state, sortable in ranked.items()}
-    for state, sortable in ranked.items():
-        rows[state].extend(row for _, row, _ in sortable)
-    # a group's rows with the rows folded under them, which its columns are measured over; the
-    # needs-me group's copy button copies what each row asks (ruled_with)
-    grouped = {state: [one for _, _, t in sortable for one in with_folded(t, kids)] for state, sortable in ranked.items() if sortable}
-    asking = {state: [one for _, _, t in sortable for one in (ruled_with(t, kids) if state == "needs" else [t])]
-              for state, sortable in ranked.items() if sortable}
-    groups = "".join(
-        f'<details class="grp" id="grp-{state}" data-state="{state}"{"" if state == "done" else " open"}>'
-        f'<summary><h2>{label} <span class="n">{len(rows[state])}</span>{group_copy(asking.get(state, []))}</h2></summary>'
-        f'<div class="tickets">{"".join(rows[state])}</div></details>'
-        for state, label in GROUPS if rows[state]
-    )
+@dataclass(frozen=True)
+class Briefed:
+    """The head of the side column: the briefing as markdown, when it was written as the column
+    shows it, and the words that says on hover."""
 
-    trees = trees_of(tickets)
-    chips = "".join(tree_chip(tree, tickets) for tree in trees)
-
-    graphs = ""
-    for tree in trees:
-        src = tree_graph(tickets, "" if tree == ALONE else tree)
-        inner = f'<pre class="mermaid" data-key="g:{tree}">{src}</pre>' if src else f'<div class="gnote">nothing in {html.escape(tree)} waits on anything</div>'
-        graphs += f'<div class="g" data-tree="{html.escape(tree)}" hidden>{inner}</div>'
-    board = board_graph(tickets)
-    graphs += '<div class="g" data-tree="*" hidden>' + (
-        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden tree</div>'
-        f'<script type="application/json" class="parts">{json.dumps(board).replace("</", "<\\/")}</script>'
-        if board else '<div class="gnote">nothing waits on anything</div>'
-    ) + "</div>"
-
-    log_html = "\n".join(
-        f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
-        for line in log.strip().splitlines()
-    )
-    named = [tree for tree in trees if tree != ALONE]
-    footmeta = f"{len(tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
-    return PAGE.substitute(
-        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
-        project=html.escape(project), chips=chips, groups=groups, graphs=graphs, log=log_html,
-        columns=row_columns(tickets, grouped),
-        absences="".join(absences(tickets, gh, said)) + absence_note("board-server", UNSERVED, hidden=True),
-        briefing=briefing_block(said, tickets),
-        footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
-    )
+    text: str
+    when: str
+    says: str
 
 
-def briefing_block(said: "briefing.Briefing | None", tickets: list[Ticket]) -> str:
-    """The head of the side column: where things stand and what to take up next, as the briefing
-    session wrote it and when, or the board's own count where no session has written one."""
-    when, text, tip = (
-        # the row shows the day and the hour; the words behind it carry the year, which is what a
-        # briefing nobody has replaced in months is read by
-        (f"written {said.written:%d %b %H:%M}", said.text, f"Written {said.written:%Y-%m-%d %H:%M}.\n{BRIEFING_TIP}")
-        if said else ("the board's own", fallback(tickets), FALLBACK_TIP)
-    )
-    return (
-        f'<div class="bhead"><span class="label">briefing</span>'
-        f'<span class="bwhen" title="{html.escape(tip)}">{html.escape(when)}</span></div>'
-        f'<div class="btext">{markdown.markdown(text)}</div>'
-    )
+def briefed(said: "briefing.Briefing | None", board: View) -> Briefed:
+    """Where things stand and what to take up next, as the briefing session wrote it and when, or
+    the board's own count where no session has written one."""
+    if not said:
+        return Briefed(fallback(board), "the board's own", FALLBACK_TIP)
+    # the column shows the day and the hour; the words behind it carry the year, which is what a
+    # briefing nobody has replaced in months is read by
+    return Briefed(said.text, f"written {said.written:%d %b %H:%M}", f"Written {said.written:%Y-%m-%d %H:%M}.\n{BRIEFING_TIP}")
 
 
 # How many characters of a tracker's own slugs a column shows before the rest is cut with an
@@ -1699,8 +1712,9 @@ NAME_CAP = 14
 REF_CAP = 14
 
 
-def row_columns(tickets: list[Ticket], grouped: dict[str, list[Ticket]]) -> str:
-    """The width of each of a row's fixed columns, as the CSS tokens the row's grid reads.
+def columns(board: View) -> dict[str, dict[str, int]]:
+    """The width in characters of each of a row's fixed columns, for the whole board (`:root`) and
+    for each group (`#grp-<state>`) that narrows any of them.
 
     A column is as wide as the widest mark that can land in it and no wider, so the name and the
     brief take every pixel the row has spare. The widths come from the marks themselves: the closed
@@ -1713,6 +1727,7 @@ def row_columns(tickets: list[Ticket], grouped: dict[str, list[Ticket]]) -> str:
     run straight down every row of it. The time, the priority and the blockers are measured
     over each group, since a group of quick unblocked tickets has no use for the width an XL one
     needs: a column still runs down the group the eye is reading, and the rest is the brief's."""
+    tickets = [r.ticket for r in board.rows.values()]
     page = {
         "tree": min(max([len(t.tree) for t in tickets], default=0), NAME_CAP),
         "slug": min(max([len(t.slug) for t in tickets], default=0), NAME_CAP),
@@ -1721,27 +1736,22 @@ def row_columns(tickets: list[Ticket], grouped: dict[str, list[Ticket]]) -> str:
         "pri": max(len(f"p{level} {word}") for level, (word, _) in PRIORITY.items()),
         "chips": min(max([len(ref) for ref in blocker_refs(tickets)], default=2), REF_CAP),
     }
-    css = column_tokens(":root", page)
-    for state, rows in grouped.items():
+    widths = {":root": page}
+    for g in board.groups:
+        rows = [one for r in g.rows for one in with_kids(r)]
         own = {
-            "time": max([len(SIZES[r.size][0]) for r in rows], default=0),
-            "pri": max([len(f"p{r.priority} {PRIORITY[r.priority][0]}") for r in rows], default=0),
-            "chips": min(max([len(ref) for r in rows for ref in blockers_of(r)], default=0), REF_CAP),
+            "time": max([len(mark(r, "time").shows) for r in rows], default=0),
+            "pri": max([len(mark(r, "pri").shows) for r in rows], default=0),
+            "chips": min(max([len(m.shows) for r in rows for m in r.marks if m.kind == "chip"], default=0), REF_CAP),
         }
-        css += column_tokens(f"#grp-{state}", {mark: n for mark, n in own.items() if n < page[mark]})
-    return css
+        if narrowed := {kind: n for kind, n in own.items() if n < page[kind]}:
+            widths[f"#grp-{g.state}"] = narrowed
+    return widths
 
 
-PADDING = {"asks": 0.85, "pri": 0.95}  # the tag's border and the pill's, which sit outside the words
-
-
-def column_tokens(selector: str, widths: dict[str, int]) -> str:
-    if not widths:
-        return ""
-    return f"  {selector} {{\n" + "".join(
-        f"    --col-{mark}: calc({count} * var(--mark-char) + {PADDING.get(mark, 0)}rem);\n"
-        for mark, count in widths.items()
-    ) + "  }\n"
+def with_kids(r: Row) -> list[Row]:
+    """A row and every row folded under it, however deep."""
+    return [r, *(one for kid in r.kids for one in with_kids(kid))]
 
 
 def blockers_of(t: Ticket) -> list[str]:
@@ -1759,9 +1769,216 @@ def gh_shown(tickets: list[Ticket]) -> list[str]:
     return [ref for t in tickets for ref in t.gh]
 
 
-def absences(
-    tickets: list[Ticket], gh: github.Answer, standing: "briefing.Briefing | None" = None,
-) -> list[str]:
+# ---- page -----------------------------------------------------------------
+# The rows as markup: every class and attribute the stylesheet and the page's script read is
+# written here and nowhere else.
+
+
+def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
+    """The board as one page. The rows sit in their groups (GROUPS, done folded), each sorted by
+    sort_key. The top bar carries a pill per tree that hides and shows its rows, a filter box that
+    narrows the rows to a word, and the scheme switch, which pins one of the house style's two
+    schemes where the page otherwise follows the system's (`?theme=day|night` on the address pins
+    one for a screenshot). The side column, beside the rows on a wide window and above them on a
+    narrow one, holds the briefing over a preview of the dependency graph: the tree of the row under
+    the cursor with that ticket marked, or the whole tracker's graph with the edges between trees,
+    hidden trees left out. The preview's `full` button, or `?graph` on the address, opens the same
+    graph at its own size over the board (OVERLAY); `window` opens it in a window of its own beside
+    the board (GRAPH_WINDOW)."""
+    board = view(reading.tickets, reading.gh)
+    graphs = ""
+    for p in board.pills:
+        inner = (f'<pre class="mermaid" data-key="g:{p.tree}">{p.graph}</pre>' if p.graph
+                 else f'<div class="gnote">nothing in {html.escape(p.tree)} waits on anything</div>')
+        graphs += f'<div class="g" data-tree="{html.escape(p.tree)}" hidden>{inner}</div>'
+    whole = board_graph(reading.tickets)
+    graphs += '<div class="g" data-tree="*" hidden>' + (
+        f'<pre class="mermaid" data-key="g:*"></pre><div class="gnote" hidden>every ticket with an edge is in a hidden tree</div>'
+        f'<script type="application/json" class="parts">{json.dumps(whole).replace("</", "<\\/")}</script>'
+        if whole else '<div class="gnote">nothing waits on anything</div>'
+    ) + "</div>"
+
+    log_html = "\n".join(
+        f'<span class="hash">{html.escape(line.split(" ")[0])}</span> {html.escape(line.partition(" ")[2])}'
+        for line in reading.log.strip().splitlines()
+    )
+    named = [p.tree for p in board.pills if p.tree != ALONE]
+    footmeta = f"{len(reading.tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
+    notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True)]
+    return PAGE.substitute(
+        overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
+        project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
+        groups="".join(map(group_html, board.groups)), graphs=graphs, log=log_html,
+        columns="".join(column_tokens(selector, widths) for selector, widths in columns(board).items()),
+        absences="".join(map(absence_html, notes)), briefing=briefing_html(briefed(reading.said, board)),
+        footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
+    )
+
+
+def group_html(g: Group) -> str:
+    return (
+        f'<details class="grp" id="grp-{g.state}" data-state="{g.state}"{"" if g.folded else " open"}>'
+        f'<summary><h2>{g.label} <span class="n">{len(g.rows)}</span>{copy_html(g.copy) if g.copy else ""}</h2></summary>'
+        f'<div class="tickets">{"".join(map(row_html, g.rows))}</div></details>'
+    )
+
+
+def row_html(r: Row) -> str:
+    """One ticket row, every mark in a fixed column: the tree, the slug and what the row asks, then
+    the name with the marks of its line, the brief under it and, while the row is folded, the open
+    questions under that; then the user's time, the priority and the blockers, which move under the
+    name below a width. The rows folded under it, then the ticket's remaining text, fold under the
+    row."""
+    t = r.ticket
+
+    def some(*kinds: str) -> str:
+        return "".join(mark_html(m) for m in r.marks if m.kind in kinds)
+
+    brief = f'<span class="brief">{t.brief}</span>' if t.brief else ""
+    inner = f'<div class="kids">{"".join(map(row_html, r.kids))}</div>' if r.kids else ""
+    return (
+        row_open(t, r.search) + some("tree", "slug", "asks")
+        + f'<span class="main"><span class="titleline"><span class="title" data-tip="{html.escape(t.title)}">{clipped(t.title)}</span>'
+        f'{some("hinge", "kin", "rp", "gh")}</span>{brief}{asks_html(r)}</span>'
+        f'<span class="meta">{some("time", "pri")}<span class="chips">{some("chip")}</span></span>'
+        f'</summary>{inner}<div class="body">{"".join(map(block_html, t.blocks))}</div></details>'
+    )
+
+
+def row_open(t: Ticket, search: str) -> str:
+    """The element every row is: what the page's script matches a row on, and the file a click on
+    its slug copies."""
+    return (
+        f'<details class="ticket row-{t.status}" id="t-{t.slug}" data-tree="{html.escape(t.tree or ALONE)}" '
+        f'data-slug="{html.escape(t.slug)}" data-search="{html.escape(search)}" data-path="{html.escape(str(t.path))}"><summary>'
+    )
+
+
+# Each mark's element by its kind. A tree or a slug clips its words to its column inside an element
+# of its own, since a box that hides its overflow would hide its own hover words too.
+MARK_HTML = {
+    "tree": '<span class="tree" data-tip="{says}">{clipped}</span>',
+    "slug": '<span class="slug" data-tip="{says}">{clipped}</span>',
+    "asks": '<span class="asks a-{look}" data-tip="{says}">{shows}</span>',
+    "hinge": '<span class="hinge" data-tip="{says}">{shows}</span>',
+    "kin": '<span class="kin" data-tip="{says}">{shows}</span>',
+    "rp": '<a class="rp" href="{href}" target="_blank" onclick="event.stopPropagation()" data-tip="{says}">{shows}</a>',
+    "gh": '<a class="gh {look}" href="{href}" target="_blank" onclick="event.stopPropagation()" data-tip="{says}">{shows}</a>',
+    "time": '<span class="time" data-tip="{says}">{shows}</span>',
+    "pri": '<span class="pri {look}" data-tip="{says}">{shows}</span>',
+    "chip": '<a class="chip {look}" href="{href}" onclick="event.stopPropagation()" data-tip="{says}">{shows}</a>',
+}
+
+
+def mark_html(m: Mark) -> str:
+    return MARK_HTML[m.kind].format(
+        shows=html.escape(m.shows), says=html.escape(m.says), look=html.escape(m.look), href=html.escape(m.href),
+        clipped=clipped(m.shows),
+    )
+
+
+def clipped(text: str) -> str:
+    """A mark's words, cut off with an ellipsis where its column is too narrow."""
+    return clipped_html(html.escape(text))
+
+
+def clipped_html(markup: str) -> str:
+    """The same, for words already rendered: a question's headline carries code and emphasis."""
+    return f'<span class="clip">{markup}</span>'
+
+
+def asks_html(r: Row) -> str:
+    """The open questions under a folded row: each one's tag and headline with the button that
+    copies it, a folded child's under its slug, and the row's copy-all.
+
+    The page's style hides the list while the row is open, where the block below and the rows
+    folded under it carry the same questions, so an opened row shows each of them once."""
+    if not r.asks:
+        return ""
+    lines = "".join(
+        f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">'
+        + (f"{html.escape(q.of)} " if q.of else "") + f"{q.tag}</span>"
+        f'<span class="qhead" data-tip="{html.escape(q.says)}">{clipped_html(q.headline)}</span>'
+        + copy_html(q.copy) + "</span>"
+        for q in r.asks
+    )
+    return f'<span class="qs">{lines}' + (copy_html(r.copy_all) if r.copy_all else "") + "</span>"
+
+
+def copy_html(c: Copy) -> str:
+    """A button that copies and says so: what it copies is its hover words, and its note is what
+    the page's own note says once it has. It is a span, as the row's number is, since the page
+    handles the click itself."""
+    return (f'<span class="copier {c.kind}" data-copy="{html.escape(c.text)}" data-copied="{html.escape(c.note)}" '
+            f'data-tip="{html.escape(c.does)}\n\n{html.escape(c.shows)}">{html.escape(c.word)}</span>')
+
+
+def block_html(b: Block) -> str:
+    """One block of an opened ticket. The comments are folded, so they open only when the reader
+    asks for them: the conversation on a ticket and a build's closing comment are what happened,
+    not what the ticket is."""
+    if b.label == "comments":
+        return f'<details class="history"><summary><span class="label">comments</span></summary>{b.prose}</details>'
+    label = f'<p class="label">{html.escape(b.label)}</p>' if b.label else ""
+    asked = "".join(
+        f'<li class="question{" ruled" if q.ruling else ""}">'
+        f'<span class="tag" data-tip="{html.escape(TAG_TIP)}">{q.tag}</span><div>'
+        f'<p class="head">{q.headline}</p>'
+        + (f'<p class="detail">{q.detail}</p>' if q.detail else "")
+        + (f'<p class="ruling">{q.ruling}</p>' if q.ruling else "")
+        + "</div>" + (copy_html(q.copy) if q.copy else "") + "</li>"
+        for q in b.asked
+    )
+    worked = "".join(
+        f'<li><span class="stitle">{html.escape(s.title)}</span>'
+        f'<span class="when" data-tip="{html.escape(WHEN_TIP)}">{html.escape(s.when)}</span>'
+        + (f'<a class="spage" href="{html.escape(s.page)}" target="_blank" data-tip="{html.escape(PAGE_TIP)}">page</a>' if s.page else "")
+        + copy_html(s.resume) + "</li>"
+        for s in b.worked
+    )
+    made = "".join(
+        f'<li><a href="{html.escape(a.href)}" target="_blank">{html.escape(a.name)}</a>'
+        + (copy_html(a.run) if a.run else "") + "</li>"
+        for a in b.artefacts
+    )
+    lists = "".join(f'<ul class="{kind}">{items}</ul>' for kind, items in
+                    (("asked", asked), ("sessions", worked), ("artefacts", made)) if items)
+    return f'<section class="block">{label}{b.prose}{lists}</section>'
+
+
+def pill_html(p: Pill) -> str:
+    # the dot says the tree holds work of the user's own; the counts beside it already say how much
+    dot = '<i class="dot"></i>' if p.waits else ""
+    return (
+        f'<button class="treechip" data-tree="{html.escape(p.tree)}" title="{html.escape(p.says)}">{dot}{html.escape(p.tree)} '
+        f'<span class="dim">{p.done}/{p.total}</span></button>'
+    )
+
+
+def briefing_html(b: Briefed) -> str:
+    return (
+        f'<div class="bhead"><span class="label">briefing</span>'
+        f'<span class="bwhen" title="{html.escape(b.says)}">{html.escape(b.when)}</span></div>'
+        f'<div class="btext">{markdown.markdown(b.text)}</div>'
+    )
+
+
+def absence_html(a: Absence) -> str:
+    return f'<p class="absent" data-absent="{html.escape(a.source)}"{" hidden" if a.hidden else ""}>{html.escape(a.words)}</p>'
+
+
+PADDING = {"asks": 0.85, "pri": 0.95}  # the tag's border and the pill's, which sit outside the words
+
+
+def column_tokens(selector: str, widths: dict[str, int]) -> str:
+    """Column widths as the CSS tokens the row's grid reads."""
+    return f"  {selector} {{\n" + "".join(
+        f"    --col-{kind}: calc({count} * var(--mark-char) + {PADDING.get(kind, 0)}rem);\n"
+        for kind, count in widths.items()
+    ) + "  }\n"
+
+
+def absences(reading: Reading) -> list[Absence]:
     """What this render did without, said once each (the board renders with any optional source
     missing). A board opened as a file opens its review pages as files, where nothing they are
     given is saved, which the page says of itself; a tracker with no review page rendered yet has
@@ -1774,22 +1991,22 @@ def absences(
     The model says its own absence in its own words too: a machine with no claude and a login that
     has lapsed are the same empty column and two different things to fix (briefing.missing)."""
     said = []
-    if any(t.diffview for t in tickets):
-        said.append(absence_note(
+    if any(t.diffview for t in reading.tickets):
+        said.append(Absence(
             "review-page-server",
             "This board is open as a file, so the review pages it links open as files too and what you "
             "write on one is not saved. Run board to open it served.",
             hidden=True,
         ))
     if not TRANSCRIPTS.is_dir():
-        said.append(absence_note(
+        said.append(Absence(
             "transcripts",
             f"No session transcripts at {TRANSCRIPTS}, so no ticket lists the sessions that worked on it.",
         ))
-    if gh.missing:
-        said.append(absence_note("github", gh.missing))
-    if standing is None and (why := briefing.missing()):
-        said.append(absence_note("model", why))
+    if reading.gh.missing:
+        said.append(Absence("github", reading.gh.missing))
+    if reading.said is None and (why := briefing.missing()):
+        said.append(Absence("model", why))
     return said
 
 
@@ -1887,34 +2104,9 @@ VIEW_JS = r"""
 """
 
 
-PAGE = Template(r"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>board — ${project}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<script type="importmap">
-{"integrity": {
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs": "sha256-xBkLW+qMellY+DuZMpYPTCrktZEq5EF2eXDqaqcznEU=",
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/chunk-SP2CHFBE.mjs": "sha256-OlxTRTJXQsIIjtqqpnZh8ACC0go+GQLkhkrF/rXpGPk=",
-  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/render-FL5BWEWF.mjs": "sha256-Hnzk53loGUiOW5BNdXfD72ZHqAiFm6ndvA8CAGoQZns="
-}}
-</script>
-<script>
-  // The scheme before first paint: ?theme= pins it, for a screenshot or a layout check; else the
-  // switch's last answer, else the system's.
-  (() => {
-    const asked = new URLSearchParams(location.search).get("theme");
-    const kept = localStorage.getItem("board-theme");
-    const night = asked ? asked === "night" : kept ? kept === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.dataset.theme = night ? "night" : "day";
-  })();
-</script>
-<style>
-  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
+# The page's stylesheet: the house tokens, then the board's own rules. `${columns}` is where PAGE
+# puts the widths of a row's fixed columns (board.columns).
+STYLE = r"""  /* The house tokens, copied from mx/skills/house-style/tokens.css: colours as light-dark() pairs,
      the fonts, and the base rules. The type roles there are for a page of prose; a board sets its
      own below. --muted goes darker than the house value, which is a day-scheme readability fix:
      the board's small text is read on parchment at 100% zoom. */
@@ -1939,7 +2131,7 @@ PAGE = Template(r"""<!doctype html>
        with the rest the slack a fallback mono needs */
     --mark-char: calc(.78rem * .64);
   }
-  /* the row's fixed columns, each as wide as the widest mark that lands in it (board.row_columns) */
+  /* the row's fixed columns, each as wide as the widest mark that lands in it (board.columns) */
 ${columns}
   [data-theme="day"] { color-scheme: light; }
   [data-theme="night"] { color-scheme: dark; }
@@ -2242,7 +2434,37 @@ ${columns}
   #help table { border-collapse: collapse; font-size: .9rem; }
   #help td { padding: .2rem 1rem .2rem 0; }
   kbd { font-size: .78rem; border: 1px solid var(--edge); border-radius: 4px; padding: 0 .4rem; color: var(--body); }
-</style>
+"""
+
+
+PAGE = Template(r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>board — ${project}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script type="importmap">
+{"integrity": {
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs": "sha256-xBkLW+qMellY+DuZMpYPTCrktZEq5EF2eXDqaqcznEU=",
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/chunk-SP2CHFBE.mjs": "sha256-OlxTRTJXQsIIjtqqpnZh8ACC0go+GQLkhkrF/rXpGPk=",
+  "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/chunks/mermaid-layout-elk.esm.min/render-FL5BWEWF.mjs": "sha256-Hnzk53loGUiOW5BNdXfD72ZHqAiFm6ndvA8CAGoQZns="
+}}
+</script>
+<script>
+  // The scheme before first paint: ?theme= pins it, for a screenshot or a layout check; else the
+  // switch's last answer, else the system's.
+  (() => {
+    const asked = new URLSearchParams(location.search).get("theme");
+    const kept = localStorage.getItem("board-theme");
+    const night = asked ? asked === "night" : kept ? kept === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = night ? "night" : "day";
+  })();
+</script>
+<style>
+""" + STYLE + r"""</style>
 </head>
 <body data-stamp="${stamp}" data-stamp-src="${stamp_src}">
 <div class="top">
