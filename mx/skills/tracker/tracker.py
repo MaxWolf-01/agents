@@ -459,7 +459,7 @@ NAMED_LINE = re.compile(r"(?<=on line )\d+")
 
 
 def moved(refusal: Refusal, at: dict[int, int]) -> Refusal:
-    shifted = lambda line: at.get(line, line)  # noqa: E731; a line the write changed stays put and matches nothing
+    shifted = lambda line: at.get(line, line)  # noqa: E731  a line the write changed stays put and matches nothing
     return replace(refusal, line=shifted(refusal.line),
                    what=NAMED_LINE.sub(lambda found: str(shifted(int(found.group()))), refusal.what))
 

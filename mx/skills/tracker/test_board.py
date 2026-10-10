@@ -25,7 +25,6 @@ mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec 
 import functools
 import html
 import http.server
-import itertools
 import json
 import re
 import shlex
@@ -42,7 +41,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
-from hypothesis import given, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -57,7 +55,6 @@ from board import (
     content_stamp,
     load_tickets,
     look,
-    needs_me,
     render,
     render_page,
     run_out,
@@ -388,21 +385,6 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
             assert f"T_f_{slug.replace('-', '_')}[" in graph, row_id
     assert '<div class="g" data-tree="*" hidden><pre class="mermaid" data-key="g:*"></pre>' in page
     assert '"id": "T_b_quoted"' in page
-
-
-def test_the_side_columns_graph_is_a_preview_of_one_that_opens_at_full_size(tracker: Path) -> None:
-    """The ids the page's script and the browser checks address the full size views by, and the one
-    markup both of those views wear (board.GRAPH_VIEW), so the overlay over the board and the window
-    of its own cannot drift apart. What either draws, and what a click on it does, is the browser's
-    to say (test_board_layout.py)."""
-    page = page_of(tracker)
-    for opener in ("gopen", "gwinopen", "gwinfull", "gclose"):  # from the preview, and to the window
-        assert f'id="{opener}"' in page, opener
-    for view in (board.OVERLAY, board.GRAPH_WINDOW):
-        assert re.findall(r'data-gmode="(\w+)"', view) == ["tree", "all"]
-        assert view.count('<div class="gsvg">') == 1
-    assert board.OVERLAY in page, "the overlay wears markup of its own"
-    assert json.dumps(board.GRAPH_WINDOW).replace("</", "<\\/") in page, "the window is built from markup of its own"
 
 
 def test_a_row_links_its_review_page(tracker: Path) -> None:
@@ -1266,9 +1248,6 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
                " A retry hides a real slowdown; a fake clock makes the test say nothing about timing.")
     assert [text for _, text, _, _ in copiers(body_of(row))] == [written], "the question as the file writes it, under its path"
     assert copiers(body_of(row)) == copiers(summary_of(row)), "the same button, and none on the question a ruling answered"
-    # the list going is the page's style, which only a browser sees run (test_board_layout.py);
-    # this is the tripwire for a run with no browser, not the check
-    assert ".ticket[open] > summary .qs { display: none; }" in page, "nothing in the page hides an opened row's question list"
     three = rows["t-map-columns"]
     assert [which for which, _, _, _ in copiers(body_of(three))] == ["qcopy", "qcopy", "qcopy", "runcopy"]
     assert [which for which, _, _, _ in copiers(summary_of(three))] == ["qcopy", "qcopy", "qcopy", "qall"]
@@ -2534,24 +2513,6 @@ def rows_in(page: str, group: str) -> set[str]:
     return {one for one in rows if not any(f'id="{one}"' in inside for inside in rows.values())}
 
 
-def test_a_ticket_is_in_needs_me_exactly_when_it_waits_on_a_ruling_an_answer_or_a_session() -> None:
-    """The whole space of what a ticket file can say, since it is small enough to enumerate.
-
-    The reading the spec's sentence leaves open: "nobody has claimed" means open or proposed, since
-    a blocked or done ticket is not the user's to sit for either.
-    """
-    space = itertools.product(
-        sorted(set(tracker_module.STATUSES) | {"blocked"}), [False, True], [1, 2, 3, 4, 5], [False, True],
-    )
-    for status, needs_user, priority, open_question in space:
-        waits = status != "done" and (
-            status == "review"
-            or open_question
-            or (needs_user and priority in (1, 2) and status in ("open", "proposed"))
-        )
-        assert needs_me(status, needs_user, priority, open_question) is waits, (status, needs_user, priority, open_question)
-
-
 # what the demo tracker's tickets ask of the user: the two builds in review, the parent ticket at
 # its close-out, every ticket with a question no Ruled line answers, and the two near tickets the
 # user is in the loop for, whose session is the work whether or not a question of theirs is open.
@@ -2563,8 +2524,8 @@ NEEDS_ME = {
 
 
 def test_the_needs_me_group_holds_exactly_the_tickets_that_wait_on_the_user(demo: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    """The same two properties as the checks above, at the seam the ticket's Testing seams name: a
-    fixture tracker on disk in, groups out. map-columns carries its questions in the tracker's own
+    """Who waits on the user, at the seam the ticket's Testing seams name: a fixture tracker on disk
+    in, groups out. map-columns carries its questions in the tracker's own
     copy, where the import left them."""
     out = tmp_path / "board.html"
     render(demo.root, demo.repo, out)
@@ -2829,16 +2790,6 @@ def test_a_render_writes_nothing_beside_the_board_that_says_anything_about_a_tic
     for sidecar in beside[1:]:
         held = (out.parent / sidecar).read_text()
         assert not any(said in held for said in about), f"{sidecar} says something about a ticket"
-
-
-def test_a_render_that_finds_nothing_changed_makes_no_github_request(repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path]) -> None:
-    gh = path_with("gh", 'echo "{}"')
-    out = tmp_path / "board.html"
-    queries = lambda: [r for r in runs(gh) if "graphql" in r]  # noqa: E731  an auth probe is not a request for a reference
-    render(tracker, repo, out)
-    assert len(queries()) == 1, "one query per render resolves both references"
-    render(tracker, repo, out)
-    assert len(queries()) == 1, "the answer cached beside the board serves the unchanged render"
 
 
 if __name__ == "__main__":

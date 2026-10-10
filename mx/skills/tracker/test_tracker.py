@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, example, given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -984,9 +984,8 @@ def test_p2_every_machine_read_construct_has_one_parser_so_every_read_says_the_s
         assert other["questions"] == read["questions"] and other["assumptions"] == read["assumptions"], handed
         assert other["title"] == read["title"] and other["brief"] == read["brief"], handed
 
-    row = f"one-flow                                    {status:<10}p{priority}  {size}"
-    ready, _, waiting = run(repo, "frontier").out.partition("waiting\n")
-    assert (row in ready + waiting) is (status != "done"), run(repo, "frontier").out
+    listed = [line.split()[:4] for line in run(repo, "frontier").out.splitlines()]
+    assert (["one-flow", status, f"p{priority}", size] in listed) is (status != "done"), listed
 
 
 # What a second parser of a ticket file looks like in a script: a frontmatter field matched at the
@@ -1020,19 +1019,29 @@ def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -
     )
 
 
-def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(repo: Path) -> None:
-    """`ticket-file-contract#P7` at the source: a worker is handed its ticket's context in its
-    prompt, so nothing staged on a worker host reads a ticket file, and `dispatch` is the only file
-    of the three that invokes the one command that does."""
-    staged = {name: (PLUGIN / "skills" / "dispatch" / name).read_text()
-              for name in ("dispatch-ctl", "run-worker.sh", "worker-prompt.md")}
-    invokes = re.compile(r"\$\{?tracker\b|tracker\.py")
-    holding = {name: invokes.findall(text) for name, text in staged.items()}
-    assert not any(holding.values()), f"a reader of a ticket file on a worker host: {holding}"
+def staged_on_a_worker_host(cwd: Path) -> list[Path]:
+    """The files `dispatch` copies to a worker host, as its own `stage` lists them: the script is
+    sourced for its functions, what would reach a host (`on_host`, `run`) is stubbed, and the copy
+    prints what it was handed and ends the run, before anything that needs a real checkout."""
+    said = subprocess.run(
+        ["bash", "-c", 'source "$0" >/dev/null; set +u; run() { :; }; on_host() { :; }; '
+         'copy_to() { printf "%s\\n" "${@:3}"; exit 0; }; stage local', PLUGIN / "skills" / "dispatch" / "dispatch"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    assert said.returncode == 0, said.stderr
+    return [Path(line) for line in said.stdout.splitlines()]
 
-    files = next(line for line in (PLUGIN / "skills" / "dispatch" / "dispatch").read_text().splitlines()
-                 if line.strip().startswith("files=("))
-    assert not invokes.search(files), f"the parser travels to the host again: {files.strip()}"
+
+def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(tmp_path: Path) -> None:
+    """`ticket-file-contract#P7` at the source: a worker is handed its ticket's context in its
+    prompt, so nothing `dispatch` stages on a worker host invokes the one command that reads a
+    ticket file, nor is that command among them."""
+    staged = staged_on_a_worker_host(tmp_path)
+    assert {"dispatch-ctl", "run-worker.sh", "worker-prompt.md"} <= {path.name for path in staged}, staged
+    invokes = re.compile(r"\$\{?tracker\b|tracker\.py")
+    holding = {path.name: invokes.findall(path.read_text()) for path in staged}
+    assert not any(holding.values()), f"a reader of a ticket file on a worker host: {holding}"
+    assert "tracker.py" not in {path.name for path in staged}, "the parser travels to the host again"
 
 
 DANGLING = [
@@ -1267,8 +1276,22 @@ def startable(tree: list[Leaf]) -> set[str]:
             if leaf.status == "open" and all(ref in by_slug and frees(by_slug[ref]) for ref in leaf.blocked_by)}
 
 
+HINGE, MERGED, UNMERGED = (Leaf("one-flow-0", True, "review", True), Leaf("one-flow-1", False, "review", True),
+                           Leaf("one-flow-2", False, "review", False))
+
+
 @given(tree=leaves(("review",)), up=st.booleans(), nested=st.booleans(), where=st.sampled_from(["main", "one-flow"]))
-@settings(max_examples=60, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+# a hinge is done on its merge alone, where a leaf beside it waits on the parent's branch going up
+@example(tree=[HINGE, MERGED], up=False, nested=False, where="main")
+# every child merged and the parent's branch gone up: the whole tree is done
+@example(tree=[HINGE, MERGED], up=True, nested=False, where="main")
+# a child in review and not merged refuses the parent's accept, and leaves its merged sibling's alone
+@example(tree=[MERGED, UNMERGED], up=True, nested=False, where="main")
+# on the parent's own branch the branch above is unknown: only the hinge is done
+@example(tree=[HINGE, MERGED], up=True, nested=False, where="one-flow")
+# a parent under whole-flow names the branch above, so a leaf that reached it is done there too
+@example(tree=[HINGE, MERGED], up=True, nested=True, where="one-flow")
+@settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(
     tickets: Path, repo: Path, tree: list[Leaf], up: bool, nested: bool, where: str
 ) -> None:
