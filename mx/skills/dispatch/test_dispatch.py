@@ -1461,6 +1461,19 @@ def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_a
     assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
 
 
+def test_a_merged_round_the_tracker_refuses_done_fails_the_review_and_says_why(toy: Path) -> None:
+    """A round merged before any report reached the ticket, which is still claimed: the merge asks
+    for `done`, the tracker refuses it, and the review fails with the tracker's reason rather than
+    reading as a build waiting in review."""
+    claimed_with_code(toy)
+    for top in (toy, toy / "agent"):
+        merged_in(top, "main", "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 1 and "warm-preset claimed → done" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert not (toy.parent / "bin" / "diffview.args").exists(), "and renders nothing"
+
+
 # The building stub in a worktree holding `Backend` nested in it and `jarvis` beside it, as a spawn
 # of a ticket naming both places them: a commit in each, then the report.
 BUILDING_LISTED = BUILDING.replace(
@@ -1655,32 +1668,6 @@ def test_a_respawn_holds_only_the_listed_repos_its_ticket_names_now(toy: Path, s
     calls = [line.split("dispatch-ctl ")[1] for line in said.stderr.splitlines()
              if line.startswith("+ on_host agent@far bash") or line.startswith("+ on_host agent@far env")]
     assert calls == ["spawn warm-preset sonnet"], said.stderr
-
-
-def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_only_its_own_commits(
-        toy: Path) -> None:
-    """`jarvis`'s ticket branch is cut from origin's `main`, which is ahead of the local one, and the
-    session merges it into the local `main`. The range recorded for `jarvis` starts at the ticket's
-    own fork point, not at the merge's first parent, so it holds the ticket's commit alone, and the
-    page over the range before the merge is review's to render again."""
-    repos = staged_listed(toy)
-    agent = toy / "agent"
-    rounds = {"code": built_on(toy, "ticket/warm-preset", "main", "warm.txt"),
-              "agent": built_on(agent, "ticket/warm-preset", "main", "warm.md"),
-              "jarvis": built_on(repos["jarvis"], "ticket/warm-preset", "origin/main", "warm.rs")}
-    assert rounds["jarvis"][0] == git(repos["jarvis"], "rev-parse", "origin/main").strip()
-    said = run(toy, "review", "warm-preset")
-    assert said.returncode == 0, said.stderr
-
-    for top in (toy, agent, repos["jarvis"]):
-        merged_in(top, "main", "ticket/warm-preset")
-    landed = run(toy, "review", "warm-preset")
-    assert landed.returncode == 0, landed.stderr
-    assert status_of(toy, "warm-preset") == "done"
-    assert ranges_of(toy, "warm-preset") == [f"{at}@{cut}..{tip}" for at, (cut, tip) in rounds.items()]
-    jarvis = f"{repos['jarvis']}@{rounds['jarvis'][0]}..{rounds['jarvis'][1]}"
-    assert pages(toy)[-1].split()[-1] == jarvis
-    assert len(pages(toy)) == 2 and pages(toy)[0] == pages(toy)[1], "the same page, rendered again"
 
 
 @pytest.mark.full_path

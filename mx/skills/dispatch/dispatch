@@ -639,53 +639,6 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
-# Sets the caller's `fork` to <commit> where `fork` is empty or an ancestor of it, so that of the
-# points a tip shares with its bases `fork` ends on the newest. Where two have parted, neither the
-# other's ancestor, the first one seen stays. An empty <commit>, which unrelated histories give,
-# changes nothing.
-advance_fork() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
-
-# A ticket branch merges into the branch it cut from with --no-ff, in each repo (ADR 0001), and
-# that merge commit, whose second parent is the ticket's tip, is how its range is found after the
-# merge.
-# <repo, by the name its range carries> <tip> → <from>..<tip>, whether or not the ticket branch has
-# merged yet, and nothing at all for a branch that committed nothing, which is what a round
-# that touched one of its repos leaves in another. The start is the ticket's own fork point: the
-# newest point the tip shares with any of its repo's bases. Before the merge,
-# merge-base against them is the answer; after it, the tip is an ancestor of the
-# base it merged into and merge-base would return the tip itself, so that base's
-# point comes from the merge commit that brought it in. A base the tip has not
-# reached still counts. Where the session merged into a local integration branch
-# behind origin's, the merge's first parent is older than the fork, and origin's
-# branch still holds the fork. SHAs on both ends, because cleanup deletes the
-# branch while its commits survive.
-range_of() { # <repo> <tip>
-    local at=$1 tip=$2 top fork= onto merge
-    top=$(repo_at "$1")
-    if ! bases=$(merged_into "$at" "$tip"); then
-        # Against both of a listed repo's bases at once, the newest point the tip shares with either.
-        # shellcheck disable=SC2046
-        echo "$(git -C "$top" merge-base "$tip" $(base_at "$at"))..$tip"
-        return 0
-    fi
-    for onto in $bases; do
-        merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-        [ -z "$merge" ] || advance_fork "$(git -C "$top" merge-base "$merge^1" "$tip")"
-    done
-    if [ -n "$fork" ]; then
-        for onto in $(base_at "$at"); do
-            grep -qxF -- "$onto" <<< "$bases" || advance_fork "$(git -C "$top" merge-base "$tip" "$onto")"
-        done
-        echo "$fork..$tip"
-        return 0
-    fi
-    for onto in $bases; do
-        [ -n "$(git -C "$top" rev-list -1 "$onto..$tip")" ] ||
-            return 0  # the branch carries nothing of its own, so it has no range
-    done
-    die "$tip is on ${bases//$'\n'/ and } in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
-}
-
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: the assumptions the tracker read become the page's notes, and the
 # comment ids the ticket's `Addressed:` lines name become its resolved list.
@@ -750,23 +703,17 @@ covers() { # <page> <spec...>
     done <<< "$shown"
 }
 
-# <slug>'s round as its ticket branches hold it now, in the code repo, the agent repo and each listed
-# repo named: `tips`, `<repo> <sha>` per branch there is, and `written`, `<repo>@<range>` per branch
-# that committed something. The listed repos are read already (`listed`).
-round_of() { # <slug> <listed repo...>
-    local slug=$1 at tip range
-    shift
-    tips=() written=()
-    for at in code agent "$@"; do
-        tip=$(git -C "$(repo_at "$at")" rev-parse --verify -q "refs/heads/ticket/$slug") || continue
-        tips+=("$at $tip")
-        range=$(range_of "$at" "$tip") || exit 1
-        [ -z "$range" ] || written+=("$at@$range")
-    done
+# What the merge of <slug>'s round gives its ticket, decided, written and committed by the tracker
+# (`tracker land --help`); with --dry-run, what it would write, and nothing written. `tracked` is the
+# ticket as the landing leaves it, and `written` the round's ranges, `<repo>@<range>` per branch of it
+# that committed something, merged or not.
+land() { # <slug> [--dry-run]
+    tracked=$(run "$tracker" land "$@") || exit 1
+    mapfile -t written < <(jq -r '.round[].range // empty' <<< "$tracked")
 }
 
 # The review page's sources, in `specs`, one section per round of code in each repo it landed in:
-# the rounds <slug> carries, then the round `round_of` read while it is unmerged (a proposal waiting
+# the rounds <slug> carries, then the round `land` read while it is unmerged (a proposal waiting
 # for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
 # off the page: what an agent branch carries, the report and the artefacts, reaches the user as
 # itself, through the board. `spec_repos` names the repo of each, as its range does.
@@ -812,7 +759,6 @@ render_page() { # <slug> [<spec the page may show>...]
 review() {
     locate --read "$1"
     id=$1
-    ticket=$tickets/$id.md
     branch=ticket/$id
     # One round is a branch per repo, and a ticket's rounds are their ranges, written together:
     # `code@<range>`, `agent@<range>`, and `<name>@<range>` in each listed repo its `repos:` names.
@@ -832,9 +778,6 @@ review() {
         git -C "${listed_top[$name]}" rev-parse --verify -q "$branch" > /dev/null ||
             echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2
     done
-    # shellcheck disable=SC2086
-    round_of "$id" $named
-    retiring=
 
     # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
     # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
@@ -860,7 +803,6 @@ review() {
             run "$tracker" import "$id" - --called "$branch:$reported" || exit 1
         mkdir -p "$(dirname "$imported")" && printf '%s\n' "$blob" > "$imported"
         commit_ticket "$id" "$id for review"
-        read_tracker "$id" || exit 1
     elif [ "$status" = claimed ]; then
         echo "dispatch: the report on $branch is the one $id already carries, so this round left none of its own to import" >&2
     elif [ "$status" = open ] || [ "$status" = proposed ]; then
@@ -872,52 +814,28 @@ review() {
 
     # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
     # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
-    # the round read again, since origin's base has been fetched and a deleted branch is in no round.
-    # The page a review rendered before that may be replaced by the one over what landed.
+    # the landing below reads the round again, since origin's base has been fetched and a deleted
+    # branch is in no round. The page a review rendered over the round before that may be replaced
+    # by the one over what landed.
     unmerged=() shown=() asked=0
-    for one in "${tips[@]}"; do
-        case ${one% *} in code | agent) ;; *) is_merged "${one% *}" "${one#* }" || unmerged+=("${one% *}") ;; esac
+    for name in $named; do
+        tip=$(git -C "${listed_top[$name]}" rev-parse --verify -q "refs/heads/$branch") || continue
+        is_merged "$name" "$tip" || unmerged+=("$name")
     done
     if [ ${#unmerged[@]} -gt 0 ]; then
+        land "$id" --dry-run
         page_specs "$id"
         shown=("${specs[@]}")
         land_on_github "$id" "${unmerged[@]}" || asked=1
-        read_tracker "$id" || exit 1
-        # shellcheck disable=SC2086
-        round_of "$id" $named
     fi
 
-    # The status follows the branches: waiting for the ruling while any is unmerged, done once
-    # all are, when the ranges are final too. `tracker` writes both, and refuses a landing the
-    # tracker's transitions do not allow. A round whose branches carry no commit at all built
-    # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
-    # stopped before its first commit.
-    merged=1
-    for one in "${tips[@]}"; do is_merged "${one% *}" "${one#* }" || merged=; done
-    if [ ${#written[@]} -eq 0 ]; then
-        echo "dispatch: no branch of $id carries a commit, so this round built nothing to review" >&2
-        return 0
-    elif [ -n "$merged" ]; then
-        fields=()
-        for round in "${written[@]}"; do
-            rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
-        done
-        # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
-        up=$(field "$id" parent)
-        if [ "$up" = "$base" ] && [ "$(field "$id" hinge)" != true ]; then
-            now=review landed="$id merged into $base, for its ruling with it"
-        else
-            now=done landed="$id landed" retiring=1
-        fi
-        # One commit, and none when the ticket already says all of it.
-        status=$(field "$id" status)
-        [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
-        [ ${#fields[@]} -eq 0 ] || { run "$tracker" set "$id" "${fields[@]}" && read_tracker "$id"; } || exit 1
-        git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$landed"
-    elif [ "$(field "$id" status)" != review ]; then
-        { run "$tracker" set "$id" status=review && read_tracker "$id"; } || exit 1
-        commit_ticket "$id" "$id for review"
-    fi
+    # The status and the ranges follow the branches, decided and committed by the tracker. A round
+    # whose branches carry no commit at all built nothing: there is no range, nothing to render and
+    # nothing to rule on, which is a worker that stopped before its first commit.
+    land "$id"
+    [ ${#written[@]} -gt 0 ] || return 0
+    up=$(field "$id" parent)
+    retiring=$(jq -r 'select(.merged and .tickets[0].status == "done") | "yes"' <<< "$tracked")
 
     # Read after the write above, so the round that just landed is in the list once.
     page_specs "$id"
@@ -984,59 +902,33 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
     return $rc
 }
 
-# The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
-# one commit, or none of them. The parent's ranges are its branch <slug> measured against this
-# branch, the one above it, in the code repo and in each listed repo holding a branch <slug>.
-# Before the merge up it refuses on its own; after it, `tracker` refuses each ticket whose work has
-# not reached the branch its accept merges into, and the files already written are put back.
+# The user's accept of a parent ticket ruled whole, written and committed by the tracker (`tracker
+# accept --help`), which refuses the whole while one ticket of it may not be done. A squashed or
+# rebased pull request of the parent's own branch in a listed repo leaves that branch unmerged for
+# good, as a ticket branch is in `review`: what landed is recorded first, on it and on the tickets
+# under it, and the branches it carried deleted, so the accept finds them landed.
 accept() { # <slug>
     locate --read
     id=$1
-    tip=$(git -C "$repo_root" rev-parse --verify -q "refs/heads/$id") ||
-        die "no branch $id in $repo_root; accept is the parent ticket's, whose children merge into its branch"
-    is_merged code "$tip" || die "$id is not merged into $base; merge it --no-ff first, on the user's accept"
-    range=$(range_of code "$tip") || exit 1
-    ruled=$(jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .slug' <<< "$tracked")
-    fields=(status=done)
-    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
-    # The ticket's own branch in each listed repo is measured against the branch above it there, as
-    # its code range is. Each child merged its listed repos into this ticket's branch there, which is
-    # where retire reads the merge.
     if [ -n "$(jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?' <<< "$tracked")" ]; then
         listed "$(field "$id" parent)"
-        # Its pull request squashed or rebased on GitHub leaves its own branch unmerged for good, as
-        # a ticket branch is in `review`: what landed is recorded on it and on the tickets under it
-        # first, and the branches it carried deleted, so the range read below is none and the done
-        # check finds them landed. A refusal of that check is the exit when it cannot be recorded.
         unmerged=()
         for name in "${!listed_top[@]}"; do
             own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
             is_merged "$name" "$own" || unmerged+=("$name")
         done
-        [ ${#unmerged[@]} -eq 0 ] || { land_on_github "$id" "${unmerged[@]}"; read_tracker || exit 1; }
-        for name in $(printf '%s\n' "${!listed_top[@]}" | sort); do
-            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
-            mine=$(range_of "$name" "$own") || exit 1
-            [ -z "$mine" ] || rounds_of "$id" | grep -qxF "$name@$mine" || fields+=("diff+=$name@$mine")
-        done
+        [ ${#unmerged[@]} -eq 0 ] || land_on_github "$id" "${unmerged[@]}"
+        # Each child merged its listed repos into this ticket's branch there, which is where retire
+        # reads the merge.
         listed "$id"
     fi
-    paths=("$tickets/$id.md")
-    for child in $ruled; do paths+=("$tickets/$child.md"); done
-    # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
-    git -C "$agent_top" diff --quiet -- "${paths[@]}" || die "a ticket file of $id's tree has uncommitted changes; commit them first"
-    put_back() { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
-    for child in $ruled; do
-        run "$tracker" set "$child" status=done || put_back
-    done
-    run "$tracker" set "$id" "${fields[@]}" || put_back
-    run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
+    tracked=$(run "$tracker" accept "$id") || exit 1
     retire_trees
     run board "$tickets" --no-watch --no-open
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
-    # retired by its own `review`, so only the children in review come up here.
+    # retired by its own `review`, so only the children the accept took in come up here.
     rc=0
-    for child in $ruled; do
+    for child in $(jq -r --arg p "$id" '.tickets[] | select(.slug != $p) | .slug' <<< "$tracked"); do
         # shellcheck disable=SC2046
         ( base=$id; retire "$child" "$id" $(field "$child" repos) ) || rc=1
     done

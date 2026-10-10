@@ -26,6 +26,8 @@ Examples:
     tracker new map-columns --priority 2 --size M --title "Map the CSV's columns" --brief - < brief.md
     tracker set map-columns status=claimed
     tracker rule map-columns D3 "keep it in the fast suite"
+    tracker land map-columns             # what the merge of its round gives it, committed
+    tracker accept csv-import            # a parent ticket ruled whole: done on it and its children
     tracker import map-columns report.md  # a worker's report into the ticket it is of
     tracker drop map-columns             # a ticket never done: the reject ruling
     tracker retire                       # every finished tree out, committed
@@ -420,18 +422,13 @@ def set_fields(
             raise Refused([f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}"])
         if appended and key not in LIST_FIELDS:
             raise Refused([f"`{key}` holds one value, not a list; `{key}=...` sets it"])
-        if key == "status":
-            refuse_transition(ticket, value, tracker)
         if appended:
             # what this write has appended so far, so two appends to one field keep both: a round
             # lands in two repos and writes a range for each
             grown.setdefault(key, [str(one) for one in ticket.meta.get(key) or []]).append(value)
         changes[key] = rendered(grown[key]) if appended else value
         said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
-    was = ticket.path.read_text()
-    written = written_with(was, changes)
-    after = read(ticket.path, written)
-    refuse(caused(ticket, after, tracker, was, written))
+    _, written = written_into(ticket, changes, tracker)
     ticket.path.write_text(written)
     print(f"{slug}: " + "; ".join(said))
     return 0
@@ -474,6 +471,217 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
         raise Refused([f"{ticket.slug} {ticket.status} → {want}: {rule}"])
     if want == "done" and (why := unlanded(ticket, tracker)):
         raise Refused([f"{ticket.slug} {ticket.status} → done: {why}"])
+
+
+# ---- landing ---------------------------------------------------------------
+# What a merge gives a ticket: its status and its `diff:` ranges, decided here and written in one
+# write. `dispatch review` and `dispatch accept` call these.
+
+
+@app.command(name="land")
+def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> int:
+    """Write what the merge of a ticket's round gives it, in one write committed in the agent repo.
+    The round is the ticket's `ticket/<slug>` branch in the code repo this runs in, in the agent
+    repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
+    branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket that
+    is no hinge, merged into its parent's branch: that one waits in `review` for its parent's ruling.
+    A `done` here is held to the rule `set` holds every `done` to: the work has reached the branch
+    the user's accept merges it into. A merged round that rule refuses is refused with the reason,
+    and nothing is written. Unmerged, the ticket waits in `review`. A round whose
+    branches carry no commit built nothing, and nothing is written.
+
+    Prints the ticket as `data <slug>` does, as the landing left it, and the round beside it:
+
+        {"root": "str", "tickets": [...], "merged": bool,
+         "round": [{"repo": "str", "tip": "str", "merged": bool, "range": "str|null"}]}
+
+    A range is `<repo>@<first>..<last>`, from the ticket's own fork point, which a --no-ff merge
+    (ADR 0001) keeps findable once the branch has merged; none for a branch that committed nothing,
+    nor for a merged tip no merge of its own brought in, which git cannot tell from one.
+
+    Args:
+        slug: the ticket.
+        dry_run: print what the landing would write, refusing what it would refuse, and write nothing.
+    """
+    tracker = here() if dry_run else writing()
+    ticket = tracker.ticket(slug)
+    branches = round_of(ticket, tracker)
+    merged = all(one.merged for one in branches)
+    changes, message = {}, ""
+    if not any(one.range for one in branches):
+        print(f"tracker: no branch of {slug} carries a commit, so this round built nothing to review", file=sys.stderr)
+    elif merged:
+        changes = ranged(ticket, branches)
+        base = head(repos_of(tracker)[0])
+        ruled_with_parent = ticket.parent == base and not ticket.hinge
+        if ticket.status not in ("done", now := "review" if ruled_with_parent else "done"):
+            changes["status"] = now
+        message = f"{slug} merged into {base}, for its ruling with it" if ruled_with_parent else f"{slug} landed"
+    elif ticket.status != "review":
+        changes["status"], message = "review", f"{slug} for review"
+    after, written = written_into(ticket, changes, tracker)
+    if changes and not dry_run:
+        after.path.write_text(written)
+        commit_tickets(tracker, message, [after.path])
+    print(json.dumps({"root": str(tracker.root), "tickets": [as_data(after, tracker.with_ticket(after))], "merged": merged,
+                      "round": [{"repo": one.repo, "tip": one.tip, "merged": one.merged, "range": one.range} for one in branches]},
+                     indent=2))
+    return 0
+
+
+@app.command(name="accept")
+def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
+    """The user's accept of a parent ticket ruled whole, run on the branch above it once the parent's
+    branch has merged there --no-ff: `done` on the parent, with its ranges, and on every child of it
+    in `review`, in one commit, or on none of them. The parent's ranges are its own branch, named by
+    its slug alone, measured against the branch above it, in the code repo and, where a ticket of
+    the tree names a listed repo, in each listed repo holding that branch. Where the rules refuse
+    any one of them `done`, the whole is refused: a child in review that never merged into the
+    parent's branch is one.
+
+    Prints the tickets it wrote as `data` does.
+
+    Args:
+        slug: the parent ticket.
+    """
+    tracker = writing()
+    parent = tracker.ticket(slug)
+    code = repos_of(tracker)[0]
+    above = head(code)
+    if not parent_branch(code, slug):
+        raise Refused([f"no branch {slug} in {code}; accept is the parent ticket's, whose children merge into its branch"])
+    if not reached(code, slug, above):
+        raise Refused([f"{slug} is not merged into {above}; merge it --no-ff first, on the user's accept"])
+    own = [branch_in("code", code, git(code, "rev-parse", slug).strip(), (above,))]
+    if any(one.repos for one in (parent, *tracker.children(slug))):
+        for repo in (resolved(tracker.root, name) for name in repo_list(tracker.root)):
+            if parent_branch(repo.path, slug):
+                own.append(branch_in(repo.name, repo.path, git(repo.path, "rev-parse", slug).strip(), listed_bases(repo, parent.parent)))
+    ruled = [child for child in tracker.children(slug) if child.status == "review"]
+    top = toplevel(tracker.root)
+    paths = [str(one.path.relative_to(top)) for one in (parent, *ruled)]
+    if git(top, "status", "--porcelain", "--", *paths).strip():
+        raise Refused([f"a ticket file of {slug}'s tree has uncommitted changes; commit them first"])
+    writes = []
+    # each write checked against the tree as the ones before it leave it, the parent's last, as its
+    # own `done` waits on its children's; none written before every one of them is taken
+    for one, changes in [*((child, {"status": "done"}) for child in ruled),
+                         (parent, {"status": "done", **ranged(parent, own)})]:
+        writes.append(written_into(one, changes, tracker))
+        tracker = tracker.with_ticket(writes[-1][0])
+    for after, written in writes:
+        after.path.write_text(written)
+    commit_tickets(tracker, f"{slug} landed, ruled whole", [after.path for after, _ in writes])
+    print(json.dumps({"root": str(tracker.root), "tickets": [as_data(after, tracker) for after, _ in reversed(writes)]}, indent=2))
+    return 0
+
+
+def written_into(ticket: Ticket, changes: dict[str, str], tracker: Tracker) -> tuple[Ticket, str]:
+    """The ticket as `changes` would leave it, and its file's text, refused what every write is
+    refused: a status the transitions do not allow, and breakage the write would make."""
+    if "status" in changes:
+        refuse_transition(ticket, changes["status"], tracker)
+    was = ticket.path.read_text()
+    written = written_with(was, changes)
+    after = read(ticket.path, written)
+    refuse(caused(ticket, after, tracker, was, written))
+    return after, written
+
+
+def ranged(ticket: Ticket, branches: Sequence[Branch]) -> dict[str, str]:
+    """The `diff:` a ticket gets from `branches`: each range it does not record yet, after the ones it
+    does; nothing where it records them all."""
+    recorded = [str(one) for one in ticket.meta.get("diff") or []]
+    new = [one.range for one in branches if one.range and one.range not in recorded]
+    return {"diff": rendered(recorded + new)} if new else {}
+
+
+def commit_tickets(tracker: Tracker, message: str, paths: Sequence[Path]) -> None:
+    """The ticket files at `paths` committed in the agent repo, and nothing else staged there."""
+    top = toplevel(tracker.root)
+    run(top, "git", "commit", "-q", "-m", message, "--", *(str(path.relative_to(top)) for path in paths), aside=True)
+
+
+@dataclass(frozen=True)
+class Branch:
+    """A ticket's branch in one repo, read off the disk with what its merge state gives it."""
+
+    repo: str  # what its range calls the repo: `code`, `agent`, or a listed repo's name
+    tip: str
+    merged: bool  # into one of the branches it cut from and merges back into
+    range: str | None  # `<repo>@<first>..<last>`; None for a branch that committed nothing
+
+
+def round_of(ticket: Ticket, tracker: Tracker) -> list[Branch]:
+    """The ticket's round as its `ticket/<slug>` branches hold it now, in the code repo, the agent
+    repo and each listed repo its `repos:` names, where the repo has that branch. In the code repo
+    and the agent repo the branch it merges back into is the one each has out; in a listed repo, its
+    parent ticket's branch there, or the integration branch where the repo has none (`listed_bases`)."""
+    tops = repos_of(tracker)
+    places = [(name, top, (head(top),)) for name, top in zip(("code", "agent"), tops)]
+    for repo in (resolved(tracker.root, name) for name in ticket.repos):
+        places.append((repo.name, repo.path, listed_bases(repo, ticket.parent)))
+    found = []
+    for name, top, bases in places:
+        tip = tried(top, "rev-parse", "--verify", "-q", f"refs/heads/ticket/{ticket.slug}").stdout.strip()
+        if tip:
+            found.append(branch_in(name, top, tip, bases))
+    return found
+
+
+def listed_bases(repo: Listed, above: str | None) -> tuple[str, ...]:
+    """The branches a ticket branch in a listed repo cuts from and merges back into: the branch of
+    the ticket above it, `above`, where the repo has one; otherwise its integration branch, its own
+    and origin's, those it has, since a merge on the user's machine is local and a PR's is at origin."""
+    if above and parent_branch(repo.path, above):
+        return (above,)
+    return tuple(ref.removeprefix("refs/heads/").removeprefix("refs/remotes/") for ref in integration_refs(repo.path, repo.integration))
+
+
+def branch_in(repo: str, top: Path, tip: str, bases: Sequence[str]) -> Branch:
+    """The branch whose tip is `tip` in `top`, read against `bases`: merged where one of them holds
+    the tip, and its range from the ticket's own fork point, the newest point the tip shares with
+    any of them. Before the merge, merge-base against them is that point. After it, merge-base
+    against the base it merged into would answer the tip itself, so that base's point comes from
+    the --no-ff merge that brought the tip in, whose second parent is the tip; a base the tip has
+    not reached still counts. Where the merge went into a local integration branch behind origin's,
+    the merge's first parent is older than the fork, and origin's branch still holds the fork. A
+    merged tip no merge brought in carries nothing of its own, which is what a round that touched
+    one of its repos leaves in another, and has no range. SHAs on both ends, since the branch is
+    deleted once the ticket is done and its commits stay."""
+    on = [onto for onto in bases if reached(top, tip, onto)]
+    if not on:
+        start = merge_base(top, tip, *bases)
+        if not start:
+            raise Refused([f"{tip} in {top} shares no commit with {' or '.join(bases)}, the branches it merges into"])
+        return Branch(repo, tip, False, f"{repo}@{start}..{tip}")
+    fork = None
+    for onto in on:
+        if merge := merge_of(top, onto, tip):
+            fork = newer(top, fork, merge_base(top, f"{merge}^1", tip))
+    if fork:
+        for onto in (one for one in bases if one not in on):
+            fork = newer(top, fork, merge_base(top, tip, onto))
+    return Branch(repo, tip, True, f"{repo}@{fork}..{tip}" if fork else None)
+
+
+def merge_base(top: Path, *refs: str) -> str | None:
+    """The best common ancestor of the first ref and the rest, None for histories that share none."""
+    return tried(top, "merge-base", *refs).stdout.strip() or None
+
+
+def merge_of(top: Path, onto: str, tip: str) -> str | None:
+    """The merge on `onto`'s first-parent line whose second parent is `tip`."""
+    for line in git(top, "rev-list", "--first-parent", "--merges", "--parents", onto).splitlines():
+        if (shas := line.split())[2] == tip:
+            return shas[0]
+    return None
+
+
+def newer(top: Path, fork: str | None, commit: str | None) -> str | None:
+    """Of two points a tip shares with its bases, the newer: `commit` where `fork` is none or its
+    ancestor. Where the two have parted, neither the other's ancestor, the one seen first stays."""
+    return commit if commit and (fork is None or reached(top, fork, commit)) else fork
 
 
 def unlanded(ticket: Ticket, tracker: Tracker) -> str | None:
@@ -1058,9 +1266,10 @@ def unblock(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> list[Pat
     return [ticket.path for ticket in staying]
 
 
-def run(cwd: Path, *args: str) -> None:
-    print("+ " + " ".join(args), flush=True)
-    done = subprocess.run(args, cwd=cwd)
+def run(cwd: Path, *args: str, aside: bool = False) -> None:
+    """`args` run in `cwd`, said first. `aside` says both on stderr, for a command whose stdout is data."""
+    print("+ " + " ".join(args), file=sys.stderr if aside else sys.stdout, flush=True)
+    done = subprocess.run(args, cwd=cwd, stdout=2 if aside else None)
     if done.returncode != 0:
         raise Refused([f"{' '.join(args)} failed"])
 
