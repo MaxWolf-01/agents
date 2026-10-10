@@ -12,7 +12,8 @@ import { fromEnvironment } from "./index.ts";
 import { lines } from "./journal.ts";
 import { HYPERVISOR, MODEL, PI } from "./pi.ts";
 
-const GOAL = "Gather what makes you the best assistant, coordinator of coding agents, secretary, collaborator and companion to max.";
+const GOAL =
+	"Learn what no single ticket or repo holds: what is going on in max's life, his goals, what he wants and why, his preferences and rules; and what you find about the environment you work in, how his machines and tools are set up, where your knowledge has gaps, the bugs that recur, and where agents like you go wrong.";
 export const USAGE =
 	"usage: explore-run.ts [--steps N] [--tokens N] [--model provider/id]\n" +
 	"A budget of steps, of tokens, or both, checked before each step: a step once started runs to its finding. The model defaults to " + MODEL + ".";

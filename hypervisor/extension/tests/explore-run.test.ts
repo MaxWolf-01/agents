@@ -90,7 +90,7 @@ test("a run of a few steps leaves one finding entry per step, and the tool calls
 
 test("each step starts with the goal and the budget left, and remembers the steps before through its view", () => {
 	const [first, second, third] = [1, 2, 3].map((n) => steps.get("steps")!.filter((r) => stepOf(r) === n)[0]);
-	assert.match(textOf(first.messages[1]), /Your goal: Gather what makes you the best assistant.*2 more steps after this one/);
+	assert.match(textOf(first.messages[1]), /Your goal: Learn what no single ticket or repo holds.*2 more steps after this one/);
 	assert.match(textOf(third.messages[1]), /0 more steps after this one/);
 	// What step 1 used, and whatever its forks had logged by then: a whole number of calls, three at least.
 	const left = Number(/after this one, (\d+) tokens\./.exec(textOf(second.messages[1]))?.[1]);
