@@ -890,9 +890,15 @@ print(json.dumps(out))
 """
 
 
+# The layout's chunks, as the page's import map pins them: the render chunk is fetched once the
+# graph draws, every other one as the layout loads.
+CHUNKS = [url.rsplit("/", 1)[1] for url in json.loads(
+    re.search(r'<script type="importmap">(.*?)</script>', PAGE.template, re.S).group(1))["integrity"] if "/chunks/" in url]
+
+
 @pytest.mark.full_path
-@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), ("/chunk-SP2CHFBE.mjs", "could not load"),
-                                               ("/render-FL5BWEWF.mjs", "could not be drawn")])
+@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), *(
+    (f"/{chunk}", "could not be drawn" if chunk.startswith("render-") else "could not load") for chunk in CHUNKS)])
 def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:
     """The ticket's acceptance criterion: a file whose bytes differ from its pinned hash is refused,
     the graph does not draw, the board says so the way it says the engine did not load, and the rest

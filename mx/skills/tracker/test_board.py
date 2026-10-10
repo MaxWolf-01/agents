@@ -475,16 +475,13 @@ def free_port() -> int:
 
 def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     """The graph's colours are baked into the SVG by mermaid, so the page hands it one classDef per
-    status, each mixed from the house tokens in the scheme on show."""
+    status, each named by house tokens the page declares as a light and a dark pair."""
     page = page_of(tracker)
-    classes = re.search(r"const cls = \{(.*?)\s*\};", page, re.S).group(1)
-    read = set(re.findall(r'c(?:\.|\[")([\w-]+)', classes))
-    for status in [*STATUS_SYMBOL, "ghost"]:
-        assert re.search(rf"\b{status}: \[", classes), f"the graph draws no {status} node"
-    assert read, "the classDefs name no token"
-    for token in read:
-        assert f"--{token}: light-dark(" in page, f"the graph reads --{token}, which the page does not declare"
-    assert not re.search(r":\s*\[\s*[\"']?#", classes), "a status is drawn in a literal colour, not the house ink"
+    declared = {prop.removeprefix("--") for selectors, said in style_rules(page) if ":root" in selectors
+                for prop, value in said.items() if value.startswith("light-dark(")}
+    assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
+    for status, (fill, stroke, text, _) in board.GRAPH_INK.items():
+        assert {fill, stroke, text} <= declared, f"{status} is drawn in {sorted({fill, stroke, text} - declared)}, which the page does not declare"
 
 
 class Hrefs(HTMLParser):
@@ -758,11 +755,25 @@ def test_every_size_and_priority_shows_the_word_the_spec_gives_it(tmp_path: Path
         assert f"p{i} {PRIORITY_WORDS[i]}:" in tips["pri"], f"the priority's words leave p{i} out"
 
 
+def style_rules(page: str) -> list[tuple[list[str], dict[str, str]]]:
+    """The page's stylesheet as rules, each its selectors and its declarations, comments dropped and
+    an @media block's rules read as any other's: what the style says, not how it is laid out."""
+    style = re.sub(r"/\*.*?\*/", "", "".join(re.findall(r"<style>(.*?)</style>", page, re.S)), flags=re.S)
+    return [
+        ([one.strip() for one in selectors.split(",")],
+         {prop.strip(): value.strip() for prop, _, value in (d.partition(":") for d in body.split(";")) if value})
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", style)
+    ]
+
+
 def columns_for(page: str, selector: str) -> dict[str, str]:
     """The width in characters the page gives each of a row's fixed columns, for the whole board
     (`:root`) or for one group; empty when that selector narrows none of them."""
-    block = re.search(rf"{re.escape(selector)} \{{\n((?:    --col-.*\n)+)  \}}", page)
-    return dict(re.findall(r"--col-(\w+): calc\((\d+) \*", block.group(1))) if block else {}
+    return {
+        prop.removeprefix("--col-"): re.match(r"calc\(\s*(\d+)\s*\*", value).group(1)
+        for selectors, said in style_rules(page) if selector in selectors
+        for prop, value in said.items() if prop.startswith("--col-")
+    }
 
 
 def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_path: Path) -> None:
@@ -2135,10 +2146,12 @@ def test_every_state_a_link_can_wear_has_a_look_of_its_own_on_the_page(
     gh_answering(path_with, ANSWERED)
     out = tmp_path / "board.html"
     render(referenced, repo, out)
-    style = out.read_text().split("<style>", 1)[1].split("</style>", 1)[0]
-    looks = {state: re.findall(rf"\.gh\.{state}\b[^{{]*{{([^}}]*)}}", style) for state in github.SAYS}
-    assert all(looks[state] for state in github.SAYS), f"states with no look of their own: {[s for s in looks if not looks[s]]}"
-    assert len({tuple(rules) for rules in looks.values()}) >= 4, "the states would not be told apart on the page"
+    rules = style_rules(out.read_text())
+    looks = {state: {prop: value for selectors, said in rules if any(re.search(rf"\.gh\.{state}\b", one) for one in selectors)
+                     for prop, value in said.items()}
+             for state in github.SAYS}
+    assert all(looks.values()), f"states with no look of their own: {[s for s in looks if not looks[s]]}"
+    assert len({tuple(sorted(look.items())) for look in looks.values()}) >= 4, "the states would not be told apart on the page"
 
 
 # ---- the board briefing ---------------------------------------------------
