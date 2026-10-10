@@ -38,8 +38,8 @@ import session_page
 import stop_hook
 import turn_review
 from session_checks import (
-    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, logged, messages_of, payload, rows_of, unreachable,
-    view_of, with_write,
+    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, elements, logged, messages_of, payload,
+    turns_on, unreachable, view_of, with_write,
 )
 from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
@@ -726,11 +726,11 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     front, body = chat.read_text().split("---\n", 2)[1:]
     assert [line.split(": ")[0] for line in front.splitlines()] == ["date", "chat"]
     assert body.strip() == reply.strip()
-    assert rows((worked_example / PAGE).read_text()) == [chat.stem, "t04", "t03", "t02", "t01"]
-    turns = rows_of(view_of(worked_example, unrecorded))
-    assert isinstance(turns[chat.stem].turn, session_page.Chat)
-    assert turns[chat.stem].turn.messages == (SPOKEN_AFTER["message"]["content"],)
-    assert [key for key, row in turns.items() if row.open] == ["04"]
+    page = (worked_example / PAGE).read_text()
+    assert rows(page) == [chat.stem, "t04", "t03", "t02", "t01"]
+    said = turns_on(page)[chat.stem]
+    assert said.startswith(f"you {SPOKEN_AFTER['message']['content']}"), "a chat turn shows no number"
+    assert [anchor for anchor, turn in elements(page, r"t\d+").items() if re.match(r"<details\b[^>]*\bopen\b", turn)] == ["t04"]
 
 
 @pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
@@ -774,7 +774,9 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
                                     "timestamp": (datetime.now(UTC) + timedelta(minutes=2)).isoformat()})
     run(payload(worked_example, next_turn, reply="Round 4 is on the page."))
     assert shown(capsys).startswith("session page · ")
-    assert rows((worked_example / PAGE).read_text()) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
+    page = (worked_example / PAGE).read_text()
+    assert rows(page) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
+    assert "And the third?" in turns_on(page)["t05"]
     assert messages_of(view_of(worked_example, next_turn))["05"] == ["And the third?"]
     assert "Yes, the second bank." in chat.read_text()
 

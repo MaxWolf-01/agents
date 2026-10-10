@@ -6,6 +6,7 @@ and cases.
 They live here rather than in `conftest.py` because a check that imports from `conftest` gets
 whichever conftest Python loaded last under that name, and the tracker's checks keep one too."""
 
+import html
 import itertools
 import json
 import re
@@ -76,6 +77,17 @@ def elements(page: str, pattern: str) -> dict[str, str]:
 def sections_of(page: str) -> dict[str, str]:
     """Each turn's section, keyed by the two digits of its record."""
     return {anchor[1:]: section for anchor, section in elements(page, r"t\d+").items()}
+
+
+def text_of(fragment: str) -> str:
+    """A fragment of the page as its reader reads it: the text, tags dropped, entities read and
+    whitespace run together."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
+
+
+def turns_on(page: str) -> dict[str, str]:
+    """Each turn on the page as text, by the anchor it is reached by: `t04`, or a chat turn's name."""
+    return {anchor: text_of(turn) for anchor, turn in elements(page, r"t\d+|chat-\d{8}T\d{6}Z").items()}
 
 
 def view_of(directory: Path, transcript: Path) -> View:

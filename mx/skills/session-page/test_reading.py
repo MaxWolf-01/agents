@@ -27,7 +27,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
-from session_checks import messages_of, rows_of, sections_of, view_of
+from session_checks import messages_of, rows_of, sections_of, text_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -261,8 +261,8 @@ def test_a_record_shows_what_it_says_and_marks_up_nothing_of_its_own(worked_exam
     (worked_example / "turns" / "05.md").write_text(
         "---\ndate: 2026-09-24\nanswered:\n  Q7: no\n---\n\n# Round 4\n\n## Details\n\n"
         "The page now:\n- opens <details> in prose\n- lists\n")
-    assert rows_of(view_of(worked_example, transcript))["05"].turn.answered == {"Q7": "no"}
     section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
+    assert "your answers Q7 no" in text_of(section)
     assert "<li>opens &lt;details&gt; in prose</li>" in section
 
 
@@ -364,8 +364,9 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     assert (page.session.title, page.session.brief) == (title, "")
     assert [row.key for row in page.rows] == [chat.stem]
     assert page.resume == f"cd '/srv/help line' && claude --resume {FRESH}"
-    assert page.span == "2026-10-05"
-    rendered = render_session(directory, said, now=NOW)  # a title Claude Code gave is text, whatever it holds
+    rendered = render_session(directory, said, now=NOW)
+    assert " 1 turn · 2026-10-05 · " in text_of(rendered)
+    # a title Claude Code gave is text, whatever it holds
     assert html.unescape(re.search(r"<title>(.*?) · session page</title>", rendered).group(1)) == title
 
 
@@ -420,8 +421,8 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
         record.unlink()
     page = view_of(worked_example, transcript)
     assert "Leading words for showing" in page.session.title
-    assert (page.rows, page.span) == ((), "")
-    assert render_session(worked_example, transcript, now=NOW)  # and the page formats a session with no turn
+    assert page.rows == ()
+    assert " 0 turns · rendered " in text_of(render_session(worked_example, transcript, now=NOW))
 
 
 if __name__ == "__main__":

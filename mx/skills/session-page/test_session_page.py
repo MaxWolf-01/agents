@@ -35,7 +35,7 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_checks import SESSION, elements, rows_of, sections_of, view_of
+from session_checks import SESSION, elements, rows_of, sections_of, text_of, turns_on, view_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, chat_path, chat_record, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
@@ -176,7 +176,7 @@ def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path
 
 @settings(deadline=None)  # an example writes a session directory and renders it twice
 @given(drawn=sessions())
-def test_the_top_holds_the_open_questions_and_nothing_else(
+def test_the_top_holds_the_open_questions_each_once(
     drawn: tuple[list[dict], set[str]], scratch: Callable[[], Path]
 ) -> None:
     """session-page#P1, over sessions whose questions meet every fate in turn: the open ones are
@@ -203,24 +203,28 @@ def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Pa
     assert [row.key for row in rows if row.open] == ["04"]
 
 
-def test_each_turn_on_the_page_reads_its_date_and_says_where_it_shows_no_message_of_yours(
+def test_the_page_shows_each_turns_date_the_count_and_span_and_where_no_message_of_yours_is(
     worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
-    """session-page-turns-decluttered, read off the page as text: each turn's date, and the line
-    that stands in for the user's messages on record 3, whose write the transcript lacks, and on a
-    chat turn after the newest record with nothing said before it; on no other turn."""
+    """session-page-turns-decluttered, read off the page as text: each turn's date, the number of
+    turns and the dates they span, a turn that links no artefact under its headline in the
+    timeline, and the line that stands in for the user's messages on record 3, whose write the
+    transcript lacks, and on a chat turn after the newest record with nothing said before it; on no
+    other turn."""
     unwritten = tmp_path / "t.jsonl"
     unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
     at = datetime(2026, 9, 23, 2, 0, tzinfo=UTC)
     chat = chat_path(worked_example / "turns", at)
     chat.write_text(chat_record("Still building.", at))
-    rows = view_of(worked_example, unwritten).rows
-    turns = elements(render_session(worked_example, unwritten, now=NOW), r"t\d+|chat-.+")
-    text = {row.key: html.unescape(re.sub(r"<[^>]+>", " ", turns[f"t{row.key}" if isinstance(row.turn, Turn) else row.key]))
-            for row in rows}
+    page = view_of(worked_example, unwritten)
+    rendered = render_session(worked_example, unwritten, now=NOW)
+    turns = turns_on(rendered)
+    text = {row.key: turns[f"t{row.key}" if isinstance(row.turn, Turn) else row.key] for row in page.rows}
     assert {key: "no message of yours" in t for key, t in text.items()} == {
         chat.stem: True, "04": False, "03": True, "02": False, "01": False}
-    assert [row.key for row in rows if row.when not in text[row.key]] == []
+    assert [row.key for row in page.rows if row.when not in text[row.key]] == []
+    assert f" 5 turns · {page.span} · " in text_of(rendered)
+    assert text_of(elements(rendered, "a01")["a01"]) == "01 Round 1, as text: two axes, and a page per session"
 
 
 @settings(deadline=None)
