@@ -5,10 +5,11 @@
 """How the renderer reads what a page is made of: which of the user's messages a turn carries,
 where a record's links point, and what it refuses. Run: uv run test_reading.py
 
-The seam is test_session_page.py's, `render_session`, over its worked example (conftest.py). The
-oracle for the pairing is the Decision on the turn record (a record carries the user's messages
-said after the record before it was written and before it was) and the prototype's sample, which
-holds, per record, the messages that turn answered.
+The seam is test_session_page.py's, the page as the values `render_session` formats, over its
+worked example (conftest.py); what a record's prose renders to is read off the page. The oracle for
+the pairing is the Decision on the turn record (a record carries the user's messages said after the
+record before it was written and before it was) and the prototype's sample, which holds, per
+record, the messages that turn answered.
 """
 
 import html
@@ -26,7 +27,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
-from session_checks import html_text, messages_of, sections_of
+from session_checks import messages_of, rows_of, sections_of, view_of
 
 NOW = datetime(2026, 9, 23, 2, 30)
 
@@ -50,13 +51,6 @@ def with_calls(transcript: Path, directory: Path, out: Path, calls: list[tuple[s
     return out
 
 
-def sent_of(page: str) -> dict[str, list[tuple[str, str]]]:
-    """Each turn's messages from other sessions as the page shows them: who, and what."""
-    return {key: [(html_text(who), html_text(text)) for who, text in re.findall(
-                r'<details class="said peer">.*?<span class="v-meta who">(.*?)</span>.*?<div class="msg">(.*?)</div>', section, re.S)]
-            for key, section in sections_of(page).items()}
-
-
 def written(calls: dict[int, str]) -> list[tuple[str, int, str]]:
     return [("Write", number, at) for number, at in calls.items()]
 
@@ -65,9 +59,9 @@ def test_a_turn_carries_what_the_user_said_since_the_record_before_it(worked_exa
     """session-page#P2, which turn a message reaches. The six prompts of the worked example against
     the Write calls of its four records: the first prompt's resubmission stands for it, the slash
     command reads as typed, the queued message joins the turn it was queued in."""
-    shown = messages_of(render_session(worked_example, transcript, now=NOW))
-    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
-    assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
+    said = messages_of(view_of(worked_example, transcript))
+    assert {key: [m[: len(s)] for m, s in zip(said[key], start)] for key, start in SAMPLE.items()} == SAMPLE
+    assert {key: len(m) for key, m in said.items()} == {key: len(start) for key, start in SAMPLE.items()}
 
 
 def test_a_message_said_after_the_newest_record_is_on_no_turn_yet(
@@ -75,9 +69,9 @@ def test_a_message_said_after_the_newest_record_is_on_no_turn_yet(
 ) -> None:
     """Record 4 written before the last prompt: that prompt reaches no turn."""
     early = written({4: "2026-09-23T00:40:00Z"})
-    page = render_session(worked_example, with_calls(transcript, worked_example, tmp_path / "t.jsonl", early), now=NOW)
-    assert [m[:20] for m in messages_of(page)["04"]] == ["okay okay i like it."]
-    assert "hey can you please" not in page
+    said = messages_of(view_of(worked_example, with_calls(transcript, worked_example, tmp_path / "t.jsonl", early)))
+    assert [m[:20] for m in said["04"]] == ["okay okay i like it."]
+    assert [m for messages in said.values() for m in messages if "hey can you please" in m] == []
 
 
 def test_reading_or_fixing_an_older_record_leaves_its_messages_where_they_were(
@@ -87,8 +81,8 @@ def test_reading_or_fixing_an_older_record_leaves_its_messages_where_they_were(
     neither moves when those records were written."""
     later = [("Read", 2, "2026-09-23T01:40:00Z"), ("Edit", 3, "2026-09-23T01:41:00Z")]
     t = with_calls(transcript, worked_example, tmp_path / "t.jsonl", later)
-    shown = messages_of(render_session(worked_example, t, now=NOW))
-    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
+    said = messages_of(view_of(worked_example, t))
+    assert {key: [m[: len(s)] for m, s in zip(said[key], start)] for key, start in SAMPLE.items()} == SAMPLE
 
 
 def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_so(
@@ -99,14 +93,14 @@ def test_a_record_the_transcript_shows_no_write_for_carries_no_message_and_says_
     whatever the file's own modification time says."""
     unwritten = tmp_path / "t.jsonl"
     unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
-    page = render_session(worked_example, unwritten, now=NOW)
-    shown, section = messages_of(page), sections_of(page)["03"]
-    assert shown["03"] == [] and "no Write call for this turn's record" in section
-    dates = {key: re.search(r'class="v-meta date">(.*?)<', text).group(1) for key, text in sections_of(page).items()}
+    rows = rows_of(view_of(worked_example, unwritten))
+    assert rows["03"].turn.messages == () and rows["03"].silence == "unwritten"
+    dates = {key: row.when for key, row in rows.items()}
     assert dates["03"] == "2026-09-23"  # session-page-turns-decluttered: the record's date alone
     assert all(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", d) for key, d in dates.items() if key != "03")
-    assert [m[: len(s)] for m, s in zip(shown["04"], SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
-    assert len(shown["04"]) == len(SAMPLE["03"] + SAMPLE["04"])
+    said = rows["04"].turn.messages
+    assert [m[: len(s)] for m, s in zip(said, SAMPLE["03"] + SAMPLE["04"])] == SAMPLE["03"] + SAMPLE["04"]
+    assert len(said) == len(SAMPLE["03"] + SAMPLE["04"])
 
 
 @pytest.fixture
@@ -125,10 +119,10 @@ def test_a_turns_date_and_the_pages_span_come_from_the_clock_its_time_does(
 ) -> None:
     """session-page-turns-decluttered: record 3 says 2026-09-23 and was written at 00:20Z, which is
     20:20 on the 22nd in New York; its row and the header's span both read the 22nd."""
-    page = render_session(worked_example, transcript, now=NOW)
-    dates = {key: re.search(r'class="v-meta date">(.*?)<', text).group(1) for key, text in sections_of(page).items()}
-    assert dates == {"01": "2026-09-22 17:00", "02": "2026-09-22 17:40", "03": "2026-09-22 20:20", "04": "2026-09-22 21:30"}
-    assert " 4 turns · 2026-09-22 · rendered " in html_text(page)
+    page = view_of(worked_example, transcript)
+    assert {key: row.when for key, row in rows_of(page).items()} == {
+        "01": "2026-09-22 17:00", "02": "2026-09-22 17:40", "03": "2026-09-22 20:20", "04": "2026-09-22 21:30"}
+    assert page.span == "2026-09-22"
 
 
 def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
@@ -151,12 +145,12 @@ def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
     ]
     t = tmp_path / "t.jsonl"
     t.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
-    page = render_session(worked_example, t, now=NOW)
-    shown = messages_of(page)
-    assert {key: s for key, s in sent_of(page).items() if s} == {
+    page = view_of(worked_example, t)
+    assert {row.key: [(s.name, s.text) for s in row.turn.sent] for row in page.rows if row.turn.sent} == {
         "03": [("agents-d2", "merged, the tree is yours"), ("another session", "me too")], "04": [("agents-d2", "ruled good to ship, dispatch both")]}
-    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
-    assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
+    said = messages_of(page)
+    assert {key: [m[: len(s)] for m, s in zip(said[key], start)] for key, start in SAMPLE.items()} == SAMPLE
+    assert {key: len(m) for key, m in said.items()} == {key: len(start) for key, start in SAMPLE.items()}
 
 
 def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_example: Path) -> None:
@@ -169,8 +163,8 @@ def test_the_same_short_answer_in_two_turns_is_on_both(tmp_path: Path, worked_ex
     t = tmp_path / "t.jsonl"
     t.write_text("\n".join(map(json.dumps, entries)) + "\n")
     calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
-    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
-    assert (shown["01"], shown["02"], shown["03"]) == (["yes"], ["yes"], ["yes, and split it"])
+    said = messages_of(view_of(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls)))
+    assert (said["01"], said["02"], said["03"]) == (["yes"], ["yes"], ["yes, and split it"])
 
 
 def test_a_short_answer_the_next_message_happens_to_start_with_is_its_own_message(tmp_path: Path, worked_example: Path) -> None:
@@ -184,8 +178,8 @@ def test_a_short_answer_the_next_message_happens_to_start_with_is_its_own_messag
     t = tmp_path / "t.jsonl"
     t.write_text("\n".join(map(json.dumps, entries)) + "\n")
     calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
-    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
-    assert shown["01"] == ["a", "also, keep the second bank"]
+    said = messages_of(view_of(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls)))
+    assert said["01"] == ["a", "also, keep the second bank"]
 
 
 def test_a_prompt_resubmitted_with_more_after_a_comma_is_shown_once(tmp_path: Path, worked_example: Path) -> None:
@@ -198,8 +192,8 @@ def test_a_prompt_resubmitted_with_more_after_a_comma_is_shown_once(tmp_path: Pa
     t = tmp_path / "t.jsonl"
     t.write_text("\n".join(map(json.dumps, entries)) + "\n")
     calls = written({1: "2026-09-22T21:10:00Z", 2: "2026-09-22T21:40:00Z", 3: "2026-09-22T22:10:00Z", 4: "2026-09-22T22:20:00Z"})
-    shown = messages_of(render_session(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls), now=NOW))
-    assert shown["01"] == ["fix the header, and the footer"]
+    said = messages_of(view_of(worked_example, with_calls(t, worked_example, tmp_path / "w.jsonl", calls)))
+    assert said["01"] == ["fix the header, and the footer"]
 
 
 def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
@@ -211,9 +205,9 @@ def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
     t = tmp_path / "t.jsonl"
     t.write_text(transcript.read_text() + json.dumps(
         {"type": "assistant", "timestamp": "2026-09-23T00:30:00Z", "message": {"role": "assistant", "content": [call]}}) + "\n")
-    shown = messages_of(render_session(worked_example, t, now=NOW))
-    assert {key: [m[: len(s)] for m, s in zip(shown[key], said)] for key, said in SAMPLE.items()} == SAMPLE
-    assert {key: len(m) for key, m in shown.items()} == {key: len(said) for key, said in SAMPLE.items()}
+    said = messages_of(view_of(worked_example, t))
+    assert {key: [m[: len(s)] for m, s in zip(said[key], start)] for key, start in SAMPLE.items()} == SAMPLE
+    assert {key: len(m) for key, m in said.items()} == {key: len(start) for key, start in SAMPLE.items()}
 
 
 def test_a_link_in_the_details_is_a_path_from_the_repo_root_too(worked_example: Path, transcript: Path) -> None:
@@ -235,8 +229,7 @@ def test_a_link_is_a_path_from_the_repo_root(worked_example: Path, transcript: P
     """Each link on the page, followed from the page's own directory, lands on the path the record
     wrote, from the root of the repo the session directory sits in."""
     root = worked_example.parents[2]
-    page = render_session(worked_example, transcript, now=NOW)
-    hrefs = re.findall(r'<a class="link" href="([^"]+)"', page)
+    hrefs = [link.href for row in view_of(worked_example, transcript).rows for link in row.links]
     landed = [(worked_example / href).resolve().relative_to(root.resolve()).as_posix() for href in hrefs]
     records = sorted((worked_example / "turns").glob("*.md"), reverse=True)
     assert landed == re.findall(r"\]\(([^)]+)\)", "".join(p.read_text() for p in records))
@@ -255,8 +248,7 @@ def test_a_link_to_an_artifact_in_another_repo_is_its_absolute_path(
         "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Links\n\n"
         "- [The mail design](/srv/jarvis/agent/show/mail/index.html): the figures\n"
         "- [The tree](~/jarvis/agent/show/tree.html): the other one\n")
-    section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
-    assert re.findall(r'<a class="link" href="([^"]+)"', section) == [
+    assert [link.href for link in rows_of(view_of(worked_example, transcript))["05"].links] == [
         "file:///srv/jarvis/agent/show/mail/index.html", (home / "jarvis/agent/show/tree.html").as_uri()]
     record.write_text("---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Links\n\n- [Up](../elsewhere.html): out\n")
     with pytest.raises(RecordError, match=re.escape("../elsewhere.html is neither a path from the repo root")):
@@ -269,8 +261,8 @@ def test_a_record_shows_what_it_says_and_marks_up_nothing_of_its_own(worked_exam
     (worked_example / "turns" / "05.md").write_text(
         "---\ndate: 2026-09-24\nanswered:\n  Q7: no\n---\n\n# Round 4\n\n## Details\n\n"
         "The page now:\n- opens <details> in prose\n- lists\n")
+    assert rows_of(view_of(worked_example, transcript))["05"].turn.answered == {"Q7": "no"}
     section = sections_of(render_session(worked_example, transcript, now=NOW))["05"]
-    assert "your answers" in section and re.search(r">Q7</a> no\b", section)
     assert "<li>opens &lt;details&gt; in prose</li>" in section
 
 
@@ -315,13 +307,10 @@ def test_a_chat_turn_sits_among_the_records_by_its_time_and_carries_what_was_sai
     at = datetime(2026, 9, 23, 0, 40, tzinfo=UTC)  # after record 03's write, before 04's and before the second message of SAMPLE["04"]
     chat = chat_path(worked_example / "turns", at)
     chat.write_text(chat_record("Yes, keep the grid.", at))
-    page = render_session(worked_example, transcript, now=NOW)
-    ids = re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page)
-    assert ids == ["t04", chat.stem, "t03", "t02", "t01"]
-    row = page[page.index(f'id="{chat.stem}"'):]
-    row = row[:row.index("</article>")]
-    assert html_text(re.findall(r'<div class="msg">(.*?)</div>', row, re.S)[0]).startswith(SAMPLE["04"][0])
-    assert [m[:len(SAMPLE["04"][1])] for m in messages_of(page)["04"]] == SAMPLE["04"][1:]
+    said = messages_of(view_of(worked_example, transcript))
+    assert list(said) == ["04", chat.stem, "03", "02", "01"]
+    assert said[chat.stem][0].startswith(SAMPLE["04"][0])
+    assert [m[:len(SAMPLE["04"][1])] for m in said["04"]] == SAMPLE["04"][1:]
 
 
 @pytest.mark.parametrize("frontmatter, line, reason", [
@@ -371,13 +360,13 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     chat.write_text(chat_record("On it: reading the handoff.", at))
     said = tmp_path / "t.jsonl"
     said.write_text("".join(json.dumps(e) + "\n" for e in [STARTED, *entries]))
-    page = render_session(directory, said, now=NOW)
-    assert html.unescape(re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)) == title
-    assert html.unescape(re.search(r"<title>(.*?) · session page</title>", page).group(1)) == title
-    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == [chat.stem]
-    assert '<div class="prose brief"></div>' in page
-    assert f'data-cmd="cd &#x27;/srv/help line&#x27; &amp;&amp; claude --resume {FRESH}"' in page
-    assert "1 turn · 2026-10-05 · " in html_text(page)
+    page = view_of(directory, said)
+    assert (page.session.title, page.session.brief) == (title, "")
+    assert [row.key for row in page.rows] == [chat.stem]
+    assert page.resume == f"cd '/srv/help line' && claude --resume {FRESH}"
+    assert page.span == "2026-10-05"
+    rendered = render_session(directory, said, now=NOW)  # a title Claude Code gave is text, whatever it holds
+    assert html.unescape(re.search(r"<title>(.*?) · session page</title>", rendered).group(1)) == title
 
 
 def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newest(tmp_path: Path) -> None:
@@ -391,13 +380,10 @@ def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newes
         chat_path(directory / "turns", at).write_text(chat_record("Still building.", at))
     said = tmp_path / "t.jsonl"
     said.write_text(json.dumps(STARTED) + "\n")
-    page = render_session(directory, said, now=NOW)
-    rows = re.findall(r'<article class="turn chat[^"]*" id="([^"]+)".*?</article>', page, re.S)
-    bodies = re.findall(r'<article class="turn chat.*?</article>', page, re.S)
-    assert rows == [chat_path(directory / "turns", at).stem for at in reversed(times)]
-    assert ["no message of yours" in b for b in bodies] == [True, False, False]
-    assert [re.search(r'class="v-meta date">(.*?)<', b).group(1) for b in bodies] == [
-        f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
+    rows = view_of(directory, said).rows
+    assert [row.key for row in rows] == [chat_path(directory / "turns", at).stem for at in reversed(times)]
+    assert [row.silence for row in rows] == ["unanswered", "", ""]
+    assert [row.when for row in rows] == [f"{at.astimezone():%Y-%m-%d %H:%M}" for at in reversed(times)]
 
 
 def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Path) -> None:
@@ -411,9 +397,7 @@ def test_each_run_of_turns_with_no_message_before_them_says_so_once(tmp_path: Pa
     asked = {"type": "user", "message": {"role": "user", "content": "How far along?"}, "timestamp": "2026-10-05T09:10:00.000Z"}
     said = tmp_path / "t.jsonl"
     said.write_text(json.dumps(STARTED) + "\n" + json.dumps(asked) + "\n")
-    page = render_session(directory, said, now=NOW)
-    bodies = re.findall(r'<article class="turn chat.*?</article>', page, re.S)
-    assert ["no message of yours" in b for b in bodies] == [True, False, True, False]
+    assert [row.silence for row in view_of(directory, said).rows] == ["unanswered", "", "unanswered", ""]
 
 
 def test_a_session_whose_transcript_names_no_directory_resumes_from_the_repo_root(tmp_path: Path) -> None:
@@ -426,8 +410,7 @@ def test_a_session_whose_transcript_names_no_directory_resumes_from_the_repo_roo
     chat.write_text(chat_record("On it.", at))
     said = tmp_path / "t.jsonl"
     said.write_text(json.dumps({k: v for k, v in STARTED.items() if k != "cwd"}) + "\n")
-    page = render_session(directory, said, now=NOW)
-    assert f'data-cmd="cd {tmp_path} &amp;&amp; claude --resume {FRESH}"' in page
+    assert view_of(directory, said).resume == f"cd {tmp_path} && claude --resume {FRESH}"
 
 
 def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_example: Path, transcript: Path) -> None:
@@ -435,10 +418,10 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
     so neither a numbered record nor a chat turn exists, and the page still renders."""
     for record in (worked_example / "turns").iterdir():
         record.unlink()
-    page = render_session(worked_example, transcript, now=NOW)
-    assert "Leading words for showing" in re.search(r'<h1 class="v-title">(.*?)</h1>', page).group(1)
-    assert re.findall(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"', page) == []
-    assert " 0 turns · rendered " in html_text(page)
+    page = view_of(worked_example, transcript)
+    assert "Leading words for showing" in page.session.title
+    assert (page.rows, page.span) == ((), "")
+    assert render_session(worked_example, transcript, now=NOW)  # and the page formats a session with no turn
 
 
 if __name__ == "__main__":

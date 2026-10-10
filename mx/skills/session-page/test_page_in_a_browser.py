@@ -12,7 +12,7 @@ ticket file being none; its A6, that a key clicks the link so a click handler th
 catches it too, is checked with a handler of the test's own), and the Properties of
 agent/tickets/session-page-keeps-your-place.md, P1 to P8, read off the DOM and the panes' scroll
 positions. P1 to P3 hold only across a reload, so that probe reloads a page whose file changed in
-between, a turn added. test_session_page.py checks what the timeline and the chips list; this
+between, a turn added. test_session_page.py checks which artefacts each turn lists; this
 checks what the reader sees of them and what the keys do. The page's remote fonts are answered
 from copies kept on this machine (show/page_cache.py), so a run after the first touches no network.
 """

@@ -1,11 +1,11 @@
 """What the session page's checks share beside their fixtures: the worked example's session,
 the markers of a session nobody is sitting at, a turn that wrote no record, a reviewer no check may
-reach, the page read back into its turns, and the hooks' payloads and cases.
+reach, the page as the values it formats and its HTML read back by anchor, and the hooks' payloads
+and cases.
 
 They live here rather than in `conftest.py` because a check that imports from `conftest` gets
 whichever conftest Python loaded last under that name, and the tracker's checks keep one too."""
 
-import html
 import itertools
 import json
 import re
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from session_page import SESSIONS
+from session_page import SESSIONS, Row, View, read_session, view
 
 SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of
 # the sessions the hooks leave alone are marked in the environment, and the suite runs in one of
@@ -78,15 +78,19 @@ def sections_of(page: str) -> dict[str, str]:
     return {anchor[1:]: section for anchor, section in elements(page, r"t\d+").items()}
 
 
-def html_text(fragment: str) -> str:
-    return html.unescape(re.sub(r"<[^>]+>", " ", fragment)).strip()
+def view_of(directory: Path, transcript: Path) -> View:
+    """The page `render_session` renders for the session, as the values it formats."""
+    return view(read_session(directory, transcript))
 
 
-def messages_of(page: str) -> dict[str, list[str]]:
-    """Each turn's messages from the user as the page shows them, by the two digits of its record."""
-    return {key: [html_text(m) for you in re.findall(r'<details class="said you">(.*?)</details>', section, re.S)
-                  for m in re.findall(r'<div class="msg">(.*?)</div>', you, re.S)]
-            for key, section in sections_of(page).items()}
+def rows_of(page: View) -> dict[str, Row]:
+    """Each turn the page shows, by the two digits of its record or a chat turn's name."""
+    return {row.key: row for row in page.rows}
+
+
+def messages_of(page: View) -> dict[str, list[str]]:
+    """Each turn's messages from the user, by the two digits of its record or a chat turn's name."""
+    return {row.key: list(row.turn.messages) for row in page.rows}
 
 
 # ---- the hooks' payloads and cases ---------------------------------------------
