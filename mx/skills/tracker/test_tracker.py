@@ -1022,7 +1022,8 @@ def test_p2_no_script_under_the_plugin_parses_a_ticket_file_itself(repo: Path) -
 def staged_on_a_worker_host(cwd: Path) -> list[Path]:
     """The files `dispatch` copies to a worker host, as its own `stage` lists them: the script is
     sourced for its functions, what would reach a host (`on_host`, `run`) is stubbed, and the copy
-    prints what it was handed and ends the run, before anything that needs a real checkout."""
+    prints what it was handed and ends the run, before anything that needs a real checkout. A local
+    host and a remote one are handed the same list."""
     said = subprocess.run(
         ["bash", "-c", 'source "$0" >/dev/null; set +u; run() { :; }; on_host() { :; }; '
          'copy_to() { printf "%s\\n" "${@:3}"; exit 0; }; stage local', PLUGIN / "skills" / "dispatch" / "dispatch"],
@@ -1035,11 +1036,13 @@ def staged_on_a_worker_host(cwd: Path) -> list[Path]:
 def test_p7_no_file_a_worker_host_holds_reads_or_writes_a_ticket(tmp_path: Path) -> None:
     """`ticket-file-contract#P7` at the source: a worker is handed its ticket's context in its
     prompt, so nothing `dispatch` stages on a worker host invokes the one command that reads a
-    ticket file, nor is that command among them."""
+    ticket file, nor is that command among them. The tracker's commit hook travels too, as the
+    worktree's guard against a ticket file committed there; it runs only a tracker the host has
+    installed, and none is staged."""
     staged = staged_on_a_worker_host(tmp_path)
     assert {"dispatch-ctl", "run-worker.sh", "worker-prompt.md"} <= {path.name for path in staged}, staged
     invokes = re.compile(r"\$\{?tracker\b|tracker\.py")
-    holding = {path.name: invokes.findall(path.read_text()) for path in staged}
+    holding = {path.name: invokes.findall(path.read_text()) for path in staged if path.name != "pre-commit"}
     assert not any(holding.values()), f"a reader of a ticket file on a worker host: {holding}"
     assert "tracker.py" not in {path.name for path in staged}, "the parser travels to the host again"
 

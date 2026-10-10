@@ -480,6 +480,7 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     declared = {prop.removeprefix("--") for selectors, said in style_rules(page) if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
     assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
+    assert json.dumps(board.GRAPH_INK) in page, "the page's script draws in ink other than the board's"
     for status, (fill, stroke, text, _) in board.GRAPH_INK.items():
         assert {fill, stroke, text} <= declared, f"{status} is drawn in {sorted({fill, stroke, text} - declared)}, which the page does not declare"
 
