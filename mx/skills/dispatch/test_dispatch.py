@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -34,6 +35,14 @@ from dispatch_checks import mx, stage_runner
 
 SKILL = Path(__file__).parent
 DISPATCH = SKILL / "dispatch"
+sys.path.insert(0, str(SKILL.parent / "tracker"))
+
+import tracker  # noqa: E402
+
+# Git with no configuration of the machine's, for the commits a check makes and the ones dispatch makes in
+# it: a hook or a setting of whoever runs the checks would write into the toy's history, which the board reads.
+HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false"}
 # Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
 # fresh cache puts a full dependency install in front of every tracker and board a check runs.
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
@@ -119,7 +128,7 @@ def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
          "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=HERMETIC_GIT,
     )
     assert done.returncode == 0, f"git {' '.join(args)}: {done.stderr}"
     return done.stdout
@@ -227,10 +236,15 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     # none, so every host runs the checks against this repo's own.
     (bin_dir / "tracker").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "tracker.py"}" "$@"\n')
     (bin_dir / "tracker").chmod(0o755)
+    # A board that draws nothing, since no check reads the page, unless the check put the real one
+    # there (`on_github`).
+    if not (bin_dir / "board").exists():
+        (bin_dir / "board").write_text("#!/bin/sh\n")
+        (bin_dir / "board").chmod(0o755)
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
+    env = {**HERMETIC_GIT, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
@@ -267,8 +281,8 @@ def status_of(toy: Path, slug: str) -> str:
 
 def ranges_of(toy: Path, slug: str) -> list[str]:
     """The ticket's `diff:` ranges, as the tracker reads them."""
-    return subprocess.run([str(SKILL.parent / "tracker" / "tracker.py"), "get", slug, "diff"],
-                          cwd=toy, capture_output=True, text=True).stdout.split()
+    read = tracker.tracker_of(tracker.tracker_root(toy))
+    return tracker.as_data(read.ticket(slug), read)["diff"]
 
 
 def test_a_claim_is_taken_from_the_frontier_and_a_claimed_ticket_is_in_somebodys_hands(toy: Path) -> None:
@@ -1194,7 +1208,7 @@ def built_on(top: Path, branch: str, start: str, name: str) -> tuple[str, str]:
     `top` is left on the branch it had out."""
     had = git(top, "branch", "--show-current").strip()
     exists = subprocess.run(["git", "-C", str(top), "rev-parse", "-q", "--verify", f"refs/heads/{branch}"],
-                            capture_output=True).returncode == 0
+                            capture_output=True, env=HERMETIC_GIT).returncode == 0
     git(top, "switch", "-q", *([branch] if exists else ["-c", branch, start]))
     (top / name).write_text(f"{branch} in {top.name}\n")
     git(top, "add", name)
@@ -1884,6 +1898,9 @@ def on_github(toy: Path, gh: str = "helferline/Backend#7", url: str = "git@githu
     (toy.parent / "bin" / "gh").write_text(FAKE_GH)
     (toy.parent / "bin" / "gh").chmod(0o755)
     (toy.parent / "bin" / "gh.answers").mkdir()
+    # This repo's board, whose query of GitHub is one of the calls `only_read` reads.
+    (toy.parent / "bin" / "board").write_text(f'#!/bin/sh\nexec "{SKILL.parent / "tracker" / "board.py"}" "$@"\n')
+    (toy.parent / "bin" / "board").chmod(0o755)
     answer({"state": "OPEN", "baseRefName": "development", "mergeCommit": None, "commits": []}, backend)
     return backend
 
