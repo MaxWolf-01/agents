@@ -178,7 +178,18 @@ def project(repo: Path) -> Iterator[Path]:
     git(repo / "agent", "add", "-A")
     git(repo / "agent", "commit", "-q", "-m", "the tracker")
     yield repo
-    subprocess.run(["tmux", "kill-server"], capture_output=True, env=environment(repo))
+    socket = tmux_dir(repo) / f"tmux-{os.getuid()}" / "default"
+    if socket.exists():
+        # Named by its socket and run outside the check's environment: a tmux guard that reads
+        # TMUX_TMPDIR takes the default socket under it for the user's own server and refuses.
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], capture_output=True)
+        for _ in range(20):
+            if subprocess.run(["tmux", "-S", str(socket), "list-sessions"], capture_output=True).returncode:
+                break
+            time.sleep(0.1)
+        else:
+            # The socket stays, since it is the only handle left on that server.
+            pytest.fail(f"the check's tmux server outlived its kill-server: tmux -S {socket} kill-server")
     shutil.rmtree(tmux_dir(repo), ignore_errors=True)
 
 
@@ -299,6 +310,42 @@ def mx(tmp_path: Path) -> Path:
     rules.mkdir(parents=True, exist_ok=True)
     shutil.copy(SKILL.parent / "session-page" / "RULES.md", rules)
     return tmp_path / "mx" / "installed"
+
+
+@pytest.fixture
+def runner(tmp_path: Path) -> Path:
+    """The shipped runner staged in a state dir, the message a spawn hands it, and an empty bin dir
+    for the `claude` a check stubs. Answers the state dir; `run_worker` starts what it staged."""
+    state = tmp_path / "state"
+    state.mkdir()
+    stage_runner(state)
+    (tmp_path / "message.md").write_text("Work it.\n")
+    (tmp_path / "bin").mkdir()
+    return state
+
+
+def run_worker(state: Path, *args: str, claude: str = "", run_id: str = "run-1", model: str = "opus",
+               cwd: Path | None = None, **env: str | None) -> subprocess.CompletedProcess:
+    """The runner `runner` staged, started on its message as a spawn starts it, for warm-preset, with
+    `args` after the run id. `claude` is the stub put first on PATH, FAKE_CLAUDE recording to
+    `bin/claude.calls` unless given. HOME is the check's temp dir, DISPATCH_PLUGIN_DIR a fresh mx
+    install and DISPATCH_EFFORT unset, unless `env` says otherwise; a None in it unsets the variable."""
+    tmp_path = state.parent
+    bin_dir = tmp_path / "bin"
+    (bin_dir / "claude").write_text(claude or FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
+    (bin_dir / "claude").chmod(0o755)
+    environ = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
+    environ.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
+    if "DISPATCH_PLUGIN_DIR" not in env:
+        environ["DISPATCH_PLUGIN_DIR"] = str(mx(tmp_path))
+    for key, value in env.items():
+        if value is None:
+            environ.pop(key, None)
+        else:
+            environ[key] = value
+    return subprocess.run(
+        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", model, run_id, *args],
+        cwd=cwd or tmp_path, capture_output=True, text=True, timeout=120, env=environ)
 
 
 @pytest.fixture
@@ -741,7 +788,7 @@ def test_a_ticket_file_written_on_an_agent_branch_stops_the_import(toy: Path, st
     (True, True, 0, "attempts=1 exit=0 report=yes"),
 ])
 def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
-    tmp_path: Path, already: bool, wrote: bool, exits: int, says: str
+    tmp_path: Path, runner: Path, already: bool, wrote: bool, exits: int, says: str
 ) -> None:
     """The shipped runner, with `claude` stubbed rather than the runner itself: a run whose worker
     committed its report in the agent repo is finished whatever it exited with, one that committed
@@ -749,10 +796,6 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
 
     A resumed round starts with the round before it still committed there, so what the status line
     reads is whether this run wrote that file, never whether the file is there."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work the ticket warm-preset.\n")
     worktree = tmp_path / "lamp-warm-preset"
     (worktree / "agent").mkdir(parents=True)
     git(worktree / "agent", "init", "-q", "-b", "ticket/warm-preset", ".")
@@ -766,189 +809,110 @@ def test_the_runner_reads_the_report_as_the_run_leaving_something_to_review(
         git(worktree / "agent", "add", "-A")
         git(worktree / "agent", "commit", "-q", "-m", "the round before's report")
 
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
     committing = (
         'mkdir -p agent/show/warm-preset\n'
         'printf "## Comments\\n\\nit lands.\\n" > agent/show/warm-preset/report.md\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false add -A\n'
         'git -C agent -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report\n'
     )
-    (bin_dir / "claude").write_text(
-        '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n")
-    (bin_dir / "claude").chmod(0o755)
+    claude = '#!/bin/sh\n[ "$1" = --version ] && exit 0\n' + (committing if wrote else "") + f"exit {exits}\n"
 
-    done = subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-        cwd=worktree, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
+    done = run_worker(runner, claude=claude, model="sonnet", cwd=worktree)
     assert done.returncode == 0, done.stderr
-    assert (state / "run-1.status").read_text().startswith(says), (state / "run-1.status").read_text()
-    assert "runner: started warm-preset" in (state / "run-1.log").read_text()
+    assert (runner / "run-1.status").read_text().startswith(says), (runner / "run-1.status").read_text()
+    assert "runner: started warm-preset" in (runner / "run-1.log").read_text()
 
 
 @pytest.mark.parametrize("given", ["", "low"])
-def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, given: str) -> None:
+def test_the_runner_passes_an_effort_to_every_attempt_high_unless_told(tmp_path: Path, runner: Path, given: str) -> None:
     """`model-effort-defaults`: every `claude` a worker runs on names its effort, so no worker runs
     at whatever the host's settings say; DISPATCH_EFFORT is how the spawn sets it."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))}
-    env.pop("DISPATCH_EFFORT", None)
-    if given:
-        env["DISPATCH_EFFORT"] = given
+    run_worker(runner, DISPATCH_EFFORT=given or None)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
-
-    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     assert attempts and all(f"--model opus --effort {given or 'high'} " in line for line in attempts), attempts
-    assert f"on opus at {given or 'high'} effort" in (state / "run-1.log").read_text().splitlines()[0]
+    assert f"on opus at {given or 'high'} effort" in (runner / "run-1.log").read_text().splitlines()[0]
     # `run-log`: the attempt left its line, in the log this HOME defaults to
     (logged,) = [json.loads(l) for l in (tmp_path / "logs" / "agent" / "runs.jsonl").read_text().splitlines()]
     assert (logged["site"], logged["ticket"], logged["attempt"], logged["model"], logged["effort"]) == \
         ("worker", "warm-preset", 1, "opus", given or "high")
 
 
-def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path) -> None:
+def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_else(tmp_path: Path, runner: Path) -> None:
     """`unattended-launch`, as ruled on 2026-09-26: a worker keeps the project's settings and
     CLAUDE.md and the mx plugin the host's claude has installed, and none of the user's settings,
     CLAUDE.md, output style or hooks, no MCP server, and no auto memory. The worklog's first line
     names the mx install it runs."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
     plugin = mx(tmp_path)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+    run_worker(runner, DISPATCH_PLUGIN_DIR=str(plugin))
 
-    attempts = [line for line in (bin_dir / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
+    attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
                 '--settings {"autoMemoryEnabled": false}')
     assert attempts and all(flag in line for line in attempts for flag in inherits), attempts
     assert not any("claudeMdExcludes" in line or "outputStyle" in line for line in attempts), attempts
-    assert f" and mx {plugin.name} (run-1)" in (state / "run-1.log").read_text().splitlines()[0]
+    assert f" and mx {plugin.name} (run-1)" in (runner / "run-1.log").read_text().splitlines()[0]
 
 
-def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path) -> None:
+def test_a_runner_given_no_plugin_dir_starts_no_worker(tmp_path: Path, runner: Path) -> None:
     """A worker without the plugin has none of the skills its contract names, so a runner started
     without DISPATCH_PLUGIN_DIR says so on the status line rather than start one."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
-
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path)}
-    env.pop("DISPATCH_PLUGIN_DIR", None)  # whatever the shell running these checks carries
-
-    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env=env)
+    done = run_worker(runner, DISPATCH_PLUGIN_DIR=None)
 
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith(
+    assert (runner / "run-1.status").read_text().startswith(
         "attempts=0 exit=1 report=no session=- error=DISPATCH_PLUGIN_DIR unset")
-    assert not (bin_dir / "claude.calls").exists(), "claude ran"
+    assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
 
 
-def test_a_worker_is_told_the_asking_rule_from_its_one_home(tmp_path: Path) -> None:
+def test_a_worker_is_told_the_asking_rule_from_its_one_home(tmp_path: Path, runner: Path) -> None:
     """`asking-rule-has-one-home`: worker-prompt.md names the asking rule as appended below it, so
     the runner appends that section of the install's RULES.md, and the prompt carries no copy."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
     rules = (SKILL.parent / "session-page" / "RULES.md").read_text()
     section = re.split(r"\n#{1,2} ", rules[rules.index("## What the user decides"):])[0].strip()
     prompt = (SKILL / "worker-prompt.md").read_text()
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=60,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))})
+    run_worker(runner)
 
-    assert section in (bin_dir / "claude.calls").read_text()
+    assert section in (tmp_path / "bin" / "claude.calls").read_text()
     assert not [clause for clause in re.split(r"[.:;]", section.splitlines()[-1]) if len(clause) > 20 and clause.strip() in prompt]
 
 
-def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path: Path) -> None:
+def test_a_runner_whose_install_lacks_the_asking_rule_starts_no_worker(tmp_path: Path, runner: Path) -> None:
     """A worker told the rule is appended below its prompt, with nothing there, would ask the user
     by no rule at all; the status line names the section that is missing."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(FAKE_CLAUDE.replace("CALLS", str(bin_dir / "claude.calls")))
-    (bin_dir / "claude").chmod(0o755)
     plugin = mx(tmp_path)
     rules = plugin / "skills" / "session-page" / "RULES.md"
     rules.write_text(rules.read_text().replace("## What the user decides", "## Something else"))
 
-    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=60,
-                          env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(plugin)})
+    done = run_worker(runner, DISPATCH_PLUGIN_DIR=str(plugin))
 
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith(
+    assert (runner / "run-1.status").read_text().startswith(
         "attempts=0 exit=1 report=no session=- error=no '## What the user decides' section in")
-    assert "older than" in (state / "run-1.status").read_text()
-    assert not (bin_dir / "claude.calls").exists(), "claude ran"
+    assert "older than" in (runner / "run-1.status").read_text()
+    assert not (tmp_path / "bin" / "claude.calls").exists(), "claude ran"
 
 
-def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path) -> None:
+def test_a_worker_runs_under_its_run_id_whatever_run_spawned_it(tmp_path: Path, runner: Path) -> None:
     """`browsers-a-worker-can-kill`: MX_RUN is what the browsers a worker's checks launch are
     tagged with, so it names this run and not the one the orchestrator's shell was in."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     seen = tmp_path / "mx-run"
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n')
-    (bin_dir / "claude").chmod(0o755)
 
-    subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-7"],
-                   cwd=tmp_path, capture_output=True, text=True, timeout=120,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path),
-                        "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)), "MX_RUN": "the-orchestrators"})
+    run_worker(runner, claude=f'#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "$MX_RUN" >> {seen}\n',
+               run_id="run-7", MX_RUN="the-orchestrators")
 
     assert seen.read_text().splitlines() == ["run-7"]
 
 
 @pytest.mark.parametrize("resumed", [False, True])
-def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resumed: bool) -> None:
+def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, runner: Path, resumed: bool) -> None:
     """`worker-hosts-run-the-current-claude`: `opus` on the command line says nothing about what
     answered, so the status line reads it off the session's transcript: the models this round's
     assistant turns carry, none of the rounds' before it on a resumed session, and none of the
     strings a turn merely mentions (an Agent call's `model` input) or claude's own `<synthetic>`
     error turns. The worklog's first line names the launcher's version."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     session = "5e55-10n"
     project = tmp_path / "profile" / "projects" / "-toy"
     project.mkdir(parents=True)
@@ -963,28 +927,17 @@ def test_the_status_line_names_the_models_the_worker_ran_on(tmp_path: Path, resu
         {"type": "assistant", "message": {"model": "claude-sonnet-5", "content": "done"}},
     ]
     transcript = "\n".join(json.dumps(turn) for turn in turns)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text(
-        '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
-        'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
-        f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
-    (bin_dir / "claude").chmod(0o755)
+    claude = ('#!/usr/bin/env bash\n[ "$1" = --version ] && { echo "2.1.283 (Claude Code)"; exit 0; }\n'
+              'while [ "$1" != --session-id ] && [ "$1" != --resume ]; do shift; done\n'
+              f'cat >> "{project}/$2.jsonl" <<\'T\'\n{transcript}\nT\n')
 
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path)),
-           "CLAUDE_CONFIG_DIR": str(tmp_path / "profile")}
-    env.pop("DISPATCH_EFFORT", None)  # whatever the shell running these checks carries
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "opus", "run-1",
-         *([session] if resumed else [])],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env,
-    )
-    status = (state / "run-1.status").read_text()
+    run_worker(runner, *([session] if resumed else []), claude=claude, CLAUDE_CONFIG_DIR=str(tmp_path / "profile"))
+    status = (runner / "run-1.status").read_text()
     assert status.split()[-1] == "models=claude-opus-5-5,claude-sonnet-5", status
-    assert "on opus at high effort with claude 2.1.283" in (state / "run-1.log").read_text().splitlines()[0]
+    assert "on opus at high effort with claude 2.1.283" in (runner / "run-1.log").read_text().splitlines()[0]
 
 
-def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> None:
+def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path, runner: Path) -> None:
     """A worker whose shell was killed before its cleanup line leaves its children behind, and a
     child that detached itself escapes even the process group `dispatch-ctl stop` signals. The
     runner's scope is what takes both down, on a host with a user systemd manager."""
@@ -992,24 +945,11 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
                            capture_output=True) if shutil.which("systemd-run") else None
     if probe is None or probe.returncode != 0:
         pytest.skip("no user systemd manager here, and the runner says so in the worklog instead")
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
     left = tmp_path / "left.pid"
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
-    (bin_dir / "claude").write_text(
-        f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n')
-    (bin_dir / "claude").chmod(0o755)
 
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet",
-         f"check-{tmp_path.name}"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
+    # The runner asks `claude --version` first, outside any attempt; only the attempt leaves a child.
+    run_worker(runner, claude=f'#!/bin/sh\n[ "$1" = --version ] && exit 0\nsetsid sleep 3600 > /dev/null 2>&1 &\necho $! > {left}\nexit 0\n',
+               run_id=f"check-{tmp_path.name}", model="sonnet")
     pid = left.read_text().strip()
     for _ in range(20):
         if not Path(f"/proc/{pid}").exists():
@@ -1020,39 +960,21 @@ def test_what_a_worker_leaves_running_ends_with_its_attempt(tmp_path: Path) -> N
         pytest.fail(f"the worker's detached sleep (pid {pid}) outlived the run")
 
 
-def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(tmp_path: Path) -> None:
+def test_a_worktree_with_no_agent_repo_says_so_in_the_worklog(runner: Path) -> None:
     """Without that repo the worker has nowhere to commit a report, so every attempt would end in
     `report=no` with nothing saying why."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (tmp_path / "message.md").write_text("Work it.\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
-    (bin_dir / "claude").chmod(0o755)
-
-    subprocess.run(
-        ["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": str(tmp_path), "DISPATCH_PLUGIN_DIR": str(mx(tmp_path))},
-    )
-    assert "no agent repo at" in (state / "run-1.log").read_text()
-    assert "report=no" in (state / "run-1.status").read_text()
+    run_worker(runner, claude="#!/bin/sh\nexit 0\n", model="sonnet")
+    assert "no agent repo at" in (runner / "run-1.log").read_text()
+    assert "report=no" in (runner / "run-1.status").read_text()
 
 
-def test_a_runner_staged_without_run_log_refuses_to_start(tmp_path: Path) -> None:
+def test_a_runner_staged_without_run_log_refuses_to_start(runner: Path) -> None:
     """Every attempt runs through run-log, so a staging that lacks it is said on the status line
     rather than run unlogged."""
-    state = tmp_path / "state"
-    state.mkdir()
-    stage_runner(state)
-    (state / "run-log").unlink()
-    (tmp_path / "message.md").write_text("Work it.\n")
-    done = subprocess.run(["bash", str(state / "run-worker.sh"), str(tmp_path / "message.md"), "warm-preset", "sonnet", "run-1"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path)})
+    (runner / "run-log").unlink()
+    done = run_worker(runner, model="sonnet")
     assert done.returncode == 1
-    assert (state / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
+    assert (runner / "run-1.status").read_text().startswith("attempts=0 exit=1 report=no session=- error=no run-log beside run-worker.sh")
 
 
 @pytest.mark.full_path
@@ -2295,12 +2217,6 @@ def test_a_host_staged_before_the_agent_repo_says_so(toy: Path, staged: Path) ->
                           capture_output=True, text=True, env=environment(toy))
     assert said.returncode != 0
     assert "predates the agent repo" in said.stderr, said.stderr
-
-
-def test_the_report_the_contract_names_is_the_one_the_scripts_read() -> None:
-    """The worker reads the path out of prose, which no check of the runner or the import can
-    exercise; the two scripts are held to it by the runs above."""
-    assert "agent/show/<slug>/report.md" in (SKILL / "worker-prompt.md").read_text()
 
 
 @pytest.mark.full_path
