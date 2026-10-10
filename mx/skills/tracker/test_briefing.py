@@ -20,7 +20,6 @@ not been told about, once both windows have passed, reaches it.
 
 import json
 import shlex
-import sys
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -28,8 +27,6 @@ from pathlib import Path
 
 import pytest
 from hypothesis import given, strategies as st
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 import briefing
 from briefing import (CADENCE, DENIED, EFFORT, IDLE, MODEL, PING_CAP, QUIET, TOOLS, UNCHANGED, Briefing, cache_path,

@@ -32,7 +32,6 @@ import shlex
 import shutil
 import socket
 import subprocess
-import sys
 import threading
 import urllib.parse
 import urllib.request
@@ -41,8 +40,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 import board
 import tracker as tracker_module

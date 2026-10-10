@@ -1,10 +1,12 @@
-"""Every module the checks under mx import by its bare name names one file. Run: pytest
+"""Every module the scripts under mx import by its bare name names one file. Run: pytest
 test_module_names.py, or `make check`.
 
-A skill's checks put their own directory on the import path, and a run collects several skills'
-checks into one process, so two files of one name shadow each other: whichever directory went on
-the path first wins for every importer. `conftest.py` is the name every skill shares, and pytest
-loads each by its path, so it is the one file no check imports by name.
+The scripts import each other by bare name, across skills too (the board reads the session page,
+which reads the tracker), and `pytest.ini` puts every directory a check imports from on the path of
+one test process. So two scripts of one name shadow each other, at runtime and in a run: whichever
+directory comes first on the path wins for every importer. Test files and conftests are imported by
+their path, so their names may repeat, but they sit in those same directories and are the files no
+check imports by name.
 """
 
 import ast
@@ -14,10 +16,10 @@ from pathlib import Path
 MX = Path(__file__).resolve().parent
 
 
-def test_no_two_modules_under_mx_share_a_name() -> None:
+def test_no_two_scripts_under_mx_share_a_name() -> None:
     by_name = defaultdict(list)
     for path in MX.rglob("*.py"):
-        if path.name != "conftest.py":
+        if path.name != "conftest.py" and not path.name.startswith("test_"):
             by_name[path.stem].append(path.relative_to(MX))
     assert {name: paths for name, paths in by_name.items() if len(paths) > 1} == {}
 
