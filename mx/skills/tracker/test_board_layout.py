@@ -56,21 +56,18 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-SHOW = Path(__file__).resolve().parents[1] / "show"
-sys.path[:0] = [str(Path(__file__).parent), str(SHOW)]
-
 from board import PAGE, render
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
+SHOW = Path(__file__).resolve().parents[1] / "show"
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range

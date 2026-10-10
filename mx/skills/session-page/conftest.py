@@ -1,21 +1,17 @@
-"""What the session page's checks share: the path entry that makes the modules beside them
-importable, a session someone is sitting at whose prose reviewer is stubbed, and the worked example
-the seams read. The reviewer stub sits at `turn_review.review`, the one call that reaches a model."""
+"""What the session page's checks share: a session someone is sitting at whose prose reviewer is
+stubbed, and the worked example the seams read. The reviewer stub sits at `turn_review.review`, the one call that reaches a model."""
 
 import json
 import os
 import shutil
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-import turn_review  # noqa: E402
-from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED  # noqa: E402
-from session_page import SESSIONS  # noqa: E402
+import turn_review
+from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED
+from session_page import SESSIONS
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

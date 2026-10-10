@@ -15,7 +15,6 @@ record, the messages that turn answered.
 import html
 import json
 import re
-import sys
 import time
 from datetime import UTC, datetime
 from collections.abc import Iterator
@@ -23,8 +22,6 @@ from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 from session_page import Chat, RecordError, chat_path, chat_record, read_chat, render_session
 from session_checks import messages_of, rows_of, sections_of, text_of, view_of

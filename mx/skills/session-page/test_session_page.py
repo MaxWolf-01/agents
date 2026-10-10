@@ -25,15 +25,12 @@ import itertools
 import json
 import re
 import shutil
-import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from hypothesis import given, settings, strategies as st
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 from session_checks import SESSION, elements, rows_of, sections_of, text_of, turns_on, view_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, chat_path, chat_record, render_session

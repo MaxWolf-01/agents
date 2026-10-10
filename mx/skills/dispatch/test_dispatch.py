@@ -23,7 +23,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -31,13 +30,11 @@ from typing import Literal
 
 import pytest
 
+import tracker
 from dispatch_checks import mx, stage_runner
 
 SKILL = Path(__file__).parent
 DISPATCH = SKILL / "dispatch"
-sys.path.insert(0, str(SKILL.parent / "tracker"))
-
-import tracker  # noqa: E402
 
 # Git with no configuration of the machine's, for the commits a check makes and the ones dispatch makes in
 # it: a hook or a setting of whoever runs the checks would write into the toy's history, which the board reads.
