@@ -37,9 +37,10 @@ sys.path.insert(0, str(SKILL.parent / "tracker"))
 
 import tracker  # noqa: E402
 
-# The toy's git as no user's configuration leaves it: a hook or a setting of whoever runs the checks
-# would write into the toy's history, which the board reads.
-HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null"}
+# Git with no configuration of the machine's, for the commits a check makes and the ones dispatch makes in
+# it: a hook or a setting of whoever runs the checks would write into the toy's history, which the board reads.
+HERMETIC_GIT = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false"}
 # Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
 # fresh cache puts a full dependency install in front of every tracker and board a check runs.
 UV_CACHE = subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True, check=True).stdout.strip()
@@ -124,7 +125,7 @@ esac
 def git(at: Path, *args: str) -> str:
     done = subprocess.run(
         ["git", "-C", str(at), "-c", "user.email=toy@toy", "-c", "user.name=toy",
-         "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "maintenance.auto=false", *args],
+         "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
         capture_output=True, text=True, env=HERMETIC_GIT,
     )
     assert done.returncode == 0, f"git {' '.join(args)}: {done.stderr}"
@@ -230,7 +231,7 @@ def environment(toy: Path, **extra: str) -> dict[str, str]:
     (toy.parent / "home").mkdir(exist_ok=True)
     plugin = mx(toy.parent)
     tmux_dir(toy).mkdir(exist_ok=True)
-    env = {**os.environ, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE, "GIT_CONFIG_GLOBAL": "/dev/null",
+    env = {**HERMETIC_GIT, "HOME": str(toy.parent / "home"), "UV_CACHE_DIR": UV_CACHE,
            "JOB_STATE_DIR": str(toy.parent / "jobs"), "TMUX_TMPDIR": str(tmux_dir(toy)),
            "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "DISPATCH_PLUGIN_DIR": str(plugin), **extra}
