@@ -1140,6 +1140,22 @@ def test_a_project_whose_agent_directory_is_not_a_repo_is_refused_by_name(toy: P
 
 
 @pytest.mark.full_path
+def test_a_round_that_built_nothing_is_no_landing(toy: Path, staged: Path) -> None:
+    """A worker that died before its first commit: both branches are the base, so there is no range,
+    nothing to render and nothing to rule on, and the ticket keeps the claim it had."""
+    (staged.parent / "run-worker.sh").write_text(RUNNER)  # starts, logs, leaves both repos untouched
+    run(toy, "claim", "warm-preset")
+    assert spawn(toy, staged, "warm-preset", "Work it.\n").returncode == 0
+    waited(toy)
+
+    assert run(toy, "fetch", "warm-preset").returncode == 0
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 0, said.stderr
+    assert "built nothing to review" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+
+
+@pytest.mark.full_path
 def test_a_round_with_no_code_gets_no_review_page(toy: Path, staged: Path) -> None:
     """A research ticket's round: the agent branch carries the report and nothing in the code repo
     moved, so there is no diff of code to show and `review` says so rather than rendering one. A

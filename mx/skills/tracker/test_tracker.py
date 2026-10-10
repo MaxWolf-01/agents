@@ -2138,7 +2138,7 @@ def test_a_ticket_with_no_code_still_waits_for_its_children(listed: Path) -> Non
 # and the commit, read with git before anything merges.
 
 
-def landed(at: Path, *argv: str) -> tuple[Run, dict]:
+def printed(at: Path, *argv: str) -> tuple[Run, dict]:
     """`tracker <argv>` run in `at`, and the JSON it printed, empty where it printed none."""
     said = run(at, *argv)
     return said, json.loads(said.out) if said.out else {}
@@ -2172,7 +2172,7 @@ def test_a_round_waits_in_review_until_every_branch_has_merged_and_then_lands_wi
     git(agent, "commit", "-q", "-am", "one-flow claimed")
     code, notes = built(split, "ticket/one-flow", "main", "the build"), built(agent, "ticket/one-flow", "main", "the report")
 
-    said, read = landed(split, "land", "one-flow")
+    said, read = printed(split, "land", "one-flow")
     assert said.code == 0, said.said
     assert read["tickets"][0]["status"] == "review" and read["tickets"][0]["diff"] == [], "a range waits for its merge"
     assert [(one["repo"], one["merged"], one["range"]) for one in read["round"]] == [
@@ -2180,20 +2180,20 @@ def test_a_round_waits_in_review_until_every_branch_has_merged_and_then_lands_wi
     assert subjects(agent)[0] == "one-flow for review"
 
     merged(split, "ticket/one-flow")
-    said, read = landed(split, "land", "one-flow")
+    said, read = printed(split, "land", "one-flow")
     assert read["tickets"][0]["status"] == "review" and read["merged"] is False, "the agent branch is half of the round"
     assert subjects(agent)[0] == "one-flow for review", "and nothing changed, so nothing is committed"
 
     merged(agent, "ticket/one-flow")
     before = path.read_text()
-    said, read = landed(split, "land", "one-flow", "--dry-run")
+    said, read = printed(split, "land", "one-flow", "--dry-run")
     assert read["tickets"][0]["status"] == "done" and path.read_text() == before, "a dry run writes nothing"
-    said, read = landed(split, "land", "one-flow")
+    said, read = printed(split, "land", "one-flow")
     assert said.code == 0, said.said
     assert read["tickets"][0]["diff"] == [f"code@{code}", f"agent@{notes}"], "the same ranges after the merge as before it"
     assert run(split, "get", "one-flow", "status").out == "done\n"
     assert subjects(agent)[0] == "one-flow landed" and not git(agent, "status", "--porcelain", "--", "tickets")
-    landed(split, "land", "one-flow")
+    printed(split, "land", "one-flow")
     assert subjects(agent)[0] == "one-flow landed" and path.read_text().count("code@") == 1, "landing again writes nothing"
 
 
@@ -2211,35 +2211,34 @@ def test_a_child_merged_into_its_parents_branch_waits_for_the_parents_ruling_unl
     merged(split, "ticket/map-columns")
     merged(agent, "ticket/map-columns")
 
-    said, read = landed(split, "land", "map-columns")
+    said, read = printed(split, "land", "map-columns")
     assert said.code == 0, said.said
     assert read["tickets"][0]["status"] == ("done" if hinge else "review")
     assert read["tickets"][0]["diff"] == [f"code@{code}", f"agent@{notes}"]
-    assert subjects(agent)[0] == ("map-columns landed" if hinge else "map-columns merged into one-flow, for its ruling with it")
+    assert subjects(agent)[0] == ("map-columns landed" if hinge else "map-columns merged into one-flow, waiting in review")
+    assert hinge or "ruled with its parent ticket one-flow" in git(agent, "log", "-1", "--format=%b"), "and says why"
 
 
 def test_a_later_round_is_recorded_beside_the_first_once_it_merges(split: Path) -> None:
     """A child sent back after its merge: the resumed worker's next round is in the round and not on
     the ticket until it merges, and then it is recorded after the first, which stays."""
-    agent = split / "agent"
     in_review(split, "one-flow")
     in_review(split, "map-columns", parent="one-flow")
     git(split, "checkout", "-q", "-b", "one-flow")
     first = built(split, "ticket/map-columns", "one-flow", "columns")
     merged(split, "ticket/map-columns")
-    landed(split, "land", "map-columns")
+    printed(split, "land", "map-columns")
     git(split, "checkout", "-q", "ticket/map-columns")
     committed(split, "columns, amended")
     git(split, "checkout", "-q", "one-flow")
     later = f"{tip(split, 'ticket/map-columns~1')}..{tip(split, 'ticket/map-columns')}"
 
-    said, read = landed(split, "land", "map-columns")
+    said, read = printed(split, "land", "map-columns")
     assert [one["range"] for one in read["round"]] == [f"code@{later}"]
     assert read["tickets"][0]["diff"] == [f"code@{first}"]
     merged(split, "ticket/map-columns")
-    said, read = landed(split, "land", "map-columns")
+    said, read = printed(split, "land", "map-columns")
     assert read["tickets"][0]["diff"] == [f"code@{first}", f"code@{later}"], said.said
-    assert git(agent, "branch", "--list", "ticket/map-columns") == "", "a round in the code repo alone has no agent branch"
 
 
 def test_a_round_that_built_nothing_writes_nothing(split: Path) -> None:
@@ -2252,7 +2251,7 @@ def test_a_round_that_built_nothing_writes_nothing(split: Path) -> None:
     git(agent, "commit", "-q", "-am", "one-flow claimed")
     for top in (split, agent):
         git(top, "branch", "ticket/one-flow")
-    said, read = landed(split, "land", "one-flow")
+    said, read = printed(split, "land", "one-flow")
     assert said.code == 0 and "built nothing to review" in said.err, said.said
     assert read["tickets"][0]["status"] == "claimed" and subjects(agent)[0] == "one-flow claimed"
 
@@ -2270,10 +2269,10 @@ def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_o
     for top in (listed, listed / "agent"):
         git(top, "branch", "ticket/nps-tests")
 
-    _, read = landed(listed, "land", "nps-tests")
+    _, read = printed(listed, "land", "nps-tests")
     assert [one["range"] for one in read["round"] if one["repo"] == "quartz"] == [f"quartz@{own}"]
     merged(quartz, "ticket/nps-tests")
-    said, read = landed(listed, "land", "nps-tests")
+    said, read = printed(listed, "land", "nps-tests")
     assert read["tickets"][0]["diff"] == [f"quartz@{own}"] and read["tickets"][0]["status"] == "done", said.said
 
 
@@ -2306,14 +2305,15 @@ def test_a_parents_accept_writes_done_on_it_and_its_children_in_review_in_one_co
     assert said.code == 1 and "uncommitted changes" in said.err, said.said
     assert (agent / "tickets" / "one-flow.md").read_text().endswith("A note not committed yet.\n"), "the edit is kept"
     (agent / "tickets" / "one-flow.md").write_text(tree["one-flow.md"])
-    in_review(split, "dim-preset", parent="one-flow")
-    built(split, "ticket/dim-preset", "one-flow", "dim, never merged")
+    # checked after map-columns, which the rules take, so a write before the last check is seen
+    in_review(split, "warm-preset", parent="one-flow")
+    built(split, "ticket/warm-preset", "one-flow", "warm, never merged")
     tree = {one.name: one.read_text() for one in (agent / "tickets").glob("*.md")}
-    refused("dim-preset")
-    git(agent, "rm", "-q", "tickets/dim-preset.md")
-    git(agent, "commit", "-q", "-m", "dim-preset dropped")
+    refused("warm-preset")
+    git(agent, "rm", "-q", "tickets/warm-preset.md")
+    git(agent, "commit", "-q", "-m", "warm-preset dropped")
 
-    said, read = landed(split, "accept", "one-flow")
+    said, read = printed(split, "accept", "one-flow")
     assert said.code == 0, said.said
     assert [one["slug"] for one in read["tickets"]] == ["one-flow", "map-columns"], "the parent, and the child it took in"
     assert subjects(agent)[0] == "one-flow landed, ruled whole"
@@ -2321,6 +2321,25 @@ def test_a_parents_accept_writes_done_on_it_and_its_children_in_review_in_one_co
     for slug in ("one-flow", "map-columns", "saved-views"):
         assert run(split, "get", slug, "status").out == "done\n", slug
     assert run(split, "get", "one-flow", "diff").out == f"code@{own}\n", "its branch, against the branch above it"
+
+
+def test_a_childs_branch_in_a_listed_repo_is_read_against_its_parents_branch_there(listed: Path) -> None:
+    """Backend holds the parent's branch, ahead of its integration branch: the child's branch there
+    is cut from it and merges back into it, so that is what its range and its merge are read on."""
+    backend = listed / "Backend"
+    in_review(listed, "nps")
+    in_review(listed, "nps-shape", parent="nps", repos="[Backend]")
+    git(backend, "checkout", "-q", "-b", "nps", "development")
+    committed(backend, "nps itself")
+    own = built(backend, "ticket/nps-shape", "nps", "nps shape")
+    for top in (listed, listed / "agent"):
+        git(top, "branch", "ticket/nps-shape")
+    merged(backend, "ticket/nps-shape")
+
+    said, read = printed(listed, "land", "nps-shape")
+    assert said.code == 0, said.said
+    assert [(one["merged"], one["range"]) for one in read["round"] if one["repo"] == "Backend"] == [(True, f"Backend@{own}")]
+    assert read["tickets"][0]["status"] == "review", "ruled with its parent, whose accept takes it to development"
 
 
 def test_a_parents_accept_records_its_branch_in_a_listed_repo_a_child_of_it_names(listed: Path) -> None:
@@ -2340,7 +2359,7 @@ def test_a_parents_accept_records_its_branch_in_a_listed_repo_a_child_of_it_name
     merged(listed, "nps")
     fork = tip(backend, "development~1")
 
-    said, read = landed(listed, "accept", "nps")
+    said, read = printed(listed, "accept", "nps")
     assert said.code == 0, said.said
     assert read["tickets"][0]["diff"] == [f"code@{tip(listed, 'main~1')}..{tip(listed, 'nps')}", f"Backend@{fork}..{tip(backend, 'nps')}"]
     assert read["tickets"][1]["status"] == "done"

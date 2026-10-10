@@ -422,18 +422,13 @@ def set_fields(
             raise Refused([f"`{key}` is no ticket field; a ticket declares {', '.join(FIELDS)}"])
         if appended and key not in LIST_FIELDS:
             raise Refused([f"`{key}` holds one value, not a list; `{key}=...` sets it"])
-        if key == "status":
-            refuse_transition(ticket, value, tracker)
         if appended:
             # what this write has appended so far, so two appends to one field keep both: a round
             # lands in two repos and writes a range for each
             grown.setdefault(key, [str(one) for one in ticket.meta.get(key) or []]).append(value)
         changes[key] = rendered(grown[key]) if appended else value
         said.append(f"{key}: {rendered(ticket.meta[key])} → {changes[key]}" if key in ticket.meta else f"{key}: {changes[key]}")
-    was = ticket.path.read_text()
-    written = written_with(was, changes)
-    after = read(ticket.path, written)
-    refuse(caused(ticket, after, tracker, was, written))
+    _, written = written_into(ticket, changes, tracker)
     ticket.path.write_text(written)
     print(f"{slug}: " + "; ".join(said))
     return 0
@@ -480,8 +475,7 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 
 # ---- landing ---------------------------------------------------------------
 # What a merge gives a ticket: its status and its `diff:` ranges, decided here and written in one
-# write. `/mx:dispatch` calls `land` after every fetch and every merge, and `accept` on the user's
-# accept of a parent ticket ruled whole.
+# write. `dispatch review` and `dispatch accept` call these.
 
 
 @app.command(name="land")
@@ -489,11 +483,11 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     """Write what the merge of a ticket's round gives it, in one write committed in the agent repo.
     The round is the ticket's `ticket/<slug>` branch in the code repo this runs in, in the agent
     repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
-    branch it cut from, the ticket gets the round's ranges and is `done` where its work has reached
-    the branch the user's accept merges it into, the rule `set` refuses every other `done` by; it
-    stays in `review` otherwise, a child ticket merged into its parent's branch waiting for its
-    parent's ruling. Unmerged, it waits in `review`. A round whose branches carry no commit built
-    nothing, and nothing is written.
+    branch it cut from, the ticket gets the round's ranges. It is `done` where its work has reached
+    the branch the user's accept merges it into, which is the rule `set` holds every `done` to. It
+    stays in `review` otherwise, saying why: a child ticket merged into its parent's branch waits
+    there for its parent's ruling. Unmerged, it waits in `review`. A round whose branches carry no
+    commit built nothing, and nothing is written.
 
     Prints the ticket as `data <slug>` does, as the landing left it, and the round beside it:
 
@@ -511,19 +505,16 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     ticket = tracker.ticket(slug)
     branches = round_of(ticket, tracker)
     merged = all(one.merged for one in branches)
-    recorded = [str(one) for one in ticket.meta.get("diff") or []]
     changes, message = {}, ""
     if not any(one.range for one in branches):
         print(f"tracker: no branch of {slug} carries a commit, so this round built nothing to review", file=sys.stderr)
     elif merged:
-        if new := [one.range for one in branches if one.range and one.range not in recorded]:
-            changes["diff"] = rendered(recorded + new)
-        ranged = read(ticket.path, written_with(ticket.path.read_text(), changes))
-        why = unlanded(ranged, tracker.with_ticket(ranged))
+        changes = ranged(ticket, branches)
+        why = unlanded(after := read(ticket.path, written_with(ticket.path.read_text(), changes)), tracker.with_ticket(after))
         if ticket.status not in ("done", now := "review" if why else "done"):
             changes["status"] = now
         base = head(repos_of(tracker)[0])
-        message = f"{slug} merged into {base}, for its ruling with it" if why else f"{slug} landed"
+        message = f"{slug} merged into {base}, waiting in review\n\n{why}" if why else f"{slug} landed"
         if why:
             print(f"tracker: {slug} merged into {base} and waits in review: {why}", file=sys.stderr)
     elif ticket.status != "review":
@@ -544,8 +535,9 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
     branch has merged there --no-ff: `done` on the parent, with its ranges, and on every child of it
     in `review`, in one commit, or on none of them. The parent's ranges are its own branch, named by
     its slug alone, measured against the branch above it, in the code repo and, where a ticket of
-    the tree names a listed repo, in each listed repo holding that branch. A ticket the rules refuse
-    `done`, a child in review not merged into the parent's branch among them, refuses the whole.
+    the tree names a listed repo, in each listed repo holding that branch. Where the rules refuse
+    any one of them `done`, the whole is refused: a child in review that never merged into the
+    parent's branch is one.
 
     Prints the tickets it wrote as `data` does.
 
@@ -565,8 +557,6 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
         for repo in (resolved(tracker.root, name) for name in repo_list(tracker.root)):
             if parent_branch(repo.path, slug):
                 own.append(branch_in(repo.name, repo.path, git(repo.path, "rev-parse", slug).strip(), listed_bases(repo, parent.parent)))
-    recorded = [str(one) for one in parent.meta.get("diff") or []]
-    ranges = recorded + [one.range for one in own if one.range and one.range not in recorded]
     ruled = [child for child in tracker.children(slug) if child.status == "review"]
     top = toplevel(tracker.root)
     paths = [str(one.path.relative_to(top)) for one in (parent, *ruled)]
@@ -576,7 +566,7 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
     # each write checked against the tree as the ones before it leave it, the parent's last, as its
     # own `done` waits on its children's; none written before every one of them is taken
     for one, changes in [*((child, {"status": "done"}) for child in ruled),
-                         (parent, {"status": "done", **({"diff": rendered(ranges)} if ranges != recorded else {})})]:
+                         (parent, {"status": "done", **ranged(parent, own)})]:
         writes.append(written_into(one, changes, tracker))
         tracker = tracker.with_ticket(writes[-1][0])
     for after, written in writes:
@@ -587,8 +577,8 @@ def accept(slug: Annotated[str, tyro.conf.Positional]) -> int:
 
 
 def written_into(ticket: Ticket, changes: dict[str, str], tracker: Tracker) -> tuple[Ticket, str]:
-    """The ticket as `changes` would leave it, and its file's text, refused what `set` would refuse
-    of the same write: a status the transitions do not allow, and breakage the write would make."""
+    """The ticket as `changes` would leave it, and its file's text, refused what every write is
+    refused: a status the transitions do not allow, and breakage the write would make."""
     if "status" in changes:
         refuse_transition(ticket, changes["status"], tracker)
     was = ticket.path.read_text()
@@ -596,6 +586,14 @@ def written_into(ticket: Ticket, changes: dict[str, str], tracker: Tracker) -> t
     after = read(ticket.path, written)
     refuse(caused(ticket, after, tracker, was, written))
     return after, written
+
+
+def ranged(ticket: Ticket, branches: Sequence[Branch]) -> dict[str, str]:
+    """The `diff:` a ticket gets from `branches`: each range it does not record yet, after the ones it
+    does; nothing where it records them all."""
+    recorded = [str(one) for one in ticket.meta.get("diff") or []]
+    new = [one.range for one in branches if one.range and one.range not in recorded]
+    return {"diff": rendered(recorded + new)} if new else {}
 
 
 def commit_tickets(tracker: Tracker, message: str, paths: Sequence[Path]) -> None:
