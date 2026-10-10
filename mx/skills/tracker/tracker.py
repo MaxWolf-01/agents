@@ -483,11 +483,12 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     """Write what the merge of a ticket's round gives it, in one write committed in the agent repo.
     The round is the ticket's `ticket/<slug>` branch in the code repo this runs in, in the agent
     repo, and in each listed repo its `repos:` names. Once every one of them has merged into the
-    branch it cut from, the ticket gets the round's ranges. It is `done` where its work has reached
-    the branch the user's accept merges it into, which is the rule `set` holds every `done` to. It
-    stays in `review` otherwise, saying why: a child ticket merged into its parent's branch waits
-    there for its parent's ruling. Unmerged, it waits in `review`. A round whose branches carry no
-    commit built nothing, and nothing is written.
+    branch it cut from, the ticket gets the round's ranges and is `done`, except a child ticket that
+    is no hinge, merged into its parent's branch: that one waits in `review` for its parent's ruling.
+    A `done` is held to the rule `set` holds every `done` to, that the work has reached the branch
+    the user's accept merges it into, and a merged round that rule refuses is refused whole, with
+    the reason, and nothing is written. Unmerged, the ticket waits in `review`. A round whose
+    branches carry no commit built nothing, and nothing is written.
 
     Prints the ticket as `data <slug>` does, as the landing left it, and the round beside it:
 
@@ -510,13 +511,11 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
         print(f"tracker: no branch of {slug} carries a commit, so this round built nothing to review", file=sys.stderr)
     elif merged:
         changes = ranged(ticket, branches)
-        why = unlanded(after := read(ticket.path, written_with(ticket.path.read_text(), changes)), tracker.with_ticket(after))
-        if ticket.status not in ("done", now := "review" if why else "done"):
-            changes["status"] = now
         base = head(repos_of(tracker)[0])
-        message = f"{slug} merged into {base}, waiting in review\n\n{why}" if why else f"{slug} landed"
-        if why:
-            print(f"tracker: {slug} merged into {base} and waits in review: {why}", file=sys.stderr)
+        ruled_with_parent = ticket.parent == base and not ticket.hinge
+        if ticket.status not in ("done", now := "review" if ruled_with_parent else "done"):
+            changes["status"] = now
+        message = f"{slug} merged into {base}, for its ruling with it" if ruled_with_parent else f"{slug} landed"
     elif ticket.status != "review":
         changes["status"], message = "review", f"{slug} for review"
     after, written = written_into(ticket, changes, tracker)

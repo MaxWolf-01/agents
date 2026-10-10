@@ -1461,6 +1461,19 @@ def test_a_page_an_earlier_review_rendered_over_the_tickets_ranges_is_rendered_a
     assert f"{toy}@{cut[:7]}..{tip[:7]}" in page.read_text()
 
 
+def test_a_merged_round_the_tracker_refuses_done_fails_the_review_and_says_why(toy: Path) -> None:
+    """A round merged before any report reached the ticket, which is still claimed: the merge asks
+    for `done`, the tracker refuses it, and the review fails with the tracker's reason rather than
+    reading as a build waiting in review."""
+    claimed_with_code(toy)
+    for top in (toy, toy / "agent"):
+        merged_in(top, "main", "ticket/warm-preset")
+    said = run(toy, "review", "warm-preset")
+    assert said.returncode == 1 and "warm-preset claimed → done" in said.stderr, said.stderr
+    assert status_of(toy, "warm-preset") == "claimed"
+    assert not (toy.parent / "bin" / "diffview.args").exists(), "and renders nothing"
+
+
 # The building stub in a worktree holding `Backend` nested in it and `jarvis` beside it, as a spawn
 # of a ticket naming both places them: a commit in each, then the report.
 BUILDING_LISTED = BUILDING.replace(

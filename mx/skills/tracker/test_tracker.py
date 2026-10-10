@@ -1326,18 +1326,21 @@ def test_p2_a_ticket_is_done_only_where_its_accept_merges_it(
 def test_p2_a_landing_writes_done_exactly_where_the_accept_merges_the_ticket(
     tickets: Path, repo: Path, tree: list[Leaf], up: bool, nested: bool, where: str
 ) -> None:
-    """`speculative-first#P2` for the landing, over the trees the refusal side is checked on: a leaf
-    is landed from the branch it merges into, the parent's, and comes out `done` exactly where its
-    `done` is accepted there, in `review` everywhere else. Merged into the parent's branch and seen
-    from main, a leaf carries no merge of its own on main, so its landing there writes nothing."""
+    """`speculative-first#P2` for the landing, over the trees the refusal side is checked on. A leaf
+    is landed from the branch it merges into, the parent's: there a hinge comes out `done`, ruled
+    alone, and every other leaf waits in `review` for the parent's ruling, as `/mx:tracker`'s State
+    has it; and no landing writes `done` where the refusal side would not take it. Merged into the
+    parent's branch and seen from main, a leaf carries no merge of its own on main, so its landing
+    there writes nothing."""
     grown(repo, tickets, tree, "review", up, nested, where)
     reaching = accepted(tree, up, nested, where)
     for leaf in tree:
         said = run(repo, "land", leaf.slug, "--dry-run")
         assert said.code == 0, (leaf, said.said)
         status = json.loads(said.out)["tickets"][0]["status"]
-        assert status == ("done" if leaf.merged and where == "one-flow" and reaching[leaf.slug] else "review"), \
+        assert status == ("done" if leaf.merged and where == "one-flow" and leaf.hinge else "review"), \
             (leaf, up, nested, where, said.err)
+        assert status == "review" or reaching[leaf.slug], (leaf, up, nested, where)
 
 
 @given(tree=leaves(("open", "claimed", "review", "done")))
@@ -2215,8 +2218,49 @@ def test_a_child_merged_into_its_parents_branch_waits_for_the_parents_ruling_unl
     assert said.code == 0, said.said
     assert read["tickets"][0]["status"] == ("done" if hinge else "review")
     assert read["tickets"][0]["diff"] == [f"code@{code}", f"agent@{notes}"]
-    assert subjects(agent)[0] == ("map-columns landed" if hinge else "map-columns merged into one-flow, waiting in review")
-    assert hinge or "ruled with its parent ticket one-flow" in git(agent, "log", "-1", "--format=%b"), "and says why"
+    assert subjects(agent)[0] == ("map-columns landed" if hinge else "map-columns merged into one-flow, for its ruling with it")
+
+
+def test_a_child_landed_on_the_branch_above_its_parent_is_done_there(split: Path) -> None:
+    """A parent with no branch of its own, so its child is cut from main and merged back there: that
+    is the branch the accept merges it into, and nothing waits for the parent's ruling."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    in_review(split, "map-columns", parent="one-flow")
+    code, notes = built(split, "ticket/map-columns", "main", "columns"), built(agent, "ticket/map-columns", "main", "report")
+    merged(split, "ticket/map-columns")
+    merged(agent, "ticket/map-columns")
+    said, read = printed(split, "land", "map-columns")
+    assert said.code == 0, said.said
+    assert (read["tickets"][0]["status"], read["tickets"][0]["diff"]) == ("done", [f"code@{code}", f"agent@{notes}"])
+
+
+@pytest.mark.parametrize("held", ["a child not merged", "no report imported"])
+def test_a_merged_round_the_done_rule_refuses_is_refused_with_the_reason_and_nothing_is_written(
+    split: Path, held: str
+) -> None:
+    """Not a child waiting on its parent's ruling, so its merge asks for `done`, and what refuses that
+    is a failure to read, never a build waiting in review: a ticket of its own whose child never
+    merged into its branch, or a round merged before its worker's report was imported."""
+    agent = split / "agent"
+    in_review(split, "one-flow")
+    if held == "a child not merged":
+        in_review(split, "map-columns", parent="one-flow")
+        built(split, "ticket/map-columns", "main", "columns, never merged")
+    else:
+        path = agent / "tickets" / "one-flow.md"
+        path.write_text(path.read_text().replace("status: review", "status: claimed"))
+        git(agent, "commit", "-q", "-am", "one-flow claimed")
+    built(split, "ticket/one-flow", "main", "the flow")
+    merged(split, "ticket/one-flow")
+    tree = {one.name: one.read_text() for one in (agent / "tickets").glob("*.md")}
+    before = subjects(agent)
+
+    said = run(split, "land", "one-flow")
+    says = "map-columns neither done nor in review merged" if held == "a child not merged" else "claimed → done"
+    assert said.code == 1 and says in said.err and said.out == "", said.said
+    assert {one.name: one.read_text() for one in (agent / "tickets").glob("*.md")} == tree
+    assert subjects(agent) == before
 
 
 def test_a_later_round_is_recorded_beside_the_first_once_it_merges(split: Path) -> None:
@@ -2332,6 +2376,7 @@ def test_a_childs_branch_in_a_listed_repo_is_read_against_its_parents_branch_the
     git(backend, "checkout", "-q", "-b", "nps", "development")
     committed(backend, "nps itself")
     own = built(backend, "ticket/nps-shape", "nps", "nps shape")
+    git(listed, "checkout", "-q", "-b", "nps")  # landed from the parent's branch, as the orchestrator does
     for top in (listed, listed / "agent"):
         git(top, "branch", "ticket/nps-shape")
     merged(backend, "ticket/nps-shape")
