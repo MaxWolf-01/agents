@@ -16,7 +16,6 @@ for which session; the hub is absent unless a check starts a stand-in of it on a
 
 import io
 import json
-import html
 import os
 import re
 import socket
@@ -39,10 +38,10 @@ import session_page
 import stop_hook
 import turn_review
 from session_checks import (
-    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, logged, messages_of, payload, unreachable,
-    with_write,
+    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, elements, logged, messages_of, payload,
+    turns_on, unreachable, view_of, with_write,
 )
-from session_page import PAGE, PREVIOUS, SESSIONS, render_session
+from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
 
 
@@ -696,7 +695,7 @@ ANSWERED_IN_THE_CHAT = {
     "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
 }
 NUMBERED = ["01.md", "02.md", "03.md", "04.md"]  # the worked example's records
-TURN_ID = re.compile(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"')
+TURN_ID = re.compile(r'\bid="(t\d+|chat-\d{8}T\d{6}Z)"')  # the anchors a turn and a chat turn are reached by
 
 
 def chats(directory: Path) -> list[Path]:
@@ -706,7 +705,7 @@ def chats(directory: Path) -> list[Path]:
 
 def rows(page: str) -> list[str]:
     """The ids of the page's turns, top to bottom."""
-    return [i for _, i in sorted((m.start(), m.group(1)) for m in TURN_ID.finditer(page))]
+    return TURN_ID.findall(page)
 
 
 @pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)
@@ -729,11 +728,9 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     assert body.strip() == reply.strip()
     page = (worked_example / PAGE).read_text()
     assert rows(page) == [chat.stem, "t04", "t03", "t02", "t01"]
-    row = page[page.index(f'id="{chat.stem}"'):]
-    row = row[:row.index("</article>")]
-    assert '<span class="rail"></span>' in row
-    assert html.unescape(re.findall(r'<div class="msg"><p>(.*?)</p>', row)[0]) == SPOKEN_AFTER["message"]["content"]
-    assert '<details class="turn blk" id="t04" data-block open>' in page
+    said = turns_on(page)[chat.stem]
+    assert said.startswith(f"you {SPOKEN_AFTER['message']['content']}"), "a chat turn shows no number"
+    assert [anchor for anchor, turn in elements(page, r"t\d+").items() if re.match(r"<details\b[^>]*\bopen\b", turn)] == ["t04"]
 
 
 @pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
@@ -779,7 +776,8 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
     assert shown(capsys).startswith("session page · ")
     page = (worked_example / PAGE).read_text()
     assert rows(page) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
-    assert messages_of(page)["05"] == ["And the third?"]
+    assert "And the third?" in turns_on(page)["t05"]
+    assert messages_of(view_of(worked_example, next_turn))["05"] == ["And the third?"]
     assert "Yes, the second bank." in chat.read_text()
 
 
@@ -804,7 +802,7 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     assert capsys.readouterr().out == ""
     assert "Round 4" in (worked_example / PAGE).read_text()
     with_write(unrecorded, "Write", record)
-    assert messages_of(render_session(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
+    assert messages_of(view_of(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
 
 
 def test_a_turn_that_answers_by_editing_an_earlier_record_gets_its_reply_as_a_chat_turn(
