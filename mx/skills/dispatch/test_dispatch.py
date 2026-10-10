@@ -845,7 +845,7 @@ def test_a_worker_inherits_the_projects_settings_and_the_hosts_mx_and_nothing_el
     names the mx install it runs."""
     plugin = mx(tmp_path)
 
-    run_worker(runner, DISPATCH_PLUGIN_DIR=str(plugin))
+    run_worker(runner)
 
     attempts = [line for line in (tmp_path / "bin" / "claude.calls").read_text().splitlines() if line.startswith("-p ")]
     inherits = ("--setting-sources project", "--strict-mcp-config", f"--plugin-dir {plugin}",
