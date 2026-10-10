@@ -1,5 +1,6 @@
 """What the session page's checks share: a session someone is sitting at whose prose reviewer is
-stubbed, and the worked example the seams read. The reviewer stub sits at `turn_review.review`, the one call that reaches a model."""
+stubbed, and the worked example the seams read. The reviewer stub sits at `turn_review.review`, the
+one call that reaches a model."""
 
 import json
 import os
