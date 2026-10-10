@@ -30,6 +30,8 @@ from typing import Literal
 
 import pytest
 
+from dispatch_checks import mx, stage_runner
+
 SKILL = Path(__file__).parent
 DISPATCH = SKILL / "dispatch"
 # Read before any check moves HOME: uv keeps its cache under HOME unless told otherwise, and a
@@ -283,22 +285,6 @@ def test_a_parent_tickets_worktree_finds_the_tracker_and_writes_where_it_is(toy:
     assert status_of(toy, "warm-preset") == "claimed"
     assert "claim warm-preset" in git(toy / "agent", "log", "-1", "--format=%s")
     assert git(toy / "agent", "branch", "--show-current").strip() == "main", "on the branch it had out"
-
-
-def stage_runner(state: Path) -> None:
-    """The shipped runner and what it reads beside itself, as `dispatch` stages them on a host."""
-    for name in ("run-worker.sh", "worker-prompt.md"):
-        shutil.copy(SKILL / name, state / name)
-    shutil.copy(SKILL.parent / "run-log" / "run-log", state / "run-log")
-
-
-def mx(tmp_path: Path) -> Path:
-    """The mx install `dispatch-ctl` names to a runner in DISPATCH_PLUGIN_DIR: a directory made here,
-    shaped like a real one, whose leaf the lines that name the install print."""
-    rules = tmp_path / "mx" / "installed" / "skills" / "session-page"
-    rules.mkdir(parents=True, exist_ok=True)
-    shutil.copy(SKILL.parent / "session-page" / "RULES.md", rules)
-    return tmp_path / "mx" / "installed"
 
 
 @pytest.fixture

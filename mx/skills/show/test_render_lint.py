@@ -41,15 +41,10 @@ from pathlib import Path
 
 import pytest
 
+from lint_pages import LINT, PAGE, RESTLESS
+
 # Every check here starts a browser.
 pytestmark = pytest.mark.full_path
-
-LINT = Path(__file__).parent / "render_lint.py"
-
-PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body {{ font-family: serif; margin: 0 }}</style></head>
-<body>{}</body></html>
-"""
 
 TWO_LABELS = """
 <div style="position:relative;height:60px">
@@ -79,14 +74,6 @@ def settles(top_at_first: int, top_at_rest: int) -> str:
     </script>
     """.replace("FIRST", str(top_at_first)).replace("REST", str(top_at_rest))
 
-
-# A page that never comes to rest, so there is no moment at which measuring it means anything.
-RESTLESS = """
-<div style="position:relative;height:200px">
-  <span id="pacer" style="position:absolute;left:20px;top:10px">A label that never stops</span>
-</div>
-<script>let n = 0; setInterval(() => document.getElementById("pacer").style.top = (10 + (n = (n + 13) % 90)) + "px", 60)</script>
-"""
 
 # A fixed bar and a note far enough down the page for an address to scroll it under the bar. The
 # bar carries no background, so what suppresses the pairing is where the page is read, not what is

@@ -32,46 +32,14 @@ from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from session_checks import SESSION
+from session_checks import SESSION, elements, sections_of
 from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
-VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 
 # ---- reading the page -------------------------------------------------------
-
-
-def elements(page: str, pattern: str) -> dict[str, str]:
-    """Each element of the page whose id `pattern` matches, whole, keyed by that id: a block is
-    read by the anchor that names it, not by where the next one starts, so anything nested inside
-    it stays part of it."""
-    starts = list(itertools.accumulate((len(line) for line in page.splitlines(keepends=True)), initial=0))
-    found: dict[str, str] = {}
-    open_tags: list[tuple[str, str | None, int]] = []
-
-    class Reader(HTMLParser):
-        def at(self) -> int:
-            line, column = self.getpos()
-            return starts[line - 1] + column
-
-        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            if tag in VOID:
-                return
-            value = dict(attrs).get("id")
-            open_tags.append((tag, value if value and re.fullmatch(pattern, value) else None, self.at()))
-
-        def handle_endtag(self, tag: str) -> None:
-            while open_tags:
-                name, value, start = open_tags.pop()
-                if name == tag:
-                    if value:
-                        found[value] = page[start : self.at() + len(f"</{tag}>")]
-                    return
-
-    Reader().feed(page)
-    return found
 
 
 def top_of(page: str) -> str:
@@ -88,11 +56,6 @@ def question_anchors(fragment: str) -> list[str]:
 def questions_in(fragment: str) -> set[str]:
     """The questions a fragment of the page shows, by tag."""
     return set(question_anchors(fragment))
-
-
-def sections_of(page: str) -> dict[str, str]:
-    """Each turn's section, keyed by the two digits of its record."""
-    return {anchor[1:]: section for anchor, section in elements(page, r"t\d+").items()}
 
 
 # ---- sessions to render -----------------------------------------------------

@@ -38,10 +38,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 import session_page
 import stop_hook
 import turn_review
-from session_checks import BEFORE_IT, SPOKEN_AFTER, unreachable
+from session_checks import (
+    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, logged, messages_of, payload, unreachable,
+    with_write,
+)
 from session_page import PAGE, PREVIOUS, SESSIONS, render_session
 from stop_hook import decide
-from test_reading import messages_of
+
 
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -85,24 +88,6 @@ def run(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict], None]:
         stop_hook.main()
 
     return call
-
-
-def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) -> dict:
-    """The Stop hook JSON for a turn of the session whose directory is `directory`."""
-    return {
-        "session_id": directory.name,
-        "cwd": str(directory.parents[len(SESSIONS.parts)]),
-        "transcript_path": str(transcript),
-        "stop_hook_active": False,
-        "last_assistant_message": reply,
-        **rest,
-    }
-
-
-def logged(log: Path, key: str) -> list[dict]:
-    """The log's lines that carry `key`: `decision` the review's, `verb` the hook's."""
-    lines = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-    return [entry for entry in lines if key in entry]
 
 
 def shown(capsys: pytest.CaptureFixture) -> str:
@@ -163,8 +148,6 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
 
 # ---- properties -------------------------------------------------------------
 
-# A reply of several lines, an answer that would fill a turn record.
-LONG = "\n".join(f"Line {n} of an answer that belongs on the page." for n in range(1, 6))
 TWENTY_LINES = "\n".join(f"Line {n} of where the work stands." for n in range(1, 21))
 
 FRESH = "8e0f1c22-0000-0000-0000-000000000000"  # a session that has no directory yet
@@ -220,9 +203,6 @@ def test_a_first_turn_that_ends_on_no_text_creates_nothing(
     assert capsys.readouterr().out == ""
 
 
-LEFT_ALONE = {"a dispatched worker": ("DISPATCH_WORKLOG", "/w/log"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
-
-
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
 def test_a_session_nobody_reads_the_page_of_never_gets_a_directory(
     marker: str, value: str, first_turn: tuple[Path, Path], capsys: pytest.CaptureFixture,
@@ -248,42 +228,6 @@ def test_a_reply_of_any_length_with_no_record_is_recorded_and_never_sent_back(
     decision = decide(payload(worked_example, unrecorded, reply=reply), worked_example)
     assert (decision.verb, decision.why) == ("render", "chat reply recorded")
     assert decision.chat[1].split("---\n", 2)[2].strip() == reply.strip()
-
-
-# The record the turn just wrote is 04.md, the one the Decisions have the hook validate; 03.md is
-# two rounds back, and a hook that read only the newest record would let it through. Each case is
-# what the record says and the line the hook names, None where the shape says only that something
-# is missing and not where.
-ROUND_3 = "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n"  # lines 1 to 6; the section's first item is line 9
-UNPARSEABLE = {
-    "frontmatter that is not YAML": (
-        "04.md", "---\ndate: 2026-09-23\nanswered: Q1: a\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 3),
-    "frontmatter that is not a mapping": (
-        "04.md", "---\n- a\n- b\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 2),
-    "a question that is not a question item": (
-        "04.md", "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n## Questions\n\n- Q7: what reviews the prose?\n", 9),
-    "a section the record's shape does not have": (
-        "04.md", "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n## Notes\n\nA fourth section.\n", 7),
-    "no headline": ("04.md", "---\ndate: 2026-09-23\n---\n\n## Details\n\nThe round.\n", None),
-    "a record from an earlier turn": (
-        "03.md", "---\ndate: 2026-09-23\n---\n\n# Round 2\n\n## Notes\n\nA fourth section.\n", 7),
-    "a question with one option": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n", 9),
-    "a question with no pick": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review.\n  - (b) None.\n", 9),
-    "a question with two picks": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n"
-                 "  - (b) None. *my pick*\n", 9),
-    "an option letter twice": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (a) None.\n", 9),
-    "a second Why": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (b) None.\n"
-                 "  - Why: seconds.\n  - Why: again.\n", 13),
-    "a question an earlier turn asked": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
-    "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
-    "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
-}
 
 
 @pytest.mark.parametrize("name, text, line", UNPARSEABLE.values(), ids=UNPARSEABLE)
@@ -765,7 +709,6 @@ def rows(page: str) -> list[str]:
     return [i for _, i in sorted((m.start(), m.group(1)) for m in TURN_ID.finditer(page))]
 
 
-
 @pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)
 def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_a_chat_turn(
     reply: str, again: bool, worked_example: Path, unrecorded: Path, capsys: pytest.CaptureFixture,
@@ -841,13 +784,6 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
 
 
 RECORD_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
-
-
-def with_write(transcript: Path, tool: str, record: Path) -> None:
-    """Append to the transcript the turn's `tool` call on `record`, a minute after SPOKEN_AFTER."""
-    call = {"type": "tool_use", "id": f"toolu_{tool}_{record.stem}", "name": tool, "input": {"file_path": str(record)}}
-    entry = {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": "2026-09-23T01:36:00.000Z"}
-    transcript.write_text(transcript.read_text() + json.dumps(entry) + "\n")
 
 
 def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with_write(
@@ -934,24 +870,9 @@ def test_the_records_as_the_turn_ended_are_logged_beside_their_review(
 
 # ---- which turn a record belongs to ------------------------------------------
 
-# Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time: a
-# background task finishing and a subagent handing its report back.
-TASK_DONE = {"type": "user", "origin": {"kind": "task-notification"}, "timestamp": SPOKEN_AFTER["timestamp"],
-             "message": {"role": "user", "content": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"}}
-HANDED_BACK = {"type": "user", "origin": {"kind": "peer", "from": "a1", "handback": True}, "timestamp": SPOKEN_AFTER["timestamp"],
-               "message": {"role": "user", "content": 'Another Claude session sent a message:\n<agent-message from="a1">\n'
-                                                      "[Subagent hand-back] The figure is built.\n</agent-message>"}}
-TURN_STARTS = {"a finished task": TASK_DONE, "a subagent's hand-back": HANDED_BACK}
 # A message the user queues while the turn runs, after it wrote its record at 01:36 (with_write).
 QUEUED = {"type": "attachment", "timestamp": "2026-09-23T01:37:00.000Z",
           "attachment": {"type": "queued_command", "prompt": "And the third bank?"}}
-
-
-
-
-def appended(transcript: Path, out: Path, *entries: dict) -> Path:
-    out.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
-    return out
 
 
 @pytest.mark.parametrize("start", TURN_STARTS.values(), ids=TURN_STARTS)
