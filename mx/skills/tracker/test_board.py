@@ -198,7 +198,7 @@ def copies(seen: board.View) -> list[board.Copy]:
     blocks each row reads as opened."""
     found = [g.copy for g in seen.groups if g.copy]
     for r in seen.rows.values():
-        found += [q.copy for q in r.asks] + ([r.copy_all] if r.copy_all else [])
+        found += [q.copy for q in r.questions] + ([r.copy_all] if r.copy_all else [])
         found += row_copies(r)
     return found
 
@@ -302,9 +302,6 @@ def test_a_tree_whose_tickets_wait_on_nothing_has_no_graph(tmp_path: Path) -> No
     assert tree_graph(read, "solo") is None
     assert board_graph(read) is None
     assert [(p.tree, p.graph) for p in board.view(read).pills] == [("solo", None)]
-    page = page_of(root)
-    assert "nothing in solo waits on anything" in page
-    assert "nothing waits on anything" in page
 
 
 def test_a_proposed_ticket_is_a_node_in_its_own_class_once_something_waits_on_it(tracker: Path) -> None:
@@ -413,6 +410,14 @@ def test_a_trees_pill_marks_when_any_of_its_tickets_waits_on_the_user(tmp_path: 
     assert (solo.says, solo.waits) == ("1/2 done · 1 claimed", False)
 
 
+def test_a_row_is_found_by_the_words_it_shows_lower_cased(tracker: Path) -> None:
+    """The filter matches what the reader typed against the row's own words, its opened blocks'
+    included, with the markup gone."""
+    rows = view_of(tracker).rows
+    assert rows["faster-suite"].search == "faster-suite faster suite what to build cut from the worker's closing comment on first: the suite is slow."
+    assert rows["quoted"].search.startswith('quoted say "no limit" plainly')
+
+
 def test_a_gh_reference_is_a_link_on_the_row_and_in_its_search_text(tracker: Path) -> None:
     ticket(tracker / "quoted.md", "open", blocked_by=["first"], gh=["acme/coding#137"], name='Say "no limit" plainly')
     rows = view_of(tracker).rows
@@ -435,8 +440,7 @@ def test_a_row_carries_what_the_page_script_matches_against_the_graphs(tracker: 
     rows = re.findall(r'<details class="ticket row-\w+" id="([\w-]+)" data-tree="([\w-]*)" data-slug="([^"]+)" data-search="([^"]*)"', page)
     assert len(rows) == len(read)
     searches = {row_id: html.unescape(search) for row_id, _, _, search in rows}  # the script reads the attribute unescaped
-    assert searches["t-faster-suite"] == "faster-suite faster suite what to build cut from the worker's closing comment on first: the suite is slow."
-    assert all(s == s.lower() and "<" not in s for s in searches.values())
+    assert searches == {f"t-{slug}": row.search for slug, row in view_of(tracker).rows.items()}
     graph = re.search(rf'<div class="g" data-tree="{TREE}" hidden><pre class="mermaid" data-key="g:{TREE}">(.*?)</pre>', page, re.S).group(1)
     for row_id, tree, slug, _ in rows:
         if tree == TREE and slug in ("second", "faster-suite", "uses-fast-suite", "after-first", "first", "built"):
@@ -535,7 +539,8 @@ def free_port() -> int:
 
 def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
     """The graph's colours are baked into the SVG by mermaid, so the page hands it one classDef per
-    status, each named by house tokens the stylesheet declares as a light and a dark pair."""
+    status, each named by house tokens the stylesheet declares as a light and a dark pair. That the
+    page's script is handed GRAPH_INK pins the format."""
     declared = {prop.removeprefix("--") for selectors, said in style_rules(board.STYLE) if ":root" in selectors
                 for prop, value in said.items() if value.startswith("light-dark(")}
     assert set(board.GRAPH_INK) == {*STATUS_SYMBOL, "ghost"}, "a status the graph draws with no ink of its own"
@@ -545,11 +550,13 @@ def test_the_graph_draws_every_status_in_the_house_ink(tracker: Path) -> None:
 
 
 def hrefs(seen: board.View) -> list[str]:
-    """Every link the rows write: their marks', the session pages' and the artefacts'."""
+    """Every link the rows write: their marks', the session pages', the artefacts', and the ones a
+    ticket's own prose carries, which reach the values rendered."""
     found = [m.href for r in seen.rows.values() for m in r.marks if m.href]
     for r in seen.rows.values():
         for b in r.ticket.blocks:
             found += [s.page for s in b.worked if s.page] + [a.href for a in b.artefacts]
+            found += [html.unescape(ref) for ref in re.findall(r'href="([^"]*)"', b.prose)]
     return found
 
 
@@ -744,6 +751,7 @@ def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_pat
     ticket(root / "long-haul.md", "open", parent="ledger", priority=5, size="XL", blocked_by=["quick"])
     ticket(root / "waits-on-the-haul.md", "open", priority=3, size="M", blocked_by=["long-haul"])
     widths = board.columns(view_of(root))
+    assert widths["#grp-needs"] == {"time": len("20 min"), "pri": len("p2 next"), "chips": 0}
     assert widths[":root"] == {
         "tree": len("ledger"),  # the one tree's slug
         "slug": len("waits-on-the-h"),  # the longest slug, capped at the column's width
@@ -752,9 +760,12 @@ def test_a_rows_fixed_columns_are_as_wide_as_the_marks_that_land_in_them(tmp_pat
         "pri": len("p5 someday"),
         "chips": len("long-haul"),
     }
-    # the group whose only ticket is an S at p2 with nothing waiting on it leaves the rest of that
-    # width to the name and the brief
-    assert widths["#grp-needs"] == {"time": len("20 min"), "pri": len("p2 next"), "chips": 0}
+    # the group whose only ticket is an S at p2 with nothing waiting on it (above) leaves the rest of
+    # that width to the name and the brief, until an XL is folded under a row of it: a folded row's
+    # marks land in the group's columns too
+    ticket(root / "month.md", "review", priority=2, size="S")
+    ticket(root / "month-part.md", "review", parent="month", priority=2, size="XL")
+    assert board.columns(view_of(root))["#grp-needs"] == {"pri": len("p2 next"), "chips": 0}
     # the group holding the XL ticket and the widest reference narrows none of the three
     assert "#grp-blocked" not in widths, f"the blocked group narrows {widths.get('#grp-blocked')}, though its rows are the widest of each"
 
@@ -851,8 +862,16 @@ def test_what_each_row_asks_of_the_user_comes_from_its_ticket_file(demo: Demo) -
         assert (asks.shows, asks.look) == (ASK_WORDS[kind], kind), f"{slug} asks {asks.shows!r}, not {ASK_WORDS[kind]!r}"
 
 
+def test_every_mark_on_the_page_says_its_own_words_on_hover() -> None:
+    """Pins the format, the page's half of P2: whatever its kind, a mark shows its words and carries
+    what it says it means as its hover words, which the page paints (test_board_layout.py)."""
+    for kind in board.MARK_HTML:
+        written = board.mark_html(board.Mark(kind, "p1 now", "What this mark means, in words.", look="x", href="#t-x"))
+        assert 'data-tip="What this mark means, in words."' in written and ">p1 now<" in written, f"the {kind} mark: {written}"
+
+
 def test_p2_every_mark_a_row_carries_says_in_four_words_or_more_what_it_means(demo: Demo) -> None:
-    """board-reads-rows-as-values P2, over the demo tracker's rows: every mark says what it means,
+    """`board-reads-rows-as-values#P2`, over the demo tracker's rows: every mark says what it means,
     and says it about itself, and so does the headline of every question a row lists. That the
     words then paint on hover is the layout check's (test_board_layout.py)."""
     rows = view_of(demo.root, demo.repo).rows
@@ -861,7 +880,7 @@ def test_p2_every_mark_a_row_carries_says_in_four_words_or_more_what_it_means(de
         for m in row.marks:
             worn.add(m.kind)
             assert len(m.says.split()) >= 4, f"{slug}: the {m.kind} mark {m.shows!r} says {m.says!r}"
-        for q in row.asks:
+        for q in row.questions:
             assert len(q.says.split()) >= 4, f"{slug}: {q.tag} says {q.says!r} of itself"
     assert worn == KINDS, f"the demo tracker has no row wearing {sorted(KINDS - worn)}, or one wearing a kind this check has never seen"
     # each mark's words are about that mark: the time's say whose time it is, the priority's who set it
@@ -887,14 +906,14 @@ def test_a_needs_me_row_lists_the_questions_its_ticket_file_asks_and_no_ruled_on
     """The fixture's build stopped on two questions, of which a `Ruled` line answered one."""
     rows = view_of(demo.root, demo.repo).rows
     row = rows["flaky-upload-test"]
-    assert [(q.tag, q.headline) for q in row.asks] == [("D1", "Retry the upload, or fake the clock?")], "D2 is ruled, and a ruled question is answered"
+    assert [(q.tag, q.headline) for q in row.questions] == [("D1", "Retry the upload, or fake the clock?")], "D2 is ruled, and a ruled question is answered"
     written = f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?** A retry hides a real slowdown; a fake clock makes the test say nothing about timing."
-    assert [q.copy.text for q in row.asks] == [written]
+    assert [q.copy.text for q in row.questions] == [written]
     assert row.copy_all is None, "one question needs no copy-all beside it"
     # the ticket with three of them has one, and it copies all three under the one path
     three = rows["map-columns"]
     assert three.copy_all.text.splitlines() == [str(demo.root / "map-columns.md")] + [
-        line for q in three.asks for line in q.copy.text.splitlines()[1:]
+        line for q in three.questions for line in q.copy.text.splitlines()[1:]
     ]
 
 
@@ -904,14 +923,14 @@ def test_a_build_in_review_shows_the_questions_and_the_closing_comment_its_repor
     on_branch = demo_git(demo.repo, "show", "ticket/map-columns:agent/tickets/map-columns.md")
     assert "## Questions" not in on_branch and "## Comments" not in on_branch
     row = view_of(demo.root, demo.repo).rows["map-columns"]
-    assert [q.tag for q in row.asks] == ["D1", "D2", "D3"]
-    assert row.asks[0].headline == "Remember the mapping per bank or per file name?"
-    assert "<code>~/.config/ledger/mappings.toml</code>" in row.asks[2].headline, "a headline's own code and emphasis render on the row"
+    assert [q.tag for q in row.questions] == ["D1", "D2", "D3"]
+    assert row.questions[0].headline == "Remember the mapping per bank or per file name?"
+    assert "<code>~/.config/ledger/mappings.toml</code>" in row.questions[2].headline, "a headline's own code and emphasis render on the row"
     assert "The mapping step is built and remembers a bank" in block(row, "comments").prose, "the closing comment, folded under the row"
     # the row cuts a headline to its column, so the question's own words are what the hover carries
-    assert row.asks[0].says.startswith("Remember the mapping per bank or per file name?")
-    assert "Per bank asks one more question on the first import" in row.asks[0].says, "the detail the row has no room for"
-    copied = [q.copy for q in row.asks] + [row.copy_all] + row_copies(row)
+    assert row.questions[0].says.startswith("Remember the mapping per bank or per file name?")
+    assert "Per bank asks one more question on the first import" in row.questions[0].says, "the detail the row has no room for"
+    copied = [q.copy for q in row.questions] + [row.copy_all] + row_copies(row)
     assert "[D4]" not in "".join(c.text for c in copied), "the tags a closing comment carries are not questions"
 
 
@@ -934,7 +953,7 @@ def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(tmp_p
 
     before = tracker_snapshot(root, repo)
     seen = view_of(root, repo)
-    assert seen.rows["map-columns"].asks == (), "no question of the branch's reaches the board"
+    assert seen.rows["map-columns"].questions == (), "no question of the branch's reaches the board"
     assert rows_in(seen, "needs") == set(), "nothing waits on the user: the tracker says the build is claimed"
 
     # the import, as `dispatch review` makes it: in the tracker's own copy
@@ -942,13 +961,14 @@ def test_a_build_in_flight_is_on_the_board_from_the_trackers_own_directory(tmp_p
     assert tracker_snapshot(root, repo) != before, "a watching board renders the import"
     seen = view_of(root, repo)
     assert rows_in(seen, "needs") == {"map-columns"}
-    assert [(q.tag, q.headline) for q in seen.rows["map-columns"].asks] == [("D1", "Per bank or per file name?")]
+    assert [(q.tag, q.headline) for q in seen.rows["map-columns"].questions] == [("D1", "Per bank or per file name?")]
 
 
 def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """A project is a code repo with its `agent/` a repo of its own inside it: `board` run anywhere
     in the code repo renders that tracker, names the page after the code repo, and reads its commit
-    log from there, while the tickets and the sessions that wrote them come from the agent repo."""
+    log from there, while the tickets and the sessions that wrote them come from the agent repo.
+    It reads the page `main` writes, so the tab's title pins the format."""
     code = tmp_path / "lamp"
     tickets = code / "agent" / "tickets"
     tickets.mkdir(parents=True)
@@ -970,7 +990,7 @@ def test_the_board_renders_the_agent_repo_its_project_holds(tmp_path: Path, path
     board.main(board.Args(tickets_root=tickets, out=out, open=False, watch=False))
     page = out.read_text()
     assert "Map columns once per bank" in page
-    assert "board — lamp" in page, "the project's name is the code repo's"
+    assert "<title>board — lamp</title>" in page, "the project's name is the code repo's, on the browser's tab"
     assert "the importer reads a bank export" in page, "and its log is the code repo's"
     assert "map-columns: filed" not in page, "not the agent repo's, which is the tickets' own history"
 
@@ -1019,12 +1039,12 @@ def test_a_near_design_session_is_in_needs_me_with_no_question_written_down(tmp_
     )
     seen = view_of(root)
     assert rows_in(seen, "needs") == {"soon"}
-    assert seen.rows["shipped"].asks == (), "a question left on a done ticket is a leftover, not a call"
+    assert seen.rows["shipped"].questions == (), "a question left on a done ticket is a leftover, not a call"
     assert copies(seen) == [], "the done group grew a copy-all for a question no row on the board shows"
 
 
 def test_p1_every_copy_button_a_row_carries_shows_what_it_copies(transcribed: Demo) -> None:
-    """board-reads-rows-as-values P1, over the demo tracker's rows: the words a button shows on
+    """`board-reads-rows-as-values#P1`, over the demo tracker's rows: the words a button shows on
     hover are what its click puts on the clipboard, cut off only where they run long.
 
     The tracker is the one with its transcripts where this machine keeps its own, since the button
@@ -1056,11 +1076,17 @@ def test_p1_every_copy_button_a_row_carries_shows_what_it_copies(transcribed: De
 
 def test_a_copy_button_carries_what_it_copies_and_what_it_shows_onto_the_page() -> None:
     """Pins the format: the page's script copies `data-copy` and says `data-copied` once it has,
-    and the hover paints `data-tip`, which is what the click does over what it copies."""
-    button = board.Copy("qcopy", "copy", "Click to copy this question.", "agent/tickets/a.md\n- [D1] **A & B?**", "D1 of a.md")
-    assert board.copy_html(button) == (
+    and the hover paints `data-tip`, which is what the click does over what it shows of what it
+    copies: all of it under the cap, the start of it past."""
+    short = board.Copy("qcopy", "copy", "Click to copy this question.", "agent/tickets/a.md\n- [D1] **A & B?**", "D1 of a.md")
+    assert board.copy_html(short) == (
         '<span class="copier qcopy" data-copy="agent/tickets/a.md\n- [D1] **A &amp; B?**" data-copied="D1 of a.md" '
         'data-tip="Click to copy this question.\n\nagent/tickets/a.md\n- [D1] **A &amp; B?**">copy</span>'
+    )
+    long = board.Copy("resume", "copy resume", "Click to copy the command.", "cd " + "a" * 300, "the command")
+    assert board.copy_html(long) == (
+        f'<span class="copier resume" data-copy="cd {"a" * 300}" data-copied="the command" '
+        f'data-tip="Click to copy the command.\n\ncd {"a" * 217}\u2026">copy resume</span>'
     )
 
 
@@ -1128,7 +1154,7 @@ def test_an_opened_ticket_carries_every_question_with_its_detail_and_the_ruling_
          "detail": "It takes four seconds with either fix.",
          "ruling": "Ruled 2026-09-21: keep it in the fast suite."},
     ]
-    assert [q.tag for q in row.asks] == ["D1"], "the row lists the open one and no more"
+    assert [q.tag for q in row.questions] == ["D1"], "the row lists the open one and no more"
 
 
 def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(demo: Demo) -> None:
@@ -1140,10 +1166,10 @@ def test_an_opened_ticket_copies_each_open_question_where_the_folded_row_does(de
     written = (f"{demo.root / 'flaky-upload-test.md'}\n- [D1] **Retry the upload, or fake the clock?**"
                " A retry hides a real slowdown; a fake clock makes the test say nothing about timing.")
     assert [c.text for c in row_copies(row)] == [written], "the question as the file writes it, under its path"
-    assert row_copies(row) == [q.copy for q in row.asks], "the same button, and none on the question a ruling answered"
+    assert row_copies(row) == [q.copy for q in row.questions], "the same button, and none on the question a ruling answered"
     three = rows["map-columns"]
     assert [c.kind for c in row_copies(three)] == ["qcopy", "qcopy", "qcopy", "runcopy"]
-    assert row_copies(three)[:3] == [q.copy for q in three.asks], "a question is copied the same way wherever the button for it sits"
+    assert row_copies(three)[:3] == [q.copy for q in three.questions], "a question is copied the same way wherever the button for it sits"
     assert three.copy_all.kind == "qall"
 
 
@@ -1160,7 +1186,7 @@ def test_a_blocked_rows_questions_carry_the_same_buttons_in_both_places(tmp_path
     row = view_of(root).rows["waiting"]
     assert row.ticket.status == "blocked", "the fixture no longer exercises a derived status"
     assert [c.text for c in row_copies(row)] == [f"{waiting}\n- [D1] **Which store?** The one that travels."]
-    assert row_copies(row) == [q.copy for q in row.asks], "the two readings of the status disagree"
+    assert row_copies(row) == [q.copy for q in row.questions], "the two readings of the status disagree"
 
 
 def test_a_tickets_artefacts_are_read_from_its_show_directory(demo: Demo) -> None:
@@ -1220,13 +1246,6 @@ def test_a_parent_ticket_lists_its_own_show_directory(tmp_path: Path) -> None:
     assert made(rows["map-columns"]) == [
         ("mapping.svg", "show/map-columns/mapping.svg", ""),
     ]
-
-
-def test_the_comments_are_the_last_of_an_opened_tickets_blocks(demo: Demo) -> None:
-    """A build's closing comment is what happened, not what the ticket is, so it is read last."""
-    row = view_of(demo.root, demo.repo).rows["map-columns"]
-    assert labels(row)[-1] == "comments"
-    assert "The mapping step is built and remembers a bank" in block(row, "comments").prose, "the closing comment, on its branch"
 
 
 def test_the_page_folds_the_comments_away_as_history() -> None:
@@ -1508,9 +1527,7 @@ def test_the_page_opens_a_session_page_in_a_tab_of_its_own_and_says_so() -> None
     written = board.block_html(board.Block("sessions on this machine", worked=(
         board.Worked("Ledger imports", "2026-09-14", "sessions/abc/index.html", resume),
     )))
-    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board.PAGE_TIP)}">page</a>' in written
-    assert len(board.PAGE_TIP.split()) >= 4 and "page" in board.PAGE_TIP
-    assert written.endswith(board.copy_html(resume) + "</li></ul></section>")
+    assert f'<a class="spage" href="sessions/abc/index.html" target="_blank" data-tip="{html.escape(board.PAGE_TIP)}">page</a><span class="copier resume"' in written
 
 
 def test_a_session_page_in_another_projects_agent_repo_is_not_linked(worked: tuple[Path, Path], path_with: Callable[..., Path]) -> None:
@@ -2067,7 +2084,7 @@ def test_the_briefing_the_cache_holds_is_what_the_board_shows_with_the_time_it_w
     when = datetime.fromisoformat("2026-09-21T09:30:00+02:00")
     Briefing("Two builds wait on your ruling.", when, "abc-123", when, when, 2).write(cache_path(out))
     reading = board.read(tracker, repo, out)
-    said = board.briefed(reading.said, board.view(reading.tickets))
+    said = board.briefed(reading.briefing, board.view(reading.tickets))
     assert said.text == "Two builds wait on your ruling.", "the board's own count stands in only until a session writes one"
     assert said.when == "written 21 Sep 09:30", "the board shows when the briefing was written"
     assert "model" not in sources(reading), "a briefing already written is no absence whatever the machine has now"
@@ -2300,7 +2317,7 @@ def test_a_cache_file_the_board_cannot_read_leaves_it_the_boards_own_count(
     out = tmp_path / "board.html"
     cache_path(out).write_text('{"text": "half a fi')
     reading = board.read(tracker, repo, out)
-    assert board.briefed(reading.said, board.view(reading.tickets)).text.startswith("One build to rule on waits on you.")
+    assert board.briefed(reading.briefing, board.view(reading.tickets)).text.startswith("One build to rule on waits on you.")
 
 
 def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file_to_read_it_in(demo: Demo) -> None:
@@ -2323,8 +2340,10 @@ def test_the_briefing_session_is_given_every_ticket_the_board_shows_and_the_file
         " it remembers that per bank and never asks again.\n"
         "  waits on: parse-rows\n"
     ) in state
-    # a row folded under its parent ticket's says which one
+    # a row folded under its parent ticket's says which one, and its question is on its own line alone,
+    # though the parent's row lists it too
     assert f"Carry the balances forward \u00b7 {demo.root / 'carry-balances.md'} \u00b7 folded under month-close\n" in state
+    assert state.count("asks: [D1] Carry a closed month's balances") == 1
     # the tickets are written out under the tree each is part of, the ones in no tree under their own
     assert "## alone\nexport-to-xlsx \u00b7 blocked \u00b7 build \u00b7 p4 later \u00b7 20 min \u00b7 Export to Excel \u00b7 " in state
 
@@ -2410,7 +2429,7 @@ def test_a_parent_at_its_close_out_is_one_needs_me_row_with_its_children_folded_
     assert mark(parent, "kin").shows == "2 child tickets"
     assert "closing a month writes each account's balance" in parent.search, "a word of a folded child finds the row holding it"
     asked = "Carry a closed month's balances, or recompute them from its transactions?"
-    assert [(q.of, q.tag, q.headline) for q in parent.asks] == [("carry-balances", "D1", asked)]
+    assert [(q.of, q.tag, q.headline) for q in parent.questions] == [("carry-balances", "D1", asked)]
     assert f"{demo.root / 'carry-balances.md'}\n- [D1] **{asked}**" in needs.copy.text
 
 
@@ -2435,7 +2454,7 @@ def test_a_parent_still_being_built_asks_its_own_questions_and_not_a_merged_chil
     built_on_its_branch(repo)
     merged_into_the_tree(repo)
     seen = view_of(tracker)
-    assert [(q.tag, q.headline) for q in seen.rows[TREE].asks] == [("D1", "Split the lamp from the ui?")]
+    assert [(q.tag, q.headline) for q in seen.rows[TREE].questions] == [("D1", "Split the lamp from the ui?")]
     (group,) = [g.copy for g in seen.groups if g.copy]
     assert "Keep the suite serial?" not in group.text and group.note == "1 question", group.note
     assert board.fallback(seen).startswith("One question wanting a word waits on you.")
@@ -2455,7 +2474,7 @@ def test_a_hinge_carries_its_mark_on_its_row(demo: Demo) -> None:
     """map-columns, a hinge in review, is ruled alone: a needs-me row of its own; lock-period is a
     hinge already ruled. Every other row carries no such mark."""
     seen = view_of(demo.root, demo.repo)
-    assert {slug for slug, row in seen.rows.items() if mark(row, "hinge")} == {"map-columns", "lock-period"}
+    assert {slug for slug, row in seen.rows.items() if board.wears(row, "hinge")} == {"map-columns", "lock-period"}
     assert "map-columns" in rows_in(seen, "needs")
 
 

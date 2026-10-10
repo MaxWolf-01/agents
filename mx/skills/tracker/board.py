@@ -74,7 +74,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Annotated
+from typing import Annotated, Literal
 
 import markdown
 import tyro
@@ -198,14 +198,14 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
 @dataclass(frozen=True)
 class Reading:
     """What one render reads: the page is written from this and nothing else, so everything it
-    shows is a format of it. `said` is the briefing the cache beside the page holds, None where no
+    shows is a format of it. `briefing` is the one the cache beside the page holds, None where no
     session has written one."""
 
     project: str  # the code repo's name, which the page is named after
     tickets: list["Ticket"]
     log: str  # the project's last commits
     gh: github.Answer = github.NOTHING
-    said: "briefing.Briefing | None" = None
+    briefing: "briefing.Briefing | None" = None
 
 
 def read(root: Path, repo: Path, out: Path) -> Reading:
@@ -459,13 +459,13 @@ def state_line(r: "Row") -> str:
     t = r.ticket
     marks = [
         t.slug, t.status, mark(r, "asks").shows, mark(r, "pri").shows, mark(r, "time").shows, t.title, str(t.path),
-    ] + (["a hinge"] if mark(r, "hinge") else []) + ([f"folded under {t.under}"] if t.under else [])
+    ] + (["a hinge"] if wears(r, "hinge") else []) + ([f"folded under {t.under}"] if t.under else [])
     said = " · ".join(marks) + "\n"
     if t.brief:
         said += f"  brief: {plain(t.brief)}\n"
     if waits := [m.shows for m in r.marks if m.kind == "chip"]:
         said += f"  waits on: {', '.join(waits)}\n"
-    for q in r.asks:
+    for q in r.questions:
         if not q.of:  # a folded child's question is on its own line
             said += f"  asks: [{q.tag}] {plain(q.headline)} {plain(q.detail)}\n".rstrip() + "\n"
     return said
@@ -515,13 +515,12 @@ def fallback(board: "View") -> str:
 
     What waits is counted off the rows themselves, so the sentence and the group under it say the
     same thing: a ticket the board tags as a design session is one here whatever else it carries,
-    and a parent ticket at its close-out asks its folded child tickets' questions (Row.asks)."""
-    tickets = [r.ticket for r in board.rows.values()]
-    live = [t for t in tickets if t.status != "done"]
-    mine = [r for r in board.rows.values() if r.group == "needs"]
+    and a parent ticket at its close-out asks its folded child tickets' questions (Row.questions)."""
+    rows = board.rows.values()
+    mine = [r for r in rows if r.group == "needs"]
     waiting = {
         ("build to rule on", "builds to rule on"): [r for r in mine if mark(r, "asks").look == "review"],
-        ("question wanting a word", "questions wanting a word"): [q for r in mine for q in r.asks],
+        ("question wanting a word", "questions wanting a word"): [q for r in mine for q in r.questions],
         ("ticket wanting a session", "tickets wanting a session"): [r for r in mine if mark(r, "asks").look == "session"],
     }
     counts = [
@@ -529,15 +528,15 @@ def fallback(board: "View") -> str:
     ]
     several = len(counts) > 1 or any(len(held) > 1 for held in waiting.values())  # what the verb agrees with
     waits = f"{listed(counts).capitalize()} wait{'' if several else 's'} on you." if counts else "Nothing waits on you."
-    running = [t for t in live if t.status == "claimed"]
+    running = [r for r in rows if r.ticket.status == "claimed"]
     worked = (
         f"{counted(len(running)).capitalize()} ticket{'s are' if len(running) != 1 else ' is'} being worked on."
         if running else "Nothing is being worked on."
     )
     lead = f"{waits} {worked}"
-    unlocks = waited_on(tickets)
+    unlocks = waited_on([r.ticket for r in rows])
     picks = sorted(
-        (t for t in live if board.rows[t.slug].group in ("needs", "open")),
+        (r.ticket for r in rows if r.group in ("needs", "open")),
         key=lambda t: (t.priority, -unlocks[t.slug], *sort_key(t)[1:]),
     )
     if not picks:
@@ -818,7 +817,7 @@ def content_stamp(reading: Reading) -> str:
     # keeps its stamp, so the open tab knows not to reload. A state GitHub gave a link, a briefing
     # a session rewrote and an absence the page says are the three of those that move without a
     # file under the tracker moving with them.
-    gh, said = reading.gh, reading.said
+    gh, said = reading.gh, reading.briefing
     key = repr((
         reading.project, reading.tickets, reading.log, sorted(gh.states.items()), gh.missing,
         said and (said.text, said.written), absences(reading),
@@ -1046,7 +1045,7 @@ class Copy:
     """A button that copies `text`: `word` is what the button itself says, `does` what its click
     does, and `note` what the page says once it has."""
 
-    kind: str  # qcopy | qall | qgroup | resume | runcopy
+    kind: Literal["qcopy", "qall", "qgroup", "resume", "runcopy"]
     word: str
     does: str
     text: str
@@ -1378,7 +1377,7 @@ class Mark:
     it beyond its kind: what a row asks, a priority, the state GitHub gave a link, a blocker's
     status. `href` is where a mark that is a link goes."""
 
-    kind: str  # tree | slug | asks | hinge | kin | rp | gh | time | pri | chip, in the order a row shows them
+    kind: Literal["tree", "slug", "asks", "hinge", "kin", "rp", "gh", "time", "pri", "chip"]  # in the order a row shows them
     shows: str
     says: str
     look: str = ""
@@ -1388,7 +1387,7 @@ class Mark:
 @dataclass(frozen=True)
 class Row:
     """One ticket as the board shows it. `group` is the group it sits in, FOLDED for a row folded
-    under its parent ticket's, and `kids` are the rows folded under it. `asks` are the open
+    under its parent ticket's, and `kids` are the rows folded under it. `questions` are the open
     questions it lists while folded, with `copy_all` copying them once there are two; `search` is
     the words a filter finds it by, its folded rows' included. What it reads as opened is its
     ticket's `blocks`."""
@@ -1396,7 +1395,7 @@ class Row:
     ticket: Ticket
     group: str
     marks: tuple[Mark, ...]
-    asks: tuple[Asked, ...]
+    questions: tuple[Asked, ...]
     copy_all: Copy | None
     search: str
     kids: tuple["Row", ...]
@@ -1477,7 +1476,7 @@ def shown_row(t: Ticket, under: tuple[Row, ...], kids: dict[str, list[Ticket]], 
     )
     return Row(
         ticket=t, group=group_of(t), marks=marks_of(t, len(under), gh),
-        asks=tuple(asked_of(q, one.path, True, "" if one is t else one.slug) for one, questions in asked for q in questions),
+        questions=tuple(asked_of(q, one.path, True, "" if one is t else one.slug) for one, questions in asked for q in questions),
         copy_all=copy_all,
         search=search_words(*(part for one in with_folded(t, kids) for part in ticket_words(one))),
         kids=under,
@@ -1521,9 +1520,16 @@ def marks_of(t: Ticket, kin: int, gh: dict[str, str]) -> tuple[Mark, ...]:
     )
 
 
-def mark(r: Row, kind: str) -> Mark | None:
-    """The row's first mark of `kind`, None where it wears none."""
-    return next((m for m in r.marks if m.kind == kind), None)
+def mark(r: Row, kind: str) -> Mark:
+    """The row's first mark of `kind`: one every row wears (a tree, a slug, what it asks, the time,
+    the priority), or one the caller knows this row has."""
+    found = [m for m in r.marks if m.kind == kind]
+    assert found, f"{r.ticket.slug} wears no {kind} mark"
+    return found[0]
+
+
+def wears(r: Row, kind: str) -> bool:
+    return any(m.kind == kind for m in r.marks)
 
 
 def ticket_words(t: Ticket) -> list[str]:
@@ -1770,8 +1776,8 @@ def gh_shown(tickets: list[Ticket]) -> list[str]:
 
 
 # ---- page -----------------------------------------------------------------
-# The rows as markup: every class and attribute the stylesheet and the page's script read is
-# written here and nowhere else.
+# The values as markup. What a ticket writes in prose reaches them already rendered (render_body),
+# a criterion's checkbox included (ticked).
 
 
 def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
@@ -1810,7 +1816,7 @@ def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
         project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
         groups="".join(map(group_html, board.groups)), graphs=graphs, log=log_html,
         columns="".join(column_tokens(selector, widths) for selector, widths in columns(board).items()),
-        absences="".join(map(absence_html, notes)), briefing=briefing_html(briefed(reading.said, board)),
+        absences="".join(map(absence_html, notes)), briefing=briefing_html(briefed(reading.briefing, board)),
         footmeta=footmeta, stamp=stamp, stamp_src=html.escape(stamp_src),
     )
 
@@ -1893,14 +1899,14 @@ def asks_html(r: Row) -> str:
 
     The page's style hides the list while the row is open, where the block below and the rows
     folded under it carry the same questions, so an opened row shows each of them once."""
-    if not r.asks:
+    if not r.questions:
         return ""
     lines = "".join(
         f'<span class="q"><span class="qtag" data-tip="{html.escape(TAG_TIP)}">'
         + (f"{html.escape(q.of)} " if q.of else "") + f"{q.tag}</span>"
         f'<span class="qhead" data-tip="{html.escape(q.says)}">{clipped_html(q.headline)}</span>'
         + copy_html(q.copy) + "</span>"
-        for q in r.asks
+        for q in r.questions
     )
     return f'<span class="qs">{lines}' + (copy_html(r.copy_all) if r.copy_all else "") + "</span>"
 
@@ -2005,7 +2011,7 @@ def absences(reading: Reading) -> list[Absence]:
         ))
     if reading.gh.missing:
         said.append(Absence("github", reading.gh.missing))
-    if reading.said is None and (why := briefing.missing()):
+    if reading.briefing is None and (why := briefing.missing()):
         said.append(Absence("model", why))
     return said
 
