@@ -8,11 +8,11 @@ The seam is the page as the values `render_session` formats (`session_page.view`
 directory (`session.md`, `turns/NN.md`) and the session's transcript in, the turns, questions and
 artefacts the page shows out. What only the HTML carries, the anchors the page's links jump to, the
 attribute the hub finds an artefact by, the prose a record's markdown renders to, is read off the
-page. The oracle is agent/tickets/session-page.md, its Properties and its
-Decisions on the turn record's shape, over two kinds of input: sessions drawn by `sessions()`,
-whose open questions come from the draw rather than from any reading of the records, and the
-worked example in `fixtures/`, which is the prototype's sample with a trimmed copy of that
-session's transcript.
+page, by checks that say they pin the format. The oracle is agent/tickets/session-page.md, its
+Properties and its Decisions on the turn record's shape, over two kinds of input: sessions drawn
+by `sessions()`, whose open questions come from the draw rather than from any reading of the
+records, and the worked example in `fixtures/`, which is the prototype's sample with a trimmed
+copy of that session's transcript.
 
 A drawn session's transcript carries one prompt per turn in the shape the real one carries a
 prompt. What the checks ask of a message is that it reaches one turn and that the noise Claude Code
@@ -177,11 +177,14 @@ def test_the_top_holds_the_open_questions_each_once(
     drawn: tuple[list[dict], set[str]], scratch: Callable[[], Path]
 ) -> None:
     """session-page#P1, over sessions whose questions meet every fate in turn: the open ones are
-    what the top holds, each once."""
+    what the top holds, each once, and the page's top block holds nothing a turn settled."""
     turns, open_tags = drawn
-    top = waiting(view_of(*write_session(scratch() / DRAWN, turns)))
+    session = write_session(scratch() / DRAWN, turns)
+    top = waiting(view_of(*session))
     assert set(top) == open_tags
     assert len(top) == len(open_tags)
+    block = text_of(elements(render_session(*session, now=NOW), QUESTIONS).get(QUESTIONS, ""))
+    assert [n for n in range(1, len(turns) + 1) if f"What turn {n} settled." in block] == []
 
 
 def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
@@ -291,7 +294,8 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
 ) -> None:
     """A path a record writes as code is a link the user clicks rather than text they copy: from
     the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a
-    `~name` that names no user, a bare word, a command, and code already inside a link stay code."""
+    `~name` that names no user, a bare word, a command, and code already inside a link stay code.
+    Pins the format: the links are in the record's prose, which reaches the page as markup."""
     root, home = tmp_path / "repo", tmp_path / "home"
     (root / "mx").mkdir(parents=True)
     (root / "mx" / "tool.py").write_text("")
@@ -354,6 +358,14 @@ def marked(page: str) -> set[str]:
     return {html.unescape(target) for target in re.findall(rf'\b{ARTEFACT}="([^"]*)"', page)}
 
 
+def chips_of(page: str) -> dict[str, list[str]]:
+    """Pins the format: the paths each turn's summary line carries for the hub, by the two digits
+    of its record. The summary line is what shows of a collapsed turn."""
+    return {key: [html.unescape(target) for target in re.findall(
+                rf'\b{ARTEFACT}="([^"]*)"', re.search(r"<summary.*?</summary>", section, re.S).group())]
+            for key, section in sections_of(page).items()}
+
+
 def with_links(record_text: str, items: list[str]) -> str:
     """A record with `items` added under its `## Links`, the section opened where it has none."""
     added = "".join(f"{item}\n" for item in items)
@@ -393,7 +405,10 @@ def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_an
     page = view_of(worked_example, transcript)
     assert column_of(page) == listed
     assert [link.key for link in rows_of(page)["04"].links] == [None, None, 1, 2]
-    assert marked(render_session(worked_example, transcript, now=NOW)) == {target for _, items in listed for _, target in items}
+    rendered = render_session(worked_example, transcript, now=NOW)
+    assert marked(rendered) == {target for _, items in listed for _, target in items}
+    assert chips_of(rendered) == {key: [target for _, target in items] for key, items in listed}, "a collapsed turn's summary line"
+
 
 
 # What a drawn turn links, and the path the hub finds each by from the repo root `root` and the
@@ -443,9 +458,9 @@ def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_th
     register(registry, 103, SESSION, "agents-9", updated=1)
     register(registry, 104, SESSION, "agents-10", updated=2)
     assert name() == "agents-10"
-    actions = re.search(r'<div class="actions">(.*?)</div>', render_session(worked_example, transcript, now=NOW), re.S).group(1)
-    assert re.fullmatch(r'\s*<button [^>]*id="resume".*?</button>\s*<span [^>]*id="session-name"[^>]*>agents-10</span>\s*',
-                        actions, re.S), actions
+    shown = elements(render_session(worked_example, transcript, now=NOW), "resume|session-name")
+    assert text_of(shown["session-name"]) == "agents-10" and "resume" in shown, "the page shows the name the view holds"
+
 
 
 @settings(deadline=None)

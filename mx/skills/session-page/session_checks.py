@@ -85,9 +85,12 @@ def text_of(fragment: str) -> str:
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
 
 
+TURN_ANCHOR = r"t\d+|chat-\d{8}T\d{6}Z"  # the anchor a turn is reached by: `t04`, or a chat turn's name
+
+
 def turns_on(page: str) -> dict[str, str]:
-    """Each turn on the page as text, by the anchor it is reached by: `t04`, or a chat turn's name."""
-    return {anchor: text_of(turn) for anchor, turn in elements(page, r"t\d+|chat-\d{8}T\d{6}Z").items()}
+    """Each turn on the page as text, by its TURN_ANCHOR."""
+    return {anchor: text_of(turn) for anchor, turn in elements(page, TURN_ANCHOR).items()}
 
 
 def view_of(directory: Path, transcript: Path) -> View:

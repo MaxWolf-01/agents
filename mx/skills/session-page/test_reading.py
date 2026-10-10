@@ -210,7 +210,8 @@ def test_a_write_to_another_directorys_turn_record_moves_none_of_this_sessions(
 def test_a_link_in_the_details_is_a_path_from_the_repo_root_too(worked_example: Path, transcript: Path) -> None:
     """The Decision resolves every link a record writes, the ones in its prose as well as its
     Links: followed from the page's directory, it lands on the path the record wrote, in a tab of
-    its own. A link to a part of the page stays on the page."""
+    its own. A link to a part of the page stays on the page. Pins the format: the links are in the
+    record's prose, which reaches the page as markup."""
     root = worked_example.parents[2]
     (worked_example / "turns" / "05.md").write_text(
         "---\ndate: 2026-09-24\n---\n\n# Round 4\n\n## Details\n\n"
@@ -363,8 +364,9 @@ def test_a_session_with_only_chat_turns_and_no_session_record_renders_under_clau
     assert page.resume == f"cd '/srv/help line' && claude --resume {FRESH}"
     rendered = render_session(directory, said, now=NOW)
     assert " 1 turn · 2026-10-05 · " in text_of(rendered)
-    # a title Claude Code gave is text, whatever it holds
+    # a title Claude Code gave is text, whatever it holds, in the tab and as the page's heading
     assert html.unescape(re.search(r"<title>(.*?) · session page</title>", rendered).group(1)) == title
+    assert html.unescape(re.search(r'<h1 class="v-title">(.*?)</h1>', rendered).group(1)) == title
 
 
 def test_a_run_of_turns_with_no_message_before_them_says_so_once_above_its_newest(tmp_path: Path) -> None:
@@ -422,12 +424,14 @@ def test_a_session_record_with_no_turn_yet_renders_its_title_and_no_turn(worked_
     assert " 0 turns · rendered " in text_of(render_session(worked_example, transcript, now=NOW))
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
-
-
 def test_the_turns_carry_no_heading_and_the_column_heading_no_rule(worked_example: Path, transcript: Path) -> None:
+    """Pins the format: the turns open on the first turn, and the timeline's heading is the column's
+    first element."""
     page = render_session(worked_example, transcript, now=NOW)
     turns = re.search(r'<section class="turns"[^>]*>(.*?)<(?:details|article)', page, re.S).group(1)
     assert turns.strip() == ""
     assert re.search(r'<aside class="column"[^>]*>\s*<div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>', page)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
