@@ -1,0 +1,14 @@
+{
+  "compactor": { "provider": "anthropic", "model": "claude-sonnet-5-5", "thinking": "low" },
+  "subagent": { "provider": "anthropic", "model": "claude-opus-5-5", "thinking": "medium" },
+  "subagentLevels": 1,
+  "maxAgents": 1,
+  "groupReports": false,
+  "previousExchange": false,
+  "previousExchangeKB": 16,
+  "memorySearch": false,
+  "summaryAcceptBytes": 640,
+  "importJobs": 8,
+  "forkSummaries": true,
+  "lazyMerges": true
+}
