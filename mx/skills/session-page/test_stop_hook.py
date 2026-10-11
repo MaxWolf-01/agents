@@ -581,11 +581,12 @@ def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
     assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["already ignored"]
 
 
-def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
+def test_an_agent_repo_that_tracks_session_records_still_shows_none_in_flight(
     worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """A repo that commits its session records keeps committing them: a later session's directory
-    still shows in its status."""
+    """The oracle is agent/tickets/session-records-tracked.md's P2: a repo that already tracks
+    earlier sessions' records gets the line too, so a later session's directory, and a tracked
+    session's derived page, stay out of its status."""
     agent = worked_example.parents[1]
     git(agent, "init")
     git(agent, "add", "sessions")
@@ -593,8 +594,8 @@ def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
     (worked_example.parent / "a-later-session").mkdir()
     (worked_example.parent / "a-later-session" / "session.md").write_text("")
     run(payload(worked_example, transcript))
-    assert [line for line in status(agent) if "sessions/" in line] == ["?? sessions/a-later-session/session.md", f"?? sessions/{worked_example.name}/index.html"]
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["tracked, so not excluded"]
+    assert [line for line in status(agent) if "sessions/" in line] == []
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == [f"added /sessions/ to {exclude_file(agent)}"]
 
 
 def test_an_agent_repo_outside_git_is_rendered_and_logged_as_such(
