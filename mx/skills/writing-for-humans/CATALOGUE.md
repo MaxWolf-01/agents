@@ -47,7 +47,6 @@ Credit: [Hardik Pandya](https://hvpandya.com), [github.com/hardikpandya/stop-slo
   Two forms are permitted. A list whose items each open with a short bold label naming a distinct fact ("**Branch:** `feature/x`, nothing pushed", "**Tests:** 604 pass") scans faster than the same facts as prose. And a bold lead-in: a few bold words at the start of a paragraph or bullet that name what it is about, end in a period, and are followed by genuinely new detail ("**Schema in TypeScript.** Tables live in one file."). Both are signposts for skimming, not an opener (34), a coined label (35) or meta-commentary (36); do not report them under those rules either.
 
 - `56` `both` **Crammed enumerations.** Items the reader scans or copies one at a time (file paths, commands, ids, settings), run together in a sentence or a table cell, most of all when each carries its own note. Put each on its own line, its note beside it: a list in prose, one line per item in a cell or a labelled row of a page. Short words that read as one phrase stay inline ("speed, quality and cost").
-  Before: "files: `src/driver/sessions.ts` (235, SessionIndex), `src/driver/models.ts` (126, per-thread model memory), `web/src/lib/chat/` (`chat-store.svelte.ts` 299, `chat-session.svelte.ts` 513)". After: one line per file, its line count and note beside it.
 
 - `17` `both` **Title case headings.** Use sentence case.
 
