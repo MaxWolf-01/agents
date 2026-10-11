@@ -26,11 +26,16 @@ exits 1, and its last line in the log says why. A run stopped by TERM, INT or HU
 is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
+A run that ended without its commit is resumed with --resume and its directory: it keeps the run's
+period, focus and seed, picks up at the first stage that left out a file it owes, and commits as
+any run does. A directory from before `run.json` was written takes its period's start from --since.
+
 Examples:
 
     retro_run.py ~/repos/github/MaxWolf-01/agents
     retro_run.py ~/repos/github/MaxWolf-01/agents --focus "the tests are overbuilt"
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
+    retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/2026-10-11T203542Z
 """
 
 from __future__ import annotations
@@ -89,32 +94,68 @@ WORKFLOW = (
 
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
-              seed: Sequence[Path] = (), until: datetime | None = None) -> Path:
-    """A whole workflow retro on `repo`; returns its run directory."""
+              seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None) -> Path:
+    """A whole workflow retro on `repo`, or the rest of the one `resume` names; returns its run directory.
+    The handlers of STOP are the caller's again afterwards: an ignored signal is inherited by every
+    process started later, which could then not be stopped."""
+    found = {s: signal.getsignal(s) for s in STOP}
+    try:
+        return retro(repo, data, projects, since, focus, seed, until, resume)
+    finally:
+        for s, handler in found.items():
+            signal.signal(s, handler)
+
+
+def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
+          seed: Sequence[Path], until: datetime | None, resume: Path | None) -> Path:
     repo = repo.expanduser().resolve()
     if not (repo / retro_collect.PLUGIN).exists():
         sys.exit(f"{repo} holds no mx plugin: the workflow retro is the agents repo's, and no other kind is built yet")
     agent = main_checkout(repo / "agent")
-    home = data.expanduser() / repo.name
     runs = run_commits(agent)
-    if since is None and not runs:
-        sys.exit(f"no earlier run of this retro in {agent}/retro/report.md's history: pass --since")
-    since = since or runs[0][1]
-    until = until or datetime.now(UTC)
-    run = home / "runs" / dirname(until)
+    if resume:
+        run = resume.expanduser().resolve()
+        if not (run / "batches.json").is_file():
+            sys.exit(f"{run} holds no batches.json: no retro run collected into it")
+        if (run / "run.json").is_file():
+            state = json.loads((run / "run.json").read_text())
+        elif since is None:  # a run from before run.json: its end is its directory's name, its start the caller's
+            sys.exit(f"{run} holds no run.json, which names the period's start: pass --since")
+        else:
+            state = dict(since=stamp(since), until=stamp(datetime.strptime(run.name, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=UTC)),
+                         focus=focus, seed=[str(Path(p).expanduser().resolve()) for p in seed],
+                         base=blob(agent, "retro/report.md"))
+            (run / "run.json").write_text(json.dumps(state) + "\n")
+        since, until, focus, base = parse_time(state["since"]), parse_time(state["until"]), state["focus"], state["base"]
+        seed = [Path(p) for p in state["seed"]]
+        home = run.parent.parent
+    else:
+        if since is None and not runs:
+            sys.exit(f"no earlier run of this retro in {agent}/retro/report.md's history: pass --since")
+        since = since or runs[0][1]
+        until = until or datetime.now(UTC)
+        home = data.expanduser() / repo.name
+        run = home / "runs" / dirname(until)
+        seed = [Path(p).expanduser().resolve() for p in seed]
+        if len({p.name for p in seed}) < len(seed):
+            sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
+        base = blob(agent, "retro/report.md")
     log = Log(home / "runs.log", run.name)
     repos = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")]
-    seed = [Path(p).expanduser() for p in seed]
-    if len({p.name for p in seed}) < len(seed):
-        sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
-    base = blob(agent, "retro/report.md")
-    log(f"started: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
+    if resume:
+        log(f"resumed: {repo}, {stamp(since)} to {stamp(until)}")
+    else:
+        log(f"started: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
     for s in STOP:
         signal.signal(s, on_stop)
     where = "collect"
     try:
-        retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos)
-        write_batches(run)
+        if not (run / "batches.json").is_file():
+            retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos)
+            # What a resumed run keeps; written once collect has written the directory, which it refuses inside git.
+            (run / "run.json").write_text(json.dumps(dict(since=stamp(since), until=stamp(until), focus=focus,
+                                                          seed=[str(p) for p in seed], base=base)) + "\n")
+            write_batches(run)
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
                       sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
@@ -123,6 +164,8 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
                       focus=f'max named a focus for this run: "{focus}".' if focus else "max named no focus for this run.")
         for stage in WORKFLOW:
             where = stage.name
+            if resume and not missing(stage, run):
+                continue
             if not stage.fresh and not (run / "previous").exists():
                 write_previous(run, agent, runs, seed)
             if failed := run_stage(stage, run, values, readable(repos, agent)):
@@ -223,7 +266,9 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
         process = subprocess.Popen(launch(stage, run, dirs), cwd=run, stdin=subprocess.PIPE, stdout=out,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True,
                                    preexec_fn=dies_with(os.getpid()),
-                                   env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0"})
+                                   env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0",
+                                        # print mode otherwise stops a subagent still running 10 minutes after the last turn
+                                        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         try:
             process.communicate(prompt)
         except Stopped:
@@ -231,11 +276,16 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path])
             raise
     if process.returncode != 0:
         return f"exited {process.returncode}"
+    if left := missing(stage, run):
+        return f"left out {', '.join(left)}"
+    return ""
+
+
+def missing(stage: Stage, run: Path) -> list[str]:
+    """The files the stage owes that the run directory lacks, or holds empty."""
     batches = [b["name"] for b in json.loads((run / "batches.json").read_text())]
     owed = [p.format(batch=b) for p in stage.owes for b in (batches if "{batch}" in p else [""])]
-    if missing := [p for p in owed if not (run / p).is_file() or not (run / p).stat().st_size]:
-        return f"left out {', '.join(missing)}"
-    return ""
+    return [p for p in owed if not (run / p).is_file() or not (run / p).stat().st_size]
 
 
 class Stopped(Exception):
@@ -385,8 +435,10 @@ class Args:
     """The retro's data directory, outside every git repo."""
     projects: list[Path] = field(default_factory=retro_collect.profiles)
     """Each Claude Code profile's directory of transcripts; by default every `~/.claude*/projects`."""
+    resume: Path | None = None
+    """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
-    run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed)
+    run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed, resume=args.resume)

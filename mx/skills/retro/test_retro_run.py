@@ -9,10 +9,11 @@ the run directory held when it started and writes what its stage owes. The same 
 read-fresh is given no earlier report (P6), and that the later stages read the last runs' reports
 from git history.
 
-Two checks enter elsewhere. The run's batches: given a run directory's `sessions.jsonl` and digests,
+Three checks enter elsewhere. The run's batches: given a run directory's `sessions.jsonl` and digests,
 the names and contents `batches.json` gets, the oracle being the batch size's arithmetic. A run
 stopped or killed: the command run as a process of its own, sent a signal while its stage's stub
 runs, the oracle being whether the stub's processes still run, read from `/proc`.
+A resumed run: the stub's record of which stages it ran, and the period on the commit.
 """
 
 import json
@@ -38,7 +39,7 @@ WEEK = timedelta(weeks=1)
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
 # command line, one argument per line, and what the run directory held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
-# With $STUB_HANG set it starts a child and waits on it instead, recording both pids, and takes a
+# With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child and waits on it instead, recording both pids, and takes a
 # second to end on TERM, as a model run ending its work does; the child ends only by its own TERM.
 STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
@@ -50,7 +51,7 @@ case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && echo "deep" > deep/architecture.md ;;
-    synthesize) eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && exit 0; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
 """
 
@@ -236,3 +237,29 @@ def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
     if sig == signal.SIGTERM:
         assert run.returncode == 128 + signal.SIGTERM
         assert last_logged(tmp_path).startswith("stopped: SIGTERM during read-fresh, which ended with it")
+
+
+def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a_file(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    assert last_logged(tmp_path).startswith("failed: synthesize left out report.md")
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    for argv in stub.glob("*.argv"):
+        argv.unlink()
+    monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
+
+    assert retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], resume=run) == run
+
+    assert [p.stem for p in stub.glob("*.argv")] == ["synthesize"], "the stages that wrote what they owe ran once"
+    message = out(repo / "agent", "log", "-1", "--format=%B")
+    assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
+    assert last_logged(tmp_path).startswith("committed ")
+
+
+def test_a_run_leaves_its_callers_signal_handlers_as_it_found_them(tmp_path: Path, stub: Path, repo: Path) -> None:
+    """A run in-process once left TERM ignored, and every process started after it unstoppable."""
+    found = {s: signal.getsignal(s) for s in retro_run.STOP}
+    retro(tmp_path, repo, FIRST, SINCE)
+    assert {s: signal.getsignal(s) for s in retro_run.STOP} == found
