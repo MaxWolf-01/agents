@@ -9,11 +9,12 @@ the run directory held when it started and writes what its stage owes. The same 
 read-fresh is given no earlier report (P6), and that the later stages read the last runs' reports
 from git history.
 
-Three checks enter elsewhere. The run's batches: given a run directory's `sessions.jsonl` and digests,
-the names and contents `batches.json` gets, the oracle being the batch size's arithmetic. A run
-stopped or killed: the command run as a process of its own, sent a signal while its stage's stub
-runs, the oracle being whether the stub's processes still run, read from `/proc`.
-A resumed run: the stub's record of which stages it ran, and the period on the commit.
+Four checks enter elsewhere. The run's batches: given a run directory's `sessions.jsonl` and
+digests, the names and contents `batches.json` gets, the oracle being the batch size's arithmetic.
+A run stopped or killed: the command run as a process of its own, sent a signal while its stage's
+stub runs, the oracle being whether the stub's processes still run, read from `/proc`. A resumed
+run: the oracle being the stub's record of which stages it ran and the period on the commit. A run
+in-process: the oracle being the signal handlers before it and after.
 """
 
 import json
@@ -39,8 +40,9 @@ WEEK = timedelta(weeks=1)
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
 # command line, one argument per line, and what the run directory held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
-# With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child and waits on it instead, recording both pids, and takes a
-# second to end on TERM, as a model run ending its work does; the child ends only by its own TERM.
+# With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child
+# and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
+# ending its work does; the child ends only by its own TERM.
 STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
@@ -263,3 +265,42 @@ def test_a_run_leaves_its_callers_signal_handlers_as_it_found_them(tmp_path: Pat
     found = {s: signal.getsignal(s) for s in retro_run.STOP}
     retro(tmp_path, repo, FIRST, SINCE)
     assert {s: signal.getsignal(s) for s in retro_run.STOP} == found
+
+
+def test_a_run_directory_from_before_run_json_resumes_with_the_start_it_is_given(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    (run / "run.json").unlink()
+    projects = [tmp_path / ".claude/projects"]
+
+    with pytest.raises(SystemExit, match="pass --since"):
+        retro_run.run_retro(repo, tmp_path / "data", projects, resume=run)
+    retro_run.run_retro(repo, tmp_path / "data", projects, SINCE, resume=run)
+
+    message = out(repo / "agent", "log", "-1", "--format=%B")
+    assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
+
+
+@pytest.mark.parametrize("kept", [True, False], ids=["run.json", "before run.json"])
+def test_a_run_is_not_resumed_over_a_verdict_committed_since_it_began(
+        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, kept: bool) -> None:
+    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
+    with pytest.raises(SystemExit):
+        retro(tmp_path, repo, FIRST, SINCE)
+    monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
+    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    if not kept:
+        (run / "run.json").unlink()
+    agent = repo / "agent"
+    (agent / "retro/report.md").write_text("F1 dismissed by max\n")
+    git(agent, "add", "retro/report.md")
+    git(agent, "commit", "-qm", "verdict", "--", "retro/report.md")
+
+    with pytest.raises(SystemExit, match="was committed to since"):
+        retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], None if kept else SINCE, resume=run)
+    assert (agent / "retro/report.md").read_text() == "F1 dismissed by max\n"
+    assert out(agent, "log", "-1", "--format=%s") == "verdict\n", "nothing was committed over it"

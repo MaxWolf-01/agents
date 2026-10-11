@@ -96,8 +96,9 @@ WORKFLOW = (
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
               seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None) -> Path:
     """A whole workflow retro on `repo`, or the rest of the one `resume` names; returns its run directory.
-    The handlers of STOP are the caller's again afterwards: an ignored signal is inherited by every
-    process started later, which could then not be stopped."""
+    The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
+    process: a signal left ignored is inherited by every process it starts later, which no TERM then
+    stops."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
         return retro(repo, data, projects, since, focus, seed, until, resume)
@@ -113,21 +114,12 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         sys.exit(f"{repo} holds no mx plugin: the workflow retro is the agents repo's, and no other kind is built yet")
     agent = main_checkout(repo / "agent")
     runs = run_commits(agent)
+    seed = [Path(p).expanduser().resolve() for p in seed]
+    if len({p.name for p in seed}) < len(seed):
+        sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
     if resume:
         run = resume.expanduser().resolve()
-        if not (run / "batches.json").is_file():
-            sys.exit(f"{run} holds no batches.json: no retro run collected into it")
-        if (run / "run.json").is_file():
-            state = json.loads((run / "run.json").read_text())
-        elif since is None:  # a run from before run.json: its end is its directory's name, its start the caller's
-            sys.exit(f"{run} holds no run.json, which names the period's start: pass --since")
-        else:
-            state = dict(since=stamp(since), until=stamp(datetime.strptime(run.name, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=UTC)),
-                         focus=focus, seed=[str(Path(p).expanduser().resolve()) for p in seed],
-                         base=blob(agent, "retro/report.md"))
-            (run / "run.json").write_text(json.dumps(state) + "\n")
-        since, until, focus, base = parse_time(state["since"]), parse_time(state["until"]), state["focus"], state["base"]
-        seed = [Path(p) for p in state["seed"]]
+        since, until, focus, seed, base = resumed(run, agent, since, focus, seed)
         home = run.parent.parent
     else:
         if since is None and not runs:
@@ -136,26 +128,20 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         until = until or datetime.now(UTC)
         home = data.expanduser() / repo.name
         run = home / "runs" / dirname(until)
-        seed = [Path(p).expanduser().resolve() for p in seed]
-        if len({p.name for p in seed}) < len(seed):
-            sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
         base = blob(agent, "retro/report.md")
     log = Log(home / "runs.log", run.name)
     repos = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")]
-    if resume:
-        log(f"resumed: {repo}, {stamp(since)} to {stamp(until)}")
-    else:
-        log(f"started: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
+    log(f"{'resumed' if resume else 'started'}: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
     for s in STOP:
         signal.signal(s, on_stop)
     where = "collect"
     try:
         if not (run / "batches.json").is_file():
             retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos)
-            # What a resumed run keeps; written once collect has written the directory, which it refuses inside git.
+            write_batches(run)
+            # What a resumed run keeps, beside the batches a resume needs.
             (run / "run.json").write_text(json.dumps(dict(since=stamp(since), until=stamp(until), focus=focus,
                                                           seed=[str(p) for p in seed], base=base)) + "\n")
-            write_batches(run)
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
                       sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
@@ -182,6 +168,33 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     if not committed:
         sys.exit(1)
     return run
+
+
+def resumed(run: Path, agent: Path, since: datetime | None, focus: str,
+            seed: list[Path]) -> tuple[datetime, datetime, str, list[Path], str | None]:
+    """The period, focus, seed and base of the run in `run`, from its `run.json`. A directory from
+    before `run.json` was written takes its start from `since`, its end from its name, and as its
+    base the report its `previous/current.md` holds. Exits when the report was committed to since
+    the run began: its stages read the report as it was, and its commit would undo the change."""
+    if not (run / "batches.json").is_file():
+        sys.exit(f"{run} holds no batches.json: no retro run collected into it")
+    if (run / "run.json").is_file():
+        if since or focus or seed:
+            sys.exit(f"{run} keeps its own period, focus and seed in run.json; --resume takes none of them")
+        state = json.loads((run / "run.json").read_text())
+    elif since is None:
+        sys.exit(f"{run} holds no run.json, which names the period's start: pass --since")
+    else:
+        current = run / "previous" / "current.md"
+        base = (git(agent, "hash-object", str(current)).strip() if current.is_file()
+                else None if (run / "previous").is_dir() else blob(agent, "retro/report.md"))
+        state = dict(since=stamp(since), until=stamp(datetime.strptime(run.name, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=UTC)),
+                     focus=focus, seed=[str(p) for p in seed], base=base)
+        (run / "run.json").write_text(json.dumps(state) + "\n")
+    if blob(agent, "retro/report.md") != state["base"]:
+        sys.exit(f"{agent}/retro/report.md was committed to since {run.name} began; start a new run, which reads it as it is")
+    return (parse_time(state["since"]), parse_time(state["until"]), state["focus"],
+            [Path(p) for p in state["seed"]], state["base"])
 
 
 def main_checkout(agent: Path) -> Path:
