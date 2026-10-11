@@ -58,8 +58,8 @@ export async function run(options: { steps: number; first: number; budget: numbe
 	for (let n = options.first; n <= last; n++) {
 		const before = weighted();
 		if (before >= options.budget) break;
-		const left = Math.round((100 * (options.budget - before)) / options.budget);
-		const done = await step(pi, `Explore step ${n} of ${last}. ${left}% of your budget is left.`);
+		// A bare "continue": no step count or budget, which would read as time pressure, and nothing a summary has to drop.
+		const done = await step(pi, "continue");
 		console.log(`step ${n}: ${weighted() - before} weighted tokens since it started. ${done.error ? `It failed: ${done.error}` : `Finding: ${done.finding}`}`);
 		if (done.error) {
 			code = 1;
