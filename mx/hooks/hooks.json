@@ -43,6 +43,14 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py ended $PPID"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/end_hook.py"
+          }
+        ]
       }
     ],
     "SessionStart": [
