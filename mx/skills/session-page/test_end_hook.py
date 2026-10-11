@@ -55,23 +55,23 @@ def agent(worked_example: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def end(worked_example: Path, monkeypatch: pytest.MonkeyPatch, attended: Path) -> Callable[..., list[dict]]:
+def end(worked_example: Path, monkeypatch: pytest.MonkeyPatch, attended: Path) -> Callable[[], list[dict]]:
     """End the session the way Claude Code does, and hand back the log's lines once the detached
-    commit has said what came of it, or ten seconds have passed. A session the hook commits nothing
-    for logs no outcome, so its wait ends on the hook's own line."""
+    commit has said what came of it. A session the hook starts no commit for has nothing to wait on.
+    A commit that never says fails the check."""
 
-    def call(reason: str = "prompt_input_exit") -> list[dict]:
-        before = len(attended.read_text().splitlines()) if attended.exists() else 0
-        hook = {"session_id": worked_example.name, "cwd": str(worked_example.parents[2]), "reason": reason,
+    def call() -> list[dict]:
+        hook = {"session_id": worked_example.name, "cwd": str(worked_example.parents[2]), "reason": "prompt_input_exit",
                 "transcript_path": "", "hook_event_name": "SessionEnd"}
         monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook)))
         end_hook.main()
         deadline = time.monotonic() + 10
         while True:
-            lines = [json.loads(line) for line in attended.read_text().splitlines()[before:]]
-            started = any(entry.get("why") == "commit started" for entry in lines)
-            if not started or any("committed" in entry for entry in lines) or time.monotonic() > deadline:
+            lines = [json.loads(line) for line in attended.read_text().splitlines()]
+            if not any(entry.get("why") == "commit started" for entry in lines) or any("committed" in entry for entry in lines):
                 return lines
+            if time.monotonic() > deadline:
+                pytest.fail(f"the detached commit logged nothing in ten seconds: {lines}")
             time.sleep(0.05)
 
     return call
@@ -87,10 +87,11 @@ def in_status(repo: Path) -> list[str]:
 
 
 def test_a_session_that_ends_commits_its_records_and_nothing_else(
-    agent: Path, worked_example: Path, end: Callable[..., list[dict]],
+    agent: Path, worked_example: Path, end: Callable[[], list[dict]],
 ) -> None:
-    """P1: the commit holds the session's `session.md` and `turns/`, not its derived page and not
-    what another session staged, which stays staged; it names the session in a `Session:` trailer."""
+    """P1, through the hook as Claude Code runs it: the commit holds the session's `session.md` and
+    `turns/`, not its derived page and not what another session staged, which stays staged; it
+    names the session in a `Session:` trailer."""
     end()
     assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
     assert git(agent, "log", "-1", "--format=%(trailers:key=Session,valueonly)").strip() == worked_example.name
@@ -98,64 +99,82 @@ def test_a_session_that_ends_commits_its_records_and_nothing_else(
 
 
 def test_records_in_flight_stay_out_of_status_and_edits_to_committed_ones_show(
-    agent: Path, worked_example: Path, end: Callable[..., list[dict]],
+    agent: Path, worked_example: Path,
 ) -> None:
-    """P2, and the Decision that the commit force-adds: before the end and after it, no session's
+    """P2, and the Decision that the commit force-adds: before the commit and after it, no session's
     records show, another session's still in flight included; a later edit to a committed record
     does."""
     later = worked_example.parent / "a-later-session"
     (later / "turns").mkdir(parents=True)
     (later / "turns" / "01.md").write_text("in flight\n")
     assert in_status(agent) == []
-    end()
+    end_hook.commit_records(worked_example)
     assert in_status(agent) == []
     (worked_example / "turns" / "04.md").write_text("revised\n")
     assert in_status(agent) == [f" M sessions/{worked_example.name}/turns/04.md"]
 
 
-def test_a_resumed_session_commits_what_changed_when_it_ends_again(
-    agent: Path, worked_example: Path, end: Callable[..., list[dict]],
-) -> None:
-    end()
+def test_a_resumed_session_commits_what_changed_when_it_ends_again(agent: Path, worked_example: Path) -> None:
+    end_hook.commit_records(worked_example)
     first = git(agent, "rev-parse", "HEAD")
-    assert [entry["committed"] for entry in end("resume") if "committed" in entry] == ["nothing changed since the last commit"]
+    assert end_hook.commit_records(worked_example) == "nothing changed since the last commit"
     assert git(agent, "rev-parse", "HEAD") == first
     (worked_example / "turns" / "05.md").write_text("the resumed session's turn\n")
-    end()
+    end_hook.commit_records(worked_example)
     assert committed(agent) == [f"sessions/{worked_example.name}/turns/05.md"]
 
 
-def test_a_commit_waits_out_another_sessions_index_lock(
-    agent: Path, worked_example: Path, end: Callable[..., list[dict]],
-) -> None:
+def test_a_commit_waits_out_another_sessions_index_lock(agent: Path, worked_example: Path) -> None:
     """Several sessions share the agent repo's main checkout, so another's commit may hold the index."""
     lock = agent / ".git" / "index.lock"
     lock.write_text("")
-    threading.Timer(1.0, lock.unlink).start()
-    end()
+    threading.Timer(0.5, lock.unlink).start()
+    end_hook.commit_records(worked_example)
     assert committed(agent) == [f"sessions/{worked_example.name}/{path}" for path in RECORDS]
 
 
-UNREAD = {"a dispatched worker": ("DISPATCH_WORKLOG", "/tmp/worklog"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
+def test_a_commit_that_fails_leaves_nothing_staged_for_another_sessions_commit(agent: Path, worked_example: Path) -> None:
+    """P1 holds for the next commit too: the index is shared, so records left staged would land in it."""
+    hook = agent / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    assert end_hook.commit_records(worked_example).endswith("; unstaged")
+    assert git(agent, "status", "--porcelain").splitlines() == ["A  tickets/other.md"]
 
 
-@pytest.mark.parametrize("variable, value", UNREAD.values(), ids=UNREAD)
+def test_an_agent_directory_inside_the_code_repo_gets_no_commit(worked_example: Path) -> None:
+    """The records are the agent repo's history; where the agent directory is no repo of its own, a
+    commit would land on the code repo's checked-out branch and reach its remote."""
+    project = worked_example.parents[2]
+    git(project, "init", "-q")
+    git(project, "commit", "-q", "--allow-empty", "-m", "start")
+    assert end_hook.commit_records(worked_example) == "the agent directory is not a repo of its own"
+    assert git(project, "rev-list", "--count", "HEAD").strip() == "1"
+    assert git(project, "diff", "--cached", "--name-only") == ""
+
+
+UNREAD = {"a dispatched worker": ("DISPATCH_WORKLOG", "/tmp/worklog", "dispatched worker"),
+          "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0", "print-mode session")}
+
+
+@pytest.mark.parametrize("variable, value, why", UNREAD.values(), ids=UNREAD)
 def test_a_session_left_alone_commits_nothing(
-    variable: str, value: str, agent: Path, end: Callable[..., list[dict]], monkeypatch: pytest.MonkeyPatch,
+    variable: str, value: str, why: str, agent: Path, end: Callable[[], list[dict]], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(variable, value)
     head = git(agent, "rev-parse", "HEAD")
-    assert end() and git(agent, "rev-parse", "HEAD") == head
+    assert [entry["why"] for entry in end()] == [why]
+    assert git(agent, "rev-parse", "HEAD") == head
 
 
 def test_a_session_with_no_records_commits_nothing(
-    agent: Path, worked_example: Path, end: Callable[..., list[dict]],
+    agent: Path, worked_example: Path, end: Callable[[], list[dict]],
 ) -> None:
-    """A session that never wrote a record: its directory holds at most the page, or is absent."""
-    for record in ("session.md", "turns"):
-        shutil.rmtree(worked_example / record) if record == "turns" else (worked_example / record).unlink()
+    """A session that never wrote a record: its directory holds at most the page."""
+    (worked_example / "session.md").unlink()
+    shutil.rmtree(worked_example / "turns")
     head = git(agent, "rev-parse", "HEAD")
-    assert [entry["why"] for entry in end() if "why" in entry] == ["no records"]
+    assert [entry["why"] for entry in end()] == ["no records"]
     assert git(agent, "rev-parse", "HEAD") == head
 
 

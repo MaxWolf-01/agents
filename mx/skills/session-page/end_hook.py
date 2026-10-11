@@ -60,9 +60,17 @@ def main() -> None:
 
 def commit_records(directory: Path) -> str:
     """Commit the records in `directory`, a session's directory under the agent repo's `sessions/`,
-    and say what came of it. Another process's commit landing between the add and the commit could
-    sweep the staged records into its own; the two run back to back to keep that window short."""
+    and say what came of it.
+
+    Only where `sessions/` sits at the top of a repo of its own: where the agent directory is part of
+    the code repo, the commit would land on whatever branch its main checkout holds and travel to
+    its remote. A commit that fails unstages the records again, since the index is shared and the
+    next session's commit would carry them. Another process's commit landing between the add and
+    the commit could sweep them all the same; the two run back to back to keep that window short."""
     sessions, session_id = directory.parent, directory.name
+    top = git(sessions, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or Path(top.stdout.strip()) != sessions.parent.resolve():
+        return "the agent directory is not a repo of its own"
     paths = [f"{session_id}/{name}" for name in RECORDS if (directory / name).exists()]
     if not paths:
         return "no records"
@@ -77,7 +85,9 @@ def commit_records(directory: Path) -> str:
             if done.returncode == 0:
                 return "committed " + " ".join(f"{sessions.name}/{path}" for path in paths)
         if "index.lock" not in done.stderr or time.monotonic() > deadline:
-            return f"git {done.args[3]} failed: {done.stderr.strip()}"
+            unstaged = git(sessions, "reset", "--quiet", "--", *paths)
+            left = "unstaged" if unstaged.returncode == 0 else f"left staged: {unstaged.stderr.strip()}"
+            return f"git {done.args[3]} failed: {done.stderr.strip()}; {left}"
         time.sleep(0.2)
 
 
