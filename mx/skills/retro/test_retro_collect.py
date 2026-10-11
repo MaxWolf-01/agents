@@ -9,8 +9,8 @@ period's start are collected. Nothing lands in a git repository (retro-semi-auto
 """
 
 import json
-import re
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -119,7 +119,7 @@ def test_the_period_holds_its_interactive_sessions_alone(tmp_path: Path, project
     assert not any(s in everything(run) for s in ("WORKER", worker.sid, before.sid))
 
 
-def test_every_claude_code_profile_under_the_home_is_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_every_claude_dot_projects_directory_under_the_home_is_a_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for d in (".claude/projects", ".claude-work/projects", ".config/claude/projects"):
         (tmp_path / d).mkdir(parents=True)
     (tmp_path / ".claude.json").write_text("{}")
