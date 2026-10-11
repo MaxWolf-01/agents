@@ -916,6 +916,7 @@ print(json.dumps(out))
 # graph draws, every other one as the layout loads.
 CHUNKS = [url.rsplit("/", 1)[1] for url in json.loads(
     re.search(r'<script type="importmap">(.*?)</script>', PAGE.template, re.S).group(1))["integrity"] if "/chunks/" in url]
+assert any(chunk.startswith("render-") for chunk in CHUNKS), f"the import map pins no render chunk among {CHUNKS}"
 
 
 @pytest.mark.full_path

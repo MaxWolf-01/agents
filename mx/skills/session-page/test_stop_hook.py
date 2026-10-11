@@ -36,8 +36,8 @@ import session_page
 import stop_hook
 import turn_review
 from session_checks import (
-    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_STARTS, UNPARSEABLE, appended, elements, logged, messages_of, payload,
-    turns_on, unreachable, view_of, with_write,
+    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_ANCHOR, TURN_STARTS, UNPARSEABLE, appended, elements, logged,
+    messages_of, payload, turns_on, unreachable, view_of, with_write,
 )
 from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
@@ -693,7 +693,6 @@ ANSWERED_IN_THE_CHAT = {
     "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
 }
 NUMBERED = ["01.md", "02.md", "03.md", "04.md"]  # the worked example's records
-TURN_ID = re.compile(r'\bid="(t\d+|chat-\d{8}T\d{6}Z)"')  # the anchors a turn and a chat turn are reached by
 
 
 def chats(directory: Path) -> list[Path]:
@@ -703,7 +702,7 @@ def chats(directory: Path) -> list[Path]:
 
 def rows(page: str) -> list[str]:
     """The ids of the page's turns, top to bottom."""
-    return TURN_ID.findall(page)
+    return re.findall(rf'\bid="({TURN_ANCHOR})"', page)
 
 
 @pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)

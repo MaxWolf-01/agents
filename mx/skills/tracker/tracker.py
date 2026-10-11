@@ -475,7 +475,7 @@ def refuse_transition(ticket: Ticket, want: str, tracker: Tracker) -> None:
 
 # ---- landing ---------------------------------------------------------------
 # What a merge gives a ticket: its status and its `diff:` ranges, decided here and written in one
-# write. `dispatch review` and `dispatch accept` call these.
+# write.
 
 
 @app.command(name="land")
@@ -487,8 +487,8 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
     is no hinge, merged into its parent's branch: that one waits in `review` for its parent's ruling.
     A `done` here is held to the rule `set` holds every `done` to: the work has reached the branch
     the user's accept merges it into. A merged round that rule refuses is refused with the reason,
-    and nothing is written. Unmerged, the ticket waits in `review`. A round whose
-    branches carry no commit built nothing, and nothing is written.
+    and nothing is written. Unmerged, the ticket waits in `review`. A round whose branches carry no
+    commit built nothing, and nothing is written.
 
     Prints the ticket as `data <slug>` does, as the landing left it, and the round beside it:
 
@@ -496,8 +496,9 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
          "round": [{"repo": "str", "tip": "str", "merged": bool, "range": "str|null"}]}
 
     A range is `<repo>@<first>..<last>`, from the ticket's own fork point, which a --no-ff merge
-    (ADR 0001) keeps findable once the branch has merged; none for a branch that committed nothing,
-    nor for a merged tip no merge of its own brought in, which git cannot tell from one.
+    keeps findable once the branch has merged (decisions/0001-every-merge-is-no-ff.md); none for a
+    branch that committed nothing, nor for a merged tip no merge of its own brought in, which git
+    cannot tell from one.
 
     Args:
         slug: the ticket.
@@ -514,7 +515,8 @@ def land(slug: Annotated[str, tyro.conf.Positional], dry_run: bool = False) -> i
         changes = ranged(ticket, branches)
         base = head(repos_of(tracker)[0])
         ruled_with_parent = ticket.parent == base and not ticket.hinge
-        if ticket.status not in ("done", now := "review" if ruled_with_parent else "done"):
+        now = "review" if ruled_with_parent else "done"
+        if ticket.status not in ("done", now):
             changes["status"] = now
         message = f"{slug} merged into {base}, for its ruling with it" if ruled_with_parent else f"{slug} landed"
     elif ticket.status != "review":
@@ -609,7 +611,7 @@ class Branch:
     repo: str  # what its range calls the repo: `code`, `agent`, or a listed repo's name
     tip: str
     merged: bool  # into one of the branches it cut from and merges back into
-    range: str | None  # `<repo>@<first>..<last>`; None for a branch that committed nothing
+    range: str | None  # `<repo>@<first>..<last>`; None where `branch_in` finds none
 
 
 def round_of(ticket: Ticket, tracker: Tracker) -> list[Branch]:
@@ -1269,6 +1271,7 @@ def unblock(retiring: Sequence[Ticket], tracker: Tracker, top: Path) -> list[Pat
 def run(cwd: Path, *args: str, aside: bool = False) -> None:
     """`args` run in `cwd`, said first. `aside` says both on stderr, for a command whose stdout is data."""
     print("+ " + " ".join(args), file=sys.stderr if aside else sys.stdout, flush=True)
+    # fd 2, not sys.stderr, which a caller running this in process may have swapped for a stream with no file
     done = subprocess.run(args, cwd=cwd, stdout=2 if aside else None)
     if done.returncode != 0:
         raise Refused([f"{' '.join(args)} failed"])

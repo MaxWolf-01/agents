@@ -25,9 +25,13 @@ def test_no_two_scripts_under_mx_share_a_name() -> None:
 
 
 def imported_by_name(path: Path) -> list[str]:
-    return [name for node in ast.walk(ast.parse(path.read_text()))
-            for name in ([a.name for a in node.names] if isinstance(node, ast.Import)
-                         else [node.module] if isinstance(node, ast.ImportFrom) else [])]
+    names = []
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.append(node.module)
+    return names
 
 
 def test_no_check_imports_a_conftest_by_name() -> None:
@@ -37,6 +41,8 @@ def test_no_check_imports_a_conftest_by_name() -> None:
 def test_no_check_imports_another_check() -> None:
     """Importing a test module collects its checks with the importer's; what two share lives in a
     module of its own beside them."""
-    importers = {path.relative_to(MX): checks for path in MX.rglob("*.py")
-                 if (checks := [name for name in imported_by_name(path) if name and name.startswith("test_")])}
+    importers = {}
+    for path in MX.rglob("*.py"):
+        if checks := [name for name in imported_by_name(path) if name.startswith("test_")]:
+            importers[path.relative_to(MX)] = checks
     assert importers == {}

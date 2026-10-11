@@ -13,9 +13,9 @@ Under "properties" at the end sit the executable Properties of
 `agent/tickets/ticket-file-contract.md`, P1 to P4 and P6, and P2 and P3 of
 `agent/tickets/speculative-first.md`; those tickets are their oracle. Under "listed repos" near
 the end sit P2 and P6 of `agent/tickets/tickets-land-in-listed-repos.md`, and under "landing", last,
-what a merge gives a ticket through `land` and `accept`. The corpus
-beside this file is the board-orients feature converted to the one-ticket model by hand: real ticket
-files, the shapes their writers actually wrote.
+what a merge gives a ticket through `land` and `accept`. The corpus beside this file is the
+board-orients feature converted to the one-ticket model by hand: real ticket files, the shapes their
+writers actually wrote.
 """
 
 import io
@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 import textwrap
+from collections.abc import Iterator
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,6 +93,18 @@ def ticket(tickets: Path, slug: str, body: str = "", **meta: object) -> Path:
 def line_of(path: Path, words: str) -> int:
     """The line `words` sits on, as an editor counts: what a refusal has to name."""
     return next(n for n, line in enumerate(path.read_text().splitlines(), start=1) if words in line)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def hermetic_git() -> Iterator[None]:
+    """Git with no configuration of the machine's, for the commits a check makes and the ones the
+    tracker makes in it: a hook or a setting of whoever runs the checks would write into the history
+    the checks read. Module-wide, so the properties' examples run under it too."""
+    with pytest.MonkeyPatch.context() as patch:
+        for key, value in {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_COUNT": "1",
+                           "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false"}.items():
+            patch.setenv(key, value)
+        yield
 
 
 def git(at: Path, *args: str) -> str:
@@ -1968,9 +1981,10 @@ def test_a_range_that_is_no_range_says_a_listed_name_may_carry_it(split: Path) -
     assert said.code == 1 and "in a repo repos.toml lists by that name" in said.out and "never as a branch name" in said.out, said.said
 
 
-def in_review(listed: Path, slug: str, **meta: object) -> Path:
-    """A ticket waiting in review, committed in the agent repo, as an accept finds it."""
-    path = ticket(listed / "agent" / "tickets", slug, status="review", **meta)
+def in_review(listed: Path, slug: str, status: str = "review", **meta: object) -> Path:
+    """A ticket waiting in review, committed in the agent repo, as an accept finds it; or at
+    `status`, as a merge finds a ticket whose worker's report was never imported."""
+    path = ticket(listed / "agent" / "tickets", slug, status=status, **meta)
     git(listed / "agent", "add", "-A")
     git(listed / "agent", "commit", "-q", "-m", slug)
     return path
@@ -2157,6 +2171,8 @@ def built(top: Path, branch: str, start: str, what: str) -> str:
 
 
 def merged(top: Path, branch: str) -> None:
+    """`branch` merged --no-ff into the branch `top` has out, as the orchestrator merges a round, so
+    the merge commit is there for `land` to find the range by."""
     git(top, "merge", "-q", "--no-ff", "-m", f"{branch} merged", branch)
 
 
@@ -2166,10 +2182,7 @@ def subjects(top: Path) -> list[str]:
 
 def test_a_round_waits_in_review_until_every_branch_has_merged_and_then_lands_with_a_range_in_each_repo(split: Path) -> None:
     agent = split / "agent"
-    in_review(split, "one-flow")
-    path = agent / "tickets" / "one-flow.md"
-    path.write_text(path.read_text().replace("status: review", "status: claimed"))
-    git(agent, "commit", "-q", "-am", "one-flow claimed")
+    path = in_review(split, "one-flow", status="claimed")
     code, notes = built(split, "ticket/one-flow", "main", "the build"), built(agent, "ticket/one-flow", "main", "the report")
 
     said, read = printed(split, "land", "one-flow")
@@ -2240,14 +2253,10 @@ def test_a_merged_round_the_done_rule_refuses_is_refused_with_the_reason_and_not
     is a failure to read, never a build waiting in review: a ticket of its own whose child never
     merged into its branch, or a round merged before its worker's report was imported."""
     agent = split / "agent"
-    in_review(split, "one-flow")
+    in_review(split, "one-flow", status="claimed" if held == "no report imported" else "review")
     if held == "a child not merged":
         in_review(split, "map-columns", parent="one-flow")
         built(split, "ticket/map-columns", "main", "columns, never merged")
-    else:
-        path = agent / "tickets" / "one-flow.md"
-        path.write_text(path.read_text().replace("status: review", "status: claimed"))
-        git(agent, "commit", "-q", "-am", "one-flow claimed")
     built(split, "ticket/one-flow", "main", "the flow")
     merged(split, "ticket/one-flow")
     tree = {one.name: one.read_text() for one in (agent / "tickets").glob("*.md")}
@@ -2286,15 +2295,12 @@ def test_a_round_that_built_nothing_writes_nothing(split: Path) -> None:
     """A worker that died before its first commit: both branches are the base, so there is no range,
     and the ticket keeps the claim it had."""
     agent = split / "agent"
-    in_review(split, "one-flow")
-    path = agent / "tickets" / "one-flow.md"
-    path.write_text(path.read_text().replace("status: review", "status: claimed"))
-    git(agent, "commit", "-q", "-am", "one-flow claimed")
+    in_review(split, "one-flow", status="claimed")
     for top in (split, agent):
         git(top, "branch", "ticket/one-flow")
     said, read = printed(split, "land", "one-flow")
     assert said.code == 0 and "built nothing to review" in said.err, said.said
-    assert read["tickets"][0]["status"] == "claimed" and subjects(agent)[0] == "one-flow claimed"
+    assert read["tickets"][0]["status"] == "claimed" and subjects(agent)[0] == "one-flow"
 
 
 def test_a_ticket_merged_into_a_local_integration_branch_behind_origin_records_only_its_own_commits(listed: Path) -> None:
