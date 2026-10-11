@@ -71,7 +71,7 @@ def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """The agents repo, holding the mx plugin, and its agent repo with a staged ticket and `retro/`'s lists."""
+    """The agents repo, holding the mx plugin, and its agent repo with a staged ticket and `retro/repos`."""
     repo = tmp_path / "agents"
     (repo / "mx/.claude-plugin").mkdir(parents=True)
     (repo / "mx/.claude-plugin/plugin.json").write_text('{"version": "1.0.0"}')
@@ -81,7 +81,6 @@ def repo(tmp_path: Path) -> Path:
     agent = repo / "agent"
     (agent / "retro").mkdir(parents=True)
     (agent / "retro/repos").write_text(f"# the repos\n{repo}\n")
-    (agent / "retro/excluded-sessions").write_text("/home/u/work/org/*\n")
     (agent / "tickets").mkdir()
     (agent / "tickets/a.md").write_text("status: proposed\n")
     git(agent, "init", "-q")

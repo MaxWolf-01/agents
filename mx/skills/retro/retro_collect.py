@@ -23,22 +23,18 @@
 messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
 change, the tickets deleted, and the worker reports committed in the period.
 
-A session whose working directory matches a pattern of the exclude file, which `sessions` cannot
-run without, is never digested. Digests are
-cached per session in the cache directory and digested again only once the transcript or its
-session page changed. Neither the run directory nor the cache may be inside a git work tree.
+Digests are cached per session in the cache directory and digested again only once the
+transcript or its session page changed. Neither the run directory nor the cache may be inside a git work tree.
 
 Examples:
 
     retro_collect.py sessions --since 2026-10-05 --run ~/.local/share/retro/runs/2026-10-12 \\
-        --exclude-file ~/repos/github/MaxWolf-01/agents/agent/retro/excluded-sessions \\
         --repos ~/repos/github/MaxWolf-01/agents ~/.dotfiles
     retro_collect.py git --since 2026-10-05 --run /tmp/run --repos ~/.dotfiles
 """
 
 from __future__ import annotations
 
-import fnmatch
 import itertools
 import json
 import os
@@ -60,7 +56,6 @@ import session_page  # noqa: E402  what counts as the user's own message, as the
 SAMPLE_SIZE = 20
 SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the period's end
 PASTE_CLIP = 600  # pasted text in a message of the user's
-PROFILES = (Path.home() / ".claude/projects", Path.home() / ".claude-helferline/projects")  # each profile's transcripts
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
@@ -70,13 +65,13 @@ PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 
 
 def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path],
-                     repos: list[Path], exclude: list[str], seed: int | None = None) -> None:
+                     repos: list[Path], seed: int | None = None) -> None:
     """Everything a workflow retro's later stages read, written into `run`."""
     refuse_inside_git(run, cache)
     refuse_unless_git(repos)
     oldest = until - SAMPLE_WINDOW[1]
-    transcripts = [t for t in find_transcripts(projects, exclude) if t.stat().st_mtime >= min(since, oldest).timestamp()]
-    digests = [d for d in digest_all(transcripts, cache, repos, exclude) if d.interactive and d.text]
+    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= min(since, oldest).timestamp()]
+    digests = [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
     period = [d for d in digests if d.end >= since and d.start <= until]
     ids = {d.sid for d in period}
     older = [d for d in digests if d.sid not in ids and until - SAMPLE_WINDOW[1] <= d.start <= until - SAMPLE_WINDOW[0]]
@@ -129,28 +124,14 @@ def refuse_unless_git(repos: list[Path]) -> None:
 # ── which sessions ───────────────────────────────────────────────────────────
 
 
-def find_transcripts(projects: list[Path], exclude: list[str]) -> list[Path]:
-    """Every session's transcript under the profiles' project directories, less those whose
-    project directory, Claude Code's encoding of the directory the session started in, matches an
-    exclude pattern: those are never opened."""
-    encoded = [e for p in exclude for e in (encode(p), encode(p.rstrip("/")) + "-*")]
-    return [t for root in projects if root.is_dir() for t in sorted(root.glob("*/*.jsonl"))
-            if not any(fnmatch.fnmatchcase(t.parent.name, e) for e in encoded)]
+def profiles() -> list[Path]:
+    """Every Claude Code profile's directory of transcripts under the home: `~/.claude*/projects`."""
+    return sorted(p for p in Path.home().glob(".claude*/projects") if p.is_dir())
 
 
-def encode(pattern: str) -> str:
-    """A pattern over a directory, as one over the name Claude Code gives that directory's
-    project: every character but a letter, a digit or the pattern's own `*` and `?` becomes `-`.
-    The encoding is lossy, so a pattern over a directory also matches its siblings whose names
-    extend it (`/a/b-c` for `/a/b`): the error is on the side of reading less."""
-    return re.sub(r"[^A-Za-z0-9*?]", "-", pattern)
-
-
-def excluded(directories: list[str], exclude: list[str]) -> bool:
-    """Whether any directory a session worked in is, or is under, one an exclude pattern matches:
-    a session can move into an excluded directory after it started outside one."""
-    return any(fnmatch.fnmatchcase(d, p) or fnmatch.fnmatchcase(d, p.rstrip("/") + "/*")
-               for d in directories for p in exclude)
+def find_transcripts(projects: list[Path]) -> list[Path]:
+    """Every session's transcript under the profiles' project directories."""
+    return [t for root in projects if root.is_dir() for t in sorted(root.glob("*/*.jsonl"))]
 
 
 def weighted_sample(digests: list[Digest], k: int, rng: random.Random) -> list[Digest]:
@@ -173,7 +154,6 @@ class Digest:
     interactive: bool
     messages: int
     text: str
-    directories: list[str] = field(default_factory=list)  # every working directory, in order
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
@@ -199,9 +179,9 @@ class Digest:
         return Digest(**{**d, "start": parse_time(d["start"]), "end": parse_time(d["end"])})
 
 
-def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude: list[str]) -> list[Digest]:
+def digest_all(transcripts: list[Path], cache: Path, repos: list[Path]) -> list[Digest]:
     """Each transcript's digest, from the cache where its key still matches, else digested now
-    and cached. A session that worked in an excluded directory keeps no text, in the cache either."""
+    and cached."""
     cache.mkdir(parents=True, exist_ok=True)
     out, todo = [], []
     for t in transcripts:
@@ -209,19 +189,13 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path], exclude:
         key = cache_key(t, records)
         cached = cache / f"{t.parent.parent.parent.name}-{t.stem}.json"
         if cached.exists() and (hit := json.loads(cached.read_text()))["key"] == key:
-            d = Digest.from_json(hit["digest"])
-            if d.text and excluded(d.directories, exclude):  # a pattern added since the session was cached
-                d.text = ""
-                cache_digest(cached, key, d)
-            out.append(d)
+            out.append(Digest.from_json(hit["digest"]))
         else:
             todo.append((t, records, key, cached))
     pool = ProcessPoolExecutor(min(8, os.cpu_count() or 1)) if len(todo) > 4 else _Inline()
     try:
         for (t, records, key, cached), d in zip(todo, pool.map(digest_job, [(t, r) for t, r, _, _ in todo])):
             if d is not None:
-                if excluded(d.directories, exclude):
-                    d.text = ""
                 cache_digest(cached, key, d)
                 out.append(d)
     finally:
@@ -249,7 +223,7 @@ def digest_job(args: tuple[Path, list[Path]]) -> Digest | None:
     return digest(*args)
 
 
-CACHE_FORMAT = 5  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 6  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -372,8 +346,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
             put(at, f"{tag}: {t}")
 
     interactive = any(e.get("entrypoint") == "cli" for e in entries)
-    directories = list(dict.fromkeys(e["cwd"] for e in entries if isinstance(e.get("cwd"), str) and e["cwd"]))
-    cwd = directories[0] if directories else ""
+    cwd = next((e["cwd"] for e in entries if isinstance(e.get("cwd"), str) and e["cwd"]), "")
     profile = transcript.parent.parent.parent.name
     start, end = min(times), max(times)
     head = [f"# session {transcript.stem}", f"title: {session_page.claude_title(entries) or '-'}",
@@ -385,7 +358,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     text = "\n".join(head + lines + page) + "\n" if interactive else ""  # only interactive sessions are read
     starts = list(itertools.accumulate((len(line) + 1 for line in lines), initial=len("\n".join(head)) + 1))
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
-                  messages=messages, text=text, directories=directories,
+                  messages=messages, text=text,
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0)
 
@@ -541,21 +514,6 @@ def versions(since: datetime, until: datetime, period: list[Digest], repos: list
 # ── command line ─────────────────────────────────────────────────────────────
 
 
-def read_list(path: Path) -> list[str]:
-    """A list file's entries, one per line, `#` starting a comment; exits when the file is missing."""
-    if not path.is_file():
-        sys.exit(f"{path} is missing")
-    return [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
-
-
-def read_patterns(path: Path) -> list[str]:
-    """The exclude file's patterns; exits when it holds none, so a run without its list fails closed."""
-    patterns = read_list(path)
-    if not patterns:
-        sys.exit(f"{path} holds no pattern; a run reads no session without its exclusions")
-    return patterns
-
-
 @dataclass
 class Sessions:
     """The period's session digests, the older sample, git across the repos, and the versions."""
@@ -564,13 +522,10 @@ class Sessions:
     """The period's start, an ISO date or time; UTC where it names no offset."""
     run: Path
     """The run directory, written into; outside every git work tree."""
-    exclude_file: Path
-    """Glob patterns over a session's working directory, one per line, `#` starting a comment; a
-    session that worked in a matching directory, or under one, is never digested."""
     repos: list[Path] = field(default_factory=list)
     """The repos whose commits and tickets are collected, and whose agent repos hold session pages."""
-    projects: list[Path] = field(default_factory=lambda: list(PROFILES))
-    """Each profile's directory of transcripts."""
+    projects: list[Path] = field(default_factory=profiles)
+    """Each profile's directory of transcripts; by default every `~/.claude*/projects`."""
     cache: Path | None = None
     """Where digests are cached; by default `digest-cache` beside the run directory."""
 
@@ -593,7 +548,7 @@ def main(command: Sessions | Git) -> None:
         collect_git(since, command.run, command.repos)
         return
     collect_sessions(since, datetime.now(UTC), command.run, command.cache or command.run.parent / "digest-cache",
-                     command.projects, command.repos, read_patterns(command.exclude_file))
+                     command.projects, command.repos)
 
 
 if __name__ == "__main__":

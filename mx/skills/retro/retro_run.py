@@ -6,8 +6,8 @@
 """Run a workflow retro on the agents repo: collect, then one model run per stage, then commit the
 living report and its page into `retro/` of the repo's agent repo, in its main checkout.
 
-The run reads two lists from that `retro/`: `repos`, the repos whose git it collects, one path per
-line, and `excluded-sessions`, the directories whose sessions it never reads. Its period starts
+The run reads `retro/repos` there, the repos whose git it collects, one path per line, and the
+sessions of every Claude Code profile under the home (`~/.claude*/projects`). Its period starts
 where the last run committed to `retro/report.md` ended, or at --since. Everything a run writes
 but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`, outside every git
 repo: the digests, each stage's prompt, notes and output, and the new report. Each event of a run
@@ -103,8 +103,7 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
     until = until or datetime.now(UTC)
     run = home / "runs" / dirname(until)
     log = Log(home / "runs.log", run.name)
-    repos = [Path(p).expanduser().resolve() for p in retro_collect.read_list(agent / "retro" / "repos")]
-    exclude = retro_collect.read_patterns(agent / "retro" / "excluded-sessions")
+    repos = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")]
     seed = [Path(p).expanduser() for p in seed]
     if len({p.name for p in seed}) < len(seed):
         sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
@@ -114,7 +113,7 @@ def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime 
         signal.signal(s, on_stop)
     where = "collect"
     try:
-        retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos, exclude)
+        retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos)
         write_batches(run)
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
@@ -169,6 +168,13 @@ class Log:
         print(line, file=sys.stderr)
         with self.path.open("a") as f:
             f.write(line + "\n")
+
+
+def read_list(path: Path) -> list[str]:
+    """A list file's entries, one per line, `#` starting a comment; exits when the file is missing."""
+    if not path.is_file():
+        sys.exit(f"{path} is missing")
+    return [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
 def readable(repos: list[Path], agent: Path) -> list[Path]:
@@ -377,8 +383,8 @@ class Args:
     """Files the run's later stages read as earlier reports, beside those in git history; no two may share a name."""
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"
     """The retro's data directory, outside every git repo."""
-    projects: list[Path] = field(default_factory=lambda: list(retro_collect.PROFILES))
-    """Each Claude Code profile's directory of transcripts."""
+    projects: list[Path] = field(default_factory=retro_collect.profiles)
+    """Each Claude Code profile's directory of transcripts; by default every `~/.claude*/projects`."""
 
 
 if __name__ == "__main__":
