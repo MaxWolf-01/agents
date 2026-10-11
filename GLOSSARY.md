@@ -151,7 +151,7 @@ What a test compares the code's behaviour against, chosen so that it is not the 
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
 **Fast suite**:
-The tests that run on every change: in-process, with no browser, no network and no sleeps.
+The tests that run on every change: nothing outside the checkout and a scratch directory, with no browser, desktop, network or sleeps. A project script run as a subprocess in the scratch directory is one.
 _Avoid_: unit tests (a fast test may enter at any seam)
 _In code_: `make test`, `make test-all`
 

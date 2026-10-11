@@ -17,7 +17,7 @@ Test names carry the domain's words, as the project's `GLOSSARY.md` has them.
 
 ## Two kinds of run
 
-**The fast suite** is `make test`: in-process, with no browser, no network and no sleeps. Every session and every worker runs it on every change, and the three jobs live in it.
+**The fast suite** is `make test`: it touches nothing outside the checkout and a scratch directory of its own, with no browser, desktop, network or sleeps. A test that runs the project's own script as a subprocess in that scratch directory belongs in it. Every session and every worker runs it on every change, and the three jobs live in it.
 
 **Full-path checks** drive the real thing end to end: a browser on the page, tmux, the real desktop, the paid API, the VPN. They stay out of `make test`, behind a target of their own (`make test-full-path`), and run deliberately, on a host that has what they drive: before a release, and by the session landing a change that reaches their path. A change reaches the full-path checks in the test files that exercise what it touched. A landing's show is usually the output of such a run, so its runnable script (`/mx:show`, A runnable artifact) is the natural home for one: the check and the demonstration are the same run.
 
