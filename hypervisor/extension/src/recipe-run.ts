@@ -15,8 +15,9 @@ import { step } from "./explore-run.ts";
 import { MODEL } from "./pi.ts";
 
 export const USAGE =
-	"usage: recipe-run.ts [--steps N] [--budget TOKENS] [--profile NAME] [--effort LEVEL]\n" +
-	"The budget is in price-weighted tokens, Opus input tokens at pi's prices, checked before each step; the steps default to 30.";
+	"usage: recipe-run.ts [--steps N] [--first N] [--budget TOKENS] [--profile NAME] [--effort LEVEL]\n" +
+	"The budget is in price-weighted tokens, Opus input tokens at pi's prices, checked before each step; the steps default to 30.\n" +
+	"--first numbers the steps on from an earlier run on the same profile.";
 
 const OPUS_INPUT = 4 / 1e6;
 const HERE = path.resolve(import.meta.dirname, "..");
@@ -30,7 +31,7 @@ const SETTLE_MS = 15 * 60_000;
 interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } }
 interface Spent { date: string; role: string; usage: Usage }
 
-export async function run(options: { steps: number; budget: number; profile: string; effort: string }): Promise<number> {
+export async function run(options: { steps: number; first: number; budget: number; profile: string; effort: string }): Promise<number> {
 	const home = process.env.OPTCHAT_HOME ?? path.join(homedir(), ".optchat");
 	const profile = path.join(home, "profiles", options.profile);
 	if (!existsSync(profile)) {
@@ -51,11 +52,12 @@ export async function run(options: { steps: number; budget: number; profile: str
 	pi.stdout!.setEncoding("utf8");
 	const closed = new Promise((resolve) => pi.on("close", resolve));
 	let code = 0;
-	for (let n = 1; n <= options.steps; n++) {
+	const last = options.first + options.steps - 1;
+	for (let n = options.first; n <= last; n++) {
 		const before = weighted();
 		if (before >= options.budget) break;
 		const left = Math.round((100 * (options.budget - before)) / options.budget);
-		const done = await step(pi, `Explore step ${n} of ${options.steps}. ${left}% of your budget is left.`);
+		const done = await step(pi, `Explore step ${n} of ${last}. ${left}% of your budget is left.`);
 		console.log(`step ${n}: ${weighted() - before} weighted tokens since it started. ${done.error ? `It failed: ${done.error}` : `Finding: ${done.finding}`}`);
 		if (done.error) {
 			code = 1;
@@ -103,11 +105,11 @@ function lines<T>(file: string): T[] {
 
 if (import.meta.main) {
 	const { values } = parseArgs({
-		options: { steps: { type: "string", default: "30" }, budget: { type: "string", default: "2000000" }, profile: { type: "string", default: "explore-recipe" }, effort: { type: "string", default: "medium" }, help: { type: "boolean", short: "h" } },
+		options: { steps: { type: "string", default: "30" }, first: { type: "string", default: "1" }, budget: { type: "string", default: "2000000" }, profile: { type: "string", default: "explore-recipe" }, effort: { type: "string", default: "medium" }, help: { type: "boolean", short: "h" } },
 	});
 	if (values.help) {
 		console.log(USAGE);
 		process.exit(0);
 	}
-	process.exit(await run({ steps: Number(values.steps), budget: Number(values.budget), profile: values.profile, effort: values.effort }));
+	process.exit(await run({ steps: Number(values.steps), first: Number(values.first), budget: Number(values.budget), profile: values.profile, effort: values.effort }));
 }
