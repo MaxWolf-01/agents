@@ -4,4 +4,9 @@ A branch holding one commit still merges `--no-ff`, so GitHub's commit list (fla
 
 ## Consequences
 
-A tip merged with no merge commit of its own gets no range, since git cannot tell it from a branch that committed nothing. A fast-forwarded repo drops out of the ticket's ranges, and a round fast-forwarded in every repo reads as one that built nothing and never lands. The commit keeps its `Workflow-stage:` trailer and `--first-parent` still shows one line per ticket either way.
+A ticket branch is never fast-forwarded, because the tracker sees a ticket's work land only through the merge commit that brought it in. A fast-forward leaves no merge commit, and git cannot tell a fast-forwarded branch from one that committed nothing. So:
+
+- the fast-forwarded repo records no commit range for the ticket;
+- a ticket fast-forwarded in every one of its repos looks as if it built nothing, and is never marked `done`.
+
+The git history itself loses nothing: the commits keep their `Workflow-stage:` trailers, and `git log --first-parent` still shows one line per ticket.
