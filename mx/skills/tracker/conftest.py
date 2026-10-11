@@ -1,19 +1,16 @@
-"""What the board's checks share: the path entry that makes the scripts beside them importable, the
-demo tracker built once per run, and a PATH the board's optional tools are absent from."""
+"""What the board's checks share: the demo tracker built once per run, and a PATH the board's
+optional tools are absent from."""
 
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-import board  # noqa: E402
-import briefing  # noqa: E402
-from demo_tracker import Demo, build  # noqa: E402
+import board
+import briefing
+from demo_tracker import Demo, build
 
 RUN_LOG = Path(__file__).resolve().parents[1] / "run-log" / "run-log"
 # What a check may still need: the repo, a script's own run, a browser, and what `run-log` wraps a

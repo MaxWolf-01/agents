@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from test_dispatch import mx, stage_runner
+from dispatch_checks import mx, stage_runner
 
 SKILL = Path(__file__).parent
 PS = SKILL / "dispatch-ps"

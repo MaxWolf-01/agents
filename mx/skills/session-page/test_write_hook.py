@@ -22,18 +22,17 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
 import session_page
 import stop_hook
 import turn_review
 import write_hook
 from session_page import PAGE, SESSIONS
 from stop_hook import RECAP
-from session_checks import SPOKEN_AFTER, UNATTENDED, unreachable
-from test_stop_hook import LEFT_ALONE, LONG, TURN_STARTS, UNPARSEABLE, appended, logged, with_write
-from test_stop_hook import payload as stopped
-from test_turn_review import CATALOGUE_FIXTURE, RULES_FIXTURE
+from session_checks import (
+    CATALOGUE_FIXTURE, LEFT_ALONE, LONG, RULES_FIXTURE, SPOKEN_AFTER, TURN_STARTS, UNATTENDED, UNPARSEABLE, appended, logged,
+    unreachable, with_write,
+)
+from session_checks import payload as stopped
 from write_hook import decide
 
 # Passages of the worked example's record 4, the one its turn wrote, as a reviewer would quote them.
