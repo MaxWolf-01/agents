@@ -7,7 +7,7 @@
 // the tokens by role. pi takes its credentials, and OptChat its profiles, from the environment, as `hv` sets them.
 
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -25,8 +25,10 @@ const SEED = path.resolve(HERE, "../explore-recipe");
 const OPTCHAT = process.env.OPTCHAT_FORK ?? path.join(homedir(), "repos/github/MaxWolf-01/pi-optchat");
 const PI = path.join(OPTCHAT, "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
 const TOOLS = ["zoom", "date", "read", "ls", "find", "grep", "memex"];
-/** How long the summaries of the last step may take once the steps end. */
+/** How long the summaries of the last step, and a merge batch, may take once the steps end. */
 const SETTLE_MS = 15 * 60_000;
+/** A tree not written for this long has no summary in flight: each one takes seconds. */
+const QUIET_MS = 90_000;
 
 interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } }
 interface Spent { date: string; role: string; usage: Usage }
@@ -67,7 +69,8 @@ export async function run(options: { steps: number; first: number; budget: numbe
 	console.log("Waiting for the last step's summaries.");
 	const memory = memoryOf(profile);
 	for (const deadline = Date.now() + SETTLE_MS; unsummarized(memory) > 0 && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
-	console.log(`${unsummarized(memory)} messages without their line.`);
+	console.log(`${unsummarized(memory)} messages without their line. Waiting for merges in flight: the tree still for ${QUIET_MS / 1000} s.`);
+	for (const deadline = Date.now() + SETTLE_MS; Date.now() - lastWrite(path.join(memory, "tree")) < QUIET_MS && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
 	pi.stdin!.end();
 	await closed;
 	for (const role of ["main", "compactor"]) {
@@ -90,6 +93,11 @@ function memoryOf(profile: string): string {
 function unsummarized(memory: string): number {
 	const records = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(".jsonl")).flatMap((n) => lines<{ l?: number }>(path.join(dir, n))) : []);
 	return records(path.join(memory, "main")).length - records(path.join(memory, "tree")).filter((node) => node.l === 0).length;
+}
+
+/** When a file in `dir` was last written, in ms since the epoch. */
+function lastWrite(dir: string): number {
+	return existsSync(dir) ? Math.max(0, ...readdirSync(dir).map((n) => statSync(path.join(dir, n)).mtimeMs)) : 0;
 }
 
 function lines<T>(file: string): T[] {
