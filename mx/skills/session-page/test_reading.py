@@ -126,18 +126,18 @@ def test_a_message_another_session_sent_is_on_its_turn_under_that_sessions_name(
     worked_example: Path, transcript: Path, tmp_path: Path
 ) -> None:
     """session-page-pairs-only-the-users-messages: another session's message, wrapped as Claude
-    Code wraps one and with no origin that says it is not the user's, delivered in turn 3 as a user
-    entry that carries two, one from a sender that gives no `from-name`, and mid-turn in turn 4 as a
-    queued command. Each is on the turn it arrived in, under its sender's `from-name`, and on no
+    Code wraps one, delivered in turn 3 as the meta user entry Claude Code writes for a message that
+    starts a turn, carrying two, one from a sender that gives no `from-name`, and mid-turn in turn 4
+    as a queued command. Each is on the turn it arrived in, under its sender's `from-name`, and on no
     turn as the user's; the user's own messages pair as before."""
     peer = ('<cross-session-message from="uds:/run/user/1000/cc-socks/2118235.sock" from-name="agents-d2"'
             ' from-mode="prompting">\n{}\n</cross-session-message>')
     entries = [
         {"type": "attachment", "timestamp": "2026-09-23T01:05:00.000Z",
          "attachment": {"type": "queued_command", "prompt": peer.format("ruled good to ship, dispatch both")}},
-        {"type": "user", "timestamp": "2026-09-23T00:10:00.000Z",
+        {"type": "user", "isMeta": True, "origin": {"kind": "peer", "name": "agents-d2"}, "timestamp": "2026-09-23T00:10:00.000Z",
          "message": {"role": "user", "content": [
-             {"type": "text", "text": peer.format("merged, the tree is yours")},
+             {"type": "text", "text": "Another Claude session sent a message:\n" + peer.format("merged, the tree is yours")},
              {"type": "text", "text": '<cross-session-message from="uds:/run/user/1000/cc-socks/77.sock">\nme too\n</cross-session-message>'}]}},
     ]
     t = tmp_path / "t.jsonl"
