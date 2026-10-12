@@ -1,6 +1,10 @@
 PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 HOOKS := mx/hooks/hooks.json
+# Each release puts its section on top: its version, then the subjects of the commits on master's first-parent line
+# since the previous release that change something under mx/. A session moved to a newer mx reads the sections it
+# skipped (mx/hooks/plugin_updates.py).
+CHANGELOG := mx/CHANGELOG.md
 
 .PHONY: check test test-all test-full-path version release-patch release-minor release-major
 
@@ -56,5 +60,9 @@ release-patch release-minor release-major: check test-all test-full-path
 	  else if (part == "minor") { printf "%d.%d.0", $$1, $$2+1 } \
 	  else { printf "%d.%d.%d", $$1, $$2, $$3+1 } }'); \
 	tmp=$$(mktemp); jq --arg v "$$NEW" '.version = $$v' $(PLUGIN) >$$tmp && mv $$tmp $(PLUGIN); \
-	git commit -q -m "mx v$$NEW" -- $(PLUGIN); \
+	last=$$(git log --first-parent --grep='^mx v[0-9]' --format=%H -1); \
+	{ printf '## %s\n\n' "$$NEW"; git log --first-parent --format='- %s' $$last..HEAD -- mx/ | grep -v '^- mx v[0-9]'; echo; \
+	  cat $(CHANGELOG) 2>/dev/null; } >$$tmp && mv $$tmp $(CHANGELOG); \
+	git add $(CHANGELOG); \
+	git commit -q -m "mx v$$NEW" -- $(PLUGIN) $(CHANGELOG); \
 	echo "$$V -> $$NEW"
