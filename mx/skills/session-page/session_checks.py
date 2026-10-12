@@ -178,16 +178,30 @@ def with_write(transcript: Path, tool: str, record: Path) -> None:
     transcript.write_text(transcript.read_text() + json.dumps(entry) + "\n")
 
 
-# Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time: a
-# background task finishing and a subagent handing its report back.
+# Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time, shaped as
+# Claude Code writes them: a background task finishing; a subagent handing its report back and
+# another session's message, both meta lines; and a scheduled prompt (a /loop or cron wakeup), a
+# meta line with no origin, which only the end of the turn before it marks as a turn of its own.
 TASK_DONE = {"type": "user", "origin": {"kind": "task-notification"}, "timestamp": SPOKEN_AFTER["timestamp"],
              "message": {"role": "user", "content": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"}}
 
-HANDED_BACK = {"type": "user", "origin": {"kind": "peer", "from": "a1", "handback": True}, "timestamp": SPOKEN_AFTER["timestamp"],
+HANDED_BACK = {"type": "user", "isMeta": True, "origin": {"kind": "peer", "from": "a1", "handback": True},
+               "timestamp": SPOKEN_AFTER["timestamp"],
                "message": {"role": "user", "content": 'Another Claude session sent a message:\n<agent-message from="a1">\n'
                                                       "[Subagent hand-back] The figure is built.\n</agent-message>"}}
 
-TURN_STARTS = {"a finished task": TASK_DONE, "a subagent's hand-back": HANDED_BACK}
+PEER_SENT = {"type": "user", "isMeta": True, "origin": {"kind": "peer", "from": "uds:/run/user/1000/cc-socks/77.sock", "name": "agents-d2"},
+             "timestamp": SPOKEN_AFTER["timestamp"],
+             "message": {"role": "user", "content": 'Another Claude session sent a message:\n<cross-session-message '
+                                                    'from="uds:/run/user/1000/cc-socks/77.sock" from-name="agents-d2" from-mode="prompting">\n'
+                                                    "Is fix-381 the right base?\n</cross-session-message>"}}
+
+TURN_ENDED = {"type": "system", "subtype": "turn_duration", "isMeta": False, "durationMs": 1000, "timestamp": "2026-09-23T01:34:00.000Z"}
+WOKEN = {"type": "user", "isMeta": True, "timestamp": SPOKEN_AFTER["timestamp"],
+         "message": {"role": "user", "content": "Check the run and report."}}
+
+TURN_STARTS = {"a finished task": (TASK_DONE,), "a subagent's hand-back": (HANDED_BACK,),
+               "another session's message": (PEER_SENT,), "a scheduled prompt": (TURN_ENDED, WOKEN)}
 
 
 def appended(transcript: Path, out: Path, *entries: dict) -> Path:

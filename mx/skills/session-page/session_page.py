@@ -626,6 +626,10 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
 NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|cross-session-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
 
 
+# How a prompt another session sent opens: the line Claude Code heads one with where it starts a
+# turn, none where it was queued mid-turn.
+SENT = re.compile(r"\s*(?:Another Claude session sent a message:\s*)?<cross-session-message\b")
+
 # How Claude Code wraps a message another session sent into this one: its attributes, its text.
 # One prompt can carry several.
 PEER = re.compile(r"<cross-session-message\b([^>]*)>\n?(.*?)(?:\n?</cross-session-message>|$)", re.S)
@@ -668,14 +672,16 @@ def said(entries: list[dict]) -> list[tuple[datetime, str]]:
 def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
     """What other sessions sent into this one, with when, oldest first."""
     return sorted(((when, Sent(name(m.group(1)), m.group(2))) for when, _, content in prompts(entries)
-                   if re.match(r"\s*<cross-session-message\b", text := flat(content)) for m in PEER.finditer(text)),
+                   if SENT.match(text := flat(content)) for m in PEER.finditer(text)),
                   key=lambda s: s[0])
 
 
 def prompted(entry: dict) -> bool:
-    """Whether a user entry is one Claude Code wrote as a prompt: not a meta line, a subagent's own
-    transcript or a compaction's summary."""
-    return entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"))
+    """Whether a user entry is one Claude Code wrote as a prompt: not a subagent's own transcript or
+    a compaction's summary, and no meta line (a skill's body, an image) unless it has an origin. A
+    message from another session or a subagent's hand-back is a meta line with an origin."""
+    return entry.get("type") == "user" and not (entry.get("isSidechain") or entry.get("isCompactSummary")) and (
+        not entry.get("isMeta") or bool(entry.get("origin")))
 
 
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
@@ -697,10 +703,14 @@ def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
 
 def turn_start(entries: list[dict]) -> datetime | None:
     """When the newest turn began: the last prompt Claude Code answered with a turn of its own,
-    whoever sent it, the user, a finished task or another session. A message queued mid-turn joins
-    the turn it arrived in, and a tool result is part of the turn that called the tool."""
-    return max((datetime.fromisoformat(entry["timestamp"]) for entry in entries
-                if prompted(entry) and "timestamp" in entry and flat(entry.get("message", {}).get("content"))), default=None)
+    whoever sent it, the user, a finished task or another session, or else the end of the turn
+    before it, where a prompt the transcript marks as none (a scheduled wakeup) started this one.
+    Claude Code marks a turn's end with a `turn_duration` line once its Stop hooks let it end, so a
+    Stop hook's send-back ends no turn. A message queued mid-turn joins the turn it arrived in, and
+    a tool result is part of the turn that called the tool."""
+    started = (entry for entry in entries if prompted(entry) and flat(entry.get("message", {}).get("content")))
+    ended = (entry for entry in entries if entry.get("type") == "system" and entry.get("subtype") == "turn_duration")
+    return max((datetime.fromisoformat(entry["timestamp"]) for entry in (*started, *ended) if "timestamp" in entry), default=None)
 
 
 def flat(content: object) -> str:

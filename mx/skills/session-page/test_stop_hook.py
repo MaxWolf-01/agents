@@ -873,14 +873,14 @@ QUEUED = {"type": "attachment", "timestamp": "2026-09-23T01:37:00.000Z",
 
 @pytest.mark.parametrize("start", TURN_STARTS.values(), ids=TURN_STARTS)
 def test_a_turn_the_user_did_not_start_still_records_its_reply_as_a_chat_turn(
-    start: dict, worked_example: Path, transcript: Path, tmp_path: Path,
+    start: tuple[dict, ...], worked_example: Path, transcript: Path, tmp_path: Path,
 ) -> None:
     """This turn runs from the prompt that started it, whoever sent it: record 04, written in the
-    turn before, is no record of a turn a finished task or a hand-back started, so its reply is
-    this turn's chat turn."""
+    turn before, is no record of a turn a finished task, a hand-back, another session's message
+    or a scheduled prompt started, so its reply is this turn's chat turn."""
     for record in (worked_example / "turns").iterdir():
         os.utime(record, (BEFORE_IT, BEFORE_IT))
-    decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", start), reply=LONG), worked_example)
+    decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", *start), reply=LONG), worked_example)
     assert (decision.verb, decision.why) == ("render", "chat reply recorded")
 
 
