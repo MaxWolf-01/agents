@@ -61,12 +61,13 @@ def test_a_session_moved_to_a_newer_mx_hears_each_skipped_versions_changes_once(
     (data / "sessions").mkdir(parents=True)
     (data / "sessions" / SESSION).write_text("1.0.54\n")
     said = run(plugin, "UserPromptSubmit", data)
-    assert said["systemMessage"] == "mx updated 1.0.54 → 1.0.56"
+    assert said["systemMessage"] == "mx updated from 1.0.54 to 1.0.56"
     context = said["hookSpecificOutput"]["additionalContext"]
     assert said["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
     assert "- hub: background commands on the session page" in context
     assert "- session page: a turn another session starts is a turn" in context
-    assert "fast suite" not in context
+    assert "## 1.0.56" in context and "## 1.0.55" in context
+    assert "fast suite" not in context and "## 1.0.54" not in context
     assert record(data) == "1.0.56"
     assert run(plugin, "UserPromptSubmit", data) is None
 
@@ -93,9 +94,25 @@ def test_a_long_changelog_is_cut_and_says_where_the_rest_is(plugin: Path, tmp_pa
     (data / "sessions").mkdir(parents=True)
     (data / "sessions" / SESSION).write_text("1.0.55\n")
     context = run(plugin, "UserPromptSubmit", data)["hookSpecificOutput"]["additionalContext"]
-    assert "- change 19" in context and "- change 20" not in context
-    assert f"and 10 more lines in {plugin / 'CHANGELOG.md'}" in context
+    assert "- change 18" in context and "- change 19" not in context
+    assert f"and 11 more lines in {plugin / 'CHANGELOG.md'}" in context
 
 
 def test_without_a_plugin_data_directory_it_does_nothing(plugin: Path) -> None:
     assert run(plugin, "UserPromptSubmit", None) is None
+
+
+def test_a_session_that_runs_keeps_its_record_however_old_the_others(plugin: Path, tmp_path: Path) -> None:
+    """A record is pruned by how long its session has not run: the session's own never, a stale
+    one when another session starts, and a run on the same version makes its record young again."""
+    data = tmp_path / "data"
+    run(plugin, "SessionStart", data)
+    own, stale = data / "sessions" / SESSION, data / "sessions" / "a-session-gone-quiet"
+    stale.write_text("1.0.40\n")
+    long_ago = 1_000_000
+    os.utime(own, (long_ago, long_ago))
+    os.utime(stale, (long_ago, long_ago))
+    assert run(plugin, "SessionStart", data) is None
+    assert (own.exists(), stale.exists()) == (True, False)
+    assert own.stat().st_mtime > long_ago
+    assert run(plugin, "UserPromptSubmit", data) is None

@@ -16,6 +16,8 @@ check:
 	  while read -r c; do [ -x "$$c" ] || { echo "$(HOOKS): $$c is not an executable file"; exit 1; }; done
 	@for f in mx/bin/*; do $$f --help >/dev/null || { echo "$$f --help failed"; exit 1; }; done
 	@uvx --quiet ruff@0.17.0 check --quiet --select F811 mx/
+	@[ ! -f $(CHANGELOG) ] || [ "$$(sed -n 's/^## //p' $(CHANGELOG) | head -1)" = "$$(jq -r .version $(PLUGIN))" ] || \
+	  { echo "$(CHANGELOG): its top section is not $(PLUGIN)'s version, which the release that wrote both left equal"; exit 1; }
 	@PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pyyaml pytest -q -p no:cacheprovider --tb=short mx/test_launches.py mx/test_skill_injections.py mx/test_module_names.py
 	@echo "manifests parse, hooks point at executables, bin/ answers --help, every claude launch names what it inherits, every skill approves its own ! lines, no two scripts under mx share a name and no check imports another, no file under mx defines one name twice"
 
@@ -54,15 +56,15 @@ release-minor: PART = minor
 release-major: PART = major
 
 release-patch release-minor release-major: check test-all test-full-path
-	@V=$$(jq -r .version $(PLUGIN)); \
+	@set -e; V=$$(jq -r .version $(PLUGIN)); \
 	NEW=$$(echo $$V | awk -F. -v part=$(PART) '{ \
 	  if (part == "major") { printf "%d.0.0", $$1+1 } \
 	  else if (part == "minor") { printf "%d.%d.0", $$1, $$2+1 } \
 	  else { printf "%d.%d.%d", $$1, $$2, $$3+1 } }'); \
 	tmp=$$(mktemp); jq --arg v "$$NEW" '.version = $$v' $(PLUGIN) >$$tmp && mv $$tmp $(PLUGIN); \
 	last=$$(git log --first-parent --grep='^mx v[0-9]' --format=%H -1); \
-	{ printf '## %s\n\n' "$$NEW"; git log --first-parent --format='- %s' $$last..HEAD -- mx/ | grep -v '^- mx v[0-9]'; echo; \
-	  cat $(CHANGELOG) 2>/dev/null; } >$$tmp && mv $$tmp $(CHANGELOG); \
+	{ printf '## %s\n\n' "$$NEW"; git log --first-parent --format='- %s' $$last..HEAD -- mx/ | { grep -v '^- mx v[0-9]' || true; }; echo; \
+	  [ ! -f $(CHANGELOG) ] || cat $(CHANGELOG); } >$$tmp; mv $$tmp $(CHANGELOG); \
 	git add $(CHANGELOG); \
 	git commit -q -m "mx v$$NEW" -- $(PLUGIN) $(CHANGELOG); \
 	echo "$$V -> $$NEW"

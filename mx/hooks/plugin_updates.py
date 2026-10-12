@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 SHOWN = 20  # changelog lines the agent reads at most; the rest stay in CHANGELOG.md
-KEPT = 60 * 86400  # a session record untouched this long is deleted when a session starts
+KEPT = 60 * 86400  # a record of a session that has not run this long is deleted when another session starts
 
 
 def version_of(text: str) -> tuple[int, ...]:
@@ -36,16 +36,13 @@ def version_of(text: str) -> tuple[int, ...]:
 
 
 def entries(old: str, new: str) -> list[str]:
-    """The CHANGELOG.md lines of the versions after `old`, up to and including `new`, newest first."""
-    try:
-        text = CHANGELOG.read_text()
-    except OSError:
-        return []
+    """The CHANGELOG.md sections of the versions after `old`, up to and including `new`, newest first, each under
+    its heading. Every installed mx carries the file (`make release-*` writes it), so a missing one is an error."""
     lines, taking = [], False
-    for line in text.splitlines():
+    for line in CHANGELOG.read_text().splitlines():
         if heading := re.match(r"##\s+(\S+)", line):
             taking = version_of(old) < version_of(heading[1]) <= version_of(new)
-        elif taking and line.strip():
+        if taking and line.strip():
             lines.append(line)
     return lines
 
@@ -61,7 +58,7 @@ def told(old: str | None, new: str) -> tuple[str, str]:
     changes = " What changed:\n" + "\n".join(lines[:SHOWN]) + more if lines else ""
     return (f"mx, the plugin your skills and hooks come from, moved from {old} to {new} in this session. Skills and "
             f"rules you read before this point are {old}'s: read a skill again before you rely on it.{changes}",
-            f"mx updated {old} → {new}")
+            f"mx updated from {old} to {new}")
 
 
 def main() -> None:
@@ -80,12 +77,14 @@ def main() -> None:
     started = hook["hook_event_name"] == "SessionStart"
     if started:
         for old in sessions.iterdir():
-            if time.time() - old.stat().st_mtime > KEPT:
+            if old != record and time.time() - old.stat().st_mtime > KEPT:
                 old.unlink(missing_ok=True)
     if before != now:
         tmp = record.with_name(f".{record.name}.tmp")
         tmp.write_text(now + "\n")
         tmp.replace(record)
+    else:
+        record.touch()  # a record's age is how long its session has not run, which pruning goes by
     if before == now or (before is None and started):
         return
     agent, user = told(before, now)
