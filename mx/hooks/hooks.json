@@ -30,6 +30,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py checkpoint",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
+            "timeout": 10
           }
         ]
       }
@@ -61,6 +66,15 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py started $PPID",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
+            "timeout": 10
           }
         ]
       }
