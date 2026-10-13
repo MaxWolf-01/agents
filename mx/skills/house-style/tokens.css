@@ -4,10 +4,10 @@
    project needs: the serif, the size and leading that fit it, the measure. The
    colours and the roles stay.
 
-   Every colour is a light-dark() pair. Without data-theme on the root the page
-   follows the system; data-theme="day" or "night" pins it. The rules sit in
-   the base and components layers, so a project's own CSS, and Tailwind's
-   utilities, win over them without fighting specificity. */
+   Every colour but the series is a light-dark() pair. Without data-theme on
+   the root the page follows the system; data-theme="day" or "night" pins it.
+   The rules sit in the base and components layers, so a project's own CSS,
+   and Tailwind's utilities, win over them without fighting specificity. */
 
 :root {
   color-scheme: light dark;
@@ -23,6 +23,15 @@
   --wash: light-dark(rgb(66 103 36 / 0.16), rgb(110 164 68 / 0.22));
   --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
   --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+
+  /* Muted on purpose, so five series sit quietly on either ground. The order
+     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
+     ever sitting side by side. */
+  --series-1: #9c6b50; /* rust */
+  --series-2: #5e7a9b; /* dusty blue */
+  --series-3: #b8915a; /* mustard */
+  --series-4: #6e6479; /* slate */
+  --series-5: #7c8f6f; /* sage */
 
   --font-body: "Newsreader", Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
