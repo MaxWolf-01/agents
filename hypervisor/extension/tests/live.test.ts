@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -129,6 +129,8 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		const bin = path.join(at, "bin"), fork = path.join(at, "fork"), hvStore = path.join(at, "store"), calls = path.join(at, "tmux.calls");
 		for (const dir of [bin, path.join(fork, "src"), path.join(hvStore, "optchat", "profiles", "hv")]) mkdirSync(dir, { recursive: true });
 		writeFileSync(path.join(fork, "src", "index.ts"), "");
+		const instructions = path.join(hvStore, "optchat", "profiles", "hv", "AGENTS.md");
+		writeFileSync(instructions, "the instructions as an earlier start copied them");
 		// A tmux whose server runs no session yet: it records each call, one argument a line, and refuses has-session.
 		writeFileSync(path.join(bin, "tmux"), `#!/bin/sh\nprintf '%s\\n' "$@" '--' >> "${calls}"\n[ "$1" = has-session ] && exit 1\nexit 0\n`, { mode: 0o755 });
 		const env = { PATH: `${bin}:${process.env.PATH}`, HOME: at, HV_STORE: hvStore, OPTCHAT_FORK: fork, ANTHROPIC_OAUTH_TOKEN: "token" };
@@ -142,6 +144,7 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(after("--optchat-profile"), ["hv"]);
 		assert.deepEqual(after("--model"), [MODEL]);
 		for (const off of ["--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files"]) assert.ok(started.includes(off), off);
+		assert.equal(readlinkSync(instructions), path.resolve(import.meta.dirname, "../../live/AGENTS.md"), "the profile's instructions link to live/'s, over the copy an earlier start left");
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}
