@@ -16,7 +16,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 extension=$here/extension
 store=${HV_STORE:-$HOME/.local/share/hypervisor}
 profile=${HV_PROFILE:-hv}
-fork=${OPTCHAT_FORK:-$HOME/repos/github/MaxWolf-01/pi-optchat-hypervisor-live}
+fork=${OPTCHAT_FORK:-$HOME/repos/github/MaxWolf-01/pi-optchat-fork-summaries}
 profiles=$store/optchat/profiles
 token_file=$HOME/.dotfiles/secrets/creds/raw/hypervisor-oauth-token
 
