@@ -66,11 +66,7 @@ export async function run(options: { steps: number; first: number; budget: numbe
 			break;
 		}
 	}
-	console.log("Waiting for the last step's summaries.");
-	const memory = memoryOf(profile);
-	for (const deadline = Date.now() + SETTLE_MS; unsummarized(memory) > 0 && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
-	console.log(`${unsummarized(memory)} messages without their line. Waiting for merges in flight: the tree still for ${QUIET_MS / 1000} s.`);
-	for (const deadline = Date.now() + SETTLE_MS; Date.now() - lastWrite(path.join(memory, "tree")) < QUIET_MS && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
+	await summarized(profile);
 	pi.stdin!.end();
 	await closed;
 	for (const role of ["main", "compactor"]) {
@@ -81,6 +77,18 @@ export async function run(options: { steps: number; first: number; budget: numbe
 	}
 	console.log(`Used ${weighted()} of ${options.budget} weighted tokens.`);
 	return code;
+}
+
+/**
+ * Resolves once the profile's last messages have their lines and no merge is in flight, or SETTLE_MS into each wait:
+ * pi quitting before then drops the summaries it was writing.
+ */
+export async function summarized(profile: string): Promise<void> {
+	console.log("Waiting for the last step's summaries.");
+	const memory = memoryOf(profile);
+	for (const deadline = Date.now() + SETTLE_MS; unsummarized(memory) > 0 && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
+	console.log(`${unsummarized(memory)} messages without their line. Waiting for merges in flight: the tree still for ${QUIET_MS / 1000} s.`);
+	for (const deadline = Date.now() + SETTLE_MS; Date.now() - lastWrite(path.join(memory, "tree")) < QUIET_MS && Date.now() < deadline; ) await new Promise((r) => setTimeout(r, 5000));
 }
 
 /** The profile's memory directory: an import can point the profile at another one. */

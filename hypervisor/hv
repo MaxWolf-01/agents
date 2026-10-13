@@ -4,12 +4,13 @@
 # is a new pi session on it, since the memory, not pi's transcript, carries the conversation.
 #
 # Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
-# sessions in optchat-pi/, and the extension's files (spawned.jsonl, inbox/). The fork is the checkout $OPTCHAT_FORK.
-# pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
+# sessions in optchat-pi/, and the extension's files (spawned.jsonl, inbox/, explore.jsonl). The fork is the checkout
+# $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
 #
 # `hv seed <profile>` makes the hypervisor's profile a copy of an explore profile, with live/'s config. Every start
 # links the profile's AGENTS.md to live/'s.
-# `hv explore [options]` runs explore steps (extension/src/recipe-run.ts; --help lists the options).
+# `hv explore N [direction] [options]` runs explore steps on the hypervisor's own profile (`hv explore --help`).
+# `hv explore-recipe [options]` runs explore steps on an explore profile of their own (extension/src/recipe-run.ts).
 # `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
 set -euo pipefail
 
@@ -26,6 +27,10 @@ if [[ ${1:-} == tell ]]; then
 	HV_STORE=$store exec node "$extension/src/hv-tell.ts" "$@"
 fi
 
+if [[ ${1:-} == explore && ${2:-} =~ ^(--found|--help|-h)$ ]]; then
+	HV_STORE=$store exec node "$extension/src/hv-explore.ts" "$2"
+fi
+
 if [[ ${1:-} == seed ]]; then
 	from=${2:?usage: hv seed <explore profile>}
 	[[ -d $profiles/$from ]] || { echo "hv seed: no profile $from in $profiles" >&2; exit 1; }
@@ -39,27 +44,34 @@ fi
 [[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
 [[ -f $fork/src/index.ts ]] || { echo "hv: no pi-optchat checkout at $fork; set OPTCHAT_FORK" >&2; exit 1; }
 if [[ -z ${ANTHROPIC_OAUTH_TOKEN:-} && -f $token_file ]]; then ANTHROPIC_OAUTH_TOKEN=$(sops decrypt "$token_file"); fi
-export HV_STORE=$store OPTCHAT_HOME=$store/optchat PI_CODING_AGENT_DIR=$store/optchat-pi OPTCHAT_FORK=$fork
+export HV_STORE=$store OPTCHAT_HOME=$store/optchat PI_CODING_AGENT_DIR=$store/optchat-pi OPTCHAT_FORK=$fork HV_PROFILE=$profile
 [[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && export ANTHROPIC_OAUTH_TOKEN
 mkdir -p "$PI_CODING_AGENT_DIR"
 
-if [[ ${1:-} == explore ]]; then
+if [[ ${1:-} == explore-recipe ]]; then
 	shift
 	cd "$extension" && exec node src/recipe-run.ts "$@"
 fi
 
 [[ -d $profiles/$profile ]] || { echo "hv: no profile $profile in $profiles; make it with hv seed <explore profile>" >&2; exit 1; }
 # pi reads the profile's instructions on every request, so a link makes an edit to live/ apply on the next turn.
-# OptChat's /optchat instructions editor saves a plain file over the link; the next start links it again.
 ln -sfn "$here/live/AGENTS.md" "$profiles/$profile/AGENTS.md"
-env=(-e "HV_STORE=$HV_STORE" -e "OPTCHAT_HOME=$OPTCHAT_HOME" -e "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR" -e PI_CACHE_RETENTION=long)
+
+# The hypervisor's pi, the TUI's and a headless explore run's alike.
+pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+	--model anthropic/claude-opus-5-5 --thinking medium
+	--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates
+	-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile")
+
+if [[ ${1:-} == explore ]]; then
+	shift
+	cd "$HOME" && PI_CACHE_RETENTION=long exec node "$extension/src/hv-explore.ts" "$@" -- "${pi[@]}"
+fi
+
+env=(-e "HV_STORE=$HV_STORE" -e "OPTCHAT_HOME=$OPTCHAT_HOME" -e "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR" -e "HV_PROFILE=$HV_PROFILE" -e PI_CACHE_RETENTION=long)
 [[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && env+=(-e "ANTHROPIC_OAUTH_TOKEN=$ANTHROPIC_OAUTH_TOKEN")
 
 if ! tmux has-session -t =hypervisor 2>/dev/null; then
-	tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" \
-		node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
-		--model anthropic/claude-opus-5-5 --thinking medium \
-		--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
-		-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile"
+	tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" "${pi[@]}"
 fi
 if [[ -n ${TMUX:-} ]]; then exec tmux switch-client -t =hypervisor; else exec tmux attach -t =hypervisor; fi
