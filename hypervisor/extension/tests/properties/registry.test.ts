@@ -27,7 +27,7 @@ const { hypervisor } = await import("../../src/index.ts");
 const LIMIT = 1000;
 const MEMORY = ["zoom", "recall", "raw"];
 /** The parent's closed set of tools. */
-const CONVERSE = ["spawn", "tell", "look", "delegate", ...MEMORY];
+const CONVERSE = ["start_session", "tell_session", "look", "delegate", ...MEMORY];
 /** The explorer's read tools, which join the set under `--explore`. */
 const EXPLORE = ["read", "ls", "find", "grep", "memex"];
 
