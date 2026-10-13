@@ -947,6 +947,7 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
 
+
 # An open tab over a watcher whose passes fail, then succeed again: the tab polls the stamp file on
 # a timer, which the page's clock runs forward rather than the check waiting it out.
 STALE_PROBE = r"""
@@ -986,7 +987,7 @@ print(json.dumps(out))
 
 @pytest.mark.full_path
 def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(transcribed: Demo, tmp_path: Path) -> None:
-    """The ticket's P3, where the user meets it: the note appears in a tab already open, saying since
+    """`board-watcher-restarts-on-new-code#P3`, where the user meets it: the note appears in a tab already open, saying since
     when and on what, without the tab reloading; the stamp file the next good render writes takes it
     down."""
     for tool in ("uv", "chromium"):
