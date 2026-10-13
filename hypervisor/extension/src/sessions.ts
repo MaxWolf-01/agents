@@ -110,11 +110,18 @@ export async function look(config: SessionConfig, { session }: { session?: strin
 }
 
 /** Runs `task` in a one-shot Claude Code session in auto mode, in `dir` or max's home, and returns its answer. */
-export async function delegate(config: SessionConfig, { task, dir }: { task: string; dir?: string }, signal?: AbortSignal): Promise<string> {
+export async function delegate(config: SessionConfig, params: { task: string; dir?: string }, signal?: AbortSignal): Promise<string> {
+	return (await delegation(config, params))(signal);
+}
+
+/** `task` checked, and where it runs resolved, ready to run as delegate runs it: refused now, not once it runs. */
+export async function delegation(config: SessionConfig, { task, dir }: { task: string; dir?: string }): Promise<(signal?: AbortSignal) => Promise<string>> {
 	if (!task.trim()) throw new Error("the task is empty");
 	const cwd = dir === undefined ? config.home : await directory(config.home, dir);
-	const stop = AbortSignal.any([AbortSignal.timeout(DELEGATE_MS), ...(signal ? [signal] : [])]);
-	return run("claude", ["-p", "--permission-mode", "auto", "--output-format", "text", "--", `${task.trim()}\n\n${BRIEFLY}`], { cwd, signal: stop });
+	return (signal) => {
+		const stop = AbortSignal.any([AbortSignal.timeout(DELEGATE_MS), ...(signal ? [signal] : [])]);
+		return run("claude", ["-p", "--permission-mode", "auto", "--output-format", "text", "--", `${task.trim()}\n\n${BRIEFLY}`], { cwd, signal: stop });
+	};
 }
 
 /**

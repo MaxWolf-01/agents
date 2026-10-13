@@ -3,10 +3,10 @@ import type { Launch, Seen } from "./effects.ts";
 import { under } from "./effects.ts";
 
 /**
- * The programs a tool may start: tmux and claude for sessions, uv for the store, memex for the explorer. Stricter than
- * P4, which bans only a shell: a tool that needs another program is a call its slice escalates.
+ * The programs a tool may start: tmux and claude for sessions, uv for the store, memex for the explorer, job for wait.
+ * Stricter than P4, which bans only a shell: a tool that needs another program is a call its slice escalates.
  */
-const PROGRAMS = new Set(["tmux", "claude", "uv", "memex"]);
+const PROGRAMS = new Set(["tmux", "claude", "uv", "memex", "job"]);
 /** Shells, and the programs that run another program named in their arguments. */
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "env", "xargs", "nohup", "setsid", "timeout", "nice", "stdbuf", "sudo"]);
 /** The store's command line, the one script uv may run. */
@@ -52,6 +52,7 @@ function launchProblems(launch: Launch, given: string[]): string[] {
 	if (program === "tmux") return tmuxProblems(launch.args, given);
 	if (program === "claude") return claudeProblems(launch.args);
 	if (program === "uv") return uvProblems(launch.args, given);
+	if (program === "job") return jobProblems(launch.args);
 	return [];
 }
 
@@ -167,4 +168,25 @@ function uvProblems(args: string[], given: string[]): string[] {
 	const options = args.slice(1, i).filter((arg) => given.some((text) => arg.includes(text)));
 	const script = path.resolve(args[i] ?? "") === STORE ? [] : [`uv run ${args.slice(i).join(" ")}: only the store runs through uv`];
 	return [...options.map((arg) => `uv run ${arg}: an option from the model`), ...script];
+}
+
+/** job's flags that wait takes, each with a value. */
+const JOB_WAIT = new Set(["--deadline", "--stall", "--watch"]);
+
+/**
+ * job runs `probe`, or `wait <name>` with a deadline and its other flags, and nothing that starts or stops a job: a job
+ * runs its command through a shell. A value that starts with `-` would reach grep, or job, as an option.
+ */
+function jobProblems(args: string[]): string[] {
+	if (args.length === 1 && args[0] === "probe") return [];
+	const shown = `job ${args.join(" ")}`;
+	if (args[0] !== "wait" || !args[1] || args[1].startsWith("-")) return [`${shown}: job runs probe, or wait on a named job`];
+	const flags = args.slice(2);
+	const problems: string[] = [];
+	for (let i = 0; i < flags.length; i += 2) {
+		if (!JOB_WAIT.has(flags[i])) problems.push(`${shown}: ${flags[i]} is not a flag wait takes`);
+		else if (flags[i + 1] === undefined || flags[i + 1].startsWith("-")) problems.push(`${shown}: ${flags[i]} has no value`);
+	}
+	if (!flags.includes("--deadline")) problems.push(`${shown}: a wait with no deadline`);
+	return problems;
 }
