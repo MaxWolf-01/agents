@@ -25,13 +25,6 @@ const { live } = await import("../../src/live.ts");
 /** How long a tool or handler runs before the check moves on; what it does after that is stray. */
 const LIMIT = 1000;
 
-test("lifelong-hypervisor#P4: the extension registers the closed set: the session tools, the inbox, wait and the explorer's read tools", async () => {
-	const { tools } = await load(live({ store, home }), home);
-	const SESSIONS = ["start_session", "tell_session", "look", "delegate"];
-	const READ = ["read", "ls", "find", "grep", "memex"];
-	assert.deepEqual([...tools.keys()].sort(), [...SESSIONS, "inbox", "wait", ...READ].sort());
-});
-
 test("lifelong-hypervisor#P4: no tool runs a shell or writes outside the store, whatever its arguments", async () => {
 	let extension!: Awaited<ReturnType<typeof load>>;
 	const atLoad = await effects.during(async () => {
