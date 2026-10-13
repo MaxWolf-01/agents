@@ -14,7 +14,7 @@ import { fromEnvironment } from "./index.ts";
 import { append } from "./journal.ts";
 import type { SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
-import { inputsDir, save } from "./inputs.ts";
+import { save } from "./inputs.ts";
 import { inboxTool, sessionTools } from "./tools.ts";
 import { watch } from "./watch.ts";
 
@@ -27,7 +27,7 @@ const STATUS_CHANNEL = "optchat:status";
 /** How often the spawned sessions and the inbox are looked at. */
 const WATCH_MS = 3000;
 
-/** Under `inputsDir(config.home)`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed. */
+/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed. */
 export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		const work = background(config.store);
@@ -43,7 +43,7 @@ export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 		pi.on("input", async (event) => {
 			// What another extension sends, a ping or a report among them, is not max's.
 			if (event.source === "extension" || !event.text.trim()) return { action: "continue" };
-			return { action: "transform", text: await save(config.home, inputsDir(config.home), event.text) };
+			return { action: "transform", text: await save(config.home, event.text) };
 		});
 		let watching: ReturnType<typeof watch> | undefined;
 		pi.on("session_start", () => {

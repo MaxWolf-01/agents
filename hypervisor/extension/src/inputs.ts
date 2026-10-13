@@ -6,17 +6,18 @@ import { shown } from "./paths.ts";
  * Where max's messages are kept, one numbered file each, under his home. It lies outside the store, which the
  * explorer's read tools deny, so the hypervisor can read one back by line range like any other file.
  */
-export const inputsDir = (home: string) => path.join(home, ".local/share/hypervisor-inputs");
+const INPUTS = ".local/share/hypervisor-inputs";
 
 /** The line `save` puts under max's message, naming its file. */
 const SAVED = /\n\n\(saved as [^\n]*\/\d+\.txt\)$/;
 
 /**
- * Saves `text` as the next of `dir`'s numbered files, `<n>.txt` one past the highest there, and returns `text` with a
- * line under it giving that file's path. A message that already ends in such a line, which pi hands back to the editor
+ * Saves `text` as the next numbered file in `home`'s inputs directory, `<n>.txt` one past the highest there, and
+ * returns `text` with a line under it giving that file's path. A message that already ends in such a line, which pi hands back to the editor
  * when a queued message is dequeued, is saved again without it.
  */
-export async function save(home: string, dir: string, text: string): Promise<string> {
+export async function save(home: string, text: string): Promise<string> {
+	const dir = path.join(home, INPUTS);
 	const bare = text.replace(SAVED, "");
 	await mkdir(dir, { recursive: true });
 	for (;;) {

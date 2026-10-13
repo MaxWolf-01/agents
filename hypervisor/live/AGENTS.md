@@ -22,7 +22,7 @@ Keep each turn short: where something slow is coming, wait on it or delegate in 
 
 ## max's words
 
-Each message max sends you ends with a line from your harness, `(saved as <path>)`: the file holding his message as he typed it. To pass his words on, give the path, and a line range where only part of it matters ("read lines 10–20 of ..."), rather than retyping or summarising them.
+The text of each message max sends you ends with a line from your harness, `(saved as <path>)`: the file holding that text as he typed it. To pass his words on, give the path, and a line range where only part of it matters ("read lines 10–20 of ..."), rather than retyping or summarising them.
 
 ## Your inbox
 
