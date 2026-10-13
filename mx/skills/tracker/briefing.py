@@ -174,8 +174,7 @@ def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
     """One `claude -p` run in `repo` on `prompt`, through `run-log`: what it answered and the session
     it answered in, or None where it did not answer at all.
 
-    The prompt goes on stdin, which `run-log` hands on to claude: as an argument, a tracker's state
-    past 128 KiB is more than Linux takes in one (MAX_ARG_STRLEN), and the run never starts.
+    The prompt goes on stdin: as an argument, one past 128 KiB (MAX_ARG_STRLEN) fails before claude starts.
 
     The board renders without the model, so every way this comes back empty is one the caller goes
     on from: no claude on the machine, no auth, no network, a run past RUN_LIMIT, an error. Each of
