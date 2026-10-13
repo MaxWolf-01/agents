@@ -4,8 +4,7 @@
 // prints what the latest run found.
 
 import { execFileSync, spawn } from "node:child_process";
-import path from "node:path";
-import { ENDED, NOTICE, parse, REFUSED, USAGE as COMMAND } from "./exploring.ts";
+import { ENDED, NOTICE, parse, profileDir, REFUSED, USAGE as COMMAND } from "./exploring.ts";
 import { lines } from "./journal.ts";
 import { summarized } from "./recipe-run.ts";
 
@@ -31,7 +30,7 @@ interface Line {
 	error?: string;
 	ended?: string;
 	steps?: number;
-	week?: number;
+	week?: number | "unread";
 }
 
 /** What the latest run in the store's journal found, step by step, and how it ended, as text; or that no run is there. */
@@ -43,7 +42,7 @@ export async function found(store: string): Promise<string> {
 	const out = [`Explore run of ${run.slice(0, 16)}Z${mine[0]?.direction ? `, toward ${mine[0].direction}` : ""}:`];
 	for (const line of mine) {
 		if (line.step !== undefined) out.push(`\nstep ${line.step}, ${line.tokens} tokens:${line.error ? ` failed: ${line.error}` : `\n${line.finding}`}`);
-		if (line.ended) out.push(`\nEnded after ${line.steps} steps, ${line.tokens} tokens: stopped by ${line.ended}.${line.week === undefined ? "" : ` The week at ${line.week}%.`}`);
+		if (line.ended) out.push(`\nEnded after ${line.steps} ${line.steps === 1 ? "step" : "steps"}, ${line.tokens} tokens: stopped by ${line.ended}.${line.week === undefined ? "" : line.week === "unread" ? " The week's quota was never read." : ` The week at ${line.week}%.`}`);
 	}
 	if (!mine.some((line) => line.ended)) out.push("\nIt has not ended yet, or its pi stopped before it could.");
 	return out.join("\n");
@@ -131,10 +130,10 @@ if (import.meta.main) {
 		// Literal keys, then Enter on its own, so nothing in the direction reads as a key name.
 		execFileSync("tmux", ["send-keys", "-t", SESSION, "-l", `/explore ${args.join(" ")}`]);
 		execFileSync("tmux", ["send-keys", "-t", SESSION, "Enter"]);
-		console.log("The hypervisor's TUI is open: typed /explore into its pane, where the run goes on (tmux attach -t hypervisor).");
+		console.log("The hypervisor's TUI is open, so /explore was typed into its pane: see there that the run started (tmux attach -t hypervisor). A draft in its editor would have taken the text.");
 		process.exit(0);
 	}
-	const profile = process.env.OPTCHAT_HOME && process.env.HV_PROFILE ? path.join(process.env.OPTCHAT_HOME, "profiles", process.env.HV_PROFILE) : undefined;
+	const profile = profileDir();
 	if (!command.length || !profile) {
 		console.error(`hv explore: no pi to run, or no profile (OPTCHAT_HOME, HV_PROFILE); run it as hv explore\n\n${USAGE}`);
 		process.exit(2);

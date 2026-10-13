@@ -7,7 +7,7 @@
 // About 12 hours before the week resets, with more than a fifth of it unused, the hypervisor is asked to offer max a
 // run, in its chat and with a desktop notification; only the command he types starts one.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -154,7 +154,10 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		return undefined;
 	});
 	pi.on("agent_end", (event) => {
-		const last = event.messages.at(-1);
+		// A message that joined the step's turn after its first reply, max's or a ping's, is not the step's: the step ends before it.
+		const replied = event.messages.findIndex((m) => m.role === "assistant");
+		const joined = event.messages.findIndex((m, i) => i > replied && (m.role === "user" || m.role === "custom"));
+		const last = event.messages.slice(0, replied < 0 || joined < 0 ? undefined : joined).findLast((m) => m.role === "assistant");
 		if (last?.role !== "assistant") return;
 		const text = last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n").trim();
 		ended = { finding: text, ...(last.stopReason === "error" || last.stopReason === "aborted" ? { error: last.errorMessage ?? last.stopReason } : {}) };
@@ -207,6 +210,11 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 					stopped = `step ${current.taken} failing`;
 					break;
 				}
+				// A cap read from a log that is not there would never stop the run.
+				if (request.tokens !== undefined && config.usage && !existsSync(config.usage)) {
+					stopped = `no usage log at ${config.usage} to count the cap from`;
+					break;
+				}
 			}
 		} catch (error) {
 			stopped = `an error: ${error instanceof Error ? error.message : String(error)}`;
@@ -215,8 +223,10 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		}
 		const used = week();
 		const tokens = spent(current.started);
-		await journal({ run: current.started, ended: stopped, steps: current.taken, tokens, ...(used ? { week: Math.round(used.used) } : {}) }).catch(() => {});
-		ctx.ui.notify(`${ENDED} after ${current.taken} ${current.taken === 1 ? "step" : "steps"}, ${tokens} tokens: stopped by ${stopped}.${used ? ` The week is at ${Math.round(used.used)}%.` : ""}`, "info");
+		// A share asked for and never read stopped nothing, which the end says rather than leave it to pass for a share not reached.
+		const share = used ? ` The week is at ${Math.round(used.used)}%.` : request.untilWeek !== undefined ? " The week's quota was never read, so --until-week stopped nothing." : "";
+		await journal({ run: current.started, ended: stopped, steps: current.taken, tokens, ...(used ? { week: Math.round(used.used) } : request.untilWeek !== undefined ? { week: "unread" } : {}) }).catch(() => {});
+		ctx.ui.notify(`${ENDED} after ${current.taken} ${current.taken === 1 ? "step" : "steps"}, ${tokens} tokens: stopped by ${stopped}.${share}`, "info");
 	};
 
 	pi.registerCommand("explore", {
@@ -254,9 +264,15 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 	});
 }
 
-/** OptChat's usage log for the profile `hv` runs on, as its environment locates it. */
-export function usageLog(): string | undefined {
+/** The OptChat profile `hv` runs on, as its environment locates it. */
+export function profileDir(): string | undefined {
 	const home = process.env.OPTCHAT_HOME;
 	const profile = process.env.HV_PROFILE;
-	return home && profile ? path.join(home, "profiles", profile, "usage.jsonl") : undefined;
+	return home && profile ? path.join(home, "profiles", profile) : undefined;
+}
+
+/** OptChat's usage log for that profile. */
+export function usageLog(): string | undefined {
+	const profile = profileDir();
+	return profile && path.join(profile, "usage.jsonl");
 }

@@ -137,6 +137,7 @@ before(async () => {
 	writeFileSync(path.join(cache, "b.json"), JSON.stringify(input(".claude-pro", 10, now / 1000)));
 	runs.set("statusline", await explore(statusline, "5", "--until-week", "95"));
 	runs.set("blocked", await explore(fixture("blocked", { tool: "start_session" }), "1"));
+	runs.set("unread", await explore(fixture("unread"), "1", "--until-week", "95"));
 	notes = await interrupted(fixture("interrupted"));
 });
 after(async () => {
@@ -189,11 +190,13 @@ test("a run starts no session: start_session is refused while it is in flight", 
 	assert.match(runs.get("blocked")!.out, /stopped by 1 step\./);
 });
 
-test("a message from max ends the run after the step in flight", () => {
+test("a message from max ends the run after the step in flight", async () => {
 	assert.match(notes.at(-1)!, /^explore run ended after 1 step, .*: stopped by max wrote\./);
 	const requests = fixtures.get("interrupted")!.requests;
 	assert.ok(requests.some((r) => said(r).some((text) => text.startsWith("max here, what did you find?"))), "his message reaches the hypervisor");
 	assert.ok(!requests.some((r) => said(r).includes("continue")), "no second step");
+	const [step] = await journal("interrupted");
+	assert.match(step!.finding!, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
 });
 
 test("hv explore refuses what /explore cannot run, before any pi starts", async () => {
@@ -271,4 +274,9 @@ test("with the hypervisor's TUI open, hv explore types the command into its pane
 	assert.equal(ran.code, 0, ran.out);
 	assert.deepEqual(readFileSync(calls, "utf8").trimEnd().split("\n"), ["has-session -t =hypervisor", "send-keys -t =hypervisor -l /explore 20 the news", "send-keys -t =hypervisor Enter"]);
 	assert.equal(f.requests.length, 0);
+});
+
+test("a share of the week asked for and never read stopped nothing, and the run's end says so", async () => {
+	assert.match(runs.get("unread")!.out, /stopped by 1 step\. The week's quota was never read, so --until-week stopped nothing\./);
+	assert.match(await found(fixtures.get("unread")!.store), /Ended after 1 step, 1000 tokens: stopped by 1 step\. The week's quota was never read\./);
 });
