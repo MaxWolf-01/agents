@@ -4,37 +4,9 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { age, markRead, shown, size, waiting } from "./inbox.ts";
 import { delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Background } from "./pace.ts";
-import type { Store } from "./store.ts";
 
 /** A tool's answer: the text it printed, or `(nothing)`. */
 export const answer = (text: string) => ({ content: [{ type: "text" as const, text: text.trimEnd() || "(nothing)" }], details: undefined });
-
-/** The memory tools: each runs one store command and answers with what it printed. */
-export function memoryTools(store: Store): ToolDefinition[] {
-	return [
-		defineTool({
-			name: "zoom",
-			label: "Zoom",
-			description: "Show a block of your view one level finer: its two halves as view lines. Zoom again into a half to go deeper; a half of one entry is that entry.",
-			parameters: Type.Object({ block: Type.String({ description: "The block as LO-HI, the numbers after # on its view line, e.g. 64-127." }) }),
-			execute: async (_id, { block }) => answer(await store.zoom(block)),
-		}),
-		defineTool({
-			name: "recall",
-			label: "Recall",
-			description: "Search your whole log, every entry ever logged, for a Python regex, ignoring case. Prints the matching entries, newest last.",
-			parameters: Type.Object({ regex: Type.String({ description: "A Python regular expression." }) }),
-			execute: async (_id, { regex }) => answer(await store.recall(regex)),
-		}),
-		defineTool({
-			name: "raw",
-			label: "Raw",
-			description: "Print the whole text of one entry, for an entry whose line ends in [raw: N bytes].",
-			parameters: Type.Object({ id: Type.Integer({ description: "The entry's number, after # on its line." }) }),
-			execute: async (_id, { id }) => answer(await store.raw(id)),
-		}),
-	] as ToolDefinition[];
-}
 
 /** The details that have pi-optchat log a tool's result as `work` in memory, not as its echo (pi-optchat's `WORK_RESULT`). */
 const WORK_RESULT = { optchat: "work" };
@@ -65,10 +37,10 @@ export function inboxTool(store: string): ToolDefinition {
 }
 
 /**
- * The session tools: each starts, messages, reads or delegates to a Claude Code session, never acting itself. Given
- * `work`, delegate can also run in the background, its answer arriving as a ping.
+ * The session tools: each starts, messages, reads or delegates to a Claude Code session, never acting itself. delegate can
+ * also run in the background on `work`, its answer arriving as a ping.
  */
-export function sessionTools(config: SessionConfig, work?: Background): ToolDefinition[] {
+export function sessionTools(config: SessionConfig, work: Background): ToolDefinition[] {
 	const session = Type.String({ description: "A session as look lists it: its tmux window (repo:window, or the window alone), its name, or its pid." });
 	const dir = (what: string) => Type.String({ description: `${what}, absolute, under ~/, or relative to max's home.` });
 	return [
@@ -106,13 +78,11 @@ export function sessionTools(config: SessionConfig, work?: Background): ToolDefi
 			parameters: Type.Object({
 				task: Type.String({ description: "What to do or find out, and what to answer with." }),
 				dir: Type.Optional(dir("Where it runs, max's home if not given")),
-				...(work
-					? { background: Type.Optional(Type.Boolean({ description: "Return at once with an id, and end your turn: the answer arrives as a report starting [delegate <id>]." })) }
-					: {}),
+				background: Type.Optional(Type.Boolean({ description: "Return at once with an id, and end your turn: the answer arrives as a report starting [delegate <id>]." })),
 			}),
 			execute: async (_id, { task: what, dir, background }, signal) => {
 				const task = await delegation(config, { task: what, dir });
-				if (!work || background !== true) return answer(await task(signal));
+				if (background !== true) return answer(await task(signal));
 				const id = randomBytes(2).toString("hex");
 				work.start(`delegate ${id}`, task);
 				return answer(`Delegated as ${id}; its answer arrives as a report starting [delegate ${id}]. End your turn.`);

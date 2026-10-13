@@ -17,11 +17,10 @@ export function standIn(fields: Record<PropertyKey, unknown>): any {
 
 /**
  * An extension loaded as pi loads it, through to session start, into a stand-in for pi that keeps the tools it
- * registers, the tools active, and its event handlers. `flipped` sets every boolean flag the extension registers.
+ * registers, the tools active, and its event handlers.
  */
-export async function load(extension: (pi: ExtensionAPI) => void, cwd: string, flipped = false) {
+export async function load(extension: (pi: ExtensionAPI) => void, cwd: string) {
 	const tools = new Map<string, ToolDefinition>();
-	const flags = new Map<string, { type: string; default?: unknown }>();
 	const handlers = new Map<string, Handler[]>();
 	const state = { active: [...PI_ACTIVE] };
 	const api: Record<string, unknown> = {
@@ -37,13 +36,6 @@ export async function load(extension: (pi: ExtensionAPI) => void, cwd: string, f
 		on(event: string, handler: Handler) {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 			return () => {};
-		},
-		registerFlag(name: string, options: { type: string; default?: unknown }) {
-			flags.set(name, options);
-		},
-		getFlag(name: string) {
-			const flag = flags.get(name);
-			return flipped && flag?.type === "boolean" ? !flag.default : flag?.default;
 		},
 		// pi's exec starts its program without a shell, so it is a launch like any other.
 		exec: async (command: string, args: string[]) => {

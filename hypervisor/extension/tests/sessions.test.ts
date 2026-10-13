@@ -1,6 +1,6 @@
 // The session layer: what a message to a session's inbox looks like on the wire, how a session is found, what spawn,
-// look and delegate start, what the watch makes of the registry, and the events and `hv tell` messages that reach the
-// agent. tmux and claude are stand-ins on PATH that record how they were called and answer as this file says.
+// look and delegate start, what the watch makes of the registry, and the inbox that `hv tell` and the watch leave
+// messages in. tmux and claude are stand-ins on PATH that record how they were called and answer as this file says.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,8 +10,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import fc from "fast-check";
-import { entriesOf } from "../src/entries.ts";
-import { eventMessage, eventsIn } from "../src/events.ts";
 import { markRead, post, type Told, unreadLine, waiting } from "../src/inbox.ts";
 import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
 import { changes, type Seen, watch, watched } from "../src/watch.ts";
@@ -257,22 +255,6 @@ test("hv tell leaves its words in the store's inbox, a ping with --ping, from th
 	assert.match(unset.stderr, /HV_STORE is not set/);
 });
 
-test("an event message holds its events, whatever they say", () => {
-	const event = fc.string({ minLength: 1 }).filter((e) => !e.includes("</event>"));
-	fc.assert(fc.property(fc.array(event, { minLength: 1, maxLength: 4 }), (events) => assert.deepEqual(eventsIn(eventMessage(events)), events)));
-	assert.deepEqual(eventsIn(eventMessage(["a\n</event>\n<event>\nb"])), ["a\n</ event>\n<event>\nb"], "an event cannot end its block early");
-	assert.equal(eventsIn("max: <event>\nx\n</event>"), undefined);
-	assert.equal(eventsIn("hello"), undefined);
-});
-
-test("each event is an entry of its own, spoken by the event and not by max", () => {
-	const content = eventMessage(["[agents:board] busy → idle", "[agents:board] hv tell: done, see the ticket"]);
-	assert.deepEqual(
-		entriesOf([{ role: "user", content, timestamp: 1 }]).map((e) => e.text),
-		["event: [agents:board] busy → idle", "event: [agents:board] hv tell: done, see the ticket"],
-	);
-});
-
 const seen = (status: string, window = "agents:board"): Seen => ({ status, window });
 
 test("a watched session's turn ending, or the session going, is a message from its window; any other change is not", () => {
@@ -340,14 +322,11 @@ test("the status line lists the unread by sender, with count, size and age, and 
 	assert.equal(unreadLine([], now), undefined);
 });
 
-/** What starts the live hypervisor's turn. */
-const PING = (told: Told) => told.ping === true;
-
 /** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
-function watching(at: string, store: string, ready = () => true) {
+function watching(at: string, store: string) {
 	const delivered: string[][] = [];
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => void delivered.push(events), (error) => failures.push(error), ready);
+	const w = watch({ home: at, store }, 2 ** 30, (pings) => void delivered.push(pings), (error) => failures.push(error));
 	return { ...w, delivered, failures };
 }
 
@@ -398,25 +377,6 @@ test("a ping starts a turn: the watch hands it over, once, and moves it to read/
 	}
 });
 
-test("the watch holds its pings while pi cannot take them, the inbox untouched, and hands them over once it can", async () => {
-	const { home: at, store } = spawnedHere("busy");
-	let ready = false;
-	const w = watching(at, store, () => ready);
-	try {
-		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
-		await w.look();
-		assert.deepEqual(w.delivered, []);
-		assert.equal(waiting(store).length, 1);
-		assert.deepEqual(w.failures, [], "holding is not a failure");
-		ready = true;
-		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
-	} finally {
-		w.stop();
-	}
-});
-
 test("a look whose delivery fails leaves its pings for the next look, and two looks at once deliver once", async () => {
 	const { home: at, store } = spawnedHere("busy");
 	const delivered: string[][] = [];
@@ -425,10 +385,9 @@ test("a look whose delivery fails leaves its pings for the next look, and two lo
 	const w = watch(
 		{ home: at, store },
 		2 ** 30,
-		PING,
-		(events) => {
+		(pings) => {
 			if (refuse) throw new Error("not now");
-			delivered.push(events);
+			delivered.push(pings);
 		},
 		(error) => failures.push(error),
 	);
@@ -445,12 +404,12 @@ test("a look whose delivery fails leaves its pings for the next look, and two lo
 	}
 });
 
-test("a delivery that returns false is held like one pi cannot take: no failure, the ping still waiting, offered again next look", async () => {
+test("a delivery that returns false is held: no failure, the ping still waiting, offered again next look", async () => {
 	const { home: at, store } = spawnedHere("busy");
 	const offered: string[][] = [];
 	let taken = false;
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => (offered.push(events), taken), (error) => failures.push(error));
+	const w = watch({ home: at, store }, 2 ** 30, (pings) => (offered.push(pings), taken), (error) => failures.push(error));
 	try {
 		await w.started;
 		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
