@@ -16,6 +16,7 @@
 #     detail   a running worker's last worklog line, `(nothing written yet)`
 #              when the worklog is empty and `(no worklog)` when there is
 #              none; a finished run's status line, less its session id.
+# A scratch dir with no run in its manifest gives no row.
 #
 # With --follow it runs until its output is closed. It prints the rows as a
 # frame, which is the rows followed by an empty line: one frame at the start,
@@ -98,10 +99,10 @@ case ${2:-} in
 esac
 
 # A scan costs over a second of CPU on a host with a few dozen runs, so the
-# loop scans again only once something a scan reads has changed: a file in a
-# scratch dir, the tmux sessions, or the processes of the runners the manifests
-# name, by which probe tells a live run. Whatever a scan comes to read beyond
-# these has to be watched here too, or a follow goes stale on it.
+# loop scans again only once something it reads has changed: a file in a
+# scratch dir, the tmux sessions, or a runner process, by which probe tells a
+# live run. Whatever a scan comes to read beyond these has to be watched here
+# too, or a follow goes stale on it.
 watched() {
     local runners
     find "$root" -mindepth 1 -maxdepth 2 -printf '%p %T@ %s\n' 2>/dev/null
@@ -116,13 +117,11 @@ last=
 while :; do
     seen=$(watched)
     if [ "$seen" != "$last" ]; then
-        printf -v began '%(%s)T' -1
+        began=$SECONDS
         rows=$(scan)
         last=$seen
-        # A scan takes its ages at its start, and can take seconds; they are sent
-        # as of now.
-        printf -v late '%(%s)T' -1
-        late=$((late - began))
+        # A scan takes its ages at its start and can take seconds.
+        late=$((SECONDS - began))
         [ "$late" -eq 0 ] || rows=$(awk -F'\t' -v OFS='\t' -v late="$late" '
             $4 ~ /^[0-9]+$/ { $4 += late } $5 ~ /^[0-9]+$/ { $5 += late } { print }' <<<"$rows")
         { [ -z "$rows" ] || printf '%s\n' "$rows"; echo; } || exit

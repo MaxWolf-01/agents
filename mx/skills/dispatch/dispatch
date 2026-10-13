@@ -213,7 +213,6 @@ scratch_dir() { # <host>
 # never speak again. The connect timeout is for a host that is off, which `ps`
 # asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
 # the background, where a passphrase prompt would be several on one terminal.
-# `ps --follow` holds its connections open on the same keepalive.
 ssh_options=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 on_host() { # <host> <command...>
     h=$1; shift
@@ -1267,17 +1266,13 @@ table() {
         }'
 }
 
-# ps --follow. Each host gets one connection, held open for as long as this
-# runs, with dispatch-ps --follow at the other end. Once a second the table is
-# drawn again from the latest frame of every host; a frame's ages count on from
-# the second it arrived. A host that has not answered yet is a `connecting` row.
-# A connection that drops turns its host into an `unreachable` row and is
-# opened again after a backoff that doubles up to a minute, and starts over
-# once a connection has held for one. The hosts are asked for again every half
-# minute, which costs no login: a host that joins gets a connection, and one
-# that leaves loses its own.
+# ps --follow: one connection per host, with dispatch-ps --follow at the other
+# end, and the table drawn again every second from each host's latest frame,
+# whose ages count on from the second it arrived. A host that has not answered
+# yet is a `connecting` row. The hosts are read again every half minute, which
+# costs no login.
 follow() {
-    local h now out shown= asked=$SECONDS
+    local h now out fresh shown= asked=$SECONDS
     fleet_hosts
     frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
     declare -gA follower=()
@@ -1287,7 +1282,12 @@ follow() {
     printf '\033[H\033[2J'
     while :; do
         if [ $((SECONDS - asked)) -ge 30 ]; then
-            reread_fleet
+            # In a subshell, so a read that dies keeps the hosts already there
+            # instead of ending the follow.
+            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
+                mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+                mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
+            fi
             follow_fleet
             asked=$SECONDS
         fi
@@ -1310,12 +1310,11 @@ follow() {
 }
 
 # Starts a follow_host for each host in `hosts` that has none, and stops the
-# one of each host that left. A register that failed (`rows` then holds its
-# `incomplete` row) has left no host: its hosts are kept until it answers.
+# one of each host that left. A register that failed (its `incomplete` row is
+# in `rows`) has left no host.
 follow_fleet() {
     local h
-    for h in "${!follower[@]}"; do
-        [ ${#rows[@]} -eq 0 ] || break
+    [ ${#rows[@]} -gt 0 ] || for h in "${!follower[@]}"; do
         printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
         kill "${follower[$h]}" 2>/dev/null
         wait "${follower[$h]}" 2>/dev/null
@@ -1327,15 +1326,6 @@ follow_fleet() {
         follow_host "$h" &
         follower[$h]=$!
     done
-}
-
-# fleet_hosts again, in a subshell, so a read that dies keeps the hosts and the
-# rows already there and ends no follow.
-reread_fleet() {
-    local fresh
-    fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}") || return 0
-    mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
-    mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
 }
 
 # Cuts `out` to `lines`, keeping its header and its tally, since a table taller
@@ -1350,8 +1340,8 @@ fit() {
           printf '%s\n' "${drawn[@]: -2}")
 }
 
-# One host's connection, opened again each time it drops; stopped by a TERM,
-# which takes the connection with it. Its rows are <frames>/<host>.rows.
+# One host's connection, opened again with backoff each time it drops; a TERM
+# stops it and the connection with it. Its rows are <frames>/<host>.rows.
 follow_host() { # <host>
     local conn pid= opened rc delay=2 pipe=$frames/$1.pipe
     trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
