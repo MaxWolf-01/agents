@@ -62,7 +62,7 @@ from pathlib import Path
 
 import pytest
 
-from board import PAGE, Failing, render, stamp_in, write_stamp
+from board import PAGE, Failing, render, restamp
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
@@ -948,8 +948,8 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
 
 
-# An open tab over a watcher whose passes fail, then succeed again: the tab polls the stamp file on
-# a timer, which the page's clock runs forward rather than the check waiting it out.
+# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
+# waiting it out.
 STALE_PROBE = r"""
 import json, os, shutil, sys
 from pathlib import Path
@@ -987,9 +987,8 @@ print(json.dumps(out))
 
 @pytest.mark.full_path
 def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(transcribed: Demo, tmp_path: Path) -> None:
-    """`board-watcher-restarts-on-new-code#P3`, where the user meets it: the note appears in a tab already open, saying since
-    when and on what, without the tab reloading; the stamp file the next good render writes takes it
-    down."""
+    """`board-watcher-restarts-on-new-code#P3`: the note shows in a tab already open, without
+    reloading it, and goes when the stamp file drops the mark."""
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
             pytest.skip(f"no {tool} to render the page with")
@@ -997,7 +996,7 @@ def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(tran
     render(transcribed.root, transcribed.repo, out)
     drawn = Path(f"{out}.stamp.js").read_text()
     since = datetime(2026, 10, 7, 9, 30).astimezone()
-    write_stamp(out, stamp_in(out), Failing(since, "second.md:2: `flavour` is no ticket field\nsecond.md:3: and a second line"))
+    restamp(out, Failing(since, "second.md:2: `flavour` is no ticket field\nsecond.md:3: and a second line"))
     stale = Path(f"{out}.stamp.js").read_text()
     Path(f"{out}.stamp.js").write_text(drawn)
     done = subprocess.run(
@@ -1006,11 +1005,11 @@ def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(tran
     )
     assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
     seen = json.loads(done.stdout)
-    assert not seen["before"], "a board whose passes succeed shows the stale note"
-    assert "stale since 07 Oct 09:30" in seen["stale"] and "`flavour` is no ticket field" in seen["stale"], f"the note says {seen['stale']!r}"
-    assert "second line" not in seen["stale"], "the note carries more than the error's first line"
-    assert not seen["after"], "the note stayed up once the stamp file dropped the mark"
-    assert not seen["reloaded"], "the tab reloaded on a stamp file whose page had not changed"
+    assert not seen["before"]
+    assert "stale since 07 Oct 09:30" in seen["stale"] and "`flavour` is no ticket field" in seen["stale"], seen["stale"]
+    assert "second line" not in seen["stale"], seen["stale"]
+    assert not seen["after"]
+    assert not seen["reloaded"]
 
 
 if __name__ == "__main__":

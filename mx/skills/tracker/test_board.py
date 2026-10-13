@@ -9,10 +9,8 @@ sources (which tickets become nodes, in which class, joined by which edges), the
 (`board.view`: the groups, and each row with its marks, its questions, its copy buttons and the
 blocks it reads as opened; `board.read`: what a render reads, GitHub and the briefing included),
 and, for the few checks that say they pin it, the page's markup itself: what the page's script and
-stylesheet read. Beside them sits the watcher: its pass (`look`), the loop around it (`turn`,
-`watch`) and what a restart on new code hands on, with one full-path check that runs it as a
-process on a copy of its code changed under it. The oracle is the tracker skill, the board's
---help and the docstrings beside the code that draws the page: the frontier is open, unblocked, unclaimed; a proposed ticket is not
+stylesheet read. The oracle is the tracker skill, the board's --help and the docstrings beside the
+code that draws the page: the frontier is open, unblocked, unclaimed; a proposed ticket is not
 open whatever blocks it; a build in review waits for the user's ruling in its own group and
 unblocks nothing until the accept writes done, save a sibling merged into the branch of the parent
 ticket the two share, no hinge; a gh reference is a link to GitHub; a row copies the absolute path
@@ -20,6 +18,9 @@ of the file it was read from; a review page is linked relative to the page, as e
 is; a reference whose file no longer exists counts as done; a graph draws only tickets with an
 edge; one tracker directory holds every ticket the board shows, a build in flight included; a
 ticket the tracker's own parser refuses is refused here, with its file and its line.
+
+The watcher is checked at its pass (`look`, `turn`), its loop (`watch`) and its restart's
+hand-over, and, as a full-path check, run as a process on a copy of its code changed under it.
 
 Under "properties" at the end sit the executable Properties of
 mx/skills/tracker/corpus/board-orients.md that belong to these seams; that spec is their oracle.
@@ -2325,128 +2326,72 @@ def test_the_watcher_runs_the_model_once_a_cadence_and_keeps_what_it_was_told_un
 
 
 def refuse(path: Path, *fields: str) -> None:
-    """Give the ticket at `path` fields the tracker does not know, in this order from its first
-    line, as a newer tracker's tickets carry one the board watching them was loaded without."""
+    """Give the ticket at `path` fields the tracker does not know, in this order from its first line."""
     path.write_text(path.read_text().replace("---\n", "---\n" + "".join(f"{f}: [x]\n" for f in fields), 1))
 
 
 def polled(out: Path) -> dict[str, object]:
-    """What an open tab reads from the stamp file it polls beside `out`: the page it should be
-    showing (`Stamp`) and the stale mark (`Stale`)."""
+    """What an open tab reads from the stamp file: `Stamp` and `Stale`."""
     said = Path(str(out) + ".stamp.js").read_text()
     return {name: json.loads(value) for name, value in re.findall(r"^window\.__board(\w+) = (.*);$", said, re.M)}
 
 
-def test_a_failing_pass_says_its_error_once_and_once_more_when_passes_succeed_again(
-    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+def test_failing_passes_say_each_error_once_and_mark_the_open_board_stale_until_one_succeeds(
+    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The helferline watcher of 2026-10-13: its tickets carried a field the tracker it had loaded
-    did not know, and every pass for six days printed the whole refusal, two seconds apart, into a
-    log that reached a gigabyte. An error is said when it is new, and the recovery once."""
-    out = tmp_path / "board.html"
-    render(tracker, repo, out)
-    watching = board.turn(board.Watch(Seen(), board.Briefer(repo, out)), tracker, repo, out)
-    capsys.readouterr()
-
-    second = tracker / "second.md"
-    good = second.read_text()
-    refuse(second, "flavour")
-    for _ in range(3):
-        watching = board.turn(watching, tracker, repo, out)
-    said = capsys.readouterr().err
-    assert said.count("`flavour` is no ticket field") == 1, f"three failed passes said their error {said.count('`flavour` is no ticket field')} times"
-
-    second.write_text(good)
-    refuse(second, "colour")
-    for _ in range(3):
-        watching = board.turn(watching, tracker, repo, out)
-    said = capsys.readouterr().err
-    assert said.count("`colour` is no ticket field") == 1, "an error the passes went on to fail on was not said once"
-
-    second.write_text(good)
-    watching = board.turn(watching, tracker, repo, out)
-    assert capsys.readouterr().err.count("succeed again") == 1, "the first pass to succeed did not say so"
-    for _ in range(2):
-        watching = board.turn(watching, tracker, repo, out)
-    assert capsys.readouterr().err == "", "passes that succeed went on saying so"
-
-
-def test_while_passes_fail_an_open_tab_is_told_the_board_is_stale_since_when_and_on_what(
-    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The other half of that watcher: the board it kept open showed nothing amiss for six days.
-    A failed pass draws no page, so the mark rides in the stamp file the open tab polls anyway; the
-    tab reloads on nothing, and the mark goes with the next pass that succeeds."""
+    """The helferline watcher of 2026-10-13 printed one refusal every two seconds for six days, into
+    a gigabyte of log, while the board it kept open showed nothing amiss."""
     clock = [datetime(2026, 10, 7, 9, 30).astimezone()]
     monkeypatch.setattr(board, "now", lambda: clock[0])
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     watching = board.turn(board.Watch(Seen(), board.Briefer(repo, out)), tracker, repo, out)
     drawn = polled(out)
-    assert drawn["Stale"] is None, "a board whose passes succeed is marked stale"
+    assert drawn["Stale"] is None
+    capsys.readouterr()
+
+    def passes(n: int) -> str:
+        nonlocal watching
+        for _ in range(n):
+            watching = board.turn(watching, tracker, repo, out)
+        return capsys.readouterr().err
 
     second = tracker / "second.md"
     good = second.read_text()
-    refuse(second, "flavour", "colour")  # two refusals, one line each
-    watching = board.turn(watching, tracker, repo, out)
+    refuse(second, "flavour", "colour")  # a refusal two lines long
+    assert passes(3).count("`flavour` is no ticket field") == 1
     stale = polled(out)
-    assert stale["Stamp"] == drawn["Stamp"], "a failed pass sent the tab to reload onto the page it has"
-    assert "stale since 07 Oct 09:30" in str(stale["Stale"]), f"the mark does not say since when: {stale['Stale']}"
-    assert "`flavour` is no ticket field" in str(stale["Stale"]), f"the mark does not carry the error: {stale['Stale']}"
-    assert "`colour`" not in str(stale["Stale"]), f"the mark carries more than the error's first line: {stale['Stale']}"
+    assert stale["Stamp"] == drawn["Stamp"], "a failed pass reloads the tab"
+    assert "stale since 07 Oct 09:30" in str(stale["Stale"]) and "`flavour` is no ticket field" in str(stale["Stale"])
+    assert "`colour`" not in str(stale["Stale"]), "the mark carries more than the error's first line"
 
     clock[0] = datetime(2026, 10, 7, 10, 45).astimezone()
     second.write_text(good)
     refuse(second, "texture")
-    watching = board.turn(watching, tracker, repo, out)
-    stale = polled(out)
-    assert "stale since 07 Oct 09:30" in str(stale["Stale"]), "a new error moved when the board went stale"
-    assert "`texture` is no ticket field" in str(stale["Stale"]), "the mark kept an error the passes no longer fail on"
+    assert passes(3).count("`texture` is no ticket field") == 1
+    assert "stale since 07 Oct 09:30" in str(polled(out)["Stale"]), "a new error moved when the board went stale"
+    assert "`texture`" in str(polled(out)["Stale"])
 
     second.write_text(good)
-    board.turn(watching, tracker, repo, out)
-    assert polled(out)["Stale"] is None, "the pass that succeeded left the mark up"
-
-
-def test_every_board_carries_the_note_an_open_tab_shows_while_it_is_stale(tracker: Path) -> None:
-    """The page's script fills the note it finds by its source from the stamp file on every poll,
-    and a poll that finds no note throws before it can reload the tab onto a changed board."""
-    assert page_of(tracker).count('data-absent="board-stale"') == 1
+    assert passes(3).count("succeed again") == 1
+    assert polled(out)["Stale"] is None
 
 
 def test_the_watcher_watches_every_module_it_loaded() -> None:
-    """The modules the ticket names, the tracker that refused the helferline tickets first of them."""
     assert {"board.py", "tracker.py", "briefing.py", "github.py"} <= {path.name for path, _, _ in board.CODE}
 
 
 class Stopped(Exception):
-    """What a check's own sleep raises to end a watcher's loop after the passes it wanted."""
+    """Raised by a check's own sleep to end a watcher's loop."""
 
 
-def test_the_watcher_hands_itself_on_within_one_pass_of_a_module_it_loaded_changing(
-    repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The Property at the loop: the pass after the change is the last the old code runs. Whether
-    the new code starts is a run of it, stubbed here as starting."""
-    out = tmp_path / "board.html"
-    render(tracker, repo, out)
-    module = tmp_path / "tracker.py"
-    module.write_text("FIELDS = ('status',)\n")
-    watching = board.Watch(Seen(), board.Briefer(repo, out), code=board.on_disk([module]))
-    module.write_text("FIELDS = ('status', 'repos')\n")
-    monkeypatch.setattr(board, "starts", lambda: None)
-    monkeypatch.setattr(board.time, "sleep", lambda _: pytest.fail("a second pass ran on the code that changed under the first"))
-    handed = board.watch(watching, tracker, repo, out)
-    assert handed.seen.snapshot, "the watcher handed itself on without the pass it was in"
-
-
-def test_new_code_that_does_not_start_is_said_once_and_tried_again_on_its_next_change(
+def test_the_watcher_tries_changed_code_once_per_change_and_hands_itself_on_within_a_pass_once_it_starts(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A module saved half-written: the watcher goes on with the code it runs, and neither tries the
-    same broken code every pass nor says so every pass, which would be the log this ticket stops
-    moved to a new place. A while on, the same code is tried again, without a word."""
+    """Broken code tried and said every pass would be the helferline log again; retried a while on,
+    it says nothing new."""
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     module = tmp_path / "tracker.py"
@@ -2470,24 +2415,24 @@ def test_new_code_that_does_not_start_is_said_once_and_tried_again_on_its_next_c
 
     module.write_text("FIELDS = ('status',\n")
     run(4, then=lambda: module.write_text("FIELDS = ('status', 'repos'\n"))
-    assert tried == ["FIELDS = ('status',\n", "FIELDS = ('status', 'repos'\n"], \
-        "broken code was tried other than once per change"
-    assert capsys.readouterr().err.count("does not start") == 2, "code that does not start was not said once per change"
+    assert tried == ["FIELDS = ('status',\n", "FIELDS = ('status', 'repos'\n"]
+    assert capsys.readouterr().err.count("does not start") == 2
 
     monkeypatch.setattr(board, "CODE_RETRY", 0)
     tried.clear()
     run(3)
-    assert len(tried) == 3, "code that did not start was never tried again"
-    assert capsys.readouterr().err.count("does not start") == 1, "the same code that does not start was said again"
+    assert len(tried) == 3
+    assert capsys.readouterr().err.count("does not start") == 1
+
+    monkeypatch.setattr(board, "starts", lambda: None)
+    monkeypatch.setattr(board.time, "sleep", lambda _: pytest.fail("a second pass ran on code that changed under the first"))
+    assert board.watch(watching, tracker, repo, out).seen.snapshot, "handed on without the pass it was in"
 
 
 def test_a_watcher_restarted_on_new_code_keeps_its_tabs_address_and_its_briefing_schedule(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path], monkeypatch: pytest.MonkeyPatch,
     listening: str,
 ) -> None:
-    """What the old code hands the new across the exec, which replaces everything the process held:
-    the address a tab is open at, the briefing session's schedule mid-window, and the run of failed
-    passes, so the stale mark keeps its time. The new code's first pass draws the page."""
     out = tmp_path / "board.html"
     render(tracker, repo, out)
     at = datetime(2026, 10, 13, 9, 30).astimezone()
@@ -2500,44 +2445,37 @@ def test_a_watcher_restarted_on_new_code_keeps_its_tabs_address_and_its_briefing
     monkeypatch.setattr(board.os, "execv", lambda path, argv: execs.append(argv))
     monkeypatch.setenv(board.HANDOVER, "")  # so the variable restart sets goes with the check
     board.restart(watching, out)
-    assert [argv[0] for argv in execs] == [str(Path(board.__file__).resolve())], "the board on disk is not what runs next"
+    assert [argv[0] for argv in execs] == [str(Path(board.__file__).resolve())]
 
     resumed = board.taken(repo, out)
-    assert resumed, "the new code starts as a watcher of its own"
-    assert resumed.address == f"{listening}/board.html", "the new code lost the address the tab is open at"
+    assert resumed and resumed.address == f"{listening}/board.html"
     kept = (resumed.session.told, resumed.session.told_statuses, resumed.session.changed_at, resumed.session.tried)
-    assert kept == (told, (("second", "open"),), at, at - timedelta(minutes=3)), "the briefing schedule did not survive the restart"
-    assert resumed.failing == failing, "the run of failed passes did not survive the restart"
-    assert resumed.seen.statuses == (("second", "claimed"),), "the statuses the session is pinged against were lost"
+    assert kept == (told, (("second", "open"),), at, at - timedelta(minutes=3))
+    assert (resumed.failing, resumed.seen.statuses) == (failing, (("second", "claimed"),))
 
     rendered = out.stat().st_mtime_ns
     board.turn(resumed, tracker, repo, out)
     assert out.stat().st_mtime_ns != rendered, "the new code's first pass did not draw the page"
 
 
-
-def test_a_hand_over_the_new_code_cannot_read_leaves_it_watching_with_the_tabs_address(
+def test_a_hand_over_the_new_code_cannot_read_keeps_the_tabs_address(
     repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The old code writes the hand-over and the new code reads it, so the day the two disagree on
-    its shape is a restart onto code that has to start anyway: a watcher that dies there leaves the
-    open tab stale for as long as nobody looks."""
-    out = tmp_path / "board.html"
+    """A watcher that died here would leave the open tab stale for as long as nobody looks."""
     held = tmp_path / "board.html.handover"
     held.write_text(repr({"address": "http://127.0.0.1:4711/board.html", "seen": ()}))
     monkeypatch.setenv(board.HANDOVER, str(held))
-    resumed = board.taken(repo, out)
-    assert resumed and resumed.address == "http://127.0.0.1:4711/board.html", "the tab's address went with a hand-over it could not read"
-    assert not held.exists(), "the hand-over was left behind"
+    resumed = board.taken(repo, tmp_path / "board.html")
+    assert resumed and resumed.address == "http://127.0.0.1:4711/board.html"
+    assert not held.exists()
+
 
 @pytest.mark.full_path
 def test_a_running_watcher_runs_the_code_changed_under_it_and_keeps_its_tab(
     repo: Path, tracker: Path, tmp_path: Path, path_with: Callable[..., Path],
 ) -> None:
-    """The Property end to end, on a copy of the board's code that the check changes under a watcher
-    running it. A module saved broken is said once and the watcher goes on with the code it has;
-    saved whole, the new code runs in the same process, with no second tab opened, and the address
-    the tab is open at is its own: the server going away is what the new code brings back."""
+    """On a copy of the board's code, changed under a watcher running it. The server going away is
+    what shows the new code holds the tab's address: it brings that server back."""
     if not shutil.which("uv"):
         pytest.skip("no uv to run the board's script with")
     here = Path(board.__file__).resolve().parent
@@ -2558,28 +2496,26 @@ def test_a_running_watcher_runs_the_code_changed_under_it_and_keeps_its_tab(
             env=os.environ | {"DIFFVIEW_BROWSER": str(opens.with_suffix(""))},
         )
     try:
-        assert until(lambda: (tracker.parent / "board.html").exists()), f"the watcher never drew the board:\n{said.read_text()}"
+        assert until(lambda: (tracker.parent / "board.html").exists()), said.read_text()
         module.write_text(loaded + "\ndef (\n")
-        assert until(lambda: "does not start" in said.read_text()), f"code that does not start was never said:\n{said.read_text()}"
-        assert watcher.poll() is None, f"code that does not start stopped the watcher:\n{said.read_text()}"
+        assert until(lambda: "does not start" in said.read_text()), said.read_text()
+        assert watcher.poll() is None, said.read_text()
 
         module.write_text(loaded + '\nprint("tracker: the new code", file=sys.stderr)\n')
-        assert until(lambda: "tracker: the new code" in said.read_text()), f"the watcher never ran the new code:\n{said.read_text()}"
+        assert until(lambda: "tracker: the new code" in said.read_text()), said.read_text()
         server.close()
-        assert until(lambda: len(runs(serves)) == 2), \
-            f"the new code never brought back the server the tab is open at:\n{said.read_text()}"
+        assert until(lambda: len(runs(serves)) == 2), said.read_text()
     finally:
         server.close()
         watcher.terminate()
         watcher.wait(10)
     log = said.read_text()
-    assert log.count("does not start") == 1, f"code that does not start was said every pass:\n{log}"
+    assert log.count("does not start") == 1, log
     assert len(runs(opens)) == 1, "the restart opened a second tab"
     assert "Traceback" not in log, log
 
 
 def until(holds: Callable[[], bool], seconds: float = 60) -> bool:
-    """Whether `holds` comes to hold within `seconds`, asked five times a second."""
     deadline = time.monotonic() + seconds
     while not holds():
         if time.monotonic() > deadline:

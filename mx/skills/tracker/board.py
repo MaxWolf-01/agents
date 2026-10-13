@@ -46,12 +46,10 @@ page from the same tracker, but each keeps its own briefing schedule, so a
 second one pays for every briefing again and resumes the session while the
 first is in it.
 
-A watcher runs the code it loaded for no longer than one pass after that code
-changes on disk: this script and the modules it imports from beside it. Once the new
-code starts, it takes the watcher's place in the same process, with the server
-the tab is open at and the briefing schedule it had. A pass that fails prints
-its error once, not every pass, and an open tab says the board is stale until
-a pass succeeds again.
+Once this script or a module it imports from beside it changes on disk and
+the new code starts, the watcher restarts on it in place within one pass,
+keeping the tab and the briefing schedule. A pass that fails prints its error
+once, and an open tab says the board is stale until a pass succeeds again.
 
 Examples:
 
@@ -93,14 +91,6 @@ import tracker  # the one parser of a ticket file, and the rules it refuses one 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "session-page"))
 from session_page import PAGE as SESSION_PAGE, sessions_directory  # noqa: E402  where a session's page lives
-
-# The code this process runs: every module it loaded from the skills beside this one, read once all
-# of them are in. A watcher compares it with what is on disk now (`watch`).
-SCRIPT = Path(__file__).resolve()
-LOADED = tuple(sorted({
-    Path(m.__file__).resolve() for m in list(sys.modules.values())
-    if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(SCRIPT.parents[1])
-}))
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
@@ -177,9 +167,8 @@ def main(args: Args) -> None:
 
 
 def started(args: Args, tickets_root: Path, repo: Path, out: Path) -> "Watch":
-    """A start of the board's own: the page drawn, the tab opened where it is asked for, and the
-    watcher that would keep both current. A watcher restarted on new code skips this (`taken`):
-    its tab is open, and its first pass draws the page, a tracker that refuses included."""
+    """A start of the board's own. A restart on new code skips it (`taken`): its tab is open, and a
+    tracker that refuses must not end it."""
     try:
         render(tickets_root, repo, out)
     except tracker.Refused as refused:
@@ -224,20 +213,19 @@ def stamp_path(out: Path) -> Path:
 
 
 def write_stamp(out: Path, stamp: str, failing: "Failing | None" = None) -> None:
-    """The file an open tab polls: the stamp of the page it should be showing, which reloads it
-    when it is not the tab's, and the stale mark, null while the watcher's passes succeed. The mark
-    is written here and not on the page, since a pass that fails draws no page."""
+    """The file an open tab polls: the page's stamp, which reloads a tab showing another, and the
+    stale mark, null while passes succeed. The mark lives here because a failing pass draws no page."""
     stale = failing and STALE.format(since=f"{failing.since:%d %b %H:%M}", error=failing.error.splitlines()[0])
     stamp_path(out).write_text(f"window.__boardStamp = {json.dumps(stamp)};\nwindow.__boardStale = {json.dumps(stale)};\n")
 
 
-def stamp_in(out: Path) -> str | None:
-    """The stamp the file beside `out` holds, which is the page's own; None where no render wrote one."""
+def restamp(out: Path, failing: "Failing | None") -> None:
+    """Set or clear the stale mark, keeping the stamp so the tab does not reload."""
     try:
-        held = re.search(r'__boardStamp = "([^"]*)"', stamp_path(out).read_text())
-    except FileNotFoundError:
-        return None
-    return held and held.group(1)
+        stamp = re.search(r'__boardStamp = "([^"]*)"', stamp_path(out).read_text()).group(1)
+    except (FileNotFoundError, AttributeError):  # no page drawn yet, so no tab to tell
+        return
+    write_stamp(out, stamp, failing)
 
 
 @dataclass(frozen=True)
@@ -300,10 +288,9 @@ def watch(watching: "Watch", tickets_root: Path, repo: Path, out: Path) -> "Watc
     written minutes after the change that asked for it would not show at all, and a run that
     answered nothing writes no file for anything else to notice.
 
-    Returns once the code this process runs has changed on disk and the new code starts, with the
-    watcher as `restart` hands it on. New code that does not start is said once, and tried again on
-    its next change or CODE_RETRY after, so neither a module saved half-written nor a dependency
-    that would not install stops the watcher or leaves it on the old code for good."""
+    Returns once the code this process runs has changed on disk and the new code starts. New code
+    that does not start is said once and tried again on its next change or CODE_RETRY on, so a
+    module saved half-written neither stops the watcher nor strands it on the old code."""
     while True:
         watching = turn(watching, tickets_root, repo, out)
         code = on_disk(path for path, _, _ in watching.code)
@@ -311,7 +298,7 @@ def watch(watching: "Watch", tickets_root: Path, repo: Path, out: Path) -> "Watc
             said = starts()
             if said is None and on_disk(path for path, _, _ in watching.code) == code:
                 return watching
-            # code that started but moved again while it was tried is tried on the next pass, as it is then
+            # code that started but moved again while it was tried is tried again on the next pass
             if said is not None:
                 if code != watching.unstarted:
                     print(f"board: the code changed on disk and does not start, so the watcher keeps the code it runs: {said}", file=sys.stderr)
@@ -326,8 +313,7 @@ Code = tuple[tuple[Path, int | None, int | None], ...]  # files, each with its t
 
 
 def on_disk(files: Iterable[Path]) -> Code:
-    """`files` with their time and size as they are on disk now; a file that cannot be read has
-    neither."""
+    """A file that cannot be read has no time and no size."""
     def read(path: Path) -> tuple[Path, int | None, int | None]:
         try:
             st = path.stat()
@@ -337,7 +323,12 @@ def on_disk(files: Iterable[Path]) -> Code:
     return tuple(map(read, files))
 
 
-CODE = on_disk(LOADED)  # the code this process runs, as it was on disk when loaded
+SCRIPT = Path(__file__).resolve()
+# the code this process runs: every module it loaded from the skills beside this one, as loaded
+CODE = on_disk(sorted({
+    Path(m.__file__).resolve() for m in list(sys.modules.values())
+    if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(SCRIPT.parents[1])
+}))
 
 
 @dataclass(frozen=True)
@@ -350,11 +341,9 @@ class Failing:
 
 @dataclass(frozen=True)
 class Watch:
-    """The watcher between two passes: what one pass hands the next, and what a watcher restarting
-    on new code hands the process that runs it (`restart`). `retry` is when a server that did not
-    come back is tried again, on the monotonic clock; `failing` is the run of failed passes the
-    watcher is in, None while they succeed; `unstarted` is the code on disk that last did not
-    start, tried again at `unstarted_retry`."""
+    """The watcher between two passes. `retry` is when a server that did not come back is tried
+    again, `unstarted_retry` when `unstarted`, the code on disk that last did not start, is; both
+    on the monotonic clock."""
 
     seen: "Seen"
     session: "Briefer"
@@ -367,9 +356,8 @@ class Watch:
 
 
 def turn(watching: Watch, tickets_root: Path, repo: Path, out: Path) -> Watch:
-    """One pass of the watcher, and what it leaves the next. A pass that fails is said once per
-    error it fails on, on the watcher's output and in the stale mark an open tab shows, rather than
-    every pass; the first pass to succeed after it says so once and takes the mark down."""
+    """One pass of the watcher. The first pass to succeed after failing ones says so and clears the
+    stale mark."""
     try:
         if watching.address and time.monotonic() >= watching.retry:
             back = kept(tickets_root.parent, out, watching.address)
@@ -381,29 +369,25 @@ def turn(watching: Watch, tickets_root: Path, repo: Path, out: Path) -> Watch:
         return replace(watching, failing=failed(watching.failing, e, out))
     if watching.failing:
         print("board: passes succeed again, and the board follows the tracker", file=sys.stderr)
-        if (stamp := stamp_in(out)) is not None:
-            write_stamp(out, stamp)
+        restamp(out, None)
     return replace(watching, failing=None)
 
 
 def failed(was: Failing | None, e: Exception, out: Path) -> Failing:
-    """The run of failed passes `was`, one pass longer. An error it has not said yet is printed
-    whole, and its first line goes into the stale mark beside the page; the same error again says
-    nothing, since a pass every two seconds would print it every two seconds for as long as it
-    stands."""
+    """The run of failed passes `was`, one pass longer. Only an error not said yet is printed, so a
+    standing one does not fill the log every two seconds."""
     error = str(e).strip() or type(e).__name__
     if was and was.error == error:
         return was
     failing = Failing(was.since if was else now(), error)
     print(f"board: {error}\nboard: the board is stale until a pass succeeds; retrying every {PASS} s", file=sys.stderr)
-    if (stamp := stamp_in(out)) is not None:
-        write_stamp(out, stamp, failing)
+    restamp(out, failing)
     return failing
 
 
 def starts() -> str | None:
-    """None where this script, as it is on disk now, starts, else the last line it said. It is run
-    the way a restart runs it, so a dependency it has gained is installed here too."""
+    """None where the script on disk starts, else the last line it said. It runs the way a restart
+    does, through its shebang, so a dependency it gained is installed now."""
     try:
         done = subprocess.run([str(SCRIPT), "--help"], capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -417,16 +401,10 @@ HANDOVER = "BOARD_HANDOVER"  # the variable naming the file a watcher restarting
 
 
 def restart(watching: Watch, out: Path) -> NoReturn:
-    """Run this script as it is on disk now in this process's place, on the arguments it was started
-    with. The watcher goes with it: the address its tab is open at, the briefing schedule, and the
-    run of failed passes it is in.
-
-    What it read of the tracker stays behind: the new code reads it again, and renders on its first
-    pass. A briefing run in flight is lost with the thread it runs in; the schedule counts it as a
-    run that answered nothing, and tries again a cadence on.
-
-    The file is a Python literal rather than JSON, since what the new code compares the statuses and
-    the snapshot against are tuples, and JSON hands them back as lists that never compare equal."""
+    """Exec the script on disk in this process's place, handing the watcher on through a file
+    (`taken`). A briefing run in flight is lost with its thread; the schedule counts it as a run
+    that answered nothing. The file is a Python literal, not JSON, because JSON hands the tuples
+    back as lists that never compare equal."""
     s = watching.session
     held = Path(str(out) + ".handover")
     held.write_text(repr({
@@ -443,11 +421,8 @@ def restart(watching: Watch, out: Path) -> NoReturn:
 
 
 def taken(repo: Path, out: Path) -> Watch | None:
-    """The watcher a restart handed this process (`restart`), or None on a start of its own. Its
-    last pass's snapshot is no tracker's, so its first pass here renders.
-
-    A hand-over this code cannot read, written by a board older than it, leaves a watcher with the
-    address alone: no second tab, and a briefing schedule that starts again."""
+    """The watcher a restart handed on, or None on a start of its own. A hand-over this code cannot
+    read, from a board older than it, keeps only the tab's address."""
     held = os.environ.pop(HANDOVER, None)
     if not held:
         return None
