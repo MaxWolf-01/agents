@@ -12,7 +12,7 @@ import { after, beforeEach, test } from "node:test";
 import fc from "fast-check";
 import { entriesOf } from "../src/entries.ts";
 import { eventMessage, eventsIn } from "../src/events.ts";
-import { post, type Told, take } from "../src/inbox.ts";
+import { markRead, post, type Told, unreadLine, waiting } from "../src/inbox.ts";
 import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
 import { changes, type Seen, watch, watched } from "../src/watch.ts";
 
@@ -231,20 +231,27 @@ test("tell writes the framed message to the session's inbox socket", async () =>
 	}
 });
 
-test("the report-back line runs hv tell on the store this hypervisor watches, quoted for a shell", () => {
+test("the report-back line runs hv tell on the store this hypervisor watches, quoted for a shell, and --ping when the orchestrator needs max", () => {
 	assert.match(reportBack("/home/max/.local/share/hypervisor"), /run `HV_STORE=\/home\/max\/\.local\/share\/hypervisor \S+\/hypervisor\/hv tell "<what happened/);
 	assert.match(reportBack("/tmp/it's here"), /HV_STORE='\/tmp\/it'\\''s here' /);
+	assert.match(reportBack("/tmp/hv"), /When you need max, run `HV_STORE=\/tmp\/hv \S+ tell --ping "/);
 });
 
-test("hv tell leaves its words in the store's inbox, from the directory it ran in outside tmux; without a store it refuses", async () => {
+test("hv tell leaves its words in the store's inbox, a ping with --ping, from the directory it ran in outside tmux; without a store it refuses", async () => {
 	const { store, repo } = home();
 	const script = path.resolve(import.meta.dirname, "../src/hv-tell.ts");
 	const { TMUX_PANE: _, ...env } = process.env;
-	const ran = spawnSync(process.execPath, [script, "done,", "see", "the ticket"], { cwd: repo, env: { ...env, HV_STORE: store }, encoding: "utf8" });
-	assert.equal(ran.status, 0, ran.stderr);
-	let told: Told[] = [];
-	await take(store, (t) => (told = t));
-	assert.deepEqual(told.map(({ at: _, ...t }) => t), [{ from: repo, text: "done, see the ticket" }]);
+	for (const args of [["done,", "see", "the ticket"], ["--ping", "the migration needs max"]]) {
+		const ran = spawnSync(process.execPath, [script, ...args], { cwd: repo, env: { ...env, HV_STORE: store }, encoding: "utf8" });
+		assert.equal(ran.status, 0, ran.stderr);
+	}
+	assert.deepEqual(
+		waiting(store).map(({ from, text, ping }) => ({ from, text, ping })),
+		[
+			{ from: repo, text: "done, see the ticket", ping: undefined },
+			{ from: repo, text: "the migration needs max", ping: true },
+		],
+	);
 	const unset = spawnSync(process.execPath, [script, "hello"], { cwd: repo, env, encoding: "utf8" });
 	assert.equal(unset.status, 2);
 	assert.match(unset.stderr, /HV_STORE is not set/);
@@ -268,7 +275,7 @@ test("each event is an entry of its own, spoken by the event and not by max", ()
 
 const seen = (status: string, window = "agents:board"): Seen => ({ status, window });
 
-test("a watched session's turn ending, or the session going, is an event; any other change is not", () => {
+test("a watched session's turn ending, or the session going, is a message from its window; any other change is not", () => {
 	const before = new Map([
 		[1, seen("busy")],
 		[2, seen("idle", "agents:x")],
@@ -286,7 +293,12 @@ test("a watched session's turn ending, or the session going, is an event; any ot
 		[6, seen("idle", "agents:new")],
 		[8, seen("waiting", "agents:u")],
 	]);
-	assert.deepEqual(changes(before, now), ["[agents:board] busy → idle", "[agents:y] busy → ended", "[agents:v] idle → ended", "[agents:u] busy → waiting"]);
+	assert.deepEqual(changes(before, now), [
+		{ from: "agents:board", text: "busy → idle" },
+		{ from: "agents:y", text: "busy → ended" },
+		{ from: "agents:v", text: "idle → ended" },
+		{ from: "agents:u", text: "busy → waiting" },
+	]);
 });
 
 test("a session is watched when it is the claude a spawned window was opened running, and no other in its pane", () => {
@@ -302,28 +314,40 @@ test("a session is watched when it is the claude a spawned window was opened run
 	assert.deepEqual([...watched(live, spawned)], [[1, seen("busy")]]);
 });
 
-test("the inbox hands over each message once, oldest first, and keeps them when taking them fails", async () => {
+test("the inbox lists what waits oldest first, leaves out a file that does not parse, and a message read leaves it for read/", async () => {
 	const { store } = home();
 	for (const text of ["first", "second", "third"]) await post(store, { at: "t", from: "agents:board", text });
 	writeFileSync(path.join(store, "inbox", "0-broken.json"), "{");
-	await assert.rejects(
-		take(store, () => {
-			throw new Error("not now");
-		}),
-	);
-	let texts: string[] = [];
-	await take(store, (told) => (texts = told.map((t) => t.text)));
-	assert.deepEqual(texts, ["first", "second", "third"]);
-	assert.deepEqual(readdirSync(path.join(store, "inbox")), []);
-	await take(store, (told) => (texts = told.map((t) => t.text)));
-	assert.deepEqual(texts, []);
+	const listed = waiting(store);
+	assert.deepEqual(listed.map((m) => m.text), ["first", "second", "third"]);
+	assert.equal(new Set(listed.map((m) => m.id)).size, 3, "each its own id");
+	await markRead(store, [listed[1]]);
+	assert.deepEqual(waiting(store).map((m) => [m.id, m.text]), [[listed[0].id, "first"], [listed[2].id, "third"]], "ids stay as they were");
+	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
 });
+
+test("the status line lists the unread by sender, with count, size and age, and never their text", () => {
+	const now = Date.parse("2026-10-13T15:00:00Z");
+	const unread: Told[] = [
+		{ at: "2026-10-13T12:00:00Z", from: "agents:board", text: "the board renders, see the PR" },
+		{ at: "2026-10-13T14:55:00Z", from: "~/repos/notes", text: "x".repeat(1500) },
+		{ at: "2026-10-13T14:58:30Z", from: "agents:board", text: "busy → idle" },
+	];
+	assert.equal(
+		unreadLine(unread, now),
+		"Unread in your inbox: agents:board 2 messages, 42 B, 3h to 1m old; ~/repos/notes 1 message, 1.5 kB, 5m old.",
+	);
+	assert.equal(unreadLine([], now), undefined);
+});
+
+/** What starts the live hypervisor's turn. */
+const PING = (told: Told) => told.ping === true;
 
 /** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
 function watching(at: string, store: string, ready = () => true) {
 	const delivered: string[][] = [];
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (events) => void delivered.push(events), (error) => failures.push(error), ready);
+	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => void delivered.push(events), (error) => failures.push(error), ready);
 	return { ...w, delivered, failures };
 }
 
@@ -336,45 +360,64 @@ function spawnedHere(status: string) {
 	return { home: at, store, entry: path.join(at, ".claude", "sessions", `${process.pid}.json`) };
 }
 
-test("the watch takes a registry file caught mid-write for no change, and a live session's turn ending for one", async () => {
+const AT = "2026-10-13T14:07:00.000Z";
+
+test("a session's turn ending waits in the inbox and starts no turn; a registry file caught mid-write is no change", async () => {
 	const { home: at, store, entry } = spawnedHere("busy");
 	const w = watching(at, store);
 	try {
 		await w.started;
 		writeFileSync(entry, "{");
 		await w.look();
-		assert.deepEqual(w.delivered, [], "the session's process lives, so it has not ended");
+		assert.deepEqual(waiting(store), [], "the session's process lives, so it has not ended");
 		registered(at, process.pid, { name: "orch-1", status: "idle" });
 		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] busy → idle"]]);
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "done, see the ticket" });
+		await w.look();
+		assert.deepEqual(w.delivered, []);
+		assert.deepEqual(waiting(store).map(({ from, text }) => `[${from}] ${text}`), ["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] done, see the ticket"]);
 	} finally {
 		w.stop();
 	}
 });
 
-test("the watch holds its events while pi cannot take them, the inbox untouched, and hands them over once it can", async () => {
+test("a ping starts a turn: the watch hands it over, once, and moves it to read/, while the plain message beside it waits", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	const w = watching(at, store);
+	try {
+		await w.started;
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "done" });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
+		await w.look();
+		await w.look();
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: the migration needs max"]]);
+		assert.deepEqual(waiting(store).map((m) => m.text), ["done"]);
+		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
+	} finally {
+		w.stop();
+	}
+});
+
+test("the watch holds its pings while pi cannot take them, the inbox untouched, and hands them over once it can", async () => {
 	const { home: at, store } = spawnedHere("busy");
 	let ready = false;
 	const w = watching(at, store, () => ready);
 	try {
 		await w.started;
-		registered(at, process.pid, { name: "orch-1", status: "idle" });
-		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
 		assert.deepEqual(w.delivered, []);
-		assert.equal(readdirSync(path.join(store, "inbox")).length, 1);
+		assert.equal(waiting(store).length, 1);
 		assert.deepEqual(w.failures, [], "holding is not a failure");
 		ready = true;
 		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] hv tell: done"]]);
-		await w.look();
-		assert.equal(w.delivered.length, 1, "each event once");
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
 	} finally {
 		w.stop();
 	}
 });
 
-test("a look whose delivery fails leaves its events for the next look, and two looks at once deliver once", async () => {
+test("a look whose delivery fails leaves its pings for the next look, and two looks at once deliver once", async () => {
 	const { home: at, store } = spawnedHere("busy");
 	const delivered: string[][] = [];
 	let refuse = true;
@@ -382,6 +425,7 @@ test("a look whose delivery fails leaves its events for the next look, and two l
 	const w = watch(
 		{ home: at, store },
 		2 ** 30,
+		PING,
 		(events) => {
 			if (refuse) throw new Error("not now");
 			delivered.push(events);
@@ -390,36 +434,35 @@ test("a look whose delivery fails leaves its events for the next look, and two l
 	);
 	try {
 		await w.started;
-		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
 		assert.equal(failures.length, 1);
 		refuse = false;
 		await Promise.all([w.look(), w.look()]);
-		assert.deepEqual(delivered, [["[my-repo:board-fix] busy → idle"]]);
+		assert.deepEqual(delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
 	} finally {
 		w.stop();
 	}
 });
 
-test("a delivery that returns false is held like one pi cannot take: no failure, the inbox untouched, the events again next look", async () => {
+test("a delivery that returns false is held like one pi cannot take: no failure, the ping still waiting, offered again next look", async () => {
 	const { home: at, store } = spawnedHere("busy");
 	const offered: string[][] = [];
 	let taken = false;
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (events) => (offered.push(events), taken), (error) => failures.push(error));
+	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => (offered.push(events), taken), (error) => failures.push(error));
 	try {
 		await w.started;
-		registered(at, process.pid, { name: "orch-1", status: "idle" });
-		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
-		assert.equal(readdirSync(path.join(store, "inbox")).length, 1);
+		assert.equal(waiting(store).length, 1);
 		assert.deepEqual(failures, []);
 		taken = true;
 		await w.look();
 		await w.look();
-		const both = ["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] hv tell: done"];
-		assert.deepEqual(offered, [both, both], "offered again after the refusal, then not again once taken");
-		assert.equal(readdirSync(path.join(store, "inbox")).length, 0);
+		const ping = ["[my-repo:board-fix] hv tell: needs max"];
+		assert.deepEqual(offered, [ping, ping], "offered again after the refusal, then not again once taken");
+		assert.deepEqual(waiting(store), []);
 	} finally {
 		w.stop();
 	}

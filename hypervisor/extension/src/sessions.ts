@@ -122,7 +122,8 @@ export async function delegate(config: SessionConfig, { task, dir }: { task: str
  * inbox of the store this hypervisor watches.
  */
 export function reportBack(store: string): string {
-	return `To report back to the hypervisor, the agent that keeps track of max's sessions, run \`HV_STORE=${quoted(store)} ${quoted(HV)} tell "<what happened, and where max should look>"\`: when you finish, and when you need max.`;
+	const tell = `HV_STORE=${quoted(store)} ${quoted(HV)} tell`;
+	return `To report back to the hypervisor, the agent that keeps track of max's sessions, run \`${tell} "<what happened, and where max should look>"\` when you finish; it waits in the hypervisor's inbox. When you need max, run \`${tell} --ping "<what you need from him>"\`, which reaches it at once.`;
 }
 
 /** The live sessions, each with its tmux window where tmux lists its pane. */

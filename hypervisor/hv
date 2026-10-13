@@ -9,7 +9,7 @@
 #
 # `hv seed <profile>` makes the hypervisor's profile a copy of an explore profile, with live/'s instructions and config.
 # `hv explore [options]` runs explore steps (extension/src/recipe-run.ts; --help lists the options).
-# `hv tell <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
+# `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

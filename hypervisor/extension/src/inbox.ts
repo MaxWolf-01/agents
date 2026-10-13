@@ -1,16 +1,33 @@
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-/** A message an orchestrator left for the hypervisor with `hv tell`. */
+/** A message for the hypervisor: what `hv tell` left, or a spawned session's turn ending, which the watch leaves. */
 export interface Told {
 	at: string;
 	/** Where it came from: its tmux window as `session:window`, or its directory. */
 	from: string;
 	text: string;
+	/** Starts a turn at once, where any other message waits in the inbox until the hypervisor reads it. */
+	ping?: boolean;
+	/** How it was sent, when not by the watch: `hv tell`. */
+	via?: string;
 }
 
-/** The store's inbox: a file per message, named so that names sort oldest first. */
+/** A message in the inbox, with the short id the inbox tool knows it by and its size in bytes. */
+export interface Waiting extends Told {
+	id: string;
+	bytes: number;
+	file: string;
+}
+
+/** The store's inbox: a file per message, named so that names sort oldest first. Its `read/` keeps every message read. */
 const INBOX = "inbox";
+const READ = "read";
+
+/** Where the inbox keeps what was read. */
+export const readDir = (store: string) => path.join(store, INBOX, READ);
 
 /** Leaves `told` in the store's inbox. The file appears whole, so a reader never sees half of it. */
 export async function post(store: string, told: Told): Promise<void> {
@@ -23,21 +40,73 @@ export async function post(store: string, told: Told): Promise<void> {
 }
 
 /**
- * Hands every message in the store's inbox to `use`, oldest first, and removes them once it has taken them. A file
- * that does not parse is removed with them; when `use` throws, every message stays for the next take.
+ * Every message in the store's inbox, oldest first; a file that does not parse is left out. Synchronous, since pi asks
+ * for the status line while it builds a request.
  */
-export async function take(store: string, use: (told: Told[]) => void): Promise<void> {
+export function waiting(store: string): Waiting[] {
 	const dir = path.join(store, INBOX);
-	const files = (await readdir(dir).catch(() => [])).filter((name) => name.endsWith(".json")).sort().map((name) => path.join(dir, name));
-	const read = await Promise.all(files.map((file) => readFile(file, "utf8").then(parsed, () => undefined)));
-	use(read.filter((told) => told !== undefined));
-	await Promise.all(files.map((file) => rm(file, { force: true })));
+	let names: string[];
+	try {
+		names = readdirSync(dir).filter((name) => name.endsWith(".json")).sort();
+	} catch {
+		return [];
+	}
+	return names.flatMap((name) => {
+		const file = path.join(dir, name);
+		let text: string;
+		try {
+			text = readFileSync(file, "utf8");
+		} catch {
+			return [];
+		}
+		const told = parsed(text);
+		return told ? [{ ...told, id: createHash("sha256").update(name).digest("hex").slice(0, 6), bytes: Buffer.byteLength(told.text), file }] : [];
+	});
+}
+
+/** Moves `messages` into the inbox's `read/`, out of what waits. */
+export async function markRead(store: string, messages: Waiting[]): Promise<void> {
+	const dir = readDir(store);
+	await mkdir(dir, { recursive: true });
+	await Promise.all(messages.map((m) => rename(m.file, path.join(dir, path.basename(m.file)))));
+}
+
+/** A message as the hypervisor gets it, and as memory keeps it: `[from] text`, or `[from] hv tell: text`. */
+export function shown(told: Told): string {
+	return `[${told.from}] ${told.via ? `${told.via}: ` : ""}${told.text}`;
+}
+
+/** The line that ends each turn's request while messages wait: per sender, how many, how many bytes, how old. Never their text. */
+export function unreadLine(unread: Told[], now: number): string | undefined {
+	if (!unread.length) return undefined;
+	const senders = Map.groupBy(unread, (m) => m.from);
+	const listed = [...senders].map(([from, messages]) => {
+		const bytes = messages.reduce((sum, m) => sum + Buffer.byteLength(m.text), 0);
+		const ages = [messages[0], messages.at(-1)!].map((m) => age(now - Date.parse(m.at)));
+		const span = ages[0] === ages[1] ? ages[0] : `${ages[0]} to ${ages[1]}`;
+		return `${from} ${messages.length} ${messages.length === 1 ? "message" : "messages"}, ${size(bytes)}, ${span} old`;
+	});
+	return `Unread in your inbox: ${listed.join("; ")}.`;
+}
+
+/** A span of `ms` as the inbox shows an age: in minutes, in hours below two days, else in days. */
+export function age(ms: number): string {
+	const minutes = Math.max(0, Math.floor(ms / 60_000));
+	if (minutes < 60) return `${minutes}m`;
+	if (minutes < 48 * 60) return `${Math.floor(minutes / 60)}h`;
+	return `${Math.floor(minutes / (24 * 60))}d`;
+}
+
+/** A size as the inbox shows it. */
+export function size(bytes: number): string {
+	return bytes < 1000 ? `${bytes} B` : `${(bytes / 1000).toFixed(1)} kB`;
 }
 
 function parsed(text: string): Told | undefined {
 	try {
 		const told = JSON.parse(text);
-		return typeof told.text === "string" ? { at: String(told.at), from: String(told.from), text: told.text } : undefined;
+		if (typeof told.text !== "string") return undefined;
+		return { at: String(told.at), from: String(told.from), text: told.text, ...(told.ping === true ? { ping: true } : {}), ...(typeof told.via === "string" ? { via: told.via } : {}) };
 	} catch {
 		return undefined;
 	}

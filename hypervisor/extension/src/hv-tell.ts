@@ -1,13 +1,18 @@
-// `hv tell`: an orchestrator leaves the hypervisor a message, which reaches it as an event within seconds, starting a
-// turn of its own when none runs. Run from a tmux pane, the message says which window it came from.
+// `hv tell`: an orchestrator leaves the hypervisor a message, which waits in its inbox until it reads it, or with
+// `--ping` reaches it within seconds, starting a turn of its own when none runs. Run from a tmux pane, the message says
+// which window it came from.
 
 import { execFileSync } from "node:child_process";
 import { post } from "./inbox.ts";
 
-export const USAGE = `usage: hv tell <message>...   (or the message on stdin)
+export const USAGE = `usage: hv tell [--ping] <message>...   (or the message on stdin)
 
-Leaves the hypervisor a message: what happened, and where max should look. It names the tmux window it was sent
-from, or the directory when it runs outside tmux. It goes to the inbox of the store $HV_STORE, which hv sets.`;
+Leaves the hypervisor a message: what happened, and where max should look. It waits in the hypervisor's inbox, listed
+by sender and size, until the hypervisor chooses to read it. With --ping it reaches the hypervisor at once, starting a
+turn: for what needs max, or what the hypervisor asked for.
+
+It names the tmux window it was sent from, or the directory when it runs outside tmux. It goes to the inbox of the
+store $HV_STORE, which hv sets.`;
 
 if (import.meta.main) {
 	const args = process.argv.slice(2);
@@ -15,14 +20,16 @@ if (import.meta.main) {
 		console.log(USAGE);
 		process.exit(0);
 	}
+	const ping = args[0] === "--ping";
+	if (ping) args.shift();
 	const text = (args.length ? args.join(" ") : await stdin()).trim();
 	const store = process.env.HV_STORE;
 	if (!text || !store) {
 		console.error(store ? USAGE : `hv tell: HV_STORE is not set; run it as hv tell\n\n${USAGE}`);
 		process.exit(2);
 	}
-	await post(store, { at: new Date().toISOString(), from: window() ?? process.cwd(), text });
-	console.log("Left for the hypervisor.");
+	await post(store, { at: new Date().toISOString(), from: window() ?? process.cwd(), text, via: "hv tell", ...(ping ? { ping } : {}) });
+	console.log(ping ? "Sent to the hypervisor." : "Left in the hypervisor's inbox.");
 }
 
 /** The tmux window this runs in, as `session:window`. */
