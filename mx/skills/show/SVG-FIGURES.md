@@ -158,7 +158,7 @@ Everything else is layout convention, a few lines each.
 - **Quadrant**: two labelled axes with named poles, items as dots with labels outside the plot. The consultant variant names all four cells and drops the dots.
 - **Venn**: 3 circles maximum, label the intersections rather than the circles when the overlap is the point.
 - **Pyramid / funnel**: ranked tiers or drop-off. Widths to scale when they encode a quantity, equal when they encode rank only.
-- **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in a desaturated series palette (sage `#7c8f6f`, dusty blue `#5e7a9b`, mustard `#b8915a`, rust `#9c6b50`, slate `#6e6479`) at 0.18 fill opacity: the one figure that reaches outside the house palette, because five series cannot share two colours.
+- **Radar**: 3–5 axes, 5 series max, exactly one in the accent and the rest in the house's `series-1` onward, at 0.18 fill opacity.
 - **Gantt**: tasks as rows, bars on a date axis, dependencies as thin elbows. 12 tasks max.
 
 ---
