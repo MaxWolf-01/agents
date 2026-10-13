@@ -9,4 +9,6 @@ The hypervisor runs in pi, which has no sandbox and no permission classifier. So
 
 ## Consequences
 
+The hypervisor carries little machinery of its own: waiting and waking, its inbox, talking to sessions and to Jarvis, and reading files. max: "that's more or less it". The work lives with the orchestrators; it starts them, introduces them to each other, and talks to max.
+
 Each new capability the hypervisor needs arrives as a narrow tool with fixed programs and checked arguments, never as a general one. Examples are waiting on a job (`job wait`, run without a shell) and leaving Jarvis a message (an ssh key whose only command writes an inbox file).
