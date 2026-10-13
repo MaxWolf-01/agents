@@ -17,11 +17,12 @@
 #              when the worklog is empty and `(no worklog)` when there is
 #              none; a finished run's status line, less its session id.
 #
-# With --follow it runs until its output is closed, and prints the rows as a
-# frame, the rows then an empty line, first and again each time anything they
-# are read from changes; a row's age and idle are as of its frame. Between
-# frames it prints a `.` line every couple of seconds, which is how it notices
-# a reader that has gone.
+# With --follow it runs until its output is closed. It prints the rows as a
+# frame, which is the rows followed by an empty line: one frame at the start,
+# and another whenever something the rows are read from has changed. A row's
+# age and idle are as of the moment its frame is sent. Between frames it prints
+# a `.` line every couple of seconds, which is how it notices that its reader
+# has gone.
 #
 # Usage: dispatch-ps <root> [--follow]   (a relative root is under $HOME)
 set -u
@@ -90,7 +91,11 @@ scan() {
     done
 }
 
-[ "${2:-}" = --follow ] || { scan; exit; }
+case ${2:-} in
+    --follow) ;;
+    "")       scan; exit ;;
+    *)        echo "usage: dispatch-ps <root> [--follow]" >&2; exit 2 ;;
+esac
 
 # A scan costs over a second of CPU on a host with a few dozen runs, so the
 # loop scans again only once something a scan reads has changed: a file in a
@@ -111,8 +116,15 @@ last=
 while :; do
     seen=$(watched)
     if [ "$seen" != "$last" ]; then
+        printf -v began '%(%s)T' -1
         rows=$(scan)
         last=$seen
+        # A scan takes its ages at its start, and can take seconds; they are sent
+        # as of now.
+        printf -v late '%(%s)T' -1
+        late=$((late - began))
+        [ "$late" -eq 0 ] || rows=$(awk -F'\t' -v OFS='\t' -v late="$late" '
+            $4 ~ /^[0-9]+$/ { $4 += late } $5 ~ /^[0-9]+$/ { $5 += late } { print }' <<<"$rows")
         { [ -z "$rows" ] || printf '%s\n' "$rows"; echo; } || exit
     else
         echo . || exit

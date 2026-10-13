@@ -255,20 +255,25 @@ def dispatch(env: dict[str, str], home: Path, *args: str, hosts: str = "local", 
              ) -> subprocess.CompletedProcess:
     """`dispatch` in <home>, with a register that publishes <hosts> and exits <register_exit>, and an
     ssh that answers each host in <answers> with its rows and exit status."""
-    bin_dir = home / "bin"
-    (bin_dir / "ssh-answers").mkdir(parents=True, exist_ok=True)
-    register = bin_dir / "worker-hosts"
-    register.write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\nexit {register_exit}\n")
-    register.chmod(0o755)
-    (bin_dir / "ssh").write_text(FAKE_SSH)
-    (bin_dir / "ssh").chmod(0o755)
+    env = adapters(env, home, hosts, FAKE_SSH, register_exit)
+    (home / "bin" / "ssh-answers").mkdir(exist_ok=True)
     for host, (said, rc) in (answers or {}).items():
-        (bin_dir / "ssh-answers" / host).write_text(said + "\n")
-        (bin_dir / "ssh-answers" / f"{host}.rc").write_text(f"{rc}\n")
-    return subprocess.run(
-        ["bash", str(DISPATCH), *args], capture_output=True, text=True, cwd=str(cwd or home), timeout=60,
-        env={**env, "HOME": str(home), "PATH": f"{bin_dir}:{env['PATH']}", "GIT_CONFIG_GLOBAL": "/dev/null"},
-    )
+        (home / "bin" / "ssh-answers" / host).write_text(said + "\n")
+        (home / "bin" / "ssh-answers" / f"{host}.rc").write_text(f"{rc}\n")
+    return subprocess.run(["bash", str(DISPATCH), *args], capture_output=True, text=True, cwd=str(cwd or home),
+                          timeout=60, env=env)
+
+
+def adapters(env: dict[str, str], home: Path, hosts: str, ssh: str, register_exit: int = 0) -> dict[str, str]:
+    """<env> as `dispatch` in <home> runs in it: a register that publishes <hosts> and exits
+    <register_exit>, and the ssh script <ssh>, both in <home>/bin."""
+    bin_dir = home / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    (bin_dir / "worker-hosts").write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\nexit {register_exit}\n")
+    (bin_dir / "ssh").write_text(ssh)
+    for f in ("worker-hosts", "ssh"):
+        (bin_dir / f).chmod(0o755)
+    return {**env, "HOME": str(home), "PATH": f"{bin_dir}:{env['PATH']}", "GIT_CONFIG_GLOBAL": "/dev/null"}
 
 
 def ssh_calls(home: Path) -> list[str]:
@@ -602,16 +607,25 @@ def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: d
 
 
 # --- following: ps --follow ---------------------------------------------------
+# Each check follows for seconds of wall clock, so all of them are full-path checks.
 
 
 # ssh to a host whose home is hosts/<host> beside it: the command runs there in bash, as a login
 # shell runs it, and every call is recorded as host, options, command. A host with no home is off.
-# Once hosts/<host>.hung exists the host stops answering: none of its output arrives any more, from
-# the moment it leaves hosts/<host>.silent, and the connection drops as many seconds later as .hung
-# says, as ssh's keepalive drops it.
+# Once hosts/<host>.hung exists the host stops answering: none of its output arrives any more from
+# the moment it leaves hosts/<host>.silent, and the connection drops as ssh's keepalive drops it,
+# ServerAliveInterval x ServerAliveCountMax seconds later, here cut to a third. With no keepalive
+# it never drops.
 FOLLOW_SSH = """#!/usr/bin/env bash
-opts=
-while [[ ${1:-} == -* ]]; do case $1 in -o) opts+=" $2"; shift 2 ;; *) shift ;; esac; done
+opts= alive=0 count=3
+while [[ ${1:-} == -* ]]; do
+    case $1 in
+        -o) opts+=" $2"
+            case $2 in ServerAliveInterval=*) alive=${2#*=} ;; ServerAliveCountMax=*) count=${2#*=} ;; esac
+            shift 2 ;;
+        *)  shift ;;
+    esac
+done
 host=$1; shift
 here=$(dirname "$0")
 printf '%s\\t%s\\t%s\\n' "$host" "${opts# }" "$*" >> "$here/ssh.calls"
@@ -623,11 +637,20 @@ cd "$home" && HOME=$home bash -c "$*" | while IFS= read -r line; do
 done
 rc=${PIPESTATUS[0]}
 [ -e "$home.hung" ] || exit "$rc"
-sleep "$(cat "$home.hung")"
+[ "$alive" -gt 0 ] || sleep infinity
+sleep $((alive * count / 3))
 exit 255
 """
 
 ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def until(check, within: float = 20):
+    """<check>'s first truthy answer, or its last one when <within> seconds run out."""
+    deadline = time.monotonic() + within
+    while not (answer := check()) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return answer
 
 
 class Following:
@@ -635,24 +658,12 @@ class Following:
 
     def __init__(self, env: dict[str, str], home: Path, hosts: str):
         self.home = home
-        bin_dir = home / "bin"
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        (bin_dir / "worker-hosts").write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\n")
-        (bin_dir / "ssh").write_text(FOLLOW_SSH)
-        for f in ("worker-hosts", "ssh"):
-            (bin_dir / f).chmod(0o755)
-        self.env = {**env, "HOME": str(home), "PATH": f"{bin_dir}:{env['PATH']}", "GIT_CONFIG_GLOBAL": "/dev/null"}
+        self.env = adapters(env, home, hosts, FOLLOW_SSH)
         self.out = home / "follow.out"
         with self.out.open("w") as out:
             # A session of its own, so the check can see what of it is left once it is stopped.
             self.proc = subprocess.Popen(["bash", str(DISPATCH), "ps", "--follow"], stdout=out,
                                          stderr=subprocess.STDOUT, cwd=home, env=self.env, start_new_session=True)
-
-    def host(self, name: str) -> Path:
-        """The home of the host <name>, which FOLLOW_SSH reaches."""
-        home = self.home / "bin" / "hosts" / name
-        home.mkdir(parents=True, exist_ok=True)
-        return home
 
     def drawn(self) -> str:
         """The table on screen now: the last whole draw, as plain text."""
@@ -666,22 +677,20 @@ class Following:
 
     def shows(self, check, within: float = 20) -> str:
         """The table drawn once <check> holds of it, or the last one drawn when <within> seconds run out."""
-        deadline = time.monotonic() + within
-        while not check(table := self.drawn()) and time.monotonic() < deadline:
-            time.sleep(0.2)
-        return table
+        def held() -> str | None:
+            table = self.drawn()
+            return table if check(table) else None
+        return until(held, within) or self.drawn()
 
     def matches_ps(self, within: float = 20) -> tuple[str, str]:
         """The drawn table and ps's output, once they agree or <within> seconds run out."""
-        deadline = time.monotonic() + within
-        while (drawn := self.drawn()) != (printed := self.printed()) and time.monotonic() < deadline:
-            time.sleep(0.2)
-        return drawn, printed
+        def agreed() -> tuple[str, str] | None:
+            pair = self.drawn(), self.printed()
+            return pair if pair[0] == pair[1] else None
+        return until(agreed, within) or (self.drawn(), self.printed())
 
     def logins(self, host: str) -> int:
-        calls = self.home / "bin" / "ssh.calls"
-        lines = calls.read_text().splitlines() if calls.exists() else []
-        return sum(1 for c in lines if c.split("\t")[0] == host and c.endswith("--follow"))
+        return sum(1 for c in ssh_calls(self.home) if c.split("\t")[0] == host)
 
     def left(self) -> list[str]:
         """Every process of the follow's session still running."""
@@ -712,6 +721,14 @@ def follow(tmux: dict[str, str]) -> Iterator:
             pass
 
 
+def remote(home: Path, name: str) -> Path:
+    """The home of the host <name>, which FOLLOW_SSH reaches from <home>; made before the follow
+    starts, since a host with no home is one that is off."""
+    there = home / "bin" / "hosts" / name
+    there.mkdir(parents=True, exist_ok=True)
+    return there
+
+
 def aged(root: Path, repo: str, slug: str, seconds: int) -> tuple[Path, str]:
     """A finished run of <slug> spawned <seconds> ago, whose worklog last spoke then too."""
     d = root / f"{repo}-master"
@@ -725,27 +742,35 @@ def aged(root: Path, repo: str, slug: str, seconds: int) -> tuple[Path, str]:
     return d, run
 
 
+@pytest.mark.full_path
 def test_following_draws_what_ps_prints(tmp_path: Path, follow):
-    """dispatch-ps-follow P3, across what a host's rows are read from: a run finishing, a new run,
-    a runner that dies."""
+    """dispatch-ps-follow P3, across what a host's rows are read from: a worklog line, a runner
+    that dies, a new run."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
-    f = follow(home, "local agent@far")
-    far = f.host("agent@far") / ROOT
+    far = remote(home, "agent@far") / ROOT
     d, _ = aged(far, "jarvis", "thread-registry", 9000)
     live = spawned(d, "dns-filter-toggle", at=int(time.time()) - 7200)
-    (d / f"{live}.log").write_text("working\n")
-    os.utime(d / f"{live}.log", (time.time() - 7200, time.time() - 7200))
+    log = d / f"{live}.log"
+    log.write_text("working\n")
+    os.utime(log, (time.time() - 7200, time.time() - 7200))
     worker = running(d, live)
+    f = follow(home, "local agent@far")
     try:
         drawn, printed = f.matches_ps()
         assert re.search(r"dns-filter-toggle +running", drawn), drawn
         assert drawn == printed
 
+        with log.open("a") as said:
+            said.write("review round 2: make test 45 passed\n")
+        drawn, printed = f.matches_ps()
+        assert "review round 2" in drawn, "an appended worklog line changes no file a scratch dir lists"
+        assert drawn == printed
+
         worker.kill()
         worker.wait()
         drawn, printed = f.matches_ps()
-        assert re.search(r"dns-filter-toggle +gone", drawn), (drawn, printed, subprocess.run(["pgrep", "-af", live], capture_output=True, text=True).stdout)
+        assert re.search(r"dns-filter-toggle +gone", drawn), "the runner died without a status file"
         assert drawn == printed
 
         finished(d, spawned(d, "late-comer", at=int(time.time()) - 7200))
@@ -756,66 +781,79 @@ def test_following_draws_what_ps_prints(tmp_path: Path, follow):
         worker.kill()
 
 
+@pytest.mark.full_path
 def test_a_frames_ages_count_on_until_the_next(tmp_path: Path, follow):
     """dispatch-ps-follow P3: nothing on the host changes, so no frame comes, and the age drawn is
     still the one ps prints."""
     home = tmp_path / "home"
-    aged(home / ROOT, "agents", "hypofuzz-default", 52)
+    aged(home / ROOT, "agents", "hypofuzz-default", 35)
     f = follow(home)
-    assert re.search(r" 5\ds ", f.shows(lambda t: "hypofuzz-default" in t)), "drawn while still under a minute"
-    table = f.shows(lambda t: " 1m " in t)
+    assert re.search(r" [345]\ds ", f.shows(lambda t: "hypofuzz-default" in t)), "drawn while under a minute"
+    table = f.shows(lambda t: " 1m " in t, within=40)
     assert " 1m " in table, table
     drawn, printed = f.matches_ps()
     assert drawn == printed
 
 
+@pytest.mark.full_path
 def test_following_logs_in_once_per_host(tmp_path: Path, follow):
     """dispatch-ps-follow P1: three changes on a host reach the table over the one login."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
-    f = follow(home, "local agent@far")
-    far = f.host("agent@far") / ROOT
+    far = remote(home, "agent@far") / ROOT
     aged(far, "jarvis", "first", 7200)
+    f = follow(home, "local agent@far")
     for slug in ("second", "third", "fourth"):
         aged(far, "jarvis", slug, 7200)
         assert slug in f.shows(lambda t: slug in t)
     assert f.logins("agent@far") == 1
 
 
+@pytest.mark.full_path
 def test_a_dropped_connection_is_unreachable_until_it_is_opened_again(tmp_path: Path, follow):
     """dispatch-ps-follow P1: a reconnect is one more login, and the host's rows come back on it."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
     f = follow(home, "local agent@far")
-    hung = f.host("agent@far").with_suffix(".hung")
-    aged(f.host("agent@far") / ROOT, "jarvis", "far-one", 7200)
     assert "far-one" in f.shows(lambda t: "far-one" in t)
 
-    hung.write_text("0")
+    hung = remote(home, "agent@far").with_suffix(".hung")
+    hung.touch()
     table = f.shows(lambda t: "unreachable" in t)
     assert "far-one" not in table and "no answer from the host" in table
     hung.unlink()
-    assert "far-one" in f.shows(lambda t: "far-one" in t)
+    assert "far-one" in f.shows(lambda t: "far-one" in t, within=30)
     assert f.logins("agent@far") == 2
 
 
+@pytest.mark.full_path
+def test_a_host_that_is_off_is_asked_less_and_less_often(tmp_path: Path, follow):
+    """dispatch-ps-follow P1: each reconnect is a login, so a host that stays off costs a login per
+    backoff, which doubles: 0, 2, 6 and 14 seconds in, where a fixed retry would be twice as many."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    f = follow(home, "local agent@off")
+    assert "agent@off" in f.shows(lambda t: "unreachable" in t)
+    time.sleep(12)
+    assert 2 <= f.logins("agent@off") <= 3
+
+
+@pytest.mark.full_path
 def test_a_host_that_stops_answering_holds_up_no_other(tmp_path: Path, follow):
     """dispatch-ps-follow P2: while one host is silent the others' rows still move, and it turns
     `unreachable` once its connection drops, on the keepalive's bound."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
+    aged(remote(home, "agent@stuck") / ROOT, "jarvis", "stuck-one", 7200)
     f = follow(home, "local agent@far agent@stuck")
-    aged(f.host("agent@far") / ROOT, "jarvis", "far-one", 7200)
-    aged(f.host("agent@stuck") / ROOT, "jarvis", "stuck-one", 7200)
     assert "stuck-one" in f.shows(lambda t: "far-one" in t and "stuck-one" in t)
 
-    stuck = f.host("agent@stuck")
-    stuck.with_suffix(".hung").write_text("10")
-    deadline = time.monotonic() + 10
-    while not stuck.with_suffix(".silent").exists() and time.monotonic() < deadline:
-        time.sleep(0.2)
-    assert stuck.with_suffix(".silent").exists()
-    aged(f.host("agent@far") / ROOT, "jarvis", "far-two", 7200)
+    stuck = remote(home, "agent@stuck")
+    stuck.with_suffix(".hung").touch()
+    assert until(stuck.with_suffix(".silent").exists), "the host never went silent"
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-two", 7200)
     aged(home / ROOT, "agents", "here-two", 7200)
     table = f.shows(lambda t: "far-two" in t and "here-two" in t, within=8)
     assert "far-two" in table and "here-two" in table, "the other hosts' changes, while one is silent"
@@ -823,24 +861,36 @@ def test_a_host_that_stops_answering_holds_up_no_other(tmp_path: Path, follow):
 
     table = f.shows(lambda t: "unreachable" in t)
     assert "stuck-one" not in table and "agent@stuck" in table
-    call = next(c for c in (f.home / "bin" / "ssh.calls").read_text().splitlines() if c.startswith("agent@stuck"))
-    assert "ServerAliveInterval=" in call and "ServerAliveCountMax=" in call, "the bound P2 is held to"
 
 
+@pytest.mark.full_path
+def test_a_host_silent_from_the_start_holds_up_no_other(tmp_path: Path, follow):
+    """dispatch-ps-follow P2 before the first frame: the hosts that answered are drawn at once, the
+    silent one as `connecting` until its connection drops."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    stuck = remote(home, "agent@stuck")
+    aged(stuck / ROOT, "jarvis", "stuck-one", 7200)
+    stuck.with_suffix(".hung").touch()
+    f = follow(home, "local agent@stuck")
+    table = f.shows(lambda t: "hypofuzz-default" in t, within=5)
+    assert "hypofuzz-default" in table
+    assert re.search(r"agent@stuck +- +- +connecting", table), table
+    assert "unreachable" in f.shows(lambda t: "unreachable" in t)
+
+
+@pytest.mark.full_path
 def test_a_stopped_follow_leaves_nothing_running(tmp_path: Path, follow):
     """Its loops on the hosts end with it, rather than scanning on for nobody."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
     f = follow(home, "local agent@far")
-    aged(f.host("agent@far") / ROOT, "jarvis", "far-one", 7200)
     assert "far-one" in f.shows(lambda t: "far-one" in t)
     assert any("--follow" in p for p in f.left())
 
     f.stop()
-    deadline = time.monotonic() + 10
-    while f.left() and time.monotonic() < deadline:
-        time.sleep(0.2)
-    assert f.left() == []
+    assert until(lambda: not f.left(), within=10), f.left()
 
 
 if __name__ == "__main__":

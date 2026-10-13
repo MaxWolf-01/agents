@@ -1117,7 +1117,7 @@ fleet_hosts() {
     rows=() missing=()
     if [ -n "$register_error" ]; then
         missing+=(worker-hosts)
-        rows+=("worker-hosts	-	-	incomplete	-	-	-	n	$register_error")
+        rows+=("$(host_row worker-hosts incomplete "$register_error")")
     fi
     if [ ${#hosts[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
@@ -1125,11 +1125,16 @@ fleet_hosts() {
     fi
 }
 
+# A row that stands for a whole host, or the register, rather than one worker.
+host_row() { # <host> <state> <detail>
+    printf '%s\t-\t-\t%s\t-\t-\t-\tn\t%s\n' "$1" "$2" "$3"
+}
+
 # The row of a host whose dispatch-ps ended with <status> before it answered.
 unanswered() { # <host> <status>
     local why="dispatch-ps failed there (exit $2)"
     [ "$2" -ne 255 ] || why="no answer from the host (ssh exit 255)"
-    printf '%s\t-\t-\tunreachable\t-\t-\t-\tn\t%s\n' "$1" "$why"
+    host_row "$1" unreachable "$why"
 }
 
 # Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
@@ -1172,21 +1177,20 @@ gather() {
 # One row per worker under a header naming the columns, then a count per state, running and
 # exited always there, zero or not. A host that did not answer is an `unreachable` row, a scratch
 # dir whose probe failed an `unreadable` one, a `worker-hosts --targets` that failed an
-# `incomplete` one. In color on a terminal, or with --color; NO_COLOR turns it off. --follow keeps
-# the table on screen and current until Ctrl-C.
+# `incomplete` one. In color on a terminal, or with --color; NO_COLOR turns it off.
 ps_() {
-    local follow=
+    local following=
     color=
     [ -t 1 ] && color=1
     for arg; do
         case $arg in
             --color)  color=1 ;;
-            --follow) follow=1 ;;
+            --follow) following=1 ;;
             *)        die "ps takes --color and --follow and nothing else" ;;
         esac
     done
     [ -z "${NO_COLOR:-}" ] || color=
-    [ -z "$follow" ] || follow
+    [ -z "$following" ] || follow
     gather
     measure
     { [ ${#rows[@]} -eq 0 ] || printf '%s\n' "${rows[@]}"; } | table
@@ -1198,13 +1202,15 @@ ps_() {
 # Sets `cols`, the width the table is cut to, so a long worklog line keeps the
 # table a table: the terminal's, or under `watch`, which runs this with no
 # terminal, COLUMNS, which a shell does not export. Piped anywhere else, 0: a
-# row goes out whole.
+# row goes out whole. Sets `lines` the same way, the height a follow fits into.
 measure() {
-    cols=0
+    cols=0 lines=0
     if [ -t 1 ]; then
         cols=$(tput cols 2>/dev/null || echo 0)
-    elif [[ ${COLUMNS:-} =~ ^[0-9]+$ ]]; then
-        cols=$COLUMNS
+        lines=$(tput lines 2>/dev/null || echo 0)
+    else
+        [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && cols=$COLUMNS
+        [[ ${LINES:-} =~ ^[0-9]+$ ]] && lines=$LINES
     fi
 }
 
@@ -1261,71 +1267,102 @@ table() {
         }'
 }
 
-# ps --follow: one connection to each host for as long as it runs, each running
-# dispatch-ps --follow there, and the table redrawn once a second from the
-# latest frame of every host, once every host has answered or failed, as ps
-# would. A frame's ages count on from when it arrived. A connection that drops
-# turns its host into an `unreachable` row and is opened again after a backoff
-# that doubles up to a minute, and starts over once a connection has held for
-# one. Each host's rows are the file <frames>/<i>.rows, every line stamped with
-# the second it arrived.
+# ps --follow. Each host gets one connection, held open for as long as this
+# runs, with dispatch-ps --follow at the other end. Once a second the table is
+# drawn again from the latest frame of every host; a frame's ages count on from
+# the second it arrived. A host that has not answered yet is a `connecting` row.
+# A connection that drops turns its host into an `unreachable` row and is
+# opened again after a backoff that doubles up to a minute, and starts over
+# once a connection has held for one. The hosts are asked for again every half
+# minute, which costs no login: a host that joins gets a connection, and one
+# that leaves loses its own.
 follow() {
-    local i now out shown= ready=
-    fleet_hosts
+    local h now out shown= asked=-30
     frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
-    followers=()
+    declare -gA follower=()
     trap 'exit 0' INT TERM
-    trap 'kill "${followers[@]}" 2>/dev/null; wait; rm -rf "$frames"' EXIT
-    for i in "${!hosts[@]}"; do
-        follow_host "$i" "${hosts[$i]}" &
-        followers+=($!)
-    done
+    trap 'kill "${follower[@]}" 2>/dev/null; wait; rm -rf "$frames"' EXIT
     printf '\033[H\033[2J'
     while :; do
-        if [ -z "$ready" ]; then
-            ready=1
-            for i in "${!hosts[@]}"; do [ -f "$frames/$i.rows" ] || ready=; done
+        if [ $((SECONDS - asked)) -ge 30 ]; then
+            follow_fleet
+            asked=$SECONDS
         fi
-        if [ -n "$ready" ]; then
-            measure
-            printf -v now '%(%s)T' -1
-            out=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"; cat "$frames"/*.rows; } |
-                awk -F'\t' -v OFS='\t' -v now="$now" '
-                    $1 ~ /^[0-9]+$/ { if ($6 ~ /^[0-9]+$/) $6 += now - $1; if ($7 ~ /^[0-9]+$/) $7 += now - $1 }
-                    { sub(/^[^\t]*\t/, ""); print }' | table)
-            # Over what was there, each line cleared to its end, so a redraw
-            # does not flicker.
-            [ "$out" = "$shown" ] || printf '\033[H%s\033[K\033[J' "${out//$'\n'/$'\033[K\n'}"
-            shown=$out
-        fi
+        measure
+        printf -v now '%(%s)T' -1
+        out=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
+                for h in "${hosts[@]}"; do
+                    cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
+                done } |
+            awk -F'\t' -v OFS='\t' -v now="$now" '
+                $1 ~ /^[0-9]+$/ { if ($6 ~ /^[0-9]+$/) $6 += now - $1; if ($7 ~ /^[0-9]+$/) $7 += now - $1 }
+                { sub(/^[^\t]*\t/, ""); print }' | table)
+        fit
+        # Over what was there, each line cleared to its end, so a redraw
+        # does not flicker.
+        [ "$out" = "$shown" ] || printf '\033[H%s\033[K\033[J' "${out//$'\n'/$'\033[K\n'}"
+        shown=$out
         sleep 1 & wait $!
     done
 }
 
+# Reads the hosts again, and starts or stops a follow_host for each that came
+# or went.
+follow_fleet() {
+    local h
+    fleet_hosts
+    for h in "${!follower[@]}"; do
+        printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
+        kill "${follower[$h]}" 2>/dev/null
+        unset 'follower[$h]'
+        rm -f "$frames/$h.rows"
+    done
+    for h in "${hosts[@]}"; do
+        [ -n "${follower[$h]:-}" ] && continue
+        follow_host "$h" &
+        follower[$h]=$!
+    done
+}
+
+# Cuts `out` to `lines`, keeping its header and its tally, since a table taller
+# than the screen would scroll on every draw.
+fit() {
+    local -a drawn
+    [ "$lines" -ge 5 ] || return 0
+    mapfile -t drawn <<<"$out"
+    [ ${#drawn[@]} -gt "$lines" ] || return 0
+    out=$(printf '%s\n' "${drawn[@]:0:lines-3}"
+          echo "($((${#drawn[@]} - lines + 1)) more rows than the screen holds)"
+          printf '%s\n' "${drawn[@]: -2}")
+}
+
 # One host's connection, opened again each time it drops; stopped by a TERM,
-# which takes the connection with it. Global `frames`; <i> names its files.
-follow_host() { # <i> <host>
-    local conn pid= opened rc now delay=2 pipe=$frames/$1.pipe
+# which takes the connection with it. Its rows are <frames>/<host>.rows.
+follow_host() { # <host>
+    local conn pid= opened rc delay=2 pipe=$frames/$1.pipe
     trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
     unset TMUX
     # A plain command, so the pid is the connection's own and the trap's kill
     # reaches it.
-    if [ "$(via "$2")" = local ]; then
+    if [ "$(via "$1")" = local ]; then
         conn=(bash -s "$state_root" --follow)
     else
-        conn=(ssh "${ssh_options[@]}" "$2" "$(remote_line bash -s "$state_root" --follow)")
+        conn=(ssh "${ssh_options[@]}" "$1" "$(remote_line bash -s "$state_root" --follow)")
     fi
-    mkfifo "$pipe" || exit 1
+    # Left behind by a follower of the same host that was stopped.
+    rm -f "$pipe"
+    if ! mkfifo "$pipe"; then
+        host_row "$1" unreachable "no pipe to read it through at $pipe" | publish "$1"
+        exit 1
+    fi
     while :; do
         opened=$SECONDS
         "${conn[@]}" < "$skill/dispatch-ps" > "$pipe" &
         pid=$!
-        frames_of "$1" "$2" < "$pipe"
+        frames_of "$1" < "$pipe"
         wait "$pid"
         rc=$? pid=
-        printf -v now '%(%s)T' -1
-        printf '%s\t%s\n' "$now" "$(unanswered "$2" "$rc")" > "$frames/$1.tmp"
-        mv "$frames/$1.tmp" "$frames/$1.rows"
+        unanswered "$1" "$rc" | publish "$1"
         [ $((SECONDS - opened)) -lt 60 ] || delay=2
         sleep "$delay" &
         pid=$!
@@ -1334,20 +1371,27 @@ follow_host() { # <i> <host>
     done
 }
 
-# Reads <host>'s frames (dispatch-ps --follow) on stdin into <frames>/<i>.rows,
-# each whole frame at once.
-frames_of() { # <i> <host>
-    local line now kept=()
+# Reads <host>'s frames (dispatch-ps --follow) on stdin, and publishes each as
+# it ends.
+frames_of() { # <host>
+    local line kept=()
     while IFS= read -r line; do
         case $line in
             .)  ;;
-            "") printf -v now '%(%s)T' -1
-                for line in "${kept[@]}"; do printf '%s\t%s\t%s\n' "$now" "$2" "$line"; done > "$frames/$1.tmp"
-                mv "$frames/$1.tmp" "$frames/$1.rows"
+            "") for line in "${kept[@]}"; do printf '%s\t%s\n' "$1" "$line"; done | publish "$1"
                 kept=() ;;
             *)  kept+=("$line") ;;
         esac
     done
+}
+
+# Replaces <host>'s rows with the rows on stdin, each stamped with this second,
+# in one rename so a draw never reads half of them.
+publish() { # <host>
+    local now line
+    printf -v now '%(%s)T' -1
+    while IFS= read -r line; do printf '%s\t%s\n' "$now" "$line"; done > "$frames/$1.tmp"
+    mv "$frames/$1.tmp" "$frames/$1.rows"
 }
 
 # Sets r_host, r_base, r_ticket, r_state and r_session from the one row
