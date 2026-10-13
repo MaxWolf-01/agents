@@ -1,4 +1,4 @@
-// lifelong-hypervisor#P4 at the session tools, past the checks the registry's check rarely gets by: every directory a
+// lifelong-hypervisor#P4 at the session tools and wait, past the checks the registry's check rarely gets by: every directory a
 // tool is given exists and a session it names is often live, so each run reaches the programs it starts, which are
 // watched and never run, and the inbox socket it writes to.
 
@@ -39,30 +39,40 @@ after(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 const { sessionTools } = await import("../../src/tools.ts");
+const { background, waitTool } = await import("../../src/pace.ts");
+/** Where wait and a background delegate run; each check stops it, so what they post lands within the check. */
+const work = background(store);
 
 const DIRS = fc.constantFrom("", "~", home, ...NAMED, ...NAMED.map((name) => `~/${name}`), ...NAMED.map((name) => path.join(home, name)));
 const SESSIONS = fc.oneof(HOSTILE, fc.constantFrom("orch", String(process.pid), "#(touch pwned)"));
+const JOBS = fc.oneof(HOSTILE, fc.constantFrom("api-build", "docs.build_2"));
 
-test("lifelong-hypervisor#P4: the session tools run no shell, start nothing but tmux and claude in auto mode, and write only the store", async () => {
+test("lifelong-hypervisor#P4: the session tools and wait run no shell, start nothing but tmux, job, and claude in auto mode, and write only the store", async () => {
 	const context = standIn({ cwd: home, hasUI: false });
 	let opened = 0;
 	let captured = 0;
-	for (const tool of sessionTools({ home, store })) {
+	let waited = 0;
+	for (const tool of [...sessionTools({ home, store }, work), waitTool(work)]) {
 		await fc.assert(
-			fc.asyncProperty(paramsFor(tool.parameters, HOSTILE, { dir: DIRS, session: SESSIONS }), async (params) => {
-				const seen = await effects.during(() => execute(tool, params, context, 1000));
+			fc.asyncProperty(paramsFor(tool.parameters, HOSTILE, { dir: DIRS, session: SESSIONS, job: JOBS }), async (params) => {
+				const seen = await effects.during(async () => {
+					await execute(tool, params, context, 1000);
+					await work.stop();
+				});
 				assert.deepEqual(toolProblems(seen, store, strings(params)), [], `${tool.name} ${JSON.stringify(params)}`);
 				if (tool.name === "start_session" && seen.launches.some((l) => l.args[0] === "new-session" || l.args[0] === "new-window")) {
 					opened++;
 					assert.ok(seen.launches.some((l) => l.program === "tmux" && l.args.includes("claude")), "a window spawn opens runs claude");
 				}
 				if (seen.launches.some((l) => l.args[0] === "capture-pane")) captured++;
+				if (seen.launches.some((l) => l.program === "job" && l.args[0] === "wait")) waited++;
 			}),
 			{ numRuns: 200 },
 		);
 	}
 	assert.ok(opened >= 20, `spawn opened a window in ${opened} runs of 200, too few to judge what it starts`);
 	assert.ok(captured >= 20, `look read a pane in ${captured} runs of 200, too few to judge what it runs`);
+	assert.ok(waited >= 20, `wait ran job wait in ${waited} runs of 200, too few to judge what it runs`);
 	assert.ok(delivered >= 20, `tell reached the inbox socket in ${delivered} runs of 200, too few to judge what it sends`);
 	assert.deepEqual(effects.stray, { launches: [], writes: [] });
 });

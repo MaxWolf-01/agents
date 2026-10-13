@@ -60,12 +60,12 @@ async function loaded(takes: () => boolean, store = newStore()) {
 	return { ...extension, reports, status, stop };
 }
 
-test("lifelong-hypervisor#P4: the live set is OptChat's zoom and date, the session tools, the inbox and the explorer's read tools, and OptChat's subagent tools are inactive", async () => {
+test("lifelong-hypervisor#P4: the live set is OptChat's zoom and date, the session tools, the inbox, wait and the explorer's read tools, and OptChat's subagent tools are inactive", async () => {
 	const { active, stop } = await loaded(() => true);
 	await stop();
 	const SESSIONS = ["start_session", "tell_session", "look", "delegate"];
 	const READ = ["read", "ls", "find", "grep", "memex"];
-	assert.deepEqual([...active].sort(), [...MEMORY, ...SESSIONS, "inbox", ...READ].sort());
+	assert.deepEqual([...active].sort(), [...MEMORY, ...SESSIONS, "inbox", "wait", ...READ].sort());
 });
 
 test("a plain hv tell starts no turn and is listed on the status line; a ping goes to OptChat as a report, and stays in the inbox until OptChat takes it", async () => {

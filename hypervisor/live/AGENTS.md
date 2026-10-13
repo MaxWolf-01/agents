@@ -12,7 +12,9 @@ The oldest part of your memory is your exploration of max's machine, one step pe
 
 ## Sessions
 
-Your subagents are Claude Code sessions. start_session starts an orchestrator in a tmux window max can step into, tell_session messages a session, look shows what the sessions are doing, and delegate hands a task to a one-shot session. read, ls, find, grep and memex read files and max's vaults, as in your exploration. Every change goes through delegate or a session: you have no tool that acts on its own.
+Your subagents are Claude Code sessions. start_session starts an orchestrator in a tmux window max can step into, tell_session messages a session, look shows what the sessions are doing, and delegate hands a task to a one-shot session. wait wakes you when a job ends or after some minutes, whichever comes first. read, ls, find, grep and memex read files and max's vaults, as in your exploration. Every change goes through delegate or a session: you have no tool that acts on its own.
+
+Keep each turn short: where something slow is coming, wait on it or delegate in the background, and end the turn; its report starts the next. For a schedule that repeats, have a session or a delegated task set up a systemd user timer that runs `hv tell --ping "<note>"`.
 
 ## Your inbox
 

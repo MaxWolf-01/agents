@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { age, markRead, shown, size, waiting } from "./inbox.ts";
-import { delegate, look, type SessionConfig, spawn, tell } from "./sessions.ts";
+import { delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
+import type { Background } from "./pace.ts";
 import type { Store } from "./store.ts";
 
 /** A tool's answer: the text it printed, or `(nothing)`. */
@@ -62,8 +64,11 @@ export function inboxTool(store: string): ToolDefinition {
 	}) as ToolDefinition;
 }
 
-/** The session tools: each starts, messages, reads or delegates to a Claude Code session, never acting itself. */
-export function sessionTools(config: SessionConfig): ToolDefinition[] {
+/**
+ * The session tools: each starts, messages, reads or delegates to a Claude Code session, never acting itself. Given
+ * `work`, delegate can also run in the background, its answer arriving as a ping.
+ */
+export function sessionTools(config: SessionConfig, work?: Background): ToolDefinition[] {
 	const session = Type.String({ description: "A session as look lists it: its tmux window (repo:window, or the window alone), its name, or its pid." });
 	const dir = (what: string) => Type.String({ description: `${what}, absolute, under ~/, or relative to max's home.` });
 	return [
@@ -97,12 +102,21 @@ export function sessionTools(config: SessionConfig): ToolDefinition[] {
 			name: "delegate",
 			label: "Delegate",
 			description:
-				"Have a one-shot Claude Code session in auto mode do a task and answer: reading a ticket, a board or a session page, or any side effect. Its permission classifier judges what it does. Returns only its answer.",
+				"Have a one-shot Claude Code session in auto mode do a task and answer: reading a ticket, a board or a session page, or any side effect. Its permission classifier judges what it does. Returns only its answer, within 45 minutes.",
 			parameters: Type.Object({
 				task: Type.String({ description: "What to do or find out, and what to answer with." }),
 				dir: Type.Optional(dir("Where it runs, max's home if not given")),
+				...(work
+					? { background: Type.Optional(Type.Boolean({ description: "Return at once with an id, and end your turn: the answer arrives as a report starting [delegate <id>]." })) }
+					: {}),
 			}),
-			execute: async (_id, params, signal) => answer(await delegate(config, params, signal)),
+			execute: async (_id, { task: what, dir, background }, signal) => {
+				const task = await delegation(config, { task: what, dir });
+				if (!work || background !== true) return answer(await task(signal));
+				const id = randomBytes(2).toString("hex");
+				work.start(`delegate ${id}`, task);
+				return answer(`Delegated as ${id}; its answer arrives as a report starting [delegate ${id}]. End your turn.`);
+			},
 		}),
 	] as ToolDefinition[];
 }
