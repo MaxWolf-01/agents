@@ -28,7 +28,7 @@ if (import.meta.main) {
 		console.error(store ? USAGE : `hv tell: HV_STORE is not set; run it as hv tell\n\n${USAGE}`);
 		process.exit(2);
 	}
-	await post(store, { at: new Date().toISOString(), from: window() ?? process.cwd(), text, ...(ping ? { ping } : {}) });
+	await post(store, { at: new Date().toISOString(), from: window() ?? process.cwd(), text, via: "hv tell", ...(ping ? { ping } : {}) });
 	console.log(ping ? "Sent to the hypervisor." : "Left in the hypervisor's inbox.");
 }
 

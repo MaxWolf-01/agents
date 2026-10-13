@@ -11,6 +11,8 @@ export interface Told {
 	text: string;
 	/** Starts a turn at once, where any other message waits in the inbox until the hypervisor reads it. */
 	ping?: boolean;
+	/** How it was sent, when not by the watch: `hv tell`. */
+	via?: string;
 }
 
 /** A message in the inbox, with the short id the inbox tool knows it by and its size in bytes. */
@@ -23,6 +25,9 @@ export interface Waiting extends Told {
 /** The store's inbox: a file per message, named so that names sort oldest first. Its `read/` keeps every message read. */
 const INBOX = "inbox";
 const READ = "read";
+
+/** Where the inbox keeps what was read. */
+export const readDir = (store: string) => path.join(store, INBOX, READ);
 
 /** Leaves `told` in the store's inbox. The file appears whole, so a reader never sees half of it. */
 export async function post(store: string, told: Told): Promise<void> {
@@ -61,14 +66,14 @@ export function waiting(store: string): Waiting[] {
 
 /** Moves `messages` into the inbox's `read/`, out of what waits. */
 export async function markRead(store: string, messages: Waiting[]): Promise<void> {
-	const dir = path.join(store, INBOX, READ);
+	const dir = readDir(store);
 	await mkdir(dir, { recursive: true });
 	await Promise.all(messages.map((m) => rename(m.file, path.join(dir, path.basename(m.file)))));
 }
 
-/** A message as the hypervisor reads it, and as memory keeps it: `[from] time text`. */
+/** A message as the hypervisor gets it, and as memory keeps it: `[from] text`, or `[from] hv tell: text`. */
 export function shown(told: Told): string {
-	return `[${told.from}] ${told.at.slice(0, 16)} ${told.text}`;
+	return `[${told.from}] ${told.via ? `${told.via}: ` : ""}${told.text}`;
 }
 
 /** The line that ends each turn's request while messages wait: per sender, how many, how many bytes, how old. Never their text. */
@@ -81,7 +86,7 @@ export function unreadLine(unread: Told[], now: number): string | undefined {
 		const span = ages[0] === ages[1] ? ages[0] : `${ages[0]} to ${ages[1]}`;
 		return `${from} ${messages.length} ${messages.length === 1 ? "message" : "messages"}, ${size(bytes)}, ${span} old`;
 	});
-	return `[Hypervisor inbox] Unread: ${listed.join("; ")}.`;
+	return `Unread in your inbox: ${listed.join("; ")}.`;
 }
 
 /** A span of `ms` as the inbox shows an age: in minutes, in hours below two days, else in days. */
@@ -92,7 +97,8 @@ export function age(ms: number): string {
 	return `${Math.floor(minutes / (24 * 60))}d`;
 }
 
-function size(bytes: number): string {
+/** A size as the inbox shows it. */
+export function size(bytes: number): string {
 	return bytes < 1000 ? `${bytes} B` : `${(bytes / 1000).toFixed(1)} kB`;
 }
 
@@ -100,7 +106,7 @@ function parsed(text: string): Told | undefined {
 	try {
 		const told = JSON.parse(text);
 		if (typeof told.text !== "string") return undefined;
-		return { at: String(told.at), from: String(told.from), text: told.text, ...(told.ping === true ? { ping: true } : {}) };
+		return { at: String(told.at), from: String(told.from), text: told.text, ...(told.ping === true ? { ping: true } : {}), ...(typeof told.via === "string" ? { via: told.via } : {}) };
 	} catch {
 		return undefined;
 	}

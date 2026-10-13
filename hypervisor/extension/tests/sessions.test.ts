@@ -335,16 +335,19 @@ test("the status line lists the unread by sender, with count, size and age, and 
 	];
 	assert.equal(
 		unreadLine(unread, now),
-		"[Hypervisor inbox] Unread: agents:board 2 messages, 42 B, 3h to 1m old; ~/repos/notes 1 message, 1.5 kB, 5m old.",
+		"Unread in your inbox: agents:board 2 messages, 42 B, 3h to 1m old; ~/repos/notes 1 message, 1.5 kB, 5m old.",
 	);
 	assert.equal(unreadLine([], now), undefined);
 });
+
+/** What starts the live hypervisor's turn. */
+const PING = (told: Told) => told.ping === true;
 
 /** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
 function watching(at: string, store: string, ready = () => true) {
 	const delivered: string[][] = [];
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (events) => void delivered.push(events), (error) => failures.push(error), ready);
+	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => void delivered.push(events), (error) => failures.push(error), ready);
 	return { ...w, delivered, failures };
 }
 
@@ -384,10 +387,10 @@ test("a ping starts a turn: the watch hands it over, once, and moves it to read/
 	try {
 		await w.started;
 		await post(store, { at: AT, from: "my-repo:board-fix", text: "done" });
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "the migration needs max", ping: true });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 		await w.look();
 		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] 2026-10-13T14:07 the migration needs max"]]);
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: the migration needs max"]]);
 		assert.deepEqual(waiting(store).map((m) => m.text), ["done"]);
 		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
 	} finally {
@@ -401,14 +404,14 @@ test("the watch holds its pings while pi cannot take them, the inbox untouched, 
 	const w = watching(at, store, () => ready);
 	try {
 		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
 		assert.deepEqual(w.delivered, []);
 		assert.equal(waiting(store).length, 1);
 		assert.deepEqual(w.failures, [], "holding is not a failure");
 		ready = true;
 		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] 2026-10-13T14:07 needs max"]]);
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
 	} finally {
 		w.stop();
 	}
@@ -422,6 +425,7 @@ test("a look whose delivery fails leaves its pings for the next look, and two lo
 	const w = watch(
 		{ home: at, store },
 		2 ** 30,
+		PING,
 		(events) => {
 			if (refuse) throw new Error("not now");
 			delivered.push(events);
@@ -430,12 +434,12 @@ test("a look whose delivery fails leaves its pings for the next look, and two lo
 	);
 	try {
 		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
 		assert.equal(failures.length, 1);
 		refuse = false;
 		await Promise.all([w.look(), w.look()]);
-		assert.deepEqual(delivered, [["[my-repo:board-fix] 2026-10-13T14:07 needs max"]]);
+		assert.deepEqual(delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
 	} finally {
 		w.stop();
 	}
@@ -446,17 +450,17 @@ test("a delivery that returns false is held like one pi cannot take: no failure,
 	const offered: string[][] = [];
 	let taken = false;
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (events) => (offered.push(events), taken), (error) => failures.push(error));
+	const w = watch({ home: at, store }, 2 ** 30, PING, (events) => (offered.push(events), taken), (error) => failures.push(error));
 	try {
 		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true });
+		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
 		await w.look();
 		assert.equal(waiting(store).length, 1);
 		assert.deepEqual(failures, []);
 		taken = true;
 		await w.look();
 		await w.look();
-		const ping = ["[my-repo:board-fix] 2026-10-13T14:07 needs max"];
+		const ping = ["[my-repo:board-fix] hv tell: needs max"];
 		assert.deepEqual(offered, [ping, ping], "offered again after the refusal, then not again once taken");
 		assert.deepEqual(waiting(store), []);
 	} finally {

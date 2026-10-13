@@ -40,6 +40,7 @@ export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 			watching ??= watch(
 				config,
 				WATCH_MS,
+				(told) => told.ping === true,
 				(pings) => {
 					// No profile open yet, or an import running: nothing takes the report, and the inbox keeps the pings for the next look.
 					const report: { text: string; taken?: boolean } = { text: pings.join("\n") };

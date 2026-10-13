@@ -47,7 +47,7 @@ const WATCH_MS = 3000;
  * when it could not be written; `requests.jsonl`, a line for each request sent, what it carried in brief, with the
  * error when the store's `stays` failed for its run; `forks.jsonl`, a line for each fork, with the tokens each of its
  * calls read from cache and wrote; `lost.jsonl`, a line for each turn the log could not take; `spawned.jsonl`, a line
- * for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not taken; `watch.jsonl`, a line for
+ * for each window spawn opened; `inbox/`, what `hv tell` left and the watch has not delivered, `inbox/read/` what it has; `watch.jsonl`, a line for
  * each look of the watch that failed.
  */
 export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
@@ -109,6 +109,7 @@ export function hypervisor(config: Config): (pi: ExtensionAPI) => void {
 				watching ??= watch(
 					config,
 					WATCH_MS,
+					() => true,
 					(events) => pi.sendUserMessage(eventMessage(events), { deliverAs: "followUp" }),
 					(error) => void watchLog({ at: new Date().toISOString(), error: String(error) }).catch(() => {}),
 					ready,

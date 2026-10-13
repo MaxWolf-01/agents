@@ -13,11 +13,15 @@ import { live, MEMORY } from "../src/live.ts";
 import { MODEL } from "../src/pi.ts";
 import { load } from "./properties/stand-in.ts";
 
-const store = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-")));
 const home = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-home-")));
+const stores: string[] = [];
+/** A store of the test's own, so no test reads what another left in its inbox. */
+function newStore() {
+	stores.push(realpathSync(mkdtempSync(path.join(tmpdir(), "hv-store-"))));
+	return stores.at(-1)!;
+}
 after(() => {
-	rmSync(store, { recursive: true, force: true });
-	rmSync(home, { recursive: true, force: true });
+	for (const dir of [home, ...stores]) rmSync(dir, { recursive: true, force: true });
 });
 
 /** pi-optchat's tools by name, as the fork registers them: `spawn` and `tell` start and steer pi subagents with pi's coding tools. */
@@ -27,7 +31,7 @@ function optchat(pi: ExtensionAPI) {
 }
 
 /** The extension loaded after OptChat's tools, with pi's event bus answering each report with `takes()`. */
-async function loaded(takes: () => boolean) {
+async function loaded(takes: () => boolean, store = newStore()) {
 	const reports: { channel: string; text: string }[] = [];
 	const listeners = new Map<string, (data: unknown) => void>();
 	const bus = {
@@ -65,41 +69,52 @@ test("lifelong-hypervisor#P4: the live set is OptChat's zoom and date, the sessi
 });
 
 test("a plain hv tell starts no turn and is listed on the status line; a ping goes to OptChat as a report, and stays in the inbox until OptChat takes it", async () => {
-	let takes = false;
+	const store = newStore();
 	const at = new Date().toISOString();
-	await post(store, { at, from: "agents:board-fix", text: "done, see the ticket" });
-	await post(store, { at, from: "agents:board-fix", text: "the migration needs max", ping: true });
-	const { reports, status, stop } = await loaded(() => takes);
+	await post(store, { at, from: "agents:board-fix", text: "done, see the ticket", via: "hv tell" });
+	await post(store, { at, from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
+	const { reports, status, stop } = await loaded(() => false, store);
 	try {
 		await new Promise((settle) => setTimeout(settle, 100));
-		assert.deepEqual(reports, [{ channel: "optchat:report", text: `[agents:board-fix] ${at.slice(0, 16)} the migration needs max` }]);
-		assert.equal(waiting(store).length, 2, "nothing took the ping: the inbox keeps it");
-		assert.deepEqual(status(), ["[Hypervisor inbox] Unread: agents:board-fix 1 message, 20 B, 0m old."], "the ping is not listed: it is on its way");
-		takes = true;
-		await new Promise((settle) => setTimeout(settle, 3500));
-		assert.equal(reports.length, 2, "offered again at the next look");
-		assert.deepEqual(waiting(store).map((m) => m.text), ["done, see the ticket"], "the plain message still waits");
+		assert.deepEqual(reports, [{ channel: "optchat:report", text: "[agents:board-fix] hv tell: the migration needs max" }]);
+		assert.equal(waiting(store).length, 2, "nothing took the ping: the inbox keeps it for the next look");
+		assert.deepEqual(status(), ["Unread in your inbox: agents:board-fix 1 message, 20 B, 0m old."], "the ping is not listed: it is on its way");
+	} finally {
+		await stop();
+	}
+});
+
+test("a ping OptChat takes leaves the inbox for read/", async () => {
+	const store = newStore();
+	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
+	const { reports, stop } = await loaded(() => true, store);
+	try {
+		await new Promise((settle) => setTimeout(settle, 100));
+		assert.equal(reports.length, 1);
+		assert.deepEqual(waiting(store), []);
+		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
 	} finally {
 		await stop();
 	}
 });
 
 test("the inbox tool lists what waits without its text, and reads one message or all from a sender as work, out of the inbox", async () => {
-	rmSync(path.join(store, "inbox"), { recursive: true, force: true });
-	const { tools, stop } = await loaded(() => false);
+	const store = newStore();
+	const { tools, stop } = await loaded(() => false, store);
 	await stop();
 	const inbox = tools.get("inbox")!;
 	const call = (params: object) => inbox.execute("call", params as never, undefined, undefined, undefined as never);
 	const at = new Date().toISOString();
-	for (const [from, text] of [["agents:a", "a's first"], ["agents:b", "b's only"], ["agents:a", "a's second"]]) await post(store, { at, from, text });
+	for (const [from, text] of [["agents:a", "a's first"], ["agents:b", "b's only"], ["agents:a", "a's second"]]) await post(store, { at, from, text, via: "hv tell" });
 	const listed = textOf(await call({}));
 	assert.doesNotMatch(listed, /first|only|second/, "the listing holds no message's text");
 	const ids = waiting(store).map((m) => m.id);
 	for (const id of ids) assert.match(listed, new RegExp(id));
 	const one = await call({ id: ids[1] });
-	assert.equal(textOf(one), `[agents:b] ${at.slice(0, 16)} b's only`);
+	const sent = `(sent ${at.slice(0, 16)}Z)`;
+	assert.equal(textOf(one), `[agents:b] hv tell: b's only ${sent}`);
 	assert.deepEqual(one.details, { optchat: "work" }, "pi-optchat logs it as work");
-	assert.equal(textOf(await call({ from: "agents:a" })), `[agents:a] ${at.slice(0, 16)} a's first\n\n[agents:a] ${at.slice(0, 16)} a's second`);
+	assert.equal(textOf(await call({ from: "agents:a" })), `[agents:a] hv tell: a's first ${sent}\n\n[agents:a] hv tell: a's second ${sent}`);
 	assert.deepEqual(waiting(store), []);
 	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 3);
 	assert.match(textOf(await call({ id: ids[1] })), /No unread message with id/);

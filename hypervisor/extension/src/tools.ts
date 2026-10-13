@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { age, markRead, shown, waiting } from "./inbox.ts";
+import { age, markRead, shown, size, waiting } from "./inbox.ts";
 import { delegate, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Store } from "./store.ts";
 
@@ -52,12 +52,12 @@ export function inboxTool(store: string): ToolDefinition {
 			const all = waiting(store).filter((m) => !m.ping);
 			if (id === undefined && from === undefined) {
 				const now = Date.now();
-				return answer(all.map((m) => `${m.id}  ${m.from}  ${m.bytes} B  ${age(now - Date.parse(m.at))} old`).join("\n") || "The inbox is empty.");
+				return answer(all.map((m) => `${m.id}  ${m.from}  ${size(m.bytes)}  ${age(now - Date.parse(m.at))} old`).join("\n") || "The inbox is empty.");
 			}
 			const chosen = all.filter((m) => (id === undefined || m.id === id) && (from === undefined || m.from === from));
 			if (!chosen.length) return answer(`No unread message ${[id && `with id ${id}`, from && `from ${from}`].filter(Boolean).join(" ")}; inbox lists what waits.`);
 			await markRead(store, chosen);
-			return { ...answer(chosen.map(shown).join("\n\n")), details: WORK_RESULT };
+			return { ...answer(chosen.map((m) => `${shown(m)} (sent ${m.at.slice(0, 16)}Z)`).join("\n\n")), details: WORK_RESULT };
 		},
 	}) as ToolDefinition;
 }

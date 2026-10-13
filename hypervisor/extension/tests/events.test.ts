@@ -56,7 +56,7 @@ before(async () => {
 	registered("idle");
 	await settled.next();
 	run = "told";
-	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "told-marker the fix is on its branch" });
+	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "told-marker the fix is on its branch", via: "hv tell" });
 	await settled.next();
 	run = "long";
 	pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: `long-marker ${"more than an entry holds. ".repeat(30)}` })}\n`);
@@ -65,7 +65,7 @@ before(async () => {
 	pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: "starting-marker hello" })}\n`);
 	// A second in, the run waits for the gist; the watch looks twice in the seven seconds left of the wait.
 	await new Promise((settle) => setTimeout(settle, 1000));
-	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "while-starting-marker reported as a turn starts" });
+	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "while-starting-marker reported as a turn starts", via: "hv tell" });
 	const both = () => ["max: starting-marker hello", "while-starting-marker"].every((marker) => logged().includes(marker));
 	for (const start = Date.now(); !both() && Date.now() - start < 30_000; ) await new Promise((settle) => setTimeout(settle, 100));
 	pi.stdin!.end();
