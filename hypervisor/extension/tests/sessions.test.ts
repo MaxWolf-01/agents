@@ -259,10 +259,10 @@ test("an event message holds its events, whatever they say", () => {
 });
 
 test("each event is an entry of its own, spoken by the event and not by max", () => {
-	const content = eventMessage(["agents:board: busy → idle", "agents:board (hv tell): done, see the ticket"]);
+	const content = eventMessage(["[agents:board] busy → idle", "[agents:board] hv tell: done, see the ticket"]);
 	assert.deepEqual(
 		entriesOf([{ role: "user", content, timestamp: 1 }]).map((e) => e.text),
-		["event: agents:board: busy → idle", "event: agents:board (hv tell): done, see the ticket"],
+		["event: [agents:board] busy → idle", "event: [agents:board] hv tell: done, see the ticket"],
 	);
 });
 
@@ -286,7 +286,7 @@ test("a watched session's turn ending, or the session going, is an event; any ot
 		[6, seen("idle", "agents:new")],
 		[8, seen("waiting", "agents:u")],
 	]);
-	assert.deepEqual(changes(before, now), ["agents:board: busy → idle", "agents:y: busy → ended", "agents:v: idle → ended", "agents:u: busy → waiting"]);
+	assert.deepEqual(changes(before, now), ["[agents:board] busy → idle", "[agents:y] busy → ended", "[agents:v] idle → ended", "[agents:u] busy → waiting"]);
 });
 
 test("a session is watched when it is the claude a spawned window was opened running, and no other in its pane", () => {
@@ -323,7 +323,7 @@ test("the inbox hands over each message once, oldest first, and keeps them when 
 function watching(at: string, store: string, ready = () => true) {
 	const delivered: string[][] = [];
 	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (events) => delivered.push(events), (error) => failures.push(error), ready);
+	const w = watch({ home: at, store }, 2 ** 30, (events) => void delivered.push(events), (error) => failures.push(error), ready);
 	return { ...w, delivered, failures };
 }
 
@@ -346,7 +346,7 @@ test("the watch takes a registry file caught mid-write for no change, and a live
 		assert.deepEqual(w.delivered, [], "the session's process lives, so it has not ended");
 		registered(at, process.pid, { name: "orch-1", status: "idle" });
 		await w.look();
-		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle"]]);
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] busy → idle"]]);
 	} finally {
 		w.stop();
 	}
@@ -366,7 +366,7 @@ test("the watch holds its events while pi cannot take them, the inbox untouched,
 		assert.deepEqual(w.failures, [], "holding is not a failure");
 		ready = true;
 		await w.look();
-		assert.deepEqual(w.delivered, [["my-repo:board-fix: busy → idle", "my-repo:board-fix (hv tell): done"]]);
+		assert.deepEqual(w.delivered, [["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] hv tell: done"]]);
 		await w.look();
 		assert.equal(w.delivered.length, 1, "each event once");
 	} finally {
@@ -395,7 +395,31 @@ test("a look whose delivery fails leaves its events for the next look, and two l
 		assert.equal(failures.length, 1);
 		refuse = false;
 		await Promise.all([w.look(), w.look()]);
-		assert.deepEqual(delivered, [["my-repo:board-fix: busy → idle"]]);
+		assert.deepEqual(delivered, [["[my-repo:board-fix] busy → idle"]]);
+	} finally {
+		w.stop();
+	}
+});
+
+test("a delivery that returns false is held like one pi cannot take: no failure, the inbox untouched, the events again next look", async () => {
+	const { home: at, store } = spawnedHere("busy");
+	const offered: string[][] = [];
+	let taken = false;
+	const failures: unknown[] = [];
+	const w = watch({ home: at, store }, 2 ** 30, (events) => (offered.push(events), taken), (error) => failures.push(error));
+	try {
+		await w.started;
+		registered(at, process.pid, { name: "orch-1", status: "idle" });
+		await post(store, { at: "t", from: "my-repo:board-fix", text: "done" });
+		await w.look();
+		assert.equal(readdirSync(path.join(store, "inbox")).length, 1);
+		assert.deepEqual(failures, []);
+		taken = true;
+		await w.look();
+		await w.look();
+		const both = ["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] hv tell: done"];
+		assert.deepEqual(offered, [both, both], "offered again after the refusal, then not again once taken");
+		assert.equal(readdirSync(path.join(store, "inbox")).length, 0);
 	} finally {
 		w.stop();
 	}

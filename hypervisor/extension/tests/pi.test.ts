@@ -127,7 +127,7 @@ test("below the budget, each turn's first request closes a breakpoint on all the
 });
 
 test("the memory and session tools are the whole tool set, and zoom answers from the store", () => {
-	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["delegate", "look", "raw", "recall", "spawn", "tell", "zoom"]);
+	for (const { request } of sent) assert.deepEqual(request.tools?.map((t) => t.name).sort(), ["delegate", "look", "raw", "recall", "start_session", "tell_session", "zoom"]);
 	const results = sent.flatMap(({ request }) => request.messages.flatMap((m) => (m.content as { type: string }[]).filter((b) => b.type === "tool_result")));
 	assert.equal(results.length, 1);
 	assert.match(JSON.stringify(results[0]), /#0 max: turn-1-marker hello.*#1 me: noted turn 1/);
@@ -168,27 +168,4 @@ test("each fork's calls are logged with the tokens they read from cache and wrot
 
 test("the request log has a line for each request the turns sent", () => {
 	assert.equal(lines("requests.jsonl").length, sent.length);
-});
-
-test("hv starts pi's TUI on the hypervisor's model with the arguments explore mode and these checks start it with", () => {
-	const extension = path.resolve(import.meta.dirname, "..");
-	const hv = readFileSync(path.join(extension, "../hv"), "utf8");
-	const launch = /\n\t\tnode ("[^"]+")((?:.|\\\n)*?)\nfi\n/.exec(hv);
-	assert.ok(launch, "hv runs pi with node");
-	const word = (w: string) => w.replace(/^"|"$/g, "").replaceAll("$extension", extension);
-	const args = launch[2].replace(/\\\n/g, " ").trim().split(/\s+/).map(word);
-	assert.equal(word(launch[1]), PI);
-	assert.equal(args[args.indexOf("--model") + 1], MODEL);
-	const at = args.indexOf(HYPERVISOR[0]);
-	assert.deepEqual(args.slice(at, at + HYPERVISOR.length), HYPERVISOR);
-});
-
-test("hv view prints the view the last turn started from", () => {
-	const last = sent.filter(({ turn }) => turn === TURNS)[0].request;
-	const blocks = last.messages[0].content as { text: string }[];
-	const view = blocks.map((b) => b.text).join("").slice("<view>\n".length, -"\n</view>".length);
-	const hv = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["view"], { env: { ...process.env, HV_STORE: store }, encoding: "utf8" });
-	assert.equal(hv.status, 0, hv.stderr);
-	assert.equal(hv.stdout, `${view}\n`);
-	assert.match(hv.stdout, new RegExp(`turn-${TURNS - 1}-marker`));
 });

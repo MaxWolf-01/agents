@@ -39,8 +39,8 @@ export function sessionTools(config: SessionConfig): ToolDefinition[] {
 	const dir = (what: string) => Type.String({ description: `${what}, absolute, under ~/, or relative to max's home.` });
 	return [
 		defineTool({
-			name: "spawn",
-			label: "Spawn",
+			name: "start_session",
+			label: "Start session",
 			description:
 				"Start an orchestrator: interactive Claude Code in auto mode, in a new tmux window of the repo's tmux session, with the brief as its first prompt. It reports back with hv tell, and you hear when its turn ends.",
 			parameters: Type.Object({
@@ -51,8 +51,8 @@ export function sessionTools(config: SessionConfig): ToolDefinition[] {
 			execute: async (_id, params) => answer(await spawn(config, params)),
 		}),
 		defineTool({
-			name: "tell",
-			label: "Tell",
+			name: "tell_session",
+			label: "Tell session",
 			description: "Send a session a message. It arrives as a cross-session message from the hypervisor.",
 			parameters: Type.Object({ session, message: Type.String({ description: "The message, as the session should read it." }) }),
 			execute: async (_id, params) => answer(await tell(config, params)),
