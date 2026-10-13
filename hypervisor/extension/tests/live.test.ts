@@ -137,11 +137,40 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		const started = readFileSync(calls, "utf8").split("--\n").map((call) => call.trimEnd().split("\n")).find((args) => args[0] === "new-session");
 		assert.ok(started, "hv opens a tmux session");
 		const after = (flag: string) => started.flatMap((arg, i) => (started[i - 1] === flag ? [arg] : []));
-		assert.deepEqual(after("-e").filter((e) => !e.includes("=")), [path.join(fork, "src", "index.ts"), path.resolve(import.meta.dirname, "../src/live.ts")], "the extensions, OptChat first");
+		assert.deepEqual(after("-e").filter((e) => !e.includes("=")), [path.resolve(import.meta.dirname, "../src/live.ts"), path.join(fork, "src", "index.ts")], "the extensions, this one first, so OptChat journals max's message with its path line");
 		assert.ok(after("-e").includes("PI_CACHE_RETENTION=long"));
 		assert.deepEqual(after("--optchat-profile"), ["hv"]);
 		assert.deepEqual(after("--model"), [MODEL]);
 		for (const off of ["--no-extensions", "--no-builtin-tools", "--no-skills", "--no-context-files"]) assert.ok(started.includes(off), off);
+	} finally {
+		rmSync(at, { recursive: true, force: true });
+	}
+});
+
+test("each message max types is saved as the next numbered file, and reaches the hypervisor with that file's path under it", async () => {
+	const at = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-inputs-")));
+	try {
+		const inputs = path.join(at, ".local", "share", "hypervisor-inputs");
+		mkdirSync(inputs, { recursive: true });
+		// Numbering goes on from the highest file there, not from how many there are.
+		writeFileSync(path.join(inputs, "1.txt"), "first");
+		writeFileSync(path.join(inputs, "9.txt"), "ninth");
+		writeFileSync(path.join(inputs, "notes.md"), "not one of max's messages");
+		const extension = await load((pi) => live({ store: newStore(), home: at })(pi), at);
+		const input = async (text: string, source = "interactive") => {
+			const results = await Promise.all((extension.handlers.get("input") ?? []).map((handler) => handler({ type: "input", text, source }, extension.context)));
+			return results[0] as { action: string; text?: string };
+		};
+		const paste = "line one\nline two\n\nline four";
+		assert.deepEqual(await input(paste), { action: "transform", text: `${paste}\n\n(saved as ~/.local/share/hypervisor-inputs/10.txt)` });
+		assert.equal(readFileSync(path.join(inputs, "10.txt"), "utf8"), paste, "the file holds the message as typed, so its line numbers are the message's");
+		const returned = await input(`${paste}\n\n(saved as ~/.local/share/hypervisor-inputs/10.txt)`);
+		assert.equal(returned.text, `${paste}\n\n(saved as ~/.local/share/hypervisor-inputs/11.txt)`, "a message pi handed back to the editor and max sent again gets one path line, its new one");
+		assert.equal(readFileSync(path.join(inputs, "11.txt"), "utf8"), paste);
+		assert.deepEqual(await input("[agents:board-fix] hv tell: the migration needs max", "extension"), { action: "continue" }, "a report another extension sends is not max's");
+		assert.deepEqual(await input("  \n"), { action: "continue" });
+		assert.deepEqual(readdirSync(inputs).sort(), ["1.txt", "10.txt", "11.txt", "9.txt", "notes.md"]);
+		for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler({ type: "session_shutdown" }, extension.context);
 	} finally {
 		rmSync(at, { recursive: true, force: true });
 	}

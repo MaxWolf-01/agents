@@ -3,7 +3,9 @@
 // `date`, the whole active set: OptChat's own `spawn` and `tell` run pi subagents with pi's coding tools, which
 // lifelong-hypervisor#P4 rules out. A message waits in the inbox, listed on OptChat's status line, until the hypervisor
 // reads it; a ping reaches OptChat as a report and starts a turn, as does what wait and a background delegate post.
-// Either way memory logs it as `work`, not as max's.
+// Either way memory logs it as `work`, not as max's. Each message max types is saved as a numbered file and reaches
+// the hypervisor with that file's path under it, so it passes a message on by path. `hv` loads this extension before
+// OptChat, whose input handler journals the message as it will arrive, path line included.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
@@ -12,6 +14,7 @@ import { fromEnvironment } from "./index.ts";
 import { append } from "./journal.ts";
 import type { SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
+import { save } from "./inputs.ts";
 import { inboxTool, sessionTools } from "./tools.ts";
 import { watch } from "./watch.ts";
 
@@ -24,7 +27,7 @@ const STATUS_CHANNEL = "optchat:status";
 /** How often the spawned sessions and the inbox are looked at. */
 const WATCH_MS = 3000;
 
-/** Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed. */
+/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed. */
 export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		const work = background(config.store);
@@ -36,6 +39,11 @@ export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 				Date.now(),
 			);
 			if (line) (data as { lines: string[] }).lines.push(line);
+		});
+		pi.on("input", async (event) => {
+			// What another extension sends, a ping or a report among them, is not max's.
+			if (event.source === "extension" || !event.text.trim()) return { action: "continue" };
+			return { action: "transform", text: await save(config.home, event.text) };
 		});
 		let watching: ReturnType<typeof watch> | undefined;
 		pi.on("session_start", () => {

@@ -56,6 +56,6 @@ if ! tmux has-session -t =hypervisor 2>/dev/null; then
 		node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
 		--model anthropic/claude-opus-5-5 --thinking medium \
 		--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
-		-e "$fork/src/index.ts" -e "$extension/src/live.ts" --optchat-profile "$profile"
+		-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile"
 fi
 if [[ -n ${TMUX:-} ]]; then exec tmux switch-client -t =hypervisor; else exec tmux attach -t =hypervisor; fi
