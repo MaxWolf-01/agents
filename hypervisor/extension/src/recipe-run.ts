@@ -6,12 +6,11 @@
 // `explore-recipe/`'s config and instructions. Once the steps end, it waits until every message has its line, then prints
 // the tokens by role. pi takes its credentials, and OptChat its profiles, from the environment, as `hv` sets them.
 
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { step } from "./explore-run.ts";
 import { MODEL } from "./pi.ts";
 
 export const USAGE =
@@ -106,6 +105,52 @@ function unsummarized(memory: string): number {
 /** When a file in `dir` was last written, in ms since the epoch. */
 function lastWrite(dir: string): number {
 	return existsSync(dir) ? Math.max(0, ...readdirSync(dir).map((n) => statSync(path.join(dir, n)).mtimeMs)) : 0;
+}
+
+/** One step's outcome: its last text, and the error it ended on, if it did. */
+interface Step {
+	finding: string;
+	error?: string;
+}
+
+/** Sends one step's message and resolves once pi has settled, with what pi reported of the step. */
+function step(pi: ChildProcess, message: string): Promise<Step> {
+	return new Promise((resolve, reject) => {
+		const done: Step = { finding: "" };
+		let buffer = "";
+		const stop = () => {
+			pi.stdout!.off("data", read);
+			pi.off("close", gone);
+		};
+		const gone = () => {
+			stop();
+			reject(new Error("pi exited during the step"));
+		};
+		const read = (chunk: string) => {
+			buffer += chunk;
+			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
+				const record = JSON.parse(buffer.slice(0, at));
+				buffer = buffer.slice(at + 1);
+				if (record.type === "response" && !record.success) {
+					stop();
+					reject(new Error(record.error));
+				}
+				if (record.type === "message_end" && record.message.role === "assistant") {
+					const reply = record.message;
+					const text = reply.content.flatMap((part: { type: string; text?: string }) => (part.type === "text" ? [part.text] : [])).join("\n");
+					if (text.trim()) done.finding = text.trim();
+					done.error = reply.stopReason === "error" || reply.stopReason === "aborted" ? (reply.errorMessage ?? reply.stopReason) : undefined;
+				}
+				if (record.type === "agent_settled") {
+					stop();
+					resolve(done);
+				}
+			}
+		};
+		pi.stdout!.on("data", read);
+		pi.once("close", gone);
+		pi.stdin!.write(`${JSON.stringify({ type: "prompt", message })}\n`);
+	});
 }
 
 function lines<T>(file: string): T[] {

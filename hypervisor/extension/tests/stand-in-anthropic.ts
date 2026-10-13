@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -10,8 +10,8 @@ type Block = { type: string; text?: string; cache_control?: unknown; tool_use_id
 /** One reply: text, or a tool call, sent after `delay` milliseconds. */
 export type Reply = ({ text: string } | { tool: string; input: object }) & { delay?: number };
 
-/** What every reply reports as its usage, so a check can find it again where the extension logs it. */
-export const USAGE = { input_tokens: 17, output_tokens: 5, cache_read_input_tokens: 4321, cache_creation_input_tokens: 123 };
+/** What every reply reports as its usage. */
+const USAGE = { input_tokens: 17, output_tokens: 5, cache_read_input_tokens: 4321, cache_creation_input_tokens: 123 };
 
 /**
  * The Anthropic messages endpoint, answering each request with what `answer` makes of it, as a stream of the events
@@ -73,9 +73,3 @@ export function standInModels(agent: string, url: string) {
 	writeFileSync(path.join(agent, "models.json"), JSON.stringify({ providers: { "stand-in": { baseUrl: url, api: "anthropic-messages", apiKey: "sk-ant-oat01-stand-in", models: [model] } } }));
 }
 
-const prompt = (name: string) => readFileSync(path.resolve(import.meta.dirname, "..", name), "utf8").trim();
-
-/** Whether a system block is the conversation's prompt: the hypervisor's, with what it says of the session tools and nothing of explore mode. */
-export function conversing(block: { text: string }): boolean {
-	return block.text.startsWith(prompt("system-prompt.md")) && block.text.includes(prompt("sessions-prompt.md")) && !block.text.includes("## Explore mode");
-}

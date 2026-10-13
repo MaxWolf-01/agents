@@ -1,5 +1,6 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { append, lines } from "./journal.ts";
@@ -10,6 +11,11 @@ import { run } from "./run.ts";
 export interface SessionConfig {
 	home: string;
 	store: string;
+}
+
+/** The configuration from the environment: the store `$HV_STORE`, or `~/.local/share/hypervisor`; the home `$HV_HOME`, or home. */
+export function fromEnvironment(): SessionConfig {
+	return { store: process.env.HV_STORE ?? path.join(homedir(), ".local/share/hypervisor"), home: process.env.HV_HOME ?? homedir() };
 }
 
 /** A live Claude Code session: its registry entry, and the tmux window its pane is in. */

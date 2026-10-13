@@ -31,7 +31,7 @@ test:
 	{ [ -z "$$py" ] || $(PYTEST) $$py; } && { [ -z "$$ts" ] || { $(MAKE) -s $(EXTENSION)/node_modules && node --test $$ts; }; }; fi
 
 test-all: $(EXTENSION)/node_modules
-	$(PYTEST) mx/ hypervisor/store
+	$(PYTEST) mx/
 	node --test "$(EXTENSION)/tests/**/*.test.ts"
 
 $(EXTENSION)/node_modules: $(EXTENSION)/package-lock.json

@@ -13,10 +13,12 @@ import { exploring, offerDue, parse, stopBefore } from "../src/exploring.ts";
 import { found } from "../src/hv-explore.ts";
 import { waiting } from "../src/inbox.ts";
 import { lines } from "../src/journal.ts";
-import { PI } from "../src/pi.ts";
 import { weekFromHeaders, weekFromStatusline } from "../src/quota.ts";
 import { load, standIn } from "./properties/stand-in.ts";
 import { type Request, standInAnthropic, standInModels, textOf } from "./stand-in-anthropic.ts";
+
+/** The pi this package installs, which the test starts in place of the fork's that `hv` starts. */
+const PI = path.resolve(import.meta.dirname, "../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
 
 const HV_EXPLORE = path.resolve(import.meta.dirname, "../src/hv-explore.ts");
 const LIVE = path.resolve(import.meta.dirname, "../src/live.ts");

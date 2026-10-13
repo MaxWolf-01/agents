@@ -3,9 +3,9 @@ import { open, readdir, readlink, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { Config } from "./index.ts";
 import { absolute, claudeConfigs, inside, shown } from "./paths.ts";
 import { run } from "./run.ts";
+import type { SessionConfig } from "./sessions.ts";
 import { answer } from "./tools.ts";
 
 /**
@@ -57,8 +57,8 @@ const LINE_CHARS = 200;
 const NOTES = 50;
 const MEMEX_MS = 300_000;
 
-export type ExploreConfig = Pick<Config, "home"> &
-	Partial<Pick<Config, "store">> & {
+export type ExploreConfig = Pick<SessionConfig, "home"> &
+	Partial<Pick<SessionConfig, "store">> & {
 		/** The memex program, `memex` on `PATH` unless named. */
 		memex?: string;
 	};

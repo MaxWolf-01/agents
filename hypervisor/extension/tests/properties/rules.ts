@@ -3,18 +3,16 @@ import type { Launch, Seen } from "./effects.ts";
 import { under } from "./effects.ts";
 
 /**
- * The programs a tool may start: tmux and claude for sessions, uv for the store, memex for the explorer, job for wait.
+ * The programs a tool may start: tmux and claude for sessions, memex for the explorer, job for wait.
  * Stricter than P4, which bans only a shell: a tool that needs another program is a call its slice escalates.
  */
-const PROGRAMS = new Set(["tmux", "claude", "uv", "memex", "job"]);
+const PROGRAMS = new Set(["tmux", "claude", "memex", "job"]);
 /** Shells, and the programs that run another program named in their arguments. */
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "nu", "pwsh", "env", "xargs", "nohup", "setsid", "timeout", "nice", "stdbuf", "sudo"]);
-/** The store's command line, the one script uv may run. */
-const STORE = path.resolve(import.meta.dirname, "../../../store/hv_store.py");
 
 /**
  * What the extension may not do, loading or handling an event: write outside the store, run one of the shells and
- * runners above, or ask tmux, claude or uv for what a tool may not. Any other program a handler starts is its slice's
+ * runners above, or ask tmux or claude for what a tool may not. Any other program a handler starts is its slice's
  * review to read: a handler is the harness, not the model's tool.
  */
 export function harnessProblems(seen: Seen, store: string): string[] {
@@ -51,7 +49,6 @@ function launchProblems(launch: Launch, given: string[]): string[] {
 	if (!PROGRAMS.has(program)) return [`started ${shown(launch)}`];
 	if (program === "tmux") return tmuxProblems(launch.args, given);
 	if (program === "claude") return claudeProblems(launch.args);
-	if (program === "uv") return uvProblems(launch.args, given);
 	if (program === "job") return jobProblems(launch.args);
 	return [];
 }
@@ -147,27 +144,6 @@ function claudeProblems(args: string[]): string[] {
 	const mode = args.flatMap((arg, i) => (arg === "--permission-mode" ? [args[i + 1]] : arg.startsWith("--permission-mode=") ? [arg.slice(arg.indexOf("=") + 1)] : []));
 	if (mode.length !== 1 || mode[0] !== "auto") problems.push(`claude ${args.join(" ")}: a session not in auto mode`);
 	return problems;
-}
-
-const UV_VALUED = new Set(["--with", "--with-editable", "--with-requirements", "--python", "-p", "--project", "--directory", "--env-file", "--extra", "--group", "--index", "--default-index", "--package", "--cache-dir", "--config-file"]);
-
-/**
- * uv starts the store and nothing else, `uv run [options] <the store's hv_store.py, absolute> ...`, and no option of it
- * comes from the model.
- */
-function uvProblems(args: string[], given: string[]): string[] {
-	if (args[0] !== "run") return [`uv ${args.join(" ")}: only the store runs through uv`];
-	let i = 1;
-	while (i < args.length && args[i].startsWith("-")) {
-		if (args[i] === "--") {
-			i++;
-			break;
-		}
-		i += UV_VALUED.has(args[i]) ? 2 : 1;
-	}
-	const options = args.slice(1, i).filter((arg) => given.some((text) => arg.includes(text)));
-	const script = path.resolve(args[i] ?? "") === STORE ? [] : [`uv run ${args.slice(i).join(" ")}: only the store runs through uv`];
-	return [...options.map((arg) => `uv run ${arg}: an option from the model`), ...script];
 }
 
 /** job's flags that wait takes, each with a value. */

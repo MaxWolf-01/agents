@@ -12,9 +12,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
 import { exploring, usageLog } from "./exploring.ts";
 import { unreadLine, waiting } from "./inbox.ts";
-import { fromEnvironment } from "./index.ts";
 import { append } from "./journal.ts";
-import type { SessionConfig } from "./sessions.ts";
+import { fromEnvironment, type SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
 import { save } from "./inputs.ts";
 import { inboxTool, sessionTools } from "./tools.ts";
@@ -53,7 +52,6 @@ export function live(config: SessionConfig & { usage?: string }): (pi: Extension
 			watching ??= watch(
 				config,
 				WATCH_MS,
-				(told) => told.ping === true,
 				(pings) => {
 					// No profile open yet, or an import running: nothing takes the report, and the inbox keeps the pings for the next look.
 					const report: { text: string; taken?: boolean } = { text: pings.join("\n") };
