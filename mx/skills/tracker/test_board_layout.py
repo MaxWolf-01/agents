@@ -62,7 +62,7 @@ from pathlib import Path
 
 import pytest
 
-from board import PAGE, render
+from board import PAGE, Failing, render, restamp
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
@@ -946,6 +946,71 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
     assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
+
+
+# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
+# waiting it out.
+STALE_PROBE = r"""
+import json, os, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import default_root, serve
+
+page, stale = Path(sys.argv[1]), sys.argv[2]
+stamp = Path(f"{page}.stamp.js")
+drawn = stamp.read_text()
+NOTE = "[data-absent=board-stale]"
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    serve(context, default_root())
+    tab = context.new_page()
+    tab.clock.install()
+    tab.goto(page.resolve().as_uri())
+    tab.evaluate("window.__loaded = true")  # gone on a reload
+    out = {"before": tab.is_visible(NOTE)}
+    stamp.write_text(stale)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}:not([hidden])")
+    out["stale"] = tab.inner_text(NOTE)
+    stamp.write_text(drawn)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}[hidden]", state="attached")
+    out["after"] = tab.is_visible(NOTE)
+    out["reloaded"] = not tab.evaluate("window.__loaded === true")
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+@pytest.mark.full_path
+def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(transcribed: Demo, tmp_path: Path) -> None:
+    """`board-watcher-restarts-on-new-code#P3`: the note shows in a tab already open, without
+    reloading it, and goes when the stamp file drops the mark."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    drawn = Path(f"{out}.stamp.js").read_text()
+    since = datetime(2026, 10, 7, 9, 30).astimezone()
+    restamp(out, Failing(since, "second.md:2: `flavour` is no ticket field\nsecond.md:3: and a second line"))
+    stale = Path(f"{out}.stamp.js").read_text()
+    Path(f"{out}.stamp.js").write_text(drawn)
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), stale],
+        input=STALE_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)}, timeout=180,
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    assert not seen["before"]
+    assert "stale since 07 Oct 09:30" in seen["stale"] and "`flavour` is no ticket field" in seen["stale"], seen["stale"]
+    assert "second line" not in seen["stale"], seen["stale"]
+    assert not seen["after"]
+    assert not seen["reloaded"]
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
