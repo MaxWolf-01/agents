@@ -10,7 +10,8 @@ windows the user ruled on 2026-09-23 (ticket 16): the session is pinged once the
 five minutes without a ticket's status moving, no sooner than ten minutes after the last briefing,
 and never outlives its idle hour or its ping cap. `ping` is a second seam, which the Testing
 Decisions does not name (ticket 13's D9): what the session is resumed with and what its answer does
-to the cache, with `claude` stubbed.
+to the cache, with `claude` stubbed. Through that same stub, both runs, `first` and `ping`, are checked
+for handing the model their whole prompt past the size Linux takes in one argument.
 
 A run of status changes and quiet ticks is drawn, driven through the schedule, and the answers are
 read back against that Property. The spec's third retirement limit, the session's context, is not a
