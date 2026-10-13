@@ -46,6 +46,13 @@ page from the same tracker, but each keeps its own briefing schedule, so a
 second one pays for every briefing again and resumes the session while the
 first is in it.
 
+A watcher runs the code it loaded for no longer than one pass after that code
+changes on disk: this script and the modules it imports from beside it. Once the new
+code starts, it takes the watcher's place in the same process, with the server
+the tab is open at and the briefing schedule it had. A pass that fails prints
+its error once, not every pass, and an open tab says the board is stale until
+a pass succeeds again.
+
 Examples:
 
     board
@@ -53,6 +60,7 @@ Examples:
     board ~/repos/workspace/agent/tickets --out /tmp/board.html
 """
 
+import ast
 import datetime
 import functools
 import hashlib
@@ -71,10 +79,10 @@ import urllib.parse
 from collections import Counter
 from itertools import takewhile
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn
 
 import markdown
 import tyro
@@ -85,6 +93,13 @@ import tracker  # the one parser of a ticket file, and the rules it refuses one 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "session-page"))
 from session_page import PAGE as SESSION_PAGE, sessions_directory  # noqa: E402  where a session's page lives
+
+# The code this process runs: every module it loaded from the skills beside this one, read once all
+# of them are in. A watcher compares it with what is on disk now (`watch`).
+LOADED = tuple(sorted({
+    Path(m.__file__).resolve() for m in list(sys.modules.values())
+    if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
+}))
 
 STATUS_SYMBOL = {"done": "✓", "review": "◉", "claimed": "⟳", "open": "○", "blocked": "⊘", "proposed": "◌"}
 
@@ -152,18 +167,23 @@ def main(args: Args) -> None:
     # itself, which is the repo that holds the agent one (`project`, below).
     repo = (args.repo or toplevel(tickets_root) or project(tickets_root)).resolve()
     out = (args.out or tickets_root.parent / "board.html").resolve()
-    try:
-        render(tickets_root, repo, out)
-    except tracker.Refused as refused:
-        sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
-    address = None
-    if args.open:
-        address = served(tickets_root.parent, out)
-        browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
-        subprocess.Popen([browser, address or str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # a watcher restarted on new code carries on where it was: its tab is open, and its page is drawn
+    # by its first pass, a tracker that refuses included
+    watching = taken(repo, out)
+    if not watching:
+        try:
+            render(tickets_root, repo, out)
+        except tracker.Refused as refused:
+            sys.exit(f"board: the tracker holds a ticket no reader can read:\n{refused}")
+        address = None
+        if args.open:
+            address = served(tickets_root.parent, out)
+            browser = os.environ.get("DIFFVIEW_BROWSER") or "xdg-open"
+            subprocess.Popen([browser, address or str(out)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        watching = Watch(Seen(), Briefer(repo, out), address)
     if args.watch:
         try:
-            watch(tickets_root, repo, out, address)
+            restart(watch(tickets_root, repo, out, watching), out)
         except KeyboardInterrupt:
             pass
 
@@ -189,10 +209,31 @@ def render(root: Path, repo: Path, out: Path) -> tuple[tuple[str, str], ...]:
     already read."""
     reading = read(root, repo, out)
     stamp = content_stamp(reading)
-    out.write_text(render_page(reading, stamp, out.name + ".stamp.js"))
-    Path(str(out) + ".stamp.js").write_text(f'window.__boardStamp = "{stamp}";\n')
+    out.write_text(render_page(reading, stamp, stamp_path(out).name))
+    write_stamp(out, stamp)
     print(out)
     return statuses(reading.tickets)
+
+
+def stamp_path(out: Path) -> Path:
+    return Path(str(out) + ".stamp.js")
+
+
+def write_stamp(out: Path, stamp: str, failing: "Failing | None" = None) -> None:
+    """The file an open tab polls: the stamp of the page it should be showing, which reloads it
+    when it is not the tab's, and the stale mark, null while the watcher's passes succeed. The mark
+    rides here and not on the page, since a pass that fails draws no page."""
+    stale = failing and STALE.format(since=f"{failing.since:%d %b %H:%M}", error=failing.error.splitlines()[0])
+    stamp_path(out).write_text(f"window.__boardStamp = {json.dumps(stamp)};\nwindow.__boardStale = {json.dumps(stale)};\n")
+
+
+def stamp_in(out: Path) -> str | None:
+    """The stamp the file beside `out` holds, which is the page's own; None where no render wrote one."""
+    try:
+        held = re.search(r'__boardStamp = "([^"]*)"', stamp_path(out).read_text())
+    except FileNotFoundError:
+        return None
+    return held and held.group(1)
 
 
 @dataclass(frozen=True)
@@ -243,35 +284,167 @@ def tracker_statuses(root: Path, repo: Path) -> tuple[tuple[str, str], ...]:
     return statuses(load_tickets(root, repo, root.parent))
 
 
-def watch(tickets_root: Path, repo: Path, out: Path, address: str | None) -> None:
+def watch(tickets_root: Path, repo: Path, out: Path, w: "Watch") -> "Watch":
     """Re-render on any change under the tracker, in every checkout that contributes to it, and on
     the three things that move on their own: the briefing a session has rewritten since the page
     was written, GitHub's answer running out of the lifetime it is cached for, and a run of the
-    model that came back with nothing. A page opened at `address` keeps a server answering there.
+    model that came back with nothing. A page opened at `w.address` keeps a server answering there.
 
     Those three are what the watcher is for as much as the tracker is. A pull request merged while
     the tracker sits still would otherwise show as open until someone touched a ticket, a briefing
     written minutes after the change that asked for it would not show at all, and a run that
-    answered nothing writes no file for anything else to notice."""
-    seen, session, retry = Seen(), Briefer(repo, out), 0.0
+    answered nothing writes no file for anything else to notice.
+
+    Returns once the code this process runs has changed on disk and the new code starts, with the
+    watcher as `restart` hands it on. New code that does not start is said once and tried again
+    on its next change, so a module saved half-written stops nothing."""
     while True:
+        w = turn(w, tickets_root, repo, out)
+        if (code := on_disk(w.code)) != w.code:
+            if starts():
+                return w
+            w = replace(w, code=code)
+        time.sleep(PASS)
+
+
+PASS = 2  # seconds between two passes of the watcher
+
+
+def on_disk(code: tuple) -> tuple:
+    """The files `code` names, each with its time and size as they are on disk now; a file gone has
+    neither."""
+    def read(path: Path) -> tuple:
         try:
-            if address and time.monotonic() >= retry:
-                back = kept(tickets_root.parent, out, address)
-                if back and back != address:
-                    print(f"board: the server came back at {back}; a tab open at {address} no longer follows the tracker", file=sys.stderr)
-                address, retry = back or address, 0.0 if back else time.monotonic() + SERVER_RETRY
-            seen = look(seen, session, tickets_root, repo, out)
-        except Exception as e:  # a file deleted mid-scan, a half-written ticket: the next pass sees the settled state
-            print(f"board: {e}; retrying", file=sys.stderr)
-        time.sleep(2)
+            st = path.stat()
+        except FileNotFoundError:
+            return (path, None, None)
+        return (path, st.st_mtime_ns, st.st_size)
+    return tuple(read(path) for path, *_ in code)
+
+
+CODE = on_disk(tuple((path,) for path in LOADED))  # the code this process runs, as it was on disk when loaded
+
+
+@dataclass(frozen=True)
+class Failing:
+    """A run of failed passes: when the first of them failed, and the error the latest failed on."""
+
+    since: datetime.datetime
+    error: str
+
+
+@dataclass(frozen=True)
+class Watch:
+    """The watcher between two passes: what one pass hands the next, and what a watcher restarting
+    on new code hands the process that runs it (`restart`). `retry` is when a server that did not
+    come back is tried again, on the monotonic clock; `failing` is the run of failed passes the
+    watcher is in, None while they succeed."""
+
+    seen: "Seen"
+    session: "Briefer"
+    address: str | None = None
+    retry: float = 0.0
+    failing: Failing | None = None
+    code: tuple = CODE
+
+
+def turn(w: Watch, tickets_root: Path, repo: Path, out: Path) -> Watch:
+    """One pass of the watcher, and what it leaves the next. A pass that fails is said once per
+    error it fails on, on the watcher's output and in the stale mark an open tab shows, rather than
+    every pass; the first pass to succeed after it says so once and takes the mark down."""
+    try:
+        if w.address and time.monotonic() >= w.retry:
+            back = kept(tickets_root.parent, out, w.address)
+            if back and back != w.address:
+                print(f"board: the server came back at {back}; a tab open at {w.address} no longer follows the tracker", file=sys.stderr)
+            w = replace(w, address=back or w.address, retry=0.0 if back else time.monotonic() + SERVER_RETRY)
+        w = replace(w, seen=look(w.seen, w.session, tickets_root, repo, out))
+    except Exception as e:  # a file deleted mid-scan, a half-written ticket, a ticket the tracker refuses
+        return replace(w, failing=failed(w.failing, e, out))
+    if w.failing:
+        print("board: passes succeed again, and the board follows the tracker", file=sys.stderr)
+        if (stamp := stamp_in(out)) is not None:
+            write_stamp(out, stamp)
+    return replace(w, failing=None)
+
+
+def failed(was: Failing | None, e: Exception, out: Path) -> Failing:
+    """The run of failed passes `was`, one pass longer. An error it has not said yet is printed
+    whole, and its first line goes into the stale mark beside the page; the same error again says
+    nothing, since a pass every two seconds would print it every two seconds for as long as it
+    stands."""
+    error = str(e).strip() or type(e).__name__
+    if was and was.error == error:
+        return was
+    failing = Failing(was.since if was else now(), error)
+    print(f"board: {error}\nboard: the board is stale until a pass succeeds; retrying every {PASS} s", file=sys.stderr)
+    if (stamp := stamp_in(out)) is not None:
+        write_stamp(out, stamp, failing)
+    return failing
+
+
+def starts() -> bool:
+    """Whether this script, as it is on disk now, starts: run the way a restart runs it, so a
+    dependency it has gained is installed here too. Where it does not, the last line it said is
+    printed."""
+    script = Path(__file__).resolve()
+    try:
+        done = subprocess.run([str(script), "--help"], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        said = str(e)
+    else:
+        if done.returncode == 0:
+            return True
+        said = ((done.stderr.strip() or done.stdout.strip()).splitlines() or [f"exit {done.returncode}"])[-1]
+    print(f"board: the code changed on disk and does not start, so the watcher keeps the code it runs: {said}", file=sys.stderr)
+    return False
+
+
+HANDOVER = "BOARD_HANDOVER"  # the variable naming the file a watcher restarting on new code leaves itself in
+
+
+def restart(w: Watch, out: Path) -> NoReturn:
+    """Run this script as it is on disk now in this process's place, on the arguments it was started
+    with, handing it the watcher: the address its tab is open at, the briefing schedule, and the
+    run of failed passes it is in. What it read of the tracker is not handed on: the new code reads
+    it again, and renders on its first pass. A briefing run in flight is lost with the thread it
+    runs in; the schedule counts it as a run that answered nothing, and tries again a cadence on."""
+    s = w.session
+    held = Path(str(out) + ".handover")
+    held.write_text(repr({
+        "address": w.address, "statuses": w.seen.statuses,
+        "told": s.told, "told_statuses": s.told_statuses,
+        "changed_at": s.changed_at and s.changed_at.isoformat(), "tried": s.tried and s.tried.isoformat(),
+        "failing": w.failing and (w.failing.since.isoformat(), w.failing.error),
+    }))
+    os.environ[HANDOVER] = str(held)
+    print("board: the code changed on disk; restarting on it", file=sys.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    script = Path(__file__).resolve()
+    os.execv(script, [str(script), *sys.argv[1:]])
+
+
+def taken(repo: Path, out: Path) -> Watch | None:
+    """The watcher a restart handed this process (`restart`), or None on a start of its own. Its
+    last pass's snapshot is no tracker's, so its first pass here renders."""
+    held = os.environ.pop(HANDOVER, None)
+    if not held:
+        return None
+    state = ast.literal_eval(Path(held).read_text())
+    Path(held).unlink()
+    when = lambda at: at and datetime.datetime.fromisoformat(at)  # noqa: E731
+    session = Briefer(repo, out, state["told"], state["told_statuses"], when(state["changed_at"]), when(state["tried"]))
+    failing = state["failing"] and Failing(when(state["failing"][0]), state["failing"][1])
+    return Watch(Seen(snapshot=(), statuses=state["statuses"]), session, state["address"], failing=failing)
 
 
 @dataclass(frozen=True)
 class Seen:
     """What the last pass of the watcher read, as a value to compare the next one against.
 
-    `snapshot` is the tracker as `tracker_snapshot` reads it and None before the first pass;
+    `snapshot` is the tracker as `tracker_snapshot` reads it, None before the first pass and () in a
+    watcher restarted on new code, which no tracker reads as, so that its first pass renders;
     `statuses` is every ticket's status as the page it drew shows it, which is what the briefing
     session is pinged about; `briefing` is when the cache file the rendered page holds was written;
     `asked` is when GitHub's answer beside the board was got, and `armed` the answer the render that
@@ -1024,6 +1197,8 @@ def read_transcript(path: Path, size: int) -> tuple[str, tuple[str, ...]]:
 
 # what a served page says once its polls have gone unanswered a while
 UNSERVED = "The server this page came from is not answering, so it stops following the tracker until it does."
+# what an open page says while every pass of the watcher fails (write_stamp)
+STALE = "This board is stale since {since}: every pass of its watcher fails, on {error}"
 
 
 @dataclass(frozen=True)
@@ -1813,7 +1988,7 @@ def render_page(reading: Reading, stamp: str, stamp_src: str) -> str:
     )
     named = [p.tree for p in board.pills if p.tree != ALONE]
     footmeta = f"{len(reading.tickets)} tickets · {len(named)} parent ticket{'' if len(named) == 1 else 's'} · rendered {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · refreshes on change"
-    notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True)]
+    notes = absences(reading) + [Absence("board-server", UNSERVED, hidden=True), Absence("board-stale", "", hidden=True)]
     return PAGE.substitute(
         overlay=OVERLAY, graphwin=json.dumps(GRAPH_WINDOW).replace("</", "<\\/"), viewjs=VIEW_JS, graphink=json.dumps(GRAPH_INK),
         project=html.escape(reading.project), chips="".join(map(pill_html, board.pills)),
@@ -3089,6 +3264,7 @@ ${viewjs}
   const served = location.protocol !== "file:";
   if (!served) document.querySelector("[data-absent=review-page-server]")?.removeAttribute("hidden");
   const gone = document.querySelector("[data-absent=board-server]");
+  const stale = document.querySelector("[data-absent=board-stale]");
   let unanswered = 0;
 
   // Reload only when the renderer wrote different content. fetch() is blocked on
@@ -3101,6 +3277,8 @@ ${viewjs}
       s.remove();
       unanswered = 0;
       gone.hidden = true;
+      stale.textContent = window.__boardStale || "";
+      stale.hidden = !window.__boardStale;
       if (window.__boardStamp !== document.body.dataset.stamp) { saveState(); location.reload(); }
       else setTimeout(poll, 5_000);
     };
