@@ -10,13 +10,14 @@ A blind test puts one decision between two options to the reader as pairs of sam
 same thing made under both options. The page shows every pair as a row of two cells, the sides
 shuffled per row on each load and unlabelled. The reader clicks the cell they prefer in any row, or
 leaves a row alone where they can't tell. Reveal labels every cell and shows the tally, the options,
-the agent's pick and its why, and one answer line to paste back into the session, naming each row's
+the agent's pick and its why where it made one, and one answer line to paste back into the session, naming each row's
 pick by its ref:
 
     Q7 blind: b 4/6 (2e7b14df 997135b9 aa054bd4 24eaab5b), a 1/6 (23e91ec6), unpicked 1/6 (84c94f65)
 
-The pairs file is JSON. `options` are short names for the two sides, `ref` names a pair in the
-answer line (its row number where it has none), and every pair holds both sides:
+The pairs file is JSON. `options` are short names for the two sides; `pick` and `why` are the
+agent's, both left out where it has no pick; `ref` names a pair in the answer line (its row number
+where it has none), and every pair holds both sides:
 
     {"question": "Q7", "title": "Commit subject style",
      "options": {"a": "outcome-phrased", "b": "conventional commits"},
@@ -24,7 +25,7 @@ answer line (its row number where it has none), and every pair holds both sides:
      "pairs": [{"ref": "2e7b14df", "a": "...", "b": "..."}, ...]}
 
 Exits 1, naming every problem, on a file that lacks a field, offers sides other than a and b, picks
-neither, or holds a pair without both sides.
+something other than a side, gives a pick without its why, or holds a pair without both sides.
 
 Examples:
 
@@ -42,7 +43,7 @@ import tyro
 
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE.parent / "house-style" / "tokens.css"
-FIELDS = ("question", "title", "options", "pick", "why", "pairs")
+FIELDS = ("question", "title", "options", "pairs")
 
 
 @dataclass
@@ -75,8 +76,10 @@ def check(data: object) -> list[str]:
     options, pairs = data["options"], data["pairs"]
     if not isinstance(options, dict) or set(options) != {"a", "b"}:
         problems.append("options holds exactly a and b")
-    if data["pick"] not in ("a", "b"):
-        problems.append("pick is a or b")
+    if data.get("pick") not in ("a", "b", None):
+        problems.append("pick is a or b, or left out")
+    elif data.get("pick") and not data.get("why"):
+        problems.append("a pick comes with its why")
     if not isinstance(pairs, list) or not pairs:
         problems.append("pairs is a list of at least one pair")
     else:
@@ -281,7 +284,7 @@ $("reveal-button").addEventListener("click", () => {
     if (DATA.pick === side) li.append(Object.assign(document.createElement("span"), { className: "v-meta", textContent: " · my pick" }))
     $("options").append(li)
   }
-  $("why").textContent = `Why ${DATA.pick}: ${DATA.why}`
+  $("why").textContent = DATA.pick ? `Why ${DATA.pick}: ${DATA.why}` : "I made no pick."
 
   // One line, so it pastes into a prompt intact, each group's rows in the pairs file's order.
   const names = (chose) => rows.filter((r) => r.chose === chose).map((r) => r.name).join(" ")

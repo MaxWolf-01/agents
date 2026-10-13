@@ -55,7 +55,7 @@ def test_a_malformed_pairs_file_is_refused_with_every_problem(tmp_path: Path) ->
     bad = PAIRS | {"options": {"a": "x", "c": "y"}, "pick": "c", "pairs": [{"a": "only one side"}]}
     done = render(tmp_path, bad)
     assert done.returncode == 1
-    for problem in ("options holds exactly a and b", "pick is a or b", "pair 1 lacks a or b"):
+    for problem in ("options holds exactly a and b", "pick is a or b, or left out", "pair 1 lacks a or b"):
         assert problem in done.stderr
     assert not (tmp_path / "blind-q4.html").exists()
 
