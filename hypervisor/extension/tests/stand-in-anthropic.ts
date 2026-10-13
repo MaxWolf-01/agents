@@ -15,9 +15,9 @@ export const USAGE = { input_tokens: 17, output_tokens: 5, cache_read_input_toke
 
 /**
  * The Anthropic messages endpoint, answering each request with what `answer` makes of it, as a stream of the events
- * the real one sends. Every request is kept in `requests`, in order.
+ * the real one sends, with the headers `headers` gives. Every request is kept in `requests`, in order.
  */
-export async function standInAnthropic(answer: (request: Request) => Reply) {
+export async function standInAnthropic(answer: (request: Request) => Reply, headers: () => Record<string, string> = () => ({})) {
 	const requests: Request[] = [];
 	const server = http.createServer((req, res) => {
 		const chunks: Buffer[] = [];
@@ -27,7 +27,7 @@ export async function standInAnthropic(answer: (request: Request) => Reply) {
 			requests.push(request);
 			const reply = answer(request);
 			setTimeout(() => {
-				res.writeHead(200, { "content-type": "text/event-stream" });
+				res.writeHead(200, { ...headers(), "content-type": "text/event-stream" });
 				for (const [event, data] of events(reply, requests.length)) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 				res.end();
 			}, reply.delay ?? 0);

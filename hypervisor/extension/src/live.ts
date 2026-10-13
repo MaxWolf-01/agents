@@ -5,10 +5,12 @@
 // reads it; a ping reaches OptChat as a report and starts a turn, as does what wait and a background delegate post.
 // Either way memory logs it as `work`, not as max's. Each message max types is saved as a numbered file and reaches
 // the hypervisor with that file's path under it, so it passes a message on by path. `hv` loads this extension before
-// OptChat, whose input handler journals the message as it will arrive, path line included.
+// OptChat, whose input handler journals the message as it will arrive, path line included. `/explore` runs explore steps
+// on the same profile (`exploring.ts`).
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
+import { exploring, usageLog } from "./exploring.ts";
 import { unreadLine, waiting } from "./inbox.ts";
 import { fromEnvironment } from "./index.ts";
 import { append } from "./journal.ts";
@@ -27,8 +29,8 @@ const STATUS_CHANNEL = "optchat:status";
 /** How often the spawned sessions and the inbox are looked at. */
 const WATCH_MS = 3000;
 
-/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed. */
-export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
+/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed; `explore.jsonl`, what explore runs found. `config.usage` is OptChat's usage log for the profile, which an explore run's token cap reads. */
+export function live(config: SessionConfig & { usage?: string }): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		const work = background(config.store);
 		const tools = [...sessionTools(config, work), inboxTool(config.store), waitTool(work), ...exploreTools(config)];
@@ -67,8 +69,9 @@ export function live(config: SessionConfig): (pi: ExtensionAPI) => void {
 			// What still runs posts that it stopped, which the next session's watch delivers.
 			await work.stop();
 		});
+		exploring(pi, { store: config.store, usage: config.usage });
 	};
 }
 
 /** The extension as pi loads it (`pi -e`), configured as `hv` sets the environment. */
-export default live(fromEnvironment());
+export default live({ ...fromEnvironment(), usage: usageLog() });
