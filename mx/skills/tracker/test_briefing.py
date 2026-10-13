@@ -201,6 +201,25 @@ def test_a_ping_the_session_does_not_answer_leaves_the_cache_where_it_is(
     assert briefing.SILENT, "a run that answered nothing said nothing of itself"
 
 
+@pytest.mark.parametrize("run", ["first", "ping"])
+def test_a_tracker_state_or_change_note_past_the_argument_limit_reaches_the_model_whole(
+    run: str, tmp_path: Path, path_with: Callable[..., Path]
+) -> None:
+    """helferline's briefing went stale when its state outgrew the 128 KiB Linux takes in one
+    command-line argument (MAX_ARG_STRLEN): the run failed with E2BIG before claude started. Each
+    line differs, so a prompt cut short or reordered on the way does not read back equal."""
+    received = tmp_path / "stdin"
+    path_with("claude", f"cat > {received}\n" + answered("Two builds wait on your ruling."))
+    told = "".join(f"- agent/tickets/ticket-{i}.md: status ready, blocked by nothing\n" for i in range(4000))
+    assert len(told.encode()) > 128 * 1024
+    if run == "first":
+        said = briefing.first(told, tmp_path, START)
+    else:
+        said = ping(Briefing("where things stand", START, "abc-123", START, START, 3), told, tmp_path, START + timedelta(minutes=20))
+    assert said and said.text == "Two builds wait on your ruling.", briefing.SILENT
+    assert told in received.read_text(), "the prompt did not reach the model whole"
+
+
 def test_the_cache_file_reads_back_what_it_was_written_with(tmp_path: Path) -> None:
     briefing = Briefing("two builds wait on you", START, "abc-123", START, START + IDLE, 3)
     path = cache_path(tmp_path / "board.html")

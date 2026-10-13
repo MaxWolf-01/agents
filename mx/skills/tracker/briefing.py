@@ -144,7 +144,7 @@ def first(state: str, repo: Path, now: datetime) -> Briefing | None:
     `now` is the moment the run starts, not the moment it answers: the session's last activity is
     what a change is read as told or untold against (on_change), and a change arriving while the
     repo is being explored is one the session has not heard."""
-    answer = ask(["--system-prompt", SYSTEM, "-p", state], repo)
+    answer = ask(["--system-prompt", SYSTEM], state, repo)
     if not answer:
         return None
     return Briefing(answer["result"].strip(), now, answer["session_id"], now, now, 0)
@@ -153,7 +153,7 @@ def first(state: str, repo: Path, now: datetime) -> Briefing | None:
 def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | None:
     """The cache after the session that wrote the briefing is told what changed: its own rewrite, or
     the briefing it left standing, and either way one more ping against its retirement."""
-    answer = ask(["--resume", cached.session, "-p", CHANGED.format(note=note)], repo)
+    answer = ask(["--resume", cached.session], CHANGED.format(note=note), repo)
     if not answer:
         return None
     said = answer["result"].strip()
@@ -170,9 +170,12 @@ def ping(cached: Briefing, note: str, repo: Path, now: datetime) -> Briefing | N
     )
 
 
-def ask(args: list[str], repo: Path) -> dict | None:
-    """One `claude -p` run in `repo`, through `run-log`: what it answered and the session it answered
-    in, or None where it did not answer at all.
+def ask(args: list[str], prompt: str, repo: Path) -> dict | None:
+    """One `claude -p` run in `repo` on `prompt`, through `run-log`: what it answered and the session
+    it answered in, or None where it did not answer at all.
+
+    The prompt goes on stdin, which `run-log` hands on to claude: as an argument, a tracker's state
+    past 128 KiB is more than Linux takes in one (MAX_ARG_STRLEN), and the run never starts.
 
     The board renders without the model, so every way this comes back empty is one the caller goes
     on from: no claude on the machine, no auth, no network, a run past RUN_LIMIT, an error. Each of
@@ -188,11 +191,11 @@ def ask(args: list[str], repo: Path) -> dict | None:
     try:
         done = subprocess.run(
             [str(RUN_LOG), "run", "--site", "briefing", "--json", "--timeout", str(RUN_LIMIT), "--",
-             COMMAND, *args, "--model", MODEL, "--effort", EFFORT,
+             COMMAND, "-p", *args, "--model", MODEL, "--effort", EFFORT,
              "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
              "--settings", '{"autoMemoryEnabled": false}',
              "--allowedTools", TOOLS, "--disallowedTools", DENIED],
-            cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
+            input=prompt, cwd=repo, capture_output=True, text=True, timeout=RUN_LIMIT + 30,  # run-log's own limit ends the run and writes its line; this one is for a run-log that hangs
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         quiet(str(e))
