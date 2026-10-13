@@ -36,17 +36,19 @@ PAIRS = {
 
 
 def render(tmp_path: Path, data: object) -> subprocess.CompletedProcess:
-    pairs = tmp_path / "pairs.json"
+    pairs = tmp_path / "blind-q4.json"
     pairs.write_text(json.dumps(data))
     return subprocess.run([str(SCRIPT), str(pairs), "--session", "0123456789abcdef"],
                           capture_output=True, text=True, timeout=120)
 
 
-def test_a_pairs_file_renders_beside_itself(tmp_path: Path) -> None:
+def test_a_pairs_file_renders_beside_itself_under_its_own_name(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("the ticket's own page")
     done = render(tmp_path, PAIRS)
     assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == str(tmp_path / "index.html")
-    assert "Q4 · Error message style" in (tmp_path / "index.html").read_text()
+    assert done.stdout.strip() == str(tmp_path / "blind-q4.html")
+    assert "Q4 · Error message style" in (tmp_path / "blind-q4.html").read_text()
+    assert (tmp_path / "index.html").read_text() == "the ticket's own page"
 
 
 def test_a_malformed_pairs_file_is_refused_with_every_problem(tmp_path: Path) -> None:
@@ -55,7 +57,7 @@ def test_a_malformed_pairs_file_is_refused_with_every_problem(tmp_path: Path) ->
     assert done.returncode == 1
     for problem in ("options holds exactly a and b", "pick is a or b", "pair 1 lacks a or b"):
         assert problem in done.stderr
-    assert not (tmp_path / "index.html").exists()
+    assert not (tmp_path / "blind-q4.html").exists()
 
 
 PROBE = r"""
@@ -70,6 +72,9 @@ with sync_playwright() as pw:
     serve(context, default_root())
     page = context.new_page()
     page.goto(sys.argv[1])
+    if sys.argv[2] == "first-column":
+        print(json.dumps(page.evaluate("[...document.querySelectorAll('.row')].map((r) => r.querySelector('.cell').dataset.side)")))
+        sys.exit()
     cell = lambda text: page.locator(".cell", has_text=text)
     for text in ("ENOENT: file", "EADDRINUSE: port", "the disk is full", "access was refused", "access was refused"):
         cell(text).click()
@@ -81,22 +86,35 @@ with sync_playwright() as pw:
 """
 
 
+def probe(tmp_path: Path, data: dict, scenario: str) -> object:
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to drive the page with")
+    assert render(tmp_path, data).returncode == 0
+    done = subprocess.run(["uv", "run", "--quiet", "--with", "playwright", "python", "-", (tmp_path / "blind-q4.html").as_uri(), scenario],
+                          input=PROBE, capture_output=True, text=True, timeout=180, env=os.environ | {"PYTHONPATH": str(SHOW)})
+    assert done.returncode == 0, done.stderr[-2000:]
+    return json.loads(done.stdout)
+
+
 @pytest.mark.full_path
 def test_the_page_hides_the_sides_until_the_reveal_and_names_each_rows_pick(tmp_path: Path) -> None:
     """Rows r1 and r2 picked b, r3 picked a, and the fourth, which has no ref, picked and then
     unpicked, so it is named by its row number."""
-    for tool in ("uv", "chromium"):
-        if not shutil.which(tool):
-            pytest.skip(f"no {tool} to drive the page with")
-    assert render(tmp_path, PAIRS).returncode == 0
-    done = subprocess.run(["uv", "run", "--quiet", "--with", "playwright", "python", "-", (tmp_path / "index.html").as_uri()],
-                          input=PROBE, capture_output=True, text=True, timeout=180, env=os.environ | {"PYTHONPATH": str(SHOW)})
-    assert done.returncode == 0, done.stderr[-2000:]
-    out = json.loads(done.stdout)
+    out = probe(tmp_path, PAIRS, "picks")
     for revealing in ("plain sentence", "code first", "my pick", "a sentence reads aloud"):
         assert revealing not in out["before"]
     assert out["answer"] == "Q4 blind: b 2/4 (r1 r2), a 1/4 (r3), unpicked 1/4 (4)"
     assert all(label == f"{side} · {PAIRS['options'][side]}" for side, label in out["labels"])
+
+
+
+@pytest.mark.full_path
+def test_the_sides_are_shuffled_per_row(tmp_path: Path) -> None:
+    """A column that always held the same side would give the side away. Over 40 rows both sides
+    lead some row, unless the shuffle is broken or a 2^-39 chance comes up."""
+    many = PAIRS | {"pairs": [{"a": f"plain {i}", "b": f"code {i}"} for i in range(40)]}
+    assert set(probe(tmp_path, many, "first-column")) == {"a", "b"}
 
 
 if __name__ == "__main__":

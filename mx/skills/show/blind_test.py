@@ -3,7 +3,8 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro"]
 # ///
-"""Render a blind test from a pairs file: `index.html`, written beside the file, its path printed.
+"""Render a blind test from a pairs file: an HTML page beside it under the same name (`blind-q7.json`
+makes `blind-q7.html`), its path printed.
 
 A blind test puts one decision between two options to the reader as pairs of samples, each pair the
 same thing made under both options. The page shows every pair as a row of two cells, the sides
@@ -27,7 +28,7 @@ neither, or holds a pair without both sides.
 
 Examples:
 
-    blind-test agent/show/commit-style/blind/pairs.json
+    blind-test agent/show/commit-style/blind-q7.json
 """
 
 import html
@@ -59,7 +60,7 @@ def main(args: Args) -> None:
         sys.exit(f"{args.pairs}: {e}")
     if problems := check(data):
         sys.exit(f"{args.pairs}: " + "; ".join(problems))
-    out = args.pairs.resolve().parent / "index.html"
+    out = args.pairs.resolve().with_suffix(".html")
     out.write_text(page(data, args.session))
     print(out)
 
@@ -263,9 +264,14 @@ $("reveal-button").addEventListener("click", () => {
   const top = count.b > count.a ? "b" : "a", other = top === "a" ? "b" : "a"
 
   const rowsOf = (k) => `${k} row${k === 1 ? "" : "s"}`
-  let tally = `You picked ${top} in ${rowsOf(count[top])} of ${n}`
-  if (count[other]) tally += `, ${other} in ${rowsOf(count[other])}`
-  if (unpicked) tally += `, and left ${rowsOf(unpicked)} unpicked`
+  let tally
+  if (!count.a && !count.b) tally = `You left all ${rowsOf(n)} unpicked`
+  else if (count.a === count.b) tally = `You picked a and b in ${rowsOf(count.a)} each, of ${n}`
+  else {
+    tally = `You picked ${top} in ${rowsOf(count[top])} of ${n}`
+    if (count[other]) tally += `, ${other} in ${rowsOf(count[other])}`
+  }
+  if (unpicked && (count.a || count.b)) tally += `, and left ${rowsOf(unpicked)} unpicked`
   $("tally").textContent = tally + "."
 
   for (const side of ["a", "b"]) {
