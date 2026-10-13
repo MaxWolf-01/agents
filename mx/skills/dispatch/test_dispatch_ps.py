@@ -708,8 +708,8 @@ def follow(tmux: dict[str, str]) -> Iterator:
     """Starts a Following; every one started is stopped at the end, and anything left of it killed."""
     started: list[Following] = []
 
-    def start(home: Path, hosts: str = "local") -> Following:
-        started.append(Following(tmux, home, hosts))
+    def start(home: Path, hosts: str = "local", **env: str) -> Following:
+        started.append(Following({**tmux, **env}, home, hosts))
         return started[-1]
 
     yield start
@@ -891,6 +891,34 @@ def test_a_stopped_follow_leaves_nothing_running(tmp_path: Path, follow):
 
     f.stop()
     assert until(lambda: not f.left(), within=10), f.left()
+
+
+@pytest.mark.full_path
+def test_a_host_the_register_comes_to_publish_is_followed(tmp_path: Path, follow):
+    """dispatch-ps-follow P3: ps asks for the hosts on every run, and a follow asks again every half
+    minute, so a host a wave adds is drawn as ps prints it."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
+    f = follow(home)
+    assert "hypofuzz-default" in f.shows(lambda t: "hypofuzz-default" in t)
+    (home / "bin" / "worker-hosts").write_text("#!/usr/bin/env bash\nprintf '%s\\n' local agent@far\n")
+    drawn, printed = f.matches_ps(within=45)
+    assert "far-one" in drawn
+    assert drawn == printed
+
+
+@pytest.mark.full_path
+def test_a_table_taller_than_the_screen_keeps_its_header_and_tally(tmp_path: Path, follow):
+    """Printed whole, it would scroll on every draw. LINES is the height with no terminal."""
+    home = tmp_path / "home"
+    for n in range(10):
+        aged(home / ROOT, "agents", f"ticket-{n}", 7200)
+    f = follow(home, LINES="8")
+    printed = f.printed().splitlines()
+    assert len(printed) == 13, "a header, ten rows, a blank line and the tally"
+    drawn = f.shows(lambda t: "ticket-" in t).splitlines()
+    assert drawn == [*printed[:5], "(6 more rows than the screen holds)", *printed[-2:]]
 
 
 if __name__ == "__main__":

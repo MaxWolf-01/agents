@@ -1277,14 +1277,17 @@ table() {
 # minute, which costs no login: a host that joins gets a connection, and one
 # that leaves loses its own.
 follow() {
-    local h now out shown= asked=-30
+    local h now out shown= asked=$SECONDS
+    fleet_hosts
     frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
     declare -gA follower=()
     trap 'exit 0' INT TERM
     trap 'kill "${follower[@]}" 2>/dev/null; wait; rm -rf "$frames"' EXIT
+    follow_fleet
     printf '\033[H\033[2J'
     while :; do
         if [ $((SECONDS - asked)) -ge 30 ]; then
+            reread_fleet
             follow_fleet
             asked=$SECONDS
         fi
@@ -1306,14 +1309,16 @@ follow() {
     done
 }
 
-# Reads the hosts again, and starts or stops a follow_host for each that came
-# or went.
+# Starts a follow_host for each host in `hosts` that has none, and stops the
+# one of each host that left. A register that failed (`rows` then holds its
+# `incomplete` row) has left no host: its hosts are kept until it answers.
 follow_fleet() {
     local h
-    fleet_hosts
     for h in "${!follower[@]}"; do
+        [ ${#rows[@]} -eq 0 ] || break
         printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
         kill "${follower[$h]}" 2>/dev/null
+        wait "${follower[$h]}" 2>/dev/null
         unset 'follower[$h]'
         rm -f "$frames/$h.rows"
     done
@@ -1322,6 +1327,15 @@ follow_fleet() {
         follow_host "$h" &
         follower[$h]=$!
     done
+}
+
+# fleet_hosts again, in a subshell, so a read that dies keeps the hosts and the
+# rows already there and ends no follow.
+reread_fleet() {
+    local fresh
+    fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}") || return 0
+    mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+    mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
 }
 
 # Cuts `out` to `lines`, keeping its header and its tally, since a table taller
