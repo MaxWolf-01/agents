@@ -47,8 +47,11 @@
 #                 their runs; a squashed or rebased PR of its branch is read as
 #                 `review` reads one. Exit 1: not merged yet, or the tracker
 #                 refused one, and nothing is written.
-# ps [--color]    every worker on every host, for a human; the orchestrator's
+# ps [--color] [--follow]
+#                 every worker on every host, for a human; the orchestrator's
 #                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
+#                 --follow keeps the table on screen, redrawn as the hosts
+#                 change, over one ssh login per host, until Ctrl-C.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
@@ -210,9 +213,10 @@ scratch_dir() { # <host>
 # never speak again. The connect timeout is for a host that is off, which `ps`
 # asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
 # the background, where a passphrase prompt would be several on one terminal.
+ssh_options=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(remote_line "$@")"; fi
+    if [ "$h" = local ]; then "$@"; else ssh "${ssh_options[@]}" "$h" "$(remote_line "$@")"; fi
 }
 
 # ssh joins its arguments with spaces into one line for the remote login shell,
@@ -1097,12 +1101,10 @@ fleet() { # <published>
         END { for (i = 1; i <= NR; i++) if (!(mine && host[i] == "local")) print host[i] }'
 }
 
-# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
-# front), and `missing`, what went unread. Every scratch dir on every host is
-# read, whichever repo and branch it is for, so ps, attach and peek run from any
-# branch.
-gather() {
-    local published= register_error= i rc
+# Sets `hosts`, every host the register publishes and this repo's runs name, and
+# starts `rows` and `missing` off with the register's failure, if it failed.
+fleet_hosts() {
+    local published= register_error=
     self=$(id -un)@$(uname -n)
     # Asked here and not inside fleet: output captured from a function runs in a
     # subshell, and a failure noticed there would not survive the trip back.
@@ -1114,12 +1116,33 @@ gather() {
     rows=() missing=()
     if [ -n "$register_error" ]; then
         missing+=(worker-hosts)
-        rows+=("worker-hosts	-	-	incomplete	-	-	-	n	$register_error")
+        rows+=("$(host_row worker-hosts incomplete "$register_error")")
     fi
     if [ ${#hosts[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
         die "no worker host: \`worker-hosts --targets\` publishes none and this repo has run on none"
     fi
+}
+
+# A row that stands for a whole host, or the register, rather than one worker.
+host_row() { # <host> <state> <detail>
+    printf '%s\t-\t-\t%s\t-\t-\t-\tn\t%s\n' "$1" "$2" "$3"
+}
+
+# The row of a host whose dispatch-ps ended with <status> before it answered.
+unanswered() { # <host> <status>
+    local why="dispatch-ps failed there (exit $2)"
+    [ "$2" -ne 255 ] || why="no answer from the host (ssh exit 255)"
+    host_row "$1" unreachable "$why"
+}
+
+# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
+# front), and `missing`, what went unread. Every scratch dir on every host is
+# read, whichever repo and branch it is for, so ps, attach and peek run from any
+# branch.
+gather() {
+    local i rc
+    fleet_hosts
     # One round trip per host, all at once: a host that is off costs its connect
     # timeout, and costs it alone. Global, since the trap fires after this
     # returns; removed below as well, before an attach execs the trap away.
@@ -1138,8 +1161,7 @@ gather() {
         [[ $rc =~ ^[0-9]+$ ]] || rc=255
         if [ "$rc" -ne 0 ]; then
             missing+=("${hosts[$i]}")
-            [ "$rc" -eq 255 ] && why="no answer from the host (ssh exit 255)" || why="dispatch-ps failed there (exit $rc)"
-            rows+=("${hosts[$i]}	-	-	unreachable	-	-	-	n	$why")
+            rows+=("$(unanswered "${hosts[$i]}" "$rc")")
             continue
         fi
         [ -s "$answers/$i" ] &&
@@ -1154,29 +1176,47 @@ gather() {
 # One row per worker under a header naming the columns, then a count per state, running and
 # exited always there, zero or not. A host that did not answer is an `unreachable` row, a scratch
 # dir whose probe failed an `unreadable` one, a `worker-hosts --targets` that failed an
-# `incomplete` one. In color on a terminal, or with --color, which `watch -c dispatch ps --color`
-# needs; NO_COLOR turns it off.
+# `incomplete` one. In color on a terminal, or with --color; NO_COLOR turns it off.
 ps_() {
+    local following=
     color=
     [ -t 1 ] && color=1
-    case ${1:-} in
-        --color) color=1 ;;
-        "")      ;;
-        *)       die "ps takes --color and nothing else" ;;
-    esac
+    for arg; do
+        case $arg in
+            --color)  color=1 ;;
+            --follow) following=1 ;;
+            *)        die "ps takes --color and --follow and nothing else" ;;
+        esac
+    done
     [ -z "${NO_COLOR:-}" ] || color=
+    [ -z "$following" ] || follow
     gather
-    [ ${#rows[@]} -gt 0 ] || { echo "no workers"; return 0; }
-    # Cut to the terminal's width, so a long worklog line keeps the table a
-    # table. `watch` runs this with no terminal and the width in COLUMNS, which
-    # a shell does not export; piped anywhere else a row goes out whole.
-    cols=0
+    measure
+    { [ ${#rows[@]} -eq 0 ] || printf '%s\n' "${rows[@]}"; } | table
+    # A table missing a host is no clean reading, and a caller should not have
+    # to spot the row to know it.
+    [ ${#missing[@]} -eq 0 ]
+}
+
+# Sets `cols`, the width the table is cut to, so a long worklog line keeps the
+# table a table: the terminal's, or under `watch`, which runs this with no
+# terminal, COLUMNS, which a shell does not export. Piped anywhere else, 0: a
+# row goes out whole. Sets `lines` the same way, the height a follow fits into.
+measure() {
+    cols=0 lines=0
     if [ -t 1 ]; then
         cols=$(tput cols 2>/dev/null || echo 0)
-    elif [[ ${COLUMNS:-} =~ ^[0-9]+$ ]]; then
-        cols=$COLUMNS
+        lines=$(tput lines 2>/dev/null || echo 0)
+    else
+        [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && cols=$COLUMNS
+        [[ ${LINES:-} =~ ^[0-9]+$ ]] && lines=$LINES
     fi
-    printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" -v color="$color" '
+}
+
+# The table ps prints, from gather's rows on stdin, cut to `cols` and painted
+# when `color` is set.
+table() {
+    sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" -v color="$color" '
         function ago(s) {
             if (s !~ /^[0-9]+$/) return "-"
             if (s < 60) return s "s"
@@ -1197,6 +1237,7 @@ ps_() {
           stale[n] = $4 == "running" && $6 ~ /^[0-9]+$/ && $6 >= 900
           count[$4]++; if (!(($4) in order)) order[$4] = ++states }
         END {
+            if (n == 0) { print "no workers"; exit }
             for (k = 0; k <= n; k++) for (c = 1; c <= 6; c++)
                 if (length(cell[k, c]) > w[c]) w[c] = length(cell[k, c])
             for (k = 0; k <= n; k++) {
@@ -1214,8 +1255,8 @@ ps_() {
                 print paint(pad[1] "  " pad[2] "  " pad[3] "  ", quiet) paint(pad[4], hue(state)) "  " \
                       paint(pad[5], quiet) "  " paint(pad[6], stale[k] ? "33" : quiet) "  " paint(detail, quiet)
             }
-            # Running and exited always first, zero or not, so a refresh under
-            # watch keeps each number where it was; the rest as they appear.
+            # Running and exited always first, zero or not, so a redraw keeps
+            # each number where it was; the rest as they appear.
             for (s in order) by[order[s]] = s
             tally = ""
             for (i = 1; i <= states; i++)
@@ -1223,9 +1264,139 @@ ps_() {
             print ""
             print tally
         }'
-    # A table missing a host is no clean reading, and a caller should not have
-    # to spot the row to know it.
-    [ ${#missing[@]} -eq 0 ]
+}
+
+# ps --follow: one connection per host, with dispatch-ps --follow at the other
+# end, and the table drawn again every second from each host's latest frame,
+# whose ages count on from the second it arrived. A host that has not answered
+# yet is a `connecting` row. The hosts are read again every half minute, which
+# costs no login.
+follow() {
+    local h now out fresh shown= asked=$SECONDS
+    fleet_hosts
+    frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
+    declare -gA follower=()
+    trap 'exit 0' INT TERM
+    trap 'kill "${follower[@]}" 2>/dev/null; wait; rm -rf "$frames"' EXIT
+    follow_fleet
+    printf '\033[H\033[2J'
+    while :; do
+        if [ $((SECONDS - asked)) -ge 30 ]; then
+            # In a subshell, so a read that dies keeps the hosts already there
+            # instead of ending the follow.
+            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
+                mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+                mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
+            fi
+            follow_fleet
+            asked=$SECONDS
+        fi
+        measure
+        printf -v now '%(%s)T' -1
+        out=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
+                for h in "${hosts[@]}"; do
+                    cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
+                done } |
+            awk -F'\t' -v OFS='\t' -v now="$now" '
+                $1 ~ /^[0-9]+$/ { if ($6 ~ /^[0-9]+$/) $6 += now - $1; if ($7 ~ /^[0-9]+$/) $7 += now - $1 }
+                { sub(/^[^\t]*\t/, ""); print }' | table)
+        fit
+        # Over what was there, each line cleared to its end, so a redraw
+        # does not flicker.
+        [ "$out" = "$shown" ] || printf '\033[H%s\033[K\033[J' "${out//$'\n'/$'\033[K\n'}"
+        shown=$out
+        sleep 1 & wait $!
+    done
+}
+
+# Starts a follow_host for each host in `hosts` that has none, and stops the
+# one of each host that left. A register that failed (its `incomplete` row is
+# in `rows`) has left no host.
+follow_fleet() {
+    local h
+    for h in "${!follower[@]}"; do
+        [ ${#rows[@]} -eq 0 ] || break
+        printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
+        kill "${follower[$h]}" 2>/dev/null
+        wait "${follower[$h]}" 2>/dev/null
+        unset 'follower[$h]'
+        rm -f "$frames/$h.rows"
+    done
+    for h in "${hosts[@]}"; do
+        [ -n "${follower[$h]:-}" ] && continue
+        follow_host "$h" &
+        follower[$h]=$!
+    done
+}
+
+# Cuts `out` to `lines`, keeping its header and its tally, since a table taller
+# than the screen would scroll on every draw.
+fit() {
+    local -a drawn
+    [ "$lines" -ge 5 ] || return 0
+    mapfile -t drawn <<<"$out"
+    [ ${#drawn[@]} -gt "$lines" ] || return 0
+    out=$(printf '%s\n' "${drawn[@]:0:lines-3}"
+          echo "($((${#drawn[@]} - lines + 1)) more rows than the screen holds)"
+          printf '%s\n' "${drawn[@]: -2}")
+}
+
+# One host's connection, opened again with backoff each time it drops; a TERM
+# stops it and the connection with it. Its rows are <frames>/<host>.rows.
+follow_host() { # <host>
+    local conn pid= opened rc delay=2 pipe=$frames/$1.pipe
+    trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
+    unset TMUX
+    # A plain command, so the pid is the connection's own and the trap's kill
+    # reaches it.
+    if [ "$(via "$1")" = local ]; then
+        conn=(bash -s "$state_root" --follow)
+    else
+        conn=(ssh "${ssh_options[@]}" "$1" "$(remote_line bash -s "$state_root" --follow)")
+    fi
+    # Left behind by a follower of the same host that was stopped.
+    rm -f "$pipe"
+    if ! mkfifo "$pipe"; then
+        host_row "$1" unreachable "no pipe to read it through at $pipe" | publish "$1"
+        exit 1
+    fi
+    while :; do
+        opened=$SECONDS
+        "${conn[@]}" < "$skill/dispatch-ps" > "$pipe" &
+        pid=$!
+        frames_of "$1" < "$pipe"
+        wait "$pid"
+        rc=$? pid=
+        unanswered "$1" "$rc" | publish "$1"
+        [ $((SECONDS - opened)) -lt 60 ] || delay=2
+        sleep "$delay" &
+        pid=$!
+        wait "$pid"
+        pid= delay=$((delay < 30 ? delay * 2 : 60))
+    done
+}
+
+# Reads <host>'s frames (dispatch-ps --follow) on stdin, and publishes each as
+# it ends.
+frames_of() { # <host>
+    local line kept=()
+    while IFS= read -r line; do
+        case $line in
+            .)  ;;
+            "") for line in "${kept[@]}"; do printf '%s\t%s\n' "$1" "$line"; done | publish "$1"
+                kept=() ;;
+            *)  kept+=("$line") ;;
+        esac
+    done
+}
+
+# Replaces <host>'s rows with the rows on stdin, each stamped with this second,
+# in one rename so a draw never reads half of them.
+publish() { # <host>
+    local now line
+    printf -v now '%(%s)T' -1
+    while IFS= read -r line; do printf '%s\t%s\n' "$now" "$line"; done > "$frames/$1.tmp"
+    mv "$frames/$1.tmp" "$frames/$1.rows"
 }
 
 # Sets r_host, r_base, r_ticket, r_state and r_session from the one row
