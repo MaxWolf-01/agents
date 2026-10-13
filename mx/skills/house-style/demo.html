@@ -49,7 +49,10 @@
     .role .spec { display: flex; gap: 1rem; }
 
     /* Parts */
-    .button { display: inline-flex; align-items: center; height: 2.5rem; padding: 0 1rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--body); font: inherit; cursor: pointer; transition: color 150ms, border-color 150ms, background-color 150ms; }
+    /* Newsreader sets its letters high in the line box, so the top padding
+       lowers them onto the button's centre; a project that swaps the serif
+       re-measures it. */
+    .button { display: inline-flex; align-items: center; height: 2.25rem; padding: 0.15em 0.875rem 0; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--body); font: 400 0.9em/1 var(--font-body); cursor: pointer; transition: color 150ms, border-color 150ms, background-color 150ms; }
     .button:hover { border-color: var(--accent); color: var(--accent); }
     .button.solid { background: var(--accent); border-color: var(--accent); color: var(--ground); }
     .button.solid:hover { background: color-mix(in srgb, var(--accent) 85%, var(--strong)); border-color: transparent; }
@@ -66,6 +69,10 @@
     .input:focus-visible { border-color: var(--accent); }
     .input::placeholder { color: var(--muted); }
     textarea.input { min-height: 6rem; resize: vertical; }
+    /* The native arrow is drawn by the platform in its own colour; two
+       gradient halves draw it in muted instead. */
+    select.input { appearance: none; padding-right: 2.5rem; cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 1.2rem) 55%, calc(100% - 0.9rem) 55%; background-size: 0.3rem 0.3rem; background-repeat: no-repeat; }
+    select.input:hover { border-color: var(--accent); }
     .error { color: var(--accent-2); }
 
     .switch { display: inline-flex; align-items: center; height: 1.25rem; width: 2.25rem; padding: 3px; box-sizing: border-box; border: 1px solid var(--edge); border-radius: 999px; background: none; cursor: pointer; transition: border-color 150ms, background-color 150ms; }
@@ -346,7 +353,7 @@ const kin = sheets.filter((s) =&gt; s.no !== sheet.no)</pre>
     const paint = () => {
       for (const el of swatches.children) el.lastElementChild.textContent = hex(getComputedStyle(el.firstElementChild).backgroundColor)
       for (const role of document.querySelectorAll(".role")) {
-        const s = getComputedStyle(role.querySelector("p"))
+        const s = getComputedStyle(role.querySelector("p:not(.spec)"))
         let spec = role.querySelector(".spec")
         if (!spec) {
           spec = document.createElement("p")
