@@ -96,9 +96,9 @@ test("the model's arguments reach job as its arguments, and never a shell", asyn
 	assert.ok(!existsSync(path.join(process.cwd(), "pwned")) && !existsSync(path.join(bin, "pwned")));
 });
 
-test("wait refuses what job would misread, and a wait with no deadline", async () => {
+test("wait refuses what job would misread, a wait with no deadline, and a timer longer than a week", async () => {
 	const { wait } = setUp();
-	for (const params of [{ job: "build" }, { job: "build", minutes: 0 }, { job: "--status", minutes: 1 }, { job: "a b", minutes: 1 }, { job: "build", minutes: 1, watch: "-f/etc/passwd" }, { minutes: 1, stall: 2 }])
+	for (const params of [{ job: "build" }, { job: "build", minutes: 0 }, { job: "--status", minutes: 1 }, { job: "a b", minutes: 1 }, { job: "build", minutes: 1, watch: "-f/etc/passwd" }, { minutes: 1, stall: 2 }, { minutes: 7 * 24 * 60 + 1 }])
 		await assert.rejects(wait(params), Error, JSON.stringify(params));
 	assert.ok(!existsSync(path.join(dir, "job.calls")), "job never ran");
 });
@@ -145,13 +145,13 @@ test("without background, delegate answers in the turn, as before", async () => 
 	assert.deepEqual(waiting(store), []);
 });
 
-test("what still runs when the session ends posts that it stopped, and work started after runs again", async () => {
+test("what still runs when the session ends posts that it stopped, with its note, and work started after runs again", async () => {
 	const { store, work, wait } = setUp();
-	await wait({ job: "api-build", minutes: 20 });
+	await wait({ job: "api-build", minutes: 20, note: "merge if green" });
 	await wait({ minutes: 20 });
 	await work.stop();
 	const told = waiting(store);
-	assert.deepEqual(told.map((m) => [m.from, m.text, m.ping]).sort(), [["wait api-build", STOPPED, true], ["wait", STOPPED, true]]);
+	assert.deepEqual(told.map((m) => [m.from, m.text, m.ping]).sort(), [["wait api-build", `${STOPPED}\nYour note: merge if green`, true], ["wait", STOPPED, true]]);
 	await wait({ minutes: 0.001 });
 	assert.match((await pinged(store, { count: 3 })).at(-1)!.text, /minutes are up/);
 });
