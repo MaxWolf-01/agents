@@ -1314,7 +1314,8 @@ follow() {
 # in `rows`) has left no host.
 follow_fleet() {
     local h
-    [ ${#rows[@]} -gt 0 ] || for h in "${!follower[@]}"; do
+    for h in "${!follower[@]}"; do
+        [ ${#rows[@]} -eq 0 ] || break
         printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
         kill "${follower[$h]}" 2>/dev/null
         wait "${follower[$h]}" 2>/dev/null

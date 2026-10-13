@@ -672,12 +672,17 @@ class Following:
 
     def shows(self, check, within: float = 20) -> str:
         """The table drawn once <check> holds of it, or the last one drawn when <within> seconds run out."""
-        return until(lambda: check(table := self.drawn()) and table, within) or self.drawn()
+        def held() -> str | None:
+            table = self.drawn()
+            return table if check(table) else None
+        return until(held, within) or self.drawn()
 
     def matches_ps(self, within: float = 20) -> tuple[str, str]:
         """The drawn table and ps's output, once they agree or <within> seconds run out."""
-        pair = lambda: (self.drawn(), self.printed())
-        return until(lambda: (p := pair())[0] == p[1] and p, within) or pair()
+        def agreed() -> tuple[str, str] | None:
+            pair = self.drawn(), self.printed()
+            return pair if pair[0] == pair[1] else None
+        return until(agreed, within) or (self.drawn(), self.printed())
 
     def logins(self, host: str) -> int:
         return sum(1 for c in ssh_calls(self.home) if c.split("\t")[0] == host)
@@ -787,29 +792,32 @@ def test_a_frames_ages_count_on_until_the_next(tmp_path: Path, follow):
 @pytest.mark.full_path
 def test_a_silent_host_holds_up_no_other_and_comes_back_on_one_more_login(tmp_path: Path, follow):
     """dispatch-ps-follow P1 and P2: a change reaches the table over the one login; while a host is
-    silent the others' rows still move; it turns `unreachable` once its keepalive drops it, and its
-    reconnect is the only other login."""
+    silent the other hosts' rows still move; it turns `unreachable` once its keepalive drops it, and
+    its reconnect is the only other login."""
     home = tmp_path / "home"
     aged(home / ROOT, "agents", "hypofuzz-default", 7200)
     far = remote(home, "agent@far")
     aged(far / ROOT, "jarvis", "far-one", 7200)
-    f = follow(home, "local agent@far")
-    assert "far-one" in f.shows(lambda t: "far-one" in t)
-    aged(far / ROOT, "jarvis", "far-two", 7200)
-    assert "far-two" in f.shows(lambda t: "far-two" in t)
-    assert f.logins("agent@far") == 1
+    stuck = remote(home, "agent@stuck")
+    aged(stuck / ROOT, "jarvis", "stuck-one", 7200)
+    f = follow(home, "local agent@far agent@stuck")
+    assert "stuck-one" in f.shows(lambda t: "far-one" in t and "stuck-one" in t)
+    aged(stuck / ROOT, "jarvis", "stuck-two", 7200)
+    assert "stuck-two" in f.shows(lambda t: "stuck-two" in t)
+    assert f.logins("agent@stuck") == 1
 
-    far.with_suffix(".hung").touch()
-    assert until(far.with_suffix(".silent").exists)
+    stuck.with_suffix(".hung").touch()
+    assert until(stuck.with_suffix(".silent").exists)
+    aged(far / ROOT, "jarvis", "far-two", 7200)
     aged(home / ROOT, "agents", "here-two", 7200)
-    table = f.shows(lambda t: "here-two" in t, within=8)
-    assert "here-two" in table and "far-one" in table
+    table = f.shows(lambda t: "far-two" in t and "here-two" in t, within=8)
+    assert "far-two" in table and "here-two" in table and "stuck-one" in table
 
     table = f.shows(lambda t: "unreachable" in t)
-    assert "far-one" not in table and "no answer from the host" in table
-    far.with_suffix(".hung").unlink()
-    assert "far-one" in f.shows(lambda t: "far-one" in t, within=30)
-    assert f.logins("agent@far") == 2
+    assert "stuck-one" not in table and "no answer from the host" in table
+    stuck.with_suffix(".hung").unlink()
+    assert "stuck-one" in f.shows(lambda t: "stuck-one" in t, within=30)
+    assert f.logins("agent@stuck") == 2
 
 
 @pytest.mark.full_path
@@ -835,6 +843,7 @@ def test_a_host_silent_from_the_start_holds_up_no_other(tmp_path: Path, follow):
     stuck.with_suffix(".hung").touch()
     f = follow(home, "local agent@stuck")
     table = f.shows(lambda t: "hypofuzz-default" in t, within=5)
+    assert "hypofuzz-default" in table
     assert re.search(r"agent@stuck +- +- +connecting", table), table
     assert "unreachable" in f.shows(lambda t: "unreachable" in t)
 
