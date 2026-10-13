@@ -14,13 +14,13 @@ export interface Seen {
  * Looks at the spawned sessions and the inbox once at the start and every `ms` after, and hands `deliver` the events
  * since the last look, if any. The first look, which `started` resolves after, only learns the sessions' states. A
  * look that fails goes to `failed`, and the next one starts from the states the last good one saw; so does a look that
- * has events while `ready` says `deliver` cannot take them, and it leaves the inbox as it is. Reads files alone: the
- * registry, and the store's own.
+ * has events while `ready` says `deliver` cannot take them, or that `deliver` refuses by returning `false`, and it
+ * leaves the inbox as it is. Reads files alone: the registry, and the store's own.
  */
 export function watch(
 	{ home, store }: { home: string; store: string },
 	ms: number,
-	deliver: (events: string[]) => void,
+	deliver: (events: string[]) => boolean | void,
 	failed: (error: unknown) => void,
 	ready: () => boolean = () => true,
 ) {
@@ -35,9 +35,8 @@ export function watch(
 			for (const [pid, was] of seen ?? []) if (!now.has(pid) && alive(pid)) now.set(pid, was);
 			const changed = seen ? changes(seen, now) : [];
 			await take(store, (told) => {
-				const events = [...changed, ...told.map((t) => `${t.from} (hv tell): ${t.text}`)];
-				if (events.length && !ready()) throw NOT_READY;
-				if (events.length) deliver(events);
+				const events = [...changed, ...told.map((t) => `[${t.from}] hv tell: ${t.text}`)];
+				if (events.length && (!ready() || deliver(events) === false)) throw NOT_READY;
 			});
 			seen = now;
 		} catch (error) {
@@ -58,8 +57,8 @@ export function watch(
 export function changes(before: Map<number, Seen>, now: Map<number, Seen>): string[] {
 	return [...before].flatMap(([pid, was]) => {
 		const is = now.get(pid);
-		if (!is) return [`${was.window}: ${was.status} → ended`];
-		return was.status === "busy" && is.status !== "busy" ? [`${is.window}: busy → ${is.status}`] : [];
+		if (!is) return [`[${was.window}] ${was.status} → ended`];
+		return was.status === "busy" && is.status !== "busy" ? [`[${is.window}] busy → ${is.status}`] : [];
 	});
 }
 

@@ -96,7 +96,7 @@ interface Step {
 }
 
 /** Sends one step's message and resolves once pi has settled, with what pi reported of the step. */
-function step(pi: ChildProcess, message: string): Promise<Step> {
+export function step(pi: ChildProcess, message: string): Promise<Step> {
 	return new Promise((resolve, reject) => {
 		const done: Step = { tokens: none(), finding: "" };
 		let buffer = "";

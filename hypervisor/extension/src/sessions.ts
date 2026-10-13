@@ -40,7 +40,7 @@ export interface Spawned {
 const HV = fileURLToPath(new URL("../../hv", import.meta.url));
 const SPAWNED = "spawned.jsonl";
 /** How long a delegated task runs before it is stopped. */
-const DELEGATE_MS = 15 * 60_000;
+const DELEGATE_MS = 45 * 60_000;
 /** How long a session's inbox socket has to take a message. */
 const INBOX_MS = 5000;
 /** How many lines of a pane `look` shows. */

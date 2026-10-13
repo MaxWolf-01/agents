@@ -52,7 +52,7 @@ test("lifelong-hypervisor#P4: the session tools run no shell, start nothing but 
 			fc.asyncProperty(paramsFor(tool.parameters, HOSTILE, { dir: DIRS, session: SESSIONS }), async (params) => {
 				const seen = await effects.during(() => execute(tool, params, context, 1000));
 				assert.deepEqual(toolProblems(seen, store, strings(params)), [], `${tool.name} ${JSON.stringify(params)}`);
-				if (tool.name === "spawn" && seen.launches.some((l) => l.args[0] === "new-session" || l.args[0] === "new-window")) {
+				if (tool.name === "start_session" && seen.launches.some((l) => l.args[0] === "new-session" || l.args[0] === "new-window")) {
 					opened++;
 					assert.ok(seen.launches.some((l) => l.program === "tmux" && l.args.includes("claude")), "a window spawn opens runs claude");
 				}

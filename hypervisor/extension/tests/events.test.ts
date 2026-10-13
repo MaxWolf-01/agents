@@ -105,25 +105,25 @@ test("a spawned session's turn ending starts a turn of the hypervisor's own, car
 	assert.ok(request, "a request with no message from max");
 	assert.equal(request.messages.length, 2);
 	assert.ok(textOf(request.messages[0]).includes("max-marker"), "the earlier turn is in the view");
-	assert.equal(textOf(request.messages[1]), "<event>\nagents:board-fix: busy → idle\n</event>");
+	assert.equal(textOf(request.messages[1]), "<event>\n[agents:board-fix] busy → idle\n</event>");
 	assert.ok(request.system?.some(conversing), "the hypervisor's system prompt");
 });
 
 test("an orchestrator's hv tell starts a turn carrying what it said and where from", () => {
 	const [request] = runs.get("told") ?? [];
 	assert.ok(request);
-	assert.equal(textOf(request.messages.at(-1)!), "<event>\nagents:board-fix (hv tell): told-marker the fix is on its branch\n</event>");
+	assert.equal(textOf(request.messages.at(-1)!), "<event>\n[agents:board-fix] hv tell: told-marker the fix is on its branch\n</event>");
 	assert.ok(!request.messages.slice(1).some((m) => textOf(m).includes("max-marker")), "no message of an earlier turn");
 });
 
 test("the log keeps each event as the event's, not max's", () => {
 	const log = readFileSync(path.join(store, "log", "LOG.txt"), "utf8");
-	assert.match(log, /event: agents:board-fix: busy → idle/);
-	assert.match(log, /event: agents:board-fix \(hv tell\): told-marker the fix is on its branch/);
+	assert.match(log, /event: \[agents:board-fix\] busy → idle/);
+	assert.match(log, /event: \[agents:board-fix\] hv tell: told-marker the fix is on its branch/);
 	assert.doesNotMatch(log, /max: <event>/);
 });
 
 test("an event that arrives while a turn is starting waits for it to run, and neither the turn's message nor the event is lost", () => {
 	assert.match(logged(), /max: starting-marker hello/);
-	assert.match(logged(), /event: agents:board-fix \(hv tell\): while-starting-marker reported as a turn starts/);
+	assert.match(logged(), /event: \[agents:board-fix\] hv tell: while-starting-marker reported as a turn starts/);
 });
