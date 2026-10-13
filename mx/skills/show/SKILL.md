@@ -78,7 +78,7 @@ Every artifact, in every medium, reads like a good README: it states, it never s
 How a row's medium gets made. An open set, not a menu; combining media is normal, and anything that carries the thing qualifies:
 
 - **Diagram**: mermaid (invoke `mx:mermaid` first) when layout should be solved for you; hand-placed SVG (read `SVG-FIGURES.md`) when the figure is the artifact and deserves the control. Either way the classic families apply: UML, flowcharts, sequence and state charts, Nassi-Shneiderman, and the rest.
-- **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side.
+- **Comparison**: show a difference instead of describing it: a code diff (`diffview`), a table, two rendered variants side by side, or a blind test (`blind-test`) where the reader is to choose between them by taste (`/mx:grilling`, A blind test).
 - **Runnable code**: the smallest script that exhibits the behavior; run it and show the output. When the question grows into "does this design/state model feel right?", that's `/mx:prototype`.
 - **HTML/JS page**, the most flexible medium: interactive figures, animations, side-by-side panels, up to a full explainer in the distill.pub tradition (prose interleaved with figures the reader can poke at). Read `PAGES.md`.
 - **LaTeX/TikZ**: publication-grade figures.
