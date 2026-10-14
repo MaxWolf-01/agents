@@ -1,18 +1,18 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["playwright", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["playwright", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Lay down five made-up orchestrator sessions, run the container hub over them, and shoot its tab.
 
 The README's hub figure is the real hub tab, not a mockup: this builds a throwaway HOME holding a small
-ledger app, its tracker, and the session pages of five sessions on it (`fixture.py`), each rendered by this
-checkout's session-page renderer, registers the sessions as running (one in a pane of a tmux server of the run's
-own, a `sleep` standing in for its process, so its box offers to hand off), starts the container hub on that HOME,
-opens each session's pages through it, and screenshots the tab at the selected session in the night scheme, the one
-the README shows, to mx/assets/hub.png. Nothing reaches the real ~/.claude, a
-running hub, or the user's tmux server, and the HOME and the run's tmux server go when the shot is taken. Re-run it
-whenever the hub tab or the session page changes how it looks.
+ledger app, its tracker, and the session pages of five sessions on it and of an ended one the selected session
+continues (`fixture.py`), each rendered by this checkout's session-page renderer, registers the five as running (one
+in a pane of a tmux server of the run's own, a `sleep` standing in for its process, so its box offers to hand off),
+starts the container hub on that HOME, opens each running session's pages through it, and screenshots the tab at the
+selected session in the night scheme, the one the README shows, to mx/assets/hub.png. Nothing reaches the real
+~/.claude, a running hub, or the user's tmux server, and the HOME and the run's tmux server go when the shot is
+taken. Re-run it whenever the hub tab or the session page changes how it looks.
 
 Needs chromium and tmux on PATH and the network (the hub fetches its pane library from jsDelivr, the pages their
 fonts). The container hub lives in the dotfiles repo, with diffview beside it.
@@ -52,7 +52,10 @@ import fixture  # noqa: E402
 import session_page  # noqa: E402  this checkout's renderer, not the installed plugin's
 
 SCHEMES = {"dark": "hub"}  # the README shows the hub at night only
-WIDTH, HEIGHT = 1600, 1000
+WIDTH, HEIGHT = 1920, 1200
+# The session sidebar as a user drags it wider: at the hub's default width the session page folds its timeline away
+# and its bar has no room left for where the session runs.
+SESSION_WIDTH = 760
 GIT = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com", "GIT_COMMITTER_NAME": "demo",
        "GIT_COMMITTER_EMAIL": "demo@example.com", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
@@ -125,12 +128,16 @@ def lay_project(code: Path, env: dict, diffview: Path) -> None:
     agent = code / "agent"
     agent.mkdir()
     run(env, "git", "init", "-q", "-b", "main", cwd=agent)
-    tickets = {t.slug: t for t in fixture.TICKETS}
+    tickets, filed = {t.slug: t for t in fixture.TICKETS}, set()
     for s in fixture.SESSIONS:
         for slug in s.tickets:
-            write(agent / "tickets" / f"{slug}.md", tickets[slug].text(f"{base}..{head}"))
+            t = tickets[slug]
+            first = slug not in filed and t.filed
+            write(agent / "tickets" / f"{slug}.md", t.text("" if first else f"{base}..{head}", t.filed if first else None))
+            filed.add(slug)
         run(env, "git", "add", "-A", cwd=agent)
-        run(env, "git", "commit", "-q", "-m", f"{s.tickets[0]}: filed", "-m", f"Session: {s.id}", cwd=agent)
+        run(env, "git", "commit", "-q", "-m", f"{s.tickets[0]}: {'filed' if s.running else 'cut'}", "-m",
+            f"Session: {s.id}", cwd=agent)
     for s in fixture.SESSIONS:  # committed after every prompt the transcripts hold, so each is fresh
         if s.handoff:
             slug, body = s.handoff
@@ -168,10 +175,20 @@ def home_is(home: Path):
             os.environ["CLAUDE_CONFIG_DIR"] = was[1]
 
 
+def link_handoffs(code: Path) -> None:
+    """Each session that picked up another's continuation handoff names it in `previous`, as the handoff skill's
+    pickup does, before any page renders: a page links back through its own `previous`, and forward through those
+    that name it."""
+    for s in fixture.SESSIONS:
+        if s.continues:
+            write(code / "agent" / "sessions" / s.id / session_page.PREVIOUS, s.continues.id + "\n")
+
+
 def lay_session(s: fixture.Session, code: Path, home: Path, now: float, pane: tuple[str, int] | None) -> Path:
     """The session's records, a transcript that pairs them with the user's prompts, its page rendered from both,
-    and its entry in the registry, naming this process so the hub reads it as running, or, for a session in a tmux
-    pane, the pane's own process, which the hub checks the pane still holds before it offers anything there."""
+    and, while it runs, its entry in the registry, naming this process so the hub reads it as running, or, for a
+    session in a tmux pane, the pane's own process, which the hub checks the pane still holds before it offers
+    anything there."""
     directory = code / "agent" / "sessions" / s.id
     transcript = home / ".claude" / "projects" / ("-" + str(code).strip("/").replace("/", "-")) / f"{s.id}.jsonl"
     lines, number, first = [], 0, at(s.turns[0].ago, now)
@@ -205,6 +222,20 @@ def lay_session(s: fixture.Session, code: Path, home: Path, now: float, pane: tu
     os.utime(directory / "session.md", (first, first))
 
     last = at(s.turns[-1].ago, now)
+    if s.running:
+        register(s, code, home, now, last, pane)
+    with home_is(home):
+        try:
+            page = session_page.render_session(directory, transcript, datetime.fromtimestamp(last))
+        except session_page.RecordError as e:
+            fail(f"the session page of {s.name} did not render: {e}")
+    index = write(directory / session_page.PAGE, page)
+    os.utime(index, (last, last))
+    return index
+
+
+def register(s: fixture.Session, code: Path, home: Path, now: float, last: float, pane: tuple[str, int] | None) -> None:
+    """The session's entry in Claude Code's registry, and what the statusline last read of its context use."""
     n = s.name.rsplit("-", 1)[1]
     target, pid = pane or (f"ledger:@{n}.%{n}", os.getpid())
     entry = {"pid": pid, "procStart": started_at(pid), "sessionId": s.id, "name": s.name, "status": s.status,
@@ -217,15 +248,6 @@ def lay_session(s: fixture.Session, code: Path, home: Path, now: float, pane: tu
         "context_window": {"used_percentage": pct, "total_input_tokens": tokens},
         "rate_limits": {k: {"used_percentage": used, "resets_at": now + 3600 * hours}
                         for k, (used, hours) in fixture.USAGE.items()}}))
-
-    with home_is(home):
-        try:
-            page = session_page.render_session(directory, transcript, datetime.fromtimestamp(last))
-        except session_page.RecordError as e:
-            fail(f"the session page of {s.name} did not render: {e}")
-    index = write(directory / session_page.PAGE, page)
-    os.utime(index, (last, last))
-    return index
 
 
 def install_plugin(home: Path) -> None:
@@ -317,7 +339,7 @@ def open_pages(port: int, code: Path, pages: dict[str, Path]) -> str:
     every unit but the one left new since its last turn, and the selected one, which the tab visits. Answers the
     hub tab's id of the page the shot brings to the front."""
     front = None
-    for s in fixture.SESSIONS:
+    for s in fixture.RUNNING:
         for target in [pages[s.id], *(code / "agent" / rel for rel in s.opens)]:
             opened = api(port, "/api/open", {"target": str(target), "session": s.id, "cwd": str(code)})
             if "unit" not in opened:
@@ -325,11 +347,11 @@ def open_pages(port: int, code: Path, pages: dict[str, Path]) -> str:
             if s is fixture.SELECTED and target == code / "agent" / fixture.FRONT:
                 front = f"{s.id}~{opened['id']}"
     time.sleep(1.1)  # a visit counts what was written before it, to the second
-    for s in fixture.SESSIONS:
+    for s in fixture.RUNNING:
         if s.visited and s is not fixture.SELECTED:
             api(port, "/api/visit", {"unit": s.id})
     units = {u["session"]: u for u in api(port, "/api/hub")["units"]}
-    for s in fixture.SESSIONS:
+    for s in fixture.RUNNING:
         u = units.get(s.id)
         state = "idle" if s.status == "shell" else s.status  # the hub's: a shell left running is an idle session
         if not u or u["state"] != state:
@@ -371,6 +393,7 @@ def shoot(port: int, selected: str, panes: int, front: str) -> list[Path]:
                 # the hub tab follows the system's scheme, and every page in it follows the tab
                 context = browser.new_context(viewport={"width": WIDTH, "height": HEIGHT}, device_scale_factor=2,
                                               color_scheme=scheme)
+                context.add_init_script(f"localStorage.setItem('wc:side:session:width', '{SESSION_WIDTH}')")
                 tab = context.new_page()
                 errors = []
                 tab.on("pageerror", lambda e, errors=errors: errors.append(str(e)))
@@ -415,6 +438,7 @@ def main(args: Args) -> None:
         install_plugin(home)
         lay_project(code, env, diffview)
         in_tmux = start_tmux(tmux_socket, env)
+        link_handoffs(code)
         pages = {s.id: lay_session(s, code, home, now, in_tmux.get(s.id)) for s in fixture.SESSIONS}
         port = free_port()
         hub = start_hub(hub_path, port, scratch, tmux_socket, env)

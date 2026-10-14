@@ -50,6 +50,7 @@ SCHEMES = {"light": "-light", "dark": ""}  # the suffixes render.py gives the ot
 # a worktree dispatch has since removed, as every orchestrator's does; the worker ran on another
 # host and has no transcript here, so the board leaves it out.
 SESSIONS = {
+    "2e6b8d41-0f5c-4a37-9b82-c4d1e7a3f950": ("Reviewing the export screen", REPO),
     "3f9c1e7a-52b4-4d0e-9a61-8c2f7b3d5e10": ("Grilling the CSV import", REPO),
     "8a4d2b6c-1e7f-4c39-b5a0-6d9e2f4a1c83": ("Dispatching csv-import", f"{REPO}-csv-import"),
     "c51e7f03-9b2a-4e68-8d14-3a7c6b9e0f25": ("Grilling saved views", REPO),
@@ -57,7 +58,7 @@ SESSIONS = {
     "4b8e1c6f-3d2a-4f97-a0c5-7e9b1d3f6a48": ("Dispatching saved-views", f"{REPO}-saved-views"),
     "9d3a6f2e-8b1c-4e50-b7d9-1f4c8a2e6b07": ("Triage after the long weekend", REPO),
 }
-GRILL_CSV, ORCH_CSV, GRILL_VIEWS, PROTO, ORCH_VIEWS, TRIAGE = SESSIONS
+REVIEW_EXPORT, GRILL_CSV, ORCH_CSV, GRILL_VIEWS, PROTO, ORCH_VIEWS, TRIAGE = SESSIONS
 WORKER = "a06f5d29-7c3e-4b1a-8f62-5e0d9c4b7a31"  # a worker on another host
 
 # The review pages: (title, summary) per ticket with a range. The first is the one shot.
@@ -230,28 +231,29 @@ def build_agent(ranges: dict[str, list[str]]) -> None:
     t = functools.partial(tickets, ranges)
     step = lambda files, msg, when, sid: (write(AGENT, files), commit(AGENT, msg, when, sid))  # noqa: E731
 
+    # an agent's own filings are proposed, off the frontier until the user's triage promotes them
+    step(t(*((slug, "proposed", False) for slug in ("flaky-export-test", "retire-the-legacy-exporter",
+                                                    "name-the-categories", "pin-the-python-version"))),
+         "tickets: four proposed from the export screen's review", "2026-09-08T16:20:00+02:00", REVIEW_EXPORT)
     step(t(("flaky-export-test", "open", False), "retire-the-legacy-exporter", "name-the-categories",
            ("pin-the-python-version", "open")),
-         "tickets: filed at triage", "2026-09-10T09:12:00+02:00", TRIAGE)
+         "tickets: the four promoted at triage", "2026-09-10T09:12:00+02:00", TRIAGE)
     step(t("pin-the-python-version"), "pin-the-python-version: done", "2026-09-11T09:45:00+02:00", TRIAGE)
     step(t(("csv-import", "open", False), ("duplicate-rule", "open")),
          "csv-import: grilled; the parent ticket and its duplicate rule", "2026-09-12T15:30:00+02:00", GRILL_CSV)
-    step(t(("upload-and-parse-report", "proposed", False), ("map-columns-to-fields", "proposed", False),
-           ("commit-the-import", "proposed", False)),
-         "csv-import: cut into its slices", "2026-09-14T10:05:00+02:00", GRILL_CSV)
-    step(t("duplicate-rule", ("upload-and-parse-report", "open", False), ("map-columns-to-fields", "open", False),
+    # a cut's slices are filed open: how a ticket is cut is the cutting agent's call
+    step(t(("upload-and-parse-report", "open", False), ("map-columns-to-fields", "open", False),
            ("commit-the-import", "open", False)),
-         "csv-import: D1 ruled, the slices ruled open", "2026-09-16T09:20:00+02:00", GRILL_CSV)
+         "csv-import: cut into its slices", "2026-09-14T10:05:00+02:00", GRILL_CSV)
+    step(t("duplicate-rule"), "duplicate-rule: D1 ruled", "2026-09-16T09:20:00+02:00", GRILL_CSV)
     step(t(("csv-import", "claimed", False), ("upload-and-parse-report", "claimed", False)),
          "csv-import: claimed for its tree; upload-and-parse-report claimed", "2026-09-16T11:00:00+02:00", ORCH_CSV)
     step(t("upload-and-parse-report", ("map-columns-to-fields", "claimed", False)),
          "upload-and-parse-report: accepted, merged into csv-import", "2026-09-17T16:50:00+02:00", ORCH_CSV)
-    step(t(("saved-views", "open"), ("filters-as-data", "proposed", False), ("filters-in-the-address", "proposed"),
+    step(t(("saved-views", "open"), ("filters-as-data", "open", False), "filters-in-the-address",
            ("view-storage-research", "open"), ("view-list-shape", "open", False),
-           ("save-and-reopen-a-view", "proposed"), ("share-a-view-by-link", "proposed")),
+           "save-and-reopen-a-view", "share-a-view-by-link"),
          "saved-views: grilled; the parent ticket and six slices", "2026-09-18T16:40:00+02:00", GRILL_VIEWS)
-    step(t(("filters-as-data", "open", False), "filters-in-the-address", "save-and-reopen-a-view", "share-a-view-by-link"),
-         "saved-views: the slices ruled open", "2026-09-19T10:15:00+02:00", GRILL_VIEWS)
     reported("map-columns-to-fields", ranges, "2026-09-20T14:20:00+02:00", "2026-09-20T15:31:00+02:00")
     step(t("map-columns-to-fields", ("commit-the-import", "claimed", False)),
          "map-columns-to-fields: merged into csv-import, for its close-out", "2026-09-20T15:35:00+02:00", ORCH_CSV)

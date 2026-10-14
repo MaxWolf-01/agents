@@ -188,11 +188,15 @@ class Ticket:
     blocked_by: tuple[str, ...] = ()
     needs_user: bool = False
     diff: bool = False  # the saved-views slice's range, filled in once the code repo has it
+    filed: str | None = None
+    """The status it was filed with, where a later session moved it on: the session that filed it commits it so,
+    and the next one that names it commits the status above."""
     criteria: tuple[str, ...] = ()
     properties: tuple[str, ...] = ()
 
-    def text(self, diff: str = "") -> str:
-        front = [f"status: {self.status}"]
+    def text(self, diff: str = "", status: str | None = None) -> str:
+        status = status or self.status
+        front = [f"status: {status}"]
         if self.parent:
             front.append(f"parent: {self.parent}")
         if self.blocked_by:
@@ -200,9 +204,9 @@ class Ticket:
         if self.needs_user:
             front.append("needs-user: true")
         front += [f"priority: {self.priority}", f"size: {self.size}"]
-        if self.diff:
+        if self.diff and diff:
             front.append(f"diff: [{diff}]")
-        done = "x" if self.status in ("review", "done") else " "
+        done = "x" if status in ("review", "done") else " "
         criteria = "\n".join(f"- [{done}] {c}" for c in self.criteria) or f"- [{done}] {self.title}, built and driven."
         props = "".join(f"- P{i} {p}\n" for i, p in enumerate(self.properties, 1))
         return ("---\n" + "\n".join(front) + f"\n---\n\n# {self.title}\n\n## Brief\n\n{self.brief}\n\n"
@@ -211,13 +215,14 @@ class Ticket:
 
 
 TICKETS = [
-    Ticket("saved-views", "Saved views", "claimed", priority=1, size="L",
+    Ticket("saved-views", "Saved views", "claimed", filed="open", priority=1, size="L",
            properties=("A reopened view shows exactly the rows its filters show now.",
                        "A view's name is unique per user, and the first view saved under it stands.",
                        "A view reopened after a column left the ledger drops that column and says so."),
            brief="A user names the filters, sort and columns they are looking at, reopens them from the sidebar, "
                  "and shares one by link. Today every visit starts from the default screen."),
-    Ticket("save-and-reopen-a-view", "Save and reopen a view", "review", parent="saved-views", priority=1, diff=True,
+    Ticket("save-and-reopen-a-view", "Save and reopen a view", "review", filed="open", parent="saved-views", priority=1,
+           diff=True,
            brief="Save what the screen shows under a name, and put it back from the sidebar.",
            criteria=("`saved-views#P1` and `saved-views#P2` hold, as the review reads the diff.",
                      "A taken name is refused with the existing view's link.")),
@@ -284,36 +289,19 @@ class Session:
     """Its continuation handoff, committed after its last prompt, so fresh: the file's slug and its body."""
     runs: tuple[tuple[str, str], ...] = ()
     """What its last turn left running in the background, which no task notification has ended: description, command."""
+    continues: "Session | None" = None
+    """The session whose continuation handoff it picked up, which its page links as the previous one."""
+    running: bool = True
+    """Whether its process still runs, which makes it a unit on the rail; an ended one only has its page, which the
+    page of the session that continued it links."""
 
 
-SAVED = Session(
-    id="3f6c2a91-8d4e-4b7a-9c15-2e7d40b8a6f3", name="ledger-14", status="idle", context=(78, 156_000), pane=True,
+GRILL = Session(
+    id="71b0d4c8-2a5f-4e93-b86d-0c3e9f17a254", name="ledger-13", status="idle", running=False,
     tickets=("saved-views", "save-and-reopen-a-view", "share-a-view-by-link"),
-    title="Saved views: reopening a view, then sharing one by link",
-    brief="The saved-views tree: the filters, sort and columns a user names once and reopens from the sidebar, then "
-          "a link that shows a view to someone else. The design is settled and its first slice has landed; sharing by "
-          "link waits on what a shared link carries.",
-    opens=("show/saved-views/what-a-view-holds.html", "diffviews/save-and-reopen-a-view.html",
-           "show/share-a-view-by-link/link-resolves.html"),
-    handoff=("share-a-view-by-link", """# Saved views: build sharing by link once Q3 is answered
-
-## Purpose
-
-Continuation. `save-and-reopen-a-view` has landed on the saved-views branch; what is left of the tree is
-`share-a-view-by-link`, which waits on Q3 of this session's page: whether a shared link carries the view or a
-snapshot of its rows.
-
-## Where it stands
-
-- The review of the landed slice checked P1 and P2 against the diff; P3 (a dropped column) is covered by `reopen`.
-- My pick on Q3 is (a), the link names the view; the figure lays both answers side by side.
-
-## Sources
-
-- MUST READ `agent/tickets/saved-views.md`: the properties, and the two slices
-- MUST READ `agent/show/share-a-view-by-link/link-resolves.html`: the two answers to Q3
-- `ledger/views.py`: what a stored view holds, which a link would resolve through
-"""),
+    title="Saved views: grilling what a view holds",
+    brief="Grilling saved views: what a view keeps of the screen, where views are stored, and how the ticket cuts into "
+          "slices. Ends with the tree filed and a handoff for the session that builds it.",
     turns=[
         Turn(ago=26 * 60, prompts=((
             "saved views. people keep rebuilding the same filter every morning, groceries last 90 days etc. "
@@ -357,8 +345,51 @@ answered:
 
 ## Details
 
-- `save-and-reopen-a-view` is dispatched; `share-a-view-by-link` waits on it, since a link resolves through the stored view.
+- Both slices are filed open: `save-and-reopen-a-view`, then `share-a-view-by-link`, which waits on it, since a link resolves through the stored view.
 - P3 came out of your answer to Q1: a view reopened after a column left the ledger drops that column and says so.
+- The handoff is committed; the next session dispatches the first slice.
+"""),
+    ],
+)
+
+SAVED = Session(
+    id="3f6c2a91-8d4e-4b7a-9c15-2e7d40b8a6f3", name="ledger-14", status="idle", context=(78, 156_000), pane=True,
+    continues=GRILL, tickets=("save-and-reopen-a-view", "saved-views"),
+    title="Saved views: reopening a view, then sharing one by link",
+    brief="Building the saved-views tree yesterday's grilling filed: the filters, sort and columns a user names once "
+          "and reopens from the sidebar, then a link that shows a view to someone else. Its first slice has landed; "
+          "sharing by link waits on what a shared link carries.",
+    opens=("show/share-a-view-by-link/link-resolves.html", "diffviews/save-and-reopen-a-view.html"),
+    handoff=("share-a-view-by-link", """# Saved views: build sharing by link once Q1 is answered
+
+## Purpose
+
+Continuation. `save-and-reopen-a-view` has landed on the saved-views branch; what is left of the tree is
+`share-a-view-by-link`, which waits on Q1 of this session's page: whether a shared link carries the view or a
+snapshot of its rows.
+
+## Where it stands
+
+- The review of the landed slice checked P1 and P2 against the diff; P3 (a dropped column) is covered by `reopen`.
+- My pick on Q1 is (a), the link names the view; the figure lays both answers side by side.
+
+## Sources
+
+- MUST READ `agent/tickets/saved-views.md`: the properties, and the two slices
+- MUST READ `agent/show/share-a-view-by-link/link-resolves.html`: the two answers to Q1
+- `ledger/views.py`: what a stored view holds, which a link would resolve through
+"""),
+    turns=[
+        Turn(ago=5 * 60, prompts=("continue",), record="""---
+date: {date}
+---
+
+# Picked up the saved-views tree; save and reopen is with a worker
+
+## Details
+
+- From the grilling's handoff: views keep filters, sort and columns, in a `views` table of the ledger's database.
+- `save-and-reopen-a-view` is dispatched to a worker in its own worktree. `share-a-view-by-link` waits on it, and on what a shared link carries, which I put to you once the first slice lands.
 """),
         Turn(ago=3 * 60, chat=True, prompts=("how's the worker doing",),
              record="The worker on `save-and-reopen-a-view` has views saving and reopening and is on the sidebar list; "
@@ -371,7 +402,7 @@ date: {date}
 
 ## Questions
 
-- [Q3] **Does a shared link carry the view, or a snapshot of its rows?** It decides what `share-a-view-by-link` builds, and what your partner sees a week after you send it.
+- [Q1] **Does a shared link carry the view, or a snapshot of its rows?** It decides what `share-a-view-by-link` builds, and what your partner sees a week after you send it.
   - (a) The view: the link names the saved view, and whoever opens it sees today's rows through its filters *my pick*
   - (b) A snapshot: the link carries the rows as they stood when it was shared
   - Why: a view is how you read your ledger, and (a) keeps one copy of it. (b) needs storage of its own and a rule for when a snapshot expires, for a reader who wanted the numbers at a date, which an export already gives.
@@ -385,7 +416,7 @@ date: {date}
 
 - `save-and-reopen-a-view` is merged into the saved-views branch and waits for the tree's close-out; its review checked the diff against P1 and P2.
 - One call the worker made: a name already taken is refused with a link to the view that has it, never overwritten. It is in the ticket's Decisions, and the review page notes it where the code does it.
-- Context is at 78%, so the handoff is committed: the next session takes Q3's answer from there and builds the link.
+- Context is at 78%, so the handoff is committed: the next session takes Q1's answer from there and builds the link.
 """),
     ],
 )
@@ -455,8 +486,8 @@ EXPORTER = Session(
     id="5b82f4d6-1e37-4a90-a6c3-0d58e7b21f94", name="ledger-9", status="busy", context=(12, 24_000),
     tickets=("retire-the-legacy-exporter",),
     title="Legacy exporter: what still calls it, before it goes",
-    brief="The legacy exporter writes a format nothing reads any more. Finding what still calls it, so the proposal "
-          "to retire it says what moves.",
+    brief="The legacy exporter writes a format nothing reads any more. Finding what still calls it, so the proposed "
+          "ticket to retire it says what moves when a triage takes it up.",
     turns=[
         Turn(ago=3 * 60 + 20, prompts=("what still uses the old exporter?",), record="""---
 date: {date}
@@ -467,7 +498,7 @@ date: {date}
 ## Details
 
 - `reports/monthly.py` calls it twice, for the totals table and the category breakdown; the new exporter writes both.
-- The proposal `retire-the-legacy-exporter` now lists the two moves in its brief, and waits for your ruling on the board.
+- The proposed ticket `retire-the-legacy-exporter` now lists the two moves in its brief, and waits for your next triage.
 """),
     ],
 )
@@ -498,7 +529,8 @@ All three are drawn from September's real-looking sample, 14 categories. Pick on
     ],
 )
 
-SESSIONS = [SAVED, IMPORT, FLAKY, EXPORTER, BUDGET]
+SESSIONS = [GRILL, SAVED, IMPORT, FLAKY, EXPORTER, BUDGET]  # an ended one before the session that continues it
+RUNNING = [s for s in SESSIONS if s.running]
 SELECTED = SAVED
 FRONT = "show/share-a-view-by-link/link-resolves.html"  # the page the shot brings to the front of its pane
 
@@ -558,7 +590,7 @@ def lane(x: int, tag: str, head: str, steps: list[list[str]], pick: bool) -> str
 
 LINK_RESOLVES = SHOW_HEAD.format(title="How a shared link resolves", tokens="__TOKENS__") + """
 <h1>How a shared link resolves</h1>
-<p class="meta">share-a-view-by-link · Q3, the two answers side by side</p>
+<p class="meta">share-a-view-by-link · Q1, the two answers side by side</p>
 <svg viewBox="0 0 520 430" role="img" aria-label="Two flows from the sender's share to what the reader sees">
 """ + lane(2, "(a)", "the link names the view", [
     ["Sam shares the view", '"groceries, last 90 days"'],
