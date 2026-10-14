@@ -264,7 +264,8 @@ def frontier() -> int:
     user; a proposed ticket waits for a triage to promote it to open. A blocker holds until it is
     done, or until it is a sibling in review, no hinge, and merged into the branch of the parent
     ticket the two share: a parent ticket ruled whole lets its children build on each other
-    unruled, and a hinge is ruled alone before anything builds on it. Everything else not done follows under `waiting`, with what holds it back.
+    unruled, and a hinge is ruled alone before anything builds on it. Everything else not done
+    follows under `waiting`, with what holds it back.
     """
     tracker = here()
     refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
