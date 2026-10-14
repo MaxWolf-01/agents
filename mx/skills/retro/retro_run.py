@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Run a retro on a repo: collect, then one model run per stage, then commit the living report and
 its page into `retro/` of the repo's agent repo, in its main checkout.

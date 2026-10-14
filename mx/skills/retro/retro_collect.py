@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Gather what a retro reads, for the period since a given start, into a run directory.
 
@@ -61,8 +61,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "session-page"))
-import session_page  # noqa: E402  what counts as the user's own message, as the session page reads it
 import scan_unapproved  # noqa: E402
+import session_page  # noqa: E402  what counts as the user's own message, as the session page reads it
 
 SAMPLE_SIZE = 20
 SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the period's end

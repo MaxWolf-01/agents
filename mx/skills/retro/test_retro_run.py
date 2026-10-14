@@ -2,7 +2,7 @@
 given a scratch agent repo in which another change is staged, the commit holds the report's files
 alone and the other change is still staged after it; given one mid-rebase, nothing is committed
 and the run log says why (P9). The oracle is git's own record of the commit and the index.
-Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py.
+Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py[linkify].
 
 Each run goes through the whole command, its model runs a stub `claude` on PATH that records what
 the run directory held when it started and writes what its stage owes. The same runs show that
@@ -34,10 +34,8 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import retro_run  # noqa: E402
-from test_retro_collect import IDENTITY, SINCE, Transcript, commit, git, ticket  # noqa: E402
+import retro_run
+from retro_checks import IDENTITY, SINCE, Transcript, commit, git, ticket
 
 FIRST = datetime(2026, 10, 12, 2, tzinfo=UTC)
 WEEK = timedelta(weeks=1)
