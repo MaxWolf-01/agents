@@ -1,3 +1,8 @@
+## 1.0.62
+
+- fix(dispatch): dispatch --help back within its word budget
+- feat(dispatch): ps puts running workers first and folds exited ones to fit the screen
+
 ## 1.0.61
 
 - feat(session-page): the page's top, timeline and copy redesigned, and the turns' end times the hub reads
