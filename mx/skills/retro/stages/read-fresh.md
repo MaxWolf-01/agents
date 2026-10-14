@@ -33,7 +33,7 @@ One file per session. Its header names the session id, title, project, profile, 
 - `(turn took 4m12s)`, `(context compacted)`, and `(left out: …)` where a long session's days before the period were cut.
 - `## Session page: …` closes a digest that has them: the session page's records, what max was shown of the session.
 
-A git record lists commits with their messages, reverts, ticket changes and worker reports. In it, look for work built and then undone, tickets filed and dropped, rules added and removed again, and the friction workers reported.
+A git record lists commits with their messages, reverts, ticket changes and worker reports.
 
 ### The notes
 
@@ -52,6 +52,6 @@ Outcome: done | partial | abandoned | unclear, and what came out, in one clause.
 Friction that recurs across two or more of these sessions, naming each session and the date.
 ```
 
-Each finding carries a verbatim quote and its absolute date, copied from the digest; a finding you cannot quote stays out. Cost is `high` when max lost many minutes, repeated himself, saw a build wasted or said he was frustrated; `med` for a detour; `low` for a papercut. A session with no friction gets its heading and its outcome line alone. The concrete beats the general: "max pasted the board's URL by hand three times because the Stop hook printed no link" carries the fix; "observability could be better" carries nothing. For `git/`, the sections are the repos, and the quotes are commit subjects and report lines with their short sha or ticket and date.
+Each finding carries a verbatim quote and its absolute date, copied from the digest; a finding you cannot quote stays out. Cost is your estimate of what it cost: `high` for many minutes or much nerve lost, `med` for a detour, `low` for a papercut. A session with no friction gets its heading and its outcome line alone. The concrete beats the general: "max pasted the board's URL by hand three times because the Stop hook printed no link" carries the fix; "observability could be better" carries nothing. For `git/`, the sections are the repos, and the quotes are commit subjects and report lines with their short sha or ticket and date.
 
 Write the notes file at the path you were given, then reply with that path alone.

@@ -150,7 +150,7 @@ def collect_permissions(since: datetime, run: Path, projects: list[Path]) -> Non
         (out / "scan.json").write_text(json.dumps(found, indent=1) + "\n")
         for stale in ("auto-mode.json", "auto-mode.failed"):
             (out / stale).unlink(missing_ok=True)
-        name, text = auto_mode(profile)
+        name, text = auto_mode(profile, run)
         (out / name).write_text(text)
 
 
@@ -163,12 +163,13 @@ def rules(settings: Path) -> dict:
     return {key: data[key] for key in ("permissions", "autoMode") if key in data}
 
 
-def auto_mode(profile: Path) -> tuple[str, str]:
+def auto_mode(profile: Path, cwd: Path) -> tuple[str, str]:
     """The profile's effective auto mode config: the file to write, `auto-mode.json` or
     `auto-mode.failed`, and what it holds."""
     try:
+        # From a directory with no project settings, which the config would otherwise merge in.
         done = subprocess.run(["claude", "auto-mode", "config"], capture_output=True, text=True, timeout=120,
-                              stdin=subprocess.DEVNULL, env={**os.environ, "CLAUDE_CONFIG_DIR": str(profile)})
+                              stdin=subprocess.DEVNULL, cwd=cwd, env={**os.environ, "CLAUDE_CONFIG_DIR": str(profile)})
     except (OSError, subprocess.TimeoutExpired) as e:
         return "auto-mode.failed", f"claude auto-mode config failed: {e}\n"
     if done.returncode != 0:

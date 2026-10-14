@@ -308,7 +308,7 @@ def test_nothing_is_written_inside_a_git_repository(tmp_path: Path, repo: Path) 
     assert not (repo / "retro-run").exists() and not (tmp_path / "cache").exists()
 
 
-def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_uncovered_bash_calls_of_the_period(
+def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_interactive_uncovered_bash_calls_of_the_period(
         tmp_path: Path, projects: Path) -> None:
     profile = projects.parent
     profile.mkdir(parents=True)
@@ -320,6 +320,8 @@ def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_uncov
     t.at = SINCE + timedelta(days=1)
     t.says("check and deploy").calls("Bash", {"command": "make check && make deploy"}, "ok")
     t.calls("Bash", {"command": "cat README.md"}, "readme")
+    headless = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1), entrypoint="sdk-cli")
+    headless.calls("Bash", {"command": "make release"}, "released")  # a `claude -p` run, which prompts nobody
 
     permissions = collect(tmp_path) / "permissions" / "claude"
     scan = json.loads((permissions / "scan.json").read_text())

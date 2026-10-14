@@ -186,7 +186,8 @@ def load_allowlist(*settings_paths: Path) -> list[str]:
 
 
 def scan_sessions(sessions_dir: Path, cutoff_ts: float) -> list[str]:
-    """Return every Bash command from sessions under sessions_dir called after cutoff."""
+    """Return every Bash command of an interactive session under sessions_dir called after cutoff:
+    a headless run (`claude -p`, the SDK) prompts nobody."""
     commands = []
     for path in sessions_dir.rglob("*.jsonl"):
         if path.name.endswith(".wakatime") or path.stat().st_mtime < cutoff_ts:
@@ -200,7 +201,7 @@ def scan_sessions(sessions_dir: Path, cutoff_ts: float) -> list[str]:
                         entry = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if called_after(entry, cutoff_ts):
+                    if entry.get("entrypoint", "cli") == "cli" and called_after(entry, cutoff_ts):
                         commands.extend(bash_commands(entry))
         except OSError:
             continue
