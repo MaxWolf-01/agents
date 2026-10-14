@@ -1,3 +1,7 @@
+## 1.0.58
+
+- docs(git): commit subjects are conventional commits, the outcome sentence opens the body
+
 ## 1.0.57
 
 - feat(grilling): blind questions for taste decisions, rendered by blind-test
