@@ -48,12 +48,10 @@
 #                 `review` reads one. Exit 1: not merged yet, or the tracker
 #                 refused one, and nothing is written.
 # ps [--color] [--follow]
-#                 every worker on every host, for a human, the running ones
-#                 first; the orchestrator's view is `ctl probe`. Exit 1: a host
-#                 or a scratch dir unread. --follow keeps the table on screen,
-#                 redrawn as the hosts change, over one ssh login per host,
-#                 until Ctrl-C; one taller than the screen folds its exited
-#                 workers into a few lines per host and base.
+#                 every worker on every host, for a human; the orchestrator's
+#                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
+#                 --follow keeps the table on screen, redrawn as the hosts
+#                 change, over one ssh login per host, until Ctrl-C.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
