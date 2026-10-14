@@ -1091,7 +1091,8 @@ def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], caps
 
 
 def links_to(page: Path) -> list[str]:
-    return re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())
+    """The sessions a page links to, each once: the line under its title and an end of its timeline both link it."""
+    return list(dict.fromkeys(re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())))
 
 
 def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(

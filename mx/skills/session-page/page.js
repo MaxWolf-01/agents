@@ -71,7 +71,7 @@ const keepInView = (box, el, head = 0) => {
 
 let cur = -1
 // the cursor's turn is marked in the timeline too, and kept in the timeline's view
-const group = (b) => (b && b.matches("details.turn") ? document.getElementById("a" + b.id.slice(1)) : null)
+const group = (b) => (!b ? null : b.matches("details.turn") ? document.getElementById("a" + b.id.slice(1)) : document.getElementById("a-" + b.id))
 const columnHead = column.querySelector(".column-head")
 const mark = () => {
   blocks.forEach((b, n) => b.classList.toggle("cur", n === cur))
@@ -314,13 +314,21 @@ const byNumber = (e) => {
 
 // ---- copying
 
-const write = async (text) => {
+// "copied" rises over the element a click copied, and fades
+const copied = (el) => {
+  const r = el.getBoundingClientRect()
+  const tip = Object.assign(document.createElement("span"), { className: "copied-tip", textContent: "copied" })
+  Object.assign(tip.style, { left: `${r.left + r.width / 2}px`, top: `${r.top - 4}px` })
+  document.body.append(tip)
+  tip.addEventListener("animationend", () => tip.remove())
+}
+const write = async (text, el) => {
   try { await navigator.clipboard.writeText(text) }
   catch {
     const ta = Object.assign(document.createElement("textarea"), { value: text })
     document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove()
   }
-  say("copied: " + text)
+  if (el) copied(el)
 }
 const resume = document.getElementById("resume")
 const copy = async () => {
@@ -331,7 +339,7 @@ const copy = async () => {
 }
 resume.addEventListener("click", copy)
 const id = document.getElementById("session-id")
-id.addEventListener("click", () => write(id.dataset.copy))
+id.addEventListener("click", () => write(id.dataset.copy, id))
 
 // ---- the keys
 

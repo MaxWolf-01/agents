@@ -243,6 +243,12 @@ def test_the_page_shows_each_turns_date_the_count_and_span_and_where_no_message_
     assert [row.key for row in page.rows if row.when not in text[row.key]] == []
     assert f" 5 turns · {page.span} · " in text_of(rendered)
     assert text_of(elements(rendered, "a01")["a01"]) == "01 Round 1, as text: two axes, and a page per session"
+    assert text_of(elements(rendered, f"a-{chat.stem}")[f"a-{chat.stem}"]) == "Still building.", "a chat turn is a row of the timeline"
+    # when each turn ended, to the second, which the hub reads; none for record 3, whose write the transcript lacks
+    ended = dict(re.findall(r'id="(t\d+|chat-[^"]+)"[^>]*?data-at="([^"]+)"', rendered))
+    assert sorted(ended) == sorted(f"t{row.key}" if isinstance(row.turn, Turn) else row.key for row in page.rows if row.key != "03")
+    assert all(datetime.fromisoformat(at) == row.turn.written for row in page.rows
+               for at in [ended.get(f"t{row.key}" if isinstance(row.turn, Turn) else row.key)] if at)
 
 
 @settings(deadline=None)
