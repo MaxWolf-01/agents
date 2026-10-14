@@ -38,7 +38,7 @@ export function jarvisTool(config: JarvisConfig): ToolDefinition {
 		name: "tell_jarvis",
 		label: "Tell Jarvis",
 		description:
-			"Leave Jarvis, max's life assistant, a message in its inbox. It waits there for Jarvis's next wake, and Jarvis's answer reaches your inbox from jarvis within minutes of that. Send what you meet that is Jarvis's to keep: a deadline, a preference, a calendar item, an interest of max's.",
+			"Leave Jarvis, max's life assistant, a message in its inbox. It waits there for Jarvis's next wake; Jarvis's answer waits in your inbox, from jarvis.",
 		parameters: Type.Object({ message: Type.String({ description: "The message, as Jarvis should read it: what you learned, where it came from, and what you ask of Jarvis, if anything." }) }),
 		execute: async (_id, { message }) => answer(await tellJarvis(config, message)),
 	}) as ToolDefinition;

@@ -15,6 +15,8 @@ import { jarvisTool } from "../src/tools.ts";
 import { resultText } from "./helpers.ts";
 
 const MAILBOX = fileURLToPath(new URL("../../jarvis-mailbox", import.meta.url));
+/** The biggest report the mailbox takes: its `max_bytes`. */
+const MAX_BYTES = Number(/^max_bytes=(\d+)$/m.exec(readFileSync(MAILBOX, "utf8"))![1]);
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-jarvis-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -96,7 +98,7 @@ test("the mailbox key runs tell, fetch and delete of an outbox message, and refu
 
 test("an empty message and one over the mailbox's limit leave nothing in Jarvis's inbox", async () => {
 	const { config, workspace } = laptopAndJarvis();
-	for (const input of ["", "x".repeat(262145)]) assert.notEqual(mailbox(workspace, "tell", input).status, 0);
+	for (const input of ["", "x".repeat(MAX_BYTES + 1)]) assert.notEqual(mailbox(workspace, "tell", input).status, 0);
 	await assert.rejects(jarvisTool(config).execute("call", { message: "  \n" } as never, undefined, undefined, undefined as never) as Promise<unknown>, /empty/);
 	assert.deepEqual(readdirSync(path.join(workspace, "inbox")), []);
 });

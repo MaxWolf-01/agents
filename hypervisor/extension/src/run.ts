@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 
 /**
- * Runs `program` without a shell, `input` on its stdin, else stdin closed, and returns what it printed. A failure carries what it said on
- * stderr, after the program's name and its first argument. With `anyExit`, a program that ran and exited non-zero
- * answers too, with its stdout, else its stderr: for a program whose exit code is part of its answer.
+ * Runs `program` without a shell, `input` on its stdin, else its stdin closed, and returns what it printed. A failure
+ * carries what it said on stderr, after the program's name and its first argument. With `anyExit`, a program that ran
+ * and exited non-zero answers too, with its stdout, else its stderr: for a program whose exit code is part of its answer.
  */
 export function run(program: string, args: string[], options: { cwd?: string; signal?: AbortSignal; timeout?: number; anyExit?: boolean; input?: string } = {}): Promise<string> {
 	const { anyExit, input, ...given } = options;

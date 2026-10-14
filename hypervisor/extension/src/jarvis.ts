@@ -19,7 +19,7 @@ export interface JarvisConfig {
 export const JARVIS = "jarvis";
 const SSH_TIMEOUT_MS = 30_000;
 
-/** The configuration from the environment: the host `$HV_JARVIS_HOST`, or `jarvis`; the key `$HV_JARVIS_KEY`, or `~/.ssh/hypervisor-jarvis`. */
+/** The configuration from the environment. */
 export function jarvisFromEnvironment(): JarvisConfig {
 	return { host: process.env.HV_JARVIS_HOST ?? "jarvis", key: process.env.HV_JARVIS_KEY ?? path.join(homedir(), ".ssh/hypervisor-jarvis") };
 }
