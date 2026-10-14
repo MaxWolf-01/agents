@@ -1,23 +1,23 @@
-// `hv explore`: explore steps on the hypervisor's own profile, as `/explore` runs them (`exploring.ts`). A profile
-// takes one pi at a time, so with the hypervisor's TUI open the command is typed into its pane; with it closed, the
-// run goes headless, in a pi `hv` starts over RPC, and prints each step's finding as it goes. `hv explore --found`
-// prints what the latest run found.
+// `hv explore`: explore steps on the hypervisor's own profile, as `/explore` runs them in its TUI (`exploring.ts`). The run
+// lives in the TUI alone: with it open, the command is typed into its pane; with it closed, the command `hv` passes
+// after `--` starts it, with the command as pi's first message, which pi runs once every extension has started. `hv explore --found` prints what the
+// latest run found.
 
-import { execFileSync, spawn } from "node:child_process";
-import { ENDED, NOTICE, parse, profileDir, REFUSED, USAGE as COMMAND } from "./exploring.ts";
+import { execFileSync } from "node:child_process";
+import { parse, USAGE as COMMAND } from "./exploring.ts";
 import { lines } from "./journal.ts";
-import { summarized } from "./recipe-run.ts";
 
 export const USAGE = `usage: hv explore N [direction] [--tokens T] [--until-week P]
        hv explore --found
 
 Runs up to N explore steps on the hypervisor's own memory, as /explore does in its TUI:
 ${COMMAND.split("\n").slice(1).join("\n")}
-With the TUI open, the command is typed into its pane, and the run goes on there. With --found, prints what the
-latest run found, from $HV_STORE/explore.jsonl.`;
+The command goes to the TUI, which hv starts when it does not run; the run goes on there (tmux attach -t hypervisor).
+With --found, prints what the latest run found, from $HV_STORE/explore.jsonl.`;
 
-/** The tmux session `hv` runs the TUI in. */
+/** The tmux session `hv` runs the TUI in, and its pane: a bare `=session` names no pane, so send-keys takes the colon. */
 const SESSION = "=hypervisor";
+const PANE = `${SESSION}:`;
 
 /** A line of `explore.jsonl`: a step's finding, a run's end, or an offer. */
 interface Line {
@@ -58,56 +58,11 @@ function tuiOpen(): boolean {
 	}
 }
 
-/**
- * Runs `/explore args` in the pi that `command` starts over RPC, printing what the run notifies, and resolves with the
- * exit code once the run has ended and the profile's summaries are written: 1 when pi or an extension failed.
- */
-export function headless(args: string, command: string[], profile: string): Promise<number> {
-	return new Promise((resolve) => {
-		const pi = spawn(command[0]!, [...command.slice(1), "--mode", "rpc"], { stdio: ["pipe", "pipe", "inherit"] });
-		pi.stdout!.setEncoding("utf8");
-		let buffer = "";
-		let code = 0;
-		let ending = false;
-		const end = async (failed: boolean) => {
-			if (ending) return;
-			ending = true;
-			if (failed) code = 1;
-			else await summarized(profile);
-			pi.stdin!.end();
-		};
-		pi.on("close", (exit) => resolve(code || (ending ? 0 : exit || 1)));
-		pi.stdout!.on("data", (chunk: string) => {
-			buffer += chunk;
-			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
-				const line = buffer.slice(0, at);
-				buffer = buffer.slice(at + 1);
-				let record: { type?: string; method?: string; message?: string; error?: string; extensionPath?: string; event?: string };
-				try {
-					record = JSON.parse(line);
-				} catch {
-					continue;
-				}
-				// A profile that cannot open, open in another pi among the reasons, fails its extension's session_start.
-				if (record.type === "extension_error") {
-					console.error(`hv explore: ${record.extensionPath} failed in ${record.event}: ${record.error}`);
-					void end(true);
-				}
-				if (record.type === "extension_ui_request" && record.method === "notify" && record.message?.startsWith(NOTICE)) {
-					console.log(record.message);
-					if (record.message.startsWith(ENDED)) void end(record.message.startsWith(REFUSED));
-				}
-			}
-		});
-		pi.stdin!.write(`${JSON.stringify({ type: "prompt", message: `/explore ${args}` })}\n`);
-	});
-}
-
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
 	const split = argv.indexOf("--");
 	const args = split < 0 ? argv : argv.slice(0, split);
-	const command = split < 0 ? [] : argv.slice(split + 1);
+	const start = split < 0 ? [] : argv.slice(split + 1);
 	const store = process.env.HV_STORE;
 	if (args[0] === "--help" || args[0] === "-h") {
 		console.log(USAGE);
@@ -126,17 +81,18 @@ if (import.meta.main) {
 		console.error(`hv explore: ${request}\n\n${USAGE}`);
 		process.exit(2);
 	}
+	const command = `/explore ${args.join(" ")}`;
 	if (tuiOpen()) {
 		// Literal keys, then Enter on its own, so nothing in the direction reads as a key name.
-		execFileSync("tmux", ["send-keys", "-t", SESSION, "-l", `/explore ${args.join(" ")}`]);
-		execFileSync("tmux", ["send-keys", "-t", SESSION, "Enter"]);
+		execFileSync("tmux", ["send-keys", "-t", PANE, "-l", command]);
+		execFileSync("tmux", ["send-keys", "-t", PANE, "Enter"]);
 		console.log("The hypervisor's TUI is open, so /explore was typed into its pane: see there that the run started (tmux attach -t hypervisor). A draft in its editor would have taken the text.");
 		process.exit(0);
 	}
-	const profile = profileDir();
-	if (!command.length || !profile) {
-		console.error(`hv explore: no pi to run, or no profile (OPTCHAT_HOME, HV_PROFILE); run it as hv explore\n\n${USAGE}`);
+	if (!start.length) {
+		console.error(`hv explore: the TUI does not run, and nothing was given to start it; run it as hv explore\n\n${USAGE}`);
 		process.exit(2);
 	}
-	process.exit(await headless(args.join(" "), command, profile));
+	execFileSync(start[0]!, [...start.slice(1), command], { stdio: "inherit" });
+	console.log("The hypervisor's TUI started, with /explore as its first message: the run goes on there (tmux attach -t hypervisor).");
 }

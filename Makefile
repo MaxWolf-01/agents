@@ -2,7 +2,7 @@ PLUGIN := mx/.claude-plugin/plugin.json
 MARKETPLACE := .claude-plugin/marketplace.json
 HOOKS := mx/hooks/hooks.json
 
-.PHONY: check test test-all version release-patch release-minor release-major
+.PHONY: check test test-all test-full-path version release-patch release-minor release-major
 
 check:
 	@jq -e . $(PLUGIN) >/dev/null
@@ -33,6 +33,10 @@ test:
 test-all: $(EXTENSION)/node_modules
 	$(PYTEST) mx/
 	node --test "$(EXTENSION)/tests/**/*.test.ts"
+
+# Checks that drive real tmux; they run on a host that has it, not in the fast suite.
+test-full-path: $(EXTENSION)/node_modules
+	node --test "$(EXTENSION)/tests/full-path/*.full.ts"
 
 $(EXTENSION)/node_modules: $(EXTENSION)/package-lock.json
 	cd $(EXTENSION) && npm ci --no-audit --no-fund
