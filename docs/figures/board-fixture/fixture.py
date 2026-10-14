@@ -1,10 +1,10 @@
-"""The demo project the board and review-page screenshots are taken of.
+"""The demo project the board and review-page screenshots are taken of: its code, commit by commit.
 
-One dict per commit, so `build.py` can lay the repo down from scratch and the
-history a review page needs is real. The project is invented: a small expenses
-app whose first feature imports bank CSVs and whose second saves filtered views.
-`build.py` runs the suite at HEAD, so this code stays a worked example rather
-than something that only looks like one.
+`build.py` lays the repo down from these, so the history a review page shows is real and every
+branch a ticket names exists. The project is invented: a small expenses app, "ledger", whose first
+tree of tickets imports bank CSVs and whose second saves filtered views. `build.py` runs the suite
+at the tip of every branch, so this code stays a worked example rather than something that only
+looks like one.
 """
 
 GLOSSARY = """\
@@ -13,53 +13,83 @@ GLOSSARY = """\
 **Row**: one line of an imported statement, before it becomes an entry.
 _Avoid_: record, item
 
-**Entry**: a row the import accepted, stored against an account.
+**Entry**: a movement of money on an account, its amount in whole cents.
 _Avoid_: transaction, txn
+
+**Parse report**: what one upload produced: the rows that parsed, and every line that did not, with its reason.
 """
 
-MAKEFILE = "test:\n\tuv run --with pytest --with hypothesis pytest -q\n\nharden:\n\tharden $(ARGS)\n"
+MAKEFILE = "test:\n\tuv run --with pytest pytest -q\n"
 
-# --- 01 the skeleton -------------------------------------------------------
+# --- main: the app before either tree ---------------------------------------
 
-C1 = {
+SKELETON = {
     "pytest.ini": "[pytest]\npythonpath = .\n",
     "ledger/__init__.py": '"""A small expenses app."""\n',
-    "ledger/importer.py": '''\
-"""Turn an uploaded statement into rows the account can accept."""
+    "ledger/account.py": '''\
+"""An account and the entries it holds."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class Row:
-    """One line of a statement, before it becomes an entry."""
+class Entry:
+    """One movement of money on an account: when, to or from whom, and how much in cents."""
 
     date: str
     payee: str
     cents: int
 
 
-def parse_rows(text: str, columns: dict[str, str]) -> list[Row]:
-    """The rows of `text` that parsed, under a mapping of column name to field."""
-    raise NotImplementedError
+@dataclass
+class Account:
+    """The entries an account holds, in the order they were added."""
+
+    entries: list[Entry] = field(default_factory=list)
 ''',
-    "tests/test_importer.py": '''\
-import pytest
+    "ledger/export.py": '''\
+"""The CSV export the old account screen offered, kept until nothing calls it."""
 
-from ledger.importer import parse_rows
+import csv
+from pathlib import Path
+
+from ledger.account import Account
+
+HEADER = ["date", "description", "amount"]
 
 
-def test_the_importer_is_not_built_yet() -> None:
-    with pytest.raises(NotImplementedError):
-        parse_rows("", {})
+def export_csv(account: Account, path: Path) -> None:
+    """Write the account's entries to `path`, under the column names the banks use."""
+    with path.open("w", newline="") as out:
+        writer = csv.writer(out)
+        writer.writerow(HEADER)
+        for entry in account.entries:
+            writer.writerow([entry.date, entry.payee, f"{entry.cents / 100:.2f}"])
+''',
+    "tests/test_export.py": '''\
+import csv
+
+from ledger.account import Account, Entry
+from ledger.export import export_csv
+
+
+def test_export_round_trip(tmp_path) -> None:
+    account = Account([Entry("2026-02-01", "Coffee Roasters", -480)])
+    path = tmp_path / "export.csv"
+    export_csv(account, path)
+    with path.open() as written:
+        rows = list(csv.reader(written))
+    assert rows == [["date", "description", "amount"], ["2026-02-01", "Coffee Roasters", "-4.80"]]
 ''',
 }
 
-# --- 02 the properties, and the seams they need ----------------------------
+PIN = {".python-version": "3.13\n"}
 
-C2 = {
+# --- csv-import: the seam its grilling designed, stubbed by the orchestrator -
+
+SEAM = {
     "ledger/importer.py": '''\
-"""Turn an uploaded statement into rows the account can accept."""
+"""Turn an uploaded statement into rows an account can accept."""
 
 from dataclasses import dataclass
 
@@ -92,94 +122,13 @@ def parse_report(text: str, columns: dict[str, str]) -> ParseReport:
     """Every line of `text`, sorted into the rows that parsed and the ones that did not."""
     raise NotImplementedError
 ''',
-    "ledger/commit.py": '''\
-"""Turn accepted rows into entries against an account."""
-
-from dataclasses import dataclass, field
-
-from ledger.importer import Row
-
-
-@dataclass
-class Account:
-    """The entries an account holds."""
-
-    entries: list[Row] = field(default_factory=list)
-
-
-def commit_import(account: Account, text: str, columns: dict[str, str]) -> list[Row]:
-    """Add the statement's accepted rows to the account, skipping duplicates; the entries added."""
-    raise NotImplementedError
-''',
-    "tests/properties/__init__.py": "",
-    "tests/properties/generators.py": '''\
-"""Whole statements, so the properties explore the space the importer actually meets."""
-
-from hypothesis import strategies as st
-
-DATES = st.sampled_from(["2026-02-01", "2026-02-02", "2026-02-03", "2026-03-11"])
-PAYEES = st.text(alphabet=st.characters(categories=("L", "N", "Zs"), blacklist_characters=',"'), min_size=1, max_size=12)
-AMOUNTS = st.integers(min_value=-500_000, max_value=500_000).map(lambda c: f"{c / 100:.2f}")
-
-
-@st.composite
-def statements(draw: st.DrawFn) -> str:
-    """A CSV statement: the header the default mapping expects, then rows, some unreadable."""
-    lines = ["date,description,amount"]
-    for _ in range(draw(st.integers(min_value=0, max_value=6))):
-        date, payee, amount = draw(DATES), draw(PAYEES), draw(AMOUNTS)
-        if draw(st.booleans()):
-            payee = ""  # a line the mapping cannot read: the report must keep it
-        lines.append(f"{date},{payee},{amount}")
-    return "\\n".join(lines) + "\\n"
-''',
-    "tests/properties/test_import.py": '''\
-"""The properties the import spec states, as checks over generated statements.
-
-Each is an expected failure while the behaviour it tests does not exist, naming the
-ticket that lifts it; at a stub only the not-implemented exception counts.
-"""
-
-import pytest
-from hypothesis import given
-
-from ledger.commit import Account, commit_import
-from ledger.importer import DEFAULT_COLUMNS, parse_report, parse_rows
-
-from .generators import statements
-
-
-@given(statements())
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 02-upload-and-parse-report")
-def test_every_accepted_row_carries_a_date_a_payee_and_an_amount(statement: str) -> None:
-    for row in parse_rows(statement, DEFAULT_COLUMNS):
-        assert row.date and row.payee and isinstance(row.cents, int)
-
-
-@given(statements())
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 02-upload-and-parse-report")
-def test_a_line_is_either_accepted_or_reported_never_both(statement: str) -> None:
-    report = parse_report(statement, DEFAULT_COLUMNS)
-    body = [line for line in statement.split("\\n")[1:] if line.strip()]  # not splitlines: CSV breaks on \\n alone
-    assert len(report.rows) + len(report.rejected) == len(body)
-
-
-@given(statements())
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 04-commit-the-import")
-def test_importing_the_same_statement_twice_adds_no_entry_the_second_time(statement: str) -> None:
-    account = Account()
-    commit_import(account, statement, DEFAULT_COLUMNS)
-    settled = len(account.entries)
-    commit_import(account, statement, DEFAULT_COLUMNS)
-    assert len(account.entries) == settled
-''',
 }
 
-# --- 03 the parse report ---------------------------------------------------
+# --- upload-and-parse-report ------------------------------------------------
 
-C3 = {
+PARSE_REPORT = {
     "ledger/importer.py": '''\
-"""Turn an uploaded statement into rows the account can accept."""
+"""Turn an uploaded statement into rows an account can accept."""
 
 import csv
 from dataclasses import dataclass
@@ -265,53 +214,20 @@ def test_the_report_keeps_every_line_it_could_not_read() -> None:
     assert [number for number, _ in report.rejected] == [4]
 
 
+def test_every_line_is_accepted_or_reported_never_both() -> None:
+    report = parse_report(STATEMENT, DEFAULT_COLUMNS)
+    assert len(report.rows) + len(report.rejected) == len(STATEMENT.splitlines()) - 1
+
+
 def test_an_amount_becomes_whole_cents() -> None:
     assert to_cents("-4.80") == -480
     assert to_cents("2,400") == 240000
 ''',
-    "tests/properties/test_import.py": '''\
-"""The properties the import spec states, as checks over generated statements.
-
-Each is an expected failure while the behaviour it tests does not exist, naming the
-ticket that lifts it; at a stub only the not-implemented exception counts.
-"""
-
-import pytest
-from hypothesis import given
-
-from ledger.commit import Account, commit_import
-from ledger.importer import DEFAULT_COLUMNS, parse_report, parse_rows
-
-from .generators import statements
-
-
-@given(statements())
-def test_every_accepted_row_carries_a_date_a_payee_and_an_amount(statement: str) -> None:
-    for row in parse_rows(statement, DEFAULT_COLUMNS):
-        assert row.date and row.payee and isinstance(row.cents, int)
-
-
-@given(statements())
-def test_a_line_is_either_accepted_or_reported_never_both(statement: str) -> None:
-    report = parse_report(statement, DEFAULT_COLUMNS)
-    body = [line for line in statement.split("\\n")[1:] if line.strip()]  # not splitlines: CSV breaks on \\n alone
-    assert len(report.rows) + len(report.rejected) == len(body)
-
-
-@given(statements())
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 04-commit-the-import")
-def test_importing_the_same_statement_twice_adds_no_entry_the_second_time(statement: str) -> None:
-    account = Account()
-    commit_import(account, statement, DEFAULT_COLUMNS)
-    settled = len(account.entries)
-    commit_import(account, statement, DEFAULT_COLUMNS)
-    assert len(account.entries) == settled
-''',
 }
 
-# --- 04 the mapping ---------------------------------------------------------
+# --- map-columns-to-fields --------------------------------------------------
 
-C4 = {
+MAPPING = {
     "ledger/mapping.py": '''\
 """Which of a bank's columns is the date, the payee and the amount."""
 
@@ -343,38 +259,11 @@ def test_a_corrected_mapping_comes_back_for_the_next_statement() -> None:
 ''',
 }
 
-# --- 05 the commit ----------------------------------------------------------
+# --- commit-the-import ------------------------------------------------------
 
-C5 = {
-    "ledger/commit.py": '''\
-"""Turn accepted rows into entries against an account."""
-
-from dataclasses import dataclass, field
-
-from ledger.importer import Row, parse_report
-
-
-@dataclass
-class Account:
-    """The entries an account holds."""
-
-    entries: list[Row] = field(default_factory=list)
-
-
-def commit_import(account: Account, text: str, columns: dict[str, str]) -> list[Row]:
-    """Add the statement's accepted rows to the account, skipping duplicates; the entries added."""
-    added = dry_run(account, text, columns)
-    account.entries.extend(added)
-    return added
-
-
-def dry_run(account: Account, text: str, columns: dict[str, str]) -> list[Row]:
-    """What committing this statement would add, so the human sees it before it lands."""
-    settled = set(account.entries)
-    return [row for row in parse_report(text, columns).rows if row not in settled]
-''',
-    "tests/test_commit.py": '''\
-from ledger.commit import Account, commit_import, dry_run
+COMMIT_TEST = '''\
+from ledger.account import Account
+from ledger.commit import commit_import, dry_run
 from ledger.importer import DEFAULT_COLUMNS
 
 STATEMENT = """date,description,amount
@@ -386,23 +275,137 @@ STATEMENT = """date,description,amount
 def test_the_dry_run_and_the_commit_agree() -> None:
     account = Account()
     assert dry_run(account, STATEMENT, DEFAULT_COLUMNS) == commit_import(account, STATEMENT, DEFAULT_COLUMNS)
+'''
+
+COMMIT = {
+    "ledger/commit.py": '''\
+"""Turn a statement's accepted rows into entries on an account."""
+
+from ledger.account import Account, Entry
+from ledger.importer import parse_report
 
 
+def commit_import(account: Account, text: str, columns: dict[str, str]) -> list[Entry]:
+    """Add the statement's accepted rows to the account, skipping duplicates; the entries added."""
+    added = dry_run(account, text, columns)
+    account.entries.extend(added)
+    return added
+
+
+def dry_run(account: Account, text: str, columns: dict[str, str]) -> list[Entry]:
+    """What committing this statement would add, so the human sees it before it lands.
+
+    A row whose date, payee and amount match an entry already there is the same row twice,
+    and is skipped.
+    """
+    settled = set(account.entries)
+    entries = (Entry(row.date, row.payee, row.cents) for row in parse_report(text, columns).rows)
+    return [entry for entry in entries if entry not in settled]
 ''',
-    "tests/properties/test_import.py": C3["tests/properties/test_import.py"]
-        .replace(
-            '@given(statements())\n@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="lifted by 04-commit-the-import")\n',
-            "@given(statements())\n",
-        )
-        .replace("import pytest\nfrom hypothesis", "from hypothesis")
-        .replace(
-            "Each is an expected failure while the behaviour it tests does not exist, naming the\nticket that lifts it; at a stub only the not-implemented exception counts.",
-            "All three hold now. One written ahead of its behaviour would carry a strict expected\nfailure naming the ticket that lifts it.",
-        ),
+    "tests/test_commit.py": COMMIT_TEST,
 }
 
+# --- the close-out's one fix, on csv-import's branch ------------------------
 
-# --- the orchestrator's notes on 02's review page ---------------------------
+SETTLED = {"tests/test_commit.py": COMMIT_TEST + '''
+
+def test_a_re_issued_statement_adds_nothing() -> None:
+    account = Account()
+    commit_import(account, STATEMENT, DEFAULT_COLUMNS)
+    assert commit_import(account, STATEMENT, DEFAULT_COLUMNS) == []
+'''}
+
+# --- saved-views: filters-as-data -------------------------------------------
+
+FILTERS = {
+    "ledger/filters.py": '''\
+"""The filter bar's state as one value: what saving, reopening and sharing a view store."""
+
+from dataclasses import dataclass
+from urllib.parse import parse_qs, urlencode
+
+
+@dataclass(frozen=True)
+class Filters:
+    """The date range, the accounts and the payee the entries are narrowed to; empty is all."""
+
+    since: str = ""
+    until: str = ""
+    accounts: tuple[str, ...] = ()
+    payee: str = ""
+
+    def to_text(self) -> str:
+        """The value as one line of text, the form a saved view and a link both carry."""
+        return urlencode({"since": self.since, "until": self.until,
+                          "accounts": ",".join(self.accounts), "payee": self.payee})
+
+    @classmethod
+    def from_text(cls, text: str) -> "Filters":
+        """The value `to_text` wrote; a field the text leaves out is empty."""
+        read = {key: values[0] for key, values in parse_qs(text, keep_blank_values=True).items()}
+        return cls(read.get("since", ""), read.get("until", ""),
+                   tuple(filter(None, read.get("accounts", "").split(","))), read.get("payee", ""))
+''',
+    "tests/test_filters.py": '''\
+from ledger.filters import Filters
+
+
+def test_a_filter_value_survives_the_round_trip_dates_included() -> None:
+    value = Filters(since="2026-02-01", until="2026-02-28", accounts=("checking", "card"), payee="Coffee")
+    assert Filters.from_text(value.to_text()) == value
+
+
+def test_no_filter_is_every_entry() -> None:
+    assert Filters.from_text(Filters().to_text()) == Filters()
+''',
+}
+
+# --- flaky-export-test ------------------------------------------------------
+
+STEADY = {
+    "ledger/export.py": '''\
+"""The CSV export the old account screen offered, kept until nothing calls it."""
+
+import csv
+from pathlib import Path
+from typing import TextIO
+
+from ledger.account import Account
+
+HEADER = ["date", "description", "amount"]
+
+
+def export_csv(account: Account, path: Path) -> None:
+    """Write the account's entries to `path`, under the column names the banks use."""
+    with path.open("w", newline="") as out:
+        write_csv(account, out)
+
+
+def write_csv(account: Account, out: TextIO) -> None:
+    """Write the account's entries to an open text stream, a file or a buffer alike."""
+    writer = csv.writer(out)
+    writer.writerow(HEADER)
+    for entry in account.entries:
+        writer.writerow([entry.date, entry.payee, f"{entry.cents / 100:.2f}"])
+''',
+    "tests/test_export.py": '''\
+import csv
+from io import StringIO
+
+from ledger.account import Account, Entry
+from ledger.export import write_csv
+
+
+def test_export_round_trip() -> None:
+    account = Account([Entry("2026-02-01", "Coffee Roasters", -480)])
+    out = StringIO()
+    write_csv(account, out)
+    rows = list(csv.reader(StringIO(out.getvalue())))
+    assert rows == [["date", "description", "amount"], ["2026-02-01", "Coffee Roasters", "-4.80"]]
+''',
+}
+
+# --- the worker's notes on upload-and-parse-report's review page ------------
 
 NOTES = {
     "notes": [
@@ -412,10 +415,10 @@ NOTES = {
             "line": 34,
             "end": 37,
             "side": "new",
-            "text": "The spec says a line the mapping cannot read is shown, not dropped, so the report "
-                    "carries both lists and the second property can count them against the upload. "
-                    "Rejecting per line rather than per file is what keeps the mapping screen useful "
-                    "on a statement with one bad row.",
+            "text": "The parent ticket's P2 says a line the mapping cannot read is reported, not dropped, so "
+                    "the report carries both lists and a test can count them against the upload. Rejecting "
+                    "per line rather than per file is what keeps the mapping screen useful on a statement "
+                    "with one bad row.",
         },
         {
             "id": 2,
@@ -423,20 +426,16 @@ NOTES = {
             "line": 62,
             "end": 66,
             "side": "new",
-            "text": "Cents, not a float: the glossary's Entry carries an integer amount. One assumption "
-                    "I could not settle from the spec, flagged rather than guessed at: a statement in "
-                    "a currency with three decimal places truncates here.",
+            "text": "Cents, not a float: the glossary's Entry carries an integer amount. One assumption I "
+                    "could not settle from the ticket, flagged rather than guessed at: a statement in a "
+                    "currency with three decimal places truncates here.",
         },
         {
             "id": 3,
-            "path": "ledger/commit.py",
-            "text": "Read and deliberately left alone. The third property still names "
-                    "04-commit-the-import, and this ticket does not touch the commit seam; its stub "
-                    "is what keeps the property collecting until then.",
+            "path": "ledger/export.py",
+            "text": "Read and deliberately left alone. `export_csv` writes the format this parser reads, "
+                    "so it looked like a test oracle, but nothing calls it any more; retiring it is its "
+                    "own ticket, not this slice's.",
         },
     ]
 }
-
-# --- the orchestrator's own fix, from the harden report ---------------------
-
-C6 = {"tests/test_commit.py": C5["tests/test_commit.py"].rstrip("\n") + '\n\n\ndef test_a_re_issued_statement_adds_nothing() -> None:\n    account = Account()\n    commit_import(account, STATEMENT, DEFAULT_COLUMNS)\n    assert commit_import(account, STATEMENT, DEFAULT_COLUMNS) == []\n'}
