@@ -1,3 +1,7 @@
+## 1.0.60
+
+- fix(session-page): clickable links, and a reload that follows a new turn when you were caught up
+
 ## 1.0.59
 
 - feat(tracker): proposed tickets wait off the frontier for a triage the user starts
