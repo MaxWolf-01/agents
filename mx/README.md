@@ -90,6 +90,7 @@ Every session you sit at answers on its session page, which the bullet "A sessio
 | Prototype         | `agent/prototypes/<slug>/`           | committed; retired with the work it served                            | code that answered a design question + `ANSWER.md`                                                                                                                  |
 | Show              | `agent/show/<slug>/`, `<branch>/`    | committed with the round or the landing that made it; retired with the ticket or branch it served | an explanation carried by an artefact                                                                                                                               |
 | Handoff           | `agent/handoffs/YYYY-MM-DD-slug.md`  | committed; retired by the session that picks it up                    | a session compacted for a fresh one to start from                                                                                                                  |
+| Retro             | `agent/retro/`                       | durable; rewritten whole by every retro run                           | the repo's living report and the page built from it                                                                                                                 |
 
 `/mx:tracker` defines the file conventions (status, blocked-by, frontier, claiming, the board); the tracker lives in the agent repo, which is a git repo of its own at the project's `agent/`.
 
@@ -135,13 +136,13 @@ Planning that outgrows one session keeps its artefacts: the open questions leave
 | `/mx:show` | show, don't tell; explain via artifact (diagram, comparison, demo, explainer page, …) |
 | `/mx:fork` | delegate to an agent that inherits the full conversation |
 | `/mx:diagnosing-bugs` | tight-loop debugging for hard bugs |
-| `/mx:improve-codebase-architecture`, `/mx:bloat-audit` | codebase health |
+| `/mx:improve-codebase-architecture`, `/mx:bloat-audit`, `/mx:retro` | codebase health; `/mx:retro` works the repo's living report, which a weekly retro keeps |
 | `/mx:research` | primary-source investigation → findings on the ticket that asked |
 | `/mx:codex` | second opinion from a different model |
 | `/mx:handoff`, `/mx:transcript`, `/mx:recap` | session continuity & status |
 | `/mx:writing-for-agents`, `/mx:writing-for-humans` | the writing references: documents that instruct agents (skills, CLAUDE.md, tickets) / artifact text read cold (docs, comments, UI copy) |
 
-Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `project-setup`, `ml`, `house-style`, `session-name`, `restore-sessions`, `permissions-review`, `review-pr`, `github`, `gh-stack`, `expert`, `changelog`, `dependabot-triage`.
+Plus assorted utilities: `tmux`, `mermaid`, `tyro-cli`, `project-setup`, `ml`, `house-style`, `session-name`, `restore-sessions`, `review-pr`, `github`, `gh-stack`, `expert`, `changelog`, `dependabot-triage`.
 
 ---
 

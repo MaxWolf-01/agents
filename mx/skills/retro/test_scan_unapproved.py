@@ -1,8 +1,4 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["tyro"]
-# ///
-"""Checks for the shell parsing in scan_unapproved.py. Run: uv run test_scan_unapproved.py
+"""Checks for the shell parsing in scan_unapproved.py. Run: make test, or pytest on this file.
 
 Every case below is a real command shape taken from session transcripts. The parsing exists
 to mirror Claude Code's permission check, so the cases that matter are the ones where naive
@@ -113,10 +109,3 @@ def test_the_case_the_old_scanner_got_wrong() -> None:
     segments = [normalize(s) for s in split_segments("cd /tmp/greyline && tre --limit 60")]
     assert all(is_allowed(s, patterns) or internally_approved(s) for s in segments)
 
-
-if __name__ == "__main__":
-    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
-    for test in tests:
-        test()
-        print(f"ok  {test.__name__}")
-    print(f"\n{len(tests)} passed")

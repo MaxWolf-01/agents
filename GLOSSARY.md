@@ -33,7 +33,7 @@ _Avoid_: Further Notes, Not yet specified, unknowns, TBD
 ### Tracker
 
 **Agent repo**:
-The repo of everything that plans a project, held inside the repo it plans and ignored by it: its tickets, show directories, prototypes and research.
+The repo of everything that plans a project, its tickets first, held inside the repo it plans and ignored by it.
 _In code_: `agent/`
 _Avoid_: tracker repo (the tracker is one directory in it), meta repo, planning repo
 
@@ -179,3 +179,29 @@ _Avoid_: context budget, token budget
 **Session page**:
 The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log
+
+### Retros
+
+**Retro**:
+A recurring review of one repo and its tracker that runs unattended and keeps a living report; a repo retro, or the workflow retro.
+_Avoid_: retrospective, post-mortem, review (a diff's)
+
+**Repo retro**:
+A retro of one repo's code and its proposed tickets, through every code lens, reading no session.
+_Avoid_: architecture retro, architecture review
+
+**Workflow retro**:
+The agents repo's retro: its repo retro, plus a reading of every repo's sessions for friction in the workflow.
+_Avoid_: agents retro, meta-analysis
+
+**Lens pass**:
+The part of every retro that reads its repo's code through each code lens and proposes candidates for it.
+_Avoid_: architecture pass
+
+**Code lens**:
+One angle a lens pass reads a repo's code from; architecture is one.
+_Avoid_: lens (bare; a workflow retro's finding has a lens, whose friction it is)
+
+**Living report**:
+A retro's one report for its repo, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.
+_Avoid_: weekly report, retro report

@@ -19,6 +19,7 @@ A **flow** is a path through the skills. Most work travels one **main flow**, wi
 | Prototype         | `agent/prototypes/<slug>/`           | committed; retired with the work it served (`/mx:tracker`)             | throwaway code that answered a design question + `ANSWER.md` (question, verdicts)                                                                                      |
 | Show              | `agent/show/<slug>/`, `<branch>/`    | committed with the round or the landing that made it; retired in the commit that retires the ticket or branch it served (`/mx:tracker`) | an explanation carried by an artefact: diagram, comparison, run output, explainer page                                                                                                           |
 | Handoff           | `agent/handoffs/YYYY-MM-DD-slug.md`  | committed; retired by the session that picks it up (`/mx:handoff`)    | a session compacted for a fresh one to start from                                                                                                                                              |
+| Retro             | `agent/retro/`                       | durable; the report rewritten whole and committed by every retro run (`/mx:retro`) | the living report, `report.md`, and the page built from it; in the agents repo's, `repos`, the other repos the workflow retro collects |
 
 Every `agent/` row above is in the **agent repo**, a git repo of its own inside the one it plans. Layout, state, and claiming: `/mx:tracker`. A fact that fits none of these (a gotcha, a vendor quirk, knowledge not derivable from the code): an ADR if it constrained a decision, a code comment if it's code-local, the project CLAUDE.md if it's navigational.
 
@@ -71,6 +72,7 @@ Not product work, upkeep.
 
 - **`/mx:improve-codebase-architecture`**: survey the codebase for **deepening opportunities**, then grill through them in order of impact.
 - **`/mx:bloat-audit`**: an over-engineering audit, a ranked list of what to delete, simplify, or replace with stdlib.
+- **`/mx:retro`**: act on the repo's living report, which a weekly retro run keeps: the findings and candidates the user picks are grilled into tickets, and their verdicts written into it; or start a run by hand, on a focus they name. It is typed by the user, so a session that hears them want to act on a finding names it to them.
 
 ## Vocabulary underneath
 
