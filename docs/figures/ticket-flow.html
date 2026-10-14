@@ -2,318 +2,541 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>mx: a ticket's flow</title>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mx: a ticket&#x27;s flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-:root{
+/* The house tokens: parchment over brown ink by day, charcoal and sand by
+   night, one moss accent for anything you can act on. Copy this file into the
+   project, with the font <link> from the head of demo.html, and change what the
+   project needs: the serif, the size and leading that fit it, the measure. The
+   colours and the roles stay.
+
+   Every colour but the series is a light-dark() pair. Without data-theme on
+   the root the page follows the system; data-theme="day" or "night" pins it.
+   The rules sit in the base and components layers, so a project's own CSS,
+   and Tailwind's utilities, win over them without fighting specificity. */
+
+:root {
   color-scheme: light dark;
-  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
-  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
-  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
-  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
-  --wash:light-dark(rgba(45,49,66,.03),rgba(245,245,245,.03));
+
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #75a252);
+  --accent-2: light-dark(#674806, #cdb78a);
+  --wash: light-dark(rgb(66 103 36 / 0.16), rgb(117 162 82 / 0.22));
+  --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+  --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+
+  /* Muted on purpose, so five series sit quietly on either ground. The order
+     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
+     ever sitting side by side. */
+  --series-1: #9c6b50; /* rust */
+  --series-2: #5e7a9b; /* dusty blue */
+  --series-3: #b8915a; /* mustard */
+  --series-4: #6e6479; /* slate */
+  --series-5: #7c8f6f; /* sage */
+
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --size-body: 19px;
+  --leading-body: 1.62;
+  --measure: 43rem;
+  --page: 62rem;
+  --radius: 6px;
 }
-body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
-.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
-h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
-.dek{font-size:13px; color:var(--muted); max-width:760px; line-height:1.5; margin:0 0 24px;}
-.dek code{font:500 12px 'Geist Mono',monospace;}
-svg{display:block; width:100%; height:auto;}
-.mask{fill:var(--paper);}
-.lane{fill:var(--wash); stroke:var(--rule); stroke-width:1;}
-.station{fill:var(--node); stroke:var(--ink); stroke-width:1.2;}
-.station-you{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
-.ghost{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
-.card-you{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1;}
-.chip{fill:var(--node); stroke:var(--ink); stroke-width:1;}
-.chip-ghost{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
-.rail{fill:none; stroke:var(--ink); stroke-width:1.6;}
-.rail-out{fill:none; stroke:var(--muted); stroke-width:1.2;}
-.back{fill:none; stroke:var(--muted); stroke-width:1.2; stroke-dasharray:5 4;}
-.flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
-.tick{fill:none; stroke:var(--muted); stroke-width:1;}
-.tick-you{fill:none; stroke:var(--accent); stroke-width:1.2;}
-.dot{fill:var(--muted);} .dot-you{fill:var(--accent);}
-.m-muted{fill:var(--muted);} .m-ink{fill:var(--ink);} .m-accent{fill:var(--accent);}
-text{fill:var(--ink);}
-.band{font:500 9px 'Geist Mono',monospace; letter-spacing:.16em; fill:var(--muted);}
-.where{font:400 10px 'Geist',sans-serif; fill:var(--soft);}
-.name{font:600 12px 'Geist',sans-serif;}
-.note{font:400 10px 'Geist',sans-serif; fill:var(--muted);}
-.msg-soft{font:400 10px 'Geist',sans-serif; fill:var(--muted);}
-.cmd{font:500 10px 'Geist Mono',monospace; fill:var(--ink);}
-.cmdlabel{font:500 9px 'Geist Mono',monospace; fill:var(--muted);}
-.state{font:600 13px 'Geist Mono',monospace;}
-.gstate{font:600 11px 'Geist Mono',monospace; fill:var(--muted);}
-.sdetail{font:400 10px 'Geist',sans-serif; fill:var(--muted);}
-.al{font:600 9px 'Geist Mono',monospace; letter-spacing:.08em; fill:var(--muted);}
-.al-accent{font:600 9px 'Geist Mono',monospace; letter-spacing:.12em; fill:var(--accent);}
-.host{font:500 9px 'Geist Mono',monospace; fill:var(--muted);}
-.chipname{font:500 11px 'Geist',sans-serif;}
-.chipcmd{font:500 10px 'Geist Mono',monospace;}
-.chipnote{font:400 9px 'Geist Mono',monospace; fill:var(--soft);}
-.rule{stroke:var(--rule); stroke-width:1;}
-.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
-.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
-.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
-.scheme:hover{color:var(--ink);}
-.mask-lane{fill:var(--wash);}
-.rail-by{fill:none; stroke:var(--ink); stroke-width:1.2;}
+
+[data-theme="day"] {
+  color-scheme: light;
+}
+
+[data-theme="night"] {
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--body);
+    font: 400 var(--size-body) / var(--leading-body) var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--mark);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* A link in chrome (nav, back, next) is muted text that turns accent; a link
+     in running text is accent and underlined, under .prose below. */
+  a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 150ms;
+  }
+
+  a:hover {
+    color: var(--accent);
+  }
+
+  code,
+  kbd,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  code {
+    font-size: 0.875em;
+  }
+}
+
+/* Type by role, so a page asks for a heading rather than a size. */
+@layer components {
+  .v-title {
+    font-weight: 600;
+    font-size: clamp(1.875rem, 3.5vw, 2.5rem);
+    line-height: 1.12;
+    letter-spacing: -0.022em;
+    color: var(--strong);
+  }
+
+  .v-h2 {
+    font-weight: 600;
+    font-size: 1.3em;
+    line-height: 1.3;
+    letter-spacing: -0.012em;
+    color: var(--strong);
+  }
+
+  .v-h3 {
+    font-weight: 600;
+    font-size: 1.05em;
+    line-height: 1.4;
+    color: var(--strong);
+  }
+
+  .v-lead {
+    font-size: 1.14em;
+    line-height: 1.55;
+  }
+
+  .v-small {
+    font-size: 0.92em;
+    line-height: 1.6;
+  }
+
+  /* The monospace line: dates, counts, provenance, field labels. Lowercase. */
+  .v-meta {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v-num {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Running text, styled by tag: prose arrives as markup and should not need
+     a class per paragraph. */
+  .prose > * {
+    max-width: var(--measure);
+  }
+
+  /* A table or a code block takes the width of the column the prose sits in
+     rather than the measure: squeezed to the measure, its cells wrap. */
+  .prose > table,
+  .prose > pre {
+    max-width: 100%;
+  }
+
+  .prose > * + * {
+    margin-top: 1.1em;
+  }
+
+  .prose h2 {
+    font-weight: 600;
+    font-size: 1.3em;
+    line-height: 1.3;
+    letter-spacing: -0.012em;
+    color: var(--strong);
+    margin-top: 2.4em;
+  }
+
+  .prose h3 {
+    font-weight: 600;
+    font-size: 1.05em;
+    color: var(--strong);
+    margin-top: 1.8em;
+  }
+
+  .prose a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  .prose a:hover {
+    text-decoration-color: var(--accent);
+  }
+
+  .prose strong {
+    font-weight: 600;
+    color: var(--strong);
+  }
+
+  .prose code {
+    background: var(--ground-2);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  .prose ul,
+  .prose ol {
+    padding-left: 1.2em;
+  }
+
+  .prose li + li {
+    margin-top: 0.4em;
+  }
+
+  .prose li::marker {
+    color: var(--muted);
+  }
+
+  /* Block display lets a table too wide for a narrow window scroll inside
+     itself instead of widening the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .prose th,
+  .prose td {
+    padding: 0.45rem 1.75rem 0.45rem 0;
+    text-align: left;
+    vertical-align: baseline;
+  }
+
+  .prose th:last-child,
+  .prose td:last-child {
+    padding-right: 0;
+  }
+
+  .prose th {
+    font: 400 0.8125rem / 1.5 var(--font-mono);
+    color: var(--muted);
+    border-bottom: 1px solid var(--muted);
+  }
+
+  .prose td {
+    border-bottom: 1px solid var(--edge);
+  }
+
+  .prose tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .prose blockquote {
+    margin: 0;
+    border-left: 2px solid var(--edge);
+    padding-left: 1.2em;
+    color: var(--muted);
+  }
+}
+
+
+/* The figure on the house tokens above. */
+body { padding: 40px 56px 32px; }
+header { display: flex; align-items: flex-start; gap: 2rem; }
+h1 { margin: 0; }
+.lead { margin: 12px 0 28px; max-width: 46rem; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.lead code { font-size: 13px; }
+.scheme { margin-left: auto; display: inline-flex; padding: 0.25rem; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color 150ms; }
+.scheme:hover { color: var(--accent); }
+[data-theme="night"] .sun, [data-theme="day"] .moon { display: none; }
+svg.fig { display: block; width: 100%; height: auto; }
+
+
+.lane { fill: none; stroke: var(--edge); stroke-width: 1; }
+.lane-fill { fill: var(--wash-ink); stroke: var(--edge); stroke-width: 1; }
+.hair { stroke: var(--edge); stroke-width: 1; }
+.station { fill: var(--ground-2); stroke: var(--body); stroke-width: 1; }
+.station-you { fill: var(--wash); stroke: var(--accent); stroke-width: 1.2; }
+.card-you { fill: var(--wash); stroke: var(--accent); stroke-width: 1; }
+.ghost, .chip-ghost { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.chip { fill: var(--ground-2); stroke: var(--body); stroke-width: 1; }
+.rail { fill: none; stroke: var(--body); stroke-width: 1.2; }
+.rail-by { fill: none; stroke: var(--body); stroke-width: 1; }
+.out { fill: none; stroke: var(--muted); stroke-width: 1; }
+.back { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5 4; }
+.flow { fill: none; stroke: var(--muted); stroke-width: 1; }
+.tick { fill: none; stroke: var(--muted); stroke-width: 1; }
+.tick-you { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+.dot { fill: var(--muted); }
+.m-muted { fill: var(--muted); }
+.m-body { fill: var(--body); }
+.m-accent { fill: var(--accent); }
+svg text { fill: var(--body); font-family: var(--font-body); }
+.row, .track, .legend, .host { font-family: var(--font-mono); font-size: 13px; fill: var(--muted); }
+.track { font-size: 12px; }
+.host { font-size: 12px; }
+.rowdetail { font-size: 13px; fill: var(--muted); }
+.name { font-weight: 600; font-size: 14px; }
+.name-you { font-weight: 600; font-size: 14px; fill: var(--accent); }
+.note, .sdetail { font-size: 13px; fill: var(--muted); }
+.chiptext { font-size: 13px; fill: var(--body); }
+.cmdline { font-family: var(--font-mono); font-size: 12px; }
+.state { font-family: var(--font-mono); font-size: 14px; font-weight: 500; }
+.gstate { font-family: var(--font-mono); font-size: 13px; fill: var(--muted); }
+.m { font-family: var(--font-mono); font-size: 12px; }
+
 </style>
 </head>
 <body>
-<header class="topbar">
-  <p class="eyebrow">mx dispatch &middot; a ticket's flow</p>
-  <button class="scheme"></button>
+<header>
+  <h1 class="v-title" id="t">A ticket's flow, and the command that writes each status</h1>
+  <button class="scheme" id="scheme" aria-label="switch to night">
+    <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+  </button>
 </header>
-<h1 id="t">A ticket's flow: where each status is written, and by which command</h1>
-<p class="dek">A ticket's status is a field in its file in the agent repo, and the sessions on your machine write it: a
-session you sit at, and the orchestrator, which holds the branch the tickets merge into; often they are one session. Each line
-into a status starts at the command that writes it, in the row where that command is typed. Workers build on hosts of their
-own and write no ticket file. Nothing moves back from <code>done</code>.</p>
-
-<svg viewBox="0 0 1200 1112" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t">
+<p class="lead">A ticket's status is a field in its file, and each line into a status starts at the command that writes it, in the row where that command is typed.</p>
+<svg class="fig" viewBox="0 0 1200 1128" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-muted"/></marker>
-    <marker id="arrow-ink" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-ink"/></marker>
-    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-accent"/></marker>
+    <marker id="arrow-ink" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-body"/></marker>
+    <marker id="arrow-you" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-accent"/></marker>
   </defs>
-
-  <!-- rows of place -->
-  <rect class="lane" x="24" y="32" width="1168" height="204" rx="8"/>
-  <rect class="lane" x="24" y="248" width="1168" height="272" rx="8"/>
-  <rect class="lane" x="24" y="532" width="1168" height="228" rx="8"/>
-  <rect class="lane" x="24" y="772" width="1168" height="268" rx="8"/>
-
-  <!-- connectors: the rail, the moves back, the ticks from the row that types each command -->
-  <path class="rail" d="M 176,400 H 222" marker-end="url(#arrow-ink)"/>
-  <path class="rail" d="M 352,400 H 510" marker-end="url(#arrow-ink)"/>
-  <path class="rail" d="M 640,400 H 818" marker-end="url(#arrow-ink)"/>
-  <path class="rail" d="M 948,400 H 1026" marker-end="url(#arrow-ink)"/>
-  <path class="rail-out" d="M 940,428 V 458" marker-end="url(#arrow)"/>
-  <path class="rail-out" d="M 1132,428 V 458" marker-end="url(#arrow)"/>
-  <path class="back" d="M 860,372 V 308 Q 860,300 852,300 H 312 Q 304,300 304,308 V 370" marker-end="url(#arrow)"/>
-  <path class="back" d="M 836,372 V 356 Q 836,348 828,348 H 624 Q 616,348 616,356 V 370" marker-end="url(#arrow)"/>
-  <path class="back" d="M 556,372 V 356 Q 556,348 548,348 H 336 Q 328,348 328,356 V 370" marker-end="url(#arrow)"/>
-  <path class="rail-by" d="M 96,428 V 452 Q 96,460 104,460 H 156 a 8,8 0 0,1 16,0 H 512 Q 520,460 520,452 V 430" marker-end="url(#arrow-ink)"/>
-  <path class="tick" d="M 200,140 V 398" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 248,228 V 370" marker-end="url(#arrow)"/>
-  <path class="tick-you" d="M 916,208 V 370" marker-end="url(#arrow-accent)"/>
-  <path class="tick" d="M 164,578 V 430" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 560,584 V 430" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 836,578 V 430" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 1052,578 V 430" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 400,700 V 980"/>
-  <path class="tick" d="M 400,832 H 414" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 504,832 H 518" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 632,832 H 646" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 760,832 H 768 Q 776,832 776,824 V 614 Q 776,606 768,606 H 742" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 400,912 H 414" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 504,912 H 518" marker-end="url(#arrow)"/>
-  <path class="back" d="M 576,928 V 932 Q 576,940 568,940 H 468 Q 460,940 460,932 V 930" marker-end="url(#arrow)"/>
-  <path class="tick" d="M 400,980 H 414" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 504,980 H 518" marker-end="url(#arrow)"/>
-
-  <!-- stations, ghosts, cards, chips -->
-  <rect class="station" x="48" y="372" width="128" height="56" rx="6"/>
-  <rect class="station" x="224" y="372" width="128" height="56" rx="6"/>
-  <rect class="station" x="512" y="372" width="128" height="56" rx="6"/>
-  <rect class="station-you" x="820" y="372" width="128" height="56" rx="6"/>
-  <rect class="station" x="1028" y="372" width="128" height="56" rx="6"/>
-  <rect class="ghost" x="896" y="460" width="88" height="48" rx="6"/>
-  <rect class="ghost" x="1088" y="460" width="88" height="48" rx="6"/>
-  <rect class="card-you" x="212" y="68" width="152" height="84" rx="6"/>
-  <rect class="card-you" x="788" y="68" width="192" height="140" rx="6"/>
-  <rect class="chip" x="416" y="816" width="88" height="32" rx="4"/>
-  <rect class="chip" x="520" y="816" width="112" height="32" rx="4"/>
-  <rect class="chip" x="648" y="816" width="112" height="32" rx="4"/>
-  <rect class="chip" x="416" y="896" width="88" height="32" rx="4"/>
-  <rect class="chip-ghost" x="520" y="896" width="112" height="32" rx="4"/>
-  <rect class="chip" x="416" y="964" width="88" height="32" rx="4"/>
-  <rect class="chip-ghost" x="520" y="964" width="112" height="32" rx="4"/>
-
-  <!-- labels -->
-  <text class="band" x="40" y="54">WITH YOU</text>
-  <text class="where" x="107" y="54">a session you sit at, on your machine</text>
-  <text class="band" x="40" y="270">THE TRACKER</text>
-  <text class="where" x="264" y="270">agent/tickets/&lt;slug&gt;.md, written in the agent repo&#x27;s main checkout, never on a ticket branch</text>
-  <text class="band" x="40" y="554">THE ORCHESTRATOR</text>
-  <text class="where" x="176" y="554">the session holding the branch the tickets merge into, on your machine</text>
-  <text class="band" x="40" y="794">WORKER HOSTS</text>
-  <text class="where" x="134" y="794">a worktree per ticket, on ticket/&lt;slug&gt;</text>
-  <text class="state" x="60" y="394">proposed</text>
-  <text class="sdetail" x="60" y="412">an agent filed it</text>
-  <text class="state" x="236" y="394">open</text>
-  <text class="sdetail" x="236" y="412">ruled, not built</text>
-  <text class="state" x="524" y="394">claimed</text>
-  <text class="sdetail" x="524" y="412">a session holds it</text>
-  <text class="state" x="832" y="394">review</text>
-  <text class="sdetail" x="832" y="412">waits for your ruling</text>
-  <text class="state" x="1040" y="394">done</text>
-  <text class="sdetail" x="1040" y="412">your accept, landed</text>
-  <text class="gstate" x="908" y="480">dropped</text>
-  <text class="sdetail" x="908" y="496">git rm&#x27;d</text>
-  <text class="gstate" x="1100" y="480">retired</text>
-  <text class="sdetail" x="1100" y="496">git log keeps it</text>
-  <rect class="mask" x="357" y="280" width="450" height="16"/>
-  <rect class="mask-lane" x="357" y="280" width="450" height="16"/>
-  <text class="al" x="582" y="292" text-anchor="middle">REDO <tspan class="cmd">dispatch ctl cleanup, git branch -D, tracker set &lt;slug&gt; status=open</tspan></text>
-  <rect class="mask" x="640" y="312" width="172" height="30"/>
-  <rect class="mask-lane" x="640" y="312" width="172" height="30"/>
-  <text class="al" x="726" y="324" text-anchor="middle">AMEND</text>
-  <text class="cmd" x="726" y="338" text-anchor="middle">dispatch ctl resume &lt;slug&gt;</text>
-  <rect class="mask" x="344" y="312" width="196" height="30"/>
-  <rect class="mask-lane" x="344" y="312" width="196" height="30"/>
-  <text class="al" x="442" y="324" text-anchor="middle">SESSION LOST</text>
-  <text class="cmd" x="442" y="338" text-anchor="middle">tracker set &lt;slug&gt; status=open</text>
-  <rect class="mask" x="236" y="440" width="252" height="14"/>
-  <rect class="mask-lane" x="236" y="440" width="252" height="14"/>
-  <text class="note" x="362" y="451" text-anchor="middle">a proposal is claimed as it stands, like an open ticket</text>
-  <text class="al" x="948" y="442">reject</text>
-  <text class="cmdlabel" x="948" y="455">tracker drop</text>
-  <text class="cmdlabel" x="1124" y="442" text-anchor="end">tracker</text>
-  <text class="cmdlabel" x="1124" y="455" text-anchor="end">retire</text>
-  <text class="msg-soft" x="600" y="16" text-anchor="middle">nothing moves back from done; a decision reopened once code reads it is filed as a new ticket that supersedes it</text>
-  <text class="name" x="40" y="84">Rule on a proposal</text>
-  <text class="note" x="40" y="100">before it is built; one already</text>
-  <text class="note" x="40" y="113">built is ruled at its landing</text>
-  <text class="cmd" x="40" y="132">tracker set &lt;slug&gt;</text>
-  <text class="cmd" x="40" y="145">status=open</text>
-  <circle class="dot" cx="200" cy="140" r="2.5"/>
-  <text class="al-accent" x="222" y="86">NEEDS-USER</text>
-  <text class="note" x="222" y="102">kept from every worker; its</text>
-  <text class="note" x="222" y="115">question waits in the</text>
-  <text class="note" x="222" y="128">needs-me group, for a</text>
-  <text class="note" x="222" y="141">session with you</text>
-  <text class="name" x="216" y="172">Ask for a ticket</text>
-  <text class="note" x="216" y="188">filed open, ruled by your asking</text>
-  <text class="cmd" x="216" y="207">tracker new &lt;slug&gt;</text>
-  <text class="cmd" x="216" y="220">--status open</text>
-  <circle class="dot" cx="248" cy="228" r="2.5"/>
-  <text class="name" x="392" y="84">Nothing waits on you while it builds</text>
-  <text class="note" x="392" y="100">A session writes an answer you give meanwhile into the</text>
-  <text class="note" x="392" y="113">ticket, and the worker gets it as guidance on its resume.</text>
-  <text class="al-accent" x="798" y="86">YOUR RULING</text>
-  <text class="name" x="798" y="104">accept, amend, redo or reject</text>
-  <text class="note" x="798" y="122">on the calls the landing shows you,</text>
-  <text class="note" x="798" y="135">each a [Dn] question in the needs-me</text>
-  <text class="note" x="798" y="148">group; tracker rule records each</text>
-  <text class="note" x="798" y="161">answer. A child that is no hinge is</text>
-  <text class="note" x="798" y="174">ruled with its parent, at its close-out</text>
-  <circle class="dot-you" cx="916" cy="208" r="2.5"/>
-  <text class="name" x="1008" y="84">Drive what landed</text>
-  <text class="note" x="1008" y="100">file each finding as a new</text>
-  <text class="note" x="1008" y="113">ticket, with blocking edges</text>
-  <text class="name" x="1008" y="138">Reopen a decision</text>
-  <text class="note" x="1008" y="154">a new ticket supersedes it,</text>
-  <text class="note" x="1008" y="167">filed open like any you ask for;</text>
-  <text class="note" x="1008" y="180">the old one gets a forward pointer</text>
-  <circle class="dot" cx="164" cy="578" r="2.5"/>
-  <text class="cmd" x="40" y="592">tracker new &lt;slug&gt;</text>
-  <text class="note" x="40" y="608">files what it reads: a punt or</text>
-  <text class="note" x="40" y="621">friction in a report, a miss</text>
-  <text class="note" x="40" y="634">in a build. A proposal is built</text>
-  <text class="note" x="40" y="647">while your ruling waits</text>
-  <text class="cmd" x="216" y="592">tracker frontier</text>
-  <text class="note" x="216" y="608">each tick, the tickets unclaimed,</text>
-  <text class="note" x="216" y="621">unblocked and not needing you</text>
-  <text class="name" x="216" y="644">Plans the wave</text>
-  <text class="note" x="216" y="660">tickets with disjoint files run</text>
-  <text class="note" x="216" y="673">together; a shared surface goes</text>
-  <text class="note" x="216" y="686">to one serial worker</text>
-  <text class="cmd" x="216" y="709">worker-hosts</text>
-  <text class="note" x="216" y="725">the hosts to pick from, one</text>
-  <text class="note" x="216" y="738">per ticket at spawn</text>
-  <circle class="dot" cx="560" cy="584" r="2.5"/>
-  <text class="cmd" x="392" y="592">dispatch claim &lt;slug&gt;</text>
-  <text class="cmd" x="392" y="610">dispatch prompt &lt;slug&gt; &lt; msg</text>
-  <text class="cmd" x="392" y="628">dispatch ctl --host &lt;host&gt;</text>
-  <text class="cmd" x="416" y="641">spawn &lt;slug&gt; &lt;model&gt;</text>
-  <text class="cmd" x="392" y="659">dispatch wait &lt;slug&gt;</text>
-  <text class="note" x="392" y="677">the ticket and its ancestry are</text>
-  <text class="note" x="392" y="690">the worker&#x27;s whole brief</text>
-  <text class="cmd" x="604" y="592">dispatch ctl probe</text>
-  <text class="cmd" x="604" y="610">dispatch fetch &lt;slug&gt;</text>
-  <text class="note" x="604" y="628">a report this round committed</text>
-  <text class="note" x="604" y="641">is the finished signal; then</text>
-  <text class="note" x="604" y="654">it reads the diff against the</text>
-  <text class="note" x="604" y="667">ticket and its ancestry</text>
-  <circle class="dot" cx="836" cy="578" r="2.5"/>
-  <text class="cmd" x="792" y="592">dispatch review &lt;slug&gt;</text>
-  <text class="note" x="792" y="608">imports the report, renders the</text>
-  <text class="note" x="792" y="621">review page, writes review</text>
-  <text class="note" x="792" y="647">on this read it merges a child that</text>
-  <text class="note" x="792" y="660">is no hinge into its parent&#x27;s branch</text>
-  <text class="note" x="792" y="673">(--no-ff), which unblocks its</text>
-  <text class="note" x="792" y="686">siblings before any ruling</text>
-  <text class="note" x="792" y="708">a parent goes in at its close-out:</text>
-  <text class="cmd" x="792" y="724">tracker set &lt;slug&gt; status=review</text>
-  <circle class="dot" cx="1052" cy="578" r="2.5"/>
-  <text class="cmd" x="1008" y="592">dispatch review &lt;slug&gt;</text>
-  <text class="note" x="1008" y="608">or, for a parent and its children:</text>
-  <text class="cmd" x="1008" y="624">dispatch accept &lt;slug&gt;</text>
-  <text class="note" x="1008" y="642">once your accept is merged</text>
-  <text class="note" x="1008" y="655">--no-ff and verified; tracker</text>
-  <text class="note" x="1008" y="668">retire then takes a finished</text>
-  <text class="note" x="1008" y="681">tree out of the tracker</text>
-  <text class="name" x="40" y="824">A worker per ticket</text>
-  <text class="note" x="40" y="840">worker-hosts lists the machines, their live state and</text>
-  <text class="note" x="40" y="853">what each can do; the orchestrator picks one per</text>
-  <text class="note" x="40" y="866">ticket as it spawns it, and local is your own machine.</text>
-  <text class="note" x="40" y="879">On an isolated host the worker runs with permissions</text>
-  <text class="note" x="40" y="892">bypassed. A worker writes no ticket file; dispatch</text>
-  <text class="note" x="40" y="905">review imports its report into the ticket.</text>
-  <circle class="dot" cx="400" cy="700" r="2.5"/>
-  <text class="host" x="416" y="810">ticket/a  on &lt;user@host&gt;</text>
-  <text class="chipname" x="460" y="836" text-anchor="middle">build, test</text>
-  <text class="chipcmd" x="576" y="836" text-anchor="middle">/mx:code-review</text>
-  <text class="chipname" x="704" y="836" text-anchor="middle">its report, last</text>
-  <text class="chipnote" x="460" y="862" text-anchor="middle">/mx:testing</text>
-  <text class="chipnote" x="576" y="862" text-anchor="middle">of its own branch</text>
-  <text class="chipnote" x="704" y="862" text-anchor="middle">agent/show/&lt;slug&gt;/</text>
-  <text class="host" x="416" y="890">ticket/b  on &lt;user@host&gt;</text>
-  <text class="chipname" x="460" y="916" text-anchor="middle">build, test</text>
-  <text class="chipname" x="576" y="916" text-anchor="middle">stopped, blocked</text>
-  <text class="cmd" x="648" y="906">dispatch ctl resume</text>
-  <text class="note" x="648" y="920">on guidance, or continue;</text>
-  <text class="note" x="648" y="933">the status stays claimed</text>
-  <text class="host" x="416" y="958">ticket/c  on local</text>
-  <text class="chipname" x="460" y="984" text-anchor="middle">build, test</text>
-  <text class="chipname" x="576" y="984" text-anchor="middle">gone</text>
-  <text class="note" x="648" y="974">the probe says gone: dispatch</text>
-  <text class="note" x="648" y="987">ctl cleanup, and the ticket goes</text>
-  <text class="note" x="648" y="1000">back to open for a fresh worker</text>
-  <text class="note" x="792" y="824">A resume continues the worker&#x27;s own conversation on</text>
-  <text class="note" x="792" y="837">the same branches, after an amend, a cleared blocker,</text>
-  <text class="note" x="792" y="850">or a branch that moved under it.</text>
-  <text class="note" x="792" y="876">Writing done retires the run, on its host and here.</text>
-  <text class="note" x="792" y="889">On a redo, a reject or a lost session, dispatch ctl</text>
-  <text class="note" x="792" y="902">cleanup removes the run&#x27;s worktrees and branches.</text>
-
+  <!-- rows of place, then connectors, then boxes, then every label -->
+  <rect class="lane" x="8" y="0" width="1184" height="196" rx="8"/>
+  <rect class="lane-fill" x="8" y="208" width="1184" height="300" rx="8"/>
+  <rect class="lane" x="8" y="520" width="1184" height="292" rx="8"/>
+  <rect class="lane" x="8" y="824" width="1184" height="224" rx="8"/>
+  <path class="back" d="M 820,356 V 280 Q 820,272 812,272 H 316 Q 308,272 308,280 V 350" marker-end="url(#arrow)"/>
+  <path class="back" d="M 476,356 V 336 Q 476,328 468,328 H 364 Q 356,328 356,336 V 350" marker-end="url(#arrow)"/>
+  <path class="back" d="M 788,356 V 336 Q 788,328 780,328 H 564 Q 556,328 556,336 V 350" marker-end="url(#arrow)"/>
+  <path class="back" d="M 684,956 V 960 Q 684,968 676,968 H 562 Q 554,968 554,960 V 962" marker-end="url(#arrow)"/>
+  <path class="rail" d="M 180,382 H 246" marker-end="url(#arrow-ink)"/>
+  <path class="rail" d="M 400,382 H 446" marker-end="url(#arrow-ink)"/>
+  <path class="rail" d="M 600,382 H 758" marker-end="url(#arrow-ink)"/>
+  <path class="rail" d="M 912,382 H 990" marker-end="url(#arrow-ink)"/>
+  <path class="rail-by" d="M 132,408 V 428 Q 132,436 140,436 H 456 Q 464,436 464,428 V 414" marker-end="url(#arrow-ink)"/>
+  <path class="out" d="M 876,408 V 438" marker-end="url(#arrow)"/>
+  <path class="out" d="M 1104,408 V 438" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 272,116 V 350" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 296,132 V 350" marker-end="url(#arrow)"/>
+  <path class="tick-you" d="M 868,180 V 350" marker-end="url(#arrow-you)"/>
+  <path class="tick" d="M 48,568 V 414" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 492,568 V 414" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 776,722 V 414" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 1008,640 V 414" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 492,624 V 996"/>
+  <path class="tick" d="M 492,868 Q 492,876 500,876 H 502" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 492,932 Q 492,940 500,940 H 502" marker-end="url(#arrow)"/>
+  <path class="tick" d="M 492,996 Q 492,1004 500,1004 H 502" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 600,876 H 610" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 752,876 H 762" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 840,860 V 742" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 600,940 H 610" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 600,1004 H 610" marker-end="url(#arrow)"/>
+  <rect class="station" x="32" y="356" width="148" height="52" rx="6"/>
+  <rect class="station" x="252" y="356" width="148" height="52" rx="6"/>
+  <rect class="station" x="452" y="356" width="148" height="52" rx="6"/>
+  <rect class="station-you" x="764" y="356" width="148" height="52" rx="6"/>
+  <rect class="station" x="996" y="356" width="148" height="52" rx="6"/>
+  <rect class="ghost" x="848" y="444" width="136" height="48" rx="6"/>
+  <rect class="ghost" x="1048" y="444" width="132" height="48" rx="6"/>
+  <rect class="card-you" x="560" y="40" width="192" height="104" rx="6"/>
+  <rect class="card-you" x="776" y="40" width="216" height="140" rx="6"/>
+  <rect class="chip" x="508" y="860" width="92" height="32" rx="4"/>
+  <rect class="chip" x="508" y="924" width="92" height="32" rx="4"/>
+  <rect class="chip" x="508" y="988" width="92" height="32" rx="4"/>
+  <rect class="chip" x="616" y="860" width="136" height="32" rx="4"/>
+  <rect class="chip" x="768" y="860" width="112" height="32" rx="4"/>
+  <rect class="chip-ghost" x="616" y="924" width="136" height="32" rx="4"/>
+  <rect class="chip-ghost" x="616" y="988" width="136" height="32" rx="4"/>
+  <circle class="dot" cx="272" cy="116" r="3"/>
+  <circle class="dot" cx="296" cy="132" r="3"/>
+  <circle class="dot" cx="48" cy="568" r="3"/>
+  <circle class="dot" cx="492" cy="568" r="3"/>
+  <circle class="dot" cx="492" cy="624" r="3"/>
+  <circle class="dot" cx="776" cy="608" r="3"/>
+  <circle class="dot" cx="776" cy="722" r="3"/>
+  <circle class="dot" cx="1008" cy="568" r="3"/>
+  <circle class="dot" cx="1008" cy="640" r="3"/>
+  <text class="row" x="24" y="24">with you</text>
+  <text class="rowdetail" x="98.4" y="24">a session you sit at, on your machine</text>
+  <text class="row" x="24" y="232">the tracker</text>
+  <text class="row" x="24" y="544">the orchestrator</text>
+  <text class="rowdetail" x="160.8" y="544">holds the branch the tickets merge into</text>
+  <text class="row" x="24" y="848">worker hosts</text>
+  <text class="rowdetail" x="129.6" y="848">a worktree per ticket, on its branch ticket/&lt;slug&gt;</text>
+  <text class="state" x="44" y="378">proposed</text>
+  <text class="sdetail" x="44" y="396">an agent filed it</text>
+  <text class="state" x="264" y="378">open</text>
+  <text class="sdetail" x="264" y="396">ruled, not built</text>
+  <text class="state" x="464" y="378">claimed</text>
+  <text class="sdetail" x="464" y="396">a session holds it</text>
+  <text class="state" x="776" y="378">review</text>
+  <text class="sdetail" x="776" y="396">waits for your ruling</text>
+  <text class="state" x="1008" y="378">done</text>
+  <text class="sdetail" x="1008" y="396">your accept, landed</text>
+  <text class="note" x="24" y="252"><tspan class="m">agent/tickets/&lt;slug&gt;.md</tspan></text>
+  <text class="note" x="24" y="270">in the agent repo's main checkout,</text>
+  <text class="note" x="24" y="286">never on a ticket branch</text>
+  <text class="track" x="568" y="248" text-anchor="middle">redo</text>
+  <text class="track" x="568" y="264" text-anchor="middle"><tspan class="m">tracker set &lt;slug&gt; status=open</tspan></text>
+  <text class="track" x="424" y="304" text-anchor="middle">session lost</text>
+  <text class="track" x="424" y="320" text-anchor="middle"><tspan class="m">tracker set &lt;slug&gt; status=open</tspan></text>
+  <text class="track" x="688" y="304" text-anchor="middle">amend</text>
+  <text class="track" x="688" y="320" text-anchor="middle"><tspan class="m">dispatch ctl resume &lt;slug&gt; &lt;model&gt;</tspan></text>
+  <text class="note" x="1012" y="276">nothing moves back from</text>
+  <text class="note" x="1012" y="292">done: a reopened decision</text>
+  <text class="note" x="1012" y="308">is a new ticket that</text>
+  <text class="note" x="1012" y="324">supersedes it</text>
+  <text class="note" x="296" y="456" text-anchor="middle">a proposal is claimed as it stands</text>
+  <text class="gstate" x="860" y="464">dropped</text>
+  <text class="sdetail" x="860" y="482"><tspan class="m">tracker drop</tspan></text>
+  <text class="track" x="868" y="432" text-anchor="end">reject</text>
+  <text class="gstate" x="1060" y="464">retired</text>
+  <text class="sdetail" x="1060" y="482"><tspan class="m">tracker retire</tspan></text>
+  <text class="name" x="24" y="60">rule on a proposal</text>
+  <text class="note" x="24" y="78">before it is built; one already</text>
+  <text class="note" x="24" y="94">built is ruled at its landing</text>
+  <text class="cmdline" x="24" y="120"><tspan class="m">tracker set &lt;slug&gt; status=open</tspan></text>
+  <text class="name" x="312" y="60">ask for a ticket</text>
+  <text class="note" x="312" y="78">filed open: your asking is its ruling,</text>
+  <text class="note" x="312" y="94">and a reopened decision is filed the</text>
+  <text class="note" x="312" y="110">same, superseding the old ticket</text>
+  <text class="cmdline" x="312" y="136"><tspan class="m">tracker new &lt;slug&gt; --status open</tspan></text>
+  <text class="name-you" x="572" y="62">a needs-user ticket</text>
+  <text class="note" x="572" y="80">kept from every worker; its</text>
+  <text class="note" x="572" y="96">question waits in the</text>
+  <text class="note" x="572" y="112">needs-me group, for a</text>
+  <text class="note" x="572" y="128">session with you</text>
+  <text class="note" x="560" y="164">your answer while it builds</text>
+  <text class="note" x="560" y="180">reaches the worker on resume</text>
+  <text class="name-you" x="788" y="62">your ruling</text>
+  <text class="note" x="788" y="80">accept, amend, redo or reject,</text>
+  <text class="note" x="788" y="96">on the calls the landing shows</text>
+  <text class="note" x="788" y="112">you, each a <tspan class="m">[Dn]</tspan> question;</text>
+  <text class="note" x="788" y="128"><tspan class="m">tracker rule</tspan> records each</text>
+  <text class="note" x="788" y="144">answer. A child that is no hinge</text>
+  <text class="note" x="788" y="160">is ruled with its parent</text>
+  <text class="name" x="1012" y="60">drive what landed</text>
+  <text class="note" x="1012" y="78">file each finding as a new</text>
+  <text class="note" x="1012" y="94">ticket, with blocking edges</text>
+  <text class="cmdline" x="60" y="572"><tspan class="m">tracker new &lt;slug&gt;</tspan></text>
+  <text class="note" x="60" y="590">files what it reads: a punt</text>
+  <text class="note" x="60" y="606">or friction in a report,</text>
+  <text class="note" x="60" y="622">a finding, a miss in a</text>
+  <text class="note" x="60" y="638">build. A proposal is built</text>
+  <text class="note" x="60" y="654">while your ruling waits</text>
+  <text class="cmdline" x="224" y="572"><tspan class="m">tracker frontier</tspan></text>
+  <text class="note" x="224" y="590">each tick: what is unclaimed,</text>
+  <text class="note" x="224" y="606">unblocked and not needing you;</text>
+  <text class="note" x="224" y="622">a sibling in review, no hinge,</text>
+  <text class="note" x="224" y="638">merged into the parent's branch</text>
+  <text class="note" x="224" y="654">no longer blocks</text>
+  <text class="name" x="224" y="686">plan the wave</text>
+  <text class="note" x="224" y="704">disjoint files run together;</text>
+  <text class="note" x="224" y="720">a shared surface goes to one</text>
+  <text class="note" x="224" y="736">serial worker</text>
+  <text class="cmdline" x="224" y="766"><tspan class="m">worker-hosts</tspan></text>
+  <text class="note" x="224" y="784">the hosts to pick from, one</text>
+  <text class="note" x="224" y="800">per ticket as it spawns</text>
+  <text class="cmdline" x="504" y="572"><tspan class="m">dispatch claim &lt;slug&gt;</tspan></text>
+  <text class="cmdline" x="504" y="592"><tspan class="m">dispatch prompt &lt;slug&gt; &lt; msg</tspan></text>
+  <text class="cmdline" x="504" y="612"><tspan class="m">dispatch ctl --host &lt;host&gt;</tspan></text>
+  <text class="cmdline" x="520" y="628"><tspan class="m">spawn &lt;slug&gt; &lt;model&gt;</tspan></text>
+  <text class="cmdline" x="504" y="648"><tspan class="m">dispatch wait &lt;slug&gt;</tspan></text>
+  <text class="note" x="504" y="668">the ticket and its ancestry</text>
+  <text class="note" x="504" y="684">are the worker's whole brief</text>
+  <text class="cmdline" x="788" y="572"><tspan class="m">dispatch ctl probe</tspan></text>
+  <text class="cmdline" x="788" y="592"><tspan class="m">dispatch fetch &lt;slug&gt;</tspan></text>
+  <text class="cmdline" x="788" y="612"><tspan class="m">dispatch review &lt;slug&gt;</tspan></text>
+  <text class="note" x="788" y="630">imports the report, renders the</text>
+  <text class="note" x="788" y="646">review page, writes review; a child</text>
+  <text class="note" x="788" y="662">that is no hinge then merges on this</text>
+  <text class="note" x="788" y="678">read into its parent's branch</text>
+  <text class="note" x="788" y="706">a parent, at its close-out:</text>
+  <text class="cmdline" x="788" y="726"><tspan class="m">tracker set &lt;slug&gt; status=review</tspan></text>
+  <text class="cmdline" x="1020" y="572"><tspan class="m">dispatch review &lt;slug&gt;</tspan></text>
+  <text class="note" x="1020" y="590">once your accept is</text>
+  <text class="note" x="1020" y="606">merged and verified;</text>
+  <text class="note" x="1020" y="622">a parent and its children:</text>
+  <text class="cmdline" x="1020" y="644"><tspan class="m">dispatch accept &lt;slug&gt;</tspan></text>
+  <text class="note" x="1020" y="664">then <tspan class="m">tracker retire</tspan> takes</text>
+  <text class="note" x="1020" y="680">a finished tree out</text>
+  <text class="name" x="24" y="880">a worker per ticket</text>
+  <text class="note" x="24" y="898"><tspan class="m">worker-hosts</tspan> lists the machines, their live state and</text>
+  <text class="note" x="24" y="914">what each can do; the orchestrator picks one per ticket</text>
+  <text class="note" x="24" y="930">as it spawns it, <tspan class="m">local</tspan> being your own machine. On an</text>
+  <text class="note" x="24" y="946">isolated host the worker runs with permissions bypassed.</text>
+  <text class="note" x="24" y="962">A worker writes no ticket file: <tspan class="m">dispatch review</tspan> imports</text>
+  <text class="note" x="24" y="978">the report it commits.</text>
+  <text class="host" x="508" y="854">ticket/a on &lt;user@host&gt;</text>
+  <text class="chiptext" x="554" y="881" text-anchor="middle">build, test</text>
+  <text class="host" x="508" y="918">ticket/b on &lt;user@host&gt;</text>
+  <text class="chiptext" x="554" y="945" text-anchor="middle">build, test</text>
+  <text class="host" x="508" y="982">ticket/c on local</text>
+  <text class="chiptext" x="554" y="1009" text-anchor="middle">build, test</text>
+  <text class="chiptext" x="684.0" y="881" text-anchor="middle"><tspan class="m">/mx:code-review</tspan></text>
+  <text class="chiptext" x="824.0" y="881" text-anchor="middle">its report, last</text>
+  <text class="chiptext" x="684" y="945" text-anchor="middle">stopped, blocked</text>
+  <text class="cmdline" x="768" y="936"><tspan class="m">dispatch ctl resume</tspan></text>
+  <text class="note" x="768" y="954">on guidance, or <tspan class="m">continue</tspan>, after an amend, a cleared</text>
+  <text class="note" x="768" y="970">blocker or a branch that moved; the status stays claimed</text>
+  <text class="chiptext" x="684" y="1009" text-anchor="middle">gone</text>
+  <text class="note" x="768" y="1000">the probe says gone: <tspan class="m">dispatch ctl cleanup &lt;slug&gt;</tspan>,</text>
+  <text class="note" x="768" y="1016">and the ticket goes back to open for a fresh worker</text>
+  <text class="note" x="24" y="996">A resume continues the worker's own conversation on the same</text>
+  <text class="note" x="24" y="1012">branches. Writing done retires the run; on a redo, a reject or a</text>
+  <text class="note" x="24" y="1028">lost session, <tspan class="m">dispatch ctl cleanup</tspan> removes its worktrees and branches.</text>
   <!-- legend -->
-  <line class="rule" x1="24" y1="1064" x2="1192" y2="1064"/>
-  <circle class="dot" cx="28" cy="1089" r="2.5"/><line class="tick" x1="28" y1="1089" x2="64" y2="1089" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="76" y="1092">typed in this row; writes the status it lands on</text>
-  <line class="rail" x1="390" y1="1089" x2="430" y2="1089" marker-end="url(#arrow-ink)"/>
-  <text class="legend-text" x="442" y="1092">a move forward</text>
-  <line class="back" x1="580" y1="1089" x2="620" y2="1089" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="632" y="1092">a move back, or a resume</text>
-  <rect class="ghost" x="820" y="1081" width="24" height="14" rx="3"/>
-  <text class="legend-text" x="852" y="1092">out of the live tracker</text>
-  <rect class="card-you" x="1010" y="1081" width="24" height="14" rx="3"/>
-  <text class="legend-text" x="1042" y="1092">asks for your attention</text>
+  <line class="hair" x1="24" y1="1076" x2="1176" y2="1076"/>
+  <circle class="dot" cx="28" cy="1108" r="3"/><path class="tick" d="M 28,1108 H 62" marker-end="url(#arrow)"/>
+  <text class="legend" x="76" y="1112">typed in this row, writes the status it reaches</text>
+  <path class="rail" d="M 492,1108 H 526" marker-end="url(#arrow-ink)"/>
+  <text class="legend" x="540" y="1112">a move on</text>
+  <path class="back" d="M 640,1108 H 674" marker-end="url(#arrow)"/>
+  <text class="legend" x="688" y="1112">a move back</text>
+  <rect class="ghost" x="800" y="1099" width="28" height="18" rx="3"/>
+  <text class="legend" x="840" y="1112">out of the live tracker</text>
+  <rect class="card-you" x="1028" y="1099" width="28" height="18" rx="3"/>
+  <text class="legend" x="1068" y="1112">asks for you</text>
 </svg>
 <script>
-const root = document.documentElement, button = document.querySelector('.scheme');
-let dark = matchMedia('(prefers-color-scheme: dark)').matches;
-const apply = () => {
-  root.style.colorScheme = dark ? 'dark' : 'light';
-  button.textContent = dark ? 'Light' : 'Dark';
-  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
-};
-button.addEventListener('click', () => { dark = !dark; apply(); });
-apply();
+  const root = document.documentElement
+  const theme = new URLSearchParams(location.search).get("theme")
+  const night = theme ? theme === "night" : matchMedia("(prefers-color-scheme: dark)").matches
+  const set = (night) => {
+    root.dataset.theme = night ? "night" : "day"
+    document.getElementById("scheme").setAttribute("aria-label", night ? "switch to day" : "switch to night")
+  }
+  document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+  set(night)
 </script>
 </body>
 </html>
-

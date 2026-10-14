@@ -5,7 +5,7 @@ session's records follow the shape `mx/skills/session-page/RULES.md` gives them;
 oldest first, each with how long before the shot it ended and the prompts the user sent before it.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # --- the code repo: a skeleton, then the slice the selected session just landed ---------------------
 
@@ -264,7 +264,8 @@ class Session:
     name: str
     """Its short name in Claude Code's registry, `<repo>-<n>`."""
     status: str
-    """The registry's: idle, busy, or waiting on something in the terminal."""
+    """The registry's: idle, busy, waiting on something in the terminal, or shell (idle with a command it left
+    running in the background)."""
     tickets: tuple[str, ...]
     """The tickets it filed or committed on, which give its unit a tree on the rail."""
     title: str
@@ -277,11 +278,16 @@ class Session:
     context: tuple[int, int] = (30, 60_000)
     """Its context use, as the statusline last had it: percent and tokens."""
     waiting_for: str | None = None
-    extra: dict = field(default_factory=dict)
+    pane: bool = False
+    """Whether it runs in a tmux pane the hub can type into, which gives its box an offer to hand off."""
+    handoff: tuple[str, str] | None = None
+    """Its continuation handoff, committed after its last prompt, so fresh: the file's slug and its body."""
+    runs: tuple[tuple[str, str], ...] = ()
+    """What its last turn left running in the background, which no task notification has ended: description, command."""
 
 
 SAVED = Session(
-    id="3f6c2a91-8d4e-4b7a-9c15-2e7d40b8a6f3", name="ledger-14", status="idle", context=(41, 82_000),
+    id="3f6c2a91-8d4e-4b7a-9c15-2e7d40b8a6f3", name="ledger-14", status="idle", context=(78, 156_000), pane=True,
     tickets=("saved-views", "save-and-reopen-a-view", "share-a-view-by-link"),
     title="Saved views: reopening a view, then sharing one by link",
     brief="The saved-views tree: the filters, sort and columns a user names once and reopens from the sidebar, then "
@@ -289,6 +295,25 @@ SAVED = Session(
           "link waits on what a shared link carries.",
     opens=("show/saved-views/what-a-view-holds.html", "diffviews/save-and-reopen-a-view.html",
            "show/share-a-view-by-link/link-resolves.html"),
+    handoff=("share-a-view-by-link", """# Saved views: build sharing by link once Q3 is answered
+
+## Purpose
+
+Continuation. `save-and-reopen-a-view` has landed on the saved-views branch; what is left of the tree is
+`share-a-view-by-link`, which waits on Q3 of this session's page: whether a shared link carries the view or a
+snapshot of its rows.
+
+## Where it stands
+
+- The review of the landed slice checked P1 and P2 against the diff; P3 (a dropped column) is covered by `reopen`.
+- My pick on Q3 is (a), the link names the view; the figure lays both answers side by side.
+
+## Sources
+
+- MUST READ `agent/tickets/saved-views.md`: the properties, and the two slices
+- MUST READ `agent/show/share-a-view-by-link/link-resolves.html`: the two answers to Q3
+- `ledger/views.py`: what a stored view holds, which a link would resolve through
+"""),
     turns=[
         Turn(ago=26 * 60, prompts=((
             "saved views. people keep rebuilding the same filter every morning, groceries last 90 days etc. "
@@ -360,12 +385,14 @@ date: {date}
 
 - `save-and-reopen-a-view` is merged into the saved-views branch and waits for the tree's close-out; its review checked the diff against P1 and P2.
 - One call the worker made: a name already taken is refused with a link to the view that has it, never overwritten. It is in the ticket's Decisions, and the review page notes it where the code does it.
+- Context is at 78%, so the handoff is committed: the next session takes Q3's answer from there and builds the link.
 """),
     ],
 )
 
 IMPORT = Session(
-    id="8a1d5e07-3c92-4f6b-b2e8-71c94d0a5e26", name="ledger-11", status="busy", context=(63, 126_000),
+    id="8a1d5e07-3c92-4f6b-b2e8-71c94d0a5e26", name="ledger-11", status="shell", context=(63, 126_000),
+    runs=(("wait for the wave-2 workers to land", "dispatch-ctl wait map-columns-to-fields duplicate-rule"),),
     tickets=("csv-import", "upload-and-parse-report", "map-columns-to-fields", "duplicate-rule", "commit-the-import"),
     title="CSV import: wave 2, mapping columns and the duplicate rule",
     brief="Dispatching the csv-import tree. Wave 1 landed the upload's parse report; wave 2 runs map-columns-to-fields "
@@ -425,7 +452,7 @@ Every failure ran beside `test_upload_too_large`, which writes the same `upload.
 )
 
 EXPORTER = Session(
-    id="5b82f4d6-1e37-4a90-a6c3-0d58e7b21f94", name="ledger-9", status="idle", context=(12, 24_000),
+    id="5b82f4d6-1e37-4a90-a6c3-0d58e7b21f94", name="ledger-9", status="busy", context=(12, 24_000),
     tickets=("retire-the-legacy-exporter",),
     title="Legacy exporter: what still calls it, before it goes",
     brief="The legacy exporter writes a format nothing reads any more. Finding what still calls it, so the proposal "

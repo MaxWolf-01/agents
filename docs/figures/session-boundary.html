@@ -2,172 +2,425 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mx: grilling across sessions</title>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-:root{
+/* The house tokens: parchment over brown ink by day, charcoal and sand by
+   night, one moss accent for anything you can act on. Copy this file into the
+   project, with the font <link> from the head of demo.html, and change what the
+   project needs: the serif, the size and leading that fit it, the measure. The
+   colours and the roles stay.
+
+   Every colour but the series is a light-dark() pair. Without data-theme on
+   the root the page follows the system; data-theme="day" or "night" pins it.
+   The rules sit in the base and components layers, so a project's own CSS,
+   and Tailwind's utilities, win over them without fighting specificity. */
+
+:root {
   color-scheme: light dark;
-  --paper:light-dark(#f5f5f5,#2d3142); --paper2:light-dark(#ececec,#393e53); --node:light-dark(#ffffff,#393e53);
-  --ink:light-dark(#2d3142,#f5f5f5); --muted:light-dark(#4f5d75,#bfc0c0); --soft:light-dark(#7a8399,#8e98ac);
-  --rule:light-dark(rgba(45,49,66,.12),rgba(245,245,245,.12));
-  --accent:light-dark(#eb6c36,#f08a59); --accent-tint:light-dark(rgba(235,108,54,.08),rgba(240,138,89,.10));
+
+  --ground: light-dark(#f4e4cd, #1a1714);
+  --ground-2: light-dark(#eddabe, #201c18);
+  --edge: light-dark(#cfbca3, #4a433b);
+  --muted: light-dark(#5e5650, #b0a89e);
+  --body: light-dark(#37261d, #ede3d2);
+  --strong: light-dark(#22140b, #faf2dc);
+  --accent: light-dark(#426724, #75a252);
+  --accent-2: light-dark(#674806, #cdb78a);
+  --wash: light-dark(rgb(66 103 36 / 0.16), rgb(117 162 82 / 0.22));
+  --wash-ink: color-mix(in srgb, var(--muted) 6%, transparent);
+  --mark: light-dark(rgb(168 139 81 / 0.35), rgb(205 183 138 / 0.35));
+
+  /* Muted on purpose, so five series sit quietly on either ground. The order
+     keeps the two closest pairs, dusty blue and slate, sage and mustard, from
+     ever sitting side by side. */
+  --series-1: #9c6b50; /* rust */
+  --series-2: #5e7a9b; /* dusty blue */
+  --series-3: #b8915a; /* mustard */
+  --series-4: #6e6479; /* slate */
+  --series-5: #7c8f6f; /* sage */
+
+  --font-body: "Newsreader", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --size-body: 19px;
+  --leading-body: 1.62;
+  --measure: 43rem;
+  --page: 62rem;
+  --radius: 6px;
 }
-body{background:var(--paper); color:var(--ink); font-family:'Geist',sans-serif; margin:0; padding:44px 56px 32px;}
-.eyebrow{font:500 10px 'Geist Mono',monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
-h1{font:600 1.25rem 'Geist',sans-serif; margin:0 0 8px;}
-.dek{font-size:13px; color:var(--muted); max-width:680px; line-height:1.5; margin:0 0 24px;}
-svg{display:block; width:100%; height:auto;}
-.mask{fill:var(--paper);}
-.card{fill:var(--node); stroke:var(--ink); stroke-width:1;}
-.hub{fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2;}
-.hub-rule{stroke:var(--accent); stroke-width:.8; opacity:.5;}
+
+[data-theme="day"] {
+  color-scheme: light;
+}
+
+[data-theme="night"] {
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--body);
+    font: 400 var(--size-body) / var(--leading-body) var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--mark);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* A link in chrome (nav, back, next) is muted text that turns accent; a link
+     in running text is accent and underlined, under .prose below. */
+  a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 150ms;
+  }
+
+  a:hover {
+    color: var(--accent);
+  }
+
+  code,
+  kbd,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  code {
+    font-size: 0.875em;
+  }
+}
+
+/* Type by role, so a page asks for a heading rather than a size. */
+@layer components {
+  .v-title {
+    font-weight: 600;
+    font-size: clamp(1.875rem, 3.5vw, 2.5rem);
+    line-height: 1.12;
+    letter-spacing: -0.022em;
+    color: var(--strong);
+  }
+
+  .v-h2 {
+    font-weight: 600;
+    font-size: 1.3em;
+    line-height: 1.3;
+    letter-spacing: -0.012em;
+    color: var(--strong);
+  }
+
+  .v-h3 {
+    font-weight: 600;
+    font-size: 1.05em;
+    line-height: 1.4;
+    color: var(--strong);
+  }
+
+  .v-lead {
+    font-size: 1.14em;
+    line-height: 1.55;
+  }
+
+  .v-small {
+    font-size: 0.92em;
+    line-height: 1.6;
+  }
+
+  /* The monospace line: dates, counts, provenance, field labels. Lowercase. */
+  .v-meta {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v-num {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Running text, styled by tag: prose arrives as markup and should not need
+     a class per paragraph. */
+  .prose > * {
+    max-width: var(--measure);
+  }
+
+  /* A table or a code block takes the width of the column the prose sits in
+     rather than the measure: squeezed to the measure, its cells wrap. */
+  .prose > table,
+  .prose > pre {
+    max-width: 100%;
+  }
+
+  .prose > * + * {
+    margin-top: 1.1em;
+  }
+
+  .prose h2 {
+    font-weight: 600;
+    font-size: 1.3em;
+    line-height: 1.3;
+    letter-spacing: -0.012em;
+    color: var(--strong);
+    margin-top: 2.4em;
+  }
+
+  .prose h3 {
+    font-weight: 600;
+    font-size: 1.05em;
+    color: var(--strong);
+    margin-top: 1.8em;
+  }
+
+  .prose a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  .prose a:hover {
+    text-decoration-color: var(--accent);
+  }
+
+  .prose strong {
+    font-weight: 600;
+    color: var(--strong);
+  }
+
+  .prose code {
+    background: var(--ground-2);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  .prose ul,
+  .prose ol {
+    padding-left: 1.2em;
+  }
+
+  .prose li + li {
+    margin-top: 0.4em;
+  }
+
+  .prose li::marker {
+    color: var(--muted);
+  }
+
+  /* Block display lets a table too wide for a narrow window scroll inside
+     itself instead of widening the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .prose th,
+  .prose td {
+    padding: 0.45rem 1.75rem 0.45rem 0;
+    text-align: left;
+    vertical-align: baseline;
+  }
+
+  .prose th:last-child,
+  .prose td:last-child {
+    padding-right: 0;
+  }
+
+  .prose th {
+    font: 400 0.8125rem / 1.5 var(--font-mono);
+    color: var(--muted);
+    border-bottom: 1px solid var(--muted);
+  }
+
+  .prose td {
+    border-bottom: 1px solid var(--edge);
+  }
+
+  .prose tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .prose blockquote {
+    margin: 0;
+    border-left: 2px solid var(--edge);
+    padding-left: 1.2em;
+    color: var(--muted);
+  }
+}
+
+/* the figure: the house tokens above, worn as SVG-FIGURES.md's skin says */
+body{padding:48px 56px 40px;}
+.top{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
+.top h1{margin:0;}
+.lead{font-size:15px; line-height:1.5; color:var(--muted); max-width:60rem; margin:12px 0 28px;}
+.scheme{flex:none; display:inline-flex; margin-top:10px; padding:0.25rem; border:0; background:none; color:var(--muted); cursor:pointer; transition:color 150ms;}
+.scheme:hover{color:var(--accent);}
+[data-theme="night"] .sun, [data-theme="day"] .moon{display:none;}
+svg.fig{display:block; width:100%; height:auto;}
+.mask{fill:var(--ground);}
+.node{fill:var(--ground-2); stroke:var(--body); stroke-width:1;}
+.store{fill:var(--ground-2); stroke:var(--muted); stroke-width:1;}
+.focal{fill:var(--wash); stroke:var(--accent); stroke-width:1.2;}
+.ghost{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
+.hair{stroke:var(--edge); stroke-width:1;}
 .flow{fill:none; stroke:var(--muted); stroke-width:1.2;}
+.flow-accent{fill:none; stroke:var(--accent); stroke-width:1.2;}
 .spoke{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:5 4;}
-.m-muted{fill:var(--muted);}
-text{fill:var(--ink);}
-.name{font:600 12px 'Geist',sans-serif;}
-.cmd{font:400 9px 'Geist Mono',monospace; fill:var(--muted);}
-.note{font:400 9px 'Geist',sans-serif; fill:var(--soft);}
-.hubrow{font:500 8px 'Geist Mono',monospace; letter-spacing:.08em; fill:var(--muted);}
-.al{font:400 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--muted);}
-.al-accent{font:500 8px 'Geist Mono',monospace; letter-spacing:.06em; fill:var(--accent);}
-.aside{font:400 11px 'Geist',sans-serif; fill:var(--soft);}
-.rule{stroke:var(--rule); stroke-width:1;}
-.legend-text{font:400 8px 'Geist Mono',monospace; letter-spacing:.05em; fill:var(--muted);}
-.topbar{display:flex; align-items:flex-start; justify-content:space-between; gap:32px;}
-.scheme{flex:none; font:500 8px 'Geist Mono',monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); background:var(--paper2); border:1px solid var(--rule); border-radius:6px; padding:5px 10px; cursor:pointer;}
-.scheme:hover{color:var(--ink);}
+.m-muted{fill:var(--muted);} .m-accent{fill:var(--accent);}
+svg text{fill:var(--body); font-family:var(--font-body);}
+svg .name{font-size:14px; font-weight:600; fill:var(--strong);}
+svg .name.on{fill:var(--accent);}
+svg .role{font-size:13px;}
+svg .detail{font-size:13px; fill:var(--muted);}
+svg .code{font:400 12px var(--font-mono); fill:var(--muted);}
+svg .state{font:500 14px var(--font-mono); fill:var(--strong);}
+svg .state.on{fill:var(--accent);}
+svg .al{font-size:12px; fill:var(--muted);}
+svg .al-code{font:400 12px var(--font-mono); fill:var(--muted);}
+svg .meta{font:400 13px var(--font-mono); fill:var(--muted);}
+svg .meta.on{fill:var(--accent);}
+svg .aside{font-size:13px; fill:var(--muted);}
+svg .legend{font:400 13px var(--font-mono); fill:var(--muted);}
+.unruled{fill:var(--ground); stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
+.past{fill:none; stroke:var(--edge); stroke-width:1.2;}
+svg .code.on{fill:var(--accent);}
 </style>
 </head>
 <body>
-<header class="topbar">
-  <p class="eyebrow">mx workflow &middot; grilling across sessions</p>
-  <button class="scheme"></button>
+<header class="top">
+  <h1 class="v-title">Grilling across sessions</h1>
+  <button class="scheme" id="scheme" aria-label="switch to night">
+    <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+  </button>
 </header>
-<h1>Planning that spans sessions: the ticket carries the design, child tickets carry the open questions.</h1>
-<p class="dek">A grilling writes its design into the ticket round by round, so a later session reads the design
-from the file. A session that ends with questions open files them as child tickets that need you; a fresh session
-claims one, grills it, and lands the answer on the parent ticket. How many sessions the frontier takes is
-discovered, not declared. Once it is empty the ticket is cut, or built as it stands, and the calls you have not
-ruled on travel with it.</p>
+<p class="lead">A grilling writes its design into the ticket each round; a session that ends with questions open files them as child tickets that need you, and a fresh session grills each one.</p>
 
-<svg viewBox="0 40 1200 800" xmlns="http://www.w3.org/2000/svg">
+<svg class="fig" viewBox="0 32 1200 768" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" class="m-muted"/>
-    </marker>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-muted"/></marker>
   </defs>
 
-  <!-- connectors: entry and exit -->
-  <path class="flow" d="M 288,144 H 600 Q 608,144 608,152 V 166" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 688,172 V 132 Q 688,124 696,124 H 874" marker-end="url(#arrow)"/>
-  <!-- connectors: the loop -->
-  <path class="flow" d="M 768,224 H 996 Q 1004,224 1004,232 V 330" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 1004,480 V 672 Q 1004,680 996,680 H 786" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 516,680 H 408 Q 400,680 400,672 V 232 Q 400,224 408,224 H 522" marker-end="url(#arrow)"/>
+  <!-- connectors: in, and out once the frontier is empty -->
+  <path class="flow" d="M 288,88 H 382" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 768,88 H 894" marker-end="url(#arrow)"/>
+  <!-- connectors: the loop across sessions -->
+  <path class="flow" d="M 768,128 H 848 Q 856,128 856,136 V 262" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 980,384 V 636 Q 980,644 972,644 H 770" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 384,644 H 352 Q 344,644 344,636 V 136 Q 344,128 352,128 H 382" marker-end="url(#arrow)"/>
   <!-- spokes: the ticket written and read -->
-  <path class="spoke" d="M 648,276 V 314" marker-end="url(#arrow)"/>
-  <path class="spoke" d="M 648,568 V 610" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 576,152 V 230" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 576,512 V 590" marker-end="url(#arrow)"/>
 
   <!-- nodes -->
-  <rect class="card" x="64" y="96" width="224" height="96" rx="6"/>
-  <rect class="card" x="880" y="64" width="264" height="120" rx="6"/>
-  <rect class="card" x="528" y="172" width="240" height="104" rx="6"/>
-  <rect class="hub" x="864" y="336" width="280" height="144" rx="6"/>
-  <rect class="card" x="516" y="616" width="264" height="128" rx="6"/>
-  <rect class="hub" x="504" y="320" width="288" height="248" rx="8"/>
-  <line class="hub-rule" x1="520" y1="444" x2="776" y2="444"/>
+  <rect class="node" x="48" y="48" width="240" height="80" rx="6"/>
+  <rect class="focal" x="384" y="48" width="384" height="104" rx="6"/>
+  <rect class="node" x="896" y="48" width="256" height="96" rx="6"/>
+  <rect class="focal" x="808" y="264" width="344" height="120" rx="6"/>
+  <rect class="store" x="416" y="232" width="320" height="280" rx="8"/>
+  <line class="hair" x1="432" y1="356" x2="720" y2="356"/>
+  <rect class="node" x="384" y="592" width="384" height="104" rx="6"/>
 
-  <!-- labels -->
-  <!-- idea -->
-  <text class="name" x="80" y="120">Idea</text>
-  <text class="cmd" x="80" y="136">/mx:grilling</text>
-  <text class="note" x="80" y="154">fog: no brief can be written yet;</text>
-  <text class="note" x="80" y="168">a big one's first round fans out</text>
-  <text class="note" x="80" y="182">breadth-first, so fog and frontier show</text>
-  <!-- cut -->
-  <text class="name" x="896" y="88">Read whole, then cut</text>
-  <text class="cmd" x="896" y="104">/mx:tracker, SLICING.md</text>
-  <text class="note" x="896" y="122">read whole once if several sessions wrote it,</text>
-  <text class="note" x="896" y="136">then cut into child tickets, or built as it</text>
-  <text class="note" x="896" y="150">stands when it is one slice. Calls you have</text>
-  <text class="note" x="896" y="164">not ruled on stay marked and travel with them</text>
-  <!-- round -->
-  <text class="name" x="544" y="196">Grilling round</text>
-  <text class="cmd" x="544" y="212">a turn on the session page</text>
-  <text class="note" x="544" y="230">the design whole, sketched past the</text>
-  <text class="note" x="544" y="244">frontier, then the frontier's questions,</text>
-  <text class="note" x="544" y="258">Q1, Q2; you answer by number</text>
-  <!-- child tickets -->
-  <text class="name" x="880" y="360">Child tickets that need you</text>
-  <text class="cmd" x="880" y="376">filed open, needs-user</text>
-  <text class="note" x="880" y="394">the questions still open, those sharing context</text>
-  <text class="note" x="880" y="408">in one ticket, sized to a session; each keeps</text>
-  <text class="note" x="880" y="422">the options and the pick as the last round put</text>
-  <text class="note" x="880" y="436">them, and names the sections its answers may</text>
-  <text class="note" x="880" y="450">rewrite. The parent's (open → Qn) becomes</text>
-  <text class="note" x="880" y="464">(open → &lt;slug&gt;)</text>
-  <!-- fresh session -->
-  <text class="name" x="532" y="640">Fresh session</text>
-  <text class="note" x="532" y="658">reads the ticket top-down: Brief, the marks,</text>
-  <text class="note" x="532" y="672">Fog, and its open child tickets; claims one,</text>
-  <text class="note" x="532" y="686">reads its Comments, grills it as a round.</text>
-  <text class="note" x="532" y="700">The answer lands on the parent marked</text>
-  <text class="note" x="532" y="714">(you, &lt;slug&gt;), the reasoning in the child</text>
-  <text class="note" x="532" y="728">ticket's Comments</text>
-  <!-- hub: the ticket -->
-  <text class="name" x="520" y="344">The ticket</text>
-  <text class="cmd" x="520" y="360">agent/tickets/&lt;slug&gt;.md</text>
-  <text class="hubrow" x="520" y="380">BRIEF, USER STORIES, PROPERTIES</text>
-  <text class="hubrow" x="520" y="396">DECISIONS, EACH WITH ITS CALL MARK</text>
-  <text class="hubrow" x="520" y="412">TESTING SEAMS, OUT OF SCOPE, FOG</text>
-  <text class="hubrow" x="520" y="428">ACCEPTANCE CRITERIA</text>
-  <text class="name" x="520" y="468">Call marks</text>
-  <text class="cmd" x="520" y="486">(you, rN)</text>
-  <text class="note" x="612" y="486">you settled it in round N</text>
-  <text class="cmd" x="520" y="500">(you, &lt;slug&gt;)</text>
-  <text class="note" x="612" y="500">answered in a child ticket</text>
-  <text class="cmd" x="520" y="514">(my call)</text>
-  <text class="note" x="612" y="514">the agent's, yours to veto</text>
-  <text class="cmd" x="520" y="528">(open → Qn)</text>
-  <text class="note" x="612" y="528">put to a question this round</text>
-  <text class="cmd" x="520" y="542">(fog)</text>
-  <text class="note" x="612" y="542">no question can be stated yet</text>
+  <!-- labels: nodes -->
+  <text class="name" x="64" y="74">an idea</text>
+  <text class="role" x="64" y="92">too foggy to brief</text>
+  <text class="code" x="64" y="110">/mx:grilling</text>
 
-  <!-- arrow labels -->
-  <rect class="mask" x="736" y="104" width="104" height="14" rx="4"/>
-  <text class="al" x="788" y="114" text-anchor="middle">FRONTIER EMPTY</text>
-  <rect class="mask" x="800" y="204" width="168" height="14" rx="4"/>
-  <text class="al" x="884" y="214" text-anchor="middle">SESSION ENDS, FRONTIER OPEN</text>
-  <text class="al" x="1016" y="584">CLAIM ONE</text>
-  <text class="al" x="660" y="298">REWRITTEN EACH ROUND</text>
-  <text class="al" x="660" y="592">READ TOP-DOWN</text>
-  <text class="al" x="388" y="448" text-anchor="end">A ROUND LIKE</text>
-  <text class="al" x="388" y="460" text-anchor="end">ANY OTHER</text>
+  <text class="name on" x="400" y="74">a grilling round</text>
+  <text class="role" x="400" y="92">the design whole, then the frontier's questions</text>
+  <text class="detail" x="400" y="110">Q1, Q2 on the session page; you answer by number</text>
+  <text class="detail" x="400" y="128">a question of taste, asked as a blind test</text>
 
-  <!-- aside -->
-  <text class="aside" x="80" y="664">A question is Qn on the session page,</text>
-  <text class="aside" x="80" y="680">Dn once a ticket holds it.</text>
+  <text class="name" x="912" y="74">read whole, then cut or build</text>
+  <text class="role" x="912" y="92">into child tickets, or built as one slice</text>
+  <text class="detail" x="912" y="110">calls still unruled keep their marks</text>
+  <text class="code" x="912" y="128">SLICING.md</text>
+
+  <text class="name on" x="824" y="290">child tickets that need you</text>
+  <text class="role" x="824" y="308">the questions still open, a session's worth</text>
+  <text class="code" x="824" y="326">open, needs-user</text>
+  <text class="detail" x="824" y="344">options and pick, as the last round put them</text>
+  <text class="detail" x="824" y="362">and the sections its answers may rewrite</text>
+
+  <text class="name" x="432" y="258">the ticket</text>
+  <text class="code" x="432" y="276">agent/tickets/&lt;slug&gt;.md</text>
+  <text class="detail" x="432" y="302">brief, user stories, properties,</text>
+  <text class="detail" x="432" y="320">decisions, testing seams, out of scope,</text>
+  <text class="detail" x="432" y="338">fog, acceptance criteria</text>
+  <text class="meta" x="432" y="380">call marks</text>
+  <text class="code" x="432" y="402">(you, rN)</text>
+  <text class="detail" x="560" y="402">you, in round N</text>
+  <text class="code" x="432" y="420">(you, &lt;slug&gt;)</text>
+  <text class="detail" x="560" y="420">you, in a child ticket</text>
+  <text class="code" x="432" y="438">(my call)</text>
+  <text class="detail" x="560" y="438">the agent's, yours to veto</text>
+  <text class="code" x="432" y="456">(open → Qn)</text>
+  <text class="detail" x="560" y="456">a question this round</text>
+  <text class="code" x="432" y="474">(open → &lt;slug&gt;)</text>
+  <text class="detail" x="560" y="474">a child ticket asks it</text>
+  <text class="code" x="432" y="492">(fog)</text>
+  <text class="detail" x="560" y="492">no question yet</text>
+
+  <text class="name" x="400" y="618">a fresh session</text>
+  <text class="role" x="400" y="636">reads the ticket top-down, claims one child ticket</text>
+  <text class="detail" x="400" y="654">reads its comments, grills it as a round</text>
+  <text class="detail" x="400" y="672">the answer lands on the parent, marked (you, &lt;slug&gt;)</text>
+
+  <!-- labels: connectors -->
+  <text class="al" x="832" y="80" text-anchor="middle">frontier empty</text>
+  <text class="al" x="868" y="196">session ends,</text>
+  <text class="al" x="868" y="212">frontier open</text>
+  <text class="al" x="992" y="512">claim one</text>
+  <text class="al" x="588" y="196">rewritten each round</text>
+  <text class="al" x="588" y="556">read top-down</text>
+  <text class="al" x="332" y="380" text-anchor="end">a round like</text>
+  <text class="al" x="332" y="396" text-anchor="end">any other</text>
+
+  <!-- asides -->
+  <text class="aside" x="48" y="580">each round is a turn on the session page;</text>
+  <text class="aside" x="48" y="598">the session commits the page's records</text>
+  <text class="aside" x="48" y="616">to the agent repo as it ends</text>
+  <text class="aside" x="48" y="650">a question is Qn on the page, Dn once</text>
+  <text class="aside" x="48" y="668">a ticket holds it</text>
 
   <!-- legend -->
-  <line class="rule" x1="64" y1="784" x2="1144" y2="784"/>
-  <line class="flow" x1="64" y1="808" x2="104" y2="808" marker-end="url(#arrow)"/>
-  <text class="legend-text" x="112" y="811">the loop: one session or many</text>
-  <line class="spoke" x1="336" y1="808" x2="376" y2="808"/>
-  <text class="legend-text" x="384" y="811">the ticket written and read</text>
-  <rect class="hub" x="584" y="802" width="24" height="12" rx="3"/>
-  <text class="legend-text" x="616" y="811">a ticket on disk: outlives every session</text>
+  <line class="hair" x1="48" y1="744" x2="1152" y2="744"/>
+  <rect class="focal" x="48" y="768" width="24" height="16" rx="4"/>
+  <text class="legend" x="84" y="781">waits on you</text>
+  <line class="flow" x1="216" y1="776" x2="254" y2="776" marker-end="url(#arrow)"/>
+  <text class="legend" x="268" y="781">the loop, over one session or many</text>
+  <line class="spoke" x1="576" y1="776" x2="614" y2="776" marker-end="url(#arrow)"/>
+  <text class="legend" x="628" y="781">the ticket written and read</text>
+  <rect class="store" x="880" y="768" width="24" height="16" rx="4"/>
+  <text class="legend" x="916" y="781">on disk, outlives the session</text>
 </svg>
 <script>
-const root = document.documentElement, button = document.querySelector('.scheme');
-let dark = matchMedia('(prefers-color-scheme: dark)').matches;
-const apply = () => {
-  root.style.colorScheme = dark ? 'dark' : 'light';
-  button.textContent = dark ? 'Light' : 'Dark';
-  button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
-};
-button.addEventListener('click', () => { dark = !dark; apply(); });
-apply();
+const root = document.documentElement
+const theme = new URLSearchParams(location.search).get("theme")
+const dark = theme ? theme === "night" : matchMedia("(prefers-color-scheme: dark)").matches
+const set = (night) => {
+  root.dataset.theme = night ? "night" : "day"
+  document.getElementById("scheme").setAttribute("aria-label", night ? "switch to day" : "switch to night")
+}
+document.getElementById("scheme").addEventListener("click", () => set(root.dataset.theme !== "night"))
+set(dark)
 </script>
 </body>
 </html>

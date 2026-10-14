@@ -7,13 +7,14 @@
 
 The README's hub figure is the real hub tab, not a mockup: this builds a throwaway HOME holding a small
 ledger app, its tracker, and the session pages of five sessions on it (`fixture.py`), each rendered by this
-checkout's session-page renderer, registers the sessions as running, starts the container hub on that HOME,
+checkout's session-page renderer, registers the sessions as running (one in a pane of a tmux server of the run's
+own, a `sleep` standing in for its process, so its box offers to hand off), starts the container hub on that HOME,
 opens each session's pages through it, and screenshots the tab at the selected session in both schemes, to
-mx/assets/hub.png (night) and mx/assets/hub-light.png (day). Nothing reaches the real ~/.claude, a running
-hub, or a tmux server, and the HOME goes when the shot is taken. Re-run it whenever the hub tab or the
-session page changes how it looks.
+mx/assets/hub.png (night, the README's) and mx/assets/hub-light.png (day). Nothing reaches the real ~/.claude, a
+running hub, or the user's tmux server, and the HOME and the run's tmux server go when the shot is taken. Re-run it
+whenever the hub tab or the session page changes how it looks.
 
-Needs chromium on PATH and the network (the hub fetches its pane library from jsDelivr, the pages their
+Needs chromium and tmux on PATH and the network (the hub fetches its pane library from jsDelivr, the pages their
 fonts). The container hub lives in the dotfiles repo, with diffview beside it.
 
 Examples:
@@ -52,7 +53,6 @@ import session_page  # noqa: E402  this checkout's renderer, not the installed p
 
 SCHEMES = {"dark": "hub", "light": "hub-light"}  # the suffixes render.py gives the other figures
 WIDTH, HEIGHT = 1600, 1000
-SELF_STARTED = Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()[19]
 GIT = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com", "GIT_COMMITTER_NAME": "demo",
        "GIT_COMMITTER_EMAIL": "demo@example.com", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
@@ -131,6 +131,13 @@ def lay_project(code: Path, env: dict, diffview: Path) -> None:
             write(agent / "tickets" / f"{slug}.md", tickets[slug].text(f"{base}..{head}"))
         run(env, "git", "add", "-A", cwd=agent)
         run(env, "git", "commit", "-q", "-m", f"{s.tickets[0]}: filed", "-m", f"Session: {s.id}", cwd=agent)
+    for s in fixture.SESSIONS:  # committed after every prompt the transcripts hold, so each is fresh
+        if s.handoff:
+            slug, body = s.handoff
+            day = datetime.now().strftime("%Y-%m-%d")
+            write(agent / "handoffs" / f"{day}-{slug}.md", f"---\nsession: {s.id}\npurpose: continuation\n---\n\n{body}")
+            run(env, "git", "add", "-A", cwd=agent)
+            run(env, "git", "commit", "-q", "-m", f"handoff: {slug}", cwd=agent)
     tracker = MX / "skills" / "tracker" / "tracker.py"
     run(env, str(tracker), "check", *(str(p) for p in sorted((agent / "tickets").glob("*.md"))), cwd=code)
 
@@ -161,9 +168,10 @@ def home_is(home: Path):
             os.environ["CLAUDE_CONFIG_DIR"] = was[1]
 
 
-def lay_session(s: fixture.Session, code: Path, home: Path, now: float) -> Path:
+def lay_session(s: fixture.Session, code: Path, home: Path, now: float, pane: tuple[str, int] | None) -> Path:
     """The session's records, a transcript that pairs them with the user's prompts, its page rendered from both,
-    and its entry in the registry, naming this process so the hub reads it as running."""
+    and its entry in the registry, naming this process so the hub reads it as running, or, for a session in a tmux
+    pane, the pane's own process, which the hub checks the pane still holds before it offers anything there."""
     directory = code / "agent" / "sessions" / s.id
     transcript = home / ".claude" / "projects" / ("-" + str(code).strip("/").replace("/", "-")) / f"{s.id}.jsonl"
     lines, number, first = [], 0, at(s.turns[0].ago, now)
@@ -187,12 +195,20 @@ def lay_session(s: fixture.Session, code: Path, home: Path, now: float) -> Path:
                               {"type": "tool_use", "id": f"toolu_{s.id[:8]}_{number:02d}_{i}", "name": "Write",
                                "input": {"file_path": str(p)}} for i, p in enumerate(writes)]}})
         os.utime(path, (end, end))
+    if s.runs:
+        lines.append({"type": "assistant", "timestamp": iso(at(s.turns[-1].ago, now) - 45), "sessionId": s.id,
+                      "cwd": str(code), "message": {"role": "assistant", "content": [
+                          {"type": "tool_use", "id": f"toolu_{s.id[:8]}_run_{i}", "name": "Bash",
+                           "input": {"command": command, "description": what, "run_in_background": True}}
+                          for i, (what, command) in enumerate(s.runs)]}})
     write(transcript, "".join(json.dumps(line) + "\n" for line in lines))
     os.utime(directory / "session.md", (first, first))
 
     last = at(s.turns[-1].ago, now)
-    entry = {"pid": os.getpid(), "procStart": SELF_STARTED, "sessionId": s.id, "name": s.name, "status": s.status,
-             "statusUpdatedAt": int(last * 1000), "tmux": f"ledger:@{s.name.rsplit('-', 1)[1]}.%{s.name.rsplit('-', 1)[1]}",
+    n = s.name.rsplit("-", 1)[1]
+    target, pid = pane or (f"ledger:@{n}.%{n}", os.getpid())
+    entry = {"pid": pid, "procStart": started_at(pid), "sessionId": s.id, "name": s.name, "status": s.status,
+             "statusUpdatedAt": int(last * 1000), "tmux": target, "cwd": str(code),
              **({"waitingFor": s.waiting_for} if s.waiting_for else {})}
     write(home / ".claude" / "sessions" / f"{s.id[:8]}.json", json.dumps(entry))
     pct, tokens = s.context
@@ -224,16 +240,39 @@ def install_plugin(home: Path) -> None:
 # --- the hub --------------------------------------------------------------------------------------
 
 
+def started_at(pid: int) -> str:
+    """A process's start time as Claude Code's registry records it, which the hub checks a pid against."""
+    return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+
+
+def start_tmux(socket_path: Path, env: dict) -> dict[str, tuple[str, int]]:
+    """A tmux server of this run's own, with a pane for each session that runs in one: its registry entry's tmux
+    target and the pid the pane holds, by session id. No config, so nothing of the user's tmux setup loads."""
+    panes = {}
+    for s in (s for s in fixture.SESSIONS if s.pane):
+        how = (["-f", os.devnull, "new-session", "-s", "ledger", "-x", "160", "-y", "40"] if not panes
+               else ["new-window", "-t", "ledger"])
+        shown = run(env, "tmux", "-S", str(socket_path), *how, "-d", "-P", "-F",
+                    "#{session_name}:#{window_id}.#{pane_id} #{pane_pid}", "exec sleep 86400")
+        target, pid = shown.split()
+        panes[s.id] = target, int(pid)
+    return panes
+
+
+def stop_tmux(socket_path: Path, env: dict) -> None:
+    subprocess.run(["tmux", "-S", str(socket_path), "kill-server"], env=env, capture_output=True, check=False)
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
-def start_hub(hub: Path, port: int, scratch: Path, env: dict) -> subprocess.Popen:
+def start_hub(hub: Path, port: int, scratch: Path, tmux_socket: Path, env: dict) -> subprocess.Popen:
     log = (scratch / "hub.log").open("a")
     started = subprocess.Popen([str(hub), "--port", str(port), "--state", str(scratch / "state"),
-                                "--tmux-socket", str(scratch / "no-tmux.sock")],
+                                "--tmux-socket", str(tmux_socket)],
                                env=env, stdout=log, stderr=log, start_new_session=True)
     deadline = time.monotonic() + 120  # its first start resolves its dependencies through uv
     while time.monotonic() < deadline:
@@ -292,12 +331,18 @@ def open_pages(port: int, code: Path, pages: dict[str, Path]) -> str:
     units = {u["session"]: u for u in api(port, "/api/hub")["units"]}
     for s in fixture.SESSIONS:
         u = units.get(s.id)
-        if not u or u["state"] != s.status:
-            fail(f"{s.name} is not a running unit in state {s.status}: {u and u['state']}")
+        state = "idle" if s.status == "shell" else s.status  # the hub's: a shell left running is an idle session
+        if not u or u["state"] != state:
+            fail(f"{s.name} is not a running unit in state {state}: {u and u['state']}")
         if not u["status_line"]:
             fail(f"{s.name} has no status line: the hub did not read its session page through the plugin's reader")
-        if u["session_page"]["url"].startswith("/pages/"):
+        details = api(port, f"/api/u/{s.id}")
+        if details["session_page"]["url"].startswith("/pages/"):
             fail(f"{s.name} shows the hub's stand-in, not its session page")
+        if s.runs and len(details["background"]) != len(s.runs):
+            fail(f"{s.name} shows {details['background']} running in the background, not its {len(s.runs)} runs")
+        if s.handoff and (details["handoff"] or {}).get("offer") != "hand-off":
+            fail(f"{s.name}'s box does not offer to hand off from its handoff: {details['handoff']}")
     return front
 
 
@@ -363,14 +408,16 @@ def main(args: Args) -> None:
         fail(f"no diffview beside the hub, at {diffview}")
     scratch = Path(tempfile.mkdtemp(prefix="hub-fixture."))
     home, now, hub = scratch / "home", time.time(), None
+    tmux_socket = scratch / "tmux.sock"
     code = home / "code" / "ledger"
     try:
         env = clean_env(home)
         install_plugin(home)
         lay_project(code, env, diffview)
-        pages = {s.id: lay_session(s, code, home, now) for s in fixture.SESSIONS}
+        in_tmux = start_tmux(tmux_socket, env)
+        pages = {s.id: lay_session(s, code, home, now, in_tmux.get(s.id)) for s in fixture.SESSIONS}
         port = free_port()
-        hub = start_hub(hub_path, port, scratch, env)
+        hub = start_hub(hub_path, port, scratch, tmux_socket, env)
         front = open_pages(port, code, pages)
         panes = len(fixture.SELECTED.opens)
         shots = shoot(port, fixture.SELECTED.id, panes, front)
@@ -378,6 +425,8 @@ def main(args: Args) -> None:
     finally:
         if hub:
             stop_hub(hub)
+        if tmux_socket.exists():  # the server started, so env is set
+            stop_tmux(tmux_socket, env)
         if args.keep:
             print(f"kept: {scratch}")
         else:
