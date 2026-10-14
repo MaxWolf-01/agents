@@ -2,15 +2,19 @@
 //
 // A step is being read once its top has crossed the reading line (half way
 // down the window; lower on a narrow one, where the picture sits above the
-// text). For a chapter with k of its steps past that line:
+// text). One step at a time is in focus: the last one past the line, whose
+// text is in the accent; the steps before it are marked past. For a chapter
+// with k of its steps past that line:
 // - a figure shows every element whose data-step is at most k, those of step k
 //   in the accent, and its camera closes in on what is drawn so far while that
 //   still reads; before its first step it shows step 1 without the accent;
 // - a screenshot closes in on step k's region and dims the rest; before its
 //   first step, and for a step with no region, it is shown whole.
-// With "whole" on the root (head.js) every picture is complete and unzoomed.
-// The arrow keys, j and k, and Space move one step, scrolling the page to it;
-// Home and End go to the top and to the last step.
+// With "whole" on the root (head.js) the page is a plain article (story.css):
+// every picture complete at its own size, nothing in focus, and the keys
+// scroll as on any page. Switching keeps the chapter being read in view.
+// Stepped, the arrow keys, j and k, and Space move one step, scrolling the
+// page to it; Home and End go to the top and to the last step.
 
 (() => {
   const root = document.documentElement
@@ -35,8 +39,6 @@
     ch.canvas = ch.stage.querySelector(".canvas")
     ch.W = +ch.canvas.dataset.w
     ch.H = +ch.canvas.dataset.h
-    ch.canvas.style.width = `${ch.W}px`
-    ch.canvas.style.height = `${ch.H}px`
     if (ch.kind === "screenshot") {
       ch.focus = ch.canvas.querySelector(".focus")
       ch.regions = ch.steps.map((s) => (s.dataset.region ? s.dataset.region.split(" ").map(Number) : null))
@@ -50,8 +52,9 @@
 
   // What each drawn element of a figure covers, in SVG units, and how it takes
   // the accent: a text by its fill, a line by its stroke, a box by a wash, a
-  // small solid shape by its fill. A shape filled with the ground is a mask, and
-  // one filled with the accent already says "you"; both keep their fill.
+  // small solid shape by its fill. A shape or a text filled with the ground is a
+  // mask or a number knocked out of a disc, and one filled with the accent
+  // already says "you"; both keep their fill.
   // Measured once, with the canvas unscaled.
   function measure(ch) {
     ch.canvas.style.transform = "none"
@@ -75,8 +78,10 @@
       if (!host) continue
       const cs = getComputedStyle(g)
       const roles = []
-      if (g.tagName === "text") roles.push("text")
-      else {
+      if (g.tagName === "text") {
+        // a number knocked out of a disc is drawn in the ground, and stays so
+        if (cs.fill !== ground && cs.fill !== accent) roles.push("text")
+      } else {
         const stroked = cs.stroke !== "none" && parseFloat(cs.strokeWidth) > 0
         const filled = cs.fill !== "none" && cs.fillOpacity !== "0" && !/,\s*0\)$/.test(cs.fill) &&
           cs.fill !== ground && cs.fill !== accent
@@ -125,9 +130,8 @@
 
   const fitScale = (ch, w, h) => Math.min(ch.fw / w, ch.fh / h)
 
-  function figureView(ch, k, active) {
+  function figureView(ch, k) {
     const all = fitScale(ch, ch.W, ch.H)
-    if (whole()) return aim(ch, Math.min(ch.fw / ch.W, MAX_FIGURE), ch.W / 2, ch.H / 2)
     if (!ch.stepped || !ch.boxes) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
     const drawn = union(ch.boxes.filter((b) => b.step <= k))
     if (!drawn) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
@@ -152,15 +156,13 @@
     return aim(ch, s, (x + w / 2) * ch.W, (y + h / 2) * ch.H)
   }
 
-  // A whole figure is drawn at its readable width, not fitted into the window:
-  // its stage takes the figure's height and scrolls past like the text.
+  // The frame a stepped picture is fitted into; a whole one sizes itself.
   function layout(ch) {
+    if (whole()) return
     const cs = getComputedStyle(ch.stage)
     const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
     const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
     ch.fw = ch.stage.getBoundingClientRect().width - padX
-    const tall = whole() && ch.svg
-    ch.stage.style.height = tall ? `${ch.H * Math.min(ch.fw / ch.W, MAX_FIGURE) + padY}px` : ""
     ch.fh = ch.stage.getBoundingClientRect().height - padY
   }
 
@@ -168,7 +170,7 @@
     let view
     if (ch.kind === "screenshot") {
       const region = whole() || passed === 0 ? null : ch.regions[k - 1]
-      view = shotView(ch, region)
+      view = whole() ? null : shotView(ch, region)
       ch.focus.classList.toggle("on", !!region)
       if (region) {
         const [x, y, w, h] = region
@@ -184,10 +186,15 @@
         const hot = active && g.closest(".is-new")
         for (const [prop, id] of used) g.style[prop] = hot ? `url(#${id}-hl)` : ""
       }
-      view = figureView(ch, k, active)
+      view = whole() ? null : figureView(ch, k)
     }
-    ch.canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`
-    ch.canvas.style.setProperty("--s", view.s)
+    if (whole()) {
+      ch.canvas.style.transform = ""
+      ch.canvas.style.removeProperty("--s")
+    } else {
+      ch.canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`
+      ch.canvas.style.setProperty("--s", view.s)
+    }
     ch.el.dataset.shown = whole() ? "whole" : String(k)
     ch.el.dataset.accent = active && (ch.kind === "screenshot" ? !!ch.regions[k - 1] : !!ch.stepped) ? String(k) : ""
   }
@@ -203,8 +210,11 @@
 
   function update(force) {
     const y = readingLine()
-    const current = currentIndex()
-    steps.forEach((s, i) => s.classList.toggle("is-current", i === current))
+    const current = whole() ? -1 : currentIndex()
+    steps.forEach((s, i) => {
+      s.classList.toggle("is-current", i === current)
+      s.classList.toggle("is-past", i < current)
+    })
     for (const ch of chapters) {
       if (!ch.stage) continue
       const passed = ch.steps.filter((s) => s.getBoundingClientRect().top <= y + 1).length
@@ -234,7 +244,7 @@
   addEventListener("scrollend", () => { pending = null })
 
   addEventListener("keydown", (e) => {
-    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return
+    if (whole() || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return
     const t = e.target
     if (t.closest && t.closest("input, textarea, select, [contenteditable]")) return
     const onControl = t.closest && t.closest("button, a, summary")
@@ -258,10 +268,31 @@
     update(true)
   }
 
+  // The chapter being read: the last whose top is above the reading line.
+  let reading = null
+  const track = () => {
+    const y = readingLine()
+    reading = null
+    for (const ch of chapters) if (ch.el.getBoundingClientRect().top <= y) reading = ch
+  }
+
+  // Switching between stepped and whole moves every chapter; bring the one
+  // being read back to the top of the window, from its heading.
+  function switched() {
+    const ch = reading
+    relayout()
+    if (!ch) return
+    const heading = ch.el.querySelector("h2")
+    scrollTo({ top: scrollY + heading.getBoundingClientRect().top - parseFloat(getComputedStyle(root).scrollPaddingTop || 0), behavior: "auto" })
+    track()
+  }
+
   for (const ch of chapters) if (ch.stage) layout(ch)
   update(true)
+  track()
   addEventListener("scroll", schedule, { passive: true })
-  document.addEventListener("story:whole", relayout)
+  addEventListener("scroll", track, { passive: true })
+  document.addEventListener("story:whole", switched)
   const resized = new ResizeObserver(relayout)
   for (const ch of chapters) if (ch.stage) resized.observe(ch.stage)
 

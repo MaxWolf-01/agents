@@ -1,8 +1,10 @@
 /* The story page, on the house tokens (tokens.css, copied in by build.py from
-   mx/skills/house-style). Each chapter is a column of text beside a stage:
-   the stage stays in view while the chapter's steps scroll past, and story.js
-   grows the picture on it to the step being read. Without the script the
-   pictures sit whole above their text. */
+   mx/skills/house-style). Stepped, each chapter is a column of text beside a
+   stage: the stage stays in view while the chapter's steps scroll past, and
+   story.js grows the picture on it to the step being read. Whole (the class
+   "whole" on the root, set by head.js), and without the script, the page is a
+   plain article: each chapter's intro, its picture complete, then the
+   paragraphs that walk through it. */
 
 :root {
   --head: 3.25rem;
@@ -140,63 +142,56 @@ main {
   margin-right: 0.5rem;
 }
 
-/* ---- a chapter: text beside its stage ---------------------------------- */
+/* ---- a chapter as an article ---------------------------------------------
+   How every chapter reads without the script, and with "whole" on the root:
+   heading and intro, the picture complete at its own width or the column's,
+   whichever is smaller, then the steps as the paragraphs that walk through
+   it. The text column dissolves so its parts and the picture share one flow. */
 
 .chapter {
-  display: grid;
-  grid-template-columns: minmax(18rem, var(--text)) minmax(0, 1fr);
-  column-gap: var(--gap);
-  margin-top: 7rem;
+  display: flex;
+  flex-direction: column;
+  margin-top: 6rem;
 }
 
 .chapter .text {
-  grid-column: 1;
-  grid-row: 1;
+  display: contents;
+}
+
+.chapter .text > * {
+  order: 3;
   max-width: var(--measure);
 }
 
-.chapter .stage {
-  grid-column: 2;
-  grid-row: 1;
+.chapter .text > h2 {
+  order: 1;
 }
 
+.chapter .text > .intro {
+  order: 1;
+}
+
+.chapter .stage {
+  order: 2;
+  margin: 2rem 0 0.9rem;
+}
 
 .chapter h2 {
   margin: 0 0 1rem;
 }
 
-.chapter .intro {
+.chapter .intro,
+.beat {
   color: var(--body);
 }
 
-/* Each step gets a stretch of scroll of its own; the step being read is
-   marked by the same accent as the part of the picture it added. */
 .beat {
-  margin-top: 1.75rem;
-  padding-left: 1rem;
-  border-left: 2px solid var(--edge);
-  transition: border-color 200ms;
+  margin-top: 1.1em;
 }
 
-.beat.is-current {
-  border-left-color: var(--accent);
-}
-
-.js .beat {
-  margin-top: 42vh;
-}
-
-.js .chapter .intro + .beat {
-  margin-top: 28vh;
-}
-
-.js .chapter .beat:last-child {
-  margin-bottom: 62vh;
-}
-
-/* Without the script: every picture whole, above its text. */
-.stage {
-  margin: 0 0 2rem;
+.canvas {
+  position: relative;
+  max-width: var(--max);
 }
 
 .canvas svg,
@@ -206,55 +201,14 @@ main {
   height: auto;
 }
 
-/* With it: the stage holds still while the chapter scrolls, and the canvas
-   inside it is moved and scaled by story.js. */
-.js .stage {
-  position: sticky;
-  top: calc(var(--head) + 1rem);
-  align-self: start;
-  height: calc(100svh - var(--head) - 2rem);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.js .frame {
-  position: relative;
-  width: 100%;
-  height: 100%;
+.stage[data-kind="screenshot"] .canvas {
   overflow: hidden;
+  border-radius: var(--radius);
+  outline: 1px solid var(--edge);
 }
 
-/* A whole figure scrolls past at its own height (story.js sets it). */
-.js.whole .stage[data-kind="figure"] {
-  position: relative;
-  top: auto;
-}
-
-/* A screenshot's edge, drawn on the image so it holds at any zoom; the
-   image clips the focus' dimming to itself. */
-.js .stage[data-kind="screenshot"] .canvas {
-  overflow: hidden;
-  border-radius: calc(var(--radius) / var(--s, 1));
-  outline: calc(1px / var(--s, 1)) solid var(--edge);
-}
-
-.js .canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 0 0;
-}
-
-.js .canvas svg,
-.js .canvas img {
-  width: 100%;
-  height: 100%;
-}
-
-.js .canvas.ready {
-  transition: transform 650ms cubic-bezier(0.3, 0.1, 0.2, 1);
+.focus {
+  display: none;
 }
 
 /* Each screenshot is drawn in both schemes where it has both. */
@@ -275,10 +229,107 @@ main {
   }
 }
 
-/* The focus on a screenshot: the region a step talks about stays clear and
-   the rest of the picture recedes. --s is the canvas' scale, so the line
-   keeps its width on screen however far the picture is zoomed. */
-.focus {
+/* ---- a chapter stepped: text beside a stage that holds still ----------- */
+
+.js:not(.whole) .chapter {
+  display: grid;
+  grid-template-columns: minmax(18rem, var(--text)) minmax(0, 1fr);
+  column-gap: var(--gap);
+  margin-top: 7rem;
+}
+
+.js:not(.whole) .chapter .text {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  max-width: var(--measure);
+}
+
+/* One step at a time is in focus: the one being read is in the accent, like
+   the part of the picture it brought in; the steps read before it are in the
+   body colour and the ones still to come are quiet. Each gets a stretch of
+   scroll of its own. */
+.js:not(.whole) .beat {
+  margin-top: 42vh;
+  padding-left: 1rem;
+  border-left: 2px solid var(--edge);
+  color: var(--muted);
+  transition: color 250ms, border-color 250ms;
+}
+
+.js:not(.whole) .beat.is-past {
+  color: var(--body);
+}
+
+.js:not(.whole) .beat.is-current {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.js:not(.whole) .beat.is-current code {
+  color: inherit;
+}
+
+.js:not(.whole) .chapter .intro + .beat {
+  margin-top: 28vh;
+}
+
+.js:not(.whole) .chapter .beat:last-child {
+  margin-bottom: 62vh;
+}
+
+/* The stage holds still while the chapter scrolls, and the canvas inside it
+   is moved and scaled by story.js. */
+.js:not(.whole) .stage {
+  grid-column: 2;
+  grid-row: 1;
+  position: sticky;
+  top: calc(var(--head) + 1rem);
+  align-self: start;
+  height: calc(100svh - var(--head) - 2rem);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.js:not(.whole) .frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.js:not(.whole) .canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--w) * 1px);
+  max-width: none;
+  height: calc(var(--h) * 1px);
+  transform-origin: 0 0;
+}
+
+.js:not(.whole) .canvas svg,
+.js:not(.whole) .canvas img {
+  height: 100%;
+}
+
+.js:not(.whole) .canvas.ready {
+  transition: transform 650ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+
+/* A screenshot's edge, drawn on the image so it holds at any zoom; the
+   image clips the focus' dimming to itself. --s is the canvas' scale. */
+.js:not(.whole) .stage[data-kind="screenshot"] .canvas {
+  border-radius: calc(var(--radius) / var(--s, 1));
+  outline-width: calc(1px / var(--s, 1));
+}
+
+/* The focus on a screenshot: the region the step being read talks about
+   stays clear, outlined in the accent, and the rest recedes. */
+.js:not(.whole) .focus {
+  display: block;
   position: absolute;
   left: 0;
   top: 0;
@@ -291,17 +342,18 @@ main {
   pointer-events: none;
 }
 
-.focus.on {
+.js:not(.whole) .focus.on {
   opacity: 1;
 }
 
-.ready .focus {
+.js:not(.whole) .ready .focus {
   transition: opacity 400ms, left 650ms, top 650ms, width 650ms, height 650ms;
 }
 
 /* A figure growing: a later step's parts are not drawn yet, and the parts
-   the current step added wear the accent. The !important lets a state beat
-   the figure's own colours, whatever their specificity. */
+   the step being read brought in wear the accent; everything earlier keeps
+   the figure's own colours. The !important lets a state beat the figure's
+   own colours, whatever their specificity. */
 .canvas [data-step] {
   transition: opacity 450ms, visibility 450ms;
 }
@@ -349,9 +401,9 @@ footer a {
   .bar button,
   .whole .track,
   .whole .track::after,
-  .beat,
-  .js .canvas.ready,
-  .ready .focus,
+  .js:not(.whole) .beat,
+  .js:not(.whole) .canvas.ready,
+  .js:not(.whole) .ready .focus,
   .canvas [data-step],
   .canvas [data-hl] {
     transition: none;
@@ -366,35 +418,37 @@ footer a {
   }
 
   .chapter {
+    margin-top: 5rem;
+  }
+
+  .js:not(.whole) .chapter {
     display: block;
     margin-top: 5rem;
   }
 
-  .js .stage {
+  .js:not(.whole) .stage {
     z-index: 2;
     top: var(--head);
     height: 46svh;
     padding: 0.75rem 0;
-    margin: 0 calc(-1 * var(--edge-pad));
-    padding-left: var(--edge-pad);
-    padding-right: var(--edge-pad);
+    margin: 0;
     background: var(--ground);
     border-bottom: 1px solid var(--edge);
   }
 
-  .chapter .text {
+  .js:not(.whole) .chapter .text {
     margin-top: 1.5rem;
   }
 
-  .js .beat {
+  .js:not(.whole) .beat {
     margin-top: 30vh;
   }
 
-  .js .chapter .intro + .beat {
+  .js:not(.whole) .chapter .intro + .beat {
     margin-top: 12vh;
   }
 
-  .js .chapter .beat:last-child {
+  .js:not(.whole) .chapter .beat:last-child {
     margin-bottom: 30vh;
   }
 

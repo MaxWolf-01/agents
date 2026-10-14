@@ -3,10 +3,12 @@
 // - The scheme: ?theme=day|night pins it, the toggle flips it, and otherwise
 //   the page follows the system, also when the system changes while it is open.
 //   data-theme on the root is the whole switch.
-// - Whole figures: every picture shown complete instead of growing step by
-//   step. ?final turns it on for this load (?final=0 off); the switch turns it
-//   on or off and is remembered in localStorage. The class "whole" on the root
-//   is the whole switch; story.js reads it.
+// - Whole figures: the page read as a plain article, each chapter's intro, its
+//   picture complete, then its steps as paragraphs, instead of pictures
+//   growing step by step.
+//   ?final turns it on for this load (?final=0 off); the switch turns it on or
+//   off and is remembered in localStorage. The class "whole" on the root is
+//   the whole switch; story.css and story.js read it.
 // The class "js" says the stepping script will run, so the stylesheet lays the
 // chapters out for it.
 
@@ -30,17 +32,20 @@
   const stored = () => {
     try { return localStorage.getItem(KEY) === "1" } catch { return false }
   }
+  const showWhole = () => {
+    const button = document.getElementById("whole")
+    if (button) button.setAttribute("aria-checked", String(root.classList.contains("whole")))
+  }
   const setWhole = (on) => {
     root.classList.toggle("whole", on)
-    const button = document.getElementById("whole")
-    if (button) button.setAttribute("aria-checked", String(on))
+    showWhole()
     document.dispatchEvent(new CustomEvent("story:whole"))
   }
   setWhole(params.has("final") ? params.get("final") !== "0" : stored())
 
   document.addEventListener("DOMContentLoaded", () => {
     setTheme(root.dataset.theme === "night")
-    setWhole(root.classList.contains("whole"))
+    showWhole()
     document.getElementById("scheme").addEventListener("click", () => {
       chosen = true
       setTheme(root.dataset.theme !== "night")

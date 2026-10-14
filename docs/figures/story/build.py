@@ -350,6 +350,13 @@ SCHEME_ICONS = """<svg class="sun" viewBox="0 0 24 24" width="18" height="18" fi
         <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>"""
 
 
+def size_attrs(w: float, h: float, natural: float) -> str:
+    """A canvas' size in its own units, and the widest it is drawn whole: a figure at one CSS
+    pixel per SVG unit, a screenshot (rendered at 2x) at one per two image pixels."""
+    return (f'data-w="{w:g}" data-h="{h:g}" '
+            f'style="--w: {w:g}; --h: {h:g}; --max: {w * natural:g}px"')
+
+
 def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size: tuple[int, int]) -> str:
     label = html.escape(section.heading, quote=True)
     if section.kind == "figure":
@@ -358,7 +365,7 @@ def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size
         head = re.sub(r'\s(?:role|aria-label|aria-labelledby)="[^"]*"', "", head)
         svg = f'{head} role="img" aria-label="{label}">{rest}'
         return f"""<div class="stage" data-kind="figure"{' data-stepped' if drawing.stepped else ''}>
-          <div class="frame"><div class="canvas fig-{section.name}" data-w="{drawing.width:g}" data-h="{drawing.height:g}">
+          <div class="frame"><div class="canvas fig-{section.name}" {size_attrs(drawing.width, drawing.height, 1)}>
             {svg}
           </div></div>
         </div>"""
@@ -367,7 +374,7 @@ def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size
         f'<img class="{scheme if len(shots) == 2 else "both"}" src="{src}" width="{w}" height="{h}" alt="{label}" decoding="async">'
         for scheme, src in shots.items())
     return f"""<div class="stage" data-kind="screenshot">
-          <div class="frame"><div class="canvas" data-w="{w}" data-h="{h}">
+          <div class="frame"><div class="canvas" {size_attrs(w, h, 0.5)}>
             {imgs}
             <div class="focus" aria-hidden="true"></div>
           </div></div>
