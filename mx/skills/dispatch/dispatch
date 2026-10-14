@@ -48,10 +48,12 @@
 #                 `review` reads one. Exit 1: not merged yet, or the tracker
 #                 refused one, and nothing is written.
 # ps [--color] [--follow]
-#                 every worker on every host, for a human; the orchestrator's
-#                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
-#                 --follow keeps the table on screen, redrawn as the hosts
-#                 change, over one ssh login per host, until Ctrl-C.
+#                 every worker on every host, for a human, the running ones
+#                 first; the orchestrator's view is `ctl probe`. Exit 1: a host
+#                 or a scratch dir unread. --follow keeps the table on screen,
+#                 redrawn as the hosts change, over one ssh login per host,
+#                 until Ctrl-C; one taller than the screen folds its exited
+#                 workers into a few lines per host and base.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
@@ -1213,10 +1215,15 @@ measure() {
     fi
 }
 
-# The table ps prints, from gather's rows on stdin, cut to `cols` and painted
-# when `color` is set.
+# The table ps prints, from gather's rows on stdin: running workers first,
+# exited ones last and the rest between, each by host, base and ticket. Cut to
+# `cols` and painted when `color` is set. With `folded` set and a width known,
+# the exited workers fold into a few lines per host and base, each ticket beside
+# its idle time.
 table() {
-    sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" -v color="$color" '
+    awk -F'\t' '{ print ($4 == "running" ? 0 : $4 == "exited" ? 2 : 1) "\t" $0 }' |
+        sort -t$'\t' -k1,1n -k2,2 -k3,3 -k4,4 | cut -f2- |
+        awk -F'\t' -v cols="$cols" -v color="$color" -v folded="${folded:-}" '
         function ago(s) {
             if (s !~ /^[0-9]+$/) return "-"
             if (s < 60) return s "s"
@@ -1235,12 +1242,14 @@ table() {
           cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9
           # A running worker whose worklog has been silent this long is worth a peek.
           stale[n] = $4 == "running" && $6 ~ /^[0-9]+$/ && $6 >= 900
+          fold[n] = folded && cols > 0 && $4 == "exited"
           count[$4]++; if (!(($4) in order)) order[$4] = ++states }
         END {
             if (n == 0) { print "no workers"; exit }
             for (k = 0; k <= n; k++) for (c = 1; c <= 6; c++)
                 if (length(cell[k, c]) > w[c]) w[c] = length(cell[k, c])
             for (k = 0; k <= n; k++) {
+                if (fold[k]) continue
                 # Padded and cut as plain text, then painted, so an escape
                 # sequence counts for no width.
                 for (c = 1; c <= 6; c++) pad[c] = sprintf(c >= 5 ? "%*s" : "%-*s", w[c], cell[k, c])
@@ -1254,6 +1263,29 @@ table() {
                 quiet = state == "exited" ? "2" : ""
                 print paint(pad[1] "  " pad[2] "  " pad[3] "  ", quiet) paint(pad[4], hue(state)) "  " \
                       paint(pad[5], quiet) "  " paint(pad[6], stale[k] ? "33" : quiet) "  " paint(detail, quiet)
+            }
+            # The folded workers line up under TICKET, as many to a line as
+            # the width holds.
+            for (k = 1; k <= n; k++) if (fold[k]) {
+                if (length(cell[k, 3]) > ws) ws = length(cell[k, 3])
+                if (length(cell[k, 6]) > wi) wi = length(cell[k, 6])
+            }
+            if (ws) {
+                lead = w[1] + 2 + w[2] + 2
+                per = int((cols - lead + 2) / (ws + 1 + wi + 2)); if (per < 1) per = 1
+                print paint(substr(sprintf("%*s%s", lead, "", "exited, each beside its IDLE"), 1, cols), "2")
+                line = ""; group = ""
+                for (k = 1; k <= n; k++) {
+                    if (!fold[k]) continue
+                    if (cell[k, 1] SUBSEP cell[k, 2] != group || i == per) {
+                        if (line != "") print paint(substr(line, 1, cols), "2")
+                        line = cell[k, 1] SUBSEP cell[k, 2] == group ? sprintf("%*s", lead, "") \
+                             : sprintf("%-*s  %-*s  ", w[1], cell[k, 1], w[2], cell[k, 2])
+                        group = cell[k, 1] SUBSEP cell[k, 2]; i = 0
+                    }
+                    line = line (i++ ? "  " : "") sprintf("%-*s %*s", ws, cell[k, 3], wi, cell[k, 6])
+                }
+                print paint(substr(line, 1, cols), "2")
             }
             # Running and exited always first, zero or not, so a redraw keeps
             # each number where it was; the rest as they appear.
@@ -1272,7 +1304,7 @@ table() {
 # yet is a `connecting` row. The hosts are read again every half minute, which
 # costs no login.
 follow() {
-    local h now out fresh shown= asked=$SECONDS
+    local h now drawing out fresh shown= asked=$SECONDS
     fleet_hosts
     frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
     declare -gA follower=()
@@ -1293,13 +1325,14 @@ follow() {
         fi
         measure
         printf -v now '%(%s)T' -1
-        out=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
-                for h in "${hosts[@]}"; do
-                    cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
-                done } |
+        drawing=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
+                    for h in "${hosts[@]}"; do
+                        cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
+                    done } |
             awk -F'\t' -v OFS='\t' -v now="$now" '
                 $1 ~ /^[0-9]+$/ { if ($6 ~ /^[0-9]+$/) $6 += now - $1; if ($7 ~ /^[0-9]+$/) $7 += now - $1 }
-                { sub(/^[^\t]*\t/, ""); print }' | table)
+                { sub(/^[^\t]*\t/, ""); print }')
+        out=$(printf '%s' "$drawing" | table)
         fit
         # Over what was there, each line cleared to its end, so a redraw
         # does not flicker.
@@ -1329,11 +1362,15 @@ follow_fleet() {
     done
 }
 
-# Cuts `out` to `lines`, keeping its header and its tally, since a table taller
-# than the screen would scroll on every draw.
+# Fits `out`, the table drawn from `drawing`, to `lines`, since a table taller
+# than the screen would scroll on every draw: folded first, then cut below its
+# header and above its tally where the fold is not enough.
 fit() {
     local -a drawn
     [ "$lines" -ge 5 ] || return 0
+    mapfile -t drawn <<<"$out"
+    [ ${#drawn[@]} -gt "$lines" ] || return 0
+    out=$(printf '%s' "$drawing" | folded=1 table)
     mapfile -t drawn <<<"$out"
     [ ${#drawn[@]} -gt "$lines" ] || return 0
     out=$(printf '%s\n' "${drawn[@]:0:lines-3}"

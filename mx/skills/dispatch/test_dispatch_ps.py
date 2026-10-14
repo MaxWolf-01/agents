@@ -317,6 +317,14 @@ def test_under_watch_the_table_is_cut_to_its_width_and_painted_when_asked(home: 
     assert "\x1b[" not in dispatch({**tmux, "NO_COLOR": "1"}, home, "ps", "--color", hosts="local agent@far", answers=far).stdout
 
 
+def test_the_running_workers_come_first_and_the_exited_ones_last(home: Path, tmux: dict[str, str]):
+    """Whatever host they are on: the live runs are what a glance at the table is for, and what did
+    not get read comes next."""
+    out = dispatch(tmux, home, "ps", hosts="local zz@far zz@off", answers={"zz@far": elsewhere("busy-one")})
+    states = [line.split()[3] for line in out.stdout.splitlines()[1:-2]]
+    assert states == ["running", "unreachable", "exited"], out.stdout
+
+
 def test_the_hosts_are_the_registers_and_the_repos_runs_from_anywhere_in_it(home: Path, tmux: dict[str, str]):
     """The register names one host, the repo's runs another, and ps is run from a subdirectory on a
     branch no run was spawned from: both hosts are read."""
@@ -888,6 +896,28 @@ def test_a_table_taller_than_the_screen_keeps_its_header_and_tally(tmp_path: Pat
     assert len(printed) == 13, "a header, ten rows, a blank line and the tally"
     drawn = f.shows(lambda t: "ticket-" in t).splitlines()
     assert drawn == [*printed[:5], "(6 more rows than the screen holds)", *printed[-2:]]
+
+
+@pytest.mark.full_path
+def test_a_table_taller_than_the_screen_folds_its_exited_workers_first(tmp_path: Path, follow):
+    """Ten exited workers of one base, which a screen 8 lines tall and 100 wide holds in two lines
+    under TICKET, beside the running one."""
+    home = tmp_path / "home"
+    for n in range(10):
+        d = aged(home / ROOT, "agents", f"ticket-{n}", 7200)
+    live = running(d, spawned(d, "busy-one"))
+    try:
+        f = follow(home, LINES="8", COLUMNS="100")
+        drawn = f.shows(lambda t: "ticket-9" in t and "busy-one" in t).splitlines()
+        assert len(drawn) == 7, drawn
+        assert re.match(r"local +agents/master +busy-one +running", drawn[1])
+        assert drawn[2].split() == ["exited,", "each", "beside", "its", "IDLE"]
+        ticket = drawn[2].index("exited")
+        assert drawn[3][:ticket].split() == ["local", "agents/master"] and not drawn[4][:ticket].strip()
+        assert re.findall(r"ticket-\d 2h", drawn[3] + drawn[4]) == [f"ticket-{n} 2h" for n in range(10)]
+        assert drawn[-2:] == ["", "1 running  10 exited"]
+    finally:
+        live.kill()
 
 
 if __name__ == "__main__":
