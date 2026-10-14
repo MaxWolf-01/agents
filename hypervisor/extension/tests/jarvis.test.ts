@@ -25,6 +25,8 @@ mkdirSync(bin);
 writeFileSync(
 	path.join(bin, "ssh"),
 	`#!/usr/bin/env bash
+# Real ssh offers the agent's keys before -i's, and max's own key logs in as root, past the forced command.
+[[ " $* " == *" IdentityAgent=none "* ]] || { echo "ssh: the agent's keys would be offered before the mailbox key" >&2; exit 255; }
 while [[ $1 == -* ]]; do shift 2; done
 shift
 SSH_ORIGINAL_COMMAND="$*" exec ${JSON.stringify(MAILBOX)}

@@ -49,10 +49,14 @@ export async function fetchFromJarvis(config: JarvisConfig, inbox: Inbox): Promi
 	return messages.length;
 }
 
-/** Runs one request of the mailbox's on the VPS, with only the mailbox key offered and no prompt to answer. */
+/**
+ * Runs one request of the mailbox's on the VPS, with the mailbox key offered first and no prompt to answer. A
+ * `Host *` IdentityFile in max's ssh config is offered too, and the agent's keys go before every file, so with the
+ * agent on, max's own key logs in as root and the request runs in his shell instead of the mailbox.
+ */
 async function mailbox({ host, key }: JarvisConfig, request: string[], input?: string): Promise<string> {
 	if (!existsSync(key)) throw new Error(`no mailbox key at ${key}; hypervisor/jarvis-mailbox says how it is set up`);
-	const ssh = ["-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, ...request];
+	const ssh = ["-i", key, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, ...request];
 	try {
 		return await run("ssh", ssh, { input, timeout: SSH_TIMEOUT_MS });
 	} catch (error) {
