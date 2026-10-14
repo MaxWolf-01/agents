@@ -23,7 +23,7 @@ The provenance tag on a call: who settled it, or that nobody has yet.
 _Avoid_: spec mark, mark (bare; a row mark is one too), marker, annotation, tag, label
 
 **Frontier**:
-What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open or proposed tickets nothing gates, nobody holds, and the user is not in the loop for.
+What can be worked now: in a grilling, the decisions nothing open still gates; on the tracker, the open tickets nothing gates, nobody holds, and the user is not in the loop for.
 _Avoid_: backlog, todo, next steps
 
 **Fog**:
@@ -59,8 +59,12 @@ A ticket's own body with every ancestor's: the whole of what a worker or a revie
 _Avoid_: brief (a ticket's brief is one section of it), spec, background
 
 **Proposed**:
-The status of a ticket an agent filed that the user has not yet ruled on: built like an open one while the ruling waits.
+The status of a ticket an agent filed that the user has not yet ruled on: off the frontier until a triage promotes it to open.
 _Avoid_: backlog, suggested, draft ticket, idea
+
+**Triage**:
+A pass the user starts over the proposed tickets: they are grouped by shared cause, and each is dropped, merged into another, or promoted to open.
+_Avoid_: grooming, backlog review
 
 **Review**:
 The status of a ticket whose work is finished and waits for the user's ruling.
@@ -68,7 +72,7 @@ _Avoid_: needs ruling, pending, awaiting approval, done
 
 **Ruling**:
 The user's answer on what a ticket built: accept, amend, redo or reject.
-_Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
+_Avoid_: approval, triage (a triage is over proposed tickets, before any build), verdict (a verdict settles a call in grilling)
 
 **Standing yes**:
 The user's accept, given in advance, of every build that carries no call of theirs they have not already made, as far as its parent ticket's branch.

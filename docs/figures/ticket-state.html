@@ -56,8 +56,8 @@ text{fill:var(--ink);}
 </header>
 <h1>Every ticket holds one state, and each transition has exactly one writer.</h1>
 <p class="dek">Tickets are markdown files under <code>agent/tickets/</code>; the board is the whole tracker rendered as
-one page. Every ticket an agent writes is <code>proposed</code>: on the frontier and built like any other, in its own
-colour in every view, until you rule on what it produced. Everything the page shows &mdash; the dependency graph, the
+one page. Every ticket an agent files on its own reading is <code>proposed</code>: off the frontier, in its own
+colour in every view, until your triage drops it, merges it or promotes it to open. Everything the page shows &mdash; the dependency graph, the
 frontier, the review pages, everything that waits on you &mdash; is derived from those files, so the page is never a
 second place to keep state.</p>
 
@@ -85,7 +85,6 @@ second place to keep state.</p>
   <path class="flow" d="M 568,414 V 458" marker-end="url(#arrow)"/>
   <path class="flow" d="M 568,534 V 578" marker-end="url(#arrow)"/>
   <path class="flow" d="M 568,654 V 698" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 704,136 H 730 V 376 H 706" marker-end="url(#arrow)"/>
   <path class="flow-accent" d="M 344,600 H 386 V 496 H 426" marker-end="url(#arrow-accent)"/>
 
   <!-- state chips -->
@@ -121,14 +120,14 @@ second place to keep state.</p>
 
   <!-- labels: sources -->
   <text class="name" x="76" y="112">Any agent that writes a ticket</text>
-  <text class="note" x="76" y="132">to-tickets: every slice of a spec you grilled</text>
+  <text class="note" x="76" y="132">a review session: what it found worth doing</text>
   <text class="note" x="76" y="148">a worker: the friction it hit, a punt it left</text>
   <text class="note" x="76" y="162">the orchestrator: a miss it read in a build</text>
   <text class="note" x="76" y="176">a review: a finding too large to fix there</text>
 
   <text class="name" x="76" y="232">You</text>
   <text class="note" x="76" y="252">asked for in chat, or a grilling's decision</text>
-  <text class="note" x="76" y="266">tickets: rulings already</text>
+  <text class="note" x="76" y="266">tickets, and their slices: rulings already</text>
   <text class="note" x="76" y="282">silence is not a ruling</text>
 
   <text class="name" x="76" y="448">A ticket's open questions</text>
@@ -147,8 +146,8 @@ second place to keep state.</p>
 
   <!-- labels: states -->
   <text class="state" x="448" y="128">proposed</text>
-  <text class="note" x="448" y="146">written, not yet ruled; on the frontier,</text>
-  <text class="note" x="448" y="160">and the claim takes it like an open one</text>
+  <text class="note" x="448" y="146">written, not yet ruled; off the frontier</text>
+  <text class="note" x="448" y="160">until a triage you start promotes it</text>
 
   <text class="state" x="448" y="248">open</text>
   <text class="note" x="448" y="266">on the tracker, nobody holds it; open +</text>
@@ -171,14 +170,14 @@ second place to keep state.</p>
   <text class="note" x="448" y="760">the row leaves the board; history keeps it</text>
 
   <!-- labels: transitions -->
-  <text class="al-accent" x="584" y="186">AN EARLY RULING</text>
-  <text class="note" x="584" y="200">open, delete, or send it to</text>
-  <text class="note" x="584" y="214">grilling; most are ruled on later</text>
+  <text class="al-accent" x="584" y="186">YOUR TRIAGE</text>
+  <text class="note" x="584" y="200">grouped by cause: promote,</text>
+  <text class="note" x="584" y="214">merge or drop; or "build this"</text>
 
   <text class="al" x="584" y="300">DISPATCH CLAIM</text>
   <text class="note" x="584" y="312">the orchestrator, sole</text>
-  <text class="note" x="584" y="324">claim-writer; proposed and</text>
-  <text class="note" x="584" y="336">open alike</text>
+  <text class="note" x="584" y="324">claim-writer; it takes</text>
+  <text class="note" x="584" y="336">open tickets alone</text>
 
   <text class="al" x="584" y="426">THE WORKER'S LAST ACT</text>
   <text class="note" x="584" y="440">on its branch; the orchestrator</text>
@@ -194,8 +193,8 @@ second place to keep state.</p>
   <text class="dagtag" x="824" y="300">the frontier</text>
   <text class="dagtag" x="984" y="300">proposed</text>
   <text class="note" x="772" y="330">the frontier is what can start right now, first by number</text>
-  <text class="note" x="772" y="344">wins, proposed or open. A proposed node keeps its colour</text>
-  <text class="note" x="772" y="358">in every view, so you triage from the picture, not a list.</text>
+  <text class="note" x="772" y="344">wins, open only. A proposed node keeps its colour in every</text>
+  <text class="note" x="772" y="358">view, so you see what waits for your triage in the picture.</text>
 
   <text class="name" x="772" y="464">Also on the page</text>
   <text class="cmd" x="772" y="480">board</text>

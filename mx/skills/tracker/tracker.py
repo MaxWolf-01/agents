@@ -260,11 +260,12 @@ def assembled(ticket: Ticket, tracker: Tracker) -> str:
 
 @app.command(name="frontier")
 def frontier() -> int:
-    """What can be started right now: the unclaimed, unblocked tickets that are open or proposed and
-    do not need the user. A blocker holds until it is done, or until it is a sibling in review, no
-    hinge, and merged into the branch of the parent ticket the two share: a parent ticket ruled
-    whole lets its children build on each other unruled, and a hinge is ruled alone before anything
-    builds on it. Everything else not done follows under `waiting`, with what holds it back.
+    """What can be started right now: the unclaimed, unblocked open tickets that do not need the
+    user; a proposed ticket waits for a triage to promote it to open. A blocker holds until it is
+    done, or until it is a sibling in review, no hinge, and merged into the branch of the parent
+    ticket the two share: a parent ticket ruled whole lets its children build on each other
+    unruled, and a hinge is ruled alone before anything builds on it. Everything else not done
+    follows under `waiting`, with what holds it back.
     """
     tracker = here()
     refuse([refusal for ticket in tracker.tickets.values() for refusal in refusals_of(ticket, tracker)])
@@ -286,6 +287,8 @@ def held(ticket: Ticket, tracker: Tracker) -> str:
     """What holds a ticket back from being started now, or "" when nothing does."""
     if ticket.status in ("claimed", "review"):
         return f"{ticket.status}, not the frontier's"
+    if ticket.status == "proposed":
+        return "proposed, waiting for a triage"
     if ticket.needs_user:
         return "on the user, who is in the loop for it"
     blocking = [tracker.tickets[ref] for ref in ticket.blocked_by if not frees(tracker.tickets[ref], ticket, tracker)]
@@ -390,10 +393,10 @@ def rendered(value: object) -> str:
 # What a status change follows: where it may come from, and the rule that says so. A ticket moves
 # along the tracker's transitions and nowhere else, so the rule is enforced where it is written.
 INTO = {
-    "claimed": (("open", "proposed", "review"), "a claim is taken from the frontier, a proposal like an open ticket, and a build the user sent back is claimed again"),
+    "claimed": (("open", "review"), "a claim is taken from the frontier, which a proposal joins only once a triage or the user's word makes it open, and a build the user sent back is claimed again"),
     "review": (("claimed",), "review is where a finished build waits for the user's ruling, and a build starts from a claim"),
     "done": (("review",), "done is the accept and nothing less, written once the user has accepted, given or standing, the ticket or the parent ticket it was ruled with"),
-    "open": (("proposed", "review", "claimed"), "open is a ticket ruled and not yet built: the ruling on a proposal, the redo ruling that discards a build and keeps the ticket, or a claim released when its session is lost"),
+    "open": (("proposed", "review", "claimed"), "open is a ticket ruled and not yet built: a proposal promoted at a triage or by the user's word, the redo ruling that discards a build and keeps the ticket, or a claim released when its session is lost"),
     "proposed": ((), "proposed is where an agent files a ticket the user has not ruled on, and nothing moves back to it"),
 }
 

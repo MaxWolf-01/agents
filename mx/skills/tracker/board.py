@@ -1022,14 +1022,14 @@ SESSION_TRAILER = "Session"  # the trailer a session's commits carry, added by t
 
 def needs_me(status: str, needs_user: bool, priority: int, open_question: bool) -> bool:
     """Whether a ticket waits on the user, from what its file says: one not done that is a build in
-    review, has an open question, or is an unclaimed ticket at p1 or p2 the user is in the loop
-    for."""
+    review, has an open question, or is an unclaimed open ticket at p1 or p2 the user is in the loop
+    for; a proposed one waits for a triage instead."""
     if status == "done":
         return False
     if status == "review" or open_question:
         return True
     # a ticket worked with the user, that nobody has taken up yet
-    return bool(needs_user) and priority in (1, 2) and status in ("open", "proposed")
+    return bool(needs_user) and priority in (1, 2) and status == "open"
 
 
 Question = tracker.Question  # one `[Dn]` item under a ticket's `## Questions`, read by the one parser
