@@ -340,6 +340,12 @@ const copy = async () => {
 resume.addEventListener("click", copy)
 const id = document.getElementById("session-id")
 id.addEventListener("click", () => write(id.dataset.copy, id))
+// a code block's button copies its code short of the newline that ends it, so a command pasted
+// into a terminal waits for Enter rather than running
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".copy-code")
+  if (b) write(b.parentElement.querySelector("pre").textContent.replace(/\n$/, ""), b)
+})
 
 // ---- the keys
 

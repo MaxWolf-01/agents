@@ -28,7 +28,7 @@ import os
 import re
 import shlex
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -1307,6 +1307,19 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
+COPY_CODE = (
+    '<button class="copy-code" type="button" aria-label="copy the code" title="copy">'
+    '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" '
+    'stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>'
+    '<path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg></button>'
+)
+
+
+def with_copy(rule: Callable):
+    """A code block's render rule, its block in a box that also holds the button copying it."""
+    return lambda self, tokens, idx, options, env: f'<div class="code">{rule(tokens, idx, options, env)}{COPY_CODE}</div>\n'
+
+
 def links_in_text(state) -> None:
     """A bare URL in the text made a link, short of text that sits inside a link of its own. Only
     a URL with its scheme: fuzzy matching would take `session_page.py` for a domain in Paraguay.
@@ -1333,6 +1346,8 @@ MARKDOWN.validateLink = file_links_too
 CODE_INLINE = MARKDOWN.renderer.rules["code_inline"]
 MARKDOWN.add_render_rule("link_open", link_open)
 MARKDOWN.add_render_rule("code_inline", code_inline)
+for rule in ("fence", "code_block"):
+    MARKDOWN.add_render_rule(rule, with_copy(MARKDOWN.renderer.rules[rule]))
 
 
 URL = re.compile(r"[a-z][a-z0-9+.-]*:", re.I)
