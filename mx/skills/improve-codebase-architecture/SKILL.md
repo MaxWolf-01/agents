@@ -12,6 +12,8 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Run `/mx:codebase-design`; use its terms exactly in every suggestion.
 - The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `decisions/` record decisions this command should not re-litigate.
 
+**A repo with a living report keeps one list of candidates.** Run by hand in a repo whose agent repo holds `retro/report.md`, read its architecture candidates and its Dismissed section before the scan. A candidate the scan finds again is reported under the report's id and with its history, not as a new one; a dismissed one returns only on evidence dated after the user's verdict, which it names. Each ruling the grilling gets on a candidate is written into that report as [`../retro/REPORT.md`](../retro/REPORT.md)'s max's verdicts says.
+
 ## Process
 
 ### 1. Scan

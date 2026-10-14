@@ -10,6 +10,17 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
 - **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
 
+## max's verdicts
+
+A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits `retro/report.md` alone. The page is left as it is; the next run rebuilds it.
+
+- **Dismissed**: the finding leaves Findings, or the candidate Architecture candidates, for a line under Dismissed.
+- **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
+- **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
+- **A candidate the report lacks**, ruled in a session's own architecture review, enters it with its verdict, under the next id after the `ids:` line's, which the session raises.
+
+What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
+
 ## The weighing
 
 What orders the findings and decides what a run reports, loosely, on four things together:
