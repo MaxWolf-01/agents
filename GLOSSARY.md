@@ -199,7 +199,7 @@ The part of every retro that reads its repo's code through each code lens and pr
 _Avoid_: architecture pass
 
 **Code lens**:
-One angle a lens pass reads a repo's code from, its candidates kept under that name; architecture is one.
+One angle a lens pass reads a repo's code from; architecture is one.
 _Avoid_: lens (bare; a workflow retro's finding has a lens, whose friction it is)
 
 **Living report**:

@@ -71,8 +71,8 @@ In order of the weighing.
 
 What the lens pass proposes for the code, every code lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
 
-- **Code lens**: the section of `stages/lens-pass.md`'s The lenses it came from
-- **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them (solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
+- **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
+- **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
 - **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's
 

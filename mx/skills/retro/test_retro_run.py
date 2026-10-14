@@ -24,6 +24,7 @@ the stub's record and the stages' command lines (retro-semi-automated#P10); and 
 refused and which weeks skipped, the oracle being git's record of the agent repo and the run log.
 """
 
+import fnmatch
 import json
 import os
 import signal
@@ -113,6 +114,14 @@ def retro(tmp_path: Path, repo: Path, until: datetime, since: datetime | None = 
 def last_logged(tmp_path: Path, repo: str = "agents") -> str:
     """The message of the run log's last line, after its time and run."""
     return (tmp_path / f"data/{repo}/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
+
+
+def refused(command: str, allowed: list[str], denied: list[str]) -> bool:
+    """Whether a stage's Bash call is refused, as Claude Code reads its rules: `Bash(<pattern>)`, `*`
+    matching any text, a deny rule winning over an allow rule, and no rule refusing with nobody to ask."""
+    def matches(rules: list[str]) -> bool:
+        return any(fnmatch.fnmatchcase(command, r[len("Bash("):-1]) for r in rules if r.startswith("Bash("))
+    return matches(denied) or not matches(allowed)
 
 
 def alive(pid: int) -> bool:
@@ -388,10 +397,12 @@ def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_sessio
         denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
         allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
         assert f"Read(/{code / 'agent/sessions'}/**)" in denied, "no stage may read the agent repo's session pages"
-        assert {f"Bash(git -C {code} * --no-index*)", f"Bash(git -C {code} * --contents*)"} <= set(denied), \
-            "nor print them through a git read of the code repo that takes a path outside it"
-        assert not [a for a in allowed if a.startswith(f"Bash(git -C {code / 'agent'}")], \
-            "nor run git in the agent repo, which shows a committed page without naming it"
+        page = code / "agent/sessions/0123abcd/session.md"
+        assert not refused(f"git -C {code} log -p -- backup.sh", allowed, denied), "the history of the code repo is read"
+        for command in (f"git -C {code} diff /dev/null {page}", f"git -C {code} diff --no-index /dev/null {page}",
+                        f"git -C {code} blame --contents {page} -- backup.sh",
+                        f"git -C {code / 'agent'} show HEAD:sessions/0123abcd/session.md"):
+            assert refused(command, allowed, denied), f"nor a session page printed through git: {command}"
         assert [a for a in allowed if a.startswith("Edit(")] == [f"Edit(/{run}/**)"], \
             "a stage writes in its run directory alone, a proposed ticket untouched (retro-semi-automated#P5)"
     agent = code / "agent"

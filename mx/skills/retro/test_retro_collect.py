@@ -1,7 +1,7 @@
 """Checks for the retro's collect stage, at the seam "The collect script's output"
 (retro-semi-automated): given a directory of fixture transcripts and a fixture repo, which sessions
 it digests, what each digest keeps, and which commits and tickets it collects for the period.
-Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py[linkify].
+Run: make test, or pytest on this file with hypothesis, pyyaml and markdown-it-py[linkify].
 
 The transcripts are synthetic, in the shape Claude Code writes, and the oracle is their own
 content: max's messages appear verbatim, tool output does not, and only commits after the

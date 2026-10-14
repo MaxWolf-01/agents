@@ -8,8 +8,8 @@ its page into `retro/` of the repo's agent repo, in its main checkout.
 
 The repo's kind decides what a run reads and which stages it runs. The agents repo, which holds
 the mx plugin, gets the workflow retro: it reads the sessions of every Claude Code profile under
-the home (`~/.claude*/projects`) and the git of the repos `retro/repos` lists in its agent repo,
-one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
+the home (`~/.claude*/projects`) and the git of the agents repo and of the repos `retro/repos`
+lists in its agent repo, one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
 other repo gets a repo retro: it reads the repo's own commits and its agent repo's tickets, and no
 session, and runs follow-up, the lens pass and synthesize. A repo whose `agent/` is no git repo of
 its own is refused, since the report lives there.
@@ -20,22 +20,23 @@ but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`
 repo: what collect gathered, each stage's prompt, notes and output, and the new report. Each event
 of a run is a line of `<data>/<repo>/runs.log`.
 
-The stages run one after another, each a `claude -p` that may write only in the run directory. The workflow retro's first, read-fresh, may read nothing outside it either, and runs
-before the earlier reports are copied into it, under `previous/`. A repo retro's stages may not
-read the session pages in its agent repo, and run no git command there.
+The stages run one after another, each a `claude -p` that may write only in the run directory.
+The workflow retro's first, read-fresh, may read nothing outside it either, and runs before the
+earlier reports are copied into it, under `previous/`. A repo retro's stages may not read the
+session pages in its agent repo, and run no git command there.
 
 The commit holds `retro/report.md` and `retro/report.html` alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
 the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has
 changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
 A run that ends without its commit, there, in collect or at a stage that failed or left out a file
-it owes, exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the stage it
-is in, and whatever that stage started, before it exits; one stopped during the commit lets the
+it owes, exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the
+stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
 A new run given --if-active first looks for something new since the period's start: for the
-workflow retro, a message of max's in an interactive session or a commit of his in a repo
-`retro/repos` lists; for a repo retro, a commit on any branch of the repo. Finding none, it logs
+workflow retro, a message of max's in an interactive session or a commit of his in the agents
+repo or a repo `retro/repos` lists; for a repo retro, a commit on any branch of the repo. Finding none, it logs
 that it skipped and exits 3, having run no stage.
 
 A run that ended without its commit, once collect had finished, is resumed with --resume and its
@@ -50,7 +51,7 @@ Examples:
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
     retro_run.py ~/.dotfiles --if-active
     retro_run.py ~/.dotfiles --focus "the backup scripts"
-    retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/2026-10-11T203542Z
+    retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/<end of period>
 """
 
 from __future__ import annotations
@@ -83,8 +84,10 @@ BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in retro/
 RUN_LOG = HERE.parent / "run-log" / "run-log"
-# `status` is left out: it refreshes the index, a write into the repo.
-GIT_READS = ("log", "show", "diff", "blame", "rev-parse", "rev-list", "merge-base", "ls-files", "ls-tree",
+# `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
+# path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
+# `log -p` and `show` read the same history from the repo's objects alone.
+GIT_READS = ("log", "show", "blame", "rev-parse", "rev-list", "merge-base", "ls-files", "ls-tree",
              "cat-file", "shortlog")
 IN_PROGRESS = {"MERGE_HEAD": "merge", "rebase-merge": "rebase", "rebase-apply": "rebase",
                "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert"}  # marker in the git dir: operation
@@ -210,21 +213,32 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     except Stopped as stop:
         log(f"stopped: {stop.signal.name} during {where}, which ended with it; the run's directory is {run}")
         sys.exit(128 + stop.signal)
-    except subprocess.CalledProcessError as e:
-        log(f"failed: {where}: {' '.join(map(str, e.cmd))} exited {e.returncode}: {(e.stderr or '').strip()}")
-        sys.exit(1)
     except SystemExit as e:
         if isinstance(e.code, str):  # a refusal, which says why; an exit status is a line already logged
             log(f"failed: {where}: {e.code}")
             sys.exit(1)
         raise
+    except Exception as e:
+        log(f"failed: {where}: {failure(e)}")
+        raise
     for s in STOP:  # the commit takes a moment, and one cut short leaves the agent repo half-changed
         signal.signal(s, signal.SIG_IGN)
-    committed, line = commit_report(agent, run, base, since, until, kind)
+    try:
+        committed, line = commit_report(agent, run, base, since, until, kind)
+    except Exception as e:
+        log(f"failed: the commit: {failure(e)}; the report stays in {run}")
+        raise
     log(line)
     if not committed:
         sys.exit(1)
     return run
+
+
+def failure(e: Exception) -> str:
+    """An exception as a run log's line says it: a git command with what it printed, anything else by its type."""
+    if isinstance(e, subprocess.CalledProcessError):
+        return f"{' '.join(map(str, e.cmd))} exited {e.returncode}: {(e.stderr or '').strip()}"
+    return f"{type(e).__name__}: {e}"
 
 
 def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path, projects: list[Path], repo: Path,
@@ -248,8 +262,8 @@ def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: s
     if since or focus or seed:
         sys.exit(f"{run} keeps its own period, focus and seed in run.json; --resume takes none of them")
     state = json.loads((run / "run.json").read_text())
-    if state.get("repo", str(repo)) != str(repo):
-        sys.exit(f"{run} is a run of {state['repo']}, not of {repo}")
+    if state.get("repo") != str(repo):
+        sys.exit(f"{run} is a run of {state.get('repo', 'a repo its run.json does not name')}, not of {repo}; start a new run")
     if blob(agent, "retro/report.md") != state["base"]:
         sys.exit(f"{agent}/retro/report.md was committed to since {run.name} began; start a new run, which reads it as it is")
     return (parse_time(state["since"]), parse_time(state["until"]), state["focus"],
@@ -427,8 +441,8 @@ def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
     tools, allowed, add = "Read,Grep,Glob,Write,Edit,Agent", [f"Edit(/{run}/**)"], []
     if not stage.fresh:
         tools += ",Bash"
-        # --output writes a file; --no-index and blame's --contents read any file on disk, a hidden one included.
-        denied = [*(f"Bash(git -C {d} * {option}*)" for d in within.git for option in ("--output", "--no-index", "--contents")),
+        # --output writes a file; blame's --contents reads any file on disk, a hidden one included.
+        denied = [*(f"Bash(git -C {d} * {option}*)" for d in within.git for option in ("--output", "--contents")),
                   *(f"Read(/{h}/**)" for h in within.hidden)]
         add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
         allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
@@ -494,7 +508,10 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
-        git(agent, "add", "--", *paths)
+        # `--only` stages a tracked file itself, so a commit that fails leaves it unstaged; a first
+        # run's files, untracked, need the add.
+        if new := [path for path in paths if blob(agent, path) is None]:
+            git(agent, "add", "--", *new)
         git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths)
     except subprocess.CalledProcessError as e:
         restore(agent, paths)
