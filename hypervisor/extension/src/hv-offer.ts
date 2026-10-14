@@ -36,7 +36,7 @@ export function offerText(week: Week): string {
 	return (
 		`Explore offer: max's week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z with ${Math.round(100 - week.used)}% of it unused. ` +
 		`Ask him whether you should explore for up to ${OFFER_STEPS} steps until ${OFFER_UNTIL}% of the week is used, and suggest a direction. ` +
-		`A run starts only when he types the command, \`${command}\`, so give it to him with your direction filled in. No answer means no run.`
+		`A run starts only when he types the command, \`${command}\`, so give it to him with your direction filled in. No answer means no run, and once that reset has passed, the offer has lapsed.`
 	);
 }
 
@@ -71,7 +71,8 @@ export function weekFromStatusline(cache: string, configDir: string): Week | und
  * its last argument, then the offer is recorded and max notified. Resolves with what it did, or why it did nothing.
  * An offer `tell` failed to deliver is not recorded, so the next run tries again.
  */
-export async function offer(store: string, tell: string[], now = Date.now()): Promise<string> {
+export async function offer(store: string, tell: string[]): Promise<string> {
+	const now = Date.now();
 	const week = weekFromStatusline(path.join(homedir(), ".cache", "claude-statusline"), path.join(homedir(), ".claude"));
 	if (!week) return "No offer: the statusline's cache holds no week of ~/.claude.";
 	const state = `the week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z, ${Math.round(week.used)}% used`;

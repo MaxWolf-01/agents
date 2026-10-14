@@ -50,7 +50,7 @@ test("12 hours before the reset, with more than a fifth of the week unused, the 
 	reading(f, "s", { used: 40, resetsIn: 6 * HOUR });
 	for (let hour = 0; hour < 3; hour++) assert.equal(offer(f).code, 0);
 	assert.equal(told(f).length, 1, "one offer for the week, however often the timer runs");
-	assert.match(told(f)[0]!, /^--ping Explore offer: .*60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run\./);
+	assert.match(told(f)[0]!, /^--ping Explore offer: .*60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run, and once that reset has passed, the offer has lapsed\./);
 	assert.equal(readFileSync(f.notified, "utf8").trimEnd().split("\n").length, 1);
 	assert.equal((await offers(f)).length, 1);
 	assert.match(offer(f).out, /^No offer: this week's was made already/);
@@ -79,7 +79,9 @@ test("the newest reading of the week decides: a week used up since an older read
 	const f = fixture("newest");
 	reading(f, "old", { used: 30, resetsIn: 6 * HOUR, ago: 2 * HOUR });
 	reading(f, "new", { used: 90, resetsIn: 6 * HOUR });
-	offer(f);
+	const run = offer(f);
+	assert.equal(run.code, 0, run.out);
+	assert.match(run.out, /^No offer: .*, 90% used/);
 	assert.deepEqual(told(f), []);
 });
 
@@ -96,7 +98,8 @@ test("last week's offer does not stand for this week's", () => {
 	const f = fixture("next-week");
 	writeFileSync(path.join(f.store, "explore.jsonl"), `${JSON.stringify({ at: new Date(Date.now() - 7 * 24 * HOUR).toISOString(), offer: Date.now() - 7 * 24 * HOUR + 6 * HOUR, used: 30 })}\n`);
 	reading(f, "s", { used: 40, resetsIn: 6 * HOUR });
-	offer(f);
+	const run = offer(f);
+	assert.equal(run.code, 0, run.out);
 	assert.equal(told(f).length, 1);
 });
 
