@@ -8,7 +8,18 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 - **Every proposal names what it deletes or narrows.** One that adds a mechanism also names the recurrence behind it and what keeping it costs.
 - **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for an architecture candidate. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
-- **The report proposes; it files nothing.** What max rules on a finding, in a session, becomes tickets there.
+- **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
+
+## The weighing
+
+What orders the findings and decides what a run reports, loosely, on four things together:
+
+1. **What the friction costs**: time and energy, max's first.
+2. **What preventing it costs to keep**: code, prose and workflow machinery carry upkeep for as long as they live; a one-time cost amortizes.
+3. **How often it happens**, and is expected to.
+4. **How robust the available fix is**: whether it simplifies or adds, and whether mechanism can fix it at all, or a better model or the harness's makers will fix the quirk first.
+
+Deletions and narrowings come first. A defect class that recurs and that a tool could catch gets its check proposed, weighed like any other fix. A pattern rooted in the model's own habit, with no line to delete, is reported as that, with what was tried. A count backs a finding and is never a number a later run tries to move.
 
 ## Shape, in this order
 
@@ -42,6 +53,10 @@ In order of the weighing.
 ## Architecture candidates
 
 In order of impact. Each `### A<n> <the deepening it proposes>`, with `/mx:improve-codebase-architecture`'s fields (files, problem, solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates), the friction that pointed at it with its date, its state and its history as a finding's.
+
+## Proposed tickets
+
+The agents repo's proposed tickets, as `proposed.md` names them, grouped by the cause they share. Each group: its slugs, the cause in a sentence, and the finding or candidate it is (`F<n>`, `A<n>`), or "no finding". A ticket that shares its cause with no other stays out.
 
 ## Versions
 

@@ -91,7 +91,7 @@ class Stage:
 WORKFLOW = (
     Stage("read-fresh", ("notes/{batch}.md", "notes/git.md"), fresh=True),
     Stage("follow-up", ("follow-up.md",)),
-    Stage("go-deep", ("deep/architecture.md",)),
+    Stage("go-deep", ("deep/architecture.md", "deep/lenses.md", "deep/permissions.md")),
     Stage("synthesize", REPORT),
 )
 
@@ -149,13 +149,13 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     where = "collect"
     try:
         if not (run / "batches.json").is_file():
-            retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos)
+            retro_collect.collect_sessions(since, until, run, home / "digest-cache", list(projects), repos, agent=agent)
             write_batches(run)
             # What a resumed run keeps, beside the batches a resume needs.
             (run / "run.json").write_text(json.dumps(dict(since=stamp(since), until=stamp(until), focus=focus,
                                                           seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
-                      lenses=(HERE / "LENSES.md").read_text(), repos="\n".join(f"- {r}" for r in repos),
+                      repos="\n".join(f"- {r}" for r in repos),
                       sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
                              f"{retro_collect.SAMPLE_WINDOW[0].days // 7} to {retro_collect.SAMPLE_WINDOW[1].days // 7} "
                              f"weeks before the period's end",

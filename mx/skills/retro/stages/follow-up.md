@@ -8,7 +8,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `notes/`: stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it.
 - `sessions/`, `sample/`: the digests the notes come from; `sample/` holds {{sample}}. `git/<repo>.md`: the period's commits, reverts, tickets and worker reports in each repo. `versions.md`.
 
-The report's shape and rules are `{{skills}}/retro/REPORT.md`; what the retro looks for and how it weighs, `{{skills}}/retro/LENSES.md`. Read both first. You may read the repos below and run git's read commands in them as `git -C <repo> <command>`:
+The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. You may read the repos below and run git's read commands in them as `git -C <repo> <command>`:
 
 {{repos}}
 

@@ -42,8 +42,10 @@ WEEK = timedelta(weeks=1)
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
 # With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child
 # and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
-# ending its work does; the child ends only by its own TERM.
+# ending its work does; the child ends only by its own TERM. Run as `claude auto-mode config`, as
+# collect runs it, it prints a config.
 STUB = r"""#!/usr/bin/env bash
+[ "$1" = auto-mode ] && { echo '{"allow": []}'; exit 0; }
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
 printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
@@ -52,7 +54,7 @@ if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
-    "go deep") mkdir -p deep && echo "deep" > deep/architecture.md ;;
+    "go deep") mkdir -p deep && for f in architecture lenses permissions; do echo "deep" > "deep/$f.md"; done ;;
     synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && exit 0; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
 """

@@ -18,7 +18,7 @@ The `workflow-retro` timer in max's dotfiles runs `retro <agents repo> --if-acti
 
 ## The parts
 
-- `retro_collect.py`, stage 1: the period's session digests, git across the repos `retro/repos` lists, the versions, and an older sample, by script.
+- `retro_collect.py`, stage 1: the period's session digests, git across the repos `retro/repos` lists, the versions, an older sample, each profile's permission data, and the agents repo's proposed tickets, by script. `scan_unapproved.py` is its scan of the Bash calls no allowlist rule covers.
 - `stages/`, a prompt per later stage, each one model run: read fresh, follow up, go deep, synthesize.
-- `LENSES.md`, what the retro looks for and how it weighs a finding; `REPORT.md`, the living report's shape and rules.
+- `LENSES.md`, the leading words and max's questions go-deep searches the period for; `PERMISSIONS.md`, what go-deep's permissions reading knows of its data and the bar a proposed rule meets; `REPORT.md`, the living report's shape, its rules and the weighing.
 - `retro_run.py`, the run: collect, the stages in order, then the commit of the report's two files alone.

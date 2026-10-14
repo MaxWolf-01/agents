@@ -80,6 +80,19 @@ def projects(tmp_path: Path) -> Path:
     return tmp_path / ".claude" / "projects"
 
 
+@pytest.fixture(autouse=True)
+def claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A `claude` on PATH whose `auto-mode config` prints the profile it was run under, or with
+    $CLAUDE_FAILS set fails, so that no test runs the real one."""
+    bin = tmp_path / "bin"
+    bin.mkdir()
+    (bin / "claude").write_text('#!/usr/bin/env bash\n[ -n "${CLAUDE_FAILS:-}" ] && { echo "not logged in" >&2; exit 1; }\n'
+                                'echo "{\\"profile\\": \\"$CLAUDE_CONFIG_DIR\\", \\"args\\": \\"$*\\"}"\n')
+    (bin / "claude").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin}:{os.environ['PATH']}")
+    return bin
+
+
 def test_a_digest_keeps_maxs_messages_verbatim_and_no_tool_output(tmp_path: Path, projects: Path) -> None:
     message = "why did the suite take 20 min?\n\n- `make test` ran *everything*\n- again & again <sigh>"
     long_error = "Traceback (most recent call last):\n" + "  frame\n" * 900 + "AssertionError: boom"
@@ -293,3 +306,72 @@ def test_nothing_is_written_inside_a_git_repository(tmp_path: Path, repo: Path) 
         retro_collect.collect_sessions(SINCE, UNTIL, repo / "retro-run", tmp_path / "cache",
                                        [tmp_path / ".claude" / "projects"], [repo], 0)
     assert not (repo / "retro-run").exists() and not (tmp_path / "cache").exists()
+
+
+def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_interactive_uncovered_bash_calls_of_the_period(
+        tmp_path: Path, projects: Path) -> None:
+    profile = projects.parent
+    profile.mkdir(parents=True)
+    settings = {"permissions": {"allow": ["Bash(make check)"], "deny": ["Bash(git push --force *)"]},
+                "autoMode": {"allow": ["Pushing to my own branches"]}, "theme": "dark"}
+    (profile / "settings.json").write_text(json.dumps(settings))
+    t = Transcript(projects, "/home/u/repos/agents", SINCE - timedelta(hours=1))
+    t.calls("Bash", {"command": "npm publish"}, "published")
+    t.at = SINCE + timedelta(days=1)
+    t.says("check and deploy").calls("Bash", {"command": "make check && make deploy"}, "ok")
+    t.calls("Bash", {"command": "cat README.md"}, "readme")
+    headless = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1), entrypoint="sdk-cli")
+    headless.calls("Bash", {"command": "make release"}, "released")  # a `claude -p` run, which prompts nobody
+
+    permissions = collect(tmp_path) / "permissions" / "claude"
+    scan = json.loads((permissions / "scan.json").read_text())
+
+    assert [r["example"] for r in scan["would_prompt"]] == ["make deploy"]
+    assert [r["example"] for r in scan["auto_approved"]] == ["cat README.md"]
+    assert json.loads((permissions / "rules.json").read_text()) == {
+        "settings.json": {"permissions": settings["permissions"], "autoMode": settings["autoMode"]}}
+    assert json.loads((permissions / "auto-mode.json").read_text()) == {"profile": str(profile), "args": "auto-mode config"}
+
+
+def test_an_auto_mode_config_that_could_not_be_read_says_why(
+        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    projects.mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_FAILS", "1")
+
+    permissions = collect(tmp_path) / "permissions" / "claude"
+
+    assert not (permissions / "auto-mode.json").exists()
+    assert "not logged in" in (permissions / "auto-mode.failed").read_text()
+
+
+def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tmp_path: Path) -> None:
+    agent = tmp_path / "agents" / "agent"
+    agent.mkdir(parents=True)
+    git(agent, "init", "-q", "-b", "main")
+    commit(agent, {"tickets/slow-suite.md": ticket("proposed"), "tickets/board-link.md": ticket("open") + "\nIt moved from status: proposed to open.\n",
+                   "tickets/hook-noise.md": ticket("proposed"), "show/hook-noise/report.md": "status: proposed\n"},
+           "file tickets", SINCE)
+    (agent / "tickets/hook-noise.md").write_text(ticket("open"))  # a session's edit, not yet committed
+    run = tmp_path / "data" / "runs" / "1"
+    retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
+                                   [], 0, agent=agent)
+
+    proposed = (run / "proposed.md").read_text()
+    head = subprocess.run(["git", "-C", agent, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    assert head in proposed
+    assert re.findall(r"^- (.+)$", proposed, re.M) == ["hook-noise", "slow-suite"]
+
+
+def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "agents"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.0"}'}, "mx v1.0.0", SINCE - timedelta(days=1))
+    commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.1"}'}, "mx v1.0.1", SINCE + timedelta(days=1))
+    sha = subprocess.run(["git", "-C", repo, "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    versions = (collect(tmp_path, [repo]) / "versions.md").read_text()
+
+    assert f"- 1.0.1 {sha} (" in versions and "mx v1.0.1" in versions
+    assert "1.0.0" not in versions
