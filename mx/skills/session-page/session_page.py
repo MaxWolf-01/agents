@@ -1012,15 +1012,14 @@ def assemble(v: View, now: datetime) -> str:
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
     from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory: a line under the title, each by its session's title where it has one, so
+    sessions directory: a line each under the title, by the session's title where it has one, so
     they show with the brief folded. Nothing where neither is there."""
-    def to(other: str) -> str:
-        named = session.titles.get(other)
-        text = f'{inline(named, paths=False)} <span class="v-meta">{esc(other[:8])}</span>' if named else esc(other[:8])
-        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{text}</a>'
-    parts = ([f'<span class="v-meta">continues</span> {to(session.previous)}'] if session.previous else []) + (
-        [f'<span class="v-meta">continued in</span> {", ".join(to(s) for s in session.following)}'] if session.following else [])
-    return f'\n      <p class="handoffs" id="handoffs">{"<br>".join(parts)}</p>' if parts else ""
+    def line(label: str, other: str) -> str:
+        text = inline(session.titles[other], paths=False) if session.titles.get(other) else esc(other[:8])
+        return (f'<span class="handoff"><span class="v-meta">{label}</span> '
+                f'<a href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(text))} · {esc(other)}">{text}</a></span>')
+    lines = ([line("previous", session.previous)] if session.previous else []) + [line("next", s) for s in session.following]
+    return f'\n      <p class="handoffs" id="handoffs">{"".join(lines)}</p>' if lines else ""
 
 
 def column(rows: tuple[Row, ...]) -> str:

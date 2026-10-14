@@ -95,11 +95,11 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .intro > .v-meta { margin-top: 0.4rem; }
 .intro:not(.unfolded) :is(.brief, .actions) { display: none; }
 .intro .nowrap { white-space: nowrap; }
-/* where the session came from and went: a line under the title, each session by its title */
+/* where the session came from and went: a line each under the title, cut to one line */
 .handoffs { margin-top: 0.35rem; font-size: 0.92rem; line-height: 1.5; color: var(--body); }
-.handoffs > .v-meta { margin-right: 0.35rem; }
+.handoffs .handoff { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handoffs .v-meta { margin-right: 0.35rem; }
 .handoffs a { color: var(--accent); text-decoration: none; }
-.handoffs a .v-meta { margin-left: 0.25rem; }
 .handoffs a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .unfold { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; }
 .unfold::after { content: " ▾"; }
