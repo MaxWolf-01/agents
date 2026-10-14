@@ -137,6 +137,28 @@ with sync_playwright() as pw:
         out["help"] = page.evaluate('''[...document.querySelectorAll("#help td:first-child")].map((td) =>
             [...td.querySelectorAll("kbd")].map((k) => k.textContent).join(" "))''')
 
+    elif scenario == "copy-code":
+        context, page = open_page(1280, 800)
+        context.grant_permissions(["clipboard-read", "clipboard-write"])
+        pre, button = "#t04 .code pre", "#t04 .copy-code"
+        opacity = lambda: page.eval_on_selector(button, "(b) => getComputedStyle(b).opacity")
+        out["hidden"] = opacity()
+        page.hover(pre)
+        out["over_code"] = opacity()
+        before = page.eval_on_selector(button, BOX)
+        page.eval_on_selector(pre, "(p) => { p.scrollLeft = 200 }")
+        out["scrolled"] = page.eval_on_selector(pre, "(p) => p.scrollLeft")
+        # the pointer into the block's top right corner, onto where the button sits
+        box = page.eval_on_selector(pre, BOX)
+        page.mouse.move(box["right"] - 14, box["top"] + 14)
+        out["in_corner"] = opacity()
+        out["moved"] = page.eval_on_selector(button, BOX) != before
+        out["corner"] = page.evaluate(f'''(() => {{ const b = document.querySelector("{button}").getBoundingClientRect(),
+            p = document.querySelector("{pre}").getBoundingClientRect(); return [p.right - b.right, b.top - p.top] }})()''')
+        page.click(button)
+        page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
+        out["copied"] = page.evaluate("navigator.clipboard.readText()")
+
     elif scenario == "reload":
         # P1, P2, P3, P5 across a reload: the reader clicks a turn number in the timeline, which
         # puts its fragment in the address, opens a turn, scrolls on, and the page is reloaded with
@@ -353,6 +375,26 @@ def test_the_chips_and_keys_work_in_a_browser(rendered: tuple[Path, Path]) -> No
     assert seen["copied"] == SESSION, "a click on the session id did not copy it whole"
     for keys in ("n", "t 0 7", "[ ]", "q"):
         assert keys in seen["help"], f"the key list has no {keys}: {seen['help']}"
+
+
+def test_a_code_blocks_button_copies_its_code(rendered: tuple[Path, Path], transcript: Path) -> None:
+    """A code block in the newest turn shows its copy button only once the pointer is in the
+    block's top right corner, not anywhere over the code, and the button stays in that corner while
+    a line too long for the block scrolls it sideways. A click copies the code short of the newline
+    that ends it, so a pasted command waits for Enter, and says so."""
+    page, _ = rendered
+    record = page.parent / "turns" / "04.md"
+    code = "make test BASE=master\nclaude --resume " + "x" * 200
+    record.write_text(record.read_text().replace("## Details\n\n", f"## Details\n\n```sh\n{code}\n```\n\n", 1))
+    page.write_text(render_session(page.parent, transcript))
+    seen = probe(page, "copy-code")
+    assert seen["hidden"] == "0" and seen["over_code"] == "0", f"the button shows outside the corner: {seen}"
+    assert seen["in_corner"] == "1", "the pointer in the corner does not show the button"
+    assert seen["scrolled"] > 0, "the long line does not scroll the block, so the check proves nothing"
+    assert not seen["moved"], "the button scrolled with the code"
+    right, top = seen["corner"]
+    assert 0 < right < 20 and 0 < top < 20, f"the button is not in the block's top right corner: {seen['corner']}"
+    assert seen["copied"] == code
 
 
 def test_a_reload_with_a_turn_added_keeps_the_readers_place(long_session: tuple[Path, Path]) -> None:

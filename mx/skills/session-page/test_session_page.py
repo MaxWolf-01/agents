@@ -353,6 +353,16 @@ def test_a_bare_url_and_a_file_url_are_links() -> None:
     assert "<a" not in inline("Stage at https://example.com/a", paths=False)
 
 
+def test_a_code_block_sits_in_a_box_with_its_copy_button() -> None:
+    """A fenced and an indented code block each render in a box holding the block and the button
+    page.js copies it with, the code as it was; a code span gets no button. Pins the format: the
+    box and the button are what page.js and page.css find the code by."""
+    rendered = block("Run `ls` or:\n\n```sh\nmake test\n```\n\n    uv run x.py\n")
+    boxes = re.findall(r'<div class="code">(<pre>.*?</pre>)\s*<button class="copy-code"', rendered, re.S)
+    assert boxes == ['<pre><code class="language-sh">make test\n</code></pre>', "<pre><code>uv run x.py\n</code></pre>"]
+    assert rendered.count('class="copy-code"') == 2
+
+
 # What the user said in each of the worked example's four turns, the last of them queued mid-turn,
 # and what Claude Code wrote as the user around them: images, task notifications and another
 # session's hand-back, which are nobody's message.

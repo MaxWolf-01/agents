@@ -12,6 +12,16 @@ p, h1, h2, h3 { margin: 0; }
 .prose > * + ul, .prose > * + ol { margin-top: 0.7em; }
 .prose pre { background: var(--ground-2); border: 1px solid var(--edge); border-radius: var(--radius); padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.6; }
 .prose pre code { background: none; padding: 0; font-size: inherit; }
+/* a code block's copy button sits in its top right corner, over the code, and stays put while the code scrolls sideways */
+.code { position: relative; }
+.prose > .code { max-width: 100%; }
+.code > pre { margin: 0; }
+/* it shows only while the pointer is in the corner; ::before widens that corner past the button's own box */
+.copy-code { position: absolute; top: 0.4rem; right: 0.4rem; display: inline-flex; padding: 0.3rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); color: var(--muted); cursor: pointer; opacity: 0; transition: opacity 150ms, color 150ms, border-color 150ms; }
+.copy-code::before { content: ""; position: absolute; inset: -0.4rem; }
+.copy-code:hover, .copy-code:focus-visible { opacity: 1; }
+.copy-code:hover { color: var(--accent); border-color: var(--accent); }
+@media (hover: none) { .copy-code { opacity: 1; } }
 
 /* The window never scrolls: the bar on top, and under it the panes, each scrolling on its own. */
 html, body { height: 100%; }
