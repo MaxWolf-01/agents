@@ -1,60 +1,79 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["tyro", "markdown"]
+# dependencies = ["tyro", "markdown", "tinycss2"]
 # ///
-"""Render story.md into a self-contained static folder: the mx workflow told as one page of pictures.
+"""Render story.md into a self-contained static folder: the mx workflow told as one page whose pictures grow.
 
 story.md holds the text: an H1 title, a lead paragraph and an intro, then one `## ` section per
-picture. A section opens with `key: value` lines:
-- image: the picture's name in mx/assets, `<name>.png` the night render and `<name>-light.png` the
-  day render; a picture with one render shows it in both schemes
-- source: the repo path of what draws or shoots the picture; defaults to docs/figures/<name>.html
+picture. A section opens with one of two lines, then its intro, then its steps:
+- `figure: <name>`: the SVG of docs/figures/<name>.html, inlined with the part of the figure's CSS
+  its SVG uses, scoped to it. Step k shows every element whose `data-step` (on itself or an
+  ancestor) is at most k, and the elements of step k in the accent; an element with no
+  `data-step` shows at every step. A figure whose SVG carries no `data-step` is shown whole at
+  every step. A figure that does not exist yet leaves its section as text alone, with a warning.
+- `screenshot: <name>`: mx/assets/<name>.png (night) and <name>-light.png (day); one render serves
+  both schemes. Each step may name a `region: x y w h`, fractions of the image, and the picture
+  closes in on that region while the step is read.
+- `step: <k>` starts step k, numbered from 1, its text the paragraph under it; `region:` may follow.
 
-The output folder gets index.html, the pictures it uses, the stylesheets, the scripts and the fonts,
-and nothing on the page loads from outside it, so the folder can be copied anywhere and opened over
-file:// or any static server. A missing picture or source fails the build, naming it.
+The output folder gets index.html, the screenshots it uses, the stylesheets, the scripts and the
+fonts, and nothing on the page loads from outside it, so the folder can be copied anywhere and
+opened over file:// or any static server. A missing screenshot, a malformed section, or a figure
+whose `data-step` values do not run 1 to the section's step count fails the build, naming it.
 
 Examples:
 
     docs/figures/story/build.py
     docs/figures/story/build.py --out /tmp/story
+    docs/figures/story/build.py --figures /tmp/annotated   # figure sources read from there instead
 """
 
-import datetime
 import html
 import json
 import re
 import shutil
 import struct
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import markdown
+import tinycss2
 import tyro
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 ASSETS = REPO / "mx" / "assets"
+FIGURES = REPO / "docs" / "figures"
 TOKENS = REPO / "mx" / "skills" / "house-style" / "tokens.css"
 PLUGIN = REPO / "mx" / ".claude-plugin" / "plugin.json"
 GENERATOR = "docs/figures/story/build.py"
-META_KEYS = ("image", "source")
+COPIED = ("story.css", "head.js", "story.js")
 
 
 @dataclass
 class Args:
     out: Path = HERE / "site"
     """Folder to write the page into. Emptied first; a non-empty folder this script did not write is refused."""
+    figures: Path = FIGURES
+    """Folder the figure sources (`<name>.html`) are read from."""
+
+
+@dataclass
+class Step:
+    number: int
+    body: str  # markdown
+    region: tuple[float, float, float, float] | None = None
 
 
 @dataclass
 class Section:
     heading: str
-    image: str
-    source: str
-    body: str  # markdown
+    kind: str  # "figure" or "screenshot"
+    name: str
+    intro: str  # markdown
+    steps: list[Step] = field(default_factory=list)
 
 
 @dataclass
@@ -69,6 +88,54 @@ def fail(message: str) -> None:
     sys.exit(f"build.py: {message}")
 
 
+def warn(message: str) -> None:
+    print(f"build.py: warning: {message}", file=sys.stderr)
+
+
+def parse_region(text: str, where: str) -> tuple[float, float, float, float]:
+    try:
+        x, y, w, h = (float(v) for v in text.split())
+    except ValueError:
+        fail(f"{where}: region must be four numbers, x y w h, got {text!r}")
+    if min(x, y) < 0 or w <= 0 or h <= 0 or x + w > 1.0001 or y + h > 1.0001:
+        fail(f"{where}: region {text!r} does not lie inside the picture (fractions from 0 to 1)")
+    return x, y, w, h
+
+
+def parse_section(chunk: str) -> Section:
+    heading, _, rest = chunk.partition("\n")
+    heading = heading.strip()
+    lines = rest.strip("\n").split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    m = re.match(r"(figure|screenshot):\s*(\S+)\s*$", lines[0] if lines else "")
+    if not m:
+        fail(f"section {heading!r} must open with a `figure: <name>` or `screenshot: <name>` line")
+    kind, name = m.groups()
+    blocks = re.split(r"^step:\s*", "\n".join(lines[1:]), flags=re.M)
+    intro, steps = blocks[0].strip(), []
+    for i, block in enumerate(blocks[1:], 1):
+        number, _, body = block.partition("\n")
+        where = f"section {heading!r}, step {number.strip()}"
+        if number.strip() != str(i):
+            fail(f"{where}: steps are numbered 1, 2, 3 in order; expected {i}")
+        body = body.strip()
+        region = None
+        if body.startswith("region:"):
+            first, _, body = body.partition("\n")
+            region = parse_region(first.removeprefix("region:"), where)
+            if kind == "figure":
+                fail(f"{where}: a figure's steps come from its data-step marks; region is for screenshots")
+        if not body.strip():
+            fail(f"{where} has no text")
+        steps.append(Step(i, body.strip(), region))
+    if not intro:
+        fail(f"section {heading!r} needs an intro paragraph before its first step")
+    if not steps:
+        fail(f"section {heading!r} has no steps")
+    return Section(heading, kind, name, intro, steps)
+
+
 def parse(text: str) -> Story:
     """story.md into its title, lead, intro and sections, failing on a malformed section."""
     head, *chunks = re.split(r"^## ", text, flags=re.M)
@@ -78,22 +145,170 @@ def parse(text: str) -> Story:
     paragraphs = [p.strip() for p in head[m.end():].strip().split("\n\n") if p.strip()]
     if not paragraphs:
         fail("story.md needs a lead paragraph under its title")
-    sections = []
-    for chunk in chunks:
-        heading, _, rest = chunk.partition("\n")
-        meta: dict[str, str] = {}
-        lines = rest.split("\n")
-        while lines and (not lines[0].strip() or re.match(rf"({'|'.join(META_KEYS)}):", lines[0])):
-            line = lines.pop(0).strip()
-            if line:
-                key, _, value = line.partition(":")
-                meta[key] = value.strip()
-        if "image" not in meta:
-            fail(f"section {heading!r} names no image")
-        name = meta["image"]
-        sections.append(Section(heading.strip(), name,
-                                meta.get("source", f"docs/figures/{name}.html"), "\n".join(lines).strip()))
-    return Story(m.group(1).strip(), paragraphs[0], "\n\n".join(paragraphs[1:]), sections)
+    return Story(m.group(1).strip(), paragraphs[0], "\n\n".join(paragraphs[1:]),
+                 [parse_section(c) for c in chunks])
+
+
+# ---- figures: the SVG and the CSS it uses, scoped ---------------------------------------------
+
+
+def figure_svg(source: str, name: str) -> str:
+    """The figure's drawing: every top-level <svg> whose viewBox is wider than an icon, joined."""
+    spans, depth, start = [], 0, 0
+    for m in re.finditer(r"<svg\b|</svg\s*>", source):
+        if m.group().startswith("<svg"):
+            if depth == 0:
+                start = m.start()
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                spans.append(source[start:m.end()])
+    drawings = []
+    for svg in spans:
+        vb = re.search(r'viewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)', svg[:svg.index(">")])
+        if vb and float(vb.group(1)) >= 200:
+            drawings.append(svg)
+    if not drawings:
+        fail(f"figure {name!r}: no <svg> with a viewBox wider than 200 units")
+    return "\n".join(drawings)
+
+
+def namespace_ids(svg: str, prefix: str) -> tuple[str, dict[str, str]]:
+    """Prefix every id in the SVG and every reference to one, so two figures' ids cannot meet."""
+    ids = set(re.findall(r'\bid="([^"]+)"', svg))
+    renamed = {i: f"{prefix}--{i}" for i in ids}
+    for old, new in renamed.items():
+        o = re.escape(old)
+        svg = re.sub(rf'\bid="{o}"', f'id="{new}"', svg)
+        svg = re.sub(rf"url\(#{o}\)", f"url(#{new})", svg)
+        svg = re.sub(rf'((?:xlink:)?href)="#{o}"', rf'\1="#{new}"', svg)
+        svg = re.sub(rf'(aria-(?:labelledby|describedby)="[^"]*)\b{o}\b', rf"\1{new}", svg)
+    return svg, renamed
+
+
+def root_tokens() -> dict[str, str]:
+    """The page's own custom properties, so a figure's identical copies of them can be dropped."""
+    out = {}
+    for rule in tinycss2.parse_stylesheet(TOKENS.read_text(), skip_comments=True, skip_whitespace=True):
+        if rule.type == "qualified-rule" and tinycss2.serialize(rule.prelude).strip() == ":root":
+            for d in tinycss2.parse_declaration_list(rule.content, skip_comments=True, skip_whitespace=True):
+                if d.type == "declaration":
+                    out[d.name] = " ".join(tinycss2.serialize(d.value).split())
+    return out
+
+
+def split_selectors(prelude: str) -> list[str]:
+    parts, depth, cur = [], 0, ""
+    for ch in prelude:
+        depth += ch in "([" and 1 or 0
+        depth -= ch in ")]" and 1 or 0
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    return [p for p in parts + [cur.strip()] if p]
+
+
+ROOT_PREFIX = re.compile(r'^((?::root|html)?\[data-theme[^\]]*\])\s+')
+
+
+def scope_css(css: str, scope: str, svg: str, ids: dict[str, str], tokens: dict[str, str]) -> str:
+    """The rules of the figure's stylesheet that can reach an element of its SVG, under `scope`.
+
+    A selector is kept when every class, id and element name it names occurs in the SVG; it is
+    rewritten to start at the scope, after a leading [data-theme] on the root. Custom properties
+    the figure sets on :root move to the scope, less those equal to the page's own tokens."""
+    classes = {c for attr in re.findall(r'\bclass="([^"]*)"', svg) for c in attr.split()}
+    tags = {t.lower() for t in re.findall(r"<([a-zA-Z][\w-]*)", svg)}
+    found_ids = set(ids)
+
+    def keep(selector: str) -> str | None:
+        prefix = ""
+        m = ROOT_PREFIX.match(selector)
+        if m:
+            prefix, selector = m.group(1) + " ", selector[m.end():]
+        bare = re.sub(r"\[[^\]]*\]|::?[\w-]+(\([^)]*\))?", " ", selector)
+        cls = set(re.findall(r"\.([\w-]+)", bare))
+        idents = set(re.findall(r"#([\w-]+)", bare))
+        types = {t.lower() for t in re.findall(r"(?:^|[\s>+~(])([a-zA-Z][\w-]*)", bare)}
+        if not (cls or idents or types) or "html" in types or "body" in types:
+            return None
+        if cls - classes or idents - found_ids or types - tags:
+            return None
+        for old, new in ids.items():
+            selector = re.sub(rf"#{re.escape(old)}\b", f"#{new}", selector)
+        return f"{prefix}{scope} {selector}"
+
+    def rules(nodes) -> list[str]:
+        out = []
+        for rule in nodes:
+            if rule.type == "qualified-rule":
+                prelude = tinycss2.serialize(rule.prelude).strip()
+                body = tinycss2.serialize(rule.content).strip()
+                if prelude == ":root":
+                    decls = [d for d in tinycss2.parse_declaration_list(rule.content, skip_comments=True,
+                                                                        skip_whitespace=True)
+                             if d.type == "declaration" and d.name.startswith("--")
+                             and tokens.get(d.name) != " ".join(tinycss2.serialize(d.value).split())]
+                    if decls:
+                        out.append(f"{scope} {{ " + " ".join(
+                            f"{d.name}: {tinycss2.serialize(d.value).strip()};" for d in decls) + " }")
+                    continue
+                kept = [s for s in (keep(sel) for sel in split_selectors(prelude)) if s]
+                if kept:
+                    out.append(f"{', '.join(kept)} {{ {body} }}")
+            elif rule.type == "at-rule" and rule.content is not None:
+                if rule.lower_at_keyword in ("media", "supports", "layer"):
+                    inner = rules(tinycss2.parse_rule_list(rule.content, skip_comments=True,
+                                                           skip_whitespace=True))
+                    if inner:
+                        head = tinycss2.serialize(rule.prelude).strip()
+                        if rule.lower_at_keyword == "layer":
+                            out.extend(inner)  # the page's layers are its own; the figure's rules sit unlayered
+                        else:
+                            out.append(f"@{rule.at_keyword} {head} {{\n" + "\n".join(inner) + "\n}")
+                elif rule.lower_at_keyword == "keyframes":
+                    out.append(tinycss2.serialize([rule]))
+        return out
+
+    return "\n".join(rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True)))
+
+
+@dataclass
+class Drawing:
+    svg: str
+    css: str
+    width: float
+    height: float
+    stepped: bool
+
+
+def load_figure(section: Section, figures: Path, tokens: dict[str, str]) -> Drawing | None:
+    path = figures / f"{section.name}.html"
+    if not path.exists():
+        warn(f"section {section.heading!r}: {path} does not exist yet; the section is text alone")
+        return None
+    source = path.read_text()
+    svg = figure_svg(source, section.name)
+    svg, ids = namespace_ids(svg, f"fig-{section.name}")
+    css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", source, flags=re.S))
+    scoped = scope_css(css, f".fig-{section.name}", svg, ids, tokens)
+    marks = {int(v) for v in re.findall(r'\bdata-step="(\d+)"', svg)}
+    if re.search(r'\bdata-step="(?!\d+")', svg):
+        fail(f"figure {section.name!r}: every data-step must be a whole number from 1")
+    n = len(section.steps)
+    if marks and marks != set(range(1, n + 1)):
+        fail(f"figure {section.name!r} marks steps {sorted(marks)}, but its section in story.md has "
+             f"steps 1 to {n}; every step needs its marks and every mark its step")
+    if not marks:
+        warn(f"figure {section.name!r} carries no data-step; it is shown whole at every step")
+    vb = [float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).replace(",", " ").split()]
+    return Drawing(svg, scoped, vb[2], vb[3], bool(marks))
+
+
+# ---- screenshots ------------------------------------------------------------------------------
 
 
 def png_size(path: Path) -> tuple[int, int]:
@@ -104,12 +319,18 @@ def png_size(path: Path) -> tuple[int, int]:
 
 
 def renders(section: Section) -> dict[str, Path]:
-    """The scheme -> file map a section shows: both renders, or the one it has."""
-    night, day = ASSETS / f"{section.image}.png", ASSETS / f"{section.image}-light.png"
+    """The scheme -> file map a screenshot section shows: both renders, or the one it has."""
+    night, day = ASSETS / f"{section.name}.png", ASSETS / f"{section.name}-light.png"
     have = {k: p for k, p in (("night", night), ("day", day)) if p.exists()}
     if not have:
-        fail(f"no render of {section.image!r} in {ASSETS} (looked for {night.name} and {day.name})")
+        fail(f"no render of {section.name!r} in {ASSETS} (looked for {night.name} and {day.name})")
+    sizes = {png_size(p) for p in have.values()}
+    if len(sizes) > 1:
+        fail(f"the renders of {section.name!r} differ in size {sorted(sizes)}; regions need one geometry")
     return have
+
+
+# ---- the page ---------------------------------------------------------------------------------
 
 
 def inline(text: str) -> str:
@@ -118,7 +339,6 @@ def inline(text: str) -> str:
 
 
 def plain(text: str) -> str:
-    """Markdown as plain text, for the viewer's caption."""
     return html.unescape(re.sub(r"<[^>]+>", "", markdown.markdown(text))).replace("\n", " ")
 
 
@@ -130,47 +350,49 @@ SCHEME_ICONS = """<svg class="sun" viewBox="0 0 24 24" width="18" height="18" fi
         <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>"""
 
 
-def figure(section: Section, shown: dict[str, str], sizes: dict[str, tuple[int, int]], github: str) -> str:
-    """One picture as a button that opens the viewer, with the line naming its source."""
-    alt = html.escape(section.heading, quote=True)
-    if len(shown) == 2:
-        imgs = "\n".join(
-            f'<img class="{scheme}" src="{src}" width="{sizes[scheme][0]}" height="{sizes[scheme][1]}" '
-            f'alt="{alt}" loading="lazy" decoding="async">'
-            for scheme, src in shown.items()
-        )
-        day, night = shown["day"], shown["night"]
-    else:
-        (scheme, src), = shown.items()
-        imgs = (f'<img src="{src}" width="{sizes[scheme][0]}" height="{sizes[scheme][1]}" '
-                f'alt="{alt}" loading="lazy" decoding="async">')
-        day = night = src
-    kind = "figure, drawn by" if section.source.endswith(".html") else "screenshot, taken by"
-    source = f'<a href="{github}/blob/master/{section.source}">{html.escape(section.source)}</a>'
-    return f"""<figure class="shot">
-          <button class="open" type="button" aria-label="open {alt} full size"
-            data-day="{day}" data-night="{night}"
-            data-title="{alt}" data-text="{html.escape(plain(section.body), quote=True)}">
+def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size: tuple[int, int]) -> str:
+    label = html.escape(section.heading, quote=True)
+    if section.kind == "figure":
+        if drawing is None:
+            return ""
+        svg = re.sub(r"^<svg\b", f'<svg role="img" aria-label="{label}"', drawing.svg, count=1)
+        return f"""<div class="stage" data-kind="figure"{' data-stepped' if drawing.stepped else ''}>
+          <div class="frame"><div class="canvas fig-{section.name}" data-w="{drawing.width:g}" data-h="{drawing.height:g}">
+            {svg}
+          </div></div>
+        </div>"""
+    w, h = size
+    imgs = "\n".join(
+        f'<img class="{scheme if len(shots) == 2 else "both"}" src="{src}" width="{w}" height="{h}" alt="{label}" decoding="async">'
+        for scheme, src in shots.items())
+    return f"""<div class="stage" data-kind="screenshot">
+          <div class="frame"><div class="canvas" data-w="{w}" data-h="{h}">
             {imgs}
-          </button>
-          <figcaption class="v-meta"><span>{kind} {source}</span></figcaption>
-        </figure>"""
+            <div class="focus" aria-hidden="true"></div>
+          </div></div>
+        </div>"""
 
 
-def page(story: Story, figures: list[str], version: str, github: str) -> str:
-    contents = "\n".join(
-        f'<li><span class="v-num muted">{i:02}</span><a class="v-small" href="#{slug(s.heading)}">{html.escape(s.heading)}</a></li>'
-        for i, s in enumerate(story.sections, 1)
-    )
+def chapter(i: int, section: Section, stage_html: str) -> str:
     steps = "\n".join(
-        f"""<section class="step" id="{slug(s.heading)}">
-        <h2 class="v-h2 column"><span class="v-num">{i:02}</span><span>{html.escape(s.heading)}</span></h2>
-        <div class="prose column">{markdown.markdown(s.body)}</div>
-        {fig}
-      </section>"""
-        for i, (s, fig) in enumerate(zip(story.sections, figures), 1)
-    )
-    built = datetime.date.today().isoformat()
+        f'<div class="beat prose" data-step="{s.number}"'
+        + (f' data-region="{" ".join(f"{v:g}" for v in s.region)}"' if s.region else "")
+        + f">{markdown.markdown(s.body)}</div>"
+        for s in section.steps)
+    return f"""<section class="chapter{'' if stage_html else ' bare'}" id="{slug(section.heading)}">
+      {stage_html}
+      <div class="text">
+        <h2 class="v-h2"><span class="v-num">{i:02}</span> {html.escape(section.heading)}</h2>
+        <div class="prose intro">{markdown.markdown(section.intro)}</div>
+        {steps}
+      </div>
+    </section>"""
+
+
+def page(story: Story, chapters: list[str], css: str, version: str, github: str) -> str:
+    contents = "\n".join(
+        f'<li><a href="#{slug(s.heading)}"><span class="v-num">{i:02}</span> {html.escape(s.heading)}</a></li>'
+        for i, s in enumerate(story.sections, 1))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -182,59 +404,45 @@ def page(story: Story, figures: list[str], version: str, github: str) -> str:
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="story.css">
-  <script src="theme.js"></script>
+  <style>
+{css}
+  </style>
+  <script src="head.js"></script>
 </head>
 <body>
-  <header class="page">
-    <div class="row">
-      <span class="v-h3 name">mx</span>
-      <button class="scheme" id="scheme" type="button" aria-label="switch scheme">
-        {SCHEME_ICONS}
-      </button>
-    </div>
+  <header class="bar">
+    <a class="name v-h3" href="#top">mx</a>
+    <span class="version v-meta">{html.escape(version)}</span>
+    <button class="whole" id="whole" type="button" role="switch" aria-checked="false">
+      <span class="track" aria-hidden="true"></span><span class="v-small">whole figures</span>
+    </button>
+    <button class="scheme" id="scheme" type="button" aria-label="switch scheme">
+      {SCHEME_ICONS}
+    </button>
   </header>
 
-  <main class="wide">
-    <div class="hero column">
+  <main id="top">
+    <div class="hero">
       <h1 class="v-title">{html.escape(story.title)}</h1>
-      <p class="v-meta">mx {html.escape(version)} · {len(story.sections)} pictures · built {built}</p>
       <p class="v-lead">{inline(story.lead)}</p>
+      <div class="prose">{markdown.markdown(story.intro)}</div>
+      <ol class="contents" aria-label="contents">
+        {contents}
+      </ol>
     </div>
-    <div class="prose intro column">{markdown.markdown(story.intro)}</div>
-    <ol class="contents column" aria-label="contents">
-      {contents}
-    </ol>
-    {steps}
+    {"".join(chapters)}
   </main>
 
   <footer class="page">
-    <hr>
-    <p class="v-small muted">Built by <a href="{github}/blob/master/{GENERATOR}">{GENERATOR}</a> from
-      <a href="{github}/blob/master/docs/figures/story/story.md">story.md</a> and the pictures in
-      <a href="{github}/tree/master/mx/assets">mx/assets</a>.</p>
-    <p class="v-small muted">Set in Newsreader and IBM Plex Mono, both under the SIL Open Font License; the
-      licence texts are <a href="fonts/OFL-Newsreader.txt">fonts/OFL-Newsreader.txt</a> and
-      <a href="fonts/OFL-IBM-Plex-Mono.txt">fonts/OFL-IBM-Plex-Mono.txt</a>.</p>
+    <p class="v-small">mx is on GitHub at <a href="{github}/tree/master/mx">MaxWolf-01/agents</a>; its
+      <a href="{github}/blob/master/mx/README.md">README</a> covers installing it, and
+      <a href="{github}/blob/master/mx/skills/orient/SKILL.md"><code>/mx:orient</code></a> is this workflow as the agents read it.
+      This page is built from <a href="{github}/blob/master/docs/figures/story/story.md">story.md</a>
+      by <a href="{github}/blob/master/{GENERATOR}">build.py</a>. Set in Newsreader and IBM Plex Mono, under the
+      SIL Open Font License (<a href="fonts/OFL-Newsreader.txt">Newsreader</a>,
+      <a href="fonts/OFL-IBM-Plex-Mono.txt">IBM Plex Mono</a>).</p>
   </footer>
-
-  <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
-    <div class="stage"><img alt=""></div>
-    <div class="bar">
-      <div class="caption">
-        <p class="v-h3" id="viewer-title"></p>
-        <p class="v-small"></p>
-        <p class="v-meta">drag to pan · scroll or pinch to zoom · 0 fits · esc closes</p>
-      </div>
-      <div class="tools">
-        <button class="tool out" type="button" aria-label="zoom out">&minus;</button>
-        <span class="zoom v-meta" aria-live="polite">100%</span>
-        <button class="tool in" type="button" aria-label="zoom in">+</button>
-        <button class="tool fit" type="button">fit</button>
-        <button class="tool close" type="button">close</button>
-      </div>
-    </div>
-  </div>
-  <script src="zoom.js"></script>
+  <script src="story.js"></script>
 </body>
 </html>
 """
@@ -255,30 +463,41 @@ def main(args: Args) -> None:
     story = parse((HERE / "story.md").read_text())
     plugin = json.loads(PLUGIN.read_text())
     github = plugin["repository"].rstrip("/")
-    for s in story.sections:
-        if not (REPO / s.source).exists():
-            fail(f"section {s.heading!r}: source {s.source} does not exist")
-    chosen = [renders(s) for s in story.sections]  # every check before the folder is touched
+    tokens = root_tokens()
+    # every check before the folder is touched
+    loaded = [(s, load_figure(s, args.figures, tokens) if s.kind == "figure" else renders(s))
+              for s in story.sections]
 
     out = args.out.resolve()
     prepare(out)
-    figures = []
-    for section, files in zip(story.sections, chosen):
-        shown, sizes = {}, {}
-        for scheme, path in files.items():
-            shutil.copy2(path, out / "img" / path.name)
-            shown[scheme] = f"img/{path.name}"
-            sizes[scheme] = png_size(path)
-        figures.append(figure(section, shown, sizes, github))
+    chapters, css, counts = [], [], {"stepped": 0, "whole": 0, "missing": 0, "screenshots": 0}
+    for i, (section, thing) in enumerate(loaded, 1):
+        if section.kind == "figure":
+            stage_html = stage(section, thing, {}, (0, 0))
+            if thing:
+                css.append(f"/* {section.name}: from docs/figures/{section.name}.html */\n{thing.css}")
+                counts["stepped" if thing.stepped else "whole"] += 1
+            else:
+                counts["missing"] += 1
+        else:
+            shots, size = {}, (0, 0)
+            for scheme, path in thing.items():
+                shutil.copy2(path, out / "img" / path.name)
+                shots[scheme] = f"img/{path.name}"
+                size = png_size(path)
+            stage_html = stage(section, None, shots, size)
+            counts["screenshots"] += 1
+        chapters.append(chapter(i, section, stage_html))
 
-    (out / "index.html").write_text(page(story, figures, plugin["version"], github))
+    (out / "index.html").write_text(page(story, chapters, "\n".join(css), plugin["version"], github))
     shutil.copy2(TOKENS, out / "tokens.css")
-    for name in ("story.css", "theme.js", "zoom.js"):
+    for name in COPIED:
         shutil.copy2(HERE / name, out / name)
     for font in (HERE / "fonts").iterdir():
         shutil.copy2(font, out / "fonts" / font.name)
-    print(f"wrote {out / 'index.html'}: {len(story.sections)} sections, "
-          f"{sum(len(f) for f in chosen)} pictures")
+    print(f"wrote {out / 'index.html'}: {len(story.sections)} sections; figures {counts['stepped']} "
+          f"stepped, {counts['whole']} whole, {counts['missing']} not drawn yet; "
+          f"{counts['screenshots']} screenshots")
 
 
 if __name__ == "__main__":

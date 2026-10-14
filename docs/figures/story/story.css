@@ -1,10 +1,15 @@
 /* The story page, on the house tokens (tokens.css, copied in by build.py from
-   mx/skills/house-style). The main column is --wide, so a picture's lettering
-   stays legible before anyone zooms; text inside it keeps to the --page
-   column, centred above the pictures, and running text to the measure. */
+   mx/skills/house-style). Each chapter is a column of text beside a stage:
+   the stage stays in view while the chapter's steps scroll past, and story.js
+   grows the picture on it to the step being read. Without the script the
+   pictures sit whole above their text. */
 
 :root {
-  --wide: 82rem;
+  --head: 3.25rem;
+  --text: 25rem;
+  --gap: 3.5rem;
+  --edge-pad: 2rem;
+  scroll-padding-top: calc(var(--head) + 1rem);
 }
 
 /* In the base layer, so the house's .prose spacing (components) still wins. */
@@ -14,52 +19,80 @@
   }
 }
 
+/* ---- the bar ---------------------------------------------------------- */
 
-.page,
-.wide {
-  margin: 0 auto;
-  padding: 0 2rem;
-}
-
-.page {
-  max-width: var(--page);
-}
-
-.wide {
-  max-width: var(--wide);
-}
-
-.column {
-  max-width: var(--page);
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.row {
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 1rem 0;
+  gap: 0.75rem;
+  height: var(--head);
+  padding: 0 var(--edge-pad);
+  background: var(--ground);
   border-bottom: 1px solid var(--edge);
 }
 
-.row .name {
+.bar .name {
   margin: 0;
 }
 
-.scheme {
-  margin-left: auto;
+.bar .version {
+  margin-right: auto;
+}
+
+.bar button {
   display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.25rem;
   border: 0;
   background: none;
   color: var(--muted);
+  font: inherit;
   cursor: pointer;
   transition: color 150ms;
 }
 
-.scheme:hover {
+.bar button:hover {
   color: var(--accent);
+}
+
+.whole .track {
+  position: relative;
+  width: 1.75rem;
+  height: 1rem;
+  border: 1px solid var(--edge);
+  border-radius: 1rem;
+  background: var(--ground-2);
+  transition: background 150ms, border-color 150ms;
+}
+
+.whole .track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1rem - 6px);
+  height: calc(1rem - 6px);
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 150ms, background 150ms;
+}
+
+.whole[aria-checked="true"] {
+  color: var(--body);
+}
+
+.whole[aria-checked="true"] .track {
+  background: var(--wash);
+  border-color: var(--accent);
+}
+
+.whole[aria-checked="true"] .track::after {
+  transform: translateX(0.75rem);
+  background: var(--accent);
 }
 
 [data-theme="night"] .scheme .sun,
@@ -67,292 +100,311 @@
   display: none;
 }
 
+/* ---- the opening ------------------------------------------------------ */
+
+main {
+  padding: 0 var(--edge-pad);
+}
+
 .hero {
-  padding: 4rem 0 1rem;
+  max-width: var(--measure);
+  padding: 4.5rem 0 2rem;
 }
 
 .hero .v-title {
   margin: 0;
 }
 
-.hero .v-meta {
-  margin-top: 0.75rem;
-}
-
 .hero .v-lead {
-  margin-top: 2rem;
-  color: var(--muted);
-  max-width: var(--measure);
-}
-
-.intro {
-  margin-top: 2rem;
+  margin: 1.5rem 0 1.25rem;
+  color: var(--strong);
 }
 
 .contents {
-  margin-top: 2.5rem;
-  margin-bottom: 0;
+  margin: 2.5rem 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 0.375rem;
-}
-
-.contents li {
-  display: grid;
-  grid-template-columns: 2.25rem 1fr;
-  align-items: baseline;
-}
-
-.contents a {
-  color: var(--muted);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.375rem 2rem;
 }
 
 .contents a:hover {
   color: var(--accent);
 }
 
-.muted {
+.v-num {
   color: var(--muted);
-}
-
-/* One section per picture. */
-.step {
-  margin-top: 6rem;
-  scroll-margin-top: 2rem;
-}
-
-.step h2 {
-  display: grid;
-  grid-template-columns: 2.25rem 1fr;
-  align-items: baseline;
-  margin: 0 auto;
-}
-
-.step h2 .v-num {
-  color: var(--muted);
-  font-weight: 400;
   font-size: 0.8125rem;
+  font-weight: 400;
+  margin-right: 0.5rem;
 }
 
-.step .prose {
-  margin: 1rem auto 0;
-  padding-left: 2.25rem;
-  box-sizing: border-box;
-}
+/* ---- a chapter: text beside its stage ---------------------------------- */
 
-.shot {
-  margin: 2rem 0 0;
+.chapter {
   display: grid;
-  gap: 0.5rem;
+  grid-template-columns: minmax(18rem, var(--text)) minmax(0, 1fr);
+  column-gap: var(--gap);
+  margin-top: 7rem;
 }
 
-.open {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--ground-2);
-  overflow: hidden;
-  cursor: zoom-in;
+.chapter .text {
+  grid-column: 1;
+  grid-row: 1;
+  max-width: var(--measure);
 }
 
-.open:hover {
-  border-color: var(--accent);
+.chapter .stage {
+  grid-column: 2;
+  grid-row: 1;
 }
 
-.open img {
+.chapter.bare {
+  grid-template-columns: minmax(0, var(--measure));
+}
+
+.chapter h2 {
+  margin: 0 0 1rem;
+}
+
+.chapter .intro {
+  color: var(--body);
+}
+
+/* Each step gets a stretch of scroll of its own; the step being read is
+   marked by the same accent as the part of the picture it added. */
+.beat {
+  margin-top: 1.75rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--edge);
+  transition: border-color 200ms;
+}
+
+.beat.is-current {
+  border-left-color: var(--accent);
+}
+
+.js .beat {
+  margin-top: 42vh;
+}
+
+.js .chapter .intro + .beat {
+  margin-top: 28vh;
+}
+
+.js .chapter .beat:last-child {
+  margin-bottom: 62vh;
+}
+
+/* Without the script: every picture whole, above its text. */
+.stage {
+  margin: 0 0 2rem;
+}
+
+.canvas svg,
+.canvas img {
   display: block;
   width: 100%;
   height: auto;
 }
 
-/* Each picture is drawn in both schemes where it has both, and the page shows
-   the one that matches its own: data-theme once the script has set it, the
-   system's preference until then. */
-[data-theme="night"] .open .day,
-[data-theme="day"] .open .night {
+/* With it: the stage holds still while the chapter scrolls, and the canvas
+   inside it is moved and scaled by story.js. */
+.js .stage {
+  position: sticky;
+  top: calc(var(--head) + 1rem);
+  align-self: start;
+  height: calc(100svh - var(--head) - 2rem);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.js .frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* A screenshot's edge, drawn on the image so it holds at any zoom; the
+   image clips the focus' dimming to itself. */
+.js .stage[data-kind="screenshot"] .canvas {
+  overflow: hidden;
+  border-radius: calc(var(--radius) / var(--s, 1));
+  outline: calc(1px / var(--s, 1)) solid var(--edge);
+}
+
+.js .canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.js .canvas svg,
+.js .canvas img {
+  width: 100%;
+  height: 100%;
+}
+
+.js .canvas.ready {
+  transition: transform 650ms cubic-bezier(0.3, 0.1, 0.2, 1);
+}
+
+/* Each screenshot is drawn in both schemes where it has both. */
+[data-theme="night"] .canvas img.day,
+[data-theme="day"] .canvas img.night {
   display: none;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .open .day {
+  :root:not([data-theme]) .canvas img.day {
     display: none;
   }
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .open .night {
+  :root:not([data-theme]) .canvas img.night {
     display: none;
   }
 }
 
-.shot figcaption {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1rem;
+/* The focus on a screenshot: the region a step talks about stays clear and
+   the rest of the picture recedes. --s is the canvas' scale, so the line
+   keeps its width on screen however far the picture is zoomed. */
+.focus {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border-radius: calc(4px / var(--s, 1));
+  outline: calc(2px / var(--s, 1)) solid var(--accent);
+  box-shadow: 0 0 0 100000px color-mix(in srgb, var(--ground) 58%, transparent);
+  pointer-events: none;
 }
 
-.shot figcaption a:hover {
-  color: var(--accent);
+.focus.on {
+  opacity: 1;
 }
+
+.ready .focus {
+  transition: opacity 400ms, left 650ms, top 650ms, width 650ms, height 650ms;
+}
+
+/* A figure growing: a later step's parts are not drawn yet, and the parts
+   the current step added wear the accent. The !important lets a state beat
+   the figure's own colours, whatever their specificity. */
+.canvas [data-step] {
+  transition: opacity 450ms, visibility 450ms;
+}
+
+.canvas .is-later {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.canvas [data-hl] {
+  transition: fill 300ms, stroke 300ms;
+}
+
+.canvas .is-new[data-hl~="text"],
+.canvas .is-new [data-hl~="text"],
+.canvas .is-new[data-hl~="solid"],
+.canvas .is-new [data-hl~="solid"] {
+  fill: var(--accent) !important;
+}
+
+.canvas .is-new[data-hl~="stroke"],
+.canvas .is-new [data-hl~="stroke"] {
+  stroke: var(--accent) !important;
+}
+
+.canvas .is-new[data-hl~="fill"],
+.canvas .is-new [data-hl~="fill"] {
+  fill: var(--wash) !important;
+}
+
+/* ---- the end ---------------------------------------------------------- */
 
 footer.page {
-  margin-top: 6rem;
-  padding-bottom: 4rem;
-}
-
-footer hr {
-  border: 0;
-  height: 1px;
-  background: var(--edge);
-  margin: 0 0 1.5rem;
-}
-
-footer p {
   max-width: var(--measure);
-}
-
-footer p + p {
-  margin-top: 0.5rem;
+  margin: 6rem 0 0;
+  padding: 1.5rem var(--edge-pad) 4rem;
+  border-top: 1px solid var(--edge);
+  color: var(--muted);
 }
 
 footer a {
   color: var(--accent);
 }
 
-/* The viewer: one picture over the page, fitted to the window. */
-html.viewing {
-  overflow: hidden;
-}
-
-.viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  background: var(--ground);
-}
-
-.viewer[hidden] {
-  display: none;
-}
-
-.viewer .stage {
-  position: relative;
-  flex: 1;
-  overflow: hidden;
-  touch-action: none;
-  cursor: zoom-out;
-}
-
-.viewer .stage img {
-  position: absolute;
-  left: 0;
-  top: 0;
-  max-width: none;
-  transform-origin: 0 0;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  cursor: grab;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.viewer .stage.dragging img {
-  cursor: grabbing;
-}
-
-.viewer .bar {
-  display: flex;
-  gap: 2rem;
-  align-items: flex-start;
-  padding: 0.875rem 2rem 1.125rem;
-  border-top: 1px solid var(--edge);
-  background: var(--ground);
-}
-
-.viewer .caption {
-  flex: 1;
-  min-width: 0;
-  max-width: var(--page);
-}
-
-.viewer .caption .v-h3 {
-  margin: 0;
-}
-
-.viewer .caption .v-small {
-  margin-top: 0.25rem;
-  color: var(--muted);
-}
-
-.viewer .caption .v-meta {
-  margin-top: 0.5rem;
-}
-
-.viewer .tools {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: auto;
-}
-
-.viewer .tool {
-  min-width: 2.25rem;
-  height: 2.25rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: none;
-  color: var(--body);
-  font: 400 0.9rem/1 var(--font-body);
-  cursor: pointer;
-  transition: color 150ms, border-color 150ms;
-}
-
-.viewer .tool:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.viewer .zoom {
-  min-width: 3.5rem;
-  text-align: center;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .scheme,
-  .viewer .tool {
+  .bar button,
+  .whole .track,
+  .whole .track::after,
+  .beat,
+  .js .canvas.ready,
+  .ready .focus,
+  .canvas [data-step],
+  .canvas [data-hl] {
     transition: none;
   }
 }
 
-@media (max-width: 44rem) {
-  .page,
-  .wide {
-    padding: 0 1.25rem;
+/* ---- narrow: the stage above the text, still holding while it scrolls -- */
+
+@media (max-width: 60rem) {
+  :root {
+    --edge-pad: 1.25rem;
   }
 
-  .step .prose {
-    padding-left: 0;
+  .chapter {
+    display: block;
+    margin-top: 5rem;
   }
 
-  .viewer .bar {
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem 1.25rem 1rem;
+  .js .stage {
+    z-index: 2;
+    top: var(--head);
+    height: 46svh;
+    padding: 0.75rem 0;
+    margin: 0 calc(-1 * var(--edge-pad));
+    padding-left: var(--edge-pad);
+    padding-right: var(--edge-pad);
+    background: var(--ground);
+    border-bottom: 1px solid var(--edge);
   }
 
-  .viewer .caption .v-small {
-    max-height: 6.4em;
-    overflow-y: auto;
+  .chapter .text {
+    margin-top: 1.5rem;
   }
 
-  .viewer .caption .v-meta {
+  .js .beat {
+    margin-top: 30vh;
+  }
+
+  .js .chapter .intro + .beat {
+    margin-top: 12vh;
+  }
+
+  .js .chapter .beat:last-child {
+    margin-bottom: 30vh;
+  }
+
+  .contents {
+    grid-template-columns: 1fr;
+  }
+
+  .bar .version {
     display: none;
+  }
+
+  .bar .name {
+    margin-right: auto;
   }
 }
