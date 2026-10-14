@@ -1,3 +1,7 @@
+## 1.0.57
+
+- feat(grilling): blind questions for taste decisions, rendered by blind-test
+
 ## 1.0.56
 
 - house-style: a quieter night accent, centred button labels, a muted select arrow
