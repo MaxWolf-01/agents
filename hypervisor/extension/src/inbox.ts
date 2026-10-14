@@ -61,7 +61,7 @@ export function inbox(store: string): Inbox {
 		async read({ id, from }) {
 			const chosen = plain().filter((m) => (id === undefined || m.id === id) && (from === undefined || m.from === from));
 			await markRead(chosen);
-			return chosen.map((m) => `${shown(m)} (sent ${m.at.slice(0, 16)}Z)`);
+			return chosen.map((m) => `${delivered(m)} (sent ${m.at.slice(0, 16)}Z)`);
 		},
 		async takePings(deliver) {
 			if (taking.has(dir)) return;
@@ -71,7 +71,7 @@ export function inbox(store: string): Inbox {
 				if (!pings.length) return;
 				// read/ exists before a delivery, so a delivered ping cannot stay behind to be delivered again.
 				await mkdir(readDir, { recursive: true });
-				if (deliver(pings.map(shown)) === false) return;
+				if (deliver(pings.map(delivered)) === false) return;
 				await markRead(pings);
 			} finally {
 				taking.delete(dir);
@@ -119,7 +119,7 @@ function waiting(dir: string): Waiting[] {
 }
 
 /** A message as the hypervisor gets it, and as memory keeps it: `[from] text`, or `[from] hv tell: text`. */
-function shown(told: Told): string {
+function delivered(told: Told): string {
 	return `[${told.from}] ${told.via ? `${told.via}: ` : ""}${told.text}`;
 }
 

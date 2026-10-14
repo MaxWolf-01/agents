@@ -46,7 +46,7 @@ export interface Spawned {
 const HV = fileURLToPath(new URL("../../hv", import.meta.url));
 const SPAWNED = "spawned.jsonl";
 /** How long a delegated task runs before it is stopped. */
-const DELEGATE_MS = 45 * 60_000;
+export const DELEGATE_MINUTES = 45;
 /** How long a session's inbox socket has to take a message. */
 const INBOX_MS = 5000;
 /** How many lines of a pane `look` shows. */
@@ -115,17 +115,15 @@ export async function look(config: SessionConfig, { session }: { session?: strin
 	return `${head}\n${pane.replace(/\n{3,}/g, "\n\n").trimEnd()}`;
 }
 
-/** Runs `task` in a one-shot Claude Code session in auto mode, in `dir` or max's home, and returns its answer. */
-export async function delegate(config: SessionConfig, params: { task: string; dir?: string }, signal?: AbortSignal): Promise<string> {
-	return (await delegation(config, params))(signal);
-}
-
-/** `task` checked, and where it runs resolved, ready to run as delegate runs it: refused now, not once it runs. */
+/**
+ * `task` checked, and where it runs resolved: refused now, not once it runs. What it returns runs the task in a one-shot
+ * Claude Code session in auto mode, in `dir` or max's home, and answers with what the session answered.
+ */
 export async function delegation(config: SessionConfig, { task, dir }: { task: string; dir?: string }): Promise<(signal?: AbortSignal) => Promise<string>> {
 	if (!task.trim()) throw new Error("the task is empty");
 	const cwd = dir === undefined ? config.home : await directory(config.home, dir);
 	return (signal) => {
-		const stop = AbortSignal.any([AbortSignal.timeout(DELEGATE_MS), ...(signal ? [signal] : [])]);
+		const stop = AbortSignal.any([AbortSignal.timeout(DELEGATE_MINUTES * 60_000), ...(signal ? [signal] : [])]);
 		return run("claude", ["-p", "--permission-mode", "auto", "--output-format", "text", "--", `${task.trim()}\n\n${BRIEFLY}`], { cwd, signal: stop });
 	};
 }

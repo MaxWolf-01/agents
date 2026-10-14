@@ -5,8 +5,9 @@
 // The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in flight, the
 // hypervisor reads and delegates, and starts or messages no session. `hv offer` asks it to offer max a run.
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { append } from "./journal.ts";
 import { type Week, weekFromHeaders } from "./quota.ts";
@@ -17,10 +18,17 @@ export const USAGE =
 	"(one uncached Opus input token each, the profile's summaries included); --until-week stops it once P% of the week's quota is used.";
 
 /** The tools a run blocks: no session is started or messaged while max is away. */
-export const BLOCKED = ["start_session", "tell_session"];
+const BLOCKED = ["start_session", "tell_session"];
 
 /** The price of one uncached Opus input token, the unit of a token cap. */
 const OPUS_INPUT = 4 / 1e6;
+/** How often a run looks whether the turn in flight has ended, before it sends its next step. */
+const IDLE_POLL_MS = 1000;
+/**
+ * How long a step's turn has to start. pi tells no extension when it refuses a prompt before its turn starts (expired
+ * credentials, a compaction running), so a step whose turn has not started by then has failed.
+ */
+const START_MS = 120_000;
 
 /** What `/explore` was asked for. */
 export interface Request {
@@ -30,14 +38,40 @@ export interface Request {
 	untilWeek?: number;
 }
 
-/** Where a run reads what it costs and how much of the week is used. */
-export interface ExploreConfig {
+/** Where a run reads what it costs. */
+export interface RunConfig {
 	/** The hypervisor's store: `explore.jsonl` keeps each step's finding and each run's end, beside `hv offer`'s offers. */
 	store: string;
 	/** OptChat's usage log for the profile, a line per model call with its cost; without it, a run takes no token cap. */
 	usage?: string;
-	/** The clock, in ms since the epoch. */
-	now?: () => number;
+}
+
+/** A line of `explore.jsonl`, the journal of explore runs: a step's finding, a run's end, or an offer `hv offer` made. */
+export type JournalLine = { at: string } & (StepLine | EndLine | OfferLine);
+export interface StepLine {
+	/** The run's start, which names it. */
+	run: string;
+	step: number;
+	/** The run's direction, on its first step. */
+	direction?: string;
+	finding: string;
+	tokens: number;
+	error?: string;
+}
+export interface EndLine {
+	run: string;
+	/** What stopped it, as it reads after "stopped by". */
+	ended: string;
+	steps: number;
+	tokens: number;
+	/** The week's use in percent as the run ended, or `unread` when --until-week was asked for and the week never read. */
+	week?: number | "unread";
+}
+export interface OfferLine {
+	/** When the offered week resets, in ms since the epoch. */
+	offer: number;
+	/** Percent of that week used when it was offered. */
+	used: number;
 }
 
 /** A run's state between steps. */
@@ -82,7 +116,7 @@ export function stepMessage(n: number, direction: string | undefined): string {
 /** Why a run stops before its next step, or nothing while it goes on. A week whose reset has passed tells nothing. */
 export function stopBefore(run: Run, spent: number, week: Week | undefined, now: number): string | undefined {
 	const { request } = run;
-	if (run.interrupted) return "max wrote";
+	if (run.interrupted) return "a message from max";
 	if (run.taken >= request.steps) return `${request.steps} ${request.steps === 1 ? "step" : "steps"}`;
 	if (request.tokens !== undefined && spent >= request.tokens) return `the cap of ${request.tokens} tokens`;
 	if (request.untilWeek !== undefined && week && week.resets > now && week.used >= request.untilWeek) return `the week at ${Math.round(week.used)}% used`;
@@ -90,16 +124,24 @@ export function stopBefore(run: Run, spent: number, week: Week | undefined, now:
 }
 
 /** Registers `/explore` with pi. */
-export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
-	const now = config.now ?? Date.now;
+export function exploring(pi: ExtensionAPI, config: RunConfig): void {
+	const now = Date.now;
 	/** The week as this process's replies last gave it. */
 	let replied: Week | undefined;
-	const journal = (line: object) => append(config.store, "explore.jsonl", { at: new Date(now()).toISOString(), ...line });
+	const journal = (line: StepLine | EndLine) => append(config.store, "explore.jsonl", { at: new Date(now()).toISOString(), ...line });
 
 	let run: Run | undefined;
-	/** Resolves the step in flight once pi settles. */
-	let settle: (() => void) | undefined;
-	/** How the latest turn ended: its last text, and the error it ended on, if it did. */
+	/** Resolve on pi's next agent_start and agent_settled. */
+	const waiting = { start: new Set<() => void>(), settled: new Set<() => void>() };
+	const next = (event: keyof typeof waiting) => new Promise<void>((resolve) => waiting[event].add(resolve));
+	const fire = (event: keyof typeof waiting) => {
+		const resolvers = [...waiting[event]];
+		waiting[event].clear();
+		for (const resolve of resolvers) resolve();
+	};
+	/** The message of the step in flight, whose reply is its finding. */
+	let sent: string | undefined;
+	/** How the step's turn ended: the step's reply, and the error it ended on, if it did. */
 	let ended: { finding: string; error?: string } = { finding: "" };
 
 	pi.on("after_provider_response", (event) => {
@@ -115,28 +157,31 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		return undefined;
 	});
 	pi.on("agent_end", (event) => {
-		// A message that joined the step's turn after its first reply, max's or a ping's, is not the step's: the step ends before it.
-		const replied = event.messages.findIndex((m) => m.role === "assistant");
+		// The step's reply follows its own message. A message that joined the turn after that reply, max's or a ping's, is
+		// not the step's: the step ends before it.
+		const own = event.messages.findLastIndex((m) => m.role === "user" && sent !== undefined && textOf(m.content) === sent);
+		const replied = event.messages.findIndex((m, i) => i > own && m.role === "assistant");
 		const joined = event.messages.findIndex((m, i) => i > replied && (m.role === "user" || m.role === "custom"));
 		const last = event.messages.slice(0, replied < 0 || joined < 0 ? undefined : joined).findLast((m) => m.role === "assistant");
 		if (last?.role !== "assistant") return;
 		const text = last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n").trim();
 		ended = { finding: text, ...(last.stopReason === "error" || last.stopReason === "aborted" ? { error: last.errorMessage ?? last.stopReason } : {}) };
 	});
-	pi.on("agent_settled", () => {
-		const done = settle;
-		settle = undefined;
-		done?.();
-	});
+	pi.on("agent_start", () => fire("start"));
+	pi.on("agent_settled", () => fire("settled"));
 
-	const spent = (since: string): number => {
+	/** What the run has cost since `since`, in the cap's tokens; `undefined` when there is no usage log to count from. */
+	const spent = (since: string): number | undefined => {
 		if (!config.usage) return 0;
-		let text = "";
+		let text: string;
 		try {
 			text = readFileSync(config.usage, "utf8");
-		} catch {}
+		} catch {
+			return undefined;
+		}
 		let cost = 0;
 		for (const line of text.split("\n")) {
+			// The last line may be one OptChat is still writing.
 			try {
 				const record = JSON.parse(line) as { date: string; usage: { cost: { total: number } } };
 				if (record.date >= since) cost += record.usage.cost.total;
@@ -145,34 +190,43 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		return Math.round(cost / OPUS_INPUT);
 	};
 
-	const step = (ctx: ExtensionContext, message: string) => {
-		const settled = new Promise<void>((resolve) => (settle = resolve));
+	const step = async (ctx: ExtensionContext, message: string) => {
+		const started = next("start");
+		const settled = next("settled");
+		sent = message;
 		ended = { finding: "" };
+		// Idle when the run sent it; a ping's turn that started since makes it a follow-up of that turn.
 		pi.sendUserMessage(message, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-		return settled.then(() => ended);
+		const began = await Promise.race([started.then(() => true), sleep(START_MS, false, { ref: false })]);
+		if (!began) return { finding: "", error: `its turn did not start within ${START_MS / 1000} s` };
+		await settled;
+		return ended;
 	};
 
 	const explore = async (request: Request, ctx: ExtensionContext) => {
 		const current: Run = { request, started: new Date(now()).toISOString(), taken: 0, interrupted: false };
 		run = current;
-		let stopped: string | undefined;
+		let stopped = "";
 		try {
 			ctx.ui.notify(`explore: up to ${request.steps} steps toward ${request.direction ?? "the default goal"}. A message from you ends the run after the step in flight.`, "info");
 			for (;;) {
-				const before = spent(current.started);
-				stopped = stopBefore(current, before, replied, now());
+				// A turn in flight, max's or a ping's, ends before the next step starts, so the step's turn is the step's alone.
+				while (!ctx.isIdle()) await sleep(IDLE_POLL_MS);
+				const before = spent(current.started) ?? 0;
+				stopped = stopBefore(current, before, replied, now()) ?? "";
 				if (stopped) break;
 				const done = await step(ctx, stepMessage(current.taken + 1, request.direction));
 				current.taken++;
-				const tokens = spent(current.started) - before;
+				const after = spent(current.started);
+				const tokens = (after ?? before) - before;
 				await journal({ run: current.started, step: current.taken, ...(current.taken === 1 && request.direction ? { direction: request.direction } : {}), finding: done.finding, tokens, ...(done.error ? { error: done.error } : {}) });
 				ctx.ui.notify(`explore step ${current.taken} of ${request.steps}, ${tokens} tokens: ${done.error ? `failed: ${done.error}` : done.finding}`, done.error ? "error" : "info");
 				if (done.error) {
 					stopped = `step ${current.taken} failing`;
 					break;
 				}
-				// A cap read from a log that is not there would never stop the run.
-				if (request.tokens !== undefined && config.usage && !existsSync(config.usage)) {
+				// A cap read from a log that cannot be read would never stop the run.
+				if (request.tokens !== undefined && after === undefined) {
 					stopped = `no usage log at ${config.usage} to count the cap from`;
 					break;
 				}
@@ -183,7 +237,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 			run = undefined;
 		}
 		const used = replied;
-		const tokens = spent(current.started);
+		const tokens = spent(current.started) ?? 0;
 		// A share asked for and never read stopped nothing, which the end says rather than leave it to pass for a share not reached.
 		const share = used ? ` The week is at ${Math.round(used.used)}%.` : request.untilWeek !== undefined ? " The week's quota was never read, so --until-week stopped nothing." : "";
 		await journal({ run: current.started, ended: stopped, steps: current.taken, tokens, ...(used ? { week: Math.round(used.used) } : request.untilWeek !== undefined ? { week: "unread" } : {}) }).catch(() => {});
@@ -204,7 +258,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 }
 
 /** The OptChat profile `hv` runs on, as its environment locates it. */
-export function profileDir(): string | undefined {
+function profileDir(): string | undefined {
 	const home = process.env.OPTCHAT_HOME;
 	const profile = process.env.HV_PROFILE;
 	return home && profile ? path.join(home, "profiles", profile) : undefined;
@@ -214,4 +268,9 @@ export function profileDir(): string | undefined {
 export function usageLog(): string | undefined {
 	const profile = profileDir();
 	return profile && path.join(profile, "usage.jsonl");
+}
+
+/** A message's text, as pi holds it: a string, or its text parts. */
+function textOf(content: string | { type: string; text?: string }[]): string {
+	return typeof content === "string" ? content : content.flatMap((part) => (part.type === "text" && part.text !== undefined ? [part.text] : [])).join("\n");
 }

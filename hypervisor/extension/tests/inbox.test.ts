@@ -42,7 +42,8 @@ test("every message is delivered or read exactly once, a ping never shows in the
 			let model: { tag: string; from: string; ping: boolean }[] = [];
 			/** Every tag handed over: read, or delivered by a take that took it. */
 			const handled: string[] = [];
-			const tags = (said: string[]) => said.flatMap((s) => [...s.matchAll(/#(\d+)#/g)].map((m) => m[1]));
+			// Only the tag a message starts with: its generated text may hold one too.
+			const tags = (said: string[]) => said.flatMap((s) => /^\[[^\]]*\] (?:hv tell: )?#(\d+)#/.exec(s)?.[1] ?? []);
 			const take = async (outcome: "taken" | "refused" | "failed") => {
 				let offered: string[] = [];
 				await hypervisor

@@ -4,19 +4,19 @@
 // the TUI runs, and waits in the inbox while it does not. The week is read from what Claude Code last handed its
 // statusline, which keeps it under `~/.cache/claude-statusline/<session id>.json`.
 
-import { execFile } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import type { JournalLine, OfferLine } from "./exploring.ts";
 import { append, lines } from "./journal.ts";
 import type { Week } from "./quota.ts";
+import { run } from "./run.ts";
 
 /** The offer: this long before the week resets, with more than this share of it unused, for up to this many steps. */
-export const OFFER_AHEAD_MS = 12 * 3600_000;
-export const OFFER_UNUSED = 20;
-export const OFFER_STEPS = 50;
-export const OFFER_UNTIL = 95;
+const OFFER_AHEAD_MS = 12 * 3600_000;
+const OFFER_UNUSED = 20;
+const OFFER_STEPS = 50;
+const OFFER_UNTIL = 95;
 
 export const USAGE = `usage: hv offer
 
@@ -30,11 +30,14 @@ export function offerDue(week: Week | undefined, now: number): boolean {
 	return week !== undefined && week.resets > now && week.resets - now <= OFFER_AHEAD_MS && 100 - week.used > OFFER_UNUSED;
 }
 
-/** The offer's text, as the hypervisor reads it in the ping that starts its turn. */
-export function offerText(week: Week): string {
+/**
+ * The offer's text at `now`, as the hypervisor reads it in the ping that starts its turn. It says how old the reading
+ * is: the statusline's cache moves only while max uses Claude Code, so an old one overstates what is unused.
+ */
+export function offerText(week: Week, now: number): string {
 	const command = `/explore ${OFFER_STEPS} --until-week ${OFFER_UNTIL} <direction>`;
 	return (
-		`Explore offer: max's week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z with ${Math.round(100 - week.used)}% of it unused. ` +
+		`Explore offer: max's week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z with ${Math.round(100 - week.used)}% of it unused, as Claude Code read it ${Math.max(0, Math.round((now - week.at) / 3600_000))} h ago. ` +
 		`Ask him whether you should explore for up to ${OFFER_STEPS} steps until ${OFFER_UNTIL}% of the week is used, and suggest a direction. ` +
 		`A run starts only when he types the command, \`${command}\`, so give it to him with your direction filled in. No answer means no run, and once that reset has passed, the offer has lapsed.`
 	);
@@ -78,18 +81,17 @@ export async function offer(store: string, tell: string[]): Promise<string> {
 	const state = `the week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z, ${Math.round(week.used)}% used`;
 	if (!offerDue(week, now)) return `No offer: ${state}.`;
 	// The one week whose reset is still ahead is this one, whatever its reset time reads to the second.
-	const offers = await lines<{ offer?: number }>(store, "explore.jsonl");
-	if (offers.some((line) => line.offer !== undefined && line.offer > now)) return `No offer: this week's was made already; ${state}.`;
-	await run(tell[0]!, [...tell.slice(1), offerText(week)]);
-	await append(store, "explore.jsonl", { at: new Date(now).toISOString(), offer: week.resets, used: Math.round(week.used) });
+	const offers = await lines<JournalLine>(store, "explore.jsonl");
+	if (offers.some((line) => "offer" in line && line.offer > now)) return `No offer: this week's was made already; ${state}.`;
+	await run(tell[0]!, [...tell.slice(1), offerText(week, now)]);
+	const offered: JournalLine & OfferLine = { at: new Date(now).toISOString(), offer: week.resets, used: Math.round(week.used) };
+	await append(store, "explore.jsonl", offered);
 	const notified = await run("notify-send", ["--app-name=hypervisor", "Explore before the week resets?", `${Math.round(100 - week.used)}% of the week unused. The hypervisor asks in its chat.`]).then(
 		() => "",
 		(error) => ` The desktop notification failed: ${error instanceof Error ? error.message : String(error)}`,
 	);
 	return `Offered: ${state}.${notified}`;
 }
-
-const run = promisify(execFile);
 
 if (import.meta.main) {
 	const argv = process.argv.slice(2);

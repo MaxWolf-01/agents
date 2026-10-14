@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Inbox } from "./inbox.ts";
-import { delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
+import { DELEGATE_MINUTES, delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Background } from "./pace.ts";
 
 /** A tool's answer: the text it printed, or `(nothing)`. */
@@ -69,7 +69,7 @@ export function sessionTools(config: SessionConfig, work: Background): ToolDefin
 			name: "delegate",
 			label: "Delegate",
 			description:
-				"Have a one-shot Claude Code session in auto mode do a task and answer: reading a ticket, a board or a session page, or any side effect. Its permission classifier judges what it does. Returns only its answer, within 45 minutes.",
+				`Have a one-shot Claude Code session in auto mode do a task and answer: reading a ticket, a board or a session page, or any side effect. Its permission classifier judges what it does. Returns only its answer, within ${DELEGATE_MINUTES} minutes.`,
 			parameters: Type.Object({
 				task: Type.String({ description: "What to do or find out, and what to answer with." }),
 				dir: Type.Optional(dir("Where it runs, max's home if not given")),

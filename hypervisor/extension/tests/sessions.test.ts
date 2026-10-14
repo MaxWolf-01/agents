@@ -10,7 +10,7 @@ import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import fc from "fast-check";
 import { inbox } from "../src/inbox.ts";
-import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
+import { delegation, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-sessions-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -171,8 +171,8 @@ test("look lists what claude agents lists, the sessions of other config director
 test("delegate runs claude -p in auto mode, in the directory given or home, and answers with what it printed", async () => {
 	const { home: at, store, repo } = home();
 	answering({ "claude -p": { out: "4\n" } });
-	assert.equal(await delegate({ home: at, store }, { task: "2 + 2?", dir: "~/my.repo" }), "4\n");
-	await delegate({ home: at, store }, { task: "2 + 2?" });
+	assert.equal(await (await delegation({ home: at, store }, { task: "2 + 2?", dir: "~/my.repo" }))(), "4\n");
+	await (await delegation({ home: at, store }, { task: "2 + 2?" }))();
 	const [inRepo, inHome] = called();
 	assert.deepEqual(inRepo.argv.slice(0, 6), ["-p", "--permission-mode", "auto", "--output-format", "text", "--"]);
 	assert.match(inRepo.argv[6], /^2 \+ 2\?\n\nYour answer goes back to the hypervisor/);
@@ -214,12 +214,14 @@ test("tell writes the framed message to the session's inbox socket", async () =>
 	const { home: at, store } = home();
 	const socket = path.join(at, "inbox.sock");
 	const received: string[] = [];
-	const server = createServer((c) => c.on("data", (d) => received.push(d.toString())));
+	let ended!: () => void;
+	const delivered = new Promise<void>((resolve) => (ended = resolve));
+	const server = createServer((c) => c.on("data", (d) => received.push(d.toString())).on("end", () => ended()));
 	await new Promise<void>((resolve) => server.listen(socket, resolve));
 	registered(at, process.pid, { name: "orch-1", messagingSocketPath: socket });
 	try {
 		assert.equal(await tell({ home: at, store }, { session: "orch-1", message: "max says: ship it" }), "Sent to orch-1.");
-		await new Promise((settle) => setTimeout(settle, 50));
+		await delivered;
 		const body = ENVELOPE.exec(JSON.parse(received.join("")).message.content)![7];
 		assert.equal(body, `max says: ship it\n\n${reportBack(store)}`);
 	} finally {
