@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
@@ -37,6 +37,9 @@ from typing import Literal, TypeVar
 
 import yaml
 from markdown_it import MarkdownIt
+from markdown_it.common.normalize_url import validateLink
+from markdown_it.rules_core import linkify
+from markdown_it.rules_inline import linkify as linkify_inline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
@@ -152,7 +155,17 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         root=root,
         previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
         following=successors(directory),
+        titles={other: title_of(directory.parent / other) for other in (previous, *successors(directory)) if other},
     )
+
+
+def title_of(directory: Path) -> str:
+    """The H1 of another session's `session.md`, which names its subject; empty where it has none."""
+    try:
+        heading = re.search(r"^# (.+)$", (directory / "session.md").read_text(), re.M)
+    except OSError:
+        return ""
+    return heading[1].strip() if heading else ""
 
 
 def predecessor(directory: Path) -> str:
@@ -235,6 +248,9 @@ class Question:
     detail: str  # the rest of the item, as written
     options: tuple[Option, ...] = ()
     why: str = ""  # the `- Why:` sub-item under the options, where the question carries one
+    # A blind question's test page (`blind-test`), from the repo root or absolute: the page holds its
+    # options and the agent's pick, if any, so the question carries neither.
+    blind: str = ""
 
 
 @dataclass(frozen=True)
@@ -336,6 +352,7 @@ class Session:
     described: datetime | None = None  # when the transcript last shows session.md written
     previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
     following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
+    titles: dict[str, str] = field(default_factory=dict)  # those sessions' titles, by id, where their session.md has one
 
 
 # ---- reading the records ----------------------------------------------------
@@ -528,18 +545,21 @@ SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
 PICK = re.compile(r"\s*\*my pick\*\s*")
 WHY = re.compile(r"Why:\s*(.*)")
+BLIND = re.compile(r"Blind:\s*(\S+)")
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
-    and at most one `Why: text`, as sub-items; a line indented under an item continues it."""
+    and at most one `Why: text`, as sub-items; a line indented under an item continues it. A blind
+    question carries one `Blind: path` sub-item, its test page, and nothing else."""
     items: list[dict] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
             continue
         if m := QUESTION_ITEM.fullmatch(line):
-            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None, "line": n}
+            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
+                    "blind": None, "line": n}
             items.append(part)
         elif line.startswith("- "):
             raise RecordError(path, n, "a question is `- [Q7] **headline** detail`")
@@ -554,14 +574,25 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
                 if item["why"] is not None:
                     raise RecordError(path, n, f"a second Why: under {item['tag']}")
                 part = item["why"] = {"text": w.group(1)}
+            elif b := BLIND.fullmatch(m.group(1)):
+                if item["blind"] is not None:
+                    raise RecordError(path, n, f"a second Blind: under {item['tag']}")
+                if b.group(1).startswith("../"):
+                    raise RecordError(path, n, f"{b.group(1)} is neither a path from the repo root nor an absolute one")
+                item["blind"], part = b.group(1), None
             else:
-                raise RecordError(path, n, "a question's sub-item is an option `(a) text` or `Why: text`")
+                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
         elif line.startswith(" ") and part is not None:
             part["text"] = f"{part['text']} {line.strip()}".strip()
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions = []
     for item in items:
+        if item["blind"] is not None:
+            if item["options"] or item["why"] is not None:
+                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options, pick and why live in its test page, not here")
+            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"]))
+            continue
         letters = [o["letter"] for o in item["options"]]
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
@@ -626,6 +657,10 @@ def settle(turns: list[Turn]) -> dict[str, Settled]:
 NOT_SAID = re.compile(r"\s*(<(task-notification|agent-message|cross-session-message|local-command-\w+|system-reminder|bash-input|bash-stdout|bash-stderr)\b|\[Request interrupted by user)")
 
 
+# How a prompt another session sent opens: the line Claude Code heads one with where it starts a
+# turn, none where it was queued mid-turn.
+SENT = re.compile(r"\s*(?:Another Claude session sent a message:\s*)?<cross-session-message\b")
+
 # How Claude Code wraps a message another session sent into this one: its attributes, its text.
 # One prompt can carry several.
 PEER = re.compile(r"<cross-session-message\b([^>]*)>\n?(.*?)(?:\n?</cross-session-message>|$)", re.S)
@@ -668,14 +703,16 @@ def said(entries: list[dict]) -> list[tuple[datetime, str]]:
 def sent(entries: list[dict]) -> list[tuple[datetime, Sent]]:
     """What other sessions sent into this one, with when, oldest first."""
     return sorted(((when, Sent(name(m.group(1)), m.group(2))) for when, _, content in prompts(entries)
-                   if re.match(r"\s*<cross-session-message\b", text := flat(content)) for m in PEER.finditer(text)),
+                   if SENT.match(text := flat(content)) for m in PEER.finditer(text)),
                   key=lambda s: s[0])
 
 
 def prompted(entry: dict) -> bool:
-    """Whether a user entry is one Claude Code wrote as a prompt: not a meta line, a subagent's own
-    transcript or a compaction's summary."""
-    return entry.get("type") == "user" and not (entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"))
+    """Whether a user entry is one Claude Code wrote as a prompt: not a subagent's own transcript or
+    a compaction's summary, and no meta line (a skill's body, an image) unless it has an origin. A
+    message from another session or a subagent's hand-back is a meta line with an origin."""
+    return entry.get("type") == "user" and not (entry.get("isSidechain") or entry.get("isCompactSummary")) and (
+        not entry.get("isMeta") or bool(entry.get("origin")))
 
 
 def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
@@ -697,10 +734,14 @@ def prompts(entries: list[dict]) -> list[tuple[datetime, str, object]]:
 
 def turn_start(entries: list[dict]) -> datetime | None:
     """When the newest turn began: the last prompt Claude Code answered with a turn of its own,
-    whoever sent it, the user, a finished task or another session. A message queued mid-turn joins
-    the turn it arrived in, and a tool result is part of the turn that called the tool."""
-    return max((datetime.fromisoformat(entry["timestamp"]) for entry in entries
-                if prompted(entry) and "timestamp" in entry and flat(entry.get("message", {}).get("content"))), default=None)
+    whoever sent it, the user, a finished task or another session, or else the end of the turn
+    before it, where a prompt the transcript marks as none (a scheduled wakeup) started this one.
+    Claude Code marks a turn's end with a `turn_duration` line once its Stop hooks let it end, so a
+    Stop hook's send-back ends no turn. A message queued mid-turn joins the turn it arrived in, and
+    a tool result is part of the turn that called the tool."""
+    started = (entry for entry in entries if prompted(entry) and flat(entry.get("message", {}).get("content")))
+    ended = (entry for entry in entries if entry.get("type") == "system" and entry.get("subtype") == "turn_duration")
+    return max((datetime.fromisoformat(entry["timestamp"]) for entry in (*started, *ended) if "timestamp" in entry), default=None)
 
 
 def flat(content: object) -> str:
@@ -813,31 +854,117 @@ def page(session: Session, now: datetime) -> str:
     """The session page, with every path a record writes resolved from the session's repo root."""
     root = ROOT.set(session.root)
     try:
-        return assemble(session, now)
+        return assemble(view(session), now)
     finally:
         ROOT.reset(root)
 
 
-def assemble(session: Session, now: datetime) -> str:
-    resume = f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}"
-    waiting = open_questions(session)
+# ---- the page, as values ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Shown:
+    """A link from a turn's Links as the page shows it."""
+
+    link: Link
+    href: str  # where it opens from the page
+    artefact: str  # the file or URL it resolves to on this machine, which the hub finds it by; empty for a ticket file
+    key: int | None  # the key that opens it among its turn's artefacts, 1 to 9; None for a ticket file and past the ninth
+
+
+@dataclass(frozen=True)
+class Row:
+    """A turn as the page shows it, a numbered one or a chat turn."""
+
+    turn: Turn | Chat
+    when: str  # its date, with its time to the minute where the transcript has the turn
+    open: bool  # the newest numbered turn, the one the page opens
+    # What the page says where it shows no message of the user's: that it pairs none, since the
+    # transcript shows no write of the record; or, from the newest of a run of turns with none
+    # before them, that there was none.
+    silence: Literal["", "unwritten", "unanswered"]
+    links: tuple[Shown, ...]
+
+    @property
+    def key(self) -> str:
+        return self.turn.key
+
+    @property
+    def artefacts(self) -> tuple[Shown, ...]:
+        return tuple(s for s in self.links if s.artefact)
+
+
+@dataclass(frozen=True)
+class View:
+    """A session as its page shows it."""
+
+    session: Session
+    rows: tuple[Row, ...]  # newest first, each chat turn among the numbered ones by its time
+    waiting: tuple[tuple[Turn, Question], ...]  # open_questions
+    span: str  # the dates the turns fall on: one, or the first and the last; empty with no turn
+    resume: str  # the command that resumes the session
+
+    @property
+    def column(self) -> tuple[Row, ...]:
+        """The timeline's rows: the numbered turns, newest first."""
+        return tuple(r for r in self.rows if isinstance(r.turn, Turn))
+
+
+def view(session: Session) -> View:
     timeline = in_order(list(session.turns), list(session.chats))
-    dates = sorted({when(t)[:10] for t in timeline})
-    span = "" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
-    turns = len(timeline)
+    shown = list(reversed(timeline))
+    newest = max(session.turns, key=lambda t: t.number, default=None)
+    hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
+    rows = tuple(
+        Row(t, when(t), t is newest, "unwritten" if t.written is None else "unanswered" if hint else "",
+            shown_links(t, session.root) if isinstance(t, Turn) else ())
+        for t, hint in zip(shown, hinted))
+    dates = sorted({r.when[:10] for r in rows})
+    return View(
+        session=session,
+        rows=rows,
+        waiting=tuple(open_questions(session)),
+        span="" if not dates else dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}",
+        resume=f"cd {shlex.quote(str(session.repo))} && claude --resume {session.id}",
+    )
+
+
+def shown_links(turn: Turn, root: Path) -> tuple[Shown, ...]:
+    """A turn's links, the artefacts among them keyed in order and resolved from `root`."""
+    shown, keys = [], itertools.count(1)
+    for link in turn.links:
+        key = None if link.ticket else next(keys)
+        shown.append(Shown(link, href(link.path), "" if link.ticket else resolved(link.path, root),
+                           key if key is not None and key <= 9 else None))
+    return tuple(shown)
+
+
+def unanswered(t: Turn | Chat) -> bool:
+    """Whether the transcript shows the turn and no message of the user's before it."""
+    return t.written is not None and not t.messages
+
+
+def when(t: Turn | Chat) -> str:
+    """The turn's date and time to the minute, from the transcript where it has the turn, which
+    keeps the two on one clock; the record's own date where it hasn't."""
+    return f"{t.written.astimezone():%Y-%m-%d %H:%M}" if t.written else t.date
+
+
+# ---- the page, as HTML ------------------------------------------------------
+
+
+def assemble(v: View, now: datetime) -> str:
+    session = v.session
     top = f"""
     <section class="waiting" id="{QUESTIONS}" aria-labelledby="waiting">
-      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(waiting)} question{'s' * (len(waiting) != 1)}</h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
-      {''.join(open_question(t, q, folded=i > 0) for i, (t, q) in enumerate(waiting))}
-    </section>""" if waiting else ""
-    newest_first = sorted(session.turns, key=lambda t: t.number, reverse=True)
-    shown = list(reversed(timeline))
-    hinted = [unanswered(t) and not (newer is not None and unanswered(newer)) for newer, t in zip([None, *shown], shown)]
-    body = "".join(chat_row(t, hint=hint) if isinstance(t, Chat) else turn_section(t, session.settled, open_=t is newest_first[0], hint=hint)
-                   for t, hint in zip(shown, hinted))
+      <div class="divider"><h2 class="v-meta" id="waiting">waiting on you · {len(v.waiting)} question{'s' * (len(v.waiting) != 1)}</h2><button class="fold-band v-meta" id="fold-band" aria-expanded="true" aria-keyshortcuts="q">fold <kbd>q</kbd></button></div>
+      {''.join(open_question(t, q, folded=i > 0) for i, (t, q) in enumerate(v.waiting))}
+    </section>""" if v.waiting else ""
+    body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
-    name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
+    name = (f'<span class="sep">·</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
+    turns = len(v.rows)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -852,8 +979,8 @@ def assemble(session: Session, now: datetime) -> str:
 </head>
 <body>
 <header class="bar">
-  <span class="v-meta where">session page · {esc(session.repo.name)}</span>{newest_control(newest_first)}
-  <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(t.artefacts) for t in session.turns)}</button>
+  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.rows)}
+  <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
     <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -863,12 +990,11 @@ def assemble(session: Session, now: datetime) -> str:
 <main class="panes">
   <div class="left">
     <section class="intro">
-      <h1 class="v-title">{title}</h1>
-      <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(span)} · " if span else ""}rendered {now:%Y-%m-%d %H:%M} · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
-{handoffs(session)}
+      <h1 class="v-title">{title}</h1>{handoffs(session)}
+      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
       <div class="prose brief">{block(session.brief)}</div>
       <div class="actions">
-        <button class="button" id="resume" data-cmd="{esc(resume)}" title="{esc(resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
+        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>
       </div>
     </section>{top}
     <div class="pane" id="turns-pane">
@@ -876,7 +1002,7 @@ def assemble(session: Session, now: datetime) -> str:
         {body}
       </section>
     </div>
-  </div>{column(newest_first)}
+  </div>{column(v.rows, session)}
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -889,59 +1015,86 @@ def assemble(session: Session, now: datetime) -> str:
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
     from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory. Nothing where neither is there."""
-    def to(other: str) -> str:
-        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{esc(other[:8])}</a>'
-    parts = ([f"continues {to(session.previous)}"] if session.previous else []) + (
-        [f"continued in {', '.join(to(s) for s in session.following)}"] if session.following else [])
-    return f'\n    <p class="v-meta handoffs" id="handoffs">{" · ".join(parts)}</p>' if parts else ""
+    sessions directory: a line each under the title, by the session's title where it has one, so
+    they show with the brief folded. Nothing where neither is there."""
+    def line(label: str, other: str) -> str:
+        text = inline(session.titles[other], paths=False) if session.titles.get(other) else esc(other[:8])
+        return (f'<span class="handoff"><span class="v-meta">{label}</span> '
+                f'<a href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(text))} · {esc(other)}">{text}</a></span>')
+    lines = ([line("previous", session.previous)] if session.previous else []) + [line("next", s) for s in session.following]
+    return f'\n      <p class="handoffs" id="handoffs">{"".join(lines)}</p>' if lines else ""
 
 
-def column(newest_first: list[Turn]) -> str:
-    """The timeline: every numbered turn in the order of the turns beside it, each under its
-    number, with the artefacts it linked, or its headline on one line where it linked none."""
-    rows = "".join(f"""
-    <section class="group{'' if t.artefacts else ' bare'}" id="a{t.key}">
-      <a class="v-num turn-ref" href="#t{t.key}" title="{esc(strip_tags(inline(t.headline)))}">{t.key}</a>{timeline_row(t)}
-    </section>""" for t in newest_first)
+def column(rows: tuple[Row, ...], session: Session) -> str:
+    """The timeline: every turn in the order of the turns beside it. A numbered turn sits under its
+    number with its headline, and under that the artefacts it linked; a chat turn is a quiet row of
+    its reply's first line. The session that continued this one is at its top, the one it continued
+    at its bottom, each a link to that session's page."""
+    groups = "".join(chat_group(r) if isinstance(r.turn, Chat) else f"""
+    <section class="group{'' if r.artefacts else ' bare'}" id="a{r.key}">
+      <a class="v-num turn-ref" href="#t{r.key}">{r.key}</a><div class="tl">{timeline_row(r)}</div>
+    </section>""" for r in rows)
+    later = "".join(timeline_end(session, "next", s) for s in session.following)
+    earlier = timeline_end(session, "previous", session.previous) if session.previous else ""
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(newest_first)}</div>{rows or '<p class="v-meta">no turn yet</p>'}
+    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(rows)}</div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
   </aside>"""
 
 
-def timeline_row(t: Turn) -> str:
-    """What follows a turn's number in the timeline: its artefacts, or its muted headline."""
-    if not t.artefacts:
-        return f'<a class="hl" href="#t{t.key}" tabindex="-1">{esc(strip_tags(inline(t.headline)))}</a>'
-    items = "".join(f"<li>{opening_key(i)}{artefact(link, 'artefact')}</li>" for i, link in enumerate(t.artefacts, start=1))
-    return f"<ol>{items}</ol>"
+CHEVRONS = {"next": "M3 8.5 7 4.5l4 4", "previous": "M3 5.5l4 4 4-4"}
 
 
-def newest_control(newest_first: list[Turn]) -> str:
-    """The control that takes the reader to the newest turn, showing its number, which the page
-    marks while a turn has arrived that the reader has not reached. It sits in the timeline's
-    head, and in the bar where the timeline is a sheet; nothing where there is no numbered turn."""
-    if not newest_first:
+def timeline_end(session: Session, label: str, other: str) -> str:
+    """A link at an end of the timeline to the page of a session this one continued or was continued in."""
+    title = session.titles.get(other) or other[:8]
+    return (f'\n    <a class="tl-end {label}" href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(inline(title)))} · {esc(other)}">'
+            f'<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
+            f'stroke-linejoin="round" aria-hidden="true"><path d="{CHEVRONS[label]}"/></svg>'
+            f'<span class="v-meta">{label}</span> <span class="title">{esc(strip_tags(inline(title)))}</span></a>')
+
+
+def chat_group(r: Row) -> str:
+    """A chat turn in the timeline: its reply's first line, quiet, with no number."""
+    first = next((line for line in r.turn.reply.splitlines() if line.strip()), "")
+    text = esc(strip_tags(inline(first.strip().lstrip("#-*> ").strip())))
+    return f"""
+    <section class="group chat" id="a-{r.key}">
+      <span class="turn-ref"></span><div class="tl"><a class="hl" href="#{r.key}" tabindex="-1" title="{text}">{text}</a></div>
+    </section>"""
+
+
+def timeline_row(r: Row) -> str:
+    """What follows a turn's number in the timeline: its headline, then its artefacts."""
+    headline = esc(strip_tags(inline(r.turn.headline)))
+    items = "".join(f"<li>{opening_key(s)}{artefact(s, 'artefact')}</li>" for s in r.artefacts)
+    return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
+
+
+def newest_control(rows: tuple[Row, ...]) -> str:
+    """The control that takes the reader to the newest turn, showing its number, or `chat` for a
+    chat turn, which the page marks while a turn has arrived that the reader has not reached. It
+    sits in the timeline's head, and in the bar where the timeline is a sheet; nothing where there
+    is no turn."""
+    if not rows:
         return ""
+    label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
     return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
-            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{newest_first[0].key}</span><kbd>n</kbd></button>')
+            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span><kbd>n</kbd></button>')
 
 
-def opening_key(i: int) -> str:
-    """The key that opens a turn's `i`th artefact, where one does."""
-    return f'<kbd class="n">{i}</kbd>' if i <= 9 else NO_KEY
+def opening_key(s: Shown) -> str:
+    """The key that opens a link, where one does."""
+    return f'<kbd class="n">{s.key}</kbd>' if s.key else '<span class="n"></span>'
 
 
-NO_KEY = '<span class="n"></span>'
-
-
-def artefact(link: Link, cls: str) -> str:
+def artefact(s: Shown, cls: str) -> str:
     """A link from a turn's Links, an artefact carrying the path the hub finds it by; a ticket file
     carries none, since the hub marks no ticket."""
+    link = s.link
     title = strip_tags(inline(link.text, paths=False)) + (f": {strip_tags(inline(link.note))}" if link.note else "")
-    marked = "" if link.ticket else f' {ARTEFACT}="{esc(resolved(link.path, ROOT.get()))}"'
-    return (f'<a class="{cls}" href="{esc(href(link.path))}"{marked} target="_blank" '
+    marked = f' {ARTEFACT}="{esc(s.artefact)}"' if s.artefact else ""
+    return (f'<a class="{cls}" href="{esc(s.href)}"{marked} target="_blank" '
             f'rel="noopener" title="{esc(title)}">{inline(link.text, paths=False)}</a>')
 
 
@@ -952,6 +1105,10 @@ def open_question(turn: Turn, q: Question, folded: bool) -> str:
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
     pick = next((o for o in q.options if o.picked), None)
     pickline = f'<p class="pickline"><span class="v-num">{pick.letter}</span> · {esc(strip_tags(inline(pick.text)))}</p>' if pick else ""
+    if q.blind:
+        # The pick line's place on a folded question, so the test is one click from the band.
+        test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get() or Path.cwd()), None)
+        pickline = f'<p class="pickline blind">blind · {artefact(test, "link")}</p>'
     return f"""
 <article class="q{' folded' if folded else ''}" id="{q.tag.lower()}" tabindex="-1">
   <span class="rail v-num">{q.tag}</span>
@@ -978,65 +1135,65 @@ def options(q: Question, answer: str | None = None) -> str:
     return f'<ol class="opts">{"".join(items)}</ol>'
 
 
-def unanswered(t: Turn | Chat) -> bool:
-    """Whether the transcript shows the turn and no message of the user's before it."""
-    return t.written is not None and not t.messages
-
-
-def when(t: Turn | Chat) -> str:
-    """The turn's date and time to the minute, from the transcript where it has the turn, which
-    keeps the two on one clock; the record's own date where it hasn't."""
-    return f"{t.written.astimezone():%Y-%m-%d %H:%M}" if t.written else t.date
-
-
-def turn_section(t: Turn, settled: dict[str, Settled], open_: bool, hint: bool) -> str:
+def turn_section(r: Row, settled: dict[str, Settled]) -> str:
+    t = r.turn
     details = f'<div class="prose details">{block(t.details)}</div>' if t.details else ""
     asked = "".join(asked_question(q, settled[q.tag]) for q in t.questions if q.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
-<details class="turn blk" id="t{t.key}" data-block{' open' if open_ else ''}>
+<details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
   <summary class="head">
-    <span class="rail v-num">{t.key}</span>
+    <span class="rail v-num">{r.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
-    <span class="v-meta date">{esc(when(t))}</span>{chips(t)}
+    <span class="v-meta date">{esc(r.when)}</span>{chips(r)}
   </summary>
   <div class="turn-body">
-    {you(t, hint)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(t.links)}{asked}
+    {you(r)}{"".join(map(peer, t.sent))}{answers(t)}{details}{links(r.links)}{asked}
   </div>
 </details>"""
 
 
-def chat_row(c: Chat, hint: bool) -> str:
+def chat_row(r: Row) -> str:
     """A chat turn: one compact row with no number, the user's messages behind a click and the
     reply as it was, with nothing to open or close."""
     return f"""
-<article class="turn chat blk" id="{c.key}" tabindex="-1" data-block>
+<article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
   <span class="rail"></span>
   <div class="chat-body">
-    {you(c, hint)}{"".join(map(peer, c.sent))}
-    <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(c.reply)}</div></div>
+    {you(r)}{"".join(map(peer, r.turn.sent))}
+    <div class="reply"><span class="v-meta who">chat</span><div class="prose">{block(r.turn.reply)}</div></div>
   </div>
-  <span class="v-meta date">{esc(when(c))}</span>
+  <span class="v-meta date">{esc(r.when)}</span>
 </article>"""
 
 
-def chips(t: Turn) -> str:
+def ended(r: Row) -> str:
+    """When the turn ended, to the second, as the transcript has it: the hub reads it to tell that a message it typed
+    into the session was taken up by a turn the page shows. Nothing where the transcript has no time for the turn."""
+    return f' data-at="{r.turn.written.astimezone().isoformat(timespec="seconds")}"' if r.turn.written else ""
+
+
+def chips(r: Row) -> str:
     """The turn's artefacts on its summary line, which is what shows of a collapsed turn."""
-    if not t.artefacts:
+    if not r.artefacts:
         return ""
     return ('<span class="chips">' + "".join(
-        f'<span class="chip">{opening_key(i)}{artefact(link, "chip-link")}</span>' for i, link in enumerate(t.artefacts, start=1)
-    ) + "</span>")
+        f'<span class="chip">{opening_key(s)}{artefact(s, "chip-link")}</span>' for s in r.artefacts) + "</span>")
 
 
-def you(t: Turn | Chat, hint: bool) -> str:
-    """The user's messages, under "you". Of a run of turns with none before them, only the newest
-    says so (`hint`)."""
-    if t.written is None:
-        return '<p class="v-meta you-none">no message of yours paired, since the transcript shows no Write call for this turn\'s record</p>'
-    messages = t.messages
+SILENCES = {
+    "unwritten": "no message of yours paired, since the transcript shows no Write call for this turn's record",
+    "unanswered": "no message of yours in the transcript before this turn",
+}
+
+
+def you(r: Row) -> str:
+    """The user's messages, under "you", or what the page says where it shows none."""
+    if r.silence:
+        return f'<p class="v-meta you-none">{SILENCES[r.silence]}</p>'
+    messages = r.turn.messages
     if not messages:
-        return '<p class="v-meta you-none">no message of yours in the transcript before this turn</p>' if hint else ''
+        return ""
     lead = f"{len(messages)} messages · " if len(messages) > 1 else ""
     return message_block("said you", "you", messages, lead)
 
@@ -1068,15 +1225,13 @@ def answers(t: Turn) -> str:
     return f'<p class="v-meta answers">{" · ".join(bits)}</p>' if bits else ""
 
 
-def links(items: tuple[Link, ...]) -> str:
+def links(items: tuple[Shown, ...]) -> str:
     if not items:
         return ""
     rows = []
-    keys = itertools.count(1)
-    for link in items:
-        note = f'<span class="desc v-small">{inline(link.note)}</span>' if link.note else ""
-        key = NO_KEY if link.ticket else opening_key(next(keys))
-        rows.append(f'<li>{key}<span class="link-main">{artefact(link, "link")}{note}</span></li>')
+    for s in items:
+        note = f'<span class="desc v-small">{inline(s.link.note)}</span>' if s.link.note else ""
+        rows.append(f'<li>{opening_key(s)}<span class="link-main">{artefact(s, "link")}{note}</span></li>')
     return f'<ol class="links">{"".join(rows)}</ol>'
 
 
@@ -1152,7 +1307,29 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
-MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
+def links_in_text(state) -> None:
+    """A bare URL in the text made a link, short of text that sits inside a link of its own. Only
+    a URL with its scheme: fuzzy matching would take `session_page.py` for a domain in Paraguay.
+    markdown-it finds them twice, while it parses a line and after, so both of its rules ask."""
+    if state.env.get("paths", True):
+        linkify(state)
+
+
+def links_in_line(state, silent: bool) -> bool:
+    return state.env.get("paths", True) and linkify_inline(state, silent)
+
+
+def file_links_too(url: str) -> bool:
+    """markdown-it's check of a link's target, short of its ban on `file:`: a reply links a file on
+    this machine that way, the PDF in `~/Downloads` say, and the page is the reader's own."""
+    return url.strip().lower().startswith("file:") or validateLink(url)
+
+
+MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable(["table", "linkify"])
+MARKDOWN.linkify.set({"fuzzy_link": False, "fuzzy_email": False})
+MARKDOWN.core.ruler.at("linkify", links_in_text)
+MARKDOWN.inline.ruler.at("linkify", links_in_line)
+MARKDOWN.validateLink = file_links_too
 CODE_INLINE = MARKDOWN.renderer.rules["code_inline"]
 MARKDOWN.add_render_rule("link_open", link_open)
 MARKDOWN.add_render_rule("code_inline", code_inline)

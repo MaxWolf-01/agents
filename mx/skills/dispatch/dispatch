@@ -47,8 +47,11 @@
 #                 their runs; a squashed or rebased PR of its branch is read as
 #                 `review` reads one. Exit 1: not merged yet, or the tracker
 #                 refused one, and nothing is written.
-# ps [--color]    every worker on every host, for a human; the orchestrator's
+# ps [--color] [--follow]
+#                 every worker on every host, for a human; the orchestrator's
 #                 view is `ctl probe`. Exit 1: a host or a scratch dir unread.
+#                 --follow keeps the table on screen, redrawn as the hosts
+#                 change, over one ssh login per host, until Ctrl-C.
 # attach <worker> a worker's tmux pane; Ctrl-C in it stops the run, resumably.
 # peek <worker> [lines]
 #                 the last lines of a worker's pane, 100 by default.
@@ -77,6 +80,18 @@ run() { echo "+ $*" >&2; "$@"; }
 die() { echo "dispatch: $1" >&2; exit 1; }
 
 commit_ticket() { run git -C "$agent_top" commit -q -m "$2" -- "$tickets/$1.md"; } # <slug> <message>
+
+# The tracker as `tracker data` reads it, in `tracked`: <slug> alone where one is given, every
+# ticket otherwise. One launch of the tracker answers every field `field` picks out of it, so a
+# command reads a ticket once, and again after each write of it.
+read_tracker() { tracked=$("$tracker" data "$@"); } # [<slug>]
+# <slug>'s <field> in that read: a list one entry a line, nothing for one it leaves empty.
+field() { # <slug> <field>
+    jq -r --arg slug "$1" --arg f "$2" \
+        '.tickets[] | select(.slug == $slug) | .[$f] | if type == "array" then .[] elif . == null then empty else . end' <<< "$tracked"
+}
+# The commit ranges a ticket's rounds have landed as, one per line; nothing before the first of them lands.
+rounds_of() { field "$1" diff; } # <slug>
 
 # Once a `done` is committed, every tree it finished leaves the tracker in a commit of its own. A
 # retirement the tracker refuses is said, and the `done` stands.
@@ -116,14 +131,14 @@ listed() { # <parent slug, or nothing>
 
 # The listed repos <slug>'s `repos:` names, in `ticket_repos`, each with `listed_top` filled and the one ref
 # its ticket branch cuts from in `cut_from`; nothing at all for a ticket that names none, whose
-# project may list none.
+# project may list none. The ticket is the one `read_tracker` read.
 declare -A cut_from=()
 ticket_listed() { # <slug>
     local name refs
     ticket_repos=() cut_from=()
-    read -r -a ticket_repos <<< "$("$tracker" get "$1" repos 2>/dev/null | tr '\n' ' ')"
+    read -r -a ticket_repos <<< "$(field "$1" repos | tr '\n' ' ')"
     [ ${#ticket_repos[@]} -gt 0 ] || return 0
-    listed "$("$tracker" get "$1" parent 2>/dev/null)"
+    listed "$(field "$1" parent)"
     for name in "${ticket_repos[@]}"; do
         [ -n "${listed_top[$name]-}" ] || die "$1's repos: names $name, which \`tracker repos\` does not list"
         # Of a local integration branch and origin's, the one ahead, and the local one where the two
@@ -141,8 +156,9 @@ ticket_listed() { # <slug>
 remote_of() { case $1 in code | agent) echo "${2//[@.]/-}" ;; *) echo "${2//[@.]/-}-$repo" ;; esac; } # <repo> <host>
 
 # Every command runs on the branch ticket branches cut from and merge back
-# into: a parent ticket's, or the integration branch.
-locate() {
+# into: a parent ticket's, or the integration branch. With --read, the tracker
+# is read first (`read_tracker`), and where it is comes with that read.
+locate() { # [--read [<slug>]]
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git worktree"
     # Every path of this repo's own below is relative to its worktree root.
     cd "$repo_root" || die "cannot enter $repo_root"
@@ -151,7 +167,12 @@ locate() {
     # A project is two repos: this one, and the agent repo it holds at `agent/`,
     # where the tickets are. Every ticket change is committed in that repo's
     # main checkout, and never on a ticket branch of either.
-    tickets=$("$tracker" root) || exit 1
+    if [ "${1:-}" = --read ]; then
+        read_tracker "${@:2}" || exit 1
+        tickets=$(jq -r .root <<< "$tracked")
+    else
+        tickets=$("$tracker" root) || exit 1
+    fi
     agent_top=$(dirname "$tickets")
     [ "$(git -C "$agent_top" rev-parse --show-toplevel 2>/dev/null)" = "$agent_top" ] ||
         die "$agent_top is no git repo of its own, so this project is not two repos yet; /mx:project-setup splits it out"
@@ -191,9 +212,10 @@ scratch_dir() { # <host>
 # never speak again. The connect timeout is for a host that is off, which `ps`
 # asks alongside the rest; BatchMode because `ps` asks its hosts at once and in
 # the background, where a passphrase prompt would be several on one terminal.
+ssh_options=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 on_host() { # <host> <command...>
     h=$1; shift
-    if [ "$h" = local ]; then "$@"; else ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "$h" "$(remote_line "$@")"; fi
+    if [ "$h" = local ]; then "$@"; else ssh "${ssh_options[@]}" "$h" "$(remote_line "$@")"; fi
 }
 
 # ssh joins its arguments with spaces into one line for the remote login shell,
@@ -389,17 +411,18 @@ stage_listed() { # <host> <slug>
 }
 
 claim() {
-    locate
+    locate --read "$1"
     # A claim that changes nothing is no claim: `tracker set` takes a write to
     # the status a ticket already has, so the ticket in hand is refused here.
-    [ "$("$tracker" get "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
+    [ "$(field "$1" status)" != claimed ] || die "$1 is already claimed; a claim is taken from the frontier"
     run "$tracker" set "$1" status=claimed || exit 1
     commit_ticket "$1" "claim $1"
 }
 
-# A worker resumed on a build the user sent back holds its ticket again.
+# A worker resumed on a build the user sent back holds its ticket again. The ticket is the one
+# `read_tracker` read.
 reclaim() { # <slug>
-    [ "$("$tracker" get "$1" status)" = review ] || return 0
+    [ "$(field "$1" status)" = review ] || return 0
     run "$tracker" set "$1" status=claimed || exit 1
     commit_ticket "$1" "claim $1"
 }
@@ -415,9 +438,11 @@ push() {
     rc=0
     for h in $hosts; do
         push_to "$h" || rc=1
-        # A subshell each, so a ticket whose listed repos cannot be read stops no other push.
+        # A subshell each, so a ticket whose listed repos cannot be read stops no other push. A run
+        # whose ticket has left the tracker, retired with its tree, has none to push.
         for slug in $(runs_on "$h"); do
-            ( ticket_listed "$slug" && push_listed "$h" ) || rc=1
+            [ -f "$tickets/$slug.md" ] || continue
+            ( read_tracker "$slug" && ticket_listed "$slug" && push_listed "$h" ) || rc=1
         done
     done
     return $rc
@@ -471,7 +496,6 @@ ctl() {
     # Made absolute before locate moves to the worktree root, so a relative path
     # means what it meant where it was typed.
     [ -n "${DISPATCH_RUNNER:-}" ] && DISPATCH_RUNNER=$(realpath -m -- "$DISPATCH_RUNNER")
-    locate
     host= setup_cmd=
     while :; do
         case ${1:-} in
@@ -499,9 +523,11 @@ ctl() {
     # ticket at all, so this is where a ticket the user is in the loop for stops,
     # for a resume as much as for a spawn.
     if [ "$sub" = spawn ] || [ "$sub" = resume ]; then
-        read=$("$tracker" data "$2") || die "$2 is no ticket any reader can read in $tickets"
-        [ "$(printf '%s' "$read" | jq -r '.tickets[0]["needs-user"]')" != true ] ||
+        locate --read "$2"
+        [ "$(field "$2" needs-user)" != true ] ||
             die "$2 needs the user in the loop: it is worked with them, never handed to a worker"
+    else
+        locate
     fi
     # Before anything is staged or recorded, so a mistyped path leaves the host as it was.
     [ -z "$carries" ] || [ -z "${DISPATCH_RUNNER:-}" ] || [ -f "$DISPATCH_RUNNER" ] ||
@@ -571,7 +597,7 @@ wait_() {
 # Each fetch replaces the one before it, since a resumed worker rebases its ticket branches. The
 # worker's report is a file on the agent branch and arrives with it.
 fetch() {
-    locate; ticket_host "$1"
+    locate --read "$1"; ticket_host "$1"
     branch=ticket/$1
     ticket_listed "$1"
     names=(code agent "${ticket_repos[@]}")
@@ -585,7 +611,7 @@ fetch() {
         # the host's cleanup deletes that branch with the run, and its work may be nowhere else.
         for name in $(on_host "$host" cat "$(scratch_dir "$host")/repos-$1" 2> /dev/null | cut -f1); do
             [[ " ${names[*]} " != *" $name "* ]] || continue
-            [ ${#listed_top[@]} -gt 0 ] || listed "$("$tracker" get "$1" parent 2>/dev/null)"
+            [ ${#listed_top[@]} -gt 0 ] || listed "$(field "$1" parent)"
             [ -n "${listed_top[$name]-}" ] || die "$host holds $branch of $name for $1, which \`tracker repos\` does not list"
             echo "dispatch: $1's repos: no longer names $name, whose $branch $host still holds, so it is fetched too" >&2
             names+=("$name")
@@ -616,60 +642,14 @@ merged_into() {
 }
 is_merged() { merged_into "$@" > /dev/null; } # <repo> <tip>
 
-# Sets the caller's `fork` to <commit> where `fork` is empty or an ancestor of it, so that of the
-# points a tip shares with its bases `fork` ends on the newest. Where two have parted, neither the
-# other's ancestor, the first one seen stays. An empty <commit>, which unrelated histories give,
-# changes nothing.
-advance_fork() { [ -z "$1" ] || { [ -n "$fork" ] && ! git -C "$top" merge-base --is-ancestor "$fork" "$1"; } || fork=$1; } # <commit>
-
-# A ticket branch merges into the branch it cut from with --no-ff, in each repo (ADR 0001), and
-# that merge commit, whose second parent is the ticket's tip, is how its range is found after the
-# merge.
-# <repo, by the name its range carries> <tip> → <from>..<tip>, whether or not the ticket branch has
-# merged yet, and nothing at all for a branch that committed nothing, which is what a round
-# that touched one of its repos leaves in another. The start is the ticket's own fork point: the
-# newest point the tip shares with any of its repo's bases. Before the merge,
-# merge-base against them is the answer; after it, the tip is an ancestor of the
-# base it merged into and merge-base would return the tip itself, so that base's
-# point comes from the merge commit that brought it in. A base the tip has not
-# reached still counts. Where the session merged into a local integration branch
-# behind origin's, the merge's first parent is older than the fork, and origin's
-# branch still holds the fork. SHAs on both ends, because cleanup deletes the
-# branch while its commits survive.
-range_of() { # <repo> <tip>
-    local at=$1 tip=$2 top fork= onto merge
-    top=$(repo_at "$1")
-    if ! bases=$(merged_into "$at" "$tip"); then
-        # Against both of a listed repo's bases at once, the newest point the tip shares with either.
-        # shellcheck disable=SC2046
-        echo "$(git -C "$top" merge-base "$tip" $(base_at "$at"))..$tip"
-        return 0
-    fi
-    for onto in $bases; do
-        merge=$(git -C "$top" rev-list --first-parent --merges --parents "$onto" | awk -v t="$tip" '$3 == t { print $1; exit }')
-        [ -z "$merge" ] || advance_fork "$(git -C "$top" merge-base "$merge^1" "$tip")"
-    done
-    if [ -n "$fork" ]; then
-        for onto in $(base_at "$at"); do
-            grep -qxF -- "$onto" <<< "$bases" || advance_fork "$(git -C "$top" merge-base "$tip" "$onto")"
-        done
-        echo "$fork..$tip"
-        return 0
-    fi
-    for onto in $bases; do
-        [ -n "$(git -C "$top" rev-list -1 "$onto..$tip")" ] ||
-            return 0  # the branch carries nothing of its own, so it has no range
-    done
-    die "$tip is on ${bases//$'\n'/ and } in $top but no --no-ff merge brought it there; append the range to the ticket by hand"
-}
-
 # The notes file is a pure projection of the ticket, rewritten whole on every
 # render: the assumptions the tracker read become the page's notes, and the
 # comment ids the ticket's `Addressed:` lines name become its resolved list.
-# The ticket is read through `tracker data`, so a bullet no reader can read is
-# refused with its file and line rather than dropped from the page, and however
-# the writer wrapped one it is read whole. The user's own comments live in
-# diffview's state file beside the page, which a render never touches.
+# The ticket is the one `read_tracker` read, through `tracker data`, so a bullet
+# no reader can read was refused with its file and line rather than dropped from
+# the page, and however the writer wrapped one it is read whole. The user's own
+# comments live in diffview's state file beside the page, which a render never
+# touches.
 # A worker anchors from its worktree root, where the agent repo sits at `agent/`, a nested listed
 # repo at its place (`place_of`) and a sibling one beside it (`sibling_of`). A note goes to the page
 # under the path its repo's section shows, the anchor with that prefix cut, and names that repo as
@@ -679,10 +659,6 @@ range_of() { # <repo> <tip>
 # there and stays on the ticket.
 notes_of() { # <slug>
     local name place anchors='{}' sources='{}' at
-    # Its own status, taken before the pipe: a refusal prints to stderr and writes
-    # nothing, and jq over an empty input exits 0, so a pipeline would answer that
-    # a ticket no reader can read has no notes.
-    read=$("$tracker" data "$1") || return 1
     for name in "${!listed_top[@]}"; do
         place=$(place_of "$name")
         anchors=$(jq -c --arg at "${place:-$(sibling_of "$name" "$1")}/" --arg name "$name" '. + {($at): $name}' <<< "$anchors")
@@ -690,15 +666,16 @@ notes_of() { # <slug>
     for at in "${spec_repos[@]}"; do
         sources=$(jq -c --arg at "$at" --arg top "$(repo_at "$at")" '. + {($at): $top}' <<< "$sources")
     done
-    jq --argjson anchors "$anchors" --argjson sources "$sources" '
-        { notes: [ .tickets[0].assumptions[]
-                   | select(.path | startswith("agent/") | not)
-                   | . as $a
-                   | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
-                   | {source: $sources[$in.value // "code"], id, path: .path[($in.key // "" | length):], text}
-                     + (if .line == null then {} else {line} end)
-                   | select(.source != null) ],
-          resolved: .tickets[0].resolved }' <<< "$read"
+    jq --arg slug "$1" --argjson anchors "$anchors" --argjson sources "$sources" '
+        .tickets[] | select(.slug == $slug)
+        | { notes: [ .assumptions[]
+                     | select(.path | startswith("agent/") | not)
+                     | . as $a
+                     | ([$anchors | to_entries[] | select(.key as $at | $a.path | startswith($at))] | max_by(.key | length)) as $in
+                     | {source: $sources[$in.value // "code"], id, path: .path[($in.key // "" | length):], text}
+                       + (if .line == null then {} else {line} end)
+                     | select(.source != null) ],
+            resolved }' <<< "$tracked"
 }
 
 # Whether every source the diffview page at <page> shows is one of <specs>, or one a
@@ -729,27 +706,17 @@ covers() { # <page> <spec...>
     done <<< "$shown"
 }
 
-# The commit ranges a ticket's rounds have landed as, one per line; nothing
-# before the first of them lands.
-rounds_of() { "$tracker" get "$1" diff 2>/dev/null; } # <slug>
-
-# <slug>'s round as its ticket branches hold it now, in the code repo, the agent repo and each listed
-# repo named: `tips`, `<repo> <sha>` per branch there is, and `written`, `<repo>@<range>` per branch
-# that committed something. The listed repos are read already (`listed`).
-round_of() { # <slug> <listed repo...>
-    local slug=$1 at tip range
-    shift
-    tips=() written=()
-    for at in code agent "$@"; do
-        tip=$(git -C "$(repo_at "$at")" rev-parse --verify -q "refs/heads/ticket/$slug") || continue
-        tips+=("$at $tip")
-        range=$(range_of "$at" "$tip") || exit 1
-        [ -z "$range" ] || written+=("$at@$range")
-    done
+# What the merge of <slug>'s round gives its ticket, decided, written and committed by the tracker
+# (`tracker land --help`); with --dry-run, what it would write, and nothing written. `tracked` is the
+# ticket as the landing leaves it, and `written` the round's ranges, `<repo>@<range>` per branch of it
+# that committed something, merged or not.
+land() { # <slug> [--dry-run]
+    tracked=$(run "$tracker" land "$@") || exit 1
+    mapfile -t written < <(jq -r '.round[].range // empty' <<< "$tracked")
 }
 
 # The review page's sources, in `specs`, one section per round of code in each repo it landed in:
-# the rounds <slug> carries, then the round `round_of` read while it is unmerged (a proposal waiting
+# the rounds <slug> carries, then the round `land` read while it is unmerged (a proposal waiting
 # for its ruling, or a resumed worker's next round fetched before its merge). The agent ranges stay
 # off the page: what an agent branch carries, the report and the artefacts, reaches the user as
 # itself, through the board. `spec_repos` names the repo of each, as its range does.
@@ -793,11 +760,9 @@ render_page() { # <slug> [<spec the page may show>...]
 }
 
 review() {
-    locate
+    locate --read "$1"
     id=$1
-    ticket=$tickets/$id.md
     branch=ticket/$id
-    [ -f "$ticket" ] || die "no ticket at $ticket"
     # One round is a branch per repo, and a ticket's rounds are their ranges, written together:
     # `code@<range>`, `agent@<range>`, and `<name>@<range>` in each listed repo its `repos:` names.
     git -C "$repo_root" rev-parse --verify -q "$branch" > /dev/null ||
@@ -805,20 +770,17 @@ review() {
     agent_tip=$(git -C "$agent_top" rev-parse --verify -q "$branch") ||
         die "no branch $branch in $agent_top; fetch it from the worker host first"
     rounds=$(rounds_of "$id")
-    named=$("$tracker" get "$id" repos 2>/dev/null)
+    named=$(field "$id" repos)
     # The list is read only for a ticket that has a listed repo to read, so one repo on it that
     # this machine lacks stops no other ticket's review.
     if [ -n "$named" ] || printf '%s\n' "$rounds" | grep -qvE '^((code|agent)@|[0-9a-f]+\.\.|$)'; then
-        listed "$("$tracker" get "$id" parent 2>/dev/null)"
+        listed "$(field "$id" parent)"
     fi
     for name in $named; do
         [ -n "${listed_top[$name]-}" ] || die "$id's repos: names $name, which \`tracker repos\` does not list"
         git -C "${listed_top[$name]}" rev-parse --verify -q "$branch" > /dev/null ||
             echo "dispatch: no branch $branch in $name at ${listed_top[$name]}, so this round has nothing there" >&2
     done
-    # shellcheck disable=SC2086
-    round_of "$id" $named
-    retiring=
 
     # P7 where the orchestrator can see it, whatever else the round left: a ticket file written on
     # a ticket branch is the second copy of one this ticket exists to remove, and the ticket this
@@ -834,7 +796,7 @@ review() {
     # resumed round starts with the round before it still committed there, and bringing that in
     # again would say everything it says twice.
     reported=show/$id/report.md
-    status=$("$tracker" get "$id" status)
+    status=$(field "$id" status)
     blob=$(git -C "$agent_top" rev-parse -q --verify "$agent_tip:$reported")
     imported=$state/imported/$id
     if [ -z "$blob" ]; then
@@ -855,59 +817,36 @@ review() {
 
     # A listed repo's branch unmerged here may have landed through a pull request on GitHub, by a
     # squash or a rebase that leaves it unmerged for good: what landed is recorded in its place, and
-    # the round read again, since origin's base has been fetched and a deleted branch is in no round.
-    # The page a review rendered before that may be replaced by the one over what landed.
+    # the landing below reads the round again, since origin's base has been fetched and a deleted
+    # branch is in no round. The page a review rendered over the round before that may be replaced
+    # by the one over what landed.
     unmerged=() shown=() asked=0
-    for one in "${tips[@]}"; do
-        case ${one% *} in code | agent) ;; *) is_merged "${one% *}" "${one#* }" || unmerged+=("${one% *}") ;; esac
+    for name in $named; do
+        tip=$(git -C "${listed_top[$name]}" rev-parse --verify -q "refs/heads/$branch") || continue
+        is_merged "$name" "$tip" || unmerged+=("$name")
     done
     if [ ${#unmerged[@]} -gt 0 ]; then
+        land "$id" --dry-run
         page_specs "$id"
         shown=("${specs[@]}")
         land_on_github "$id" "${unmerged[@]}" || asked=1
-        # shellcheck disable=SC2086
-        round_of "$id" $named
     fi
 
-    # The status follows the branches: waiting for the ruling while any is unmerged, done once
-    # all are, when the ranges are final too. `tracker` writes both, and refuses a landing the
-    # tracker's transitions do not allow. A round whose branches carry no commit at all built
-    # nothing: there is no range, nothing to render and nothing to rule on, which is a worker that
-    # stopped before its first commit.
-    merged=1
-    for one in "${tips[@]}"; do is_merged "${one% *}" "${one#* }" || merged=; done
-    if [ ${#written[@]} -eq 0 ]; then
-        echo "dispatch: no branch of $id carries a commit, so this round built nothing to review" >&2
-        return 0
-    elif [ -n "$merged" ]; then
-        fields=()
-        for round in "${written[@]}"; do
-            rounds_of "$id" | grep -qxF "$round" || fields+=("diff+=$round")
-        done
-        # Merged into its parent ticket's branch, a child that is no hinge is ruled with the parent.
-        up=$("$tracker" get "$id" parent 2>/dev/null)
-        if [ "$up" = "$base" ] && [ "$("$tracker" get "$id" hinge 2>/dev/null)" != true ]; then
-            now=review landed="$id merged into $base, for its ruling with it"
-        else
-            now=done landed="$id landed" retiring=1
-        fi
-        # One commit, and none when the ticket already says all of it.
-        status=$("$tracker" get "$id" status)
-        [ "$status" = "$now" ] || [ "$status" = done ] || fields+=("status=$now")
-        [ ${#fields[@]} -eq 0 ] || run "$tracker" set "$id" "${fields[@]}" || exit 1
-        git -C "$agent_top" diff --quiet -- "$ticket" || commit_ticket "$id" "$landed"
-    elif [ "$("$tracker" get "$id" status)" != review ]; then
-        run "$tracker" set "$id" status=review || exit 1
-        commit_ticket "$id" "$id for review"
-    fi
+    # The status and the ranges follow the branches, decided and committed by the tracker. A round
+    # whose branches carry no commit at all built nothing: there is no range, nothing to render and
+    # nothing to rule on, which is a worker that stopped before its first commit.
+    land "$id"
+    [ ${#written[@]} -gt 0 ] || return 0
+    up=$(field "$id" parent)
+    retiring=$(jq -r 'select(.merged and .tickets[0].status == "done") | "yes"' <<< "$tracked")
 
     # Read after the write above, so the round that just landed is in the list once.
     page_specs "$id"
     render_page "$id" "${shown[@]}"
-    # After the page, which reads the ticket's notes from its file
     [ -z "$retiring" ] || retire_trees
-    # The board shows the status just written, and links the page.
-    run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    # The board shows the status just written, and links the page. It is found on PATH, as diffview
+    # is: the plugin that puts `dispatch` there puts `board` beside it.
+    run board "$tickets" --no-watch --no-open
     # Last: the page above is rendered from SHAs, which outlive the branches this deletes.
     # shellcheck disable=SC2086
     [ -z "$retiring" ] || retire "$id" "$up" $named || return 1
@@ -966,62 +905,35 @@ retire() { # <slug> <its parent ticket, or nothing> [<listed repo its repos: nam
     return $rc
 }
 
-# The user's accept of a parent ticket ruled whole: its children in review and the parent, done in
-# one commit, or none of them. The parent's ranges are its branch <slug> measured against this
-# branch, the one above it, in the code repo and in each listed repo holding a branch <slug>.
-# Before the merge up it refuses on its own; after it, `tracker` refuses each ticket whose work has
-# not reached the branch its accept merges into, and the files already written are put back.
+# The user's accept of a parent ticket ruled whole, written and committed by the tracker (`tracker
+# accept --help`), which refuses the whole while one ticket of it may not be done. A squashed or
+# rebased pull request of the parent's own branch in a listed repo leaves that branch unmerged for
+# good, as a ticket branch is in `review`: what landed is recorded first, on it and on the tickets
+# under it, and the branches it carried deleted, so the accept finds them landed.
 accept() { # <slug>
-    locate
+    locate --read
     id=$1
-    tip=$(git -C "$repo_root" rev-parse --verify -q "refs/heads/$id") ||
-        die "no branch $id in $repo_root; accept is the parent ticket's, whose children merge into its branch"
-    is_merged code "$tip" || die "$id is not merged into $base; merge it --no-ff first, on the user's accept"
-    range=$(range_of code "$tip") || exit 1
-    read=$("$tracker" data) || exit 1
-    ruled=$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.parent == $p and .status == "review") | .slug')
-    fields=(status=done)
-    [ -z "$range" ] || rounds_of "$id" | grep -qxF "code@$range" || fields+=("diff+=code@$range")
-    # The ticket's own branch in each listed repo is measured against the branch above it there, as
-    # its code range is. Each child merged its listed repos into this ticket's branch there, which is
-    # where retire reads the merge.
-    if [ -n "$(printf '%s\n' "$read" | jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?')" ]; then
-        listed "$("$tracker" get "$id" parent 2>/dev/null)"
-        # Its pull request squashed or rebased on GitHub leaves its own branch unmerged for good, as
-        # a ticket branch is in `review`: what landed is recorded on it and on the tickets under it
-        # first, and the branches it carried deleted, so the range read below is none and the done
-        # check finds them landed. A refusal of that check is the exit when it cannot be recorded.
+    if [ -n "$(jq -r --arg p "$id" '.tickets[] | select(.slug == $p or .parent == $p) | .repos[]?' <<< "$tracked")" ]; then
+        listed "$(field "$id" parent)"
         unmerged=()
         for name in "${!listed_top[@]}"; do
             own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
             is_merged "$name" "$own" || unmerged+=("$name")
         done
         [ ${#unmerged[@]} -eq 0 ] || land_on_github "$id" "${unmerged[@]}"
-        for name in $(printf '%s\n' "${!listed_top[@]}" | sort); do
-            own=$(git -C "${listed_top[$name]}" rev-parse -q --verify "refs/heads/$id") || continue
-            mine=$(range_of "$name" "$own") || exit 1
-            [ -z "$mine" ] || rounds_of "$id" | grep -qxF "$name@$mine" || fields+=("diff+=$name@$mine")
-        done
+        # Each child merged its listed repos into this ticket's branch there, which is where retire
+        # reads the merge.
         listed "$id"
     fi
-    paths=("$tickets/$id.md")
-    for child in $ruled; do paths+=("$tickets/$child.md"); done
-    # Put back on a refusal, so nothing it holds uncommitted may be lost with it.
-    git -C "$agent_top" diff --quiet -- "${paths[@]}" || die "a ticket file of $id's tree has uncommitted changes; commit them first"
-    put_back() { git -C "$agent_top" checkout -q -- "${paths[@]}"; exit 1; }
-    for child in $ruled; do
-        run "$tracker" set "$child" status=done || put_back
-    done
-    run "$tracker" set "$id" "${fields[@]}" || put_back
-    run git -C "$agent_top" commit -q -m "$id landed, ruled whole" -- "${paths[@]}"
+    tracked=$(run "$tracker" accept "$id") || exit 1
     retire_trees
-    run uv run "$skill/../tracker/board.py" "$tickets" --no-watch --no-open
+    run board "$tickets" --no-watch --no-open
     # Each child ran from the parent's branch, so that is where its run is recorded. A hinge was
-    # retired by its own `review`, so only the children in review come up here.
+    # retired by its own `review`, so only the children the accept took in come up here.
     rc=0
-    for child in $ruled; do
+    for child in $(jq -r --arg p "$id" '.tickets[] | select(.slug != $p) | .slug' <<< "$tracked"); do
         # shellcheck disable=SC2046
-        ( base=$id; retire "$child" "$id" $(printf '%s\n' "$read" | jq -r --arg c "$child" '.tickets[] | select(.slug == $c) | .repos[]?') ) || rc=1
+        ( base=$id; retire "$child" "$id" $(field "$child" repos) ) || rc=1
     done
     return $rc
 }
@@ -1038,7 +950,7 @@ accept() { # <slug>
 land_on_github() { # <slug> <name...>
     local id=$1 refs ref url at name under own rc=0
     shift
-    refs=$("$tracker" get "$id" gh 2>/dev/null)
+    refs=$(field "$id" gh)
     [ -n "$refs" ] || return 0
     for name in "${!listed_top[@]}"; do
         url=$(git -C "${listed_top[$name]}" config --get remote.origin.url) &&
@@ -1053,8 +965,10 @@ land_on_github() { # <slug> <name...>
     done
     # A parent ticket's pull request carries its own branch, named by its slug alone as the done
     # check reads it, and with it the work the tickets under it merged into that branch: theirs is
-    # recorded and deleted the same way, so the parent's accept finds them landed.
-    under=$("$tracker" data | jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)') || exit 1
+    # recorded and deleted the same way, so the parent's accept finds them landed. Each one's ranges
+    # are read from the whole tracker, read here.
+    read_tracker || exit 1
+    under=$(jq -r --arg p "$id" '[.tickets[]] as $t | def under($s): $t[] | select(.parent == $s) | (.slug, under(.slug)); under($p)' <<< "$tracked")
     record_landed "$id" append
     for slug in $under; do record_landed "$slug"; done
     for name in "${order[@]}"; do
@@ -1186,12 +1100,10 @@ fleet() { # <published>
         END { for (i = 1; i <= NR; i++) if (!(mine && host[i] == "local")) print host[i] }'
 }
 
-# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
-# front), and `missing`, what went unread. Every scratch dir on every host is
-# read, whichever repo and branch it is for, so ps, attach and peek run from any
-# branch.
-gather() {
-    local published= register_error= i rc
+# Sets `hosts`, every host the register publishes and this repo's runs name, and
+# starts `rows` and `missing` off with the register's failure, if it failed.
+fleet_hosts() {
+    local published= register_error=
     self=$(id -un)@$(uname -n)
     # Asked here and not inside fleet: output captured from a function runs in a
     # subshell, and a failure noticed there would not survive the trip back.
@@ -1203,12 +1115,33 @@ gather() {
     rows=() missing=()
     if [ -n "$register_error" ]; then
         missing+=(worker-hosts)
-        rows+=("worker-hosts	-	-	incomplete	-	-	-	n	$register_error")
+        rows+=("$(host_row worker-hosts incomplete "$register_error")")
     fi
     if [ ${#hosts[@]} -eq 0 ]; then
         [ -z "$register_error" ] || die "$register_error, and it has run on none"
         die "no worker host: \`worker-hosts --targets\` publishes none and this repo has run on none"
     fi
+}
+
+# A row that stands for a whole host, or the register, rather than one worker.
+host_row() { # <host> <state> <detail>
+    printf '%s\t-\t-\t%s\t-\t-\t-\tn\t%s\n' "$1" "$2" "$3"
+}
+
+# The row of a host whose dispatch-ps ended with <status> before it answered.
+unanswered() { # <host> <status>
+    local why="dispatch-ps failed there (exit $2)"
+    [ "$2" -ne 255 ] || why="no answer from the host (ssh exit 255)"
+    host_row "$1" unreachable "$why"
+}
+
+# Sets `rows`, one tab-separated worker each (dispatch-ps's row with the host in
+# front), and `missing`, what went unread. Every scratch dir on every host is
+# read, whichever repo and branch it is for, so ps, attach and peek run from any
+# branch.
+gather() {
+    local i rc
+    fleet_hosts
     # One round trip per host, all at once: a host that is off costs its connect
     # timeout, and costs it alone. Global, since the trap fires after this
     # returns; removed below as well, before an attach execs the trap away.
@@ -1227,8 +1160,7 @@ gather() {
         [[ $rc =~ ^[0-9]+$ ]] || rc=255
         if [ "$rc" -ne 0 ]; then
             missing+=("${hosts[$i]}")
-            [ "$rc" -eq 255 ] && why="no answer from the host (ssh exit 255)" || why="dispatch-ps failed there (exit $rc)"
-            rows+=("${hosts[$i]}	-	-	unreachable	-	-	-	n	$why")
+            rows+=("$(unanswered "${hosts[$i]}" "$rc")")
             continue
         fi
         [ -s "$answers/$i" ] &&
@@ -1243,29 +1175,52 @@ gather() {
 # One row per worker under a header naming the columns, then a count per state, running and
 # exited always there, zero or not. A host that did not answer is an `unreachable` row, a scratch
 # dir whose probe failed an `unreadable` one, a `worker-hosts --targets` that failed an
-# `incomplete` one. In color on a terminal, or with --color, which `watch -c dispatch ps --color`
-# needs; NO_COLOR turns it off.
+# `incomplete` one. In color on a terminal, or with --color; NO_COLOR turns it off.
 ps_() {
+    local following=
     color=
     [ -t 1 ] && color=1
-    case ${1:-} in
-        --color) color=1 ;;
-        "")      ;;
-        *)       die "ps takes --color and nothing else" ;;
-    esac
+    for arg; do
+        case $arg in
+            --color)  color=1 ;;
+            --follow) following=1 ;;
+            *)        die "ps takes --color and --follow and nothing else" ;;
+        esac
+    done
     [ -z "${NO_COLOR:-}" ] || color=
+    [ -z "$following" ] || follow
     gather
-    [ ${#rows[@]} -gt 0 ] || { echo "no workers"; return 0; }
-    # Cut to the terminal's width, so a long worklog line keeps the table a
-    # table. `watch` runs this with no terminal and the width in COLUMNS, which
-    # a shell does not export; piped anywhere else a row goes out whole.
-    cols=0
+    measure
+    { [ ${#rows[@]} -eq 0 ] || printf '%s\n' "${rows[@]}"; } | table
+    # A table missing a host is no clean reading, and a caller should not have
+    # to spot the row to know it.
+    [ ${#missing[@]} -eq 0 ]
+}
+
+# Sets `cols`, the width the table is cut to, so a long worklog line keeps the
+# table a table: the terminal's, or under `watch`, which runs this with no
+# terminal, COLUMNS, which a shell does not export. Piped anywhere else, 0: a
+# row goes out whole. Sets `lines` the same way, the height a follow fits into.
+measure() {
+    cols=0 lines=0
     if [ -t 1 ]; then
         cols=$(tput cols 2>/dev/null || echo 0)
-    elif [[ ${COLUMNS:-} =~ ^[0-9]+$ ]]; then
-        cols=$COLUMNS
+        lines=$(tput lines 2>/dev/null || echo 0)
+    else
+        [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && cols=$COLUMNS
+        [[ ${LINES:-} =~ ^[0-9]+$ ]] && lines=$LINES
     fi
-    printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -k2,2 -k3,3 | awk -F'\t' -v cols="$cols" -v color="$color" '
+}
+
+# The table ps prints, from gather's rows on stdin: running workers first,
+# exited ones last and the rest between, each youngest first by age, then by
+# idle time. Cut to `cols` and painted when `color` is set. With `folded` set
+# and a width known, the workers that exited cleanly fold into a few lines per
+# host and base, each ticket beside its idle time.
+table() {
+    awk -F'\t' '{ print ($4 == "running" ? 0 : $4 == "exited" ? 2 : 1) "\t" $0 }' |
+        sort -t$'\t' -k1,1n -k6,6n -k7,7n -k2,2 -k3,3 -k4,4 | cut -f2- |
+        awk -F'\t' -v cols="$cols" -v color="$color" -v folded="${folded:-}" '
         function ago(s) {
             if (s !~ /^[0-9]+$/) return "-"
             if (s < 60) return s "s"
@@ -1284,11 +1239,15 @@ ps_() {
           cell[n, 5] = ago($5); cell[n, 6] = ago($6); cell[n, 7] = $9
           # A running worker whose worklog has been silent this long is worth a peek.
           stale[n] = $4 == "running" && $6 ~ /^[0-9]+$/ && $6 >= 900
+          # A run that failed or left no report keeps its row and the detail saying so.
+          fold[n] = folded && cols > 0 && $4 == "exited" && $9 ~ /(^| )exit=0( |$)/ && $9 ~ /(^| )report=yes( |$)/
           count[$4]++; if (!(($4) in order)) order[$4] = ++states }
         END {
+            if (n == 0) { print "no workers"; exit }
             for (k = 0; k <= n; k++) for (c = 1; c <= 6; c++)
                 if (length(cell[k, c]) > w[c]) w[c] = length(cell[k, c])
             for (k = 0; k <= n; k++) {
+                if (fold[k]) continue
                 # Padded and cut as plain text, then painted, so an escape
                 # sequence counts for no width.
                 for (c = 1; c <= 6; c++) pad[c] = sprintf(c >= 5 ? "%*s" : "%-*s", w[c], cell[k, c])
@@ -1303,8 +1262,35 @@ ps_() {
                 print paint(pad[1] "  " pad[2] "  " pad[3] "  ", quiet) paint(pad[4], hue(state)) "  " \
                       paint(pad[5], quiet) "  " paint(pad[6], stale[k] ? "33" : quiet) "  " paint(detail, quiet)
             }
-            # Running and exited always first, zero or not, so a refresh under
-            # watch keeps each number where it was; the rest as they appear.
+            # The folded workers line up under TICKET, as many to a line as
+            # the width holds. A host and base comes where its youngest worker
+            # would, and its workers in the order they came.
+            for (k = 1; k <= n; k++) if (fold[k]) {
+                if (length(cell[k, 3]) > ws) ws = length(cell[k, 3])
+                if (length(cell[k, 6]) > wi) wi = length(cell[k, 6])
+                g = cell[k, 1] SUBSEP cell[k, 2]
+                if (!(g in at)) { at[g] = ++groups; first[groups] = k }
+                member[at[g], ++size[at[g]]] = k
+            }
+            if (ws) {
+                lead = w[1] + 2 + w[2] + 2
+                per = int((cols - lead + 2) / (ws + 1 + wi + 2)); if (per < 1) per = 1
+                print paint(substr(sprintf("%*s%s", lead, "", "exited, each beside its IDLE"), 1, cols), "2")
+                for (g = 1; g <= groups; g++) {
+                    line = sprintf("%-*s  %-*s  ", w[1], cell[first[g], 1], w[2], cell[first[g], 2])
+                    for (m = 1; m <= size[g]; m++) {
+                        if (m > 1 && (m - 1) % per == 0) {
+                            print paint(substr(line, 1, cols), "2")
+                            line = sprintf("%*s", lead, "")
+                        }
+                        k = member[g, m]
+                        line = line ((m - 1) % per ? "  " : "") sprintf("%-*s %*s", ws, cell[k, 3], wi, cell[k, 6])
+                    }
+                    print paint(substr(line, 1, cols), "2")
+                }
+            }
+            # Running and exited always first, zero or not, so a redraw keeps
+            # each number where it was; the rest as they appear.
             for (s in order) by[order[s]] = s
             tally = ""
             for (i = 1; i <= states; i++)
@@ -1312,9 +1298,144 @@ ps_() {
             print ""
             print tally
         }'
-    # A table missing a host is no clean reading, and a caller should not have
-    # to spot the row to know it.
-    [ ${#missing[@]} -eq 0 ]
+}
+
+# ps --follow: one connection per host, with dispatch-ps --follow at the other
+# end, and the table drawn again every second from each host's latest frame,
+# whose ages count on from the second it arrived. A host that has not answered
+# yet is a `connecting` row. The hosts are read again every half minute, which
+# costs no login.
+follow() {
+    local h now drawing out fresh shown= asked=$SECONDS
+    fleet_hosts
+    frames=$(mktemp -d) || die "no temp dir for the hosts' frames"
+    declare -gA follower=()
+    trap 'exit 0' INT TERM
+    trap 'kill "${follower[@]}" 2>/dev/null; wait; rm -rf "$frames"' EXIT
+    follow_fleet
+    printf '\033[H\033[2J'
+    while :; do
+        if [ $((SECONDS - asked)) -ge 30 ]; then
+            # In a subshell, so a read that dies keeps the hosts already there
+            # instead of ending the follow.
+            if fresh=$(fleet_hosts 2>/dev/null && printf '%s\n' "${hosts[@]}" -- "${rows[@]}"); then
+                mapfile -t hosts < <(awk '$0 == "--" { exit } { print }' <<<"$fresh")
+                mapfile -t rows < <(awk 'past { print } $0 == "--" { past = 1 }' <<<"$fresh")
+            fi
+            follow_fleet
+            asked=$SECONDS
+        fi
+        measure
+        printf -v now '%(%s)T' -1
+        drawing=$({ [ ${#rows[@]} -eq 0 ] || printf -- '-\t%s\n' "${rows[@]}"
+                    for h in "${hosts[@]}"; do
+                        cat "$frames/$h.rows" 2>/dev/null || printf -- '-\t%s\n' "$(host_row "$h" connecting "no answer yet")"
+                    done } |
+            awk -F'\t' -v OFS='\t' -v now="$now" '
+                $1 ~ /^[0-9]+$/ { if ($6 ~ /^[0-9]+$/) $6 += now - $1; if ($7 ~ /^[0-9]+$/) $7 += now - $1 }
+                { sub(/^[^\t]*\t/, ""); print }')
+        out=$(printf '%s' "$drawing" | table)
+        fit
+        # Over what was there, each line cleared to its end, so a redraw
+        # does not flicker.
+        [ "$out" = "$shown" ] || printf '\033[H%s\033[K\033[J' "${out//$'\n'/$'\033[K\n'}"
+        shown=$out
+        sleep 1 & wait $!
+    done
+}
+
+# Starts a follow_host for each host in `hosts` that has none, and stops the
+# one of each host that left. A register that failed (its `incomplete` row is
+# in `rows`) has left no host.
+follow_fleet() {
+    local h
+    for h in "${!follower[@]}"; do
+        [ ${#rows[@]} -eq 0 ] || break
+        printf '%s\n' "${hosts[@]}" | grep -qxF -- "$h" && continue
+        kill "${follower[$h]}" 2>/dev/null
+        wait "${follower[$h]}" 2>/dev/null
+        unset 'follower[$h]'
+        rm -f "$frames/$h.rows"
+    done
+    for h in "${hosts[@]}"; do
+        [ -n "${follower[$h]:-}" ] && continue
+        follow_host "$h" &
+        follower[$h]=$!
+    done
+}
+
+# Fits `out`, the table drawn from `drawing`, to `lines`, since a table taller
+# than the screen would scroll on every draw: folded first, then cut below its
+# header and above its tally where the fold is not enough.
+fit() {
+    local -a drawn
+    [ "$lines" -ge 5 ] || return 0
+    mapfile -t drawn <<<"$out"
+    [ ${#drawn[@]} -gt "$lines" ] || return 0
+    out=$(printf '%s' "$drawing" | folded=1 table)
+    mapfile -t drawn <<<"$out"
+    [ ${#drawn[@]} -gt "$lines" ] || return 0
+    out=$(printf '%s\n' "${drawn[@]:0:lines-3}"
+          echo "($((${#drawn[@]} - lines + 1)) more rows than the screen holds)"
+          printf '%s\n' "${drawn[@]: -2}")
+}
+
+# One host's connection, opened again with backoff each time it drops; a TERM
+# stops it and the connection with it. Its rows are <frames>/<host>.rows.
+follow_host() { # <host>
+    local conn pid= opened rc delay=2 pipe=$frames/$1.pipe
+    trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null; exit 0' TERM
+    unset TMUX
+    # A plain command, so the pid is the connection's own and the trap's kill
+    # reaches it.
+    if [ "$(via "$1")" = local ]; then
+        conn=(bash -s "$state_root" --follow)
+    else
+        conn=(ssh "${ssh_options[@]}" "$1" "$(remote_line bash -s "$state_root" --follow)")
+    fi
+    # Left behind by a follower of the same host that was stopped.
+    rm -f "$pipe"
+    if ! mkfifo "$pipe"; then
+        host_row "$1" unreachable "no pipe to read it through at $pipe" | publish "$1"
+        exit 1
+    fi
+    while :; do
+        opened=$SECONDS
+        "${conn[@]}" < "$skill/dispatch-ps" > "$pipe" &
+        pid=$!
+        frames_of "$1" < "$pipe"
+        wait "$pid"
+        rc=$? pid=
+        unanswered "$1" "$rc" | publish "$1"
+        [ $((SECONDS - opened)) -lt 60 ] || delay=2
+        sleep "$delay" &
+        pid=$!
+        wait "$pid"
+        pid= delay=$((delay < 30 ? delay * 2 : 60))
+    done
+}
+
+# Reads <host>'s frames (dispatch-ps --follow) on stdin, and publishes each as
+# it ends.
+frames_of() { # <host>
+    local line kept=()
+    while IFS= read -r line; do
+        case $line in
+            .)  ;;
+            "") for line in "${kept[@]}"; do printf '%s\t%s\n' "$1" "$line"; done | publish "$1"
+                kept=() ;;
+            *)  kept+=("$line") ;;
+        esac
+    done
+}
+
+# Replaces <host>'s rows with the rows on stdin, each stamped with this second,
+# in one rename so a draw never reads half of them.
+publish() { # <host>
+    local now line
+    printf -v now '%(%s)T' -1
+    while IFS= read -r line; do printf '%s\t%s\n' "$now" "$line"; done > "$frames/$1.tmp"
+    mv "$frames/$1.tmp" "$frames/$1.rows"
 }
 
 # Sets r_host, r_base, r_ticket, r_state and r_session from the one row

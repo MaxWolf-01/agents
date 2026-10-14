@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The Stop hook's properties. Run: uv run test_stop_hook.py
 
@@ -16,7 +16,6 @@ for which session; the hub is absent unless a check starts a stand-in of it on a
 
 import io
 import json
-import html
 import os
 import re
 import socket
@@ -33,15 +32,16 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-sys.path.insert(0, str(Path(__file__).parent))
-
 import session_page
 import stop_hook
 import turn_review
-from session_checks import BEFORE_IT, SPOKEN_AFTER, unreachable
-from session_page import PAGE, PREVIOUS, SESSIONS, render_session
+from session_checks import (
+    BEFORE_IT, LEFT_ALONE, LONG, SPOKEN_AFTER, TURN_ANCHOR, TURN_STARTS, UNPARSEABLE, appended, elements, logged,
+    messages_of, payload, turns_on, unreachable, view_of, with_write,
+)
+from session_page import PAGE, PREVIOUS, SESSIONS
 from stop_hook import decide
-from test_reading import messages_of
+
 
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -85,24 +85,6 @@ def run(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict], None]:
         stop_hook.main()
 
     return call
-
-
-def payload(directory: Path, transcript: Path, reply: str = "", **rest: object) -> dict:
-    """The Stop hook JSON for a turn of the session whose directory is `directory`."""
-    return {
-        "session_id": directory.name,
-        "cwd": str(directory.parents[len(SESSIONS.parts)]),
-        "transcript_path": str(transcript),
-        "stop_hook_active": False,
-        "last_assistant_message": reply,
-        **rest,
-    }
-
-
-def logged(log: Path, key: str) -> list[dict]:
-    """The log's lines that carry `key`: `decision` the review's, `verb` the hook's."""
-    lines = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-    return [entry for entry in lines if key in entry]
 
 
 def shown(capsys: pytest.CaptureFixture) -> str:
@@ -163,8 +145,6 @@ def test_a_session_keeps_its_page_in_the_agent_repo_whichever_worktree_it_ran_in
 
 # ---- properties -------------------------------------------------------------
 
-# A reply of several lines, an answer that would fill a turn record.
-LONG = "\n".join(f"Line {n} of an answer that belongs on the page." for n in range(1, 6))
 TWENTY_LINES = "\n".join(f"Line {n} of where the work stands." for n in range(1, 21))
 
 FRESH = "8e0f1c22-0000-0000-0000-000000000000"  # a session that has no directory yet
@@ -220,9 +200,6 @@ def test_a_first_turn_that_ends_on_no_text_creates_nothing(
     assert capsys.readouterr().out == ""
 
 
-LEFT_ALONE = {"a dispatched worker": ("DISPATCH_WORKLOG", "/w/log"), "a print-mode session": ("CLAUDE_CODE_SESSION_ATTENDED", "0")}
-
-
 @pytest.mark.parametrize("marker, value", LEFT_ALONE.values(), ids=LEFT_ALONE)
 def test_a_session_nobody_reads_the_page_of_never_gets_a_directory(
     marker: str, value: str, first_turn: tuple[Path, Path], capsys: pytest.CaptureFixture,
@@ -248,42 +225,6 @@ def test_a_reply_of_any_length_with_no_record_is_recorded_and_never_sent_back(
     decision = decide(payload(worked_example, unrecorded, reply=reply), worked_example)
     assert (decision.verb, decision.why) == ("render", "chat reply recorded")
     assert decision.chat[1].split("---\n", 2)[2].strip() == reply.strip()
-
-
-# The record the turn just wrote is 04.md, the one the Decisions have the hook validate; 03.md is
-# two rounds back, and a hook that read only the newest record would let it through. Each case is
-# what the record says and the line the hook names, None where the shape says only that something
-# is missing and not where.
-ROUND_3 = "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n"  # lines 1 to 6; the section's first item is line 9
-UNPARSEABLE = {
-    "frontmatter that is not YAML": (
-        "04.md", "---\ndate: 2026-09-23\nanswered: Q1: a\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 3),
-    "frontmatter that is not a mapping": (
-        "04.md", "---\n- a\n- b\n---\n\n# Round 3\n\n## Details\n\nThe round.\n", 2),
-    "a question that is not a question item": (
-        "04.md", "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n## Questions\n\n- Q7: what reviews the prose?\n", 9),
-    "a section the record's shape does not have": (
-        "04.md", "---\ndate: 2026-09-23\n---\n\n# Round 3\n\n## Notes\n\nA fourth section.\n", 7),
-    "no headline": ("04.md", "---\ndate: 2026-09-23\n---\n\n## Details\n\nThe round.\n", None),
-    "a record from an earlier turn": (
-        "03.md", "---\ndate: 2026-09-23\n---\n\n# Round 2\n\n## Notes\n\nA fourth section.\n", 7),
-    "a question with one option": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n", 9),
-    "a question with no pick": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review.\n  - (b) None.\n", 9),
-    "a question with two picks": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n"
-                 "  - (b) None. *my pick*\n", 9),
-    "an option letter twice": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (a) None.\n", 9),
-    "a second Why": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (b) None.\n"
-                 "  - Why: seconds.\n  - Why: again.\n", 13),
-    "a question an earlier turn asked": (
-        "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
-    "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
-    "a link item that is no link": ("04.md", f"{ROUND_3}## Links\n\n- the round's page\n", 9),
-}
 
 
 @pytest.mark.parametrize("name, text, line", UNPARSEABLE.values(), ids=UNPARSEABLE)
@@ -581,11 +522,12 @@ def test_an_agent_repo_that_already_ignores_sessions_gets_no_line_added(
     assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["already ignored"]
 
 
-def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
+def test_an_agent_repo_that_tracks_session_records_still_shows_none_in_flight(
     worked_example: Path, transcript: Path, run: Callable[[dict], None], attended: Path,
 ) -> None:
-    """A repo that commits its session records keeps committing them: a later session's directory
-    still shows in its status."""
+    """The oracle is agent/tickets/session-records-tracked.md's P2: a repo that already tracks
+    earlier sessions' records gets the line too, so a later session's directory, and a tracked
+    session's derived page, stay out of its status."""
     agent = worked_example.parents[1]
     git(agent, "init")
     git(agent, "add", "sessions")
@@ -593,8 +535,8 @@ def test_an_agent_repo_that_tracks_session_records_gets_no_line_added(
     (worked_example.parent / "a-later-session").mkdir()
     (worked_example.parent / "a-later-session" / "session.md").write_text("")
     run(payload(worked_example, transcript))
-    assert [line for line in status(agent) if "sessions/" in line] == ["?? sessions/a-later-session/session.md", f"?? sessions/{worked_example.name}/index.html"]
-    assert [entry["excluded"] for entry in logged(attended, "excluded")] == ["tracked, so not excluded"]
+    assert [line for line in status(agent) if "sessions/" in line] == []
+    assert [entry["excluded"] for entry in logged(attended, "excluded")] == [f"added /sessions/ to {exclude_file(agent)}"]
 
 
 def test_an_agent_repo_outside_git_is_rendered_and_logged_as_such(
@@ -752,7 +694,6 @@ ANSWERED_IN_THE_CHAT = {
     "a reply with a heading of its own": ("# Yes\n\nThe second bank, `ledger.py:12`.", False),
 }
 NUMBERED = ["01.md", "02.md", "03.md", "04.md"]  # the worked example's records
-TURN_ID = re.compile(r'<(?:details|article) class="turn[^"]*" id="([^"]+)"')
 
 
 def chats(directory: Path) -> list[Path]:
@@ -762,8 +703,7 @@ def chats(directory: Path) -> list[Path]:
 
 def rows(page: str) -> list[str]:
     """The ids of the page's turns, top to bottom."""
-    return [i for _, i in sorted((m.start(), m.group(1)) for m in TURN_ID.finditer(page))]
-
+    return re.findall(rf'\bid="({TURN_ANCHOR})"', page)
 
 
 @pytest.mark.parametrize("reply, again", ANSWERED_IN_THE_CHAT.values(), ids=ANSWERED_IN_THE_CHAT)
@@ -786,11 +726,9 @@ def test_a_turn_that_ends_on_a_chat_reply_and_wrote_no_record_gets_the_reply_as_
     assert body.strip() == reply.strip()
     page = (worked_example / PAGE).read_text()
     assert rows(page) == [chat.stem, "t04", "t03", "t02", "t01"]
-    row = page[page.index(f'id="{chat.stem}"'):]
-    row = row[:row.index("</article>")]
-    assert '<span class="rail"></span>' in row
-    assert html.unescape(re.findall(r'<div class="msg"><p>(.*?)</p>', row)[0]) == SPOKEN_AFTER["message"]["content"]
-    assert '<details class="turn blk" id="t04" data-block open>' in page
+    said = turns_on(page)[chat.stem]
+    assert said.startswith(f"you {SPOKEN_AFTER['message']['content']}"), "a chat turn shows no number"
+    assert [anchor for anchor, turn in elements(page, r"t\d+").items() if re.match(r"<details\b[^>]*\bopen\b", turn)] == ["t04"]
 
 
 @pytest.mark.parametrize("reply", SAID_NOTHING.values(), ids=SAID_NOTHING)
@@ -836,18 +774,12 @@ def test_the_turn_after_a_chat_turn_numbers_on_from_the_agents_own_last_record(
     assert shown(capsys).startswith("session page · ")
     page = (worked_example / PAGE).read_text()
     assert rows(page) == ["t05", chat.stem, "t04", "t03", "t02", "t01"]
-    assert messages_of(page)["05"] == ["And the third?"]
+    assert "And the third?" in turns_on(page)["t05"]
+    assert messages_of(view_of(worked_example, next_turn))["05"] == ["And the third?"]
     assert "Yes, the second bank." in chat.read_text()
 
 
 RECORD_05 = "---\ndate: 2026-09-23\n---\n\n# Round 4\n\n## Details\n\nThe second bank.\n"
-
-
-def with_write(transcript: Path, tool: str, record: Path) -> None:
-    """Append to the transcript the turn's `tool` call on `record`, a minute after SPOKEN_AFTER."""
-    call = {"type": "tool_use", "id": f"toolu_{tool}_{record.stem}", "name": tool, "input": {"file_path": str(record)}}
-    entry = {"type": "assistant", "message": {"role": "assistant", "content": [call]}, "timestamp": "2026-09-23T01:36:00.000Z"}
-    transcript.write_text(transcript.read_text() + json.dumps(entry) + "\n")
 
 
 def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with_write(
@@ -868,7 +800,7 @@ def test_a_record_written_through_the_shell_is_sent_back_once_to_be_written_with
     assert capsys.readouterr().out == ""
     assert "Round 4" in (worked_example / PAGE).read_text()
     with_write(unrecorded, "Write", record)
-    assert messages_of(render_session(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
+    assert messages_of(view_of(worked_example, unrecorded))["05"] == [SPOKEN_AFTER["message"]["content"]]
 
 
 def test_a_turn_that_answers_by_editing_an_earlier_record_gets_its_reply_as_a_chat_turn(
@@ -934,36 +866,21 @@ def test_the_records_as_the_turn_ended_are_logged_beside_their_review(
 
 # ---- which turn a record belongs to ------------------------------------------
 
-# Prompts Claude Code starts a turn on without the user typing, at SPOKEN_AFTER's time: a
-# background task finishing and a subagent handing its report back.
-TASK_DONE = {"type": "user", "origin": {"kind": "task-notification"}, "timestamp": SPOKEN_AFTER["timestamp"],
-             "message": {"role": "user", "content": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"}}
-HANDED_BACK = {"type": "user", "origin": {"kind": "peer", "from": "a1", "handback": True}, "timestamp": SPOKEN_AFTER["timestamp"],
-               "message": {"role": "user", "content": 'Another Claude session sent a message:\n<agent-message from="a1">\n'
-                                                      "[Subagent hand-back] The figure is built.\n</agent-message>"}}
-TURN_STARTS = {"a finished task": TASK_DONE, "a subagent's hand-back": HANDED_BACK}
 # A message the user queues while the turn runs, after it wrote its record at 01:36 (with_write).
 QUEUED = {"type": "attachment", "timestamp": "2026-09-23T01:37:00.000Z",
           "attachment": {"type": "queued_command", "prompt": "And the third bank?"}}
 
 
-
-
-def appended(transcript: Path, out: Path, *entries: dict) -> Path:
-    out.write_text(transcript.read_text() + "".join(json.dumps(e) + "\n" for e in entries))
-    return out
-
-
 @pytest.mark.parametrize("start", TURN_STARTS.values(), ids=TURN_STARTS)
 def test_a_turn_the_user_did_not_start_still_records_its_reply_as_a_chat_turn(
-    start: dict, worked_example: Path, transcript: Path, tmp_path: Path,
+    start: tuple[dict, ...], worked_example: Path, transcript: Path, tmp_path: Path,
 ) -> None:
     """This turn runs from the prompt that started it, whoever sent it: record 04, written in the
-    turn before, is no record of a turn a finished task or a hand-back started, so its reply is
-    this turn's chat turn."""
+    turn before, is no record of a turn a finished task, a hand-back, another session's message
+    or a scheduled prompt started, so its reply is this turn's chat turn."""
     for record in (worked_example / "turns").iterdir():
         os.utime(record, (BEFORE_IT, BEFORE_IT))
-    decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", start), reply=LONG), worked_example)
+    decision = decide(payload(worked_example, appended(transcript, tmp_path / "t.jsonl", *start), reply=LONG), worked_example)
     assert (decision.verb, decision.why) == ("render", "chat reply recorded")
 
 
@@ -1174,7 +1091,8 @@ def handed_over(first_turn: tuple[Path, Path], run: Callable[[dict], None], caps
 
 
 def links_to(page: Path) -> list[str]:
-    return re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())
+    """The sessions a page links to, each once: the line under its title and an end of its timeline both link it."""
+    return list(dict.fromkeys(re.findall(r'href="\.\./([^"/]+)/index\.html"', page.read_text())))
 
 
 def test_a_session_that_picked_up_a_continuation_handoff_links_to_the_page_before_and_back(

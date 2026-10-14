@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "pyyaml", "markdown", "markdown-it-py[linkify]"]
 # ///
 """The board's layout, measured in a browser. Run: uv run test_board_layout.py
 
@@ -56,21 +56,18 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-SHOW = Path(__file__).resolve().parents[1] / "show"
-sys.path[:0] = [str(Path(__file__).parent), str(SHOW)]
-
-from board import PAGE, render
+from board import PAGE, Failing, render, restamp
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
+SHOW = Path(__file__).resolve().parents[1] / "show"
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
@@ -436,9 +433,10 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 # What the graph does once a browser runs it, which is the only place it does anything: the side
 # column's preview, the same graph at full size over the board, and the same again in a window of
 # its own. Every move a reader makes is made here, and what the board did with it is read off the
-# board: the two keys, Escape's order, a click on the preview and on a node in it, a drag that pans
-# and the click it ends with, the switch in each view, a node clicked in each full size view, the
-# board re-rendering under the window, and the board going away.
+# board: the two keys and the buttons that do the same, Escape's order, a click on the preview and
+# on a node in it, a drag that pans and the click it ends with, the switch in each view, a node
+# clicked in each full size view, the board re-rendering under the window, and the board going
+# away.
 GRAPH_PROBE = ENGINE + r'''
 import json, os, shutil, sys
 from pathlib import Path
@@ -535,6 +533,23 @@ with sync_playwright() as pw:
     keys["esc_closed"] = not page.is_visible("#gfull")
     keys["row_still_open"] = page.evaluate(f"!!document.getElementById('{ROW}')?.open")
     out["keys"] = keys
+
+    # the buttons that do what the two keys do, clicked: the preview's `full` and `window`, and
+    # the overlay's `window`, which takes the overlay down as the window comes up
+    page.click("#gopen")
+    page.wait_for_selector("#gfull " + PAINTED)
+    buttons = {"full_opened": page.is_visible("#gfull")}
+    with page.expect_popup() as popped:
+        page.click("#gwinfull")
+    popped.value.wait_for_selector(".gfbody")
+    buttons |= {"overlay_closed": not page.is_visible("#gfull"), "from_overlay": popped.value.title()}
+    popped.value.close()
+    with page.expect_popup() as popped:
+        page.click("#gwinopen")
+    popped.value.wait_for_selector(".gfbody")
+    buttons["from_preview"] = popped.value.title()
+    popped.value.close()
+    out["buttons"] = buttons
 
     # the preview: a click opens the full size view, a click on a node in it goes to that row
     page.click(".side .g:not([hidden]) .mermaid" if drawn else "#gunloaded", position={"x": 3, "y": 3})
@@ -693,6 +708,13 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     keys = seen["keys"]
     assert keys["f_opened"] and keys["esc_closed"], f"f and Escape: {keys}"
     assert keys["row_still_open"], "Escape folded the row behind the overlay instead of closing the overlay"
+
+    buttons = seen["buttons"]
+    assert buttons["full_opened"], "the preview's full button did not open the overlay"
+    assert buttons["overlay_closed"], "the overlay's window button left the overlay over the board"
+    assert buttons["from_overlay"].endswith("dependencies") and buttons["from_preview"].endswith("dependencies"), (
+        f"a window button opened something other than the graph's window: {buttons}"
+    )
 
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
@@ -890,9 +912,16 @@ print(json.dumps(out))
 """
 
 
+# The layout's chunks, as the page's import map pins them: the render chunk is fetched once the
+# graph draws, every other one as the layout loads.
+CHUNKS = [url.rsplit("/", 1)[1] for url in json.loads(
+    re.search(r'<script type="importmap">(.*?)</script>', PAGE.template, re.S).group(1))["integrity"] if "/chunks/" in url]
+assert any(chunk.startswith("render-") for chunk in CHUNKS), f"the import map pins no render chunk among {CHUNKS}"
+
+
 @pytest.mark.full_path
-@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), ("/chunk-SP2CHFBE.mjs", "could not load"),
-                                               ("/render-FL5BWEWF.mjs", "could not be drawn")])
+@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), *(
+    (f"/{chunk}", "could not be drawn" if chunk.startswith("render-") else "could not load") for chunk in CHUNKS)])
 def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:
     """The ticket's acceptance criterion: a file whose bytes differ from its pinned hash is refused,
     the graph does not draw, the board says so the way it says the engine did not load, and the rest
@@ -917,6 +946,71 @@ def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_e
     assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
     assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
     assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
+
+
+# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
+# waiting it out.
+STALE_PROBE = r"""
+import json, os, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import default_root, serve
+
+page, stale = Path(sys.argv[1]), sys.argv[2]
+stamp = Path(f"{page}.stamp.js")
+drawn = stamp.read_text()
+NOTE = "[data-absent=board-stale]"
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    serve(context, default_root())
+    tab = context.new_page()
+    tab.clock.install()
+    tab.goto(page.resolve().as_uri())
+    tab.evaluate("window.__loaded = true")  # gone on a reload
+    out = {"before": tab.is_visible(NOTE)}
+    stamp.write_text(stale)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}:not([hidden])")
+    out["stale"] = tab.inner_text(NOTE)
+    stamp.write_text(drawn)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}[hidden]", state="attached")
+    out["after"] = tab.is_visible(NOTE)
+    out["reloaded"] = not tab.evaluate("window.__loaded === true")
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+@pytest.mark.full_path
+def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(transcribed: Demo, tmp_path: Path) -> None:
+    """`board-watcher-restarts-on-new-code#P3`: the note shows in a tab already open, without
+    reloading it, and goes when the stamp file drops the mark."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    drawn = Path(f"{out}.stamp.js").read_text()
+    since = datetime(2026, 10, 7, 9, 30).astimezone()
+    restamp(out, Failing(since, "second.md:2: `flavour` is no ticket field\nsecond.md:3: and a second line"))
+    stale = Path(f"{out}.stamp.js").read_text()
+    Path(f"{out}.stamp.js").write_text(drawn)
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), stale],
+        input=STALE_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)}, timeout=180,
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    assert not seen["before"]
+    assert "stale since 07 Oct 09:30" in seen["stale"] and "`flavour` is no ticket field" in seen["stale"], seen["stale"]
+    assert "second line" not in seen["stale"], seen["stale"]
+    assert not seen["after"]
+    assert not seen["reloaded"]
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Starts the hypervisor, pi's TUI with our pi-optchat fork and the hypervisor's extension, in the tmux session
+# `hypervisor`, or attaches to it when it runs. Its memory is the OptChat profile $HV_PROFILE (default `hv`); each start
+# is a new pi session on it, since the memory, not pi's transcript, carries the conversation.
+#
+# Everything lives under $HV_STORE (default ~/.local/share/hypervisor): the profiles in optchat/, pi's own settings and
+# sessions in optchat-pi/, and the extension's files, which extension/src/live.ts lists. The fork is the checkout
+# $OPTCHAT_FORK. pi signs in with $ANTHROPIC_OAUTH_TOKEN, else the token in max's secrets, else what /login stored.
+#
+# A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/'s.
+# `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
+# `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
+# `hv fetch` brings Jarvis's messages to the hypervisor into its inbox; a timer runs it (`hv fetch --help`).
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+extension=$here/extension
+store=${HV_STORE:-$HOME/.local/share/hypervisor}
+profile=${HV_PROFILE:-hv}
+fork=${OPTCHAT_FORK:-$HOME/repos/github/MaxWolf-01/pi-optchat-fork-summaries}
+profiles=$store/optchat/profiles
+token_file=$HOME/.dotfiles/secrets/creds/raw/hypervisor-oauth-token
+
+if [[ ${1:-} == tell ]]; then
+	shift
+	HV_STORE=$store exec node "$extension/src/hv-tell.ts" "$@"
+fi
+if [[ ${1:-} == fetch ]]; then
+	shift
+	HV_STORE=$store exec node "$extension/src/hv-fetch.ts" "$@"
+fi
+
+# Anything else would start the TUI, which a typo, or a timer running a subcommand this hv lacks, must not.
+if [[ $# -gt 0 && $1 != explore ]]; then
+	echo "hv: no command $1; hv alone starts the hypervisor or attaches to it, beside hv tell, hv fetch and hv explore (each takes --help)" >&2
+	exit 2
+fi
+
+if [[ ${1:-} == explore && ${2:-} =~ ^(--found|--help|-h)$ ]]; then
+	HV_STORE=$store exec node "$extension/src/hv-explore.ts" "$2"
+fi
+
+[[ -d $extension/node_modules ]] || npm ci --prefix "$extension" --no-audit --no-fund
+[[ -f $fork/src/index.ts ]] || { echo "hv: no pi-optchat checkout at $fork; set OPTCHAT_FORK" >&2; exit 1; }
+if [[ -z ${ANTHROPIC_OAUTH_TOKEN:-} && -f $token_file ]]; then ANTHROPIC_OAUTH_TOKEN=$(sops decrypt "$token_file"); fi
+export HV_STORE=$store OPTCHAT_HOME=$store/optchat PI_CODING_AGENT_DIR=$store/optchat-pi OPTCHAT_FORK=$fork HV_PROFILE=$profile
+[[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && export ANTHROPIC_OAUTH_TOKEN
+mkdir -p "$PI_CODING_AGENT_DIR"
+
+if [[ ! -d $profiles/$profile ]]; then
+	mkdir -p -m 700 "$profiles/$profile"
+	cp "$here/live/config.json" "$profiles/$profile/"
+	echo "hv: no profile $profile in $profiles yet; it starts empty, with live/'s config" >&2
+fi
+# pi reads the profile's instructions on every request, so a link makes an edit to live/ apply on the next turn.
+ln -sfn "$here/live/AGENTS.md" "$profiles/$profile/AGENTS.md"
+
+pi=(node "$fork/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+	--model anthropic/claude-opus-5-5 --thinking medium
+	--no-extensions --no-builtin-tools --no-skills --no-context-files --no-prompt-templates
+	-e "$extension/src/live.ts" -e "$fork/src/index.ts" --optchat-profile "$profile")
+
+env=(-e "HV_STORE=$HV_STORE" -e "OPTCHAT_HOME=$OPTCHAT_HOME" -e "PI_CODING_AGENT_DIR=$PI_CODING_AGENT_DIR" -e "HV_PROFILE=$HV_PROFILE" -e PI_CACHE_RETENTION=long)
+[[ -n ${ANTHROPIC_OAUTH_TOKEN:-} ]] && env+=(-e "ANTHROPIC_OAUTH_TOKEN=$ANTHROPIC_OAUTH_TOKEN")
+
+start=(tmux new-session -d -s hypervisor -c "$HOME" "${env[@]}" "${pi[@]}")
+
+if [[ ${1:-} == explore ]]; then
+	shift
+	exec node "$extension/src/hv-explore.ts" "$@" -- "${start[@]}"
+fi
+
+if ! tmux has-session -t =hypervisor 2>/dev/null; then
+	"${start[@]}"
+fi
+if [[ -n ${TMUX:-} ]]; then exec tmux switch-client -t =hypervisor; else exec tmux attach -t =hypervisor; fi

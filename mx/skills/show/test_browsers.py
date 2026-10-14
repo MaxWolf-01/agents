@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from test_render_lint import LINT, PAGE, RESTLESS
+from lint_pages import LINT, PAGE, RESTLESS
 
 BROWSERS = Path(__file__).parent / "browsers"
 REPO = Path(__file__).resolve().parents[3]

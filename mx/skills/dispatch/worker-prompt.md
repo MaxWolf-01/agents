@@ -55,6 +55,7 @@ You work alone in your own checkout or worktree; nobody else commits into it. Co
 
 - Check what `git add -[u|A|.]` sweeps in before you run it; build artifacts and scratch files live in your tree too. Prefer explicit file lists. `agent/` is a repo of its own: `git -C agent` is how you commit there, and the code repo ignores it.
 - Use `git mv` rather than `mv` to rename a tracked file.
+- A commit subject is a conventional commit, `type(scope): imperative summary` (`fix(tracker): refuse a slug with spaces`), unless the repo's own history follows another convention; the body opens with what the change gives its reader, in a sentence, then the why.
 - Commit as you go without asking. You never merge, and pushing isn't your job: the agent that dispatched you takes your branch from where it is. Ship-shaped actions are never yours to trigger: releases, deploys, changes to running systems, issues or PRs on any project.
 - Commits you author carry a `Workflow-stage:` trailer, classified by what the commit contains, never by what the session has been doing: `grill` (tickets, ADR, GLOSSARY.md) | `prototype` (agent/prototypes/) | `implement` (code for a defined piece of work, ticketed or not) | `review` (fixes addressing a /mx:code-review pass) | `loose` (interactive figure-it-out-with-the-user work, agent/show/ included, if tracked). A commit with no trailer reads as work that did not follow the workflow; that's a greppable signal, and CAN be fine, so leave it absent rather than guessing.
 </git>

@@ -5,11 +5,6 @@ to mirror Claude Code's permission check, so the cases that matter are the ones 
 whole-string matching gets the answer wrong.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 from scan_unapproved import (
     internally_approved,
     is_allowed,

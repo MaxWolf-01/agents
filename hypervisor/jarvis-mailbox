@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# The hypervisor's mailbox on Jarvis's VPS: the forced command of the hypervisor's own ssh key, so that key can leave
+# Jarvis a message and collect Jarvis's, and do nothing else. ssh puts what the laptop asked for in
+# $SSH_ORIGINAL_COMMAND, which is one of:
+#
+#   tell            stdin becomes a new report in Jarvis's inbox, $workspace/inbox/
+#   fetch           each message in Jarvis's outbox to the hypervisor, $workspace/outbox/hypervisor/, one line each,
+#                   oldest first: its name, its mtime in epoch seconds, its text in base64
+#   delete NAME...  removes those messages from the outbox, once the laptop has them
+#
+# A report is written as a dotfile and renamed into place, by the inbox's convention, so Jarvis never reads half of one.
+# Jarvis's side of the outbox follows the same rules, as tell_hypervisor must: a message is written as a dotfile and
+# renamed into place, under a name it has never used before, matching $name_pattern below. fetch skips a dotfile, and
+# names one that does not match on stderr and leaves it.
+#
+# It runs as root on the host, in a volume Jarvis's container writes, where a symlink of Jarvis's could point root
+# anywhere. So before it touches the volume, it becomes the inbox's owner, the container's user, and can do no more
+# there than Jarvis itself could. The volume's parent directories are root's alone, so it enters the workspace first
+# and works in it by relative paths from then on.
+#
+# Set up once: on the laptop, the key, with no passphrase since a timer uses it,
+#   ssh-keygen -t ed25519 -N '' -C hypervisor-jarvis -f ~/.ssh/hypervisor-jarvis
+# and on the VPS, this script as /usr/local/bin/jarvis-mailbox, named in one line of root's authorized_keys:
+#   command="/usr/local/bin/jarvis-mailbox",restrict ssh-ed25519 <the key in ~/.ssh/hypervisor-jarvis.pub> hypervisor-jarvis
+# A lost key loses no message: make a new one, and replace its line.
+set -euo pipefail
+set -f # the request is split into words, never expanded as globs
+
+workspace=${JARVIS_WORKSPACE:-/var/lib/docker/volumes/jarvis_jarvis-workspace/_data}
+inbox=$workspace/inbox
+outbox=$workspace/outbox/hypervisor
+# A report bigger than this is a mistake on the laptop's side, not something Jarvis should open.
+max_bytes=262144
+# The names an outbox message may have: what fetch lists and delete removes.
+name_pattern='^[A-Za-z0-9_][A-Za-z0-9._-]*$'
+
+if ((EUID == 0)); then
+	[[ $(realpath -e "$inbox" 2>/dev/null) == "$(realpath -e "$workspace")/inbox" ]] || { echo "jarvis-mailbox: $inbox is no directory of Jarvis's workspace" >&2; exit 1; }
+	owner=$(stat -c %u "$inbox")
+	((owner != 0)) || { echo "jarvis-mailbox: $inbox belongs to root, not to Jarvis" >&2; exit 1; }
+	cd "$(realpath -e "$workspace")"
+	exec setpriv --reuid="$owner" --regid="$(stat -c %g "$inbox")" --clear-groups -- env JARVIS_WORKSPACE=. "$0"
+fi
+
+read -ra request <<<"${SSH_ORIGINAL_COMMAND:-}"
+case ${request[0]:-} in
+tell)
+	[[ -d $inbox ]] || { echo "jarvis-mailbox: no inbox at $inbox; is Jarvis's workspace there?" >&2; exit 1; }
+	name=hypervisor-$(date -u +%Y%m%dT%H%M%SZ)-$$.md
+	trap 'rm -f "$inbox/.$name"' EXIT
+	head -c $((max_bytes + 1)) >"$inbox/.$name"
+	size=$(stat -c %s "$inbox/.$name")
+	((size > 0)) || { echo "jarvis-mailbox: the message is empty" >&2; exit 2; }
+	((size <= max_bytes)) || { echo "jarvis-mailbox: the message is over $max_bytes bytes" >&2; exit 2; }
+	chmod 644 "$inbox/.$name"
+	mv "$inbox/.$name" "$inbox/$name"
+	trap - EXIT
+	echo "$name"
+	;;
+fetch)
+	[[ -d $outbox ]] || exit 0
+	find "$outbox" -maxdepth 1 -type f ! -name '.*' -printf '%T@ %f\n' | sort -n | while read -r mtime name; do
+		[[ $name =~ $name_pattern ]] || { echo "jarvis-mailbox: $outbox/$name is no message's name, so it is not fetched" >&2; continue; }
+		printf '%s %s %s\n' "$name" "${mtime%.*}" "$(base64 -w0 <"$outbox/$name")"
+	done
+	;;
+delete)
+	for name in "${request[@]:1}"; do
+		[[ $name =~ $name_pattern ]] || { echo "jarvis-mailbox: $name is no outbox message's name" >&2; exit 2; }
+		rm -f -- "$outbox/$name"
+	done
+	;;
+*)
+	echo "jarvis-mailbox: this key may only run tell, fetch or delete NAME..., not: ${SSH_ORIGINAL_COMMAND:-(a shell)}" >&2
+	exit 2
+	;;
+esac

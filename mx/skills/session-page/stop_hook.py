@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Stop hook: what the end of a turn does to the session page.
 
@@ -191,11 +191,11 @@ def open_in_browser(target: str, session_id: str) -> str:
 
 
 def exclude_sessions(sessions: Path) -> str:
-    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it or
-    the repo tracks files under it, and say what came of that. A repo that tracks session records
-    means to, and an exclude line would leave every later session's out of a broad `git add`. The
-    line is anchored at its path from the repo root, so it matches that directory and no other of
-    the same name. Outside git, or where git fails, nothing is written."""
+    """Add `sessions` to the exclude file of the repo it sits in, unless git already ignores it, and
+    say what came of that. Records in flight stay out of `git status` even where the repo tracks
+    earlier sessions' records: end_hook.py force-adds them, and git shows edits to a tracked file
+    whatever ignores it. The line is anchored at its path from the repo root, so it matches that
+    directory and no other of the same name. Outside git, or where git fails, nothing is written."""
 
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", "-C", str(sessions.parent), *args], capture_output=True, text=True)
@@ -205,8 +205,6 @@ def exclude_sessions(sessions: Path) -> str:
         if "not a git repository" in found.stderr:
             return "not in a git repository"
         return f"git rev-parse failed: {found.stderr.strip()}"
-    if git("ls-files", "--", f"{sessions.name}/").stdout:
-        return "tracked, so not excluded"
     checked = git("check-ignore", "-q", f"{sessions.name}/")
     if checked.returncode == 0:
         return "already ignored"

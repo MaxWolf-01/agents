@@ -30,6 +30,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py checkpoint",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
+            "timeout": 10
           }
         ]
       }
@@ -43,6 +48,14 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py ended $PPID"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/session-page/end_hook.py"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -53,6 +66,15 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/handoff/checkpoint.py started $PPID",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/plugin_updates.py",
+            "timeout": 10
           }
         ]
       }
