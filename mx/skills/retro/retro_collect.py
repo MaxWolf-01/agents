@@ -104,6 +104,29 @@ def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime |
         (run / "git" / f"{name}.md").write_text(git_record(repo, since, until))
 
 
+def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
+    """The latest sign of the user since `since`, or "" when there is none: a message of theirs in
+    an interactive session, else a commit of theirs on a branch of one of the repos, theirs being
+    the author identity the repo itself commits with. The digests it reads are cached as a run's are."""
+    refuse_inside_git(cache)
+    refuse_unless_git(repos)
+    transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
+    said = [d for d in digest_all(transcripts, cache, repos)
+            if d.interactive and d.said_last and parse_time(d.said_last) >= since]
+    if said:
+        d = max(said, key=lambda d: d.said_last)
+        return f"a message of max's at {d.said_last} in session {d.sid} ({d.cwd})"
+    for repo in repos:
+        who = subprocess.run(["git", "-C", str(repo), "var", "GIT_AUTHOR_IDENT"], capture_output=True, text=True)
+        if who.returncode != 0 or not (email := re.search(r"<([^>]*)>", who.stdout)):
+            sys.exit(f"{repo} has no author identity, which is what tells max's commits from the rest")
+        if line := git(repo, "log", "--branches", "-1", f"--since-as-filter={since.isoformat()}", "--fixed-strings",
+                       f"--author=<{email.group(1)}>", "--format=%h %cI").strip():
+            sha, date = line.split()
+            return f"a commit of max's at {stamp(parse_time(date))} in {repo.resolve()} ({sha})"
+    return ""
+
+
 def refuse_inside_git(*directories: Path) -> None:
     """Exit, writing nothing, when a directory is or would be inside a git work tree."""
     for directory in directories:
@@ -154,6 +177,7 @@ class Digest:
     interactive: bool
     messages: int
     text: str
+    said_last: str = ""  # when the user's last message in it was sent, "" when none was
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
@@ -223,7 +247,7 @@ def digest_job(args: tuple[Path, list[Path]]) -> Digest | None:
     return digest(*args)
 
 
-CACHE_FORMAT = 6  # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 7 # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
@@ -270,6 +294,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     versions: dict[str, dict[str, list[str]]] = {}
     models: dict[str, dict[str, list[str]]] = {}
     messages = 0
+    said_last: datetime | None = None
 
     def put(at: datetime | None, text: str) -> None:
         nonlocal day
@@ -316,6 +341,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
                 put(at, f"! HOOK → agent: {flatten(a.get('content'))}")
             elif a.get("type") == "queued_command" and a.get("commandMode", "prompt") == "prompt" and (t := said(a.get("prompt"))):
                 messages += 1
+                said_last = at or said_last
                 put(at, f"MAX (queued while the agent worked): {t}")
         elif kind == "user" and session_page.prompted(e):
             content = e.get("message", {}).get("content")
@@ -336,6 +362,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
             if not (t := said(content)):
                 continue
             messages += 1
+            said_last = at or said_last
             tag = "MAX"
             if parent := e.get("parentUuid"):
                 parents[parent] += 1
@@ -358,7 +385,7 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
     text = "\n".join(head + lines + page) + "\n" if interactive else ""  # only interactive sessions are read
     starts = list(itertools.accumulate((len(line) + 1 for line in lines), initial=len("\n".join(head)) + 1))
     return Digest(sid=transcript.stem, profile=profile, cwd=cwd, start=start, end=end, interactive=interactive,
-                  messages=messages, text=text,
+                  messages=messages, text=text, said_last=stamp(said_last) if said_last else "",
                   versions=versions, models=models, days={d: starts[i] for d, i in headings.items()} if interactive else {},
                   page_at=starts[-1] - 1 if interactive else 0)
 

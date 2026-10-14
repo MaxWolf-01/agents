@@ -26,6 +26,10 @@ exits 1, and its last line in the log says why. A run stopped by TERM, INT or HU
 is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
+A new run given --if-active first looks for a sign of max since the period's start: a message of his
+in an interactive session, or a commit of his in a repo `retro/repos` lists. Finding none, it logs
+that it skipped and exits 3, having run no stage.
+
 A run that ended without its commit is resumed with --resume and its directory: it keeps the run's
 period, focus and seed, picks up at the first stage that left out a file it owes, and commits as
 any run does. A directory from before `run.json` was written takes its period's start from --since.
@@ -33,6 +37,7 @@ any run does. A directory from before `run.json` was written takes its period's 
 Examples:
 
     retro_run.py ~/repos/github/MaxWolf-01/agents
+    retro_run.py ~/repos/github/MaxWolf-01/agents --if-active
     retro_run.py ~/repos/github/MaxWolf-01/agents --focus "the tests are overbuilt"
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
     retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/2026-10-11T203542Z
@@ -62,6 +67,7 @@ from retro_collect import git, parse_time, stamp  # noqa: E402
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
+SKIPPED = 3  # the exit status of a run --if-active found no sign of max for
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in retro/
@@ -94,21 +100,22 @@ WORKFLOW = (
 
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
-              seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None) -> Path:
+              seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None,
+              if_active: bool = False) -> Path:
     """A whole workflow retro on `repo`, or the rest of the one `resume` names; returns its run directory.
     The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
     process: a signal left ignored is inherited by every process it starts later, which no TERM then
     stops."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
-        return retro(repo, data, projects, since, focus, seed, until, resume)
+        return retro(repo, data, projects, since, focus, seed, until, resume, if_active)
     finally:
         for s, handler in found.items():
             signal.signal(s, handler)
 
 
 def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
-          seed: Sequence[Path], until: datetime | None, resume: Path | None) -> Path:
+          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool) -> Path:
     repo = repo.expanduser().resolve()
     if not (repo / retro_collect.PLUGIN).exists():
         sys.exit(f"{repo} holds no mx plugin: the workflow retro is the agents repo's, and no other kind is built yet")
@@ -131,7 +138,12 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         base = blob(agent, "retro/report.md")
     log = Log(home / "runs.log", run.name)
     repos = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")]
-    log(f"{'resumed' if resume else 'started'}: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else ""))
+    active = ""
+    if if_active and not resume and not (active := retro_collect.activity(since, list(projects), home / "digest-cache", repos)):
+        log(f"skipped: no session or commit of max's since {stamp(since)}")
+        sys.exit(SKIPPED)
+    log(f"{'resumed' if resume else 'started'}: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else "")
+        + (f"; the latest sign of max: {active}" if active else ""))
     for s in STOP:
         signal.signal(s, on_stop)
     where = "collect"
@@ -448,10 +460,13 @@ class Args:
     """The retro's data directory, outside every git repo."""
     projects: list[Path] = field(default_factory=retro_collect.profiles)
     """Each Claude Code profile's directory of transcripts; by default every `~/.claude*/projects`."""
+    if_active: bool = False
+    """Skip the run, exiting 3, when max sent no message in an interactive session and committed nothing in the listed repos since the period's start."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
-    run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed, resume=args.resume)
+    run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
+              resume=args.resume, if_active=args.if_active)

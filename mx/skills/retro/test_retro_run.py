@@ -304,3 +304,44 @@ def test_a_run_is_not_resumed_over_a_verdict_committed_since_it_began(
         retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], None if kept else SINCE, resume=run)
     assert (agent / "retro/report.md").read_text() == "F1 dismissed by max\n"
     assert out(agent, "log", "-1", "--format=%s") == "verdict\n", "nothing was committed over it"
+
+
+def commit_by(repo: Path, author: str, when: datetime) -> None:
+    """A commit in `repo` whose author is `author` and whose committer is max, as a worker's is once merged."""
+    (repo / f"{when:%H%M%S}-{author.split()[0]}").write_text(author)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", f"by {author}", f"--author={author}", when=when)
+
+
+def test_a_week_with_no_session_or_commit_of_maxs_is_skipped_and_the_run_log_says_so(
+        tmp_path: Path, stub: Path, repo: Path) -> None:
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(repo), SINCE + timedelta(days=1), entrypoint="sdk-cli").says("a worker's prompt")
+    late = Transcript(projects, str(repo), SINCE - timedelta(minutes=3)).says("before the period")
+    late.answers("still").answers("working").answers("past the period's start")
+    commit_by(repo, f"max <{IDENTITY['GIT_AUTHOR_EMAIL']}>", SINCE - timedelta(days=1))
+    commit_by(repo, "worker <worker@example.org>", SINCE + timedelta(days=1))
+
+    with pytest.raises(SystemExit) as stopped:
+        retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
+
+    assert stopped.value.code == retro_run.SKIPPED
+    assert last_logged(tmp_path) == f"skipped: no session or commit of max's since {retro_run.stamp(SINCE)}"
+    assert not list(stub.glob("*.argv")), "no stage ran"
+    assert not (repo / "agent/retro/report.md").exists()
+
+
+@pytest.mark.parametrize("sign", ["a message", "a commit"])
+def test_a_week_with_a_message_or_a_commit_of_maxs_runs(tmp_path: Path, stub: Path, repo: Path, sign: str) -> None:
+    projects = tmp_path / ".claude/projects"
+    projects.mkdir(parents=True)
+    if sign == "a message":
+        Transcript(projects, str(repo), SINCE + timedelta(days=3)).says("why is the suite so slow")
+    else:
+        commit_by(repo, f"max <{IDENTITY['GIT_AUTHOR_EMAIL']}>", SINCE + timedelta(days=3))
+
+    retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
+
+    started = (tmp_path / "data/agents/runs.log").read_text().splitlines()[0]
+    assert f"the latest sign of max: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
+    assert last_logged(tmp_path).startswith("committed ")
