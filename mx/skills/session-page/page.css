@@ -203,11 +203,12 @@ button.id:hover { color: var(--accent); }
 .chip a { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .chip:hover a { color: var(--accent); }
 .turn-body { padding: 0.1rem 0 2rem var(--rail); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.15rem; }
-/* A table squeezed to the text's width wraps its cells; where it needs more, it spreads into the room either side of the
-   text, centred on it, and a narrow one stays at the text's start. The shift left is half of what the table outgrows the
-   text's column by: a translate's percentage is of the table's own width. */
-.turn-body .prose > table { width: max-content; max-width: calc(var(--text) + 2 * (var(--gutter) - var(--pad)));
-  translate: min(0px, var(--text) / 2 - 50%); }
+/* A table squeezed to the text's width wraps its cells; where it needs more, it spreads past the text: centred on it as
+   far as the room either side allows, the left's ending at the turn's edge, where the current turn's mark runs. A narrow
+   one stays at the text's start. The shift left is half of what the table outgrows the text by, or more where the right
+   lacks the room, never past the turn's edge; a translate's percentage is of the table's own width. */
+.turn-body .prose > table { width: max-content; max-width: calc(var(--text) + var(--rail) + var(--gutter) - var(--pad));
+  translate: calc(-1 * clamp(0px, max((100% - var(--text)) / 2, 100% - var(--text) - var(--gutter) + var(--pad)), var(--rail))); }
 /* a chat turn: the reply the turn ended on in the chat, one compact row with nothing to open */
 .turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.75rem 0; }
 .turn.chat:focus-visible { outline: none; }

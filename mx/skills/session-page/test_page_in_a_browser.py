@@ -288,6 +288,15 @@ with sync_playwright() as pw:
             page.click("#sheet-toggle")
         page.wait_for_timeout(400)
         out["sheet_open"] = page.evaluate(geometry)["column"]
+    elif scenario == "tables":
+        # where turn 05's tables sit against its text, its edge and the pane, and which cells wrap
+        context, page = open_page(args["width"], 800)
+        out.update(page.evaluate('''(() => { const box = (el) => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right} }
+          const turn = document.getElementById("t05"), prose = turn.querySelector(".turn-body .prose")
+          const wraps = (cell) => { const s = getComputedStyle(cell)
+            return cell.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) > 1.5 * parseFloat(s.lineHeight) }
+          return {turn: box(turn), text: box(prose.querySelector("p")), pane: box(document.getElementById("turns-pane")),
+                  tables: [...prose.querySelectorAll(":scope > table")].map((t) => ({...box(t), wraps: [...t.querySelectorAll("th, td")].some(wraps)}))} })()'''))
     browser.close()
 print(json.dumps(out))
 """
@@ -358,6 +367,25 @@ def chatted(long_session: tuple[Path, Path], transcript: Path) -> Path:
     (turns / "13.md").unlink()
     chat.unlink()
     return rendered
+
+
+WIDE_TABLE = """| What runs | Where its key comes from | What it is billed as |
+| --- | --- | --- |
+| a script run by hand from a shell on the laptop, now and then | the environment the shell exports | usage of the account the key belongs to |
+| a scheduled job on the server, once an hour | a file only the job's user can read | the same account's usage, every hour |
+"""
+NARROW_TABLE = "| Key | Does |\n| --- | --- |\n| j | the next turn |\n"
+
+
+@pytest.fixture
+def tabled(rendered: tuple[Path, Path], transcript: Path) -> Path:
+    """The worked example with a fifth turn whose Details hold a table too wide for the text's
+    measure and a narrow one."""
+    page, _ = rendered
+    record = filler(5).replace("## Details\n\n", f"## Details\n\nA paragraph before the tables.\n\n{WIDE_TABLE}\n{NARROW_TABLE}\n", 1)
+    (page.parent / "turns" / "05.md").write_text(record)
+    page.write_text(render_session(page.parent, transcript))
+    return page
 
 
 def probe(page: Path, scenario: str, **args: object) -> dict:
@@ -538,6 +566,21 @@ def test_the_panes_hold_at_every_width(long_session: tuple[Path, Path], width: i
     if width <= 704:
         sheet = seen["sheet_open"]
         assert sheet["shown"] and sheet["right"] <= seen["top"]["width"] + 1 and sheet["left"] >= 0, f"the sheet did not open: {sheet}"
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_wide_table_spreads_past_the_text_and_stays_in_its_turn(tabled: Path, width: int) -> None:
+    """A table too wide for the text's measure spreads past the text rather than wrap its cells, as
+    far as the room the turn has: never left of the turn's edge, where the current turn's mark runs,
+    nor past the pane's. At a wide window it fits on one line a row, having spread left of the text
+    too. A narrow table stays at the text's start."""
+    seen = probe(tabled, "tables", width=width)
+    (wide, narrow), turn, text, pane = seen["tables"], seen["turn"], seen["text"], seen["pane"]
+    assert wide["left"] >= turn["left"] - 1, f"the table runs over the current turn's mark: {seen}"
+    assert wide["right"] <= pane["right"] + 1, f"the table runs past the pane: {seen}"
+    if width == WIDTHS[0]:
+        assert not wide["wraps"] and wide["left"] < text["left"] - 1, f"the table did not spread past the text: {seen}"
+    assert abs(narrow["left"] - text["left"]) <= 1, f"the narrow table left the text's start: {seen}"
 
 
 if __name__ == "__main__":
