@@ -1,3 +1,7 @@
+## 1.0.64
+
+- feat(session-page): a copy button in each code block's top right corner
+
 ## 1.0.63
 
 - feat(retro): a weekly retro per repo keeps one living report, and the workflow retro reads every session
