@@ -1,6 +1,6 @@
 // The live hypervisor: this extension beside our pi-optchat fork, which holds the memory (`hv` starts pi with both). It
-// registers the session tools, the inbox, wait and the explorer's read tools, and makes them, with OptChat's `zoom` and
-// `date`, the whole active set: OptChat's own `spawn` and `tell` run pi subagents with pi's coding tools, which
+// registers the session tools, the inbox, tell_jarvis, wait and the explorer's read tools, and makes them, with
+// OptChat's `zoom` and `date`, the whole active set: OptChat's own `spawn` and `tell` run pi subagents with pi's coding tools, which
 // lifelong-hypervisor#P4 rules out. A message waits in the inbox, listed on OptChat's status line, until the hypervisor
 // reads it; a ping reaches OptChat as a report and starts a turn, as does what wait and a background delegate post.
 // Either way memory logs it as `work`, not as max's. Each message max types is saved as a numbered file and reaches
@@ -12,11 +12,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
 import { exploring, usageLog } from "./exploring.ts";
 import { inbox } from "./inbox.ts";
+import { jarvisFromEnvironment } from "./jarvis.ts";
 import { append } from "./journal.ts";
 import { fromEnvironment, type SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
 import { save } from "./inputs.ts";
-import { inboxTool, sessionTools } from "./tools.ts";
+import { inboxTool, jarvisTool, sessionTools } from "./tools.ts";
 import { watch } from "./watch.ts";
 
 /** OptChat's memory tools, which stay active. */
@@ -33,7 +34,7 @@ export function live(config: SessionConfig & { usage?: string }): (pi: Extension
 	return (pi) => {
 		const messages = inbox(config.store);
 		const work = background(messages);
-		const tools = [...sessionTools(config, work), inboxTool(messages), waitTool(work), ...exploreTools(config)];
+		const tools = [...sessionTools(config, work), inboxTool(messages), jarvisTool(jarvisFromEnvironment()), waitTool(work), ...exploreTools(config)];
 		for (const tool of tools) pi.registerTool(tool);
 		pi.events.on(STATUS_CHANNEL, (data) => {
 			const line = messages.statusLine();
