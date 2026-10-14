@@ -977,8 +977,7 @@ def assemble(v: View, now: datetime) -> str:
   <div class="left">
     <section class="intro">
       <h1 class="v-title">{title}</h1>
-      <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button> · {turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}rendered {now:%Y-%m-%d %H:%M} · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
-{handoffs(session)}
+      <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{handoffs(session)} · {turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
       <div class="prose brief">{block(session.brief)}</div>
       <div class="actions">
         <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
@@ -1002,12 +1001,13 @@ def assemble(v: View, now: datetime) -> str:
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
     from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory. Nothing where neither is there."""
+    sessions directory: a part of the meta line, after the session's own id, so they show with the
+    brief folded. Nothing where neither is there."""
     def to(other: str) -> str:
         return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{esc(other[:8])}</a>'
     parts = ([f"continues {to(session.previous)}"] if session.previous else []) + (
         [f"continued in {', '.join(to(s) for s in session.following)}"] if session.following else [])
-    return f'\n    <p class="v-meta handoffs" id="handoffs">{" · ".join(parts)}</p>' if parts else ""
+    return f' · <span class="handoffs" id="handoffs">{" · ".join(parts)}</span>' if parts else ""
 
 
 def column(rows: tuple[Row, ...]) -> str:

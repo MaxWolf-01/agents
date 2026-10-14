@@ -101,7 +101,8 @@ with sync_playwright() as pw:
         # what a click on the session id leaves on the clipboard
         context.grant_permissions(["clipboard-read", "clipboard-write"])
         page.click("#session-id")
-        page.wait_for_function("document.querySelector('#toast').textContent.startsWith('copied: ')", timeout=5000)
+        # the word that says so, over the id
+        page.wait_for_function("document.querySelector('.copied-tip')?.textContent === 'copied'", timeout=5000)
         out["copied"] = page.evaluate("navigator.clipboard.readText()")
         out["chips"] = page.evaluate('''[...document.querySelectorAll("details.turn")].map((t) => [t.id,
             [...t.querySelectorAll(":scope > summary .chip-link")].filter((a) => a.checkVisibility()).map((a) => a.textContent)])''')

@@ -37,6 +37,9 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .help td:first-child { white-space: nowrap; }
 .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); max-width: min(40rem, calc(100vw - 3rem)); box-sizing: border-box; padding: 0.5rem 0.9rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground); font: 400 0.8rem/1.5 var(--font-mono); color: var(--body); opacity: 0; pointer-events: none; transition: opacity 200ms; overflow-wrap: anywhere; }
 .toast.on { opacity: 1; }
+/* the word that rises over what a click copied and fades, as a copy button says it did */
+.copied-tip { position: fixed; z-index: 20; transform: translate(-50%, -100%); padding: 0.15rem 0.5rem; border-radius: 4px; background: var(--strong); color: var(--ground); font: 500 0.72rem/1.4 var(--font-mono); white-space: nowrap; pointer-events: none; animation: copied-tip 1.1s ease-out forwards; }
+@keyframes copied-tip { 0% { opacity: 0; margin-top: 0; } 15%, 70% { opacity: 1; margin-top: -0.4rem; } 100% { opacity: 0; margin-top: -0.7rem; } }
 
 /* Left, the title, the questions and the turns' pane; right, the timeline, full height. */
 main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--column); }
@@ -58,12 +61,12 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .column { position: relative; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 1rem 2rem 1.1rem; border-left: 1px solid var(--edge); background: var(--ground); --head: 2.75rem; }
 .column-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 2.75rem; background: var(--ground); }
 .column .group { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: baseline; padding: 0.1rem 0; }
-.column .group + .group { margin-top: 0.55rem; }
-.column .group.bare + .group.bare { margin-top: 0.1rem; }
+.column .group + .group { margin-top: 0.75rem; }
+.column .group.bare + .group.bare { margin-top: 0.3rem; }
 .column .turn-ref { color: var(--muted); }
 .column .turn-ref:hover, .column .group.cur .turn-ref { color: var(--accent); }
 .column .group.cur .hl { color: var(--body); }
-.column ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+.column ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
 .column li { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); align-items: baseline; font-size: 0.82rem; line-height: 1.45; }
 .column .n { justify-self: start; }
 .column a.artefact { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
@@ -81,19 +84,21 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .bar .newest, .sheet-toggle { display: none; }
 .sheet-toggle { height: 1.8rem; font-size: 0.78rem; }
 
-.intro { flex: none; padding: 0.65rem var(--pad) 0.55rem; border-bottom: 1px solid var(--edge); }
-.intro .v-title { font-size: 1.2rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.intro > .v-meta { margin-top: 0.15rem; }
-.intro > .handoffs { margin-top: 0.25rem; }
-.intro:not(.unfolded) :is(.brief, .actions, .handoffs) { display: none; }
+.intro { flex: none; padding: 1rem var(--pad) 0.85rem; border-bottom: 1px solid var(--edge); }
+.intro .v-title { font-size: 1.35rem; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.intro > .v-meta { margin-top: 0.4rem; }
+.intro:not(.unfolded) :is(.brief, .actions) { display: none; }
+.intro .nowrap { white-space: nowrap; }
+.handoffs a { color: var(--accent); text-decoration: none; }
+.handoffs a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .unfold { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; }
 .unfold::after { content: " ▾"; }
 .intro.unfolded .unfold::after { content: " ▴"; }
-.brief { margin-top: 0.6rem; max-width: 52rem; font-size: 0.95em; color: var(--muted); }
+.brief { margin-top: 0.75rem; max-width: 52rem; font-size: 0.95em; color: var(--muted); }
 .brief > * { max-width: none; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 0.7rem; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 0.9rem; }
 #resume.copied { border-color: var(--accent); color: var(--accent); }
-button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: copy; }
+button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; transition: color 150ms; }
 button.id:hover { color: var(--accent); }
 .actions .name { color: var(--body); }
 
@@ -107,16 +112,16 @@ button.id:hover { color: var(--accent); }
    The folded rows never shrink; the open question gives up height first, its body scrolling on its
    own, so every row stays in view however long that question is. The band itself scrolls only when
    the rows alone outgrow it. */
-.waiting { flex: 0 1 auto; display: flex; flex-direction: column; max-height: 60%; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 var(--pad) 0.9rem; background: var(--ground-2); border-bottom: 1px solid var(--edge); --head: 2.4rem; }
-.waiting .divider { flex: none; position: sticky; top: 0; z-index: 1; margin: 0 0 0.4rem; padding: 0.55rem 0 0.4rem; background: var(--ground-2); }
+.waiting { flex: 0 1 auto; display: flex; flex-direction: column; max-height: 60%; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 var(--pad) 1.1rem; background: var(--ground-2); border-bottom: 1px solid var(--edge); --head: 2.4rem; }
+.waiting .divider { flex: none; position: sticky; top: 0; z-index: 1; margin: 0 0 0.5rem; padding: 0.8rem 0 0.5rem; background: var(--ground-2); }
 .fold-band { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
 .fold-band kbd { font-size: 0.68rem; }
 .waiting.collapsed { padding-bottom: 0; }
 .waiting.collapsed > .q { display: none; }
 .q { flex: none; display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); font-size: 0.92rem; }
 .q:not(.folded) { flex: 0 1 auto; min-height: 4.5rem; }
-.q + .q { margin-top: 0.5rem; }
-.q:not(.folded) + .q, .q + .q:not(.folded) { margin-top: 0.8rem; }
+.q + .q { margin-top: 0.7rem; }
+.q:not(.folded) + .q, .q + .q:not(.folded) { margin-top: 1.05rem; }
 .q:focus { outline: none; }
 .q-main { min-width: 0; min-height: 0; max-width: 52rem; display: flex; flex-direction: column; }
 .q h3 { flex: none; cursor: pointer; }
@@ -130,41 +135,41 @@ button.id:hover { color: var(--accent); }
 .q.folded .pickline, .pickline.blind { display: block; }
 .pickline.blind a { color: var(--accent); }
 .q-detail { margin-top: 0.35rem; }
-.opts { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.25rem; }
+.opts { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
 .opts li { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); }
 .opts .k { color: var(--muted); padding-top: 0.08rem; }
 .opts .pick .k { color: var(--strong); font-weight: 500; }
 .tag { font: 400 0.75rem/1 var(--font-mono); color: var(--muted); margin-left: 0.6rem; white-space: nowrap; }
 .opts .pick .tag:not(.you) { color: var(--body); }
 .tag.you { color: var(--accent); }
-.why { margin-top: 0.5rem; color: var(--muted); max-width: 52rem; }
+.why { margin-top: 0.65rem; color: var(--muted); max-width: 52rem; }
 .why .v-meta, .free .v-meta { margin-right: 0.35rem; }
-.asked-in { margin-top: 0.4rem; }
+.asked-in { margin-top: 0.5rem; }
 .asked-in a { text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; }
 
 /* turns */
 .turn { border-top: 1px solid var(--edge); }
 .turn:last-child { border-bottom: 1px solid var(--edge); }
-.turn > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.7rem 0; }
+.turn > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.95rem 0; }
 .turn > summary::-webkit-details-marker { display: none; }
 .turn > summary:focus-visible { outline: none; }
 .turn > summary .hl { font-weight: 400; color: var(--body); transition: color 150ms; padding-right: 1.5rem; }
 .turn[open] > summary .hl { font-weight: 600; color: var(--strong); }
 .turn > summary:hover .hl { color: var(--accent); }
 .turn > summary .date { white-space: nowrap; }
-.turn > summary .chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; margin-top: 0.4rem; }
+.turn > summary .chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; margin-top: 0.55rem; }
 .turn[open] > summary .chips { display: none; }
 .chip { display: inline-flex; align-items: baseline; gap: 0.4rem; max-width: 100%; box-sizing: border-box; padding: 0.15rem 0.6rem 0.15rem 0.3rem; border: 1px solid var(--edge); border-radius: 999px; font-size: 0.8rem; line-height: 1.5; transition: border-color 150ms; }
 .chip kbd { border: 0; background: none; min-width: 0; padding: 0 0.15em; }
 .chip:hover { border-color: var(--accent); }
 .chip a { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .chip:hover a { color: var(--accent); }
-.turn-body { padding: 0 0 1.6rem var(--rail); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.turn-body { padding: 0.1rem 0 2rem var(--rail); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.15rem; }
 /* a chat turn: the reply the turn ended on in the chat, one compact row with nothing to open */
-.turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.45rem 0; }
+.turn.chat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) auto; align-items: baseline; padding: 0.75rem 0; }
 .turn.chat:focus-visible { outline: none; }
 .turn.chat .date { white-space: nowrap; }
-.chat-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.15rem; padding-right: 1.5rem; }
+.chat-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; padding-right: 1.5rem; }
 .reply { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; align-items: baseline; padding: 0 0.8rem; margin-left: -0.8rem; max-width: var(--measure); }
 .reply .prose { font-size: 0.95em; overflow-wrap: anywhere; }
 
@@ -229,4 +234,6 @@ a.path:hover { text-decoration-color: var(--accent); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+  .copied-tip { animation-name: copied-tip-still; }
+  @keyframes copied-tip-still { 0%, 70% { opacity: 1; margin-top: -0.4rem; } 100% { opacity: 0; margin-top: -0.4rem; } }
 }
