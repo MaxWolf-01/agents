@@ -20,12 +20,12 @@ The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may re
 
 1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too. Then list the agent repo's tickets in flight, those in `{{agent}}/tickets/` that max ruled on and that are not done (`status:` open, claimed or review), each by its slug and a line on what it changes.
 2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, and in a workflow retro the code the period's friction touched. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
-3. Spawn one subagent per code lens, in parallel, each given the brief below, its lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its lens that `previous/current.md` carries, Dismissed included.
+3. Spawn one subagent per code lens, in parallel, each given the brief below, its code lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its code lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
 The stage is done when `lens-pass/` holds `architecture.md`, `bloat.md`, `tests.md`, `footguns.md` and `escaped-defects.md`.
 
-## A lens's brief
+## A code lens's brief
 
 You read `{{repo}}`'s code through one code lens, starting from the direction you were given and following what you find past it. A candidate is a change the code or its environment should get. Each carries:
 
@@ -35,9 +35,9 @@ You read `{{repo}}`'s code through one code lens, starting from the direction yo
 - **In flight**: the ticket in flight that already takes it up, where one does. The candidate then cites that ticket, and proposes nothing beside it.
 - **Standing**: the id of the candidate in `previous/current.md` it is, where it is one, so it is rechecked under that id. One max dismissed comes back only on evidence dated after his verdict, which it names.
 
-Write `{{run}}/lens-pass/<lens>.md`: the candidates in order of impact, then a line on where you looked. A lens the code gives nothing to gets that line alone. Reply with the file's path alone.
+Write `{{run}}/lens-pass/<code lens>.md`: the candidates in order of impact, then a line on where you looked. A code lens that finds nothing gets that line alone. Reply with the file's path alone.
 
-## The lenses
+## The code lenses
 
 ### architecture
 

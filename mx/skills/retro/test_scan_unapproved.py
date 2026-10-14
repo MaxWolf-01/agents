@@ -1,4 +1,4 @@
-"""Checks for the shell parsing in scan_unapproved.py. Run: make test, or pytest on this file with tyro.
+"""Checks for the shell parsing in scan_unapproved.py. Run: make test, or pytest on this file.
 
 Every case below is a real command shape taken from session transcripts. The parsing exists
 to mirror Claude Code's permission check, so the cases that matter are the ones where naive

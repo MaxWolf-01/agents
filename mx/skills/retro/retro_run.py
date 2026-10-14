@@ -8,8 +8,8 @@ its page into `retro/` of the repo's agent repo, in its main checkout.
 
 The repo's kind decides what a run reads and which stages it runs. The agents repo, which holds
 the mx plugin, gets the workflow retro: it reads the sessions of every Claude Code profile under
-the home (`~/.claude*/projects`) and the git of the repos `retro/repos` lists in its agent repo,
-one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
+the home (`~/.claude*/projects`) and the git of the agents repo and of the repos `retro/repos`
+lists in its agent repo, one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
 other repo gets a repo retro: it reads the repo's own commits and its agent repo's tickets, and no
 session, and runs follow-up, the lens pass and synthesize. A repo whose `agent/` is no git repo of
 its own is refused, since the report lives there.
@@ -20,28 +20,28 @@ but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`
 repo: what collect gathered, each stage's prompt, notes and output, and the new report. Each event
 of a run is a line of `<data>/<repo>/runs.log`.
 
-The stages run one after another, each a `claude -p` on Opus 5.5 that may write only in the run
-directory. The workflow retro's first, read-fresh, may read nothing outside it either, and runs
-before the earlier reports are copied into it, under `previous/`. A repo retro's stages may not
-read the session pages in its agent repo, and run no git command there.
+The stages run one after another, each a `claude -p` that may write only in the run directory.
+The workflow retro's first, read-fresh, may read nothing outside it either, and runs before the
+earlier reports are copied into it, under `previous/`. A repo retro's stages may not read the
+session pages in its agent repo, and run no git command there.
 
 The commit holds `retro/report.md` and `retro/report.html` alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
 the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has
 changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
-A run that ends without its commit, there or at a stage that failed or left out a file it owes,
-exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the stage it
-is in, and whatever that stage started, before it exits; one stopped during the commit lets the
+A run that ends without its commit, there, in collect or at a stage that failed or left out a file
+it owes, exits 1, and its last line in the log says why. A run stopped by TERM, INT or HUP ends the
+stage it is in, and whatever that stage started, before it exits; one stopped during the commit lets the
 commit finish. On Linux, a run killed outright takes its stage down with it.
 
 A new run given --if-active first looks for something new since the period's start: for the
-workflow retro, a message of max's in an interactive session or a commit of his in a repo
-`retro/repos` lists; for a repo retro, a commit on any branch of the repo. Finding none, it logs
+workflow retro, a message of max's in an interactive session or a commit of his in the agents
+repo or a repo `retro/repos` lists; for a repo retro, a commit on any branch of the repo. Finding none, it logs
 that it skipped and exits 3, having run no stage.
 
-A run that ended without its commit is resumed with --resume and its directory: it keeps the run's
-period, focus and seed, picks up at the first stage that left out a file it owes, and commits as
-any run does. A directory from before `run.json` was written takes its period's start from --since.
+A run that ended without its commit, once collect had finished, is resumed with --resume and its
+directory: it keeps the run's repo, period, focus and seed, picks up at the first stage that left
+out a file it owes, and commits as any run does.
 
 Examples:
 
@@ -51,7 +51,7 @@ Examples:
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
     retro_run.py ~/.dotfiles --if-active
     retro_run.py ~/.dotfiles --focus "the backup scripts"
-    retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/2026-10-11T203542Z
+    retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/<end of period>
 """
 
 from __future__ import annotations
@@ -84,8 +84,10 @@ BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in retro/
 RUN_LOG = HERE.parent / "run-log" / "run-log"
-# `status` is left out: it refreshes the index, a write into the repo.
-GIT_READS = ("log", "show", "diff", "blame", "rev-parse", "rev-list", "merge-base", "ls-files", "ls-tree",
+# `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
+# path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
+# `log -p` and `show` read the same history from the repo's objects alone.
+GIT_READS = ("log", "show", "blame", "rev-parse", "rev-list", "merge-base", "ls-files", "ls-tree",
              "cat-file", "shortlog")
 IN_PROGRESS = {"MERGE_HEAD": "merge", "rebase-merge": "rebase", "rebase-apply": "rebase",
                "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert"}  # marker in the git dir: operation
@@ -156,7 +158,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
     if resume:
         run = resume.expanduser().resolve()
-        since, until, focus, seed, base = resumed(run, agent, since, focus, seed)
+        since, until, focus, seed, base = resumed(run, repo, agent, since, focus, seed)
         home = run.parent.parent
     else:
         until = until or datetime.now(UTC)
@@ -166,27 +168,31 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         home = data.expanduser() / repo.name.lstrip(".")
         run = home / "runs" / dirname(until)
         base = blob(agent, "retro/report.md")
+    retro_collect.refuse_inside_git(home)
     log = Log(home / "runs.log", run.name)
-    repos = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")] if kind is WORKFLOW else [repo]
-    active = ""
-    if if_active and not resume:
-        if kind is WORKFLOW and not (active := retro_collect.activity(since, list(projects), home / "digest-cache", repos)):
-            log(f"skipped: no session or commit of max's since {stamp(since)}")
-            sys.exit(SKIPPED)
-        if kind is REPO and not (active := retro_collect.latest_commit(repo, since)):
-            log(f"skipped: no commit in {repo} since {stamp(since)}")
-            sys.exit(SKIPPED)
-    log(f"{'resumed' if resume else 'started'}: {kind.name} of {repo}, {stamp(since)} to {stamp(until)}"
-        + (f", focus: {focus}" if focus else "") + (f"; new since: {active}" if active else ""))
-    for s in STOP:
-        signal.signal(s, on_stop)
-    where = "collect"
+    listed = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")] if kind is WORKFLOW else []
+    repos = list(dict.fromkeys([repo, *listed]))
+    where = "the check for something new"
     try:
+        retro_collect.refuse_unless_git(repos)
+        active = ""
+        if if_active and not resume:
+            if kind is WORKFLOW and not (active := retro_collect.activity(since, list(projects), home / "digest-cache", repos)):
+                log(f"skipped: no session or commit of max's since {stamp(since)}")
+                sys.exit(SKIPPED)
+            if kind is REPO and not (active := retro_collect.latest_commit(repo, since)):
+                log(f"skipped: no commit in {repo} since {stamp(since)}")
+                sys.exit(SKIPPED)
+        log(f"{'resumed' if resume else 'started'}: {kind.name} of {repo}, {stamp(since)} to {stamp(until)}"
+            + (f", focus: {focus}" if focus else "") + (f"; new since: {active}" if active else ""))
+        for s in STOP:
+            signal.signal(s, on_stop)
+        where = "collect"
         if not (run / "run.json").is_file():
             collect(kind, since, until, run, home, list(projects), repo, repos, agent)
             # What a resumed run keeps; written last, so its presence says collect finished.
-            (run / "run.json").write_text(json.dumps(dict(since=stamp(since), until=stamp(until), focus=focus,
-                                                          seed=[str(p) for p in seed], base=base)) + "\n")
+            (run / "run.json").write_text(json.dumps(dict(repo=str(repo), since=stamp(since), until=stamp(until),
+                                                          focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       kind=kind.name, agent=str(agent), repos="\n".join(f"- {r}" for r in repos),
                       sample=f"about {retro_collect.SAMPLE_SIZE} older sessions that started "
@@ -207,13 +213,32 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     except Stopped as stop:
         log(f"stopped: {stop.signal.name} during {where}, which ended with it; the run's directory is {run}")
         sys.exit(128 + stop.signal)
+    except SystemExit as e:
+        if isinstance(e.code, str):  # a refusal, which says why; an exit status is a line already logged
+            log(f"failed: {where}: {e.code}")
+            sys.exit(1)
+        raise
+    except Exception as e:
+        log(f"failed: {where}: {failure(e)}")
+        raise
     for s in STOP:  # the commit takes a moment, and one cut short leaves the agent repo half-changed
         signal.signal(s, signal.SIG_IGN)
-    committed, line = commit_report(agent, run, base, since, until, kind)
+    try:
+        committed, line = commit_report(agent, run, base, since, until, kind)
+    except Exception as e:
+        log(f"failed: the commit: {failure(e)}; the report stays in {run}")
+        raise
     log(line)
     if not committed:
         sys.exit(1)
     return run
+
+
+def failure(e: Exception) -> str:
+    """An exception as a run log's line says it: a git command with what it printed, anything else by its type."""
+    if isinstance(e, subprocess.CalledProcessError):
+        return f"{' '.join(map(str, e.cmd))} exited {e.returncode}: {(e.stderr or '').strip()}"
+    return f"{type(e).__name__}: {e}"
 
 
 def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path, projects: list[Path], repo: Path,
@@ -227,27 +252,18 @@ def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path,
     retro_collect.collect_touched(since, until, run, repo)
 
 
-def resumed(run: Path, agent: Path, since: datetime | None, focus: str,
+def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: str,
             seed: list[Path]) -> tuple[datetime, datetime, str, list[Path], str | None]:
-    """The period, focus, seed and base of the run in `run`, from its `run.json`. A directory from
-    before `run.json` was written takes its start from `since`, its end from its name, and as its
-    base the report its `previous/current.md` holds. Exits when the report was committed to since
-    the run began: its stages read the report as it was, and its commit would undo the change."""
-    if (run / "run.json").is_file():
-        if since or focus or seed:
-            sys.exit(f"{run} keeps its own period, focus and seed in run.json; --resume takes none of them")
-        state = json.loads((run / "run.json").read_text())
-    elif not (run / "batches.json").is_file():
-        sys.exit(f"{run} holds no run.json: no retro run finished collecting into it")
-    elif since is None:
-        sys.exit(f"{run} holds no run.json, which names the period's start: pass --since")
-    else:
-        current = run / "previous" / "current.md"
-        base = (git(agent, "hash-object", str(current)).strip() if current.is_file()
-                else None if (run / "previous").is_dir() else blob(agent, "retro/report.md"))
-        state = dict(since=stamp(since), until=stamp(datetime.strptime(run.name, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=UTC)),
-                     focus=focus, seed=[str(p) for p in seed], base=base)
-        (run / "run.json").write_text(json.dumps(state) + "\n")
+    """The period, focus, seed and base of the run in `run`, from its `run.json`. Exits when the
+    run was of another repo, or when the report was committed to since the run began: its stages
+    read the report as it was, and its commit would undo the change."""
+    if not (run / "run.json").is_file():
+        sys.exit(f"{run} holds no run.json: no retro run finished collecting into it; start a new run")
+    if since or focus or seed:
+        sys.exit(f"{run} keeps its own period, focus and seed in run.json; --resume takes none of them")
+    state = json.loads((run / "run.json").read_text())
+    if state.get("repo") != str(repo):
+        sys.exit(f"{run} is a run of {state.get('repo', 'a repo its run.json does not name')}, not of {repo}; start a new run")
     if blob(agent, "retro/report.md") != state["base"]:
         sys.exit(f"{agent}/retro/report.md was committed to since {run.name} began; start a new run, which reads it as it is")
     return (parse_time(state["since"]), parse_time(state["until"]), state["focus"],
@@ -419,12 +435,15 @@ def end(process: subprocess.Popen, grace: float = 60) -> None:
 def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
     """The command line of a stage's model run. It starts from none of the host's settings, and
     `--restricted` confines its file tools to the run directory and, after read-fresh, what is
-    `within` its reach; the one write rule covers the run directory alone, git's `--output`, which
-    writes a file, is denied, and every other write is refused, since nobody is there to approve it."""
+    `within` its reach; the one write rule covers the run directory alone, git's options that write
+    a file or read one outside the repo are denied, and every other write is refused, since nobody
+    is there to approve it."""
     tools, allowed, add = "Read,Grep,Glob,Write,Edit,Agent", [f"Edit(/{run}/**)"], []
     if not stage.fresh:
         tools += ",Bash"
-        denied = [*(f"Bash(git -C {d} * --output*)" for d in within.git), *(f"Read(/{h}/**)" for h in within.hidden)]
+        # --output writes a file; blame's --contents reads any file on disk, a hidden one included.
+        denied = [*(f"Bash(git -C {d} * {option}*)" for d in within.git for option in ("--output", "--contents")),
+                  *(f"Read(/{h}/**)" for h in within.hidden)]
         add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
         allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
     return ["bash", str(RUN_LOG), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
@@ -451,8 +470,10 @@ def run_commits(agent: Path) -> list[tuple[str, datetime]]:
 def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], seed: list[Path]) -> None:
     """`previous/`: the report as it stands now, verdicts since the last run included, as
     `current.md`; the last three runs' reports, each named for the end of its period; and the
-    seed, the reports a first run takes as its previous ones, under `seed/`."""
-    previous = run / "previous"
+    seed, the reports a first run takes as its previous ones, under `seed/`. Built beside it and
+    renamed into place, so a `previous/` a stopped run left is whole."""
+    previous = run / "previous.partial"
+    shutil.rmtree(previous, ignore_errors=True)
     previous.mkdir()
     if blob(agent, "retro/report.md"):
         (previous / "current.md").write_text(git(agent, "show", "HEAD:retro/report.md"))
@@ -462,6 +483,7 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
         (previous / "seed").mkdir()
         for path in seed:
             shutil.copy(path, previous / "seed" / path.name)
+    previous.rename(run / "previous")
 
 
 # ── the commit ───────────────────────────────────────────────────────────────
@@ -485,18 +507,29 @@ def commit_report(agent: Path, run: Path, base: str | None, since: datetime, unt
         shutil.copy(run / name, agent / "retro" / name)
     message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
-    git(agent, "add", "--", *paths)
-    done = subprocess.run(["git", "-C", str(agent), "commit", "--quiet", "--only", "-m", message, "--", *paths],
-                          capture_output=True, text=True)
-    if done.returncode != 0:
-        git(agent, "reset", "--quiet", "--", *paths)
-        for path in paths:
-            if blob(agent, path) is None:
-                (agent / path).unlink()
-            else:
-                git(agent, "checkout", "--", path)
-        return False, f"not committed: git commit failed ({(done.stderr or done.stdout).strip()}); the report stays in {run}"
+    try:
+        # `--only` stages a tracked file itself, so a commit that fails leaves it unstaged; a first
+        # run's files, untracked, need the add.
+        if new := [path for path in paths if blob(agent, path) is None]:
+            git(agent, "add", "--", *new)
+        git(agent, "commit", "--quiet", "--only", "-m", message, "--", *paths)
+    except subprocess.CalledProcessError as e:
+        restore(agent, paths)
+        return False, f"not committed: git {e.cmd[3]} failed ({(e.stderr or e.stdout).strip()}); the report stays in {run}"
     return True, f"committed {git(agent, 'rev-parse', '--short', 'HEAD').strip()} in {agent}"
+
+
+def restore(agent: Path, paths: list[str]) -> None:
+    """Put each file back as HEAD has it, unstaged. Each step stands alone, and the file's text
+    comes from the object store, not the index: what failed the commit is most often another
+    process holding the index's lock, which fails a reset too."""
+    for path in paths:
+        subprocess.run(["git", "-C", str(agent), "reset", "--quiet", "--", path], capture_output=True)
+        if (committed := blob(agent, path)) is None:
+            (agent / path).unlink(missing_ok=True)
+        else:
+            (agent / path).write_bytes(subprocess.run(["git", "-C", str(agent), "cat-file", "blob", committed],
+                                                      capture_output=True, check=True).stdout)
 
 
 def blob(agent: Path, path: str) -> str | None:

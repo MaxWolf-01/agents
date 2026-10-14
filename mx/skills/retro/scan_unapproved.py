@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["tyro"]
-# ///
 """Scan Claude Code sessions for Bash commands the permission allowlist does not cover.
 
 Claude Code permission-checks a command per segment: it splits on |, ;, && and ||,
@@ -9,43 +5,26 @@ matches each piece on its own, unwraps `timeout N ...` and `time ...`, and auto-
 built-in set of read-only programs (cat, head, cd, read-only sed, git read subcommands and
 their kin) without consulting settings.json at all. So chaining never prompts by itself,
 one uncovered segment prompts for the whole call, and an allowlist entry for a built-in
-program is dead weight. This script mirrors that behaviour, reading the allowlist from the
+program is dead weight. This module mirrors that behaviour, reading the allowlist from the
 settings files given, so what it reports is what actually interrupts you. Not modelled:
 commands inside `$(...)`.
 
 The built-in set is version-dependent and this script's copy of it is confirmed by probing
-a live session; after a Claude Code upgrade, --show-auto-approved is where a stale entry
+a live session; after a Claude Code upgrade, `scan`'s `auto_approved` is where a stale entry
 shows up (something listed there that does prompt).
-
-JSON schema (stdout), sorted by count, one entry per distinct segment shape:
-
-    [{"signature": "git -C * status ...", "count": 12, "example": "git -C /x status -s"}]
-
-Totals go to stderr.
-
-Examples:
-
-    uv run scan_unapproved.py
-    uv run scan_unapproved.py global.json project.json --sessions-dir <one project's dir> --days 60
-    uv run scan_unapproved.py --show-auto-approved
 """
 
 import json
-import os
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Annotated
-
-import tyro
 
 # Programs Claude Code auto-approves regardless of settings.json. Version-dependent:
 # confirmed by probing a live session (run the command, see whether it prompts). Re-probe
-# after a Claude Code upgrade -- a stale entry here hides real friction. `--show-auto-approved`
+# after a Claude Code upgrade -- a stale entry here hides real friction. `scan`'s `auto_approved`
 # lists what this set swallowed, which is where a stale entry shows up.
 READ_ONLY_PROGRAMS = frozenset("""
     awk base64 basename cat cd cut date df diff dirname du echo false file find free grep head
@@ -93,49 +72,6 @@ HEREDOC_BODY = re.compile(r"\s*<<-?\s*['\"]?(\w+)['\"]?\n.*?\n[ \t]*\1\b", re.DO
 REDIRECT = re.compile(r"\s*\d?>>?\s*\S+|\s*\d?>&\d+|\s*\d?<\s*\S+")
 
 SPLIT_OPERATORS = ("&&", "||")
-
-
-@dataclass
-class Args:
-    settings: Annotated[list[Path], tyro.conf.Positional] = field(default_factory=list)
-    """Settings JSON file(s) holding the permission allowlist. Default: the Claude config directory's settings.json ($CLAUDE_CONFIG_DIR, else ~/.claude), plus .claude/settings.json here when it exists."""
-
-    sessions_dir: Annotated[Path | None, tyro.conf.arg(metavar="DIR")] = None
-    """Claude sessions directory, scanned recursively. Default: the Claude config directory's projects/, every project."""
-
-    days: int = 30
-    """Scan the Bash calls of the last N days."""
-
-    show_auto_approved: bool = False
-    """Report the segments dropped as built-in read-only instead of the ones that would prompt."""
-
-
-def main(args: Args) -> None:
-    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
-    project_settings = Path(".claude/settings.json")
-    settings = args.settings or [
-        config_dir / "settings.json",
-        *([project_settings] if project_settings.is_file() else []),
-    ]
-    cutoff = (datetime.now() - timedelta(days=args.days)).timestamp()
-    found = scan(load_allowlist(*settings), scan_sessions(args.sessions_dir or config_dir / "projects", cutoff))
-    json.dump(found["auto_approved" if args.show_auto_approved else "would_prompt"], sys.stdout, indent=2)
-
-    blocked, auto = found["would_prompt"], found["auto_approved"]
-    print(
-        f"\nScanned: {found['calls']} Bash calls -> {found['segments']} segments "
-        f"from the last {args.days} days",
-        file=sys.stderr,
-    )
-    print(
-        f"Would prompt: {sum(r['count'] for r in blocked)} segments, {len(blocked)} distinct",
-        file=sys.stderr,
-    )
-    print(
-        f"Auto-approved by Claude Code's built-in read-only set: {sum(r['count'] for r in auto)} segments"
-        f" ({len(auto)} distinct; --show-auto-approved to inspect)",
-        file=sys.stderr,
-    )
 
 
 def scan(patterns: list[str], commands: list[str]) -> dict:
@@ -355,6 +291,3 @@ def signature(command: str) -> str:
         return f"{program} {words[1]} ..."
     return f"{program} ..."
 
-
-if __name__ == "__main__":
-    main(tyro.cli(Args, description=__doc__))

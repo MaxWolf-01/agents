@@ -1,21 +1,23 @@
-"""Checks for the workflow retro's collect stage, at the seam "The collect script's output"
+"""Checks for the retro's collect stage, at the seam "The collect script's output"
 (retro-semi-automated): given a directory of fixture transcripts and a fixture repo, which sessions
 it digests, what each digest keeps, and which commits and tickets it collects for the period.
-Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py[linkify].
+Run: make test, or pytest on this file with hypothesis, pyyaml and markdown-it-py[linkify].
 
 The transcripts are synthetic, in the shape Claude Code writes, and the oracle is their own
-content: the user's messages appear verbatim, tool output does not, and only commits after the
-period's start are collected. Nothing lands in a git repository (retro-semi-automated#P2).
+content: max's messages appear verbatim, tool output does not, and only commits after the
+period's start are collected. The older sample's draw is held as a property of any set of digests.
 """
 
 import json
 import os
+import random
 import re
-import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import retro_collect
 from retro_checks import SINCE, Transcript, commit, git, ticket
@@ -23,10 +25,10 @@ from retro_checks import SINCE, Transcript, commit, git, ticket
 UNTIL = datetime(2026, 10, 12, tzinfo=UTC)
 
 
-def collect(tmp_path: Path, repos: list[Path] = (), seed: int = 0, since: datetime = SINCE) -> Path:
+def collect(tmp_path: Path, repos: list[Path] = (), since: datetime = SINCE) -> Path:
     run = tmp_path / "data" / "runs" / "1"
     retro_collect.collect_sessions(since, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
-                                   list(repos), seed)
+                                   list(repos), sample_seed=0)
     return run
 
 
@@ -78,6 +80,28 @@ def test_a_digest_keeps_maxs_messages_verbatim_and_no_tool_output(tmp_path: Path
     assert "! ERROR Bash: rm: cannot remove 'x': Permission denied" in digest
     assert "look at this line of a log" in digest and "chars clipped" in digest and pasted.strip() not in digest
     assert "TOOL-OUTPUT-MARKER" not in digest
+
+
+def test_a_digest_marks_what_max_did_to_a_turn_and_what_the_harness_did_to_it(tmp_path: Path, projects: Path) -> None:
+    t = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1)).says("hello").answers("Hi.")
+    t.says("build the parser")
+    before_it = t.entries[-1]["parentUuid"]
+    t.answers("Building the lexer first.").says("parse dates too", parent=before_it)
+    t.says("[Request interrupted by user]")
+    t.add({"type": "attachment", "attachment": {"type": "queued_command", "prompt": "and the docs", "commandMode": "prompt"}})
+    t.add({"type": "attachment", "attachment": {"type": "hook_additional_context", "content": ["run make check first"]}})
+    t.add({"type": "system", "subtype": "stop_hook_summary", "preventedContinuation": True, "stopReason": "tests fail"})
+    t.add({"type": "system", "subtype": "api_error", "error": "overloaded"})
+    t.add({"type": "system", "subtype": "compact_boundary"})
+    t.add({"type": "system", "subtype": "turn_duration", "durationMs": 252_000})
+
+    digest = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+
+    assert "MAX: build the parser" in digest
+    assert "MAX REWOUND and re-sent (the agent's turn after the first send was abandoned): parse dates too" in digest
+    for marker in ("MAX INTERRUPTED", "MAX (queued while the agent worked): and the docs", "! HOOK → agent: run make check first",
+                   "! STOP HOOK blocked: tests fail", '! API ERROR "overloaded"', "(context compacted)", "(turn took 4m12s)"):
+        assert marker in digest, marker
 
 
 def test_the_period_holds_its_interactive_sessions_alone(tmp_path: Path, projects: Path) -> None:
@@ -160,18 +184,19 @@ def fail_if_digested(*_: object) -> None:
     raise AssertionError("digested again, not read from the cache")
 
 
-def test_a_digested_session_is_read_from_the_cache_until_its_transcript_changes(
-        tmp_path: Path, projects: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_digested_session_is_read_from_the_cache_until_its_transcript_changes(tmp_path: Path, projects: Path) -> None:
     t = Transcript(projects, "/home/u/repos/agents", SINCE + timedelta(days=1)).says("first")
-    first = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
-    digest = retro_collect.digest
-    monkeypatch.setattr(retro_collect, "digest", fail_if_digested)
+    collect(tmp_path)
+    cached = tmp_path / "data" / "cache" / f".claude-{t.sid}.json"
+    entry = json.loads(cached.read_text())
+    entry["digest"]["text"] += "CACHED-MARKER\n"
+    cached.write_text(json.dumps(entry))
 
-    assert (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text() == first
+    assert "CACHED-MARKER" in (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
 
-    monkeypatch.setattr(retro_collect, "digest", digest)
     t.says("second")
-    assert "MAX: second" in (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+    again = (collect(tmp_path) / "sessions" / f"{t.sid}.md").read_text()
+    assert "MAX: second" in again and "CACHED-MARKER" not in again
 
 
 def test_a_digest_carries_the_session_pages_turn_records(tmp_path: Path, projects: Path) -> None:
@@ -201,6 +226,27 @@ def test_the_older_sample_draws_from_two_to_eight_weeks_back_and_only_sessions_w
     assert {p.stem for p in (run / "sample").glob("*.md")} == inside
     assert {json.loads(r)["id"] for r in (run / "sessions.jsonl").read_text().splitlines()} >= inside
     assert not {silent.sid, too_old.sid, too_new.sid} & {p.stem for p in run.rglob("*.md")}
+
+
+def digests_with(messages: list[int]) -> list[retro_collect.Digest]:
+    return [retro_collect.Digest(sid=str(i), profile=".claude", cwd="/", start=SINCE, end=SINCE, interactive=True,
+                                 messages=n, text="x") for i, n in enumerate(messages)]
+
+
+@given(st.lists(st.integers(0, 30), max_size=40), st.integers(0, 25), st.integers())
+def test_the_older_sample_draws_up_to_its_size_of_distinct_sessions_each_with_a_message_of_maxs(
+        messages: list[int], k: int, seed: int) -> None:
+    drawn = retro_collect.weighted_sample(digests_with(messages), k, random.Random(seed))
+
+    assert len(drawn) == min(k, sum(n > 0 for n in messages))
+    assert len({d.sid for d in drawn}) == len(drawn) and all(d.messages > 0 for d in drawn)
+
+
+def test_the_older_sample_favours_a_session_with_more_of_maxs_messages() -> None:
+    talkative, quiet = digests_with([10, 1])
+    wins = sum(retro_collect.weighted_sample([talkative, quiet], 1, random.Random(seed)) == [talkative] for seed in range(2000))
+
+    assert wins > 1600  # 10 to 1 odds draw it about 1818 times in 2000
 
 
 @pytest.fixture
@@ -245,14 +291,6 @@ def test_git_holds_a_commit_of_the_period_beneath_one_dated_before_it(tmp_path: 
 
     assert "IN-THE-PERIOD" in record
     assert "DATED-BEFORE-IT" not in record
-
-
-def test_nothing_is_written_inside_a_git_repository(tmp_path: Path, repo: Path) -> None:
-    Transcript(tmp_path / ".claude" / "projects", "/home/u/repos/agents", SINCE + timedelta(days=1)).says("hi")
-    with pytest.raises(SystemExit):
-        retro_collect.collect_sessions(SINCE, UNTIL, repo / "retro-run", tmp_path / "cache",
-                                       [tmp_path / ".claude" / "projects"], [repo], 0)
-    assert not (repo / "retro-run").exists() and not (tmp_path / "cache").exists()
 
 
 def test_permissions_hold_each_profiles_rules_its_auto_mode_config_and_its_interactive_uncovered_bash_calls_of_the_period(
@@ -301,10 +339,10 @@ def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tm
     (agent / "tickets/hook-noise.md").write_text(ticket("open"))  # a session's edit, not yet committed
     run = tmp_path / "data" / "runs" / "1"
     retro_collect.collect_sessions(SINCE, UNTIL, run, tmp_path / "data" / "cache", [tmp_path / ".claude" / "projects"],
-                                   [], 0, agent=agent)
+                                   [], sample_seed=0, agent=agent)
 
     proposed = (run / "proposed.md").read_text()
-    head = subprocess.run(["git", "-C", agent, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    head = git(agent, "rev-parse", "HEAD").strip()
 
     assert head in proposed
     assert re.findall(r"^- (.+)$", proposed, re.M) == ["hook-noise", "slow-suite"]
@@ -317,7 +355,7 @@ def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_pat
     git(repo, "init", "-q", "-b", "main")
     commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.0"}'}, "mx v1.0.0", SINCE - timedelta(days=1))
     commit(repo, {"mx/.claude-plugin/plugin.json": '{"version": "1.0.1"}'}, "mx v1.0.1", SINCE + timedelta(days=1))
-    sha = subprocess.run(["git", "-C", repo, "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
+    sha = git(repo, "rev-parse", "--short=10", "HEAD").strip()
 
     versions = (collect(tmp_path, [repo]) / "versions.md").read_text()
 

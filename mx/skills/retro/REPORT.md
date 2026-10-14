@@ -14,6 +14,8 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
 
+Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts and wait for it to end, then write them into the report as it stands.
+
 - **Dismissed**: the finding leaves Findings, or the candidate Candidates, for a line under Dismissed.
 - **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
@@ -69,8 +71,8 @@ In order of the weighing.
 
 What the lens pass proposes for the code, every code lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
 
-- **Code lens**: the section of `stages/lens-pass.md`'s The lenses it came from
-- An architecture candidate carries `/mx:improve-codebase-architecture`'s fields (files, problem, solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates); any other, **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's
+- **Code lens**: the section of `stages/lens-pass.md`'s The code lenses it came from
+- **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's; an architecture candidate carries `/mx:improve-codebase-architecture`'s fields beside them, its **Proposal** standing for the solution (benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates)
 - **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's
 
@@ -84,7 +86,7 @@ A few lines on what changed with the mx releases, Claude Code versions and model
 
 ## Dismissed
 
-Each finding or candidate max dismissed: id, title, his verdict quoted with its date. A line here is the whole of it, until newer evidence brings it back.
+Each finding or candidate max dismissed: id, title, a candidate's code lens, his verdict quoted with its date. A line here is the whole of it, until newer evidence brings it back.
 ```
 
 A dropped finding leaves the report: the line in What changed that drops it is its last mention, and the `ids:` line keeps its number from being given again.

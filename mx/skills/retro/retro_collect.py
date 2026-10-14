@@ -3,21 +3,22 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
-"""Gather what a retro reads, for the period since a given start, into a run directory.
+"""Gather what a retro reads, for the period since a given start, into a run directory outside
+every git work tree. `retro_run.py` runs it as a run's collect stage; its subcommands run it alone.
 
 `sessions`, what a workflow retro reads, writes into the run directory:
 
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
-  every Claude Code profile given, holding the period's days alone. A digest keeps the user's
-  messages verbatim, pasted text clipped; every tool call's input, error and denial in full; the
-  model's text; and the session page's turn records. It keeps no tool output. Beside them it
-  marks interrupts, rewinds, messages queued while the agent worked, hook send-backs, context
+  every Claude Code profile given, holding the period's days alone. A digest keeps max's messages
+  verbatim, pasted text clipped; every tool call's input, error and denial in full; the model's
+  text; and the session page's turn records. It keeps no tool output. Beside them it marks
+  interrupts, rewinds, messages queued while the agent worked, hook send-backs, context
   compactions and how long each turn took.
 - `sample/<id>.md`: digests of about 20 older sessions, from two to eight weeks before the end
-  of the period, drawn at random, weighted to sessions with more of the user's messages.
-- `sessions.jsonl`: one row per digest above: id, profile, project, start, end, the user's
-  messages, and which of the two it is in.
-- `git/<repo>.md` and `versions.md`, as `git` writes them.
+  of the period, drawn at random, weighted to sessions with more of max's messages.
+- `sessions.jsonl`: one row per digest above: id, profile, project, start, end, max's messages,
+  and which of the two it is in.
+- `git/<repo>.md` and `versions.md`, as `git` writes the first.
 - `permissions/<profile>/`, for each profile: `scan.json`, the Bash calls of the period no
   allowlist rule covers, as `scan_unapproved.py` buckets them; `rules.json`, the permission rules
   and auto mode settings of the profile's own settings files; and `auto-mode.json`, the effective
@@ -34,7 +35,7 @@ A repo retro reads no session: its run gets the repo's `git/<repo>.md` and `prop
 and, as a workflow retro's does, `touched.md`, the files the period's commits touched.
 
 Digests are cached per session in the cache directory and digested again only once the
-transcript or its session page changed. Neither the run directory nor the cache may be inside a git work tree.
+transcript or its session page changed.
 
 Examples:
 
@@ -66,7 +67,7 @@ import session_page  # noqa: E402  what counts as the user's own message, as the
 
 SAMPLE_SIZE = 20
 SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the period's end
-PASTE_CLIP = 600  # pasted text in a message of the user's
+PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
@@ -76,17 +77,15 @@ PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 
 
 def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path],
-                     repos: list[Path], seed: int | None = None, agent: Path | None = None) -> None:
+                     repos: list[Path], sample_seed: int | None = None, agent: Path | None = None) -> None:
     """Everything a workflow retro's later stages read, written into `run`."""
-    refuse_inside_git(run, cache)
-    refuse_unless_git(repos + ([agent] if agent else []))
     oldest = until - SAMPLE_WINDOW[1]
     transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= min(since, oldest).timestamp()]
     digests = [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
     period = [d for d in digests if d.end >= since and d.start <= until]
     ids = {d.sid for d in period}
     older = [d for d in digests if d.sid not in ids and until - SAMPLE_WINDOW[1] <= d.start <= until - SAMPLE_WINDOW[0]]
-    sample = weighted_sample(older, SAMPLE_SIZE, random.Random(seed))
+    sample = weighted_sample(older, SAMPLE_SIZE, random.Random(sample_seed))
     rows = []
     for where, chosen in (("sessions", period), ("sample", sample)):
         (run / where).mkdir(parents=True, exist_ok=True)
@@ -106,7 +105,6 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
 
 def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path) -> None:
     """`git/<repo>.md` and `proposed.md`, what a repo retro reads beside `touched.md` and the code; no session."""
-    refuse_inside_git(run)
     collect_git(since, run, [repo], until)
     collect_proposed(run, agent)
 
@@ -114,7 +112,6 @@ def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent:
 def collect_touched(since: datetime, until: datetime, run: Path, repo: Path) -> None:
     """`touched.md`: the files of `repo` the period's commits touched that it still tracks, by how
     many of those commits touched each, most first."""
-    refuse_inside_git(run)
     out = git(repo, "log", "--branches", f"--since-as-filter={since.isoformat()}", f"--until={until.isoformat()}",
               "--format=", "--name-only")
     tracked = set(git(repo, "ls-files").splitlines())
@@ -136,8 +133,6 @@ def latest_commit(repo: Path, since: datetime) -> str:
 
 def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
     """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets."""
-    refuse_inside_git(run)
-    refuse_unless_git(repos)
     (run / "git").mkdir(parents=True, exist_ok=True)
     names = Counter()
     for repo in repos:
@@ -149,11 +144,9 @@ def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime |
 
 
 def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
-    """A sign of the user since `since`, or "" when there is none: their latest message in
-    an interactive session, else a commit of theirs on a branch of one of the repos, theirs being
-    the author identity the repo itself commits with. The digests it reads are cached as a run's are."""
-    refuse_inside_git(cache)
-    refuse_unless_git(repos)
+    """A sign of max since `since`, or "" when there is none: his latest message in an
+    interactive session, else a commit of his on a branch of one of the repos, his being the author
+    identity the repo itself commits with. The digests it reads are cached as a run's are."""
     transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= since.timestamp()]
     said = [d for d in digest_all(transcripts, cache, repos)
             if d.interactive and d.said_last and parse_time(d.said_last) >= since]
@@ -269,8 +262,8 @@ def find_transcripts(projects: list[Path]) -> list[Path]:
 
 
 def weighted_sample(digests: list[Digest], k: int, rng: random.Random) -> list[Digest]:
-    """`k` digests drawn without replacement, each with odds proportional to the user's messages
-    in it (Efraimidis and Spirakis' keys)."""
+    """`k` digests drawn without replacement, each with odds proportional to max's messages in
+    it (Efraimidis and Spirakis' keys)."""
     keyed = [(rng.random() ** (1 / d.messages), d) for d in digests if d.messages > 0]
     return [d for _, d in sorted(keyed, key=lambda kd: kd[0], reverse=True)[:k]]
 
@@ -288,7 +281,7 @@ class Digest:
     interactive: bool
     messages: int
     text: str
-    said_last: str = ""  # when the user's last message in it was sent, "" when none was
+    said_last: str = ""  # when max's last message in it was sent, "" when none was
     versions: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # Claude Code version: day: [first, last seen]
     models: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # model: day: [first, last seen]
     days: dict[str, int] = field(default_factory=dict)  # each day's heading: where in `text` it starts
@@ -329,7 +322,7 @@ def digest_all(transcripts: list[Path], cache: Path, repos: list[Path]) -> list[
             todo.append((t, records, key, cached))
     pool = ProcessPoolExecutor(min(8, os.cpu_count() or 1)) if len(todo) > 4 else _Inline()
     try:
-        for (t, records, key, cached), d in zip(todo, pool.map(digest_job, [(t, r) for t, r, _, _ in todo])):
+        for (t, records, key, cached), d in zip(todo, pool.map(digest, [t for t, *_ in todo], [r for _, r, *_ in todo])):
             if d is not None:
                 cache_digest(cached, key, d)
                 out.append(d)
@@ -350,12 +343,8 @@ class _Inline:
         pass
 
     @staticmethod
-    def map(f, items):
-        return map(f, items)
-
-
-def digest_job(args: tuple[Path, list[Path]]) -> Digest | None:
-    return digest(*args)
+    def map(f, *items):
+        return map(f, *items)
 
 
 CACHE_FORMAT = 7  # raised when a cached digest's shape changes, so every cached digest is redone
@@ -502,8 +491,8 @@ def digest(transcript: Path, records: list[Path]) -> Digest | None:
 
 
 def said(content: object) -> str:
-    """A prompt of the user's as the session page reads it, each pasted block clipped first;
-    empty for what Claude Code writes as the user."""
+    """A prompt of max's as the session page reads it, each pasted block clipped first; empty for
+    what Claude Code writes as the user."""
     pasted = PASTED.sub(lambda m: m.group(1) + clip(m.group(2), PASTE_CLIP) + m.group(3), session_page.flat(content))
     if not (text := session_page.message_text(pasted)):
         return ""
@@ -592,11 +581,11 @@ def ticket_record(agent: Path, since: datetime, until: datetime | None) -> str:
         for path, before, after, status in file_diffs(diff):
             slug = Path(path).stem
             if status == "added":
-                filed.append(f"- {slug} ({c['date']}): {after or '?'} — {c['subject']}")
+                filed.append(f"- {slug} ({c['date']}, {c['subject']}): {after or '?'}")
             elif status == "deleted":
-                deleted.append(f"- {slug} ({c['date']}): was {before or '?'} — {c['subject']}")
+                deleted.append(f"- {slug} ({c['date']}, {c['subject']}): was {before or '?'}")
             elif before != after and (before or after):
-                changes.append(f"- {slug} ({c['date']}): {before} → {after} — {c['subject']}")
+                changes.append(f"- {slug} ({c['date']}, {c['subject']}): {before} → {after}")
     reports = []
     for c in reversed(commits(agent, since, "show/*/report.md", until=until)):
         for path in git(agent, "show", "--format=", "--name-only", "--diff-filter=AM", c["sha"], "--", "show/*/report.md").split():
@@ -686,11 +675,14 @@ class Git:
 
 def main(command: Sessions | Git) -> None:
     since = parse_time(command.since)
+    refuse_unless_git(command.repos)
     if isinstance(command, Git):
+        refuse_inside_git(command.run)
         collect_git(since, command.run, command.repos)
         return
-    collect_sessions(since, datetime.now(UTC), command.run, command.cache or command.run.parent / "digest-cache",
-                     command.projects, command.repos, agent=command.agent)
+    cache = command.cache or command.run.parent / "digest-cache"
+    refuse_inside_git(command.run, cache)
+    collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent)
 
 
 if __name__ == "__main__":
