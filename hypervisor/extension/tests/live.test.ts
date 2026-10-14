@@ -76,7 +76,7 @@ test("a plain hv tell starts no turn and is listed on the status line; a ping go
 	await inbox(store).post({ at, from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, status, stop } = await loaded(() => false, store);
 	try {
-		await until(() => reports.length > 0);
+		assert.ok(await until(() => reports.length > 0), "the watch's first take reports the ping");
 		assert.deepEqual(reports, [{ channel: "optchat:report", text: "[agents:board-fix] hv tell: the migration needs max" }]);
 		assert.deepEqual(await waitingPings(store), ["[agents:board-fix] hv tell: the migration needs max"], "nothing took the ping: the inbox keeps it for the next take");
 		assert.deepEqual(status(), ["Unread in your inbox: agents:board-fix 1 message, 20 B, 0m old."], "the ping is not listed: it is on its way");
@@ -90,7 +90,7 @@ test("a ping OptChat takes leaves the inbox for read/", async () => {
 	await inbox(store).post({ at: new Date().toISOString(), from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, stop } = await loaded(() => true, store);
 	try {
-		await until(() => existsSync(path.join(store, "inbox", "read")) && readdirSync(path.join(store, "inbox", "read")).length > 0);
+		assert.ok(await until(() => existsSync(path.join(store, "inbox", "read")) && readdirSync(path.join(store, "inbox", "read")).length > 0), "the taken ping moves to read/");
 		assert.equal(reports.length, 1);
 		assert.deepEqual(await waitingPings(store), []);
 		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);

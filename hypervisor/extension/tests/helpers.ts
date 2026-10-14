@@ -13,16 +13,16 @@ export async function waitingPings(store: string): Promise<string[]> {
 	return pings;
 }
 
-/** The pings that wait, once `count` do, or after `within` ms. */
-export async function pinged(store: string, { count = 1, within = 5000 } = {}): Promise<string[]> {
-	for (const end = Date.now() + within; Date.now() < end; await sleep(20)) {
-		const pings = await waitingPings(store);
-		if (pings.length >= count) return pings;
+/** Resolves once `check` holds, looking every 10 ms, or after `within` ms with whether it held. */
+export async function until(check: () => boolean | Promise<boolean>, within = 5000): Promise<boolean> {
+	for (const end = Date.now() + within; ; await sleep(10)) {
+		if (await check()) return true;
+		if (Date.now() > end) return false;
 	}
-	return waitingPings(store);
 }
 
-/** Resolves once `check` holds, looking every 10 ms; rejects after `within` ms. */
-export async function until(check: () => boolean, within = 5000): Promise<void> {
-	for (const end = Date.now() + within; !check(); await sleep(10)) if (Date.now() > end) throw new Error(`not within ${within} ms: ${check}`);
+/** The pings that wait, once `count` do, or after `within` ms. */
+export async function pinged(store: string, { count = 1, within = 5000 } = {}): Promise<string[]> {
+	await until(async () => (await waitingPings(store)).length >= count, within);
+	return waitingPings(store);
 }

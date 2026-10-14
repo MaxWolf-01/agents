@@ -65,8 +65,10 @@ function answer(request: Request) {
 	const last = request.messages.at(-1)!;
 	const result = Array.isArray(last.content) && last.content.find((b) => b.type === "tool_result");
 	if (f.name === "failing") return { status: 400, error: "the stand-in refuses" };
+	// max's turn, in flight when /explore arrives, starts a session.
+	if (f.name === "busy" && f.requests.length === 1) return { tool: "start_session", input: { dir: "~", name: "x", brief: "y" }, delay: 400 };
 	if (f.tool && !result) return { tool: f.tool, input: { dir: "~", name: "x", brief: "y" } };
-	return { text: `finding ${f.requests.length}: ${result ? JSON.stringify(result.content) : "max reads papers on ALife"}`, delay: f.name === "interrupted" || (f.name === "busy" && f.requests.length === 1) ? 400 : 0 };
+	return { text: `finding ${f.requests.length}: ${result ? JSON.stringify(result.content) : "max reads papers on ALife"}`, delay: f.name === "interrupted" ? 400 : 0 };
 }
 
 const env = (f: Fixture) => ({
@@ -202,15 +204,15 @@ test("a message from max ends the run after the step in flight", async () => {
 	assert.match(step.finding, /^finding 1: max reads papers/, "the step's finding, not the reply to max that joined its turn");
 });
 
-test("a run started while a turn is in flight waits for it to end, and journals its own step's finding", async () => {
+test("a run asked for while max's turn is in flight begins once that turn ends, leaves its tool calls alone, and journals its own step's finding", async () => {
 	const requests = fixtures.get("busy")!.requests;
-	const lasts = requests.map((r) => said(r).at(-1) ?? "");
-	assert.equal(lasts.length, 2, runs.get("busy") ?? "");
-	assert.match(lasts[0]!, /^max here, what is in flight\?/);
-	assert.equal(lasts[1], "Explore.", "the step is a turn of its own");
+	assert.equal(requests.length, 3, runs.get("busy") ?? "");
+	assert.match(said(requests[0]!).at(-1)!, /^max here, what is in flight\?/);
+	assert.doesNotMatch(JSON.stringify(requests[1]!.messages.at(-1)), /explore run is in flight/, "max's start_session ran");
+	assert.equal(said(requests[2]!).at(-1), "Explore.", "the step is a turn of its own");
 	const [step] = await journal("busy");
 	assert.ok(step && "finding" in step);
-	assert.match(step.finding, /^finding 2: /, "the step's reply, not the reply to max's message");
+	assert.match(step.finding, /^finding 3: /, "the step's reply, not the reply that ended max's turn");
 	assert.equal(step.tokens, 1000, "only the step's own call");
 });
 
