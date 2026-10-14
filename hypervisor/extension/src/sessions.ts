@@ -181,10 +181,11 @@ export function label(s: Session): string {
  * The line a session's inbox takes: a user message wrapped as Claude Code wraps a cross-session message, so it
  * arrives as one, from "hypervisor", with no address to reply to.
  *
- * `from-mode` is the sender's permission class, which the receiving session compares with its own: a session that
- * prompts for permissions delivers a message from a prompting sender, and one that bypasses them holds it for max's
- * approval. The hypervisor says it prompts: every side effect it causes runs in a Claude Code session in auto mode
- * (decisions/0002), and Claude Code counts auto mode as prompting.
+ * `from-mode` is the sender's permission class, `prompting` or `bypass`. The receiving session delivers a message
+ * whose class matches its own, or that names none while it prompts; it holds any other for max's approval. So a
+ * session in auto mode, which Claude Code counts as prompting, takes this message at once, and one that bypasses
+ * permissions holds it. The hypervisor says it prompts because it has no side effect of its own that no permission
+ * classifier judges (decisions/0002).
  */
 export function frame(text: string): string {
 	const content = `<cross-session-message from-name="hypervisor" from-mode="prompting">\n${text}\n</cross-session-message>`;
