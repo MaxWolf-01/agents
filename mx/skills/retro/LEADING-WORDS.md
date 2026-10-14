@@ -1,6 +1,6 @@
 # The workflow retro's leading words and questions
 
-The workflow is the mx plugin: its skills, scripts, hooks and checks, run in every repo max works in. Each word below names friction that recurs, on max's side (his time, attention or nerves) or the agents' (slower, costlier, less successful), or both; the questions after them are max's, as he kept them in his brainstorm of 2026-10-13. A word or a question is a lead, never a quota.
+The workflow is the mx plugin: its skills, scripts, hooks and checks, run in every repo max works in. Each word below names friction that recurs, on max's side (his time, attention or nerves) or the agents' (slower, costlier, less successful), or both; the questions after them are max's. A word or a question is a lead, never a quota.
 
 ## Words
 
@@ -24,7 +24,7 @@ The workflow is the mx plugin: its skills, scripts, hooks and checks, run in eve
 
 ## Questions
 
-Numbered as max numbered them. Each reads the digests in `sessions/` and `sample/`, their `MAX:` lines and session pages above all, unless it names other data.
+A question's number is a permanent id that reports cite; a retired question leaves a gap. Each reads the digests in `sessions/` and `sample/`, their `MAX:` lines and session pages above all, unless it names other data.
 
 - **Q1** Which of my messages only carry information an agent could have fetched? Sort them: decision / taste / slop correction / carrying information / approval with no change.
 - **Q2** Permission friction, in three directions: prompts or blocks I approved unchanged; blocks the agent got past by rephrasing the same action; incidents nothing blocked. *The permissions worker's, in `deep/permissions.md`; not searched here.*
