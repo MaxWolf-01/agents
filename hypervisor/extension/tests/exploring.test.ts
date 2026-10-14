@@ -248,13 +248,13 @@ test("/explore's arguments: N, then a direction of any words, with its caps anyw
 
 test("a week whose reset has passed stops no run, since its quota has started over", () => {
 	const run = { request: { steps: 9, untilWeek: 95 }, started: "", begun: true, taken: 1, interrupted: false };
-	assert.equal(stopBefore(run, 0, { used: 99, resets: now - 1, at: now - 3600_000 }, now), undefined);
-	assert.equal(stopBefore(run, 0, { used: 95, resets: now + 1, at: now }, now), "the week at 95% used");
+	assert.equal(stopBefore(run, 0, { used: 99, resets: now - 1 }, now), undefined);
+	assert.equal(stopBefore(run, 0, { used: 95, resets: now + 1 }, now), "the week at 95% used");
 });
 
 test("the rate-limit headers read as a share in percent and a reset in ms; an API key's reply carries none", () => {
-	assert.deepEqual(weekFromHeaders({ "anthropic-ratelimit-unified-7d-utilization": "0.7370692663445869", "anthropic-ratelimit-unified-7d-reset": "1764615600" }, 5), { used: 73.70692663445869, resets: 1764615600000, at: 5 });
-	assert.equal(weekFromHeaders({ "anthropic-ratelimit-input-tokens-remaining": "1000" }, 5), undefined);
+	assert.deepEqual(weekFromHeaders({ "anthropic-ratelimit-unified-7d-utilization": "0.7370692663445869", "anthropic-ratelimit-unified-7d-reset": "1764615600" }), { used: 73.70692663445869, resets: 1764615600000 });
+	assert.equal(weekFromHeaders({ "anthropic-ratelimit-input-tokens-remaining": "1000" }), undefined);
 });
 
 test("with the hypervisor's TUI open, hv explore types the command into its pane and starts nothing", async () => {

@@ -141,7 +141,7 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 	let ended: { finding: string; error?: string } = { finding: "" };
 
 	pi.on("after_provider_response", (event) => {
-		replied = weekFromHeaders(event.headers, Date.now()) ?? replied;
+		replied = weekFromHeaders(event.headers) ?? replied;
 	});
 	pi.on("input", (event) => {
 		// What max types ends the run after the step in flight; what an extension sends, a step's own message among it, does not.

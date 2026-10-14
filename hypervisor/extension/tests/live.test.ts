@@ -164,7 +164,7 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(exploring, [...started, "/explore 3 papers"]);
 		assert.equal(readFileSync(path.join(hvStore, "optchat", "profiles", "hv", "config.json"), "utf8"), readFileSync(path.resolve(import.meta.dirname, "../../live/config.json"), "utf8"));
 
-		// A command hv does not have, as a timer of a newer hv would run on this one, or a timer left from hv offer, starts nothing.
+		// A command hv does not have, as a timer of a newer hv would run on this one starts nothing.
 		rmSync(calls);
 		for (const command of ["summarize", "offer"]) {
 			const unknown = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [command], { env, encoding: "utf8" });
