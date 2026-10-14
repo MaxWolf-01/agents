@@ -16,8 +16,10 @@ p, h1, h2, h3 { margin: 0; }
 .code { position: relative; }
 .prose > .code { max-width: 100%; }
 .code > pre { margin: 0; }
+/* it shows only while the pointer is in the corner; ::before widens that corner past the button's own box */
 .copy-code { position: absolute; top: 0.4rem; right: 0.4rem; display: inline-flex; padding: 0.3rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--ground-2); color: var(--muted); cursor: pointer; opacity: 0; transition: opacity 150ms, color 150ms, border-color 150ms; }
-.code:hover .copy-code, .copy-code:focus-visible { opacity: 1; }
+.copy-code::before { content: ""; position: absolute; inset: -0.4rem; }
+.copy-code:hover, .copy-code:focus-visible { opacity: 1; }
 .copy-code:hover { color: var(--accent); border-color: var(--accent); }
 @media (hover: none) { .copy-code { opacity: 1; } }
 
