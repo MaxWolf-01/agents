@@ -301,6 +301,10 @@ svg .legend{font:400 13px var(--font-mono); fill:var(--muted);}
 .unruled{fill:var(--ground); stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3;}
 .past{fill:none; stroke:var(--edge); stroke-width:1.2;}
 svg .code.on{fill:var(--accent);}
+/* a session's mark on the hub's rail, drawn as the hub draws it: a moss dot when it needs you, two
+   overlapping rings, this session and the one that takes over, when it is ready to hand off */
+.hm-needs{fill:var(--accent);}
+.hm-hand{fill:none; stroke:var(--muted); stroke-width:1.8;}
 </style>
 </head>
 <body>
@@ -311,94 +315,117 @@ svg .code.on{fill:var(--accent);}
     <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
   </button>
 </header>
-<p class="lead">A grilling writes its design into the ticket each round; a session that ends with questions open files them as child tickets that need you, and a fresh session grills each one.</p>
+<p class="lead">A grilling writes its design into the ticket each round; a session that ends with questions open files them as child tickets that need you and commits a handoff, and a fresh session picks it up and grills each one.</p>
 
-<svg class="fig" viewBox="0 32 1200 768" xmlns="http://www.w3.org/2000/svg">
+<svg class="fig" viewBox="0 32 1200 806" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="m-muted"/></marker>
   </defs>
 
   <!-- connectors: in, and out once the frontier is empty -->
-  <path class="flow" d="M 288,88 H 382" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 768,88 H 894" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 288,88 H 382" marker-end="url(#arrow)" data-step="1"/>
+  <path class="flow" d="M 768,88 H 894" marker-end="url(#arrow)" data-step="5"/>
   <!-- connectors: the loop across sessions -->
-  <path class="flow" d="M 768,128 H 848 Q 856,128 856,136 V 262" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 980,384 V 636 Q 980,644 972,644 H 770" marker-end="url(#arrow)"/>
-  <path class="flow" d="M 384,644 H 352 Q 344,644 344,636 V 136 Q 344,128 352,128 H 382" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 768,140 H 848 Q 856,140 856,148 V 262" marker-end="url(#arrow)" data-step="3"/>
+  <path class="flow" d="M 980,384 V 636 Q 980,644 972,644 H 770" marker-end="url(#arrow)" data-step="4"/>
+  <path class="flow" d="M 384,644 H 352 Q 344,644 344,636 V 136 Q 344,128 352,128 H 382" marker-end="url(#arrow)" data-step="4"/>
   <!-- spokes: the ticket written and read -->
-  <path class="spoke" d="M 576,152 V 230" marker-end="url(#arrow)"/>
-  <path class="spoke" d="M 576,512 V 590" marker-end="url(#arrow)"/>
+  <path class="spoke" d="M 576,168 V 230" marker-end="url(#arrow)" data-step="2"/>
+  <path class="spoke" d="M 576,512 V 590" marker-end="url(#arrow)" data-step="4"/>
 
   <!-- nodes -->
-  <rect class="node" x="48" y="48" width="240" height="80" rx="6"/>
-  <rect class="focal" x="384" y="48" width="384" height="104" rx="6"/>
-  <rect class="node" x="896" y="48" width="256" height="96" rx="6"/>
-  <rect class="focal" x="808" y="264" width="344" height="120" rx="6"/>
-  <rect class="store" x="416" y="232" width="320" height="280" rx="8"/>
-  <line class="hair" x1="432" y1="356" x2="720" y2="356"/>
-  <rect class="node" x="384" y="592" width="384" height="104" rx="6"/>
+  <rect class="node" x="48" y="48" width="240" height="80" rx="6" data-step="1"/>
+  <rect class="focal" x="384" y="48" width="384" height="120" rx="6" data-step="1"/>
+  <rect class="node" x="896" y="48" width="256" height="114" rx="6" data-step="5"/>
+  <rect class="focal" x="808" y="264" width="344" height="120" rx="6" data-step="3"/>
+  <rect class="store" x="416" y="232" width="320" height="280" rx="8" data-step="2"/>
+  <line class="hair" x1="432" y1="356" x2="720" y2="356" data-step="2"/>
+  <rect class="node" x="384" y="592" width="384" height="104" rx="6" data-step="4"/>
+
+  <!-- the hub's marks -->
+  <circle class="hm-needs" cx="406" cy="147" r="6" data-step="1"/>
+  <g data-step="3">
+    <circle class="hm-hand" cx="874" cy="205" r="4.6"/>
+    <circle class="hm-hand" cx="880.4" cy="205" r="4.6"/>
+  </g>
 
   <!-- labels: nodes -->
-  <text class="name" x="64" y="74">an idea</text>
-  <text class="role" x="64" y="92">too foggy to brief</text>
-  <text class="code" x="64" y="110">/mx:grilling</text>
+  <g data-step="1">
+    <text class="name" x="64" y="74">an idea</text>
+    <text class="role" x="64" y="92">too foggy to brief</text>
+    <text class="code" x="64" y="110">/mx:grilling</text>
 
-  <text class="name on" x="400" y="74">a grilling round</text>
-  <text class="role" x="400" y="92">the design whole, then the frontier's questions</text>
-  <text class="detail" x="400" y="110">Q1, Q2 on the session page; you answer by number</text>
-  <text class="detail" x="400" y="128">a question of taste, asked as a blind test</text>
+    <text class="name on" x="400" y="74">a grilling round</text>
+    <text class="role" x="400" y="92">the design whole, then the frontier's questions</text>
+    <text class="detail" x="400" y="110">Q1, Q2 on the session page; you answer by number</text>
+    <text class="detail" x="400" y="128">a question of taste, asked as a blind test</text>
+    <text class="meta on" x="418" y="152">needs you, until you answer</text>
+  </g>
 
-  <text class="name" x="912" y="74">read whole, then cut or build</text>
-  <text class="role" x="912" y="92">into child tickets, or built as one slice</text>
-  <text class="detail" x="912" y="110">calls still unruled keep their marks</text>
-  <text class="code" x="912" y="128">SLICING.md</text>
+  <g data-step="5">
+    <text class="name" x="912" y="74">read whole, then cut or build</text>
+    <text class="role" x="912" y="92">into child tickets, or built as one slice</text>
+    <text class="detail" x="912" y="110">the agent's cut, each slice filed open</text>
+    <text class="detail" x="912" y="128">calls still unruled keep their marks</text>
+    <text class="code" x="912" y="146">SLICING.md</text>
+  </g>
 
-  <text class="name on" x="824" y="290">child tickets that need you</text>
-  <text class="role" x="824" y="308">the questions still open, a session's worth</text>
-  <text class="code" x="824" y="326">open, needs-user</text>
-  <text class="detail" x="824" y="344">options and pick, as the last round put them</text>
-  <text class="detail" x="824" y="362">and the sections its answers may rewrite</text>
+  <g data-step="3">
+    <text class="name on" x="824" y="290">child tickets that need you</text>
+    <text class="role" x="824" y="308">the questions still open, a session's worth</text>
+    <text class="code" x="824" y="326">open, needs-user</text>
+    <text class="detail" x="824" y="344">options and pick, as the last round put them</text>
+    <text class="detail" x="824" y="362">and the sections its answers may rewrite</text>
+  </g>
 
-  <text class="name" x="432" y="258">the ticket</text>
-  <text class="code" x="432" y="276">agent/tickets/&lt;slug&gt;.md</text>
-  <text class="detail" x="432" y="302">brief, user stories, properties,</text>
-  <text class="detail" x="432" y="320">decisions, testing seams, out of scope,</text>
-  <text class="detail" x="432" y="338">fog, acceptance criteria</text>
-  <text class="meta" x="432" y="380">call marks</text>
-  <text class="code" x="432" y="402">(you, rN)</text>
-  <text class="detail" x="560" y="402">you, in round N</text>
-  <text class="code" x="432" y="420">(you, &lt;slug&gt;)</text>
-  <text class="detail" x="560" y="420">you, in a child ticket</text>
-  <text class="code" x="432" y="438">(my call)</text>
-  <text class="detail" x="560" y="438">the agent's, yours to veto</text>
-  <text class="code" x="432" y="456">(open → Qn)</text>
-  <text class="detail" x="560" y="456">a question this round</text>
-  <text class="code" x="432" y="474">(open → &lt;slug&gt;)</text>
-  <text class="detail" x="560" y="474">a child ticket asks it</text>
-  <text class="code" x="432" y="492">(fog)</text>
-  <text class="detail" x="560" y="492">no question yet</text>
+  <g data-step="2">
+    <text class="name" x="432" y="258">the ticket</text>
+    <text class="code" x="432" y="276">agent/tickets/&lt;slug&gt;.md</text>
+    <text class="detail" x="432" y="302">brief, user stories, properties,</text>
+    <text class="detail" x="432" y="320">decisions, testing seams, out of scope,</text>
+    <text class="detail" x="432" y="338">fog, acceptance criteria</text>
+    <text class="meta" x="432" y="380">call marks</text>
+    <text class="code" x="432" y="402">(you, rN)</text>
+    <text class="detail" x="560" y="402">you, in round N</text>
+    <text class="code" x="432" y="420">(you, &lt;slug&gt;)</text>
+    <text class="detail" x="560" y="420">you, in a child ticket</text>
+    <text class="code" x="432" y="438">(my call)</text>
+    <text class="detail" x="560" y="438">the agent's, yours to veto</text>
+    <text class="code" x="432" y="456">(open → Qn)</text>
+    <text class="detail" x="560" y="456">a question this round</text>
+    <text class="code" x="432" y="474">(open → &lt;slug&gt;)</text>
+    <text class="detail" x="560" y="474">a child ticket asks it</text>
+    <text class="code" x="432" y="492">(fog)</text>
+    <text class="detail" x="560" y="492">no question yet</text>
+  </g>
 
-  <text class="name" x="400" y="618">a fresh session</text>
-  <text class="role" x="400" y="636">reads the ticket top-down, claims one child ticket</text>
-  <text class="detail" x="400" y="654">reads its comments, grills it as a round</text>
-  <text class="detail" x="400" y="672">the answer lands on the parent, marked (you, &lt;slug&gt;)</text>
+  <g data-step="4">
+    <text class="name" x="400" y="618">a fresh session</text>
+    <text class="role" x="400" y="636">picks up the handoff, reads the ticket top-down</text>
+    <text class="detail" x="400" y="654">claims one child ticket, reads its comments, grills it</text>
+    <text class="detail" x="400" y="672">the answer lands on the parent, marked (you, &lt;slug&gt;)</text>
+  </g>
 
   <!-- labels: connectors -->
-  <text class="al" x="832" y="80" text-anchor="middle">frontier empty</text>
-  <text class="al" x="868" y="196">session ends,</text>
-  <text class="al" x="868" y="212">frontier open</text>
-  <text class="al" x="992" y="512">claim one</text>
-  <text class="al" x="588" y="196">rewritten each round</text>
-  <text class="al" x="588" y="556">read top-down</text>
-  <text class="al" x="332" y="380" text-anchor="end">a round like</text>
-  <text class="al" x="332" y="396" text-anchor="end">any other</text>
+  <text class="al" x="832" y="80" text-anchor="middle" data-step="5">frontier empty</text>
+  <g data-step="3">
+    <text class="al" x="868" y="184">session ends, frontier open</text>
+    <text class="meta" x="894" y="210">ready to hand off</text>
+    <text class="al" x="868" y="230">its handoff committed</text>
+  </g>
+  <g data-step="4">
+    <text class="al" x="992" y="512">claim one</text>
+    <text class="al" x="588" y="556">read top-down</text>
+    <text class="al" x="332" y="380" text-anchor="end">a round like</text>
+    <text class="al" x="332" y="396" text-anchor="end">any other</text>
+  </g>
+  <text class="al" x="588" y="204" data-step="2">rewritten each round</text>
 
   <!-- asides -->
-  <text class="aside" x="48" y="580">each round is a turn on the session page;</text>
-  <text class="aside" x="48" y="598">the session commits the page's records</text>
-  <text class="aside" x="48" y="616">to the agent repo as it ends</text>
-  <text class="aside" x="48" y="650">a question is Qn on the page, Dn once</text>
-  <text class="aside" x="48" y="668">a ticket holds it</text>
+  <g data-step="3">
+    <text class="aside" x="48" y="650">a question is Qn on the page, Dn once</text>
+    <text class="aside" x="48" y="668">a ticket holds it</text>
+  </g>
 
   <!-- legend -->
   <line class="hair" x1="48" y1="744" x2="1152" y2="744"/>
@@ -410,6 +437,12 @@ svg .code.on{fill:var(--accent);}
   <text class="legend" x="628" y="781">the ticket written and read</text>
   <rect class="store" x="880" y="768" width="24" height="16" rx="4"/>
   <text class="legend" x="916" y="781">on disk, outlives the session</text>
+  <text class="legend" x="48" y="817">a session's mark on the hub's rail:</text>
+  <circle class="hm-needs" cx="374" cy="812" r="6"/>
+  <text class="legend" x="388" y="817">needs you: a question waits on your answer</text>
+  <circle class="hm-hand" cx="756" cy="812" r="4.6"/>
+  <circle class="hm-hand" cx="762.4" cy="812" r="4.6"/>
+  <text class="legend" x="776" y="817">ready to hand off: its handoff committed</text>
 </svg>
 <script>
 const root = document.documentElement
