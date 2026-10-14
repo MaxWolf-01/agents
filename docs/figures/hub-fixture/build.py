@@ -51,7 +51,7 @@ sys.path.insert(0, str(MX / "skills" / "session-page"))
 import fixture  # noqa: E402
 import session_page  # noqa: E402  this checkout's renderer, not the installed plugin's
 
-SCHEMES = {"dark": "hub"}  # the README shows the hub at night only
+SHOT = "hub.png"  # the README shows the hub at night only
 WIDTH, HEIGHT = 1920, 1200
 # The session sidebar as a user drags it wider: at the hub's default width the session page folds its timeline away
 # and its bar has no room left for where the session runs.
@@ -389,34 +389,33 @@ def shoot(port: int, selected: str, panes: int, front: str) -> list[Path]:
         browser = p.chromium.launch(executable_path=chromium,
                                     args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
         try:
-            for scheme, name in SCHEMES.items():
-                # the hub tab follows the system's scheme, and every page in it follows the tab
-                context = browser.new_context(viewport={"width": WIDTH, "height": HEIGHT}, device_scale_factor=2,
-                                              color_scheme=scheme)
-                context.add_init_script(f"localStorage.setItem('wc:side:session:width', '{SESSION_WIDTH}')")
-                tab = context.new_page()
-                errors = []
-                tab.on("pageerror", lambda e, errors=errors: errors.append(str(e)))
-                tab.goto(f"http://127.0.0.1:{port}/u/{selected}")
-                try:
-                    tab.wait_for_function(LOADED, arg=panes, timeout=60_000)
-                except PlaywrightTimeout:
-                    fail(f"the hub tab never showed {panes} panes and the session page, all loaded: "
-                         f"{tab.evaluate('window.ws ? ws.views().map(v => v.id) : null')}")
-                tab.evaluate("id => ws.focus(id)", front)
-                tab.wait_for_function(LOADED, arg=panes, timeout=30_000)
-                session = tab.frame_locator("#session-frames .current iframe")
-                if not session.locator("#open-questions").count():
-                    fail("the selected session's page shows no open question at its top")
-                tab.evaluate("document.fonts.ready")
-                tab.wait_for_timeout(2500)  # the panes' own fonts, and the rail's rings at a still frame
-                if errors:
-                    fail("the hub tab threw:\n  " + "\n  ".join(errors))
-                shot = OUT / f"{name}.png"
-                tab.screenshot(path=str(shot), animations="disabled")
-                shots.append(shot)
-                print(shot.relative_to(CHECKOUT))
-                context.close()
+            # the hub tab follows the system's scheme, and every page in it follows the tab: dark
+            context = browser.new_context(viewport={"width": WIDTH, "height": HEIGHT}, device_scale_factor=2,
+                                          color_scheme="dark")
+            context.add_init_script(f"localStorage.setItem('wc:side:session:width', '{SESSION_WIDTH}')")
+            tab = context.new_page()
+            errors = []
+            tab.on("pageerror", lambda e, errors=errors: errors.append(str(e)))
+            tab.goto(f"http://127.0.0.1:{port}/u/{selected}")
+            try:
+                tab.wait_for_function(LOADED, arg=panes, timeout=60_000)
+            except PlaywrightTimeout:
+                fail(f"the hub tab never showed {panes} panes and the session page, all loaded: "
+                     f"{tab.evaluate('window.ws ? ws.views().map(v => v.id) : null')}")
+            tab.evaluate("id => ws.focus(id)", front)
+            tab.wait_for_function(LOADED, arg=panes, timeout=30_000)
+            session = tab.frame_locator("#session-frames .current iframe")
+            if not session.locator("#open-questions").count():
+                fail("the selected session's page shows no open question at its top")
+            tab.evaluate("document.fonts.ready")
+            tab.wait_for_timeout(2500)  # the panes' own fonts, and the rail's rings at a still frame
+            if errors:
+                fail("the hub tab threw:\n  " + "\n  ".join(errors))
+            shot = OUT / SHOT
+            tab.screenshot(path=str(shot), animations="disabled")
+            shots.append(shot)
+            print(shot.relative_to(CHECKOUT))
+            context.close()
         finally:
             browser.close()
     return shots

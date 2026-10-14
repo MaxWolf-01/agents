@@ -11,7 +11,7 @@ picture. A section opens with one of two lines, then its intro, then its steps:
   its SVG uses, scoped to it. Step k shows every element whose `data-step` (on itself or an
   ancestor) is at most k, and the elements of step k in the accent; an element with no
   `data-step` shows at every step. A figure whose SVG carries no `data-step` is shown whole at
-  every step. A figure that does not exist yet leaves its section as text alone, with a warning.
+  every step.
 - `screenshot: <name>`: mx/assets/<name>.png (night) and <name>-light.png (day); one render serves
   both schemes. Each step may name a `region: x y w h`, fractions of the image, and the picture
   closes in on that region while the step is read.
@@ -19,14 +19,14 @@ picture. A section opens with one of two lines, then its intro, then its steps:
 
 The output folder gets index.html, the screenshots it uses, the stylesheets, the scripts and the
 fonts, and nothing on the page loads from outside it, so the folder can be copied anywhere and
-opened over file:// or any static server. A missing screenshot, a malformed section, or a figure
-whose `data-step` values do not run 1 to the section's step count fails the build, naming it.
+opened over file:// or any static server. A missing figure or screenshot, a malformed section, a
+figure whose `data-step` values do not run 1 to the section's step count, or one that marks steps
+outside the SVG the page inlines fails the build, naming it.
 
 Examples:
 
     docs/figures/story/build.py
     docs/figures/story/build.py --out /tmp/story
-    docs/figures/story/build.py --figures /tmp/annotated   # figure sources read from there instead
 """
 
 import html
@@ -56,8 +56,6 @@ COPIED = ("story.css", "head.js", "story.js")
 class Args:
     out: Path = HERE / "site"
     """Folder to write the page into. Emptied first; a non-empty folder this script did not write is refused."""
-    figures: Path = FIGURES
-    """Folder the figure sources (`<name>.html`) are read from."""
 
 
 @dataclass
@@ -285,13 +283,15 @@ class Drawing:
     stepped: bool
 
 
-def load_figure(section: Section, figures: Path, tokens: dict[str, str]) -> Drawing | None:
-    path = figures / f"{section.name}.html"
+def load_figure(section: Section, tokens: dict[str, str]) -> Drawing:
+    path = FIGURES / f"{section.name}.html"
     if not path.exists():
-        warn(f"section {section.heading!r}: {path} does not exist yet; the section is text alone")
-        return None
+        fail(f"section {section.heading!r}: no figure at {path}")
     source = path.read_text()
     svg = figure_svg(source, section.name)
+    tagged = lambda text: len(re.findall(r'<[^!>][^>]*\bdata-step="', text))
+    if tagged(source) != tagged(svg):
+        fail(f"figure {section.name!r} marks steps outside the SVG this page inlines; move them into the drawing")
     svg, ids = namespace_ids(svg, f"fig-{section.name}")
     css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", source, flags=re.S))
     scoped = scope_css(css, f".fig-{section.name}", svg, ids, tokens)
@@ -353,9 +353,10 @@ SCHEME_ICONS = """<svg class="sun" viewBox="0 0 24 24" width="18" height="18" fi
 def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size: tuple[int, int]) -> str:
     label = html.escape(section.heading, quote=True)
     if section.kind == "figure":
-        if drawing is None:
-            return ""
-        svg = re.sub(r"^<svg\b", f'<svg role="img" aria-label="{label}"', drawing.svg, count=1)
+        # the figure page names its SVG by its own h1, which is not inlined; the page names it by the heading
+        head, rest = drawing.svg.split(">", 1)
+        head = re.sub(r'\s(?:role|aria-label|aria-labelledby)="[^"]*"', "", head)
+        svg = f'{head} role="img" aria-label="{label}">{rest}'
         return f"""<div class="stage" data-kind="figure"{' data-stepped' if drawing.stepped else ''}>
           <div class="frame"><div class="canvas fig-{section.name}" data-w="{drawing.width:g}" data-h="{drawing.height:g}">
             {svg}
@@ -379,7 +380,7 @@ def chapter(i: int, section: Section, stage_html: str) -> str:
         + (f' data-region="{" ".join(f"{v:g}" for v in s.region)}"' if s.region else "")
         + f">{markdown.markdown(s.body)}</div>"
         for s in section.steps)
-    return f"""<section class="chapter{'' if stage_html else ' bare'}" id="{slug(section.heading)}">
+    return f"""<section class="chapter" id="{slug(section.heading)}">
       {stage_html}
       <div class="text">
         <h2 class="v-h2"><span class="v-num">{i:02}</span> {html.escape(section.heading)}</h2>
@@ -434,13 +435,9 @@ def page(story: Story, chapters: list[str], css: str, version: str, github: str)
   </main>
 
   <footer class="page">
-    <p class="v-small">mx is on GitHub at <a href="{github}/tree/master/mx">MaxWolf-01/agents</a>; its
+    <p>mx is on GitHub at <a href="{github}/tree/master/mx">MaxWolf-01/agents</a>; its
       <a href="{github}/blob/master/mx/README.md">README</a> covers installing it, and
-      <a href="{github}/blob/master/mx/skills/orient/SKILL.md"><code>/mx:orient</code></a> is this workflow as the agents read it.
-      This page is built from <a href="{github}/blob/master/docs/figures/story/story.md">story.md</a>
-      by <a href="{github}/blob/master/{GENERATOR}">build.py</a>. Set in Newsreader and IBM Plex Mono, under the
-      SIL Open Font License (<a href="fonts/OFL-Newsreader.txt">Newsreader</a>,
-      <a href="fonts/OFL-IBM-Plex-Mono.txt">IBM Plex Mono</a>).</p>
+      <a href="{github}/blob/master/mx/skills/orient/SKILL.md"><code>/mx:orient</code></a> is this workflow as the agents read it.</p>
   </footer>
   <script src="story.js"></script>
 </body>
@@ -465,20 +462,17 @@ def main(args: Args) -> None:
     github = plugin["repository"].rstrip("/")
     tokens = root_tokens()
     # every check before the folder is touched
-    loaded = [(s, load_figure(s, args.figures, tokens) if s.kind == "figure" else renders(s))
+    loaded = [(s, load_figure(s, tokens) if s.kind == "figure" else renders(s))
               for s in story.sections]
 
     out = args.out.resolve()
     prepare(out)
-    chapters, css, counts = [], [], {"stepped": 0, "whole": 0, "missing": 0, "screenshots": 0}
+    chapters, css, counts = [], [], {"stepped": 0, "whole": 0, "screenshots": 0}
     for i, (section, thing) in enumerate(loaded, 1):
         if section.kind == "figure":
             stage_html = stage(section, thing, {}, (0, 0))
-            if thing:
-                css.append(f"/* {section.name}: from docs/figures/{section.name}.html */\n{thing.css}")
-                counts["stepped" if thing.stepped else "whole"] += 1
-            else:
-                counts["missing"] += 1
+            css.append(f"/* {section.name}: from docs/figures/{section.name}.html */\n{thing.css}")
+            counts["stepped" if thing.stepped else "whole"] += 1
         else:
             shots, size = {}, (0, 0)
             for scheme, path in thing.items():
@@ -496,7 +490,7 @@ def main(args: Args) -> None:
     for font in (HERE / "fonts").iterdir():
         shutil.copy2(font, out / "fonts" / font.name)
     print(f"wrote {out / 'index.html'}: {len(story.sections)} sections; figures {counts['stepped']} "
-          f"stepped, {counts['whole']} whole, {counts['missing']} not drawn yet; "
+          f"stepped, {counts['whole']} whole; "
           f"{counts['screenshots']} screenshots")
 
 

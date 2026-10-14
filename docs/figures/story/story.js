@@ -127,7 +127,8 @@
 
   function figureView(ch, k, active) {
     const all = fitScale(ch, ch.W, ch.H)
-    if (!ch.stepped || whole() || !ch.boxes) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
+    if (whole()) return aim(ch, Math.min(ch.fw / ch.W, MAX_FIGURE), ch.W / 2, ch.H / 2)
+    if (!ch.stepped || !ch.boxes) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
     const drawn = union(ch.boxes.filter((b) => b.step <= k))
     if (!drawn) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
     const pad = { x: drawn.x - PAD, y: drawn.y - PAD, w: drawn.w + 2 * PAD, h: drawn.h + 2 * PAD }
@@ -151,11 +152,16 @@
     return aim(ch, s, (x + w / 2) * ch.W, (y + h / 2) * ch.H)
   }
 
+  // A whole figure is drawn at its readable width, not fitted into the window:
+  // its stage takes the figure's height and scrolls past like the text.
   function layout(ch) {
-    const box = ch.stage.getBoundingClientRect()
     const cs = getComputedStyle(ch.stage)
-    ch.fw = box.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
-    ch.fh = box.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    ch.fw = ch.stage.getBoundingClientRect().width - padX
+    const tall = whole() && ch.svg
+    ch.stage.style.height = tall ? `${ch.H * Math.min(ch.fw / ch.W, MAX_FIGURE) + padY}px` : ""
+    ch.fh = ch.stage.getBoundingClientRect().height - padY
   }
 
   function render(ch, k, active, passed) {
@@ -255,7 +261,7 @@
   for (const ch of chapters) if (ch.stage) layout(ch)
   update(true)
   addEventListener("scroll", schedule, { passive: true })
-  document.addEventListener("story:whole", () => update(true))
+  document.addEventListener("story:whole", relayout)
   const resized = new ResizeObserver(relayout)
   for (const ch of chapters) if (ch.stage) resized.observe(ch.stage)
 

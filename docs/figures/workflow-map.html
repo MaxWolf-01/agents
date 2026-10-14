@@ -302,18 +302,10 @@ svg.map{display:block; width:100%; height:auto;}
 .zone{fill:var(--wash-ink); stroke:var(--edge); stroke-width:1;}
 .hair{stroke:var(--edge); stroke-width:1;}
 .mid{text-anchor:middle;} .end{text-anchor:end;}
-
-.foot{border-top:1px solid var(--edge); margin-top:24px; padding-top:16px;}
-.legend{display:flex; flex-wrap:wrap; gap:10px 28px; margin:0; padding:0; list-style:none;}
-.legend li{display:flex; align-items:center; gap:10px;}
-.legend svg{flex:none;}
-.key-head{margin:24px 0 12px;}
-.key{display:grid; grid-template-columns:repeat(5, 1fr); gap:16px 24px; margin:0; padding:0; list-style:none;}
-.key li{display:grid; grid-template-columns:24px 1fr; column-gap:10px; align-items:start;}
-.key .dot{width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--ground); font:500 12px/22px var(--font-mono); text-align:center; margin-top:1px; font-style:normal;}
-.key .dot.ring-dot{background:var(--ground); color:var(--accent); box-shadow:inset 0 0 0 3px var(--accent);}
-.key b{display:block; font-weight:600; font-size:15px; line-height:1.4; color:var(--body);}
-.key span{display:block; font-size:14px; line-height:1.45; color:var(--muted);}
+.kdot{fill:var(--accent);}
+.kring{fill:var(--ground); stroke:var(--accent); stroke-width:3;}
+.kname{font:600 15px var(--font-body); fill:var(--body);}
+.kdesc{font:400 14px var(--font-body); fill:var(--muted);}
 </style>
 </head>
 <body>
@@ -324,8 +316,8 @@ svg.map{display:block; width:100%; height:auto;}
 <h1 class="v-title">The mx workflow as one map</h1>
 <p class="sub">Every piece of work rides one line from an intent to merged and leaves it only where its route has a step of its own; what a landing turns up comes back as new work, and the numbered stops are the only places the workflow asks for you.</p>
 
-<!-- data-step="N": the part appears at step N of the story page; untagged is the frame -->
-<svg class="map" viewBox="0 44 1232 620" xmlns="http://www.w3.org/2000/svg">
+<!-- a data-step of N: the part appears at step N of the story page; untagged is the frame -->
+<svg class="map" viewBox="0 44 1232 1084" xmlns="http://www.w3.org/2000/svg">
   <!-- ===== lines ===== -->
   <path data-step="2" class="ln loose" d="M168,312 H184 A16,16 0 0 0 200,296 V120 A16,16 0 0 1 216,104 H1144 A16,16 0 0 1 1160,120 V324"/>
   <path data-step="2" class="ln rival" d="M168,324 H204 A16,16 0 0 0 220,308 V272 A16,16 0 0 1 236,256 H484 A16,16 0 0 1 500,272 V308 A16,16 0 0 0 516,324 H532"/>
@@ -450,36 +442,86 @@ svg.map{display:block; width:100%; height:auto;}
     <text class="role" x="976" y="625">on the board, all that waits on you</text>
     <text class="detail" x="976" y="644">agent/board.html</text>
   </g>
-</svg>
 
-<div class="foot">
-  <ul class="legend v-meta">
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln main"/></svg>main line: one ticket, one worker</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln fog"/></svg>fog: no brief can be written yet</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln rival"/></svg>rival shapes: several survive the draft</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln loose"/></svg>loose: a stranger would need no brief</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln tree"/></svg>child tickets: bigger than one worker</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln loop"/></svg>after a landing: back into the work</li>
-    <li><svg width="36" height="12"><line x1="0" y1="6" x2="36" y2="6" class="ln proposed"/></svg>proposed: waits for your triage</li>
-    <li><svg width="20" height="20"><line x1="2" y1="14" x2="18" y2="14" class="ln main" stroke-width="4"/><line x1="10" y1="12" x2="10" y2="4" class="tick main"/></svg>a step an agent runs</li>
-    <li><svg width="20" height="24"><rect class="xchg" x="5" y="2" width="10" height="20" rx="5"/></svg>routes share the step</li>
-    <li><svg width="22" height="22"><circle class="you" cx="11" cy="11" r="9"/></svg>you are asked here</li>
-    <li><svg width="22" height="22"><circle class="ring" cx="11" cy="11" r="8"/></svg>only when a call is yours</li>
-  </ul>
-  <p class="v-meta key-head">what each stop asks of you</p>
-  <ol class="key">
-    <li data-step="2"><i class="dot">1</i><div><b>grilling rounds</b><span>answer the questions by number, veto or amend any call by name; once none is left the build starts, and a call you have not ruled on stays marked</span></div></li>
-    <li data-step="2"><i class="dot">2</i><div><b>side by side</b><span>pick among the rival shapes in front of their renders; the verdict goes into the ticket</span></div></li>
-    <li data-step="2"><i class="dot">3</i><div><b>the review page</b><span>read the loose branch's diff; it merges on your word</span></div></li>
-    <li data-step="1"><i class="dot">4</i><div><b>your ruling</b><span>accept, amend, redo or reject, on the calls the landing shows you; accept merges it</span></div></li>
-    <li data-step="3"><i class="dot ring-dot">5</i><div><b>a hinge</b><span>ruled alone before anything builds on it; with no call of yours in it, it merges on your standing yes</span></div></li>
-    <li data-step="3"><i class="dot">6</i><div><b>your ruling, whole</b><span>the whole tree, on the calls the debrief puts to you; one child can still be amended, redone or rejected</span></div></li>
-    <li data-step="4"><i class="dot">7</i><div><b>QA</b><span>drive what landed on your own machine while the rest of the frontier keeps running; what you find is filed open</span></div></li>
-    <li data-step="4"><i class="dot">8</i><div><b>the review session</b><span>at first drivable: dogfood the landed surface and dump raw findings; a reopened decision is grilled again</span></div></li>
-    <li data-step="5"><i class="dot">9</i><div><b>triage</b><span>when you start one: what agents filed on their own reading (a worker's punt, a review's finding), grouped by shared cause; you drop, merge or promote each</span></div></li>
-    <li data-step="6"><i class="dot">10</i><div><b>the needs-me group</b><span>between sessions, every open ticket question and every build waiting in review, on the board</span></div></li>
-  </ol>
-</div>
+  <!-- the line legend: frame, shown at every step -->
+  <line class="hair" x1="0" y1="688" x2="1232" y2="688"/>
+  <line class="ln main" x1="0" y1="716" x2="36" y2="716"/>
+  <line class="ln fog" x1="332" y1="716" x2="368" y2="716"/>
+  <line class="ln rival" x1="656" y1="716" x2="692" y2="716"/>
+  <line class="ln loose" x1="0" y1="744" x2="36" y2="744"/>
+  <line class="ln tree" x1="364" y1="744" x2="400" y2="744"/>
+  <line class="ln loop" x1="724" y1="744" x2="760" y2="744"/>
+  <line class="ln proposed" x1="0" y1="776" x2="36" y2="776"/>
+  <line class="ln main" x1="320" y1="780" x2="336" y2="780" stroke-width="4"/>
+  <line class="tick main" x1="328" y1="778" x2="328" y2="770"/>
+  <rect class="xchg" x="536" y="766" width="10" height="20" rx="5"/>
+  <circle class="you" cx="764" cy="776" r="9"/>
+  <circle class="ring" cx="964" cy="776" r="8"/>
+  <text class="tag" x="48" y="720">main line: one ticket, one worker</text>
+  <text class="tag" x="380" y="720">fog: no brief can be written yet</text>
+  <text class="tag" x="704" y="720">rival shapes: several survive the draft</text>
+  <text class="tag" x="48" y="748">loose: a stranger would need no brief</text>
+  <text class="tag" x="412" y="748">child tickets: bigger than one worker</text>
+  <text class="tag" x="772" y="748">after a landing: back into the work</text>
+  <text class="tag" x="48" y="780">proposed: waits for your triage</text>
+  <text class="tag" x="348" y="780">a step an agent runs</text>
+  <text class="tag" x="560" y="780">routes share the step</text>
+  <text class="tag" x="784" y="780">you are asked here</text>
+  <text class="tag" x="984" y="780">only when a call is yours</text>
+
+  <!-- what each stop asks of you: an entry appears with its stop -->
+  <text class="tag" x="0" y="828">what each stop asks of you</text>
+  <g data-step="2">
+    <circle class="kdot" cx="12" cy="856" r="11"/><text class="num" x="12" y="860">1</text>
+    <text class="kname" x="36" y="856">grilling rounds</text>
+    <text class="kdesc"><tspan x="36" y="876">answer the questions by</tspan><tspan x="36" dy="20">number, veto or amend any call</tspan><tspan x="36" dy="20">by name; once none is left the</tspan><tspan x="36" dy="20">build starts, and a call you have</tspan><tspan x="36" dy="20">not ruled on stays marked</tspan></text>
+  </g>
+  <g data-step="2">
+    <circle class="kdot" cx="260" cy="856" r="11"/><text class="num" x="260" y="860">2</text>
+    <text class="kname" x="284" y="856">side by side</text>
+    <text class="kdesc"><tspan x="284" y="876">pick among the rival shapes in</tspan><tspan x="284" dy="20">front of their renders; the</tspan><tspan x="284" dy="20">verdict goes into the ticket</tspan></text>
+  </g>
+  <g data-step="2">
+    <circle class="kdot" cx="508" cy="856" r="11"/><text class="num" x="508" y="860">3</text>
+    <text class="kname" x="532" y="856">the review page</text>
+    <text class="kdesc"><tspan x="532" y="876">read the loose branch's diff; it</tspan><tspan x="532" dy="20">merges on your word</tspan></text>
+  </g>
+  <g data-step="1">
+    <circle class="kdot" cx="756" cy="856" r="11"/><text class="num" x="756" y="860">4</text>
+    <text class="kname" x="780" y="856">your ruling</text>
+    <text class="kdesc"><tspan x="780" y="876">accept, amend, redo or reject,</tspan><tspan x="780" dy="20">on the calls the landing shows</tspan><tspan x="780" dy="20">you; accept merges it</tspan></text>
+  </g>
+  <g data-step="3">
+    <circle class="kring" cx="1004" cy="856" r="9.5"/><text class="num-ring" x="1004" y="860">5</text>
+    <text class="kname" x="1028" y="856">a hinge</text>
+    <text class="kdesc"><tspan x="1028" y="876">ruled alone before anything</tspan><tspan x="1028" dy="20">builds on it; with no call of</tspan><tspan x="1028" dy="20">yours in it, it merges on your</tspan><tspan x="1028" dy="20">standing yes</tspan></text>
+  </g>
+  <g data-step="3">
+    <circle class="kdot" cx="12" cy="996" r="11"/><text class="num" x="12" y="1000">6</text>
+    <text class="kname" x="36" y="996">your ruling, whole</text>
+    <text class="kdesc"><tspan x="36" y="1016">the whole tree, on the calls the</tspan><tspan x="36" dy="20">debrief puts to you; one child</tspan><tspan x="36" dy="20">can still be amended, redone or</tspan><tspan x="36" dy="20">rejected</tspan></text>
+  </g>
+  <g data-step="4">
+    <circle class="kdot" cx="260" cy="996" r="11"/><text class="num" x="260" y="1000">7</text>
+    <text class="kname" x="284" y="996">QA</text>
+    <text class="kdesc"><tspan x="284" y="1016">drive what landed on your own</tspan><tspan x="284" dy="20">machine while the rest of the</tspan><tspan x="284" dy="20">frontier keeps running; what</tspan><tspan x="284" dy="20">you find is filed open</tspan></text>
+  </g>
+  <g data-step="4">
+    <circle class="kdot" cx="508" cy="996" r="11"/><text class="num" x="508" y="1000">8</text>
+    <text class="kname" x="532" y="996">the review session</text>
+    <text class="kdesc"><tspan x="532" y="1016">at first drivable: dogfood the</tspan><tspan x="532" dy="20">landed surface and dump raw</tspan><tspan x="532" dy="20">findings; a reopened decision</tspan><tspan x="532" dy="20">is grilled again</tspan></text>
+  </g>
+  <g data-step="5">
+    <circle class="kdot" cx="756" cy="996" r="11"/><text class="num" x="756" y="1000">9</text>
+    <text class="kname" x="780" y="996">triage</text>
+    <text class="kdesc"><tspan x="780" y="1016">when you start one: what</tspan><tspan x="780" dy="20">agents filed on their own</tspan><tspan x="780" dy="20">reading (a worker's punt, a</tspan><tspan x="780" dy="20">review's finding), grouped by</tspan><tspan x="780" dy="20">shared cause; you drop, merge</tspan><tspan x="780" dy="20">or promote each</tspan></text>
+  </g>
+  <g data-step="6">
+    <circle class="kdot" cx="1004" cy="996" r="11"/><text class="num" x="1004" y="1000">10</text>
+    <text class="kname" x="1028" y="996">the needs-me group</text>
+    <text class="kdesc"><tspan x="1028" y="1016">between sessions, every open</tspan><tspan x="1028" dy="20">ticket question and every build</tspan><tspan x="1028" dy="20">waiting in review, on the board</tspan></text>
+  </g>
+</svg>
 
 <script>
 const root = document.documentElement
