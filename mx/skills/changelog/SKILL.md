@@ -1,6 +1,6 @@
 ---
 name: changelog
-description: Update CHANGELOG.md with notable changes since the last release. Use when preparing a release, updating the changelog, or when the user asks to "update changelog", "write changelog", "prepare release notes".
+description: Update CHANGELOG.md with notable changes since the last release. Use when preparing a release, or when asked for the changelog or release notes.
 ---
 
 Update the repository changelog with changes between the last release and the current version (`main`) that are not yet incorporated. If `CHANGELOG.md` does not exist, use `CHANGELOG` instead.

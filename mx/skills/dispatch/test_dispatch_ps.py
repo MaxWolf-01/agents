@@ -12,9 +12,10 @@ is a finished run, a live runner process a running one, neither is `gone`), and
 `agent/tickets/dispatch-ps.md` for the rest: P1 a host that did not answer is a row and a nonzero
 exit; P2 a register that fails is an `incomplete` row and a nonzero exit; P3 a worker resolves
 exactly, and a slug held twice resolves to nothing; P4 an empty worklog reads apart from an absent
-one; P5 a Ctrl-C in a worker's pane leaves the status line a resume needs. The fuzz run's row answers
-to `agent/tickets/fuzz-run-on-integration-branch.md`'s P5, that a run whose workers have died reads
-apart from one that is fuzzing, and to `job --help`'s State for the files it reads.
+one; P5 a Ctrl-C in a worker's pane leaves the status line a resume needs. `ps --follow` is held to
+`agent/tickets/dispatch-ps-follow.md`, cited as dispatch-ps-follow P<n>: P1 one login per host plus
+one per reconnect; P2 a silent host holds up no other; P3 what follow draws is what ps prints at
+that moment.
 """
 
 import hashlib
@@ -25,12 +26,11 @@ import shutil
 import subprocess
 import time
 from collections.abc import Iterator
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from test_dispatch import mx, stage_runner
+from dispatch_checks import mx, stage_runner
 
 SKILL = Path(__file__).parent
 PS = SKILL / "dispatch-ps"
@@ -187,8 +187,11 @@ def test_only_the_newest_run_of_a_ticket_shows(tmp_path: Path, tmux: dict[str, s
 def test_every_scratch_dir_on_the_host_is_read(tmp_path: Path, tmux: dict[str, str]):
     spawned(scratch(tmp_path, "agents", "master"), "hypofuzz-default")
     spawned(scratch(tmp_path, "jarvis", "discord-threads"), "thread-registry")
+    spawned(scratch(tmp_path, ".dotfiles", "master"), "dns-filter-toggle")
 
-    assert sorted(row[0] for row in rows(tmp_path, tmux)) == ["agents/master", "jarvis/discord-threads"]
+    assert sorted(row[:2] for row in rows(tmp_path, tmux)) == [
+        [".dotfiles/master", "dns-filter-toggle"], ["agents/master", "hypofuzz-default"],
+        ["jarvis/discord-threads", "thread-registry"]]
 
 
 def test_a_scratch_dir_that_never_spawned_gives_no_row(tmp_path: Path, tmux: dict[str, str]):
@@ -222,6 +225,7 @@ def test_a_probe_that_fails_over_a_manifest_is_a_row_not_an_empty_scratch_dir(tm
     assert "exit 3" in row[7]
 
 
+@pytest.mark.full_path
 def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, str]):
     d = scratch(tmp_path, "agents", "master")
     finished(d, spawned(d, "hypofuzz-default"))
@@ -229,76 +233,6 @@ def test_a_live_session_is_a_pane_to_attach_to(tmp_path: Path, tmux: dict[str, s
 
     (row,) = rows(tmp_path, tmux)
     assert row[6] == "y", "cleanup has not run, so the finished worker's scrollback is still there"
-
-
-def fuzzing(env: dict[str, str], d: Path, *, idle: int, pid: int, status: str = "") -> None:
-    """The repo's fuzz run as `dispatch-ctl fuzz start` leaves it: its database in the scratch dir,
-    its newest example written <idle> seconds ago, an older one an hour before that, and a patch a
-    `fuzz check` wrote just now; and the files `job` keeps for it, with <status> once it ended."""
-    db = d / "fuzz.hypothesis"
-    examples = db / "examples" / "04e6b3400353b141"
-    examples.mkdir(parents=True)
-    (db / "patches").mkdir()
-    for name, age in (("a1", idle + 3600), ("b2", idle)):
-        (examples / name).write_text("zzz")
-        os.utime(examples / name, (time.time() - age, time.time() - age))
-    for path in (examples, db / "examples", db):
-        os.utime(path, (time.time() - idle - 3600, time.time() - idle - 3600))
-    (db / "patches" / "2026-09-28--ce3d4dce.patch").write_text("a patch\n")
-    config = dict(line.split("=", 1) for line in (d / "config").read_text().splitlines())
-    job = Path(env["JOB_STATE_DIR"]) / f"fuzz-{config['repo']}"
-    job.mkdir(parents=True)
-    started = datetime.fromtimestamp(time.time() - 7200, timezone.utc).isoformat(timespec="seconds")
-    cwd = f"{config['worktrees']}/{config['repo']}-{config['base']}-fuzz"
-    (job / "meta").write_text(f"pid={pid}\nstarted={started}\ncwd={cwd}\nawake=0\ncmd=make fuzz\n")
-    (job / "log").write_text("1 passed in 3.02s\n")
-    if status:
-        (job / "status").write_text(status + "\n")
-
-
-@pytest.fixture
-def live_pid() -> Iterator[int]:
-    """A process that stays up for the check, as a fuzz job's runner does."""
-    live = subprocess.Popen(["sleep", "30"])
-    yield live.pid
-    live.kill()
-
-
-def test_a_fuzz_run_is_idle_for_as_long_as_its_examples_have_gone_unwritten(
-        tmp_path: Path, tmux: dict[str, str], live_pid: int):
-    """A run whose workers died writes nothing more to its database, however long its job runs
-    on, and a `fuzz check` of it writes only a patch."""
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=5400, pid=live_pid)
-    session(tmux, "job-fuzz-agents")
-
-    (row,) = rows(tmp_path, tmux)
-    assert row[:3] == ["agents/master", "fuzz", "running"]
-    assert 5400 <= int(row[4]) < 5460, "idle since the newest example, not the job's start or the patch"
-    assert 7200 <= int(row[3]) < 7260
-    assert row[5:7] == ["job-fuzz-agents", "y"]
-    assert row[7] == "1 passed in 3.02s"
-
-
-def test_a_database_an_earlier_integration_branch_left_is_no_run(
-        tmp_path: Path, tmux: dict[str, str], live_pid: int):
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=60, pid=live_pid)
-    (scratch(tmp_path, "agents", "main") / "fuzz.hypothesis" / "examples").mkdir(parents=True)
-
-    assert [row[:3] for row in rows(tmp_path, tmux)] == [["agents/master", "fuzz", "running"]]
-
-
-@pytest.mark.parametrize("status, state", [("exit=0 ended=2026-09-28T07:40:33+00:00 secs=4", "exited"),
-                                           ("", "gone")])
-def test_a_fuzz_run_that_ended_reads_as_ended(tmp_path: Path, tmux: dict[str, str], status: str, state: str):
-    """A run that ended, and a killed runner, which leaves no status line."""
-    dead = subprocess.Popen(["true"])
-    dead.wait()
-    fuzzing(tmux, scratch(tmp_path, "agents", "master"), idle=60, pid=dead.pid, status=status)
-
-    (row,) = rows(tmp_path, tmux)
-    assert row[:3] == ["agents/master", "fuzz", state]
-    assert row[6] == "n"
-    assert row[7] == (status or "(runner dead without a status line)")
 
 
 # --- the commands over those rows --------------------------------------------
@@ -320,20 +254,25 @@ def dispatch(env: dict[str, str], home: Path, *args: str, hosts: str = "local", 
              ) -> subprocess.CompletedProcess:
     """`dispatch` in <home>, with a register that publishes <hosts> and exits <register_exit>, and an
     ssh that answers each host in <answers> with its rows and exit status."""
-    bin_dir = home / "bin"
-    (bin_dir / "ssh-answers").mkdir(parents=True, exist_ok=True)
-    register = bin_dir / "worker-hosts"
-    register.write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\nexit {register_exit}\n")
-    register.chmod(0o755)
-    (bin_dir / "ssh").write_text(FAKE_SSH)
-    (bin_dir / "ssh").chmod(0o755)
+    env = adapters(env, home, hosts, FAKE_SSH, register_exit)
+    (home / "bin" / "ssh-answers").mkdir(exist_ok=True)
     for host, (said, rc) in (answers or {}).items():
-        (bin_dir / "ssh-answers" / host).write_text(said + "\n")
-        (bin_dir / "ssh-answers" / f"{host}.rc").write_text(f"{rc}\n")
-    return subprocess.run(
-        ["bash", str(DISPATCH), *args], capture_output=True, text=True, cwd=str(cwd or home), timeout=60,
-        env={**env, "HOME": str(home), "PATH": f"{bin_dir}:{env['PATH']}", "GIT_CONFIG_GLOBAL": "/dev/null"},
-    )
+        (home / "bin" / "ssh-answers" / host).write_text(said + "\n")
+        (home / "bin" / "ssh-answers" / f"{host}.rc").write_text(f"{rc}\n")
+    return subprocess.run(["bash", str(DISPATCH), *args], capture_output=True, text=True, cwd=str(cwd or home),
+                          timeout=60, env=env)
+
+
+def adapters(env: dict[str, str], home: Path, hosts: str, ssh: str, register_exit: int = 0) -> dict[str, str]:
+    """<env> as `dispatch` in <home> runs in it: a register that publishes <hosts> and exits
+    <register_exit>, and the ssh script <ssh>, both in <home>/bin."""
+    bin_dir = home / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    (bin_dir / "worker-hosts").write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' {hosts}\nexit {register_exit}\n")
+    (bin_dir / "ssh").write_text(ssh)
+    for f in ("worker-hosts", "ssh"):
+        (bin_dir / f).chmod(0o755)
+    return {**env, "HOME": str(home), "PATH": f"{bin_dir}:{env['PATH']}", "GIT_CONFIG_GLOBAL": "/dev/null"}
 
 
 def ssh_calls(home: Path) -> list[str]:
@@ -350,10 +289,32 @@ def elsewhere(slug: str, base: str = "agents/master", detail: str = "on the othe
 def test_the_table_names_its_columns_and_the_worker(home: Path, tmux: dict[str, str]):
     out = dispatch(tmux, home, "ps")
     assert out.returncode == 0, out.stderr
-    header, row = out.stdout.splitlines()
+    header, row, gap, tally = out.stdout.splitlines()
     assert header.split() == ["HOST", "BASE", "TICKET", "STATE", "AGE", "IDLE", "DETAIL"]
     assert row.split()[:4] == ["local", "agents/master", "hypofuzz-default", "exited"]
     assert re.fullmatch(r"\d+s", row.split()[4]), "spawned seconds ago"
+    assert (gap, tally) == ("", "0 running  1 exited"), "running and exited hold their places at zero"
+    assert "\x1b[" not in out.stdout, "no color into a pipe unless asked"
+
+
+def test_under_watch_the_table_is_cut_to_its_width_and_painted_when_asked(home: Path, tmux: dict[str, str]):
+    """`watch` runs ps with no terminal and the width in COLUMNS, and shows color only with
+    `watch -c` and `ps --color`. A running worker silent for a quarter hour is painted apart from
+    one that is not."""
+    far = {"agent@far": (elsewhere("quiet-one")[0].replace("\t5\t", "\t1000\t") + "\n"
+                         + elsewhere("busy-one", detail="x" * 200)[0], 0)}
+    cut = dispatch({**tmux, "COLUMNS": "90"}, home, "ps", hosts="local agent@far", answers=far)
+    assert cut.returncode == 0, cut.stderr
+    assert max(map(len, cut.stdout.splitlines())) == 90
+    assert cut.stdout.splitlines()[-1] == "2 running  1 exited"
+
+    painted = dispatch({**tmux, "COLUMNS": "90"}, home, "ps", "--color", hosts="local agent@far", answers=far)
+    lines = {line.split()[2]: line for line in painted.stdout.splitlines() if "-one" in line}
+    assert "\x1b[1;32mrunning" in lines["busy-one"]
+    assert "\x1b[33m" in lines["quiet-one"] and "\x1b[33m" not in lines["busy-one"]
+    assert max(len(re.sub(r"\x1b\[[0-9;]*m", "", line)) for line in painted.stdout.splitlines()) == 90
+
+    assert "\x1b[" not in dispatch({**tmux, "NO_COLOR": "1"}, home, "ps", "--color", hosts="local agent@far", answers=far).stdout
 
 
 def test_the_hosts_are_the_registers_and_the_repos_runs_from_anywhere_in_it(home: Path, tmux: dict[str, str]):
@@ -378,6 +339,7 @@ def test_peek_without_a_worker_says_so(home: Path, tmux: dict[str, str]):
     assert "takes a worker" in out.stderr
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("worker", ["hypofuzz-default", "dispatch-agents-hypofuzz-default",
                                     "local/hypofuzz-default", "local/dispatch-agents-hypofuzz-default"])
 def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker: str):
@@ -388,10 +350,11 @@ def test_every_way_of_naming_one_worker(home: Path, tmux: dict[str, str], worker
     assert "hypofuzz-default" in out.stderr
 
 
-@pytest.mark.parametrize("fragment", ["hypofuzz", "fuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
+@pytest.mark.full_path
+@pytest.mark.parametrize("fragment", ["hypofuzz", "hypofuzz-defaul", "dispatch-agents-hypofuzz",
                                       "agents/master/hypofuzz-default"])
 def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fragment: str):
-    """P3: a fragment that matched would make attach a guess, and `fuzz` is a worker of its own."""
+    """P3: a fragment that matched would make attach a guess."""
     session(tmux, "dispatch-agents-hypofuzz-default")
 
     out = dispatch(tmux, home, "peek", fragment)
@@ -399,6 +362,7 @@ def test_a_fragment_of_a_worker_names_none(home: Path, tmux: dict[str, str], fra
     assert "no worker called" in out.stderr
 
 
+@pytest.mark.full_path
 def test_a_slug_that_is_only_a_number_is_still_a_name(home: Path, tmux: dict[str, str]):
     """`1` and `01` are equal numbers and different names; a slug is a name."""
     d = scratch(home / ROOT, "jarvis", "main")
@@ -442,6 +406,7 @@ def test_a_host_that_does_not_answer_is_a_row_and_a_nonzero_exit(home: Path, tmu
     (row,) = [line for line in out.stdout.splitlines() if line.startswith("agent@off")]
     assert "unreachable" in row and why in row
     assert "hypofuzz-default" in out.stdout, "the host that did answer is still read"
+    assert out.stdout.splitlines()[-1] == "0 running  1 exited  1 unreachable", "the rest after them, as they appear"
 
 
 def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: dict[str, str]):
@@ -455,6 +420,7 @@ def test_a_scratch_dir_left_unread_makes_the_table_incomplete(home: Path, tmux: 
     assert "hypofuzz-default" in out.stdout, "the scratch dir beside it is still read"
 
 
+@pytest.mark.full_path
 def test_a_pane_that_cannot_be_read_is_a_failed_peek_not_an_empty_one(home: Path, tmux: dict[str, str]):
     """The session can end between the read that resolved it and the capture."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -505,11 +471,12 @@ def test_this_machine_is_one_host_under_both_its_names(home: Path, tmux: dict[st
 
     out = dispatch(tmux, home, "ps", hosts=SELF, answers={SELF: elsewhere("reached-by-ssh")})
     assert out.returncode == 0, out.stderr
-    (_, row) = out.stdout.splitlines()
+    (_, row, _, _) = out.stdout.splitlines()
     assert row.split()[:3] == [SELF, "agents/master", "hypofuzz-default"]
     assert ssh_calls(home) == []
 
 
+@pytest.mark.full_path
 def test_peek_prints_the_last_lines_of_the_workers_pane(home: Path, tmux: dict[str, str]):
     session(tmux, "dispatch-agents-hypofuzz-default", "seq 1 40; sleep 30")
     time.sleep(0.5)
@@ -518,16 +485,6 @@ def test_peek_prints_the_last_lines_of_the_workers_pane(home: Path, tmux: dict[s
     assert out.returncode == 0, out.stderr
     assert out.stdout.splitlines() == ["38", "39", "40"]
     assert "hypofuzz-default" in out.stderr, "which worker it is goes to stderr, so the pane pipes clean"
-
-
-def test_the_fuzz_run_is_named_like_any_other_worker(home: Path, tmux: dict[str, str], live_pid: int):
-    fuzzing(tmux, home / ROOT / "agents-master", idle=60, pid=live_pid)
-    session(tmux, "job-fuzz-agents", "printf 'Failing test case\\n'; sleep 30")
-    time.sleep(0.5)
-
-    out = dispatch(tmux, home, "peek", "fuzz")
-    assert out.returncode == 0, out.stderr
-    assert "Failing test case" in out.stdout
 
 
 def test_a_worker_whose_session_is_gone_is_not_attached_to(home: Path, tmux: dict[str, str]):
@@ -540,7 +497,7 @@ def test_attach_to_a_remote_worker_is_ssh_with_a_terminal(home: Path, tmux: dict
     out = dispatch(tmux, home, "attach", "far-away", hosts="local agent@far",
                    answers={"agent@far": elsewhere("far-away")})
     assert out.returncode == 0, out.stderr
-    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t \\=dispatch-agents-far-away", \
+    assert ssh_calls(home)[-1] == "agent@far\ttmux attach -t \\=dispatch-agents-far-away:", \
         "the line on_host builds, its leading `=` escaped for a zsh login shell"
     assert (home / "bin" / "ssh.calls").read_text().count("\n") == 2, "one read, then the attach"
 
@@ -554,6 +511,7 @@ cd "$REMOTE_HOME" && HOME=$REMOTE_HOME exec "$REMOTE_SHELL" -c "$*"
 """
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
 def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
         tmp_path: Path, home: Path, tmux: dict[str, str], shell: str):
@@ -591,9 +549,10 @@ def test_a_remote_login_shell_hands_every_word_to_the_command_as_sent(
     assert "said on far" in peeked.stdout
     attached = dispatched("attach", "hypofuzz-default")
     assert attached.returncode == 0, attached.stderr
-    assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default"
+    assert (here / "attached").read_text().strip() == "attach -t =dispatch-agents-hypofuzz-default:"
 
 
+@pytest.mark.full_path
 def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: dict[str, str]):
     """Inside the caller's own tmux, a plain attach refuses to nest; TMUX unset, it nests."""
     session(tmux, "dispatch-agents-hypofuzz-default")
@@ -607,10 +566,11 @@ def test_attach_to_a_local_worker_is_tmux_outside_any_session(home: Path, tmux: 
 
     out = dispatch({**tmux, "TMUX": "/tmp/somebodys-socket,1,0"}, home, "attach", "hypofuzz-default")
     assert out.returncode == 0, out.stderr
-    assert (home / "attached").read_text().strip() == "TMUX=unset attach -t =dispatch-agents-hypofuzz-default"
+    assert (home / "attached").read_text().strip() == "TMUX=unset attach -t =dispatch-agents-hypofuzz-default:"
     assert "prefix twice" in out.stderr
 
 
+@pytest.mark.full_path
 def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: dict[str, str]):
     """P5, what attach invites: a Ctrl-C leaves the status line a resume needs, rather than killing
     the runner before its last act."""
@@ -643,6 +603,291 @@ def test_ctrl_c_in_a_pane_ends_the_run_the_way_stop_does(tmp_path: Path, tmux: d
     written = status.read_text()
     assert "exit=stopped" in written
     assert re.search(r"session=[0-9a-f-]{36}", written), f"a resume needs the session id: {written}"
+
+
+# --- following: ps --follow ---------------------------------------------------
+# Each check follows for seconds of wall clock, so all of them are full-path checks.
+
+
+# ssh to a host whose home is hosts/<host> beside it: the command runs there in bash, as a login
+# shell runs it, and every call is recorded host first. A host with no home is off. Once
+# hosts/<host>.hung exists, the host's output stops arriving (it leaves hosts/<host>.silent when it
+# does) and the connection drops a third of ServerAliveInterval x ServerAliveCountMax seconds
+# later, as ssh's keepalive drops it; with no keepalive it never drops.
+FOLLOW_SSH = """#!/usr/bin/env bash
+alive=0 count=3
+while [[ ${1:-} == -* ]]; do
+    case $1 in
+        -o) case $2 in ServerAliveInterval=*) alive=${2#*=} ;; ServerAliveCountMax=*) count=${2#*=} ;; esac
+            shift 2 ;;
+        *)  shift ;;
+    esac
+done
+host=$1; shift
+here=$(dirname "$0")
+printf '%s\\t%s\\n' "$host" "$*" >> "$here/ssh.calls"
+home=$here/hosts/$host
+[ -d "$home" ] || { echo "ssh: connect to host $host: No route to host" >&2; exit 255; }
+cd "$home" && HOME=$home bash -c "$*" | while IFS= read -r line; do
+    [ -e "$home.hung" ] && { touch "$home.silent"; exit; }
+    printf '%s\\n' "$line"
+done
+rc=${PIPESTATUS[0]}
+[ -e "$home.hung" ] || exit "$rc"
+[ "$alive" -gt 0 ] || sleep infinity
+sleep $((alive * count / 3))
+exit 255
+"""
+
+
+def until(check, within: float = 20):
+    """<check>'s first truthy answer, or its last one when <within> seconds run out."""
+    deadline = time.monotonic() + within
+    while not (answer := check()) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return answer
+
+
+class Following:
+    """`dispatch ps --follow` in <home>, over a register that publishes <hosts> and FOLLOW_SSH."""
+
+    def __init__(self, env: dict[str, str], home: Path, hosts: str):
+        self.home = home
+        self.env = adapters(env, home, hosts, FOLLOW_SSH)
+        self.out = home / "follow.out"
+        with self.out.open("w") as out:
+            # A session of its own, so the check can see what of it is left once it is stopped.
+            self.proc = subprocess.Popen(["bash", str(DISPATCH), "ps", "--follow"], stdout=out,
+                                         stderr=subprocess.STDOUT, cwd=home, env=self.env, start_new_session=True)
+
+    def drawn(self) -> str:
+        """The table on screen now: the last whole draw, as plain text."""
+        draws = [d for d in self.out.read_text().split("\x1b[H") if d.endswith("\x1b[J")]
+        return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", draws[-1]) if draws else ""
+
+    def printed(self) -> str:
+        """What `dispatch ps` prints now, over the same hosts."""
+        return subprocess.run(["bash", str(DISPATCH), "ps"], capture_output=True, text=True, cwd=self.home,
+                              env=self.env, timeout=60).stdout.rstrip("\n")
+
+    def shows(self, check, within: float = 20) -> str:
+        """The table drawn once <check> holds of it, or the last one drawn when <within> seconds run out."""
+        def held() -> str | None:
+            table = self.drawn()
+            return table if check(table) else None
+        return until(held, within) or self.drawn()
+
+    def matches_ps(self, within: float = 20) -> tuple[str, str]:
+        """The drawn table and ps's output, once they agree or <within> seconds run out."""
+        def agreed() -> tuple[str, str] | None:
+            pair = self.drawn(), self.printed()
+            return pair if pair[0] == pair[1] else None
+        return until(agreed, within) or (self.drawn(), self.printed())
+
+    def logins(self, host: str) -> int:
+        return sum(1 for c in ssh_calls(self.home) if c.split("\t")[0] == host)
+
+    def left(self) -> list[str]:
+        """Every process of the follow's session still running."""
+        out = subprocess.run(["pgrep", "-a", "-s", str(self.proc.pid)], capture_output=True, text=True)
+        return out.stdout.splitlines()
+
+    def stop(self) -> None:
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            self.proc.wait(timeout=10)
+
+
+@pytest.fixture
+def follow(tmux: dict[str, str]) -> Iterator:
+    """Starts a Following; every one started is stopped at the end, and anything left of it killed."""
+    started: list[Following] = []
+
+    def start(home: Path, hosts: str = "local", **env: str) -> Following:
+        started.append(Following({**tmux, **env}, home, hosts))
+        return started[-1]
+
+    yield start
+    for f in started:
+        f.stop()
+        try:
+            os.killpg(f.proc.pid, 9)
+        except ProcessLookupError:
+            pass
+
+
+def remote(home: Path, name: str) -> Path:
+    """The home of the host <name>, which FOLLOW_SSH reaches from <home>. Made before the follow
+    starts, or its first connection finds a host that is off."""
+    there = home / "bin" / "hosts" / name
+    there.mkdir(parents=True, exist_ok=True)
+    return there
+
+
+def aged(root: Path, repo: str, slug: str, seconds: int) -> Path:
+    """A finished run of <slug> spawned <seconds> ago, whose worklog last spoke then too; its
+    scratch dir."""
+    d = root / f"{repo}-master"
+    if not d.exists():
+        d = scratch(root, repo, "master")
+    run = spawned(d, slug, at=int(time.time()) - seconds)
+    log = d / f"{run}.log"
+    log.write_text("said its last\n")
+    os.utime(log, (time.time() - seconds, time.time() - seconds))
+    finished(d, run)
+    return d
+
+
+@pytest.mark.full_path
+def test_following_draws_what_ps_prints(tmp_path: Path, follow):
+    """dispatch-ps-follow P3, across what a host's rows are read from: a worklog line, a runner
+    that dies, a new run."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    d = aged(remote(home, "agent@far") / ROOT, "jarvis", "thread-registry", 9000)
+    live = spawned(d, "dns-filter-toggle", at=int(time.time()) - 7200)
+    log = d / f"{live}.log"
+    log.write_text("working\n")
+    os.utime(log, (time.time() - 7200, time.time() - 7200))
+    worker = running(d, live)
+    f = follow(home, "local agent@far")
+    try:
+        drawn, printed = f.matches_ps()
+        assert re.search(r"dns-filter-toggle +running", drawn), drawn
+        assert drawn == printed
+
+        with log.open("a") as said:
+            said.write("review round 2: make test 45 passed\n")
+        drawn, printed = f.matches_ps()
+        assert "review round 2" in drawn
+        assert drawn == printed
+
+        worker.kill()
+        worker.wait()
+        drawn, printed = f.matches_ps()
+        assert re.search(r"dns-filter-toggle +gone", drawn)
+        assert drawn == printed
+
+        finished(d, spawned(d, "late-comer", at=int(time.time()) - 7200))
+        drawn, printed = f.matches_ps()
+        assert "late-comer" in drawn
+        assert drawn == printed
+    finally:
+        worker.kill()
+
+
+@pytest.mark.full_path
+def test_a_frames_ages_count_on_until_the_next(tmp_path: Path, follow):
+    """dispatch-ps-follow P3: nothing on the host changes, so no frame comes, and the age drawn is
+    still the one ps prints."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 35)
+    f = follow(home)
+    assert re.search(r" [345]\ds ", f.shows(lambda t: "hypofuzz-default" in t))
+    assert " 1m " in f.shows(lambda t: " 1m " in t, within=40)
+    drawn, printed = f.matches_ps()
+    assert drawn == printed
+
+
+@pytest.mark.full_path
+def test_a_silent_host_holds_up_no_other_and_comes_back_on_one_more_login(tmp_path: Path, follow):
+    """dispatch-ps-follow P1 and P2: a change reaches the table over the one login; while a host is
+    silent the other hosts' rows still move; it turns `unreachable` once its keepalive drops it, and
+    its reconnect is the only other login."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    far = remote(home, "agent@far")
+    aged(far / ROOT, "jarvis", "far-one", 7200)
+    stuck = remote(home, "agent@stuck")
+    aged(stuck / ROOT, "jarvis", "stuck-one", 7200)
+    f = follow(home, "local agent@far agent@stuck")
+    assert "stuck-one" in f.shows(lambda t: "far-one" in t and "stuck-one" in t)
+    aged(stuck / ROOT, "jarvis", "stuck-two", 7200)
+    assert "stuck-two" in f.shows(lambda t: "stuck-two" in t)
+    assert f.logins("agent@stuck") == 1
+
+    stuck.with_suffix(".hung").touch()
+    assert until(stuck.with_suffix(".silent").exists)
+    aged(far / ROOT, "jarvis", "far-two", 7200)
+    aged(home / ROOT, "agents", "here-two", 7200)
+    table = f.shows(lambda t: "far-two" in t and "here-two" in t, within=8)
+    assert "far-two" in table and "here-two" in table and "stuck-one" in table
+
+    table = f.shows(lambda t: "unreachable" in t)
+    assert "stuck-one" not in table and "no answer from the host" in table
+    stuck.with_suffix(".hung").unlink()
+    assert "stuck-one" in f.shows(lambda t: "stuck-one" in t, within=30)
+    assert f.logins("agent@stuck") == 2
+
+
+@pytest.mark.full_path
+def test_a_host_that_is_off_is_asked_less_and_less_often(tmp_path: Path, follow):
+    """dispatch-ps-follow P1: a host that stays off costs a login per backoff, which doubles: 0, 2,
+    6 and 14 seconds in, where a fixed retry would be twice as many."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    f = follow(home, "local agent@off")
+    assert "agent@off" in f.shows(lambda t: "unreachable" in t)
+    time.sleep(12)
+    assert 2 <= f.logins("agent@off") <= 3
+
+
+@pytest.mark.full_path
+def test_a_host_silent_from_the_start_holds_up_no_other(tmp_path: Path, follow):
+    """dispatch-ps-follow P2 before the first frame: the hosts that answered are drawn at once, the
+    silent one as `connecting` until its connection drops."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    stuck = remote(home, "agent@stuck")
+    aged(stuck / ROOT, "jarvis", "stuck-one", 7200)
+    stuck.with_suffix(".hung").touch()
+    f = follow(home, "local agent@stuck")
+    table = f.shows(lambda t: "hypofuzz-default" in t, within=5)
+    assert "hypofuzz-default" in table
+    assert re.search(r"agent@stuck +- +- +connecting", table), table
+    assert "unreachable" in f.shows(lambda t: "unreachable" in t)
+
+
+@pytest.mark.full_path
+def test_a_stopped_follow_leaves_nothing_running(tmp_path: Path, follow):
+    """Its loops on the hosts end with it, rather than scanning on for nobody."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
+    f = follow(home, "local agent@far")
+    assert "far-one" in f.shows(lambda t: "far-one" in t)
+    assert any("--follow" in p for p in f.left())
+
+    f.stop()
+    assert until(lambda: not f.left(), within=10), f.left()
+
+
+@pytest.mark.full_path
+def test_a_host_the_register_comes_to_publish_is_followed(tmp_path: Path, follow):
+    """dispatch-ps-follow P3: ps asks for the hosts on every run, and a follow asks again every half
+    minute."""
+    home = tmp_path / "home"
+    aged(home / ROOT, "agents", "hypofuzz-default", 7200)
+    aged(remote(home, "agent@far") / ROOT, "jarvis", "far-one", 7200)
+    f = follow(home)
+    assert "hypofuzz-default" in f.shows(lambda t: "hypofuzz-default" in t)
+    (home / "bin" / "worker-hosts").write_text("#!/usr/bin/env bash\nprintf '%s\\n' local agent@far\n")
+    drawn, printed = f.matches_ps(within=45)
+    assert "far-one" in drawn
+    assert drawn == printed
+
+
+@pytest.mark.full_path
+def test_a_table_taller_than_the_screen_keeps_its_header_and_tally(tmp_path: Path, follow):
+    """Printed whole, it would scroll on every draw. LINES is the height with no terminal."""
+    home = tmp_path / "home"
+    for n in range(10):
+        aged(home / ROOT, "agents", f"ticket-{n}", 7200)
+    f = follow(home, LINES="8")
+    printed = f.printed().splitlines()
+    assert len(printed) == 13, "a header, ten rows, a blank line and the tally"
+    drawn = f.shows(lambda t: "ticket-" in t).splitlines()
+    assert drawn == [*printed[:5], "(6 more rows than the screen holds)", *printed[-2:]]
 
 
 if __name__ == "__main__":

@@ -18,7 +18,8 @@ user to tell.
 clear, in the same Claude Code process: the first records the session id that just ended under
 that process's pid, the second reads it back and looks for a continuation handoff that session
 wrote in the agent repo of the working directory (`tracker root` finds it). With one there, the
-fresh session is handed the handoff skill's pickup line; with none, or nothing recorded, nothing.
+fresh session is handed the handoff skill's pickup line, which names `pickup.py` by its absolute
+path; with none, or nothing recorded, nothing.
 <pid> is the hook shell's $PPID, which is the Claude Code process.
 
 State is under $XDG_STATE_HOME/mx (~/.local/state/mx): checkpoints/<session id> holds the highest
@@ -37,6 +38,7 @@ from pathlib import Path
 STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "mx"
 MARKS = [int(m) for m in os.environ.get("MX_CONTEXT_CHECKPOINTS", "300000,500000,600000").split(",") if m.strip()]
 TRACKER = Path(__file__).resolve().parents[1] / "tracker" / "tracker.py"
+PICKUP = Path(__file__).resolve().parent / "pickup.py"
 BLOCK = 64 * 1024
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
 
@@ -164,8 +166,8 @@ def started(hook: dict, pid: str) -> None:
         return log("started", hook["session_id"], decision="quiet", why="no continuation of the ended session", ended=session)
     latest = max(written, key=lambda p: p.stat().st_mtime).resolve()
     # the pickup line, as /mx:handoff gives it to the user to type
-    said(f"Continue from {latest}. Read it in full first, then git rm it in the agent repo and commit: "
-         f"a handoff is retired once a session has picked it up.", "SessionStart")
+    said(f"Continue from {latest}: first run `{PICKUP} {latest}`, which prints the handoff in full, retires it "
+         f"and links the session pages.", "SessionStart")
     log("started", hook["session_id"], decision="said", handoff=str(latest), ended=session)
 
 

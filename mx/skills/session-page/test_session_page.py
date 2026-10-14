@@ -4,94 +4,44 @@
 # ///
 """The session renderer's properties. Run: uv run test_session_page.py
 
-The seam is `render_session`: a session directory (`session.md`, `turns/NN.md`) and the session's
-transcript in, the page out. The oracle is agent/tickets/session-page.md, its Properties and its
-Decisions on the turn record's shape, over two kinds of input: sessions drawn by `sessions()`,
-whose open questions come from the draw rather than from any reading of the records, and the
-worked example in `fixtures/`, which is the prototype's sample with a trimmed copy of that
-session's transcript.
+The seam is the page as the values `render_session` formats (`session_page.view`): a session
+directory (`session.md`, `turns/NN.md`) and the session's transcript in, the turns, questions and
+artefacts the page shows out. What only the HTML carries, the anchors the page's links jump to, the
+attribute the hub finds an artefact by, the prose a record's markdown renders to, is read off the
+page, by checks that say they pin the format. The oracle is agent/tickets/session-page.md, its
+Properties and its Decisions on the turn record's shape, over two kinds of input: sessions drawn
+by `sessions()`, whose open questions come from the draw rather than from any reading of the
+records, and the worked example in `fixtures/`, which is the prototype's sample with a trimmed
+copy of that session's transcript.
 
 A drawn session's transcript carries one prompt per turn in the shape the real one carries a
-prompt. What the checks ask of a message is that it reaches one turn's section and that the noise
-Claude Code writes as the user reaches none, never which turn a given prompt belongs to, which
+prompt. What the checks ask of a message is that it reaches one turn and that the noise Claude Code
+writes as the user reaches none, never which turn a given prompt belongs to, which
 test_reading.py checks.
 """
 
+import html
 import itertools
 import json
 import re
 import shutil
-import sys
 from collections.abc import Callable
-from datetime import datetime
-from html.parser import HTMLParser
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from hypothesis import given, settings, strategies as st
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from session_page import PAGE, QUESTIONS, render_session
+from session_checks import SESSION, elements, rows_of, sections_of, text_of, turns_on, view_of
+from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, chat_path, chat_record, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
-VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 
-# ---- reading the page -------------------------------------------------------
-
-
-def elements(page: str, pattern: str) -> dict[str, str]:
-    """Each element of the page whose id `pattern` matches, whole, keyed by that id: a block is
-    read by the anchor that names it, not by where the next one starts, so anything nested inside
-    it stays part of it."""
-    starts = list(itertools.accumulate((len(line) for line in page.splitlines(keepends=True)), initial=0))
-    found: dict[str, str] = {}
-    open_tags: list[tuple[str, str | None, int]] = []
-
-    class Reader(HTMLParser):
-        def at(self) -> int:
-            line, column = self.getpos()
-            return starts[line - 1] + column
-
-        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            if tag in VOID:
-                return
-            value = dict(attrs).get("id")
-            open_tags.append((tag, value if value and re.fullmatch(pattern, value) else None, self.at()))
-
-        def handle_endtag(self, tag: str) -> None:
-            while open_tags:
-                name, value, start = open_tags.pop()
-                if name == tag:
-                    if value:
-                        found[value] = page[start : self.at() + len(f"</{tag}>")]
-                    return
-
-    Reader().feed(page)
-    return found
-
-
-def top_of(page: str) -> str:
-    """The block the questions waiting on the user sit in, and nothing where a session with none
-    open carries no block."""
-    return elements(page, QUESTIONS).get(QUESTIONS, "")
-
-
-def question_anchors(fragment: str) -> list[str]:
-    """The questions a fragment of the page shows, by tag, once per time it shows one."""
-    return [anchor.upper() for anchor in re.findall(r'\bid="(q\d+)"', fragment)]
-
-
-def questions_in(fragment: str) -> set[str]:
-    """The questions a fragment of the page shows, by tag."""
-    return set(question_anchors(fragment))
-
-
-def sections_of(page: str) -> dict[str, str]:
-    """Each turn's section, keyed by the two digits of its record."""
-    return {anchor[1:]: section for anchor, section in elements(page, r"t\d+").items()}
+def waiting(page: View) -> list[str]:
+    """The questions the top shows, by tag, once per time it shows one."""
+    return [q.tag for _, q in page.waiting]
 
 
 # ---- sessions to render -----------------------------------------------------
@@ -206,6 +156,12 @@ def test_the_page_is_read_by_the_values_its_module_names() -> None:
     assert (PAGE, QUESTIONS) == ("index.html", "open-questions")
 
 
+def test_the_hub_finds_an_artefact_by_its_attribute_and_the_column_by_its_id() -> None:
+    """The page's side of the hub's contract: dotfiles' `minimize-and-restore` marks a link by
+    this attribute and finds the column by this id, so a rename fails here before it reaches the hub."""
+    assert (ARTEFACT, COLUMN) == ("data-artefact", "artefacts")
+
+
 def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path, transcript: Path) -> None:
     """The ids the checks find a turn and a question by are the ones the page's own links jump to,
     and each names one part: an anchor that breaks, or a part shown twice, fails here."""
@@ -217,19 +173,18 @@ def test_every_link_within_the_page_lands_on_one_part_of_it(worked_example: Path
 
 @settings(deadline=None)  # an example writes a session directory and renders it twice
 @given(drawn=sessions())
-def test_the_top_holds_the_open_questions_and_nothing_else(
+def test_the_top_holds_the_open_questions_each_once(
     drawn: tuple[list[dict], set[str]], scratch: Callable[[], Path]
 ) -> None:
     """session-page#P1, over sessions whose questions meet every fate in turn: the open ones are
-    what the top holds, and holding one of them twice, a turn, or a turn's details is holding
-    something else."""
+    what the top holds, each once, and the page's top block holds nothing a turn settled."""
     turns, open_tags = drawn
-    directory, transcript = write_session(scratch() / DRAWN, turns)
-    top = top_of(render_session(directory, transcript, now=NOW))
-    assert questions_in(top) == open_tags
-    assert len(question_anchors(top)) == len(open_tags)
-    assert not re.search(r'\bid="t\d+"', top), "a turn sits below the questions, and a link to one carries its id"
-    assert [n for n in range(1, len(turns) + 1) if f"What turn {n} settled." in top] == []
+    session = write_session(scratch() / DRAWN, turns)
+    top = waiting(view_of(*session))
+    assert set(top) == open_tags
+    assert len(top) == len(open_tags)
+    block = text_of(elements(render_session(*session, now=NOW), QUESTIONS).get(QUESTIONS, ""))
+    assert [n for n in range(1, len(turns) + 1) if f"What turn {n} settled." in block] == []
 
 
 def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
@@ -237,15 +192,57 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
 ) -> None:
     """session-page#P1, on the prototype's four records: turn 3 answers Q1 to Q3, turn 4 answers
     Q4 and Q6 and replaces Q5 with the Q7 it asks."""
-    assert questions_in(top_of(render_session(worked_example, transcript, now=NOW))) == {"Q7"}
+    assert waiting(view_of(worked_example, transcript)) == ["Q7"]
+
+
+def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: Path) -> None:
+    """A blind question is one the user answers on its test page, which holds the options and the
+    agent's pick: the top shows it with a link to that page, and no option or pick of its own."""
+    directory = tmp_path / "agent" / "sessions" / DRAWN
+    (directory / "turns").mkdir(parents=True)
+    (directory / "turns" / "01.md").write_text(
+        "---\ndate: 2026-10-13\n---\n\n# Round 1\n\n## Questions\n\n"
+        "- [Q1] **How does a refusal read?** five refusals, written both ways\n"
+        "  - Blind: agent/show/refusals/blind-q1.html\n"
+    )
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("")
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    assert 'href="../../../agent/show/refusals/blind-q1.html"' in top
+    assert "my pick" not in text_of(top)
 
 
 def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Path, transcript: Path) -> None:
     """The Decisions' layout: the turns newest first, the newest open and the older ones
     collapsed."""
-    turns = re.findall(r'<details class="turn[^"]*" id="t(\d+)"([^>]*)>', render_session(worked_example, transcript, now=NOW))
-    assert [key for key, _ in turns] == ["04", "03", "02", "01"]
-    assert [key for key, attributes in turns if re.search(r"\bopen\b", attributes)] == ["04"]
+    rows = view_of(worked_example, transcript).rows
+    assert [row.key for row in rows] == ["04", "03", "02", "01"]
+    assert [row.key for row in rows if row.open] == ["04"]
+
+
+def test_the_page_shows_each_turns_date_the_count_and_span_and_where_no_message_of_yours_is(
+    worked_example: Path, transcript: Path, tmp_path: Path
+) -> None:
+    """session-page-turns-decluttered, read off the page as text: each turn's date, the number of
+    turns and the dates they span, a turn that links no artefact under its headline in the
+    timeline, and the line that stands in for the user's messages on record 3, whose write the
+    transcript lacks, and on a chat turn after the newest record with nothing said before it; on no
+    other turn."""
+    unwritten = tmp_path / "t.jsonl"
+    unwritten.write_text("".join(line for line in transcript.read_text().splitlines(keepends=True) if "/turns/03.md" not in line))
+    at = datetime(2026, 9, 23, 2, 0, tzinfo=UTC)
+    chat = chat_path(worked_example / "turns", at)
+    chat.write_text(chat_record("Still building.", at))
+    page = view_of(worked_example, unwritten)
+    rendered = render_session(worked_example, unwritten, now=NOW)
+    turns = turns_on(rendered)
+    text = {row.key: turns[f"t{row.key}" if isinstance(row.turn, Turn) else row.key] for row in page.rows}
+    assert {key: "no message of yours" in t for key, t in text.items()} == {
+        chat.stem: True, "04": False, "03": True, "02": False, "01": False}
+    assert [row.key for row in page.rows if row.when not in text[row.key]] == []
+    assert f" 5 turns · {page.span} · " in text_of(rendered)
+    assert text_of(elements(rendered, "a01")["a01"]) == "01 Round 1, as text: two axes, and a page per session"
 
 
 @settings(deadline=None)
@@ -253,21 +250,21 @@ def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Pa
 def test_a_turns_record_is_the_only_source_of_its_section(
     drawn: tuple[list[dict], set[str]], which: int, scratch: Callable[[], Path]
 ) -> None:
-    """session-page#P2: rewriting one record's headline and details moves that turn's section and
-    leaves every other one where it was."""
+    """session-page#P2: rewriting one record's headline and details changes that turn and leaves
+    every other one as it was."""
     turns, _ = drawn
     number = which % len(turns) + 1
     directory, transcript = write_session(scratch() / DRAWN, turns)
-    before_page = render_session(directory, transcript, now=NOW)
+    before_page = view_of(directory, transcript)
     (directory / "turns" / f"{number:02d}.md").write_text(
         record(number, turns[number - 1], headline="Rewritten", details="Rewritten too.")
     )
-    after_page = render_session(directory, transcript, now=NOW)
-    before, after = sections_of(before_page), sections_of(after_page)
+    after_page = view_of(directory, transcript)
+    before, after = rows_of(before_page), rows_of(after_page)
     key = f"{number:02d}"
     assert after[key] != before[key]
     assert {n: s for n, s in after.items() if n != key} == {n: s for n, s in before.items() if n != key}
-    assert questions_in(top_of(after_page)) == questions_in(top_of(before_page)), "a headline answers nothing"
+    assert set(waiting(after_page)) == set(waiting(before_page)), "a headline answers nothing"
 
 
 def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
@@ -275,7 +272,8 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
 ) -> None:
     """session-page#P2: the records and the transcript, carried on their own to a directory of the
     same name and depth, give back the page the session's own directory did, whatever else was
-    lying beside them there."""
+    lying beside them there. The path an artefact link carries for the hub names the repo root the
+    page was rendered under, so the two pages compare with that attribute's new root read as the old."""
     (worked_example / PAGE).write_text(stale_page)
     (worked_example / "turns" / "notes.txt").write_text("a scratch file, which is not a record")
     page = render_session(worked_example, transcript, now=NOW)
@@ -286,28 +284,58 @@ def test_the_page_regenerates_from_the_records_and_the_transcript_alone(
     for source in sorted((worked_example / "turns").glob("[0-9][0-9].md")):
         shutil.copy(source, elsewhere / "turns")
     again = render_session(elsewhere, Path(shutil.copy(transcript, tmp_path)), now=NOW)
-    assert top_of(again) == top_of(page)  # first, so a failure names the block that moved
-    assert sections_of(again) == sections_of(page)
+    again = again.replace(f'{ARTEFACT}="{tmp_path / "elsewhere"}/', f'{ARTEFACT}="{tmp_path}/')
     assert again == page
 
 
 @settings(deadline=None)
 @given(drawn=sessions(), which=st.integers(min_value=0))
-def test_a_message_reaches_one_turns_section_and_no_other(
+def test_a_message_reaches_one_turn_and_no_other(
     drawn: tuple[list[dict], set[str]], which: int, scratch: Callable[[], Path]
 ) -> None:
     """session-page#P2: the transcript is the page's other source, and one prompt belongs to one
     turn. Which turn is not this check's business."""
     turns, _ = drawn
     directory, transcript = write_session(scratch() / DRAWN, turns)
-    before = sections_of(render_session(directory, transcript, now=NOW))
+    before = rows_of(view_of(directory, transcript))
     said = prompts(len(turns))
     said[which % len(said)] = "What I asked instead."
     write_transcript(transcript, said)
-    after = sections_of(render_session(directory, transcript, now=NOW))
+    after = rows_of(view_of(directory, transcript))
     moved = [number for number in before if after[number] != before[number]]
     assert moved != [], "the transcript went unread"
     assert len(moved) == 1
+
+
+def test_a_code_span_naming_a_file_on_this_machine_opens_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path a record writes as code is a link the user clicks rather than text they copy: from
+    the repo root, absolute or under `~`, with a `:line` dropped. A path that is not there, a
+    `~name` that names no user, a bare word, a command, and code already inside a link stay code.
+    Pins the format: the links are in the record's prose, which reaches the page as markup."""
+    root, home = tmp_path / "repo", tmp_path / "home"
+    (root / "mx").mkdir(parents=True)
+    (root / "mx" / "tool.py").write_text("")
+    home.mkdir()
+    (home / "notes.md").write_text("")
+    elsewhere = tmp_path / "review.html"
+    elsewhere.write_text("")
+    monkeypatch.setenv("HOME", str(home))
+    directory, transcript = write_session(root / "agent" / "sessions" / DRAWN, [{"asks": [], "answered": {}, "superseded": {}}])
+    (directory / "turns" / "01.md").write_text(
+        "---\ndate: 2026-09-21\n---\n\n# Paths\n\n## Links\n\n- [The `mx/tool.py` listing](mx/tool.py): the code\n\n"
+        f"## Details\n\nSee `mx/tool.py:12`, `{elsewhere}`, `~/notes.md`, `mx`, `mx/gone.py`, `~ubuntu.26.04~resolute`, `claude -p mx/tool.py` "
+        "and [`mx/tool.py`](mx/tool.py).\n"
+    )
+    section = sections_of(render_session(directory, transcript, now=NOW))["01"]
+    linked = re.findall(r'<a class="path" href="([^"]+)"[^>]*><code>([^<]*)</code></a>', section)
+    assert linked == [
+        ("../../../mx/tool.py", "mx/tool.py:12"),
+        (elsewhere.as_uri(), str(elsewhere)),
+        ((home / "notes.md").as_uri(), "~/notes.md"),
+    ]
+    assert section.count('class="path"') == 3, "a code span inside a link of its own was linked again"
 
 
 # What the user said in each of the worked example's four turns, the last of them queued mid-turn,
@@ -332,6 +360,152 @@ def test_the_page_carries_what_the_user_said_and_none_of_what_claude_code_said_f
     page = render_session(worked_example, transcript, now=NOW)
     assert [said for said in SAID if said not in page] == []
     assert [noise for noise in NOT_SAID if noise in page] == []
+
+
+# ---- the artefact column ----------------------------------------------------
+
+
+def column_of(page: View) -> list[tuple[str, list[tuple[str, str]]]]:
+    """The timeline: each numbered turn, in the order it shows them, with the text of each artefact
+    the turn links and the path the hub finds it by."""
+    return [(row.key, [(s.link.text, s.artefact) for s in row.artefacts]) for row in page.column]
+
+
+def marked(page: str) -> set[str]:
+    """The paths the page's links carry for the hub, which finds an artefact by that attribute."""
+    return {html.unescape(target) for target in re.findall(rf'\b{ARTEFACT}="([^"]*)"', page)}
+
+
+def chips_of(page: str) -> dict[str, list[str]]:
+    """Pins the format: the paths each turn's summary line carries for the hub, by the two digits
+    of its record. The summary line is what shows of a collapsed turn."""
+    return {key: [html.unescape(target) for target in re.findall(
+                rf'\b{ARTEFACT}="([^"]*)"', re.search(r"<summary.*?</summary>", section, re.S).group())]
+            for key, section in sections_of(page).items()}
+
+
+def with_links(record_text: str, items: list[str]) -> str:
+    """A record with `items` added under its `## Links`, the section opened where it has none."""
+    added = "".join(f"{item}\n" for item in items)
+    if "\n## Links\n" in record_text:
+        return record_text.replace("\n## Links\n\n", f"\n## Links\n\n{added}", 1)
+    return record_text.replace("\n## Details\n", f"\n## Links\n\n{added}\n## Details\n", 1)
+
+
+# The worked example's turns, newest first, with the text and path its records give each artefact.
+LISTED = [
+    ("04", [("How the pages fit together", "agent/show/session-page/round-3/pages.html"),
+            ("The spec page", "agent/show/session-page/round-3/spec.html")]),
+    ("03", [("Round 2 as a hand-built session page", "agent/show/session-page/round-2/index.html")]),
+    ("02", [("The grid, the session page sketch and Q1 to Q3", "agent/show/session-page/round-1/index.html")]),
+    ("01", []),
+]
+# Links a turn record may carry to ticket files, here and in another repo, which are no artefact.
+TICKET_LINKS = [
+    "- [The ticket this round grills](agent/tickets/session-page.md): its Decisions",
+    "- [The hub's ticket](/home/max/.dotfiles/agent/tickets/one-hub-tab.md#decisions): what it decided",
+]
+
+
+def test_the_column_lists_every_artefact_of_the_worked_example_under_its_turn_and_no_ticket(
+    worked_example: Path, transcript: Path
+) -> None:
+    """session-pages-feed-the-hub#P2, on a real session's records: every artefact under the turn
+    whose record links it, newest turn first, a turn with none listed bare, each carrying the path it
+    resolves to on this machine; and a ticket file the newest turn links is not listed, carries
+    no attribute the hub marks by, and takes no key, so the keys beside the turn's links are the
+    column's."""
+    root = worked_example.parents[2]
+    listed = [(key, [(text, str(root / path)) for text, path in items]) for key, items in LISTED]
+    assert column_of(view_of(worked_example, transcript)) == listed
+    newest = worked_example / "turns" / "04.md"
+    newest.write_text(with_links(newest.read_text(), TICKET_LINKS))
+    page = view_of(worked_example, transcript)
+    assert column_of(page) == listed
+    assert [link.key for link in rows_of(page)["04"].links] == [None, None, 1, 2]
+    rendered = render_session(worked_example, transcript, now=NOW)
+    assert marked(rendered) == {target for _, items in listed for _, target in items}
+    assert chips_of(rendered) == {key: [target for _, target in items] for key, items in listed}, "a collapsed turn's summary line"
+
+
+
+# What a drawn turn links, and the path the hub finds each by from the repo root `root` and the
+# home `home`; None for a ticket file, which the column never lists. Near misses of a ticket file
+# sit beside them.
+POOL: dict[str, Callable[[Path, Path], str | None]] = {
+    "agent/show/csv-import/figure.html": lambda root, home: f"{root}/agent/show/csv-import/figure.html",
+    "agent/show/csv-import/figure.html#step-2": lambda root, home: f"{root}/agent/show/csv-import/figure.html",
+    "agent/tickets/csv-import.html": lambda root, home: f"{root}/agent/tickets/csv-import.html",
+    "agent/show/csv-import/ticket.md": lambda root, home: f"{root}/agent/show/csv-import/ticket.md",
+    "agent/research/tickets.md": lambda root, home: f"{root}/agent/research/tickets.md",
+    "agent/tickets/csv-import/notes.html": lambda root, home: f"{root}/agent/tickets/csv-import/notes.html",
+    "~/Downloads/show/ledger/page.html": lambda root, home: f"{home}/Downloads/show/ledger/page.html",
+    "/srv/other/agent/show/hub/page.html": lambda root, home: "/srv/other/agent/show/hub/page.html",
+    "https://example.com/rfc.html": lambda root, home: "https://example.com/rfc.html",
+    "agent/tickets/csv-import.md": lambda root, home: None,
+    "agent/tickets/csv-import.md#d4": lambda root, home: None,
+    "/srv/other/agent/tickets/one-hub-tab.md": lambda root, home: None,
+    "~/.dotfiles/agent/tickets/one-hub-tab.md": lambda root, home: None,
+}
+
+
+def register(registry: Path, pid: int, session: str, name: str, updated: int) -> None:
+    """An entry in Claude Code's session registry, in the shape a running process writes it."""
+    (registry / f"{pid}.json").write_text(json.dumps(
+        {"pid": pid, "sessionId": session, "name": name, "nameSource": "derived", "updatedAt": updated}))
+
+
+def test_the_session_id_copies_whole_from_the_meta_line(worked_example: Path, transcript: Path) -> None:
+    """session-page-copies-the-session-id: the meta line shows the id's first eight characters on
+    a button that copies the full id."""
+    button = elements(render_session(worked_example, transcript, now=NOW), "session-id")["session-id"]
+    assert f'data-copy="{SESSION}"' in button and button.endswith(f">{SESSION[:8]}</button>")
+
+
+def test_the_short_name_shows_beside_the_resume_button_where_the_registry_has_the_session(
+    worked_example: Path, transcript: Path, registry: Path
+) -> None:
+    """session-page-copies-the-session-id: no entry for the session, no name; an entry for another
+    session, or one half written, names nothing; of two entries for this session, the one updated
+    last names it, beside the copy-resume button."""
+    name = lambda: view_of(worked_example, transcript).session.name
+    assert name() == ""
+    register(registry, 101, "11111111-2222-3333-4444-555555555555", "agents-12", updated=3)
+    (registry / "102.json").write_text('{"sessionId": ')
+    assert name() == ""
+    register(registry, 103, SESSION, "agents-9", updated=1)
+    register(registry, 104, SESSION, "agents-10", updated=2)
+    assert name() == "agents-10"
+    shown = elements(render_session(worked_example, transcript, now=NOW), "resume|session-name")
+    assert text_of(shown["session-name"]) == "agents-10" and "resume" in shown, "the page shows the name the view holds"
+
+
+
+@settings(deadline=None)
+@given(linked=st.lists(st.lists(st.sampled_from(sorted(POOL)), max_size=4, unique=True), min_size=1, max_size=5))
+def test_the_column_lists_each_turns_artefacts_and_never_a_ticket_file(
+    linked: list[list[str]], scratch: Callable[[], Path], tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """session-pages-feed-the-hub#P2, over sessions whose turns link artefacts, ticket files and
+    paths that only look like one: each turn's artefacts, in the order its record gives them, under
+    that turn's number, newest turn first, and nothing else; a turn that links none has its row."""
+    home = tmp_path_factory.mktemp("home")
+    turns = [{"asks": [], "answered": {}, "superseded": {}} for _ in linked]
+    directory, transcript = write_session(scratch() / DRAWN, turns)
+    for number, paths in enumerate(linked, start=1):
+        record_path = directory / "turns" / f"{number:02d}.md"
+        record_path.write_text(with_links(record_path.read_text(), [f"- [Link {i}]({p}): why" for i, p in enumerate(paths)]))
+    root = directory.parents[2]
+    expected = []
+    for number, paths in reversed(list(enumerate(linked, start=1))):
+        listed = [(f"Link {i}", target) for i, p in enumerate(paths) if (target := POOL[p](root, home)) is not None]
+        expected.append((f"{number:02d}", listed))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("HOME", str(home))
+        page, rendered = view_of(directory, transcript), render_session(directory, transcript, now=NOW)
+    assert column_of(page) == expected
+    targets = {target for _, items in expected for _, target in items}
+    assert marked(rendered) == targets, "a ticket file carries the attribute the hub marks by"
 
 
 if __name__ == "__main__":

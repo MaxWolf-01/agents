@@ -1,6 +1,6 @@
 ---
 name: codex
-description: "Second opinion from a different model (OpenAI Codex). Use when exploring different design choices (more diversity with heterogenous models), debugging hard problems, or when the user wants a second perspective, you want second perspective, are stuck, ..."
+description: "Second opinion from a different model family (OpenAI Codex). Use when exploring design choices, debugging a hard problem, when stuck, or when the user wants a second perspective."
 ---
 
 # Codex: Second Opinion
@@ -35,7 +35,7 @@ Codex has **zero context** from your session. Everything it needs must be in the
 
 **Give it orientation first:**
 - Tell it to read `./CLAUDE.md` (project root) for project context, knowledge map, and conventions
-- Point it to `CONTEXT.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
+- Point it to `GLOSSARY.md`, `decisions/`, and `agent/tickets/` when relevant; written records is more efficient than re-explaining what's already documented
 - Name the specific files and directories to review; it can read them, but won't know which ones matter unless told
 
 **Add session context it can't get from files:**

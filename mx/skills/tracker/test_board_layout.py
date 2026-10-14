@@ -56,21 +56,18 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-SHOW = Path(__file__).resolve().parents[1] / "show"
-sys.path[:0] = [str(Path(__file__).parent), str(SHOW)]
-
-from board import PAGE, render
+from board import PAGE, Failing, render, restamp
 from briefing import Briefing, cache_path
 from demo_tracker import Demo
 from page_cache import default_root
 
+SHOW = Path(__file__).resolve().parents[1] / "show"
 RENDER_LINT = SHOW / "render_lint.py"
 WINDOWS = (900, 2560)  # from the Property's floor to a wide monitor
 ZOOMS = (0.8, 2.0)  # the Property's range
@@ -101,8 +98,11 @@ The first two touch nothing in common and can run as one wave."""
 def lint(pages: list[str], width: int) -> list[dict]:
     """render-lint's findings on each page at `width`, the ones it reports without failing aside.
     A page it could not measure comes back as its own finding rather than as a clean run."""
+    # 60s: the suite runs a browser per core, and under that load the board has taken past 20s to
+    # load with nothing wrong with it.
     done = subprocess.run(
-        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root())],
+        ["uv", "run", str(RENDER_LINT), *pages, "--width", str(width), "--json", "--cache", str(default_root()),
+         "--patience", "60"],
         capture_output=True, text=True,
     )
     # A run that never got as far as findings is its own failure, said here rather than left to a
@@ -149,6 +149,7 @@ def named(found: dict[int, list[dict]]) -> str:
     )
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("view", VIEWS)
 @pytest.mark.parametrize("width", WIDTHS)
 def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either_scheme(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int, view: str) -> None:
@@ -168,6 +169,7 @@ def test_nothing_on_the_board_overlaps_or_escapes_its_box_at_any_width_in_either
 DEFECT = "<style>.brief { display: block !important; width: 60px !important; overflow: visible !important }</style>"
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path], width: int) -> None:
     """A width where the defect goes unreported is a width the Property is not checked at, whatever
@@ -193,7 +195,7 @@ def test_a_defect_put_back_into_the_board_is_reported_at_every_band_width(transc
 # are not the engine.
 ENGINE = r'''
 def cdn(failed):
-    return not any(url.endswith(".esm.min.mjs") and why != "net::ERR_ABORTED" for url, why in failed)
+    return not any(url.endswith(("mermaid.min.js", ".esm.min.mjs")) and why != "net::ERR_ABORTED" for url, why in failed)
 '''
 
 # What the page says of itself once a browser runs it: which scheme it painted, whether the anchor
@@ -353,6 +355,7 @@ def probe(page: Path, width: int, env: dict[str, str]) -> dict:
 
 # the row beside the graph panel, the row on its own, and the row reflowed; and the first of them
 # with no graph engine to draw with
+@pytest.mark.full_path
 @pytest.mark.parametrize(("width", "offline"), [(1500, False), (1100, False), (920, False), (1500, True)])
 def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: Demo, tmp_path: Path, width: int, offline: bool, path_with: Callable[..., Path]) -> None:
     """The rendered half of the spec's "Every mark explains itself on hover", and of "a copy button
@@ -430,9 +433,10 @@ def test_every_mark_shows_its_words_on_hover_inside_the_viewport(transcribed: De
 # What the graph does once a browser runs it, which is the only place it does anything: the side
 # column's preview, the same graph at full size over the board, and the same again in a window of
 # its own. Every move a reader makes is made here, and what the board did with it is read off the
-# board: the two keys, Escape's order, a click on the preview and on a node in it, a drag that pans
-# and the click it ends with, the switch in each view, a node clicked in each full size view, the
-# board re-rendering under the window, and the board going away.
+# board: the two keys and the buttons that do the same, Escape's order, a click on the preview and
+# on a node in it, a drag that pans and the click it ends with, the switch in each view, a node
+# clicked in each full size view, the board re-rendering under the window, and the board going
+# away.
 GRAPH_PROBE = ENGINE + r'''
 import json, os, shutil, sys
 from pathlib import Path
@@ -529,6 +533,23 @@ with sync_playwright() as pw:
     keys["esc_closed"] = not page.is_visible("#gfull")
     keys["row_still_open"] = page.evaluate(f"!!document.getElementById('{ROW}')?.open")
     out["keys"] = keys
+
+    # the buttons that do what the two keys do, clicked: the preview's `full` and `window`, and
+    # the overlay's `window`, which takes the overlay down as the window comes up
+    page.click("#gopen")
+    page.wait_for_selector("#gfull " + PAINTED)
+    buttons = {"full_opened": page.is_visible("#gfull")}
+    with page.expect_popup() as popped:
+        page.click("#gwinfull")
+    popped.value.wait_for_selector(".gfbody")
+    buttons |= {"overlay_closed": not page.is_visible("#gfull"), "from_overlay": popped.value.title()}
+    popped.value.close()
+    with page.expect_popup() as popped:
+        page.click("#gwinopen")
+    popped.value.wait_for_selector(".gfbody")
+    buttons["from_preview"] = popped.value.title()
+    popped.value.close()
+    out["buttons"] = buttons
 
     # the preview: a click opens the full size view, a click on a node in it goes to that row
     page.click(".side .g:not([hidden]) .mermaid" if drawn else "#gunloaded", position={"x": 3, "y": 3})
@@ -628,6 +649,7 @@ def graph_probe(page: Path, env: dict[str, str]) -> dict:
     return json.loads(done.stdout)
 
 
+@pytest.mark.full_path
 @pytest.mark.parametrize("offline", [False, True])
 def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window(transcribed: Demo, tmp_path: Path, offline: bool, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criteria, which are all about what a browser does: the whole
@@ -686,6 +708,13 @@ def test_the_preview_opens_the_graph_at_full_size_over_the_board_and_in_a_window
     keys = seen["keys"]
     assert keys["f_opened"] and keys["esc_closed"], f"f and Escape: {keys}"
     assert keys["row_still_open"], "Escape folded the row behind the overlay instead of closing the overlay"
+
+    buttons = seen["buttons"]
+    assert buttons["full_opened"], "the preview's full button did not open the overlay"
+    assert buttons["overlay_closed"], "the overlay's window button left the overlay over the board"
+    assert buttons["from_overlay"].endswith("dependencies") and buttons["from_preview"].endswith("dependencies"), (
+        f"a window button opened something other than the graph's window: {buttons}"
+    )
 
     preview = seen["preview"]
     assert preview["click_opened"], "a click on the preview did not open the full size view"
@@ -746,6 +775,10 @@ from page_cache import copy_of, default_root, serve
 page_url, ENGINE = Path(sys.argv[1]).resolve().as_uri(), sys.argv[2].split(",")
 own, kept = Path(sys.argv[3]), default_root()
 UNDRAWN = "#gundrawn:not([hidden])"
+# mermaid is a classic script, its layout a module
+LOAD = '''(urls) => Promise.all(urls.map((u) => u.endsWith(".mjs") ? import(u) : new Promise((ok, no) =>
+  document.head.append(Object.assign(document.createElement("script"), {src: u, onload: ok, onerror: no})))))
+  .then(() => true, () => false)'''
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
@@ -756,7 +789,7 @@ with sync_playwright() as pw:
     serve(loader, kept)
     asked = []
     page.on("request", lambda r: asked.append(r.url))
-    if not page.evaluate("(urls) => Promise.all(urls.map((u) => import(u))).then(() => true, () => false)", ENGINE):
+    if not page.evaluate(LOAD, ENGINE):
         print(json.dumps({"cdn": False}))
         sys.exit()
     own.mkdir()
@@ -795,6 +828,7 @@ print(json.dumps(out))
 """
 
 
+@pytest.mark.full_path
 def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_view(transcribed: Demo, tmp_path: Path, path_with: Callable[..., Path]) -> None:
     """The ticket's acceptance criterion: the preview and both full size views say the graph could
     not be drawn, and the graph draws on the board's next load once its pieces arrive. The engine
@@ -804,7 +838,7 @@ def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_vie
             pytest.skip(f"no {tool} to render the page with")
     out = tmp_path / "board.html"
     render(transcribed.root, transcribed.repo, out)
-    engine = re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+\.esm\.min\.mjs)"', out.read_text())
+    engine = sorted(set(re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+(?:\.esm\.min\.mjs|/mermaid\.min\.js))"', out.read_text())))
     assert len(engine) == 2, f"the page names {engine} as its engine"
     done = subprocess.run(
         ["uv", "run", "--with", "playwright", "python", "-", str(out), ",".join(engine), str(tmp_path / "engine-only")],
@@ -823,6 +857,159 @@ def test_a_graph_that_fails_to_draw_after_the_engine_loaded_says_so_in_every_vie
     assert undrawn in seen["overlay"], f"the overlay says {seen['overlay']!r}"
     assert undrawn in seen["window"], f"the window of its own says {seen['window']!r}"
     assert seen["next"] == {"graphs": 1, "note": False}, f"the board's next load, once the pieces arrive: {seen['next']}"
+
+
+
+# A file of the engine changed at the CDN: the board draws once from this machine's copies, so they
+# hold every file it fetches, then loads again from a copy of them in which one file carries a
+# byte more than the one its hash was taken of.
+TAMPERED_PROBE = r"""
+import json, os, re, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import copy_of, default_root, serve
+
+page = Path(sys.argv[1])
+page_url, changed, own, kept = page.resolve().as_uri(), sys.argv[2], Path(sys.argv[3]), default_root()
+pinned = sorted(set(re.findall(r'"(https://cdn\.jsdelivr\.net/[^"]+\.m?js)"', page.read_text())))
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    loader = browser.new_context()
+    tab = loader.new_page()
+    serve(loader, kept)
+    tab.goto(f"{page_url}#t-map-columns")
+    tab.wait_for_selector(".side .mermaid svg, .gnote[id^=gun]:not([hidden])")
+    if not tab.is_visible(".side .mermaid svg"):
+        print(json.dumps({"cdn": False}))
+        sys.exit()
+    loader.close()
+    own.mkdir()
+    for url in pinned:
+        shutil.copy(copy_of(kept, url), own)
+    [target] = [url for url in pinned if url.endswith(changed)]
+    with copy_of(own, target).open("ab") as f:
+        f.write(b"\n;")
+
+    os.environ["MX_PAGE_CACHE_OFFLINE"] = "1"
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    tab = context.new_page()
+    serve(context, own)
+    errors = []
+    tab.on("pageerror", lambda e: errors.append(str(e)))
+    tab.goto(f"{page_url}?theme=day#t-map-columns")
+    tab.wait_for_selector("#gunloaded:not([hidden]), #gundrawn:not([hidden]), .side .mermaid svg")
+    out = {"cdn": True, "pinned": pinned, "graphs": tab.eval_on_selector_all(".mermaid svg", "els => els.length"),
+           "notes": [tab.inner_text(n) for n in ("#gunloaded", "#gundrawn") if tab.is_visible(n)]}
+    # the rest of the board: the open row folds, and the scheme switches
+    tab.click("#t-map-columns > summary")
+    tab.keyboard.press("t")
+    out["rest"] = {"folded": not tab.evaluate("document.getElementById('t-map-columns').open"),
+                   "scheme": tab.evaluate("document.documentElement.dataset.theme"), "errors": errors}
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+# The layout's chunks, as the page's import map pins them: the render chunk is fetched once the
+# graph draws, every other one as the layout loads.
+CHUNKS = [url.rsplit("/", 1)[1] for url in json.loads(
+    re.search(r'<script type="importmap">(.*?)</script>', PAGE.template, re.S).group(1))["integrity"] if "/chunks/" in url]
+assert any(chunk.startswith("render-") for chunk in CHUNKS), f"the import map pins no render chunk among {CHUNKS}"
+
+
+@pytest.mark.full_path
+@pytest.mark.parametrize(("changed", "note"), [("/mermaid.min.js", "could not load"), *(
+    (f"/{chunk}", "could not be drawn" if chunk.startswith("render-") else "could not load") for chunk in CHUNKS)])
+def test_an_engine_file_changed_from_its_pin_is_refused_and_the_board_says_the_engine_did_not_load(transcribed: Demo, tmp_path: Path, changed: str, note: str) -> None:
+    """The ticket's acceptance criterion: a file whose bytes differ from its pinned hash is refused,
+    the graph does not draw, the board says so the way it says the engine did not load, and the rest
+    of the board works. mermaid is pinned by its script's own hash, the layout's chunks only through
+    the import map; the layout fetches its render chunk only once it draws, so that one is refused
+    as a piece the draw did not get."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), changed, str(tmp_path / "changed")],
+        input=TAMPERED_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)},
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    if not seen["cdn"]:
+        pytest.skip("no network and no copy of the graph engine")
+    assert all(re.search(r"@\d+\.\d+\.\d+/", url) for url in seen["pinned"]), f"a script not at an exact version: {seen['pinned']}"
+    [said] = seen["notes"] or [""]
+    assert len(seen["notes"]) == 1 and note in said and "pinned" in said, f"the panel says {seen['notes']}"
+    assert seen["graphs"] == 0, f"a changed engine drew {seen['graphs']} graphs"
+    assert seen["rest"] == {"folded": True, "scheme": "night", "errors": []}, f"the rest of the board: {seen['rest']}"
+
+
+# The tab polls the stamp file on a timer, which the page's clock runs forward rather than the check
+# waiting it out.
+STALE_PROBE = r"""
+import json, os, shutil, sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from page_cache import default_root, serve
+
+page, stale = Path(sys.argv[1]), sys.argv[2]
+stamp = Path(f"{page}.stamp.js")
+drawn = stamp.read_text()
+NOTE = "[data-absent=board-stale]"
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=shutil.which("chromium"),
+                                 args=[f"--mx-run={os.environ.get('MX_RUN') or os.getcwd()}"])
+    context = browser.new_context(viewport={"width": 1600, "height": 950})
+    serve(context, default_root())
+    tab = context.new_page()
+    tab.clock.install()
+    tab.goto(page.resolve().as_uri())
+    tab.evaluate("window.__loaded = true")  # gone on a reload
+    out = {"before": tab.is_visible(NOTE)}
+    stamp.write_text(stale)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}:not([hidden])")
+    out["stale"] = tab.inner_text(NOTE)
+    stamp.write_text(drawn)
+    tab.clock.run_for(6_000)
+    tab.wait_for_selector(f"{NOTE}[hidden]", state="attached")
+    out["after"] = tab.is_visible(NOTE)
+    out["reloaded"] = not tab.evaluate("window.__loaded === true")
+    browser.close()
+print(json.dumps(out))
+"""
+
+
+@pytest.mark.full_path
+def test_an_open_tab_says_the_board_is_stale_while_the_watchers_passes_fail(transcribed: Demo, tmp_path: Path) -> None:
+    """`board-watcher-restarts-on-new-code#P3`: the note shows in a tab already open, without
+    reloading it, and goes when the stamp file drops the mark."""
+    for tool in ("uv", "chromium"):
+        if not shutil.which(tool):
+            pytest.skip(f"no {tool} to render the page with")
+    out = tmp_path / "board.html"
+    render(transcribed.root, transcribed.repo, out)
+    drawn = Path(f"{out}.stamp.js").read_text()
+    since = datetime(2026, 10, 7, 9, 30).astimezone()
+    restamp(out, Failing(since, "second.md:2: `flavour` is no ticket field\nsecond.md:3: and a second line"))
+    stale = Path(f"{out}.stamp.js").read_text()
+    Path(f"{out}.stamp.js").write_text(drawn)
+    done = subprocess.run(
+        ["uv", "run", "--with", "playwright", "python", "-", str(out), stale],
+        input=STALE_PROBE, capture_output=True, text=True, env=os.environ | {"PYTHONPATH": str(SHOW)}, timeout=180,
+    )
+    assert done.returncode == 0, f"probe: {done.stderr.strip()[-3000:]}"
+    seen = json.loads(done.stdout)
+    assert not seen["before"]
+    assert "stale since 07 Oct 09:30" in seen["stale"] and "`flavour` is no ticket field" in seen["stale"], seen["stale"]
+    assert "second line" not in seen["stale"], seen["stale"]
+    assert not seen["after"]
+    assert not seen["reloaded"]
 
 
 if __name__ == "__main__":

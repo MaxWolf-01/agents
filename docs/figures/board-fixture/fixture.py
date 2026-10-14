@@ -7,7 +7,7 @@ app whose first feature imports bank CSVs and whose second saves filtered views.
 than something that only looks like one.
 """
 
-CONTEXT = """\
+GLOSSARY = """\
 # ledger
 
 **Row**: one line of an imported statement, before it becomes an entry.

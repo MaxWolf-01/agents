@@ -15,7 +15,7 @@ One design decision as the ticket states it, carrying a call mark that says who 
 _Avoid_: choice, assumption (an assumption is an implementer's unescalated call, recorded as such in a ticket)
 
 **Intent-side call**:
-A call on what a thing is for and its shape, which is the user's to make; a call on how it is built is an implementation call, the agent's.
+A call on what gets built, which is the user's to make; a call on how it is built is an implementation call, the agent's.
 _Avoid_: product decision, design call (bare; every call is a design decision)
 
 **Call mark**:
@@ -71,7 +71,7 @@ The user's answer on what a ticket built: accept, amend, redo or reject.
 _Avoid_: approval, triage, verdict (a verdict settles a call in grilling)
 
 **Standing yes**:
-The user's accept, given in advance, of every build that carries no call worth their time that they have not already made.
+The user's accept, given in advance, of every build that carries no call of theirs they have not already made, as far as its parent ticket's branch.
 _Avoid_: auto-accept, auto-merge, silent approval
 
 **Ticket question**:
@@ -107,7 +107,7 @@ One tag on a board row, carrying a single fact about the ticket for scanning.
 _Avoid_: mark (bare; a call mark is one too), badge, pill, label
 
 **Retire**:
-Take a shipped ticket's record out of the live tracker; history keeps it.
+Take a finished tree out of the live tracker: a top-level ticket and every ticket under it done, and no ticket that stays citing their properties; history keeps it.
 _Avoid_: archive, clean up
 
 **Tombstone**:
@@ -141,7 +141,7 @@ A ticket's work is on the branch the user's accept merges it into, and verified 
 _Avoid_: merged, finished, complete
 
 **Debrief**:
-What the orchestrator tells the user when a ticket's tree is finished: what the workers and the harden report found, and what it proposes to do about it.
+What the orchestrator tells the user when a ticket's tree is finished: what the workers and the review one level up found, and what it proposes to do about it.
 _Avoid_: synthesis, summary, PR description, report (a worker's is one)
 
 ### Testing
@@ -150,9 +150,15 @@ _Avoid_: synthesis, summary, PR description, report (a worker's is one)
 What a test compares the code's behaviour against, chosen so that it is not the code itself: a property the ticket states, a worked example, a reference implementation, a round trip, a model.
 _Avoid_: expected value, ground truth, reference (an oracle may be one)
 
-**Expected failure**:
-The strict annotation a property carries while the behaviour it tests does not exist yet: it names the ticket that lifts it, and at a stub tolerates only the not-implemented exception.
-_Avoid_: mark (a call mark or a row mark), xfail, skip
+**Fast suite**:
+The tests that run on every change: nothing outside the checkout and a scratch directory, with no browser, desktop, network or sleeps. A test that runs a project script as a subprocess in the scratch directory is one.
+_Avoid_: unit tests (a fast test may enter at any seam)
+_In code_: `make test`, `make test-all`
+
+**Full-path check**:
+A check that drives the real thing end to end (a browser on the page, tmux, a paid API), kept out of the fast suite.
+_Avoid_: integration test, e2e test, slow test
+_In code_: `make test-full-path`, `@pytest.mark.full_path`
 
 ### Showing
 
@@ -167,5 +173,5 @@ The stretch of a context window within which reasoning stays sharp; the limit is
 _Avoid_: context budget, token budget
 
 **Session page**:
-The one page a session's answers live on, the questions waiting on the user at its top; the chat reply is only its index.
+The one page a session's answers live on, the questions waiting on the user at its top.
 _Avoid_: session artifact, transcript, notebook, log

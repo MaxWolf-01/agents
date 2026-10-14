@@ -1,20 +1,42 @@
-"""What the session page's checks share: the path entry that makes the modules beside them
-importable, and the worked example both seams read."""
+"""What the session page's checks share: a session someone is sitting at whose prose reviewer is
+stubbed, and the worked example the seams read. The reviewer stub sits at `turn_review.review`, the
+one call that reaches a model."""
 
+import json
 import os
 import shutil
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from session_page import SESSIONS  # noqa: E402
+import turn_review
+from session_checks import BEFORE_IT, SESSION, SPOKEN_AFTER, UNATTENDED
+from session_page import SESSIONS
 
 FIXTURES = Path(__file__).parent / "fixtures"
-SESSION = "e5ca76dc-3093-419b-aa93-b8eb8f35811f"  # the session the worked example is of
+
+
+@pytest.fixture(autouse=True)
+def attended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Every check is a turn of a session someone is sitting at, whose record the prose
+    reviewer finds nothing in unless the check says otherwise: no check spends a model call. The
+    log is the check's own, and handed back."""
+    for marker in UNATTENDED:
+        monkeypatch.delenv(marker, raising=False)
+    monkeypatch.setattr(turn_review, "review", lambda system, prompt: [])
+    monkeypatch.setattr(turn_review, "LOG", tmp_path / "session-page.jsonl")
+    return turn_review.LOG
+
+
+@pytest.fixture(autouse=True)
+def registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Claude Code's session registry, the check's own and empty until it writes an entry, so no
+    page reads a name from the sessions running on this machine. Handed back."""
+    config = tmp_path / "claude-config"
+    (config / "sessions").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    return config / "sessions"
 
 
 @pytest.fixture
@@ -48,3 +70,14 @@ def stale_page() -> str:
     """A page in the session's directory from the turn before, which a render replaces and a turn
     the hook sends back leaves standing."""
     return "<html>the page the turn before rendered</html>"
+
+
+@pytest.fixture
+def unrecorded(worked_example: Path, transcript: Path, tmp_path: Path) -> Path:
+    """The worked example's transcript with a prompt after its newest record, which this turn
+    answered without writing one."""
+    for record in (worked_example / "turns").iterdir():
+        os.utime(record, (BEFORE_IT, BEFORE_IT))
+    spoken = tmp_path / "spoken.jsonl"
+    spoken.write_text(transcript.read_text() + json.dumps(SPOKEN_AFTER) + "\n")
+    return spoken
