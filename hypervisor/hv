@@ -10,6 +10,7 @@
 # A profile that is not there yet starts with live/'s config. Every start links the profile's AGENTS.md to live/'s.
 # `hv explore N [direction] [options]` runs explore steps in the TUI, starting it when it does not run (`hv explore --help`).
 # `hv tell [--ping] <message>` leaves the hypervisor a message; orchestrators run it to report back (`hv tell --help`).
+# `hv offer` asks the hypervisor to offer max an explore run when his week is due one; a timer runs it (`hv offer --help`).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -23,6 +24,11 @@ token_file=$HOME/.dotfiles/secrets/creds/raw/hypervisor-oauth-token
 if [[ ${1:-} == tell ]]; then
 	shift
 	HV_STORE=$store exec node "$extension/src/hv-tell.ts" "$@"
+fi
+
+if [[ ${1:-} == offer ]]; then
+	shift
+	HV_STORE=$store exec node "$extension/src/hv-offer.ts" "$@" -- "$here/hv" tell --ping
 fi
 
 if [[ ${1:-} == explore && ${2:-} =~ ^(--found|--help|-h)$ ]]; then

@@ -2,18 +2,14 @@
 // profile, so what they find lands in the memory max talks to. The first step's message is the direction, every later
 // one a bare "continue". A run stops before the next step at the first of: N steps taken, its token cap spent, the
 // week's quota used to its share, a step that failed, or a message from max, who is back and whose turn comes first.
-// While a run is in flight, the hypervisor reads and delegates, and starts or messages no session.
-//
-// About 12 hours before the week resets, with more than a fifth of it unused, the hypervisor is asked to offer max a
-// run, in its chat and with a desktop notification; only the command he types starts one.
+// The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in flight, the
+// hypervisor reads and delegates, and starts or messages no session. `hv offer` asks it to offer max a run.
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { inbox } from "./inbox.ts";
-import { append, lines } from "./journal.ts";
-import { newer, type Week, weekFromHeaders, weekFromStatusline } from "./quota.ts";
+import { append } from "./journal.ts";
+import { type Week, weekFromHeaders } from "./quota.ts";
 
 export const USAGE =
 	"usage: /explore N [direction] [--tokens T] [--until-week P]\n" +
@@ -22,14 +18,6 @@ export const USAGE =
 
 /** The tools a run blocks: no session is started or messaged while max is away. */
 export const BLOCKED = ["start_session", "tell_session"];
-
-/** The offer: this long before the week resets, with more than this share of it unused, for up to this many steps. */
-export const OFFER_AHEAD_MS = 12 * 3600_000;
-export const OFFER_UNUSED = 20;
-export const OFFER_STEPS = 50;
-export const OFFER_UNTIL = 95;
-/** How often the offer is looked at. */
-const OFFER_EVERY_MS = 10 * 60_000;
 
 /** The price of one uncached Opus input token, the unit of a token cap. */
 const OPUS_INPUT = 4 / 1e6;
@@ -44,14 +32,10 @@ export interface Request {
 
 /** Where a run reads what it costs and how much of the week is used. */
 export interface ExploreConfig {
-	/** The hypervisor's store: `explore.jsonl` keeps each step's finding, each run's end, and each offer made. */
+	/** The hypervisor's store: `explore.jsonl` keeps each step's finding and each run's end, beside `hv offer`'s offers. */
 	store: string;
 	/** OptChat's usage log for the profile, a line per model call with its cost; without it, a run takes no token cap. */
 	usage?: string;
-	/** Where the statusline keeps Claude Code's inputs. */
-	statusline?: string;
-	/** The Claude Code account whose statusline inputs count, by its config directory. */
-	account?: string;
 	/** The clock, in ms since the epoch. */
 	now?: () => number;
 }
@@ -105,29 +89,11 @@ export function stopBefore(run: Run, spent: number, week: Week | undefined, now:
 	return undefined;
 }
 
-/** Whether the week, read at `now`, is due an offer: it resets within OFFER_AHEAD_MS, with more than OFFER_UNUSED% unused. */
-export function offerDue(week: Week | undefined, now: number): boolean {
-	return week !== undefined && week.resets > now && week.resets - now <= OFFER_AHEAD_MS && 100 - week.used > OFFER_UNUSED;
-}
-
-/** The offer's text, as the hypervisor reads it in the ping that starts its turn. */
-export function offerText(week: Week): string {
-	const command = `/explore ${OFFER_STEPS} --until-week ${OFFER_UNTIL} <direction>`;
-	return (
-		`max's week resets at ${new Date(week.resets).toISOString().slice(0, 16)}Z with ${Math.round(100 - week.used)}% of it unused. ` +
-		`Ask him whether you should explore for up to ${OFFER_STEPS} steps until ${OFFER_UNTIL}% of the week is used, and suggest a direction. ` +
-		`A run starts only when he types the command, \`${command}\`, so give it to him with your direction filled in. No answer means no run.`
-	);
-}
-
-/** Registers `/explore` and the offer with pi. */
+/** Registers `/explore` with pi. */
 export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 	const now = config.now ?? Date.now;
-	const statusline = config.statusline ?? path.join(homedir(), ".cache", "claude-statusline");
-	const account = config.account ?? path.join(homedir(), ".claude");
 	/** The week as this process's replies last gave it. */
 	let replied: Week | undefined;
-	const week = () => newer(replied, weekFromStatusline(statusline, account));
 	const journal = (line: object) => append(config.store, "explore.jsonl", { at: new Date(now()).toISOString(), ...line });
 
 	let run: Run | undefined;
@@ -194,7 +160,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 			ctx.ui.notify(`explore: up to ${request.steps} steps toward ${request.direction ?? "the default goal"}. A message from you ends the run after the step in flight.`, "info");
 			for (;;) {
 				const before = spent(current.started);
-				stopped = stopBefore(current, before, week(), now());
+				stopped = stopBefore(current, before, replied, now());
 				if (stopped) break;
 				const done = await step(ctx, stepMessage(current.taken + 1, request.direction));
 				current.taken++;
@@ -216,7 +182,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 		} finally {
 			run = undefined;
 		}
-		const used = week();
+		const used = replied;
 		const tokens = spent(current.started);
 		// A share asked for and never read stopped nothing, which the end says rather than leave it to pass for a share not reached.
 		const share = used ? ` The week is at ${Math.round(used.used)}%.` : request.untilWeek !== undefined ? " The week's quota was never read, so --until-week stopped nothing." : "";
@@ -234,28 +200,6 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 			// Not awaited, so the editor stays max's while the run goes on.
 			void explore(request, ctx);
 		},
-	});
-
-	let offering: ReturnType<typeof setInterval> | undefined;
-	pi.on("session_start", (_event, ctx) => {
-		// Only the TUI has max to ask.
-		if (ctx.mode !== "tui" || offering) return;
-		const look = async () => {
-			const read = week();
-			if (run || !read || !offerDue(read, now())) return;
-			const offers = await lines<{ offer?: number }>(config.store, "explore.jsonl");
-			if (offers.some((line) => line.offer === read.resets)) return;
-			await journal({ offer: read.resets, used: Math.round(read.used) });
-			await inbox(config.store).post({ at: new Date(now()).toISOString(), from: "explore offer", text: offerText(read), ping: true });
-			await pi.exec("notify-send", ["--app-name=hypervisor", "Explore before the week resets?", `${Math.round(100 - read.used)}% of the week unused. The hypervisor asks in its chat.`]).catch(() => {});
-		};
-		offering = setInterval(() => void look().catch(() => {}), OFFER_EVERY_MS);
-		offering.unref();
-		void look().catch(() => {});
-	});
-	pi.on("session_shutdown", () => {
-		if (offering) clearInterval(offering);
-		offering = undefined;
 	});
 }
 
