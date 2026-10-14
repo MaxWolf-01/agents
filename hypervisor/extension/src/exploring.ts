@@ -79,6 +79,8 @@ interface Run {
 	request: Request;
 	/** When it started, as an ISO date: its name in the journal. */
 	started: string;
+	/** Whether its first step is under way: until then, the turn in flight is not the run's, and its tool calls are not blocked. */
+	begun: boolean;
 	taken: number;
 	interrupted: boolean;
 }
@@ -129,9 +131,8 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 	let replied: Week | undefined;
 	const journal = (line: StepLine | EndLine) => append(config.store, "explore.jsonl", { at: new Date().toISOString(), ...line });
 
+	/** The run asked for, from `/explore` until it ends. */
 	let run: Run | undefined;
-	/** Whether a run was asked for and has not ended, whether or not it has begun. */
-	let asked = false;
 	/** Resolve on pi's next agent_start and agent_settled. */
 	const waiting = { start: new Set<() => void>(), settled: new Set<() => void>() };
 	const next = (event: keyof typeof waiting) => new Promise<void>((resolve) => waiting[event].add(resolve));
@@ -154,7 +155,7 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 		return { action: "continue" };
 	});
 	pi.on("tool_call", (event) => {
-		if (run && BLOCKED.includes(event.toolName)) return { block: true, reason: "An explore run is in flight: read and delegate, and start or message no session while max is away." };
+		if (run?.begun && BLOCKED.includes(event.toolName)) return { block: true, reason: "An explore run is in flight: read and delegate, and start or message no session while max is away." };
 		return undefined;
 	});
 	pi.on("agent_end", (event) => {
@@ -196,7 +197,9 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 		const settled = next("settled");
 		sent = message;
 		ended = { finding: "" };
-		pi.sendUserMessage(message);
+		// pi runs the input handlers before it looks whether a turn is in flight, so a ping's turn can start in between:
+		// the step then follows that turn, and its finding is still the reply to its own message.
+		pi.sendUserMessage(message, { deliverAs: "followUp" });
 		const began = await Promise.race([started.then(() => true), sleep(START_MS, false, { ref: false })]);
 		if (!began) return { finding: "", error: `its turn did not start within ${START_MS / 1000} s` };
 		await settled;
@@ -204,18 +207,16 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 	};
 
 	const explore = async (request: Request, ctx: ExtensionContext) => {
-		const current: Run = { request, started: new Date().toISOString(), taken: 0, interrupted: false };
-		asked = true;
+		const current: Run = { request, started: new Date().toISOString(), begun: false, taken: 0, interrupted: false };
+		run = current;
 		let stopped = "";
 		try {
 			ctx.ui.notify(`explore: up to ${request.steps} steps toward ${request.direction ?? "the default goal"}. A message from you ends the run after the step in flight.`, "info");
-			// A turn in flight when the run was asked for is max's own, and its tool calls are his: the run begins once it ends.
-			while (!ctx.isIdle()) await sleep(IDLE_POLL_MS);
-			current.started = new Date().toISOString();
-			run = current;
 			for (;;) {
 				// A turn in flight, max's or a ping's, ends before the next step starts, so the step's turn is the step's alone.
+				// One in flight when the run was asked for is not the run's: the run begins once it ends.
 				while (!ctx.isIdle()) await sleep(IDLE_POLL_MS);
+				if (!current.begun) Object.assign(current, { begun: true, started: new Date().toISOString() });
 				const before = spent(current.started) ?? 0;
 				stopped = stopBefore(current, before, replied, Date.now()) ?? "";
 				if (stopped) break;
@@ -239,7 +240,6 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 			stopped = `an error: ${error instanceof Error ? error.message : String(error)}`;
 		} finally {
 			run = undefined;
-			asked = false;
 		}
 		const used = replied;
 		const tokens = spent(current.started) ?? 0;
@@ -254,7 +254,7 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 		handler: async (args, ctx) => {
 			const request = parse(args);
 			if (typeof request === "string") return ctx.ui.notify(`explore run refused: ${request}\n${USAGE}`, "error");
-			if (asked) return ctx.ui.notify(`explore: a run is in flight already; a message from you ends it after its step.`, "warning");
+			if (run) return ctx.ui.notify(`explore: a run is in flight already; a message from you ends it after its step.`, "warning");
 			if (request.tokens !== undefined && !config.usage) return ctx.ui.notify(`explore run refused: --tokens needs the profile's usage log, which OPTCHAT_HOME and HV_PROFILE locate.`, "error");
 			// Not awaited, so the editor stays max's while the run goes on.
 			void explore(request, ctx);

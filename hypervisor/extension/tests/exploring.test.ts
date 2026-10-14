@@ -66,6 +66,7 @@ function answer(request: Request) {
 	const result = Array.isArray(last.content) && last.content.find((b) => b.type === "tool_result");
 	if (f.name === "failing") return { status: 400, error: "the stand-in refuses" };
 	// max's turn, in flight when /explore arrives, starts a session.
+	if (f.name === "called-off" && f.requests.length === 1) return { text: "noted", delay: 400 };
 	if (f.name === "busy" && f.requests.length === 1) return { tool: "start_session", input: { dir: "~", name: "x", brief: "y" }, delay: 400 };
 	if (f.tool && !result) return { tool: f.tool, input: { dir: "~", name: "x", brief: "y" } };
 	return { text: `finding ${f.requests.length}: ${result ? JSON.stringify(result.content) : "max reads papers on ALife"}`, delay: f.name === "interrupted" ? 400 : 0 };
@@ -87,9 +88,9 @@ const pi = [process.execPath, PI, "--no-extensions", "--no-builtin-tools", "--no
 /**
  * `/explore args` sent to pi over RPC, as max types it in the TUI; resolves with the run's notifications once its end is
  * notified. With `interrupt`, max writes while the first step is in flight; with `busy`, max's message `busy` is in
- * flight when the command arrives.
+ * flight when the command arrives, and with `then` max writes that too, into his own turn.
  */
-function notified(f: Fixture, args: string[], { interrupt = false, busy }: { interrupt?: boolean; busy?: string } = {}): Promise<string[]> {
+function notified(f: Fixture, args: string[], { interrupt = false, busy, then }: { interrupt?: boolean; busy?: string; then?: string } = {}): Promise<string[]> {
 	current = f;
 	return new Promise((resolve, reject) => {
 		const child = spawn(pi[0]!, [...pi.slice(1), "--mode", "rpc"], { env: env(f), stdio: ["pipe", "pipe", "inherit"] });
@@ -102,7 +103,10 @@ function notified(f: Fixture, args: string[], { interrupt = false, busy }: { int
 			for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
 				const record = JSON.parse(buffer.slice(0, at));
 				buffer = buffer.slice(at + 1);
-				if (busy && record.type === "agent_start" && !sentCommand) command();
+				if (busy && record.type === "agent_start" && !sentCommand) {
+					command();
+					if (then) child.stdin.write(`${JSON.stringify({ type: "prompt", message: then, streamingBehavior: "steer" })}\n`);
+				}
 				if (interrupt && record.type === "agent_start" && f.requests.length === 0) child.stdin.write(`${JSON.stringify({ type: "prompt", message: "max here, what did you find?", streamingBehavior: "steer" })}\n`);
 				if (record.type === "extension_ui_request" && record.method === "notify") {
 					notes.push(record.message);
@@ -151,6 +155,7 @@ before(async () => {
 	notes = await notified(fixture("interrupted"), ["5"], { interrupt: true });
 	runs.set("busy", (await notified(fixture("busy"), ["1"], { busy: "max here, what is in flight?" })).join("\n"));
 	runs.set("failing", await explore(fixture("failing"), "3"));
+	runs.set("called-off", (await notified(fixture("called-off"), ["5"], { busy: "max here, explore later", then: "no, hold off" })).join("\n"));
 });
 after(async () => {
 	await anthropic?.close();
@@ -216,6 +221,12 @@ test("a run asked for while max's turn is in flight begins once that turn ends, 
 	assert.equal(step.tokens, 1000, "only the step's own call");
 });
 
+test("a message from max while the run waits for his turn ends it before its first step", () => {
+	assert.match(runs.get("called-off")!, /^explore run ended after 0 steps, .*: stopped by a message from max\./m);
+	const requests = fixtures.get("called-off")!.requests;
+	assert.ok(!requests.some((r) => said(r).some((text) => /^Explore/.test(text))), "no step was sent");
+});
+
 test("a step that fails stops the run, and says so", async () => {
 	assert.match(runs.get("failing")!, /^explore run ended after 1 step, .*: stopped by step 1 failing./m);
 	assert.equal(fixtures.get("failing")!.requests.length, 1);
@@ -236,7 +247,7 @@ test("/explore's arguments: N, then a direction of any words, with its caps anyw
 });
 
 test("a week whose reset has passed stops no run, since its quota has started over", () => {
-	const run = { request: { steps: 9, untilWeek: 95 }, started: "", taken: 1, interrupted: false };
+	const run = { request: { steps: 9, untilWeek: 95 }, started: "", begun: true, taken: 1, interrupted: false };
 	assert.equal(stopBefore(run, 0, { used: 99, resets: now - 1, at: now - 3600_000 }, now), undefined);
 	assert.equal(stopBefore(run, 0, { used: 95, resets: now + 1, at: now }, now), "the week at 95% used");
 });
