@@ -63,10 +63,10 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
    the artefacts the turn linked under the headline */
 .column { position: relative; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 1rem 2rem 1.1rem; border-left: 1px solid var(--edge); background: var(--ground); --head: 2.75rem; }
 .column-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 2.75rem; margin-bottom: 0.35rem; background: var(--ground); }
-.column .group { display: grid; grid-template-columns: 1.9rem minmax(0, 1fr); align-items: baseline; }
+.column .group { display: grid; grid-template-columns: 1.55rem minmax(0, 1fr); align-items: baseline; }
 .column .turn-ref { color: var(--muted); font-size: 0.78rem; text-decoration: none; }
 .column .turn-ref:hover, .column .group.cur .turn-ref { color: var(--accent); }
-.column .tl { position: relative; min-width: 0; padding: 0 0 0.95rem 0.95rem; border-left: 1px solid var(--edge); }
+.column .tl { position: relative; min-width: 0; padding: 0 0 0.95rem 0.8rem; border-left: 1px solid var(--edge); }
 .column .group:last-child .tl { border-left-color: transparent; }
 .column .tl::before { content: ""; position: absolute; left: -4px; top: 0.42em; width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--edge); background: var(--ground); }
 .column .group.cur .tl::before { border-color: var(--accent); background: var(--accent); }
@@ -75,9 +75,10 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .column .hl:hover { color: var(--accent); }
 .column .group.cur .hl { color: var(--strong); }
 .column ol { list-style: none; margin: 0.35rem 0 0; padding: 0; display: grid; gap: 0.2rem; }
-.column li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); align-items: baseline; font-size: 0.8rem; line-height: 1.45; }
+.column li { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); align-items: baseline; font-size: 0.8rem; line-height: 1.4; }
 .column .n { justify-self: start; }
-.column a.artefact { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+/* an artefact's name on up to two lines, cut after that */
+.column a.artefact { color: var(--accent); text-decoration: none; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .column a.artefact:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* the control to the newest turn, marked while a turn has arrived that the reader has not reached */
