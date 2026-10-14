@@ -12,7 +12,11 @@ the home (`~/.claude*/projects`) and the git of the agents repo and of the repos
 lists in its agent repo, one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
 other repo gets a repo retro: it reads the repo's own commits and its agent repo's tickets, and no
 session, and runs follow-up, the lens pass and synthesize. A repo whose `agent/` is no git repo of
-its own is refused, since the report lives there.
+its own is refused, since the report lives there, unless --tracker names the project whose tracker
+plans it: its report is then `retro/<name>/report.md` in that project's agent repo, `<name>` what
+the project's `agent/repos.toml` calls the repo, and the tickets it reads are those whose `repos:`
+names it, which the project's own report, `retro/report.md`, leaves out once that report exists.
+Wherever this says `retro/report.md` below, such a repo's run reads its own.
 
 A run's period starts where the last run committed to `retro/report.md` ended, or at --since; a
 repo retro's first run, given no --since, takes the four weeks before it. Everything a run writes
@@ -23,7 +27,7 @@ of a run is a line of `<data>/<repo>/runs.log`.
 The stages run one after another, each a `claude -p` that may write only in the run directory.
 The workflow retro's first, read-fresh, may read nothing outside it either, and runs before the
 earlier reports are copied into it, under `previous/`. A repo retro's stages may not read the
-session pages in its agent repo, and run no git command there.
+session pages in the agent repo its report is in, and run no git command there.
 
 The commit holds `retro/report.md` and `retro/report.html` alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
@@ -51,6 +55,7 @@ Examples:
     retro_run.py ~/repos/github/MaxWolf-01/agents --since 2026-10-03 --seed ~/retro-2026-10/REPORT.md
     retro_run.py ~/.dotfiles --if-active
     retro_run.py ~/.dotfiles --focus "the backup scripts"
+    retro_run.py ~/repos/obsidian/quartz-knowledge-base --tracker ~/.dotfiles --if-active
     retro_run.py ~/repos/github/MaxWolf-01/agents --resume ~/.local/share/retro/agents/runs/<end of period>
 """
 
@@ -82,7 +87,7 @@ SKIPPED = 3  # the exit status of an --if-active run that found nothing new
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 FIRST_PERIOD = timedelta(weeks=4)  # a repo retro's first run, given no --since
-REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in retro/
+REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in the report's directory
 RUN_LOG = HERE.parent / "run-log" / "run-log"
 # `status` is left out: it refreshes the index, a write into the repo. `diff` is left out: given a
 # path outside the work tree it diffs files from disk, `--no-index` or not, so it reads any file;
@@ -127,47 +132,78 @@ def kind_of(repo: Path) -> Kind:
     return WORKFLOW if (repo / retro_collect.PLUGIN).exists() else REPO
 
 
+@dataclass(frozen=True)
+class Place:
+    """Where a repo's living report is committed, and which tickets of that agent repo its runs read."""
+    agent: Path
+    """The agent repo's main checkout."""
+    dir: str
+    """`retro`, or for a repo planned from the agent repo's project `retro/<name>`, its repo list's name for it."""
+    scope: retro_collect.Scope
+
+    @property
+    def report(self) -> str:
+        return f"{self.dir}/report.md"
+
+
+def place_of(repo: Path, kind: Kind, tracker: Path | None) -> Place:
+    """The repo's own agent repo, or given `tracker`, the agent repo of that project, whose repo
+    list names the repo. Exits when the report has no such place."""
+    if tracker is None:
+        agent = main_checkout(repo / "agent")
+        return Place(agent, "retro", retro_collect.Scope(left=retro_collect.hosted(agent)))
+    if kind is WORKFLOW:
+        sys.exit(f"{repo} gets the workflow retro, whose report is its own agent repo's; --tracker is for a repo retro")
+    if (repo / "agent" / ".git").exists():
+        sys.exit(f"{repo} has an agent repo of its own, which its report is committed in; run its retro without --tracker")
+    agent = main_checkout(tracker.expanduser().resolve() / "agent")
+    name = retro_collect.listed_name(agent, repo)
+    return Place(agent, f"retro/{name}", retro_collect.Scope(repo=name))
+
+
 # ── what runs ────────────────────────────────────────────────────────────────
 
 
 def run_retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None = None, focus: str = "",
               seed: Sequence[Path] = (), until: datetime | None = None, resume: Path | None = None,
-              if_active: bool = False) -> Path:
+              if_active: bool = False, tracker: Path | None = None) -> Path:
     """A whole retro on `repo`, or the rest of the one `resume` names; returns its run directory.
     The handlers of STOP are the caller's again afterwards, for a caller that goes on in the same
     process: a signal left ignored is inherited by every process it starts later, which no TERM then
     stops."""
     found = {s: signal.getsignal(s) for s in STOP}
     try:
-        return retro(repo, data, projects, since, focus, seed, until, resume, if_active)
+        return retro(repo, data, projects, since, focus, seed, until, resume, if_active, tracker)
     finally:
         for s, handler in found.items():
             signal.signal(s, handler)
 
 
 def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | None, focus: str,
-          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool) -> Path:
+          seed: Sequence[Path], until: datetime | None, resume: Path | None, if_active: bool,
+          tracker: Path | None) -> Path:
     repo = repo.expanduser().resolve()
     if not repo.is_dir():
         sys.exit(f"{repo} does not exist")
     kind = kind_of(repo)
-    agent = main_checkout(repo / "agent")
-    runs = run_commits(agent)
+    place = place_of(repo, kind, tracker)
+    agent = place.agent
+    runs = run_commits(place)
     seed = [Path(p).expanduser().resolve() for p in seed]
     if len({p.name for p in seed}) < len(seed):
         sys.exit("two seed files share a name; each is copied into previous/seed/ under its own")
     if resume:
         run = resume.expanduser().resolve()
-        since, until, focus, seed, base = resumed(run, repo, agent, since, focus, seed)
+        since, until, focus, seed, base = resumed(run, repo, place, since, focus, seed)
         home = run.parent.parent
     else:
         until = until or datetime.now(UTC)
         if since is None and not runs and kind is WORKFLOW:
-            sys.exit(f"no earlier run of this retro in {agent}/retro/report.md's history: pass --since")
+            sys.exit(f"no earlier run of this retro in {agent}/{place.report}'s history: pass --since")
         since = since or (runs[0][1] if runs else until - FIRST_PERIOD)
         home = data.expanduser() / repo.name.lstrip(".")
         run = home / "runs" / dirname(until)
-        base = blob(agent, "retro/report.md")
+        base = blob(agent, place.report)
     retro_collect.refuse_inside_git(home)
     log = Log(home / "runs.log", run.name)
     listed = [Path(p).expanduser().resolve() for p in read_list(agent / "retro" / "repos")] if kind is WORKFLOW else []
@@ -189,9 +225,10 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
             signal.signal(s, on_stop)
         where = "collect"
         if not (run / "run.json").is_file():
-            collect(kind, since, until, run, home, list(projects), repo, repos, agent)
+            collect(kind, since, until, run, home, list(projects), repo, repos, place)
             # What a resumed run keeps; written last, so its presence says collect finished.
-            (run / "run.json").write_text(json.dumps(dict(repo=str(repo), since=stamp(since), until=stamp(until),
+            (run / "run.json").write_text(json.dumps(dict(repo=str(repo), report=str(agent / place.report),
+                                                          since=stamp(since), until=stamp(until),
                                                           focus=focus, seed=[str(p) for p in seed], base=base)) + "\n")
         values = dict(run=str(run), repo=str(repo), skills=str(HERE.parent), since=stamp(since), until=stamp(until),
                       kind=kind.name, agent=str(agent), repos="\n".join(f"- {r}" for r in repos),
@@ -205,7 +242,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
             if resume and not missing(stage, run):
                 continue
             if not stage.fresh and not (run / "previous").exists():
-                write_previous(run, agent, runs, seed)
+                write_previous(run, place, runs, seed)
             if failed := run_stage(stage, run, values, within):
                 log(f"failed: {stage.name} {failed}; its output is {run / stage.name}.log")
                 sys.exit(1)
@@ -224,7 +261,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     for s in STOP:  # the commit takes a moment, and one cut short leaves the agent repo half-changed
         signal.signal(s, signal.SIG_IGN)
     try:
-        committed, line = commit_report(agent, run, base, since, until, kind)
+        committed, line = commit_report(place, run, base, since, until, kind)
     except Exception as e:
         log(f"failed: the commit: {failure(e)}; the report stays in {run}")
         raise
@@ -242,21 +279,22 @@ def failure(e: Exception) -> str:
 
 
 def collect(kind: Kind, since: datetime, until: datetime, run: Path, home: Path, projects: list[Path], repo: Path,
-            repos: list[Path], agent: Path) -> None:
+            repos: list[Path], place: Place) -> None:
     """Stage 1, by script: what the kind reads, and for both kinds the files the period's commits touched."""
     if kind is WORKFLOW:
-        retro_collect.collect_sessions(since, until, run, home / "digest-cache", projects, repos, agent=agent)
+        retro_collect.collect_sessions(since, until, run, home / "digest-cache", projects, repos, agent=place.agent,
+                                       scope=place.scope)
         write_batches(run)
     else:
-        retro_collect.collect_repo(since, until, run, repo, agent)
+        retro_collect.collect_repo(since, until, run, repo, place.agent, place.scope)
     retro_collect.collect_touched(since, until, run, repo)
 
 
-def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: str,
+def resumed(run: Path, repo: Path, place: Place, since: datetime | None, focus: str,
             seed: list[Path]) -> tuple[datetime, datetime, str, list[Path], str | None]:
     """The period, focus, seed and base of the run in `run`, from its `run.json`. Exits when the
-    run was of another repo, or when the report was committed to since the run began: its stages
-    read the report as it was, and its commit would undo the change."""
+    run was of another repo or for another report, or when the report was committed to since the
+    run began: its stages read the report as it was, and its commit would undo the change."""
     if not (run / "run.json").is_file():
         sys.exit(f"{run} holds no run.json: no retro run finished collecting into it; start a new run")
     if since or focus or seed:
@@ -264,8 +302,11 @@ def resumed(run: Path, repo: Path, agent: Path, since: datetime | None, focus: s
     state = json.loads((run / "run.json").read_text())
     if state.get("repo") != str(repo):
         sys.exit(f"{run} is a run of {state.get('repo', 'a repo its run.json does not name')}, not of {repo}; start a new run")
-    if blob(agent, "retro/report.md") != state["base"]:
-        sys.exit(f"{agent}/retro/report.md was committed to since {run.name} began; start a new run, which reads it as it is")
+    report = place.agent / place.report
+    if (was := state.get("report", str(place.agent / "retro/report.md"))) != str(report):  # a run.json before --tracker names none
+        sys.exit(f"{run} is a run for {was}, not for {report}; resume it with the --tracker it started with")
+    if blob(place.agent, place.report) != state["base"]:
+        sys.exit(f"{report} was committed to since {run.name} began; start a new run, which reads it as it is")
     return (parse_time(state["since"]), parse_time(state["until"]), state["focus"],
             [Path(p) for p in state["seed"]], state["base"])
 
@@ -461,13 +502,13 @@ def render(template: str, values: dict[str, str]) -> str:
 # ── the earlier reports ──────────────────────────────────────────────────────
 
 
-def run_commits(agent: Path) -> list[tuple[str, datetime]]:
+def run_commits(place: Place) -> list[tuple[str, datetime]]:
     """The commits a run made of the report, newest first, each with the end of its period."""
-    out = git(agent, "log", "--format=%H %(trailers:key=Retro-until,valueonly,separator=)", "--", "retro/report.md")
+    out = git(place.agent, "log", "--format=%H %(trailers:key=Retro-until,valueonly,separator=)", "--", place.report)
     return [(sha, parse_time(until)) for sha, until in (line.split(" ", 1) for line in out.splitlines()) if until]
 
 
-def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], seed: list[Path]) -> None:
+def write_previous(run: Path, place: Place, runs: list[tuple[str, datetime]], seed: list[Path]) -> None:
     """`previous/`: the report as it stands now, verdicts since the last run included, as
     `current.md`; the last three runs' reports, each named for the end of its period; and the
     seed, the reports a first run takes as its previous ones, under `seed/`. Built beside it and
@@ -475,10 +516,10 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
     previous = run / "previous.partial"
     shutil.rmtree(previous, ignore_errors=True)
     previous.mkdir()
-    if blob(agent, "retro/report.md"):
-        (previous / "current.md").write_text(git(agent, "show", "HEAD:retro/report.md"))
+    if blob(place.agent, place.report):
+        (previous / "current.md").write_text(git(place.agent, "show", f"HEAD:{place.report}"))
     for sha, until in runs[:3]:
-        (previous / f"{dirname(until)}.md").write_text(git(agent, "show", f"{sha}:retro/report.md"))
+        (previous / f"{dirname(until)}.md").write_text(git(place.agent, "show", f"{sha}:{place.report}"))
     if seed:
         (previous / "seed").mkdir()
         for path in seed:
@@ -489,23 +530,25 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
 # ── the commit ───────────────────────────────────────────────────────────────
 
 
-def commit_report(agent: Path, run: Path, base: str | None, since: datetime, until: datetime,
+def commit_report(place: Place, run: Path, base: str | None, since: datetime, until: datetime,
                   kind: Kind) -> tuple[bool, str]:
-    """Copy the run's report and page into `retro/` and commit those two files alone. Whether it
-    committed, and the line the run log gets, saying what was committed or why nothing was."""
-    paths = [f"retro/{name}" for name in REPORT]
+    """Copy the run's report and page into the report's directory and commit those two files alone.
+    Whether it committed, and the line the run log gets, saying what was committed or why nothing was."""
+    agent = place.agent
+    paths = [f"{place.dir}/{name}" for name in REPORT]
     gitdir = Path(git(agent, "rev-parse", "--absolute-git-dir").strip())
     if busy := [op for marker, op in IN_PROGRESS.items() if (gitdir / marker).exists()]:
         return False, f"not committed: {agent} is mid-{busy[0]}; the report stays in {run}"
-    if blob(agent, "retro/report.md") != base:
-        return False, f"not committed: {agent}/retro/report.md was committed to while the run ran; the report stays in {run}"
+    if blob(agent, place.report) != base:
+        return False, f"not committed: {agent}/{place.report} was committed to while the run ran; the report stays in {run}"
     if changed := git(agent, "status", "--porcelain", "--", *paths).strip():
         changes = ", ".join(line[3:] for line in changed.splitlines())
         return False, f"not committed: {changes} has changes of its own in {agent}; the report stays in {run}"
-    (agent / "retro").mkdir(exist_ok=True)
+    (agent / place.dir).mkdir(parents=True, exist_ok=True)
     for name in REPORT:
-        shutil.copy(run / name, agent / "retro" / name)
-    message = (f"retro: the {kind.name} of {since.date()} to {until.date()}\n\n"
+        shutil.copy(run / name, agent / place.dir / name)
+    scope = f"({place.scope.repo})" if place.scope.repo else ""
+    message = (f"retro{scope}: the {kind.name} of {since.date()} to {until.date()}\n\n"
                f"Retro-since: {stamp(since)}\nRetro-until: {stamp(until)}\n")
     try:
         # `--only` stages a tracked file itself, so a commit that fails leaves it unstaged; a first
@@ -560,9 +603,11 @@ class Args:
     """Skip the run, exiting 3, when there is nothing new since the period's start: for the workflow retro, no message of max's in an interactive session and no commit of his in the listed repos; for a repo retro, no commit in the repo."""
     resume: Path | None = None
     """An earlier run's directory: the run keeps its period, focus and seed, and picks up at the first stage that left out a file it owes."""
+    tracker: Path | None = None
+    """For a repo with no agent repo of its own: the project whose tracker plans it, whose `agent/repos.toml` lists it. The report is committed in `retro/<name>/` of that project's agent repo, `<name>` the list's for the repo, and the run reads the tickets there whose `repos:` names it."""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args, description=__doc__)
     run_retro(args.repo, args.data, args.projects, parse_time(args.since) if args.since else None, args.focus, args.seed,
-              resume=args.resume, if_active=args.if_active)
+              resume=args.resume, if_active=args.if_active, tracker=args.tracker)

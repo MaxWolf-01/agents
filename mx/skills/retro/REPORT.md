@@ -1,6 +1,6 @@
 # The living report
 
-One report per repo, `retro/report.md` in that repo's agent repo, rewritten whole by every run; git history holds every run's copy. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
+One report per repo, `retro/report.md` in that repo's agent repo, or `retro/<name>/report.md` in the agent repo of the project whose tracker plans it, rewritten whole by every run; git history holds every run's copy. Runs read it as markdown; max reads the page built from it, `retro/report.html`. Sessions write max's verdicts into it between runs, so a run reads them there.
 
 ## Rules
 
@@ -12,7 +12,7 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 ## max's verdicts
 
-A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
+A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md` (or that repo's `retro/<name>/report.md`): the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
 
 Just before that commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts and wait for it to end, then write them into the report as it stands.
 
