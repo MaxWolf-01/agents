@@ -67,7 +67,7 @@ from retro_collect import git, parse_time, stamp  # noqa: E402
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
-SKIPPED = 3  # the exit status of a run --if-active found no sign of max for
+SKIPPED = 3  # the exit status of an --if-active run that found no sign of max
 STAGE_TIMEOUT = 4 * 3600  # seconds; a stage reading a heavy week runs about an hour
 BATCH_CHARS = 300_000  # digest text one read-fresh subagent reads
 REPORT = ("report.md", "report.html")  # what synthesis writes, and all the commit holds, in retro/
@@ -143,7 +143,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
         log(f"skipped: no session or commit of max's since {stamp(since)}")
         sys.exit(SKIPPED)
     log(f"{'resumed' if resume else 'started'}: {repo}, {stamp(since)} to {stamp(until)}" + (f", focus: {focus}" if focus else "")
-        + (f"; the latest sign of max: {active}" if active else ""))
+        + (f"; a sign of max: {active}" if active else ""))
     for s in STOP:
         signal.signal(s, on_stop)
     where = "collect"

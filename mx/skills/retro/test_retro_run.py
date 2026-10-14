@@ -343,5 +343,5 @@ def test_a_week_with_a_message_or_a_commit_of_maxs_runs(tmp_path: Path, stub: Pa
     retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
 
     started = (tmp_path / "data/agents/runs.log").read_text().splitlines()[0]
-    assert f"the latest sign of max: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
+    assert f"a sign of max: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
     assert last_logged(tmp_path).startswith("committed ")

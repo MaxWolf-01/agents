@@ -105,7 +105,7 @@ def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime |
 
 
 def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
-    """The latest sign of the user since `since`, or "" when there is none: a message of theirs in
+    """A sign of the user since `since`, or "" when there is none: their latest message in
     an interactive session, else a commit of theirs on a branch of one of the repos, theirs being
     the author identity the repo itself commits with. The digests it reads are cached as a run's are."""
     refuse_inside_git(cache)
@@ -247,7 +247,7 @@ def digest_job(args: tuple[Path, list[Path]]) -> Digest | None:
     return digest(*args)
 
 
-CACHE_FORMAT = 7 # raised when a cached digest's shape changes, so every cached digest is redone
+CACHE_FORMAT = 7  # raised when a cached digest's shape changes, so every cached digest is redone
 
 
 def cache_key(transcript: Path, records: list[Path]) -> list:
