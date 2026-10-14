@@ -323,28 +323,28 @@ svg .code.on{fill:var(--accent);}
   </defs>
 
   <!-- connectors: in, and out once the frontier is empty -->
-  <path class="flow" d="M 288,88 H 382" marker-end="url(#arrow)" data-step="1"/>
-  <path class="flow" d="M 768,88 H 894" marker-end="url(#arrow)" data-step="5"/>
+  <path class="flow" d="M 288,88 H 382" marker-end="url(#arrow)" data-step="2"/>
+  <path class="flow" d="M 768,88 H 894" marker-end="url(#arrow)" data-step="12"/>
   <!-- connectors: the loop across sessions -->
-  <path class="flow" d="M 768,140 H 848 Q 856,140 856,148 V 262" marker-end="url(#arrow)" data-step="3"/>
-  <path class="flow" d="M 980,384 V 636 Q 980,644 972,644 H 770" marker-end="url(#arrow)" data-step="4"/>
-  <path class="flow" d="M 384,644 H 352 Q 344,644 344,636 V 136 Q 344,128 352,128 H 382" marker-end="url(#arrow)" data-step="4"/>
+  <path class="flow" d="M 768,140 H 848 Q 856,140 856,148 V 262" marker-end="url(#arrow)" data-step="6"/>
+  <path class="flow" d="M 980,384 V 636 Q 980,644 972,644 H 770" marker-end="url(#arrow)" data-step="9"/>
+  <path class="flow" d="M 384,644 H 352 Q 344,644 344,636 V 136 Q 344,128 352,128 H 382" marker-end="url(#arrow)" data-step="11"/>
   <!-- spokes: the ticket written and read -->
-  <path class="spoke" d="M 576,168 V 230" marker-end="url(#arrow)" data-step="2"/>
-  <path class="spoke" d="M 576,512 V 590" marker-end="url(#arrow)" data-step="4"/>
+  <path class="spoke" d="M 576,168 V 230" marker-end="url(#arrow)" data-step="4"/>
+  <path class="spoke" d="M 576,512 V 590" marker-end="url(#arrow)" data-step="10"/>
 
   <!-- nodes -->
   <rect class="node" x="48" y="48" width="240" height="80" rx="6" data-step="1"/>
-  <rect class="focal" x="384" y="48" width="384" height="120" rx="6" data-step="1"/>
-  <rect class="node" x="896" y="48" width="256" height="114" rx="6" data-step="5"/>
-  <rect class="focal" x="808" y="264" width="344" height="120" rx="6" data-step="3"/>
-  <rect class="store" x="416" y="232" width="320" height="280" rx="8" data-step="2"/>
-  <line class="hair" x1="432" y1="356" x2="720" y2="356" data-step="2"/>
-  <rect class="node" x="384" y="592" width="384" height="104" rx="6" data-step="4"/>
+  <rect class="focal" x="384" y="48" width="384" height="120" rx="6" data-step="2"/>
+  <rect class="node" x="896" y="48" width="256" height="114" rx="6" data-step="12"/>
+  <rect class="focal" x="808" y="264" width="344" height="120" rx="6" data-step="6"/>
+  <rect class="store" x="416" y="232" width="320" height="280" rx="8" data-step="4"/>
+  <line class="hair" x1="432" y1="356" x2="720" y2="356" data-step="5"/>
+  <rect class="node" x="384" y="592" width="384" height="104" rx="6" data-step="9"/>
 
   <!-- the hub's marks -->
-  <circle class="hm-needs" cx="406" cy="147" r="6" data-step="1"/>
-  <g data-step="3">
+  <circle class="hm-needs" cx="406" cy="147" r="6" data-step="3"/>
+  <g data-step="8">
     <circle class="hm-hand" cx="874" cy="205" r="4.6"/>
     <circle class="hm-hand" cx="880.4" cy="205" r="4.6"/>
   </g>
@@ -354,15 +354,17 @@ svg .code.on{fill:var(--accent);}
     <text class="name" x="64" y="74">an idea</text>
     <text class="role" x="64" y="92">too foggy to brief</text>
     <text class="code" x="64" y="110">/mx:grilling</text>
+  </g>
 
+  <g data-step="2">
     <text class="name on" x="400" y="74">a grilling round</text>
     <text class="role" x="400" y="92">the design whole, then the frontier's questions</text>
     <text class="detail" x="400" y="110">Q1, Q2 on the session page; you answer by number</text>
     <text class="detail" x="400" y="128">a question of taste, asked as a blind test</text>
-    <text class="meta on" x="418" y="152">needs you, until you answer</text>
   </g>
+  <text class="meta on" x="418" y="152" data-step="3">needs you, until you answer</text>
 
-  <g data-step="5">
+  <g data-step="12">
     <text class="name" x="912" y="74">read whole, then cut or build</text>
     <text class="role" x="912" y="92">into child tickets, or built as one slice</text>
     <text class="detail" x="912" y="110">the agent's cut, each slice filed open</text>
@@ -370,7 +372,7 @@ svg .code.on{fill:var(--accent);}
     <text class="code" x="912" y="146">SLICING.md</text>
   </g>
 
-  <g data-step="3">
+  <g data-step="6">
     <text class="name on" x="824" y="290">child tickets that need you</text>
     <text class="role" x="824" y="308">the questions still open, a session's worth</text>
     <text class="code" x="824" y="326">open, needs-user</text>
@@ -378,12 +380,14 @@ svg .code.on{fill:var(--accent);}
     <text class="detail" x="824" y="362">and the sections its answers may rewrite</text>
   </g>
 
-  <g data-step="2">
+  <g data-step="4">
     <text class="name" x="432" y="258">the ticket</text>
     <text class="code" x="432" y="276">agent/tickets/&lt;slug&gt;.md</text>
     <text class="detail" x="432" y="302">brief, user stories, properties,</text>
     <text class="detail" x="432" y="320">decisions, testing seams, out of scope,</text>
     <text class="detail" x="432" y="338">fog, acceptance criteria</text>
+  </g>
+  <g data-step="5">
     <text class="meta" x="432" y="380">call marks</text>
     <text class="code" x="432" y="402">(you, rN)</text>
     <text class="detail" x="560" y="402">you, in round N</text>
@@ -399,7 +403,7 @@ svg .code.on{fill:var(--accent);}
     <text class="detail" x="560" y="492">no question yet</text>
   </g>
 
-  <g data-step="4">
+  <g data-step="9">
     <text class="name" x="400" y="618">a fresh session</text>
     <text class="role" x="400" y="636">picks up the handoff, reads the ticket top-down</text>
     <text class="detail" x="400" y="654">claims one child ticket, reads its comments, grills it</text>
@@ -407,22 +411,22 @@ svg .code.on{fill:var(--accent);}
   </g>
 
   <!-- labels: connectors -->
-  <text class="al" x="832" y="80" text-anchor="middle" data-step="5">frontier empty</text>
-  <g data-step="3">
-    <text class="al" x="868" y="184">session ends, frontier open</text>
+  <text class="al" x="832" y="80" text-anchor="middle" data-step="12">frontier empty</text>
+  <text class="al" x="868" y="184" data-step="6">session ends, frontier open</text>
+  <g data-step="8">
     <text class="meta" x="894" y="210">ready to hand off</text>
     <text class="al" x="868" y="230">its handoff committed</text>
   </g>
-  <g data-step="4">
-    <text class="al" x="992" y="512">claim one</text>
-    <text class="al" x="588" y="556">read top-down</text>
+  <text class="al" x="992" y="512" data-step="9">claim one</text>
+  <text class="al" x="588" y="556" data-step="10">read top-down</text>
+  <g data-step="11">
     <text class="al" x="332" y="380" text-anchor="end">a round like</text>
     <text class="al" x="332" y="396" text-anchor="end">any other</text>
   </g>
-  <text class="al" x="588" y="204" data-step="2">rewritten each round</text>
+  <text class="al" x="588" y="204" data-step="4">rewritten each round</text>
 
   <!-- asides -->
-  <g data-step="3">
+  <g data-step="7">
     <text class="aside" x="48" y="650">a question is Qn on the page, Dn once</text>
     <text class="aside" x="48" y="668">a ticket holds it</text>
   </g>
@@ -437,12 +441,16 @@ svg .code.on{fill:var(--accent);}
   <text class="legend" x="628" y="781">the ticket written and read</text>
   <rect class="store" x="880" y="768" width="24" height="16" rx="4"/>
   <text class="legend" x="916" y="781">on disk, outlives the session</text>
-  <text class="legend" x="48" y="817">a session's mark on the hub's rail:</text>
-  <circle class="hm-needs" cx="374" cy="812" r="6"/>
-  <text class="legend" x="388" y="817">needs you: a question waits on your answer</text>
-  <circle class="hm-hand" cx="756" cy="812" r="4.6"/>
-  <circle class="hm-hand" cx="762.4" cy="812" r="4.6"/>
-  <text class="legend" x="776" y="817">ready to hand off: its handoff committed</text>
+  <g data-step="3">
+    <text class="legend" x="48" y="817">a session's mark on the hub's rail:</text>
+    <circle class="hm-needs" cx="374" cy="812" r="6"/>
+    <text class="legend" x="388" y="817">needs you: a question waits on your answer</text>
+  </g>
+  <g data-step="8">
+    <circle class="hm-hand" cx="756" cy="812" r="4.6"/>
+    <circle class="hm-hand" cx="762.4" cy="812" r="4.6"/>
+    <text class="legend" x="776" y="817">ready to hand off: its handoff committed</text>
+  </g>
 </svg>
 <script>
 const root = document.documentElement
