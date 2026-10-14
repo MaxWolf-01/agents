@@ -1,10 +1,12 @@
 import path from "node:path";
+import type { JarvisConfig } from "../../src/jarvis.ts";
 import type { Launch, Seen } from "./effects.ts";
 import { under } from "./effects.ts";
 
 /**
- * The programs a tool may start: tmux and claude for sessions, memex for the explorer, job for wait.
- * Stricter than P4, which bans only a shell: a tool that needs another program is a call its slice escalates.
+ * The programs a tool may start: tmux and claude for sessions, memex for the explorer, job for wait, and ssh as
+ * Jarvis's mailbox alone. Stricter than P4, which bans only a shell: a tool that needs another program is a call its
+ * slice escalates.
  */
 const PROGRAMS = new Set(["tmux", "claude", "memex", "job"]);
 /** Shells, and the programs that run another program named in their arguments. */
@@ -20,9 +22,12 @@ export function harnessProblems(seen: Seen, store: string): string[] {
 	return [...writeProblems(seen, store), ...seen.launches.flatMap((l) => (ours(l) ? launchProblems(l, []) : shellProblems(l)))];
 }
 
-/** What a tool may not do: the harness's rules, and no program outside the closed set. */
-export function toolProblems(seen: Seen, store: string, given: string[]): string[] {
-	return [...writeProblems(seen, store), ...seen.launches.flatMap((l) => launchProblems(l, given))];
+/**
+ * What a tool may not do: the harness's rules, and no program outside the closed set. `jarvis` is the mailbox the
+ * tools were given; without it, no ssh is the mailbox's.
+ */
+export function toolProblems(seen: Seen, store: string, given: string[], jarvis?: JarvisConfig): string[] {
+	return [...writeProblems(seen, store), ...seen.launches.flatMap((l) => (path.basename(l.program) === "ssh" && !l.shell ? mailboxProblems(l.args, given, jarvis) : launchProblems(l, given)))];
 }
 
 /** Every string leaf of a tool's arguments long enough not to turn up in a fixed command by chance. */
@@ -51,6 +56,26 @@ function launchProblems(launch: Launch, given: string[]): string[] {
 	if (program === "claude") return claudeProblems(launch.args);
 	if (program === "job") return jobProblems(launch.args);
 	return [];
+}
+
+/** The options every request to the mailbox carries, as `mailbox()` in `jarvis.ts` sets them. */
+const MAILBOX_OPTIONS = ["IdentitiesOnly=yes", "IdentityAgent=none", "BatchMode=yes", "ConnectTimeout=10"];
+/** The names an outbox message may have: `name_pattern` in `jarvis-mailbox`. */
+const MESSAGE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+
+/**
+ * ssh runs one request of Jarvis's mailbox: its key, its fixed options and its host, then `tell`, `fetch`, or
+ * `delete` with message names. The message goes on stdin; a name the model sent is the model choosing what is deleted.
+ */
+function mailboxProblems(args: string[], given: string[], jarvis?: JarvisConfig): string[] {
+	const shown = `started ssh ${args.join(" ")}`;
+	if (!jarvis) return [shown];
+	const fixed = ["-i", jarvis.key, ...MAILBOX_OPTIONS.flatMap((option) => ["-o", option]), jarvis.host];
+	const [request, ...names] = args.slice(fixed.length);
+	if (fixed.some((arg, i) => args[i] !== arg)) return [`${shown}: not the mailbox's key, options and host`];
+	if (request === "tell" || request === "fetch" ? names.length : request !== "delete" || !names.length || !names.every((name) => MESSAGE_NAME.test(name)))
+		return [`${shown}: the mailbox runs tell, fetch, or delete with message names`];
+	return names.filter((name) => given.some((string) => name.includes(string))).map((name) => `${shown}: ${name} is a string the model sent`);
 }
 
 function commandLine({ program, args }: Launch): string {
