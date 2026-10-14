@@ -192,7 +192,7 @@ _Avoid_: agents retro, meta-analysis
 
 **Lens pass**:
 The part of every retro that reads its repo's code through each code lens and proposes candidates for it.
-_Avoid_: architecture pass, lens (alone, which the workflow retro's leading words also go by)
+_Avoid_: architecture pass
 
 **Living report**:
 A retro's one report for its repo, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.

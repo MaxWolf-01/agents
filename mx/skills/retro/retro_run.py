@@ -23,7 +23,7 @@ of a run is a line of `<data>/<repo>/runs.log`.
 The stages run one after another, each a `claude -p` on Opus 5.5 that may write only in the run
 directory. The workflow retro's first, read-fresh, may read nothing outside it either, and runs
 before the earlier reports are copied into it, under `previous/`. A repo retro's stages may not
-read the session pages in its agent repo.
+read the session pages in its agent repo, and run no git command there.
 
 The commit holds `retro/report.md` and `retro/report.html` alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
@@ -105,8 +105,6 @@ class Kind:
     name: str
     """As the report's title, its commit and the stages' prompts name it."""
     stages: tuple[Stage, ...]
-    sessions: bool
-    """Whether a run reads sessions; a kind that reads none may not read its agent repo's session pages either."""
 
 
 LENS_PASS = Stage("lens-pass", tuple(f"lens-pass/{lens}.md" for lens in
@@ -119,8 +117,8 @@ WORKFLOW = Kind("workflow retro", (
     Stage("go-deep", ("deep/leading-words.md", "deep/permissions.md")),
     LENS_PASS,
     SYNTHESIZE,
-), sessions=True)
-REPO = Kind("repo retro", (FOLLOW_UP, LENS_PASS, SYNTHESIZE), sessions=False)
+))
+REPO = Kind("repo retro", (FOLLOW_UP, LENS_PASS, SYNTHESIZE))
 
 
 def kind_of(repo: Path) -> Kind:
@@ -195,14 +193,14 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
                              f"{retro_collect.SAMPLE_WINDOW[0].days // 7} to {retro_collect.SAMPLE_WINDOW[1].days // 7} "
                              f"weeks before the period's end",
                       focus=f'max named a focus for this run: "{focus}".' if focus else "max named no focus for this run.")
-        hidden = [] if kind.sessions else sessions_pages(repo, agent)
+        within = reach(kind, repos, agent)
         for stage in kind.stages:
             where = stage.name
             if resume and not missing(stage, run):
                 continue
             if not stage.fresh and not (run / "previous").exists():
                 write_previous(run, agent, runs, seed)
-            if failed := run_stage(stage, run, values, readable(repos, agent), hidden):
+            if failed := run_stage(stage, run, values, within):
                 log(f"failed: {stage.name} {failed}; its output is {run / stage.name}.log")
                 sys.exit(1)
             log(f"{stage.name} done")
@@ -294,16 +292,25 @@ def read_list(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
-def readable(repos: list[Path], agent: Path) -> list[Path]:
-    """What a stage after read-fresh may read and run git reads in: the repos, their agent repos,
-    and the skills, whose files the stages' prompts name."""
-    dirs = [*repos, agent, *(r / "agent" for r in repos if (r / "agent" / ".git").exists()), HERE.parent]
-    return list(dict.fromkeys(d.resolve() for d in dirs))
+@dataclass(frozen=True)
+class Reach:
+    """What a stage after read-fresh may reach beside its run directory."""
+    read: list[Path]
+    git: list[Path]
+    """Where it may run git's read commands."""
+    hidden: list[Path]
+    """Directories inside `read` it may not read."""
 
 
-def sessions_pages(repo: Path, agent: Path) -> list[Path]:
-    """Where the session pages of `repo` sit, in its agent repo's main checkout and in its `agent/`."""
-    return list(dict.fromkeys(d.resolve() / retro_collect.session_page.SESSIONS.name for d in (agent, repo / "agent")))
+def reach(kind: Kind, repos: list[Path], agent: Path) -> Reach:
+    """The repos, their agent repos and the skills, whose files the stages' prompts name. A repo
+    retro reads no session, so its agent repos' session pages are hidden, and git, which would show
+    a committed page by its commit or blob, is not run in them: their tickets are read as files."""
+    agents = list(dict.fromkeys(d.resolve() for d in (agent, *(r / "agent" for r in repos if (r / "agent" / ".git").exists()))))
+    read = list(dict.fromkeys(d.resolve() for d in (*repos, *agents, HERE.parent)))
+    if kind is WORKFLOW:
+        return Reach(read, read, [])
+    return Reach(read, [d for d in read if d not in agents], [a / retro_collect.session_page.SESSIONS.name for a in agents])
 
 
 # ── the stages ───────────────────────────────────────────────────────────────
@@ -334,7 +341,7 @@ def pack(run: Path, prefix: str, digests: list[str]) -> list[dict]:
     return batches
 
 
-def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path], hidden: list[Path]) -> str:
+def run_stage(stage: Stage, run: Path, values: dict[str, str], within: Reach) -> str:
     """One stage's model run, from its prompt filled in with `values`; what went wrong, or nothing."""
     prompt = render((HERE / "stages" / f"{stage.name}.md").read_text(), values)
     (run / "prompts").mkdir(exist_ok=True)
@@ -342,7 +349,7 @@ def run_stage(stage: Stage, run: Path, values: dict[str, str], dirs: list[Path],
     with (run / f"{stage.name}.log").open("w") as out:
         # A session of its own, so a signal meant for the run (a closed terminal's HUP, a Ctrl-C) reaches
         # the stage only through `end`, which `run-log` turns into the model run's end.
-        process = subprocess.Popen(launch(stage, run, dirs, hidden), cwd=run, stdin=subprocess.PIPE, stdout=out,
+        process = subprocess.Popen(launch(stage, run, within), cwd=run, stdin=subprocess.PIPE, stdout=out,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True,
                                    preexec_fn=dies_with(os.getpid()),
                                    env={**os.environ, "CLAUDE_CODE_SUBAGENT_MODEL": MODEL, "GIT_OPTIONAL_LOCKS": "0",
@@ -409,20 +416,17 @@ def end(process: subprocess.Popen, grace: float = 60) -> None:
         process.wait()
 
 
-def launch(stage: Stage, run: Path, dirs: list[Path], hidden: Sequence[Path] = ()) -> list[str]:
+def launch(stage: Stage, run: Path, within: Reach) -> list[str]:
     """The command line of a stage's model run. It starts from none of the host's settings, and
-    `--restricted` confines its file tools to the run directory and, after read-fresh, the
-    readable directories, less the `hidden` ones; the one write rule covers the run directory
-    alone, git's `--output`, which writes a file, is denied, and every other write is refused,
-    since nobody is there to approve it."""
+    `--restricted` confines its file tools to the run directory and, after read-fresh, what is
+    `within` its reach; the one write rule covers the run directory alone, git's `--output`, which
+    writes a file, is denied, and every other write is refused, since nobody is there to approve it."""
     tools, allowed, add = "Read,Grep,Glob,Write,Edit,Agent", [f"Edit(/{run}/**)"], []
     if not stage.fresh:
         tools += ",Bash"
-        denied = [*(f"Bash(git -C {d} * --output*)" for d in dirs), *(f"Read(/{h}/**)" for h in hidden),
-                  # git reaches a hidden directory through the repo it sits in, by a path inside that repo
-                  *(f"Bash(git -C {d} *{h.relative_to(d)}/*)" for h in hidden for d in dirs if h.is_relative_to(d))]
-        add = ["--add-dir", *map(str, dirs), "--disallowedTools", *denied]
-        allowed += [f"Bash(git -C {d} {sub}{rest})" for d in dirs for sub in GIT_READS for rest in ("", " *")]
+        denied = [*(f"Bash(git -C {d} * --output*)" for d in within.git), *(f"Read(/{h}/**)" for h in within.hidden)]
+        add = ["--add-dir", *map(str, within.read), "--disallowedTools", *denied]
+        allowed += [f"Bash(git -C {d} {sub}{rest})" for d in within.git for sub in GIT_READS for rest in ("", " *")]
     return ["bash", str(RUN_LOG), "run", "--site", f"retro-{stage.name}", "--timeout", str(STAGE_TIMEOUT), "--",
             "claude", "-p", "--model", MODEL, "--effort", EFFORT,
             "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
@@ -464,7 +468,7 @@ def write_previous(run: Path, agent: Path, runs: list[tuple[str, datetime]], see
 
 
 def commit_report(agent: Path, run: Path, base: str | None, since: datetime, until: datetime,
-                  kind: Kind = WORKFLOW) -> tuple[bool, str]:
+                  kind: Kind) -> tuple[bool, str]:
     """Copy the run's report and page into `retro/` and commit those two files alone. Whether it
     committed, and the line the run log gets, saying what was committed or why nothing was."""
     paths = [f"retro/{name}" for name in REPORT]

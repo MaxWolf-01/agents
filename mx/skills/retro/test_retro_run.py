@@ -15,6 +15,11 @@ A run stopped or killed: the command run as a process of its own, sent a signal 
 stub runs, the oracle being whether the stub's processes still run, read from `/proc`. A resumed
 run: the oracle being the stub's record of which stages it ran and the period on the commit. A run
 in-process: the oracle being the signal handlers before it and after.
+
+A repo retro runs through the same command, on a repo other than the agents repo: which stages
+run, in which order, what its run directory holds and what its stages may reach, the oracle being
+the stub's record and the stages' command lines (retro-semi-automated#P10); and which repos are
+refused and which weeks skipped, the oracle being git's record of the agent repo and the run log.
 """
 
 import json
@@ -38,7 +43,8 @@ FIRST = datetime(2026, 10, 12, 2, tzinfo=UTC)
 WEEK = timedelta(weeks=1)
 
 # What each stage writes, keyed by the stage its prompt's first line names. It records its
-# command line, one argument per line, and what the run directory held when it started; before
+# command line, one argument per line, the order the stages ran in, and what the run directory
+# held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
 # With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child
 # and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
@@ -49,6 +55,7 @@ STUB = r"""#!/usr/bin/env bash
 prompt=$(cat)
 stage=$(head -1 <<< "$prompt" | sed 's/.*: //')
 printf '%s\n' "$@" > "$STUB_LOG/$stage.argv"
+echo "$stage" >> "$STUB_LOG/order"
 find . -path ./prompts -prune -o -type f -print | sort > "$STUB_LOG/$stage.seen"
 if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo "$$ $!" > "$STUB_LOG/$stage.pids.tmp" && mv "$STUB_LOG/$stage.pids.tmp" "$STUB_LOG/$stage.pids"; wait; fi
 case $stage in
@@ -133,6 +140,8 @@ def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stay
         tmp_path: Path, stub: Path, repo: Path) -> None:
     run = retro(tmp_path, repo, FIRST, SINCE)
     agent = repo / "agent"
+    assert (stub / "order").read_text().split("\n")[:-1] == ["read fresh", "follow up", "go deep", "lens pass", "synthesize"]
+    assert (run / "touched.md").is_file()
     assert out(agent, "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
     assert out(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], \
         "the session's staged ticket is neither committed nor unstaged"
@@ -244,13 +253,15 @@ def test_a_run_stopped_or_killed_ends_the_stage_it_is_in(
         assert last_logged(tmp_path).startswith("stopped: SIGTERM during read-fresh, which ended with it")
 
 
+@pytest.mark.parametrize("kind", ["workflow retro", "repo retro"])
 def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a_file(
-        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        tmp_path: Path, stub: Path, repo: Path, code: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    repo, name = (repo, "agents") if kind == "workflow retro" else (code, "dotfiles")
     monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
     with pytest.raises(SystemExit):
         retro(tmp_path, repo, FIRST, SINCE)
-    assert last_logged(tmp_path).startswith("failed: synthesize left out report.md")
-    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
+    assert last_logged(tmp_path, name).startswith("failed: synthesize left out report.md")
+    run = tmp_path / f"data/{name}/runs" / retro_run.dirname(FIRST)
     for argv in stub.glob("*.argv"):
         argv.unlink()
     monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
@@ -260,7 +271,7 @@ def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a
     assert [p.stem for p in stub.glob("*.argv")] == ["synthesize"], "the stages that wrote what they owe ran once"
     message = out(repo / "agent", "log", "-1", "--format=%B")
     assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
-    assert last_logged(tmp_path).startswith("committed ")
+    assert last_logged(tmp_path, name).startswith("committed ")
 
 
 def test_a_run_leaves_its_callers_signal_handlers_as_it_found_them(tmp_path: Path, stub: Path, repo: Path) -> None:
@@ -357,7 +368,7 @@ def test_a_week_with_a_message_or_a_commit_of_maxs_runs(tmp_path: Path, stub: Pa
 def code(tmp_path: Path) -> Path:
     """A repo other than the agents repo, with a commit either side of the period's start, and its
     agent repo with a proposed ticket and a session page."""
-    code, agent = tmp_path / "dotfiles", tmp_path / "dotfiles" / "agent"
+    code, agent = tmp_path / ".dotfiles", tmp_path / ".dotfiles" / "agent"
     for r in (code, agent):
         r.mkdir(parents=True)
         git(r, "init", "-q", "-b", "main")
@@ -377,22 +388,24 @@ def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_sessio
 
     run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
 
-    assert sorted(p.stem for p in stub.glob("*.argv")) == ["follow up", "lens pass", "synthesize"]
+    assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
     assert not any((run / d).exists() for d in ("sessions", "sample", "sessions.jsonl", "batches.json")), \
         "no session was digested (retro-semi-automated#P10)"
     assert not (tmp_path / "data/dotfiles/digest-cache").exists()
     assert "backup: retry once" in (run / "git/dotfiles.md").read_text()
-    assert "- 1 backup.sh" in (run / "touched.md").read_text() and "old.sh" not in (run / "touched.md").read_text()
-    assert "- flaky-backup" in (run / "proposed.md").read_text()
+    assert (run / "touched.md").is_file()
+    assert (run / "proposed/flaky-backup.md").read_text() == ticket("proposed")
     for stage in ("follow up", "lens pass", "synthesize"):
         args = (stub / f"{stage}.argv").read_text().splitlines()
         assert f"Read(/{code / 'agent/sessions'}/**)" in args, "no stage may read the agent repo's session pages"
+        assert not [a for a in args if a.startswith(f"Bash(git -C {code / 'agent'}")], \
+            "nor run git in the agent repo, which shows a committed page without naming it"
+        assert [a for a in args if a.startswith("Edit(")] == [f"Edit(/{run}/**)"], \
+            "a stage writes in its run directory alone, a proposed ticket untouched (retro-semi-automated#P5)"
     agent = code / "agent"
     assert out(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")[0] == \
         f"retro: the repo retro of {SINCE.date()} to {FIRST.date()}"
     assert (agent / "retro/report.md").is_file()
-    assert out(agent, "show", "HEAD:tickets/flaky-backup.md") == ticket("proposed"), \
-        "the proposed ticket is untouched (retro-semi-automated#P5)"
 
 
 def test_a_repo_whose_agent_directory_is_no_repo_of_its_own_is_refused_with_the_reason(
@@ -429,6 +442,11 @@ def test_a_repo_retro_with_no_commit_since_its_last_run_is_skipped_and_one_with_
     assert last_logged(tmp_path, "dotfiles") == f"skipped: no commit in {code} since {retro_run.stamp(FIRST)}"
     assert not list(stub.glob("*.argv"))
 
-    commit(code, {"backup.sh": "2"}, "backup: retry twice", FIRST + timedelta(days=1))
+    git(code, "checkout", "-qb", "worker")
+    commit_by(code, "worker <worker@example.org>", FIRST + timedelta(days=1))
+    sha = out(code, "rev-parse", "--short=7", "HEAD").strip()
+    git(code, "checkout", "-q", "main")
     retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
+    started = (tmp_path / "data/dotfiles/runs.log").read_text().splitlines()[-5]
+    assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {code} ({sha})" in started
     assert last_logged(tmp_path, "dotfiles").startswith("committed ")

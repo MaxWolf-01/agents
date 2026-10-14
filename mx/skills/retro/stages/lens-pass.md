@@ -1,6 +1,6 @@
 # A {{kind}}: lens pass
 
-You run the lens pass of a {{kind}} of `{{repo}}`, over the period from {{since}} to {{until}}. Its job is to read the repo's code through every lens below and propose candidates: changes to the code or to the environment around it, each with the evidence that pointed at it, smallest first. Every later run rechecks what this one proposes, so a candidate the code keeps confirming rises in the living report, and one it does not is dropped.
+You run the lens pass of a {{kind}} of `{{repo}}`, over the period from {{since}} to {{until}}. Its job is to read the repo's code through every code lens below and propose candidates: changes to the code or to the environment around it, each with the evidence that pointed at it. Every later run rechecks what this one proposes, so a candidate the code keeps confirming rises in the living report, and one it does not is dropped.
 
 {{focus}}
 
@@ -8,26 +8,26 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 
 - `touched.md`: the files the period's commits touched, most-touched first.
 - `git/<repo>.md`: the period's commits with their messages, its reverts, and the agent repo's tickets filed, ruled and dropped, and its worker reports.
-- `proposed.md`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on, and how to read each.
+- `proposed.md` and `proposed/`: the agent repo's proposed tickets, which agents filed on what they hit and max has not ruled on.
 - `follow-up.md`: what the period did to each finding and candidate the living report already carries; `previous/`, the earlier reports, `current.md` with max's verdicts.
 - In a workflow retro, also `notes/` and `deep/`: the period's friction, read from max's sessions.
 
-The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the repos below, and the agent repo `{{agent}}`, and run git's read commands in them as `git -C <repo> <command>`:
+The report's rules and the weighing are `{{skills}}/retro/REPORT.md`. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
 {{repos}}
 
 ## Steps
 
-1. Read REPORT.md, `follow-up.md`, `touched.md`, `proposed.md` and every ticket it names; in a workflow retro, `notes/` and `deep/` too. Then list the agent repo's tickets in flight, those in `{{agent}}/tickets/` of every status but done, each by its slug and a line on what it changes.
+1. Read REPORT.md, `follow-up.md`, `touched.md` and the tickets in `proposed/`; in a workflow retro, `notes/` and `deep/` too. Then list the agent repo's tickets in flight, those in `{{agent}}/tickets/` that max ruled on and that are not done (`status:` open, claimed or review), each by its slug and a line on what it changes.
 2. Point the pass: the code the period's commits touched, the code the proposed tickets name, the focus max named, and in a workflow retro the code the period's friction touched. Write this direction down, a path or module per line with what pointed at it, as `lens-pass/direction.md`.
-3. Spawn one subagent per lens, in parallel, each given the brief below, its lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its lens that `previous/current.md` carries, Dismissed included.
+3. Spawn one subagent per code lens, in parallel, each given the brief below, its lens's section, `lens-pass/direction.md`, the list of tickets in flight, and the candidates of its lens that `previous/current.md` carries, Dismissed included.
 4. When they return, check each wrote its file; spawn a fresh one for any that did not.
 
 The stage is done when `lens-pass/` holds `architecture.md`, `bloat.md`, `tests.md`, `footguns.md` and `escaped-defects.md`.
 
 ## A lens's brief
 
-You read `{{repo}}`'s code through one lens, starting from the direction you were given and following what you find past it. A candidate is a change the code or its environment should get. Each carries:
+You read `{{repo}}`'s code through one code lens, starting from the direction you were given and following what you find past it. A candidate is a change the code or its environment should get. Each carries:
 
 - **Files**, and the **Problem**: what in the code produces it, by path and line, and its evidence, the commits, tickets or reports that show it, each with its short sha or slug and absolute date, and in a workflow retro the friction that pointed at it, quoted with its source and date.
 - **Proposal**: a deletion or a narrowing first; one that adds a mechanism names the recurrence behind it and what keeping it costs.
@@ -53,7 +53,7 @@ What the suite holds the code to, against the three jobs a test does in `{{skill
 
 ### footguns
 
-Both sides of max's footguns lens, as he widened it on 2026-10-14. A pattern that makes a bug easy: a call whose misuse looks like its use, a default that surprises, state shared where nobody expects it, two ways to do one thing that drift apart. And the obvious way to do things: where a thing goes, how a service or a script is added, which command runs the checks, should be obvious from the environment (the repo, the code, the infra), said by a lint rule, a fixed place for each kind of thing, a script or a Makefile target, never left to the memory of whoever wrote it. A choice the environment leaves to memory is a candidate, and its proposal is what in the environment would say it.
+Both sides. A pattern that makes a bug easy: a call whose misuse looks like its use, a default that surprises, state shared where nobody expects it, two ways to do one thing that drift apart. And the obvious way to do things: where a thing goes, how a service or a script is added, which command runs the checks, should be obvious from the environment (the repo, the code, the infra), said by a lint rule, a fixed place for each kind of thing, a script or a Makefile target, never left to the memory of whoever wrote it. A choice the environment leaves to memory is a candidate, and its proposal is what in the environment would say it.
 
 ### escaped defects
 

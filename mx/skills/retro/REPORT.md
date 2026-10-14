@@ -6,7 +6,7 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 - **Every finding quotes its evidence**: the session (its id's first 8 characters), the commit (its short sha) or the report it comes from, with an absolute date, `2026-10-07`. Never "last week", never a session's offset.
 - **Every proposal names what it deletes or narrows.** One that adds a mechanism also names the recurrence behind it and what keeping it costs.
-- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any lens. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
+- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any code lens. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
 - **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
 
@@ -23,7 +23,7 @@ What changed is the next run's to write. A verdict's commit carries no `Retro-un
 
 ## The weighing
 
-What orders the findings and decides what a run reports, loosely, on four things together; a candidate outside the architecture lens is weighed the same way, and its weighing is its impact:
+What orders the findings and decides what a run reports, loosely, on four things together:
 
 1. **What the friction costs**: time and energy, max's first.
 2. **What preventing it costs to keep**: code, prose and workflow machinery carry upkeep for as long as they live; a one-time cost amortizes.
@@ -31,6 +31,8 @@ What orders the findings and decides what a run reports, loosely, on four things
 4. **How robust the available fix is**: whether it simplifies or adds, and whether mechanism can fix it at all, or a better model or the harness's makers will fix the quirk first.
 
 Deletions and narrowings come first. A defect class that recurs and that a tool could catch gets its check proposed, weighed like any other fix. A pattern rooted in the model's own habit, with no line to delete, is reported as that, with what was tried. A count backs a finding and is never a number a later run tries to move.
+
+A candidate is weighed the same way; its **Weighing**, or an architecture candidate's impact, orders the Candidates section.
 
 ## Shape, in this order
 
@@ -65,9 +67,9 @@ In order of the weighing.
 
 ## Candidates
 
-What the lens pass proposes for the code, every lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
+What the lens pass proposes for the code, every code lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
 
-- **Lens**: architecture | bloat | tests | footguns | escaped defects
+- **Code lens**: the section of `stages/lens-pass.md`'s The lenses it came from
 - An architecture candidate carries `/mx:improve-codebase-architecture`'s fields (files, problem, solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates); any other, **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's
 - **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
 - **State** and **History**, as a finding's

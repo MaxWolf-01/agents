@@ -105,7 +105,7 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
 
 
 def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path) -> None:
-    """Everything a repo retro's later stages read but the code itself, written into `run`; no session."""
+    """`git/<repo>.md` and `proposed.md`, what a repo retro reads beside `touched.md` and the code; no session."""
     refuse_inside_git(run)
     collect_git(since, run, [repo], until)
     collect_proposed(run, agent)
@@ -237,17 +237,21 @@ def auto_mode(profile: Path, cwd: Path) -> tuple[str, str]:
 
 
 def collect_proposed(run: Path, agent: Path) -> None:
-    """`proposed.md`: the agent repo's commit now and the tickets proposed at it, by slug."""
+    """`proposed.md`, the agent repo's commit now and the tickets proposed at it, by slug, and
+    `proposed/<slug>.md`, each such ticket as it stands at that commit."""
     sha = git(agent, "rev-parse", "HEAD").strip()
     found = subprocess.run(["git", "-C", str(agent), "grep", "-l", "-E", "^status: *proposed *$", sha, "--", "tickets/*.md"],
                            capture_output=True, text=True)
     if found.returncode > 1:  # 1 is git grep finding nothing
         raise subprocess.CalledProcessError(found.returncode, found.args, found.stdout, found.stderr)
     slugs = sorted(Path(line.split(":", 1)[1]).stem for line in found.stdout.splitlines())
+    (run / "proposed").mkdir(parents=True, exist_ok=True)
+    for slug in slugs:
+        (run / "proposed" / f"{slug}.md").write_text(git(agent, "show", f"{sha}:tickets/{slug}.md"))
     (run / "proposed.md").write_text("\n".join([
         f"# Proposed tickets ({len(slugs)})", "",
-        f"The agent repo `{agent}` at {sha}, when the run collected. A ticket there reads as "
-        f"`git -C {agent} show {sha}:tickets/<slug>.md`.", "",
+        f"The agent repo `{agent}` at {sha}, when the run collected. Each ticket, as it stood then, is "
+        f"`proposed/<slug>.md`.", "",
         *(f"- {slug}" for slug in slugs)]) + "\n")
 
 

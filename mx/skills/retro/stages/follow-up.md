@@ -8,7 +8,7 @@ The run directory, `{{run}}`, is your working directory and the only place you w
 - `git/<repo>.md`: the period's commits, reverts, tickets and worker reports in each repo; `touched.md`, the files the period's commits touched in `{{repo}}`.
 - In a workflow retro, also `notes/`, stage 2's notes, written with no earlier report in view, on the period and, in `notes/sample-*.md`, on the older sample from before it; `sessions/` and `sample/`, the digests the notes come from, `sample/` holding {{sample}}; and `versions.md`.
 
-The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. You may read the repos below, and the agent repo `{{agent}}`, and run git's read commands in them as `git -C <repo> <command>`:
+The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. You may read the agent repo `{{agent}}`, and the repos below, and run git's read commands in those as `git -C <repo> <command>`:
 
 {{repos}}
 
