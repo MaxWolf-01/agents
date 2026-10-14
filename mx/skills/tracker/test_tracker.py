@@ -38,8 +38,9 @@ import tracker as tr
 CORPUS = Path(__file__).parent / "corpus"
 
 # The transitions /mx:tracker's Ticket state defines: claim takes an open or review ticket, and a
-# proposal is made open first, at a triage or on the user's word; the worker flips its claim to review; the accept writes done; a ruling before the build,
-# the redo ruling and a claim whose session is lost write open.
+# proposal is made open first, at a triage or on the user's word; the worker flips its claim to
+# review; the accept writes done; a ruling before the build, the redo ruling and a claim whose
+# session is lost write open.
 DEFINED = {
     ("open", "claimed"), ("review", "claimed"),
     ("claimed", "review"), ("review", "done"), ("proposed", "open"), ("review", "open"),
