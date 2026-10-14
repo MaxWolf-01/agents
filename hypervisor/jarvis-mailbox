@@ -15,7 +15,8 @@
 #
 # It runs as root on the host, in a volume Jarvis's container writes, where a symlink of Jarvis's could point root
 # anywhere. So before it touches the volume, it becomes the inbox's owner, the container's user, and can do no more
-# there than Jarvis itself could.
+# there than Jarvis itself could. The volume's parent directories are root's alone, so it enters the workspace first
+# and works in it by relative paths from then on.
 #
 # Set up once: on the laptop, the key, with no passphrase since a timer uses it,
 #   ssh-keygen -t ed25519 -N '' -C hypervisor-jarvis -f ~/.ssh/hypervisor-jarvis
@@ -37,8 +38,8 @@ if ((EUID == 0)); then
 	[[ $(realpath -e "$inbox" 2>/dev/null) == "$(realpath -e "$workspace")/inbox" ]] || { echo "jarvis-mailbox: $inbox is no directory of Jarvis's workspace" >&2; exit 1; }
 	owner=$(stat -c %u "$inbox")
 	((owner != 0)) || { echo "jarvis-mailbox: $inbox belongs to root, not to Jarvis" >&2; exit 1; }
-	cd /
-	exec setpriv --reuid="$owner" --regid="$(stat -c %g "$inbox")" --clear-groups -- "$0"
+	cd "$(realpath -e "$workspace")"
+	exec setpriv --reuid="$owner" --regid="$(stat -c %g "$inbox")" --clear-groups -- env JARVIS_WORKSPACE=. "$0"
 fi
 
 read -ra request <<<"${SSH_ORIGINAL_COMMAND:-}"
