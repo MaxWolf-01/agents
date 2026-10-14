@@ -179,16 +179,16 @@ _Avoid_: session artifact, transcript, notebook, log
 ### Retros
 
 **Retro**:
-A recurring review of one repo and its tracker that runs unattended and keeps a living report; a workflow retro or an architecture retro.
+A recurring review of one repo and its tracker that runs unattended and keeps a living report; a repo retro, or the workflow retro.
 _Avoid_: retrospective, post-mortem, review (a diff's)
 
-**Workflow retro**:
-The agents repo's retro: it reads the sessions of every repo for friction in the workflow, and adds an architecture pass over the agents repo.
-_Avoid_: agents retro, meta-analysis
+**Repo retro**:
+A retro of one repo's code and its proposed tickets, through every lens, reading no session.
+_Avoid_: architecture retro, architecture review
 
-**Architecture retro**:
-The retro of any repo but the agents repo: an architecture pass over the code its recent commits touched, reading no session.
-_Avoid_: repo retro, architecture review
+**Workflow retro**:
+The agents repo's retro: its repo retro, plus a reading of every repo's sessions for friction in the workflow.
+_Avoid_: agents retro, meta-analysis
 
 **Living report**:
 A retro's one report for its repo, which each run rewrites whole from the last few, so the newest holds what the earlier runs found.
