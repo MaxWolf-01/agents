@@ -900,22 +900,25 @@ def test_a_table_taller_than_the_screen_keeps_its_header_and_tally(tmp_path: Pat
 
 @pytest.mark.full_path
 def test_a_table_taller_than_the_screen_folds_its_exited_workers_first(tmp_path: Path, follow):
-    """Ten exited workers of one base, which a screen 8 lines tall and 100 wide holds in two lines
-    under TICKET, beside the running one."""
+    """Ten workers of one base that exited cleanly, which a screen 9 lines tall and 100 wide holds
+    in two lines under TICKET, below the running one and the one that failed."""
     home = tmp_path / "home"
     for n in range(10):
         d = aged(home / ROOT, "agents", f"ticket-{n}", 7200)
+    failed = spawned(d, "broke-one")
+    (d / f"{failed}.status").write_text("attempts=1 exit=1 report=no session=ccc models=claude-opus-5-5\n")
     live = running(d, spawned(d, "busy-one"))
     try:
-        f = follow(home, LINES="8", COLUMNS="100")
+        f = follow(home, LINES="9", COLUMNS="100")
         drawn = f.shows(lambda t: "ticket-9" in t and "busy-one" in t).splitlines()
-        assert len(drawn) == 7, drawn
+        assert len(drawn) == 8, drawn
         assert re.match(r"local +agents/master +busy-one +running", drawn[1])
-        assert drawn[2].split() == ["exited,", "each", "beside", "its", "IDLE"]
-        ticket = drawn[2].index("exited")
-        assert drawn[3][:ticket].split() == ["local", "agents/master"] and not drawn[4][:ticket].strip()
-        assert re.findall(r"ticket-\d 2h", drawn[3] + drawn[4]) == [f"ticket-{n} 2h" for n in range(10)]
-        assert drawn[-2:] == ["", "1 running  10 exited"]
+        assert re.match(r"local +agents/master +broke-one +exited .* exit=1 report=no", drawn[2])
+        assert drawn[3].split() == ["exited,", "each", "beside", "its", "IDLE"]
+        ticket = drawn[3].index("exited")
+        assert drawn[4][:ticket].split() == ["local", "agents/master"] and not drawn[5][:ticket].strip()
+        assert re.findall(r"ticket-\d 2h", drawn[4] + drawn[5]) == [f"ticket-{n} 2h" for n in range(10)]
+        assert drawn[-2:] == ["", "1 running  11 exited"]
     finally:
         live.kill()
 
