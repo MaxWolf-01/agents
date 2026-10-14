@@ -38,9 +38,9 @@ The file: each candidate with every field the scan names, in order of impact, an
 
 Write `{{run}}/deep/lenses.md`.
 
-`{{skills}}/retro/LENSES.md` holds the retro's leading words, which the readers of stage 2 were not given. Search the whole period for what each names: read every file in `notes/`, and search the digests in `sessions/`, the older sample's in `sample/` and the records in `git/` for each word's signs, reading the passages a search finds rather than every digest whole. A word is a lead, never a quota: report what the period shows and leave out a word it does not show.
+`{{skills}}/retro/LENSES.md` holds the retro's leading words and max's questions, which the readers of stage 2 were not given. Search the whole period for what each word names and for each question's answer, in the data the question names: read every file in `notes/`, and search the digests in `sessions/`, the older sample's in `sample/` and the records in `git/` for their signs, reading the passages a search finds rather than every digest whole. A word or a question is a lead, never a quota: report what the period shows and leave out one it does not show.
 
-The file: a section per word the period shows, each instance with what happened, a quote with its source and absolute date, and its cause where you can tell; whether the older sample shows it too; and, last, what recurs across words. Reply with the file's path alone.
+The file: a section per word and per question the period shows, a question's under its number, each instance with what happened, a quote with its source and absolute date, and its cause where you can tell; whether the older sample shows it too; and, last, what recurs across words. Reply with the file's path alone.
 
 ## The permissions' brief
 
