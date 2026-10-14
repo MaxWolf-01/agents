@@ -1110,7 +1110,7 @@ def turn_section(r: Row, settled: dict[str, Settled]) -> str:
     asked = "".join(asked_question(q, settled[q.tag]) for q in t.questions if q.tag in settled)
     asked = f'<div class="asked">{asked}</div>' if asked else ""
     return f"""
-<details class="turn blk" id="t{r.key}" data-block{' open' if r.open else ''}>
+<details class="turn blk" id="t{r.key}" data-block{ended(r)}{' open' if r.open else ''}>
   <summary class="head">
     <span class="rail v-num">{r.key}</span>
     <span class="hl v-h3">{inline(t.headline)}</span>
@@ -1126,7 +1126,7 @@ def chat_row(r: Row) -> str:
     """A chat turn: one compact row with no number, the user's messages behind a click and the
     reply as it was, with nothing to open or close."""
     return f"""
-<article class="turn chat blk" id="{r.key}" tabindex="-1" data-block>
+<article class="turn chat blk" id="{r.key}" tabindex="-1" data-block{ended(r)}>
   <span class="rail"></span>
   <div class="chat-body">
     {you(r)}{"".join(map(peer, r.turn.sent))}
@@ -1134,6 +1134,12 @@ def chat_row(r: Row) -> str:
   </div>
   <span class="v-meta date">{esc(r.when)}</span>
 </article>"""
+
+
+def ended(r: Row) -> str:
+    """When the turn ended, to the second, as the transcript has it: the hub reads it to tell that a message it typed
+    into the session was taken up by a turn the page shows. Nothing where the transcript has no time for the turn."""
+    return f' data-at="{r.turn.written.astimezone().isoformat(timespec="seconds")}"' if r.turn.written else ""
 
 
 def chips(r: Row) -> str:
