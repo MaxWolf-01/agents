@@ -75,7 +75,8 @@ PASTE_CLIP = 600  # pasted text in a message of max's
 # A denial in a transcript that predates `toolDenialKind`: the harness's own wordings, not a shell's "Permission denied".
 DENIAL = re.compile(r"^(Permission to use \S+ has been denied|The user doesn't want to proceed)")
 PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
-IN_FLIGHT = ("open", "claimed", "review")  # a ticket's statuses once ruled on and before it is done
+IN_FLIGHT = tuple(s for s in tracker.STATUSES if s not in ("proposed", "done"))  # ruled on, not done yet
+RETRO = Path("retro")  # in an agent repo: its own report, and a directory per repo its tracker plans that has one
 
 
 @dataclass(frozen=True)
@@ -86,19 +87,24 @@ class Scope:
 
     repo: str | None = None
     """The listed repo whose report this is, where it is not the project's own."""
-    left: frozenset[str] = frozenset()
-    """The listed repos whose report the agent repo holds beside its own, whose tickets it leaves to those."""
+    excluded: frozenset[str] = frozenset()
+    """For the project's own report, the listed repos with a report of their own, whose tickets are theirs."""
+
+    @property
+    def dir(self) -> Path:
+        """Where in the agent repo the report is."""
+        return RETRO / self.repo if self.repo else RETRO
 
     def reads(self, repos: list[str]) -> bool:
-        return self.repo in repos if self.repo else not self.left.intersection(repos)
+        return self.repo in repos if self.repo else not self.excluded.intersection(repos)
 
-    def says(self) -> str:
-        """The sentence a list of tickets carries saying which it holds, for a stage that reads it."""
+    def note(self) -> str:
+        """The sentence a record of tickets carries saying which it holds, for a stage that reads it."""
         if self.repo:
             return f" It holds only the tickets whose `repos:` names `{self.repo}`."
-        if self.left:
-            return (f" It leaves out the tickets whose `repos:` names {', '.join(f'`{n}`' for n in sorted(self.left))}, "
-                    f"each read by that repo's own report, `retro/<name>/report.md`.")
+        if self.excluded:
+            return (f" It leaves out the tickets whose `repos:` names {', '.join(f'`{n}`' for n in sorted(self.excluded))}, "
+                    f"each read by that repo's own report, `{RETRO}/<name>/report.md`.")
         return ""
 
 
@@ -126,7 +132,7 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
             rows.append(dict(id=d.sid, set=where, profile=d.profile, project=d.cwd, start=stamp(d.start),
                              end=stamp(d.end), messages=d.messages))
     (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    collect_git(since, run, repos, until)
+    collect_git(since, run, repos, until, agent, scope)
     (run / "versions.md").write_text(versions(since, until, period, repos))
     collect_permissions(since, run, projects)
     if agent:
@@ -135,7 +141,7 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
 
 def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path, scope: Scope = Scope()) -> None:
     """`git/<repo>.md` and the tickets, what a repo retro reads beside `touched.md` and the code; no session."""
-    collect_git(since, run, [repo], until)
+    collect_git(since, run, [repo], until, agent, scope)
     collect_tickets(run, agent, scope)
 
 
@@ -161,8 +167,10 @@ def latest_commit(repo: Path, since: datetime) -> str:
     return ""
 
 
-def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
-    """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets."""
+def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None,
+                agent: Path | None = None, scope: Scope = Scope()) -> None:
+    """`git/<repo>.md` for each repo: its commits since `since`, and its agent repo's tickets; the
+    tickets of `agent`, the agent repo the report is in, as far as `scope` reads them."""
     (run / "git").mkdir(parents=True, exist_ok=True)
     names = Counter()
     for repo in repos:
@@ -170,7 +178,7 @@ def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime |
         names[name] += 1
         if names[name] > 1:
             name = f"{name}-{names[name]}"
-        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until))
+        (run / "git" / f"{name}.md").write_text(git_record(repo, since, until, agent, scope))
 
 
 def activity(since: datetime, projects: list[Path], cache: Path, repos: list[Path]) -> str:
@@ -270,27 +278,26 @@ def collect_tickets(run: Path, agent: Path, scope: Scope = Scope()) -> None:
         raise subprocess.CalledProcessError(found.returncode, found.args, found.stdout, found.stderr)
     texts = {Path(path).stem: git(agent, "show", f"{sha}:{path}")
              for path in sorted(line.split(":", 1)[1] for line in found.stdout.splitlines())}
-    tickets = [t for slug, text in texts.items() if scope.reads((t := tracker.read(Path(f"{slug}.md"), text)).repos)]
+    parsed = [tracker.read(Path(f"{slug}.md"), text) for slug, text in texts.items()]
+    tickets = [t for t in parsed if scope.reads(t.repos)]
     for name, title, statuses in (("proposed", "Proposed tickets", ("proposed",)), ("in-flight", "Tickets in flight", IN_FLIGHT)):
         chosen = [t for t in tickets if t.status in statuses]
         (run / name).mkdir(parents=True, exist_ok=True)
-        for stale in (run / name).glob("*.md"):  # a run again into the same directory replaces its tickets
-            stale.unlink()
         for t in chosen:
             (run / name / f"{t.slug}.md").write_text(texts[t.slug])
         (run / f"{name}.md").write_text("\n".join([
             f"# {title} ({len(chosen)})", "",
             f"The agent repo `{agent}` at {sha}, when the run collected. Each ticket, as it stood then, is "
-            f"`{name}/<slug>.md`.{scope.says()}", "",
+            f"`{name}/<slug>.md`.{scope.note()}", "",
             *(f"- {t.slug}" + ("" if name == "proposed" else f": {t.status}") for t in chosen)]) + "\n")
 
 
-def hosted(agent: Path) -> frozenset[str]:
+def reported(agent: Path) -> frozenset[str]:
     """The listed repos whose report the agent repo holds beside its own, `retro/<name>/report.md`, at HEAD."""
     if subprocess.run(["git", "-C", str(agent), "rev-parse", "--verify", "--quiet", "HEAD"], capture_output=True).returncode:
         return frozenset()  # no commit yet, so no report
-    paths = git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", "retro").splitlines()
-    return frozenset(parts[1] for parts in map(lambda p: Path(p).parts, paths) if len(parts) == 3 and parts[2] == "report.md")
+    paths = git(agent, "ls-tree", "-r", "--name-only", "HEAD", "--", str(RETRO)).splitlines()
+    return frozenset(Path(p).parent.name for p in paths if Path(p).match(f"{RETRO}/*/report.md"))
 
 
 def listed_name(agent: Path, repo: Path) -> str:
@@ -615,8 +622,12 @@ def commits(repo: Path, since: datetime, *paths: str, until: datetime | None = N
     return rows
 
 
-def git_record(repo: Path, since: datetime, until: datetime | None = None) -> str:
-    """A repo's commits since `since` in markdown, its reverts, and its agent repo's tickets."""
+def git_record(repo: Path, since: datetime, until: datetime | None = None, report: Path | None = None,
+               scope: Scope = Scope()) -> str:
+    """A repo's commits since `since` in markdown, its reverts, and its agent repo's tickets. A
+    repo with no agent repo of its own, in the run of a report `scope` keeps for it, reads its
+    tickets in `report`, the agent repo that report is in; the tickets of `report` are the ones
+    `scope` reads, wherever they are read."""
     rows = commits(repo, since, until=until)
     out = [f"# {repo.resolve()} since {stamp(since)}", "", f"## Commits ({len(rows)})", ""]
     for c in rows:
@@ -625,19 +636,30 @@ def git_record(repo: Path, since: datetime, until: datetime | None = None) -> st
     reverts = [c for c in rows if c["subject"].startswith("Revert") or "This reverts commit" in c["body"]]
     out += ["", f"## Reverts ({len(reverts)})", ""] + [f"- {c['sha'][:10]} {c['date']}: {c['subject']}" for c in reverts]
     agent = repo / "agent"
-    if (agent / ".git").exists():
-        out += ["", ticket_record(agent, since, until)]
+    if not (agent / ".git").exists():
+        agent = report if report and scope.repo else None
+    if agent:
+        mine = report is not None and agent.resolve() == report.resolve()
+        out += ["", ticket_record(agent, since, until, scope if mine else Scope())]
     return "\n".join(out) + "\n"
 
 
-def ticket_record(agent: Path, since: datetime, until: datetime | None) -> str:
-    """An agent repo's tickets in the period: filed, every status change, deleted (dropped or
-    retired, as the commit says), and each worker report as committed."""
+def ticket_record(agent: Path, since: datetime, until: datetime | None, scope: Scope = Scope()) -> str:
+    """An agent repo's tickets in the period that `scope` reads: filed, every status change,
+    deleted (dropped or retired, as the commit says), and each worker report as committed."""
+    def reads(sha: str, slug: str) -> bool:
+        if scope == Scope():
+            return True
+        done = subprocess.run(["git", "-C", str(agent), "show", f"{sha}:tickets/{slug}.md"], capture_output=True, text=True)
+        return scope.reads(tracker.read(Path(f"{slug}.md"), done.stdout).repos if done.returncode == 0 else [])
+
     filed, changes, deleted = [], [], []
     for c in reversed(commits(agent, since, "tickets", until=until)):
         diff = git(agent, "show", "--format=", "--no-renames", c["sha"], "--", "tickets")
         for path, before, after, status in file_diffs(diff):
             slug = Path(path).stem
+            if not reads(f"{c['sha']}^" if status == "deleted" else c["sha"], slug):
+                continue
             if status == "added":
                 filed.append(f"- {slug} ({c['date']}, {c['subject']}): {after or '?'}")
             elif status == "deleted":
@@ -647,9 +669,11 @@ def ticket_record(agent: Path, since: datetime, until: datetime | None) -> str:
     reports = []
     for c in reversed(commits(agent, since, "show/*/report.md", until=until)):
         for path in git(agent, "show", "--format=", "--name-only", "--diff-filter=AM", c["sha"], "--", "show/*/report.md").split():
+            if not reads(c["sha"], Path(path).parent.name):
+                continue
             text = git(agent, "show", f"{c['sha']}:{path}").strip()
             reports.append(f"### {path} ({c['date']}, {c['subject']})\n\n{text}")
-    return "\n".join(["## Tickets", "", f"### Filed ({len(filed)})", "", *filed, "",
+    return "\n".join(["## Tickets", "", f"In `{agent}`.{scope.note()}", "", f"### Filed ({len(filed)})", "", *filed, "",
                       f"### Status changes ({len(changes)})", "", *changes, "",
                       f"### Deleted ({len(deleted)})", "", *deleted, "",
                       f"## Worker reports ({len(reports)})", "", *reports])
@@ -741,7 +765,7 @@ def main(command: Sessions | Git) -> None:
     cache = command.cache or command.run.parent / "digest-cache"
     refuse_inside_git(command.run, cache)
     collect_sessions(since, datetime.now(UTC), command.run, cache, command.projects, command.repos, agent=command.agent,
-                     scope=Scope(left=hosted(command.agent)) if command.agent else Scope())
+                     scope=Scope(excluded=reported(command.agent)) if command.agent else Scope())
 
 
 if __name__ == "__main__":

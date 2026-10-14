@@ -4,21 +4,22 @@
 # dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Run a retro on a repo: collect, then one model run per stage, then commit the living report and
-its page into `retro/` of the repo's agent repo, in its main checkout.
+its page into the agent repo the report is kept in, in its main checkout.
+
+The report is `retro/report.md` in the repo's own agent repo. A repo whose `agent/` is no git repo
+of its own is refused, unless --tracker names the project whose tracker plans it: its report is
+then `retro/<name>/report.md` in that project's agent repo, `<name>` what the project's
+`agent/repos.toml` calls the repo. Its run reads the tickets there whose `repos:` names it, and
+the project's own report leaves those out once that report exists.
 
 The repo's kind decides what a run reads and which stages it runs. The agents repo, which holds
 the mx plugin, gets the workflow retro: it reads the sessions of every Claude Code profile under
 the home (`~/.claude*/projects`) and the git of the agents repo and of the repos `retro/repos`
 lists in its agent repo, one path per line, and runs read-fresh, follow-up, go-deep, the lens pass and synthesize. Any
-other repo gets a repo retro: it reads the repo's own commits and its agent repo's tickets, and no
-session, and runs follow-up, the lens pass and synthesize. A repo whose `agent/` is no git repo of
-its own is refused, since the report lives there, unless --tracker names the project whose tracker
-plans it: its report is then `retro/<name>/report.md` in that project's agent repo, `<name>` what
-the project's `agent/repos.toml` calls the repo, and the tickets it reads are those whose `repos:`
-names it, which the project's own report, `retro/report.md`, leaves out once that report exists.
-Wherever this says `retro/report.md` below, such a repo's run reads its own.
+other repo gets a repo retro: it reads the repo's own commits and the tickets of the agent repo
+its report is in, and no session, and runs follow-up, the lens pass and synthesize.
 
-A run's period starts where the last run committed to `retro/report.md` ended, or at --since; a
+A run's period starts where the last run committed to the report ended, or at --since; a
 repo retro's first run, given no --since, takes the four weeks before it. Everything a run writes
 but the report lives in its run directory, `<data>/<repo>/runs/<end of period>/`, outside every git
 repo: what collect gathered, each stage's prompt, notes and output, and the new report. Each event
@@ -29,7 +30,7 @@ The workflow retro's first, read-fresh, may read nothing outside it either, and 
 earlier reports are copied into it, under `previous/`. A repo retro's stages may not read the
 session pages in the agent repo its report is in, and run no git command there.
 
-The commit holds `retro/report.md` and `retro/report.html` alone, and leaves whatever else is
+The commit holds the report and its page, `report.html` beside it, alone, and leaves whatever else is
 staged in the agent repo staged. It is not made, and the report stays in the run directory, when
 the agent repo is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, when either file has
 changes of its own there, or when the report was committed to while the run ran. Nothing is pushed.
@@ -44,8 +45,8 @@ repo or a repo `retro/repos` lists; for a repo retro, a commit on any branch of 
 that it skipped and exits 3, having run no stage.
 
 A run that ended without its commit, once collect had finished, is resumed with --resume and its
-directory: it keeps the run's repo, period, focus and seed, picks up at the first stage that left
-out a file it owes, and commits as any run does.
+directory, and the --tracker it started with: it keeps the run's repo, period, focus and seed,
+picks up at the first stage that left out a file it owes, and commits as any run does.
 
 Examples:
 
@@ -137,28 +138,31 @@ class Place:
     """Where a repo's living report is committed, and which tickets of that agent repo its runs read."""
     agent: Path
     """The agent repo's main checkout."""
-    dir: str
-    """`retro`, or for a repo planned from the agent repo's project `retro/<name>`, its repo list's name for it."""
     scope: retro_collect.Scope
+
+    @property
+    def dir(self) -> str:
+        return str(self.scope.dir)
 
     @property
     def report(self) -> str:
         return f"{self.dir}/report.md"
 
 
-def place_of(repo: Path, kind: Kind, tracker: Path | None) -> Place:
+def place_of(repo: Path, tracker: Path | None) -> Place:
     """The repo's own agent repo, or given `tracker`, the agent repo of that project, whose repo
     list names the repo. Exits when the report has no such place."""
     if tracker is None:
         agent = main_checkout(repo / "agent")
-        return Place(agent, "retro", retro_collect.Scope(left=retro_collect.hosted(agent)))
-    if kind is WORKFLOW:
-        sys.exit(f"{repo} gets the workflow retro, whose report is its own agent repo's; --tracker is for a repo retro")
+        return Place(agent, retro_collect.Scope(excluded=retro_collect.reported(agent)))
     if (repo / "agent" / ".git").exists():
         sys.exit(f"{repo} has an agent repo of its own, which its report is committed in; run its retro without --tracker")
     agent = main_checkout(tracker.expanduser().resolve() / "agent")
-    name = retro_collect.listed_name(agent, repo)
-    return Place(agent, f"retro/{name}", retro_collect.Scope(repo=name))
+    place = Place(agent, retro_collect.Scope(repo=retro_collect.listed_name(agent, repo)))
+    if (agent / place.dir).exists() and not (agent / place.dir).is_dir():
+        sys.exit(f"{agent / place.dir} is a file, where the report of the repo {agent / retro_collect.tracker.REPO_LIST} calls "
+                 f"{place.scope.repo} would go; rename the repo there")
+    return place
 
 
 # ── what runs ────────────────────────────────────────────────────────────────
@@ -186,7 +190,7 @@ def retro(repo: Path, data: Path, projects: Sequence[Path], since: datetime | No
     if not repo.is_dir():
         sys.exit(f"{repo} does not exist")
     kind = kind_of(repo)
-    place = place_of(repo, kind, tracker)
+    place = place_of(repo, tracker)
     agent = place.agent
     runs = run_commits(place)
     seed = [Path(p).expanduser().resolve() for p in seed]
@@ -303,7 +307,8 @@ def resumed(run: Path, repo: Path, place: Place, since: datetime | None, focus: 
     if state.get("repo") != str(repo):
         sys.exit(f"{run} is a run of {state.get('repo', 'a repo its run.json does not name')}, not of {repo}; start a new run")
     report = place.agent / place.report
-    if (was := state.get("report", str(place.agent / "retro/report.md"))) != str(report):  # a run.json before --tracker names none
+    own = place.agent / Place(place.agent, retro_collect.Scope()).report  # what a run.json written before --tracker was for
+    if (was := state.get("report", str(own))) != str(report):
         sys.exit(f"{run} is a run for {was}, not for {report}; resume it with the --tracker it started with")
     if blob(place.agent, place.report) != state["base"]:
         sys.exit(f"{report} was committed to since {run.name} began; start a new run, which reads it as it is")
@@ -592,7 +597,7 @@ class Args:
     focus: str = ""
     """What max names for this run to look at: a pattern ("the tests are overbuilt"), which becomes one of a workflow retro's deep-dives, or a module or pain point, which directs the lens pass."""
     since: str = ""
-    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to `retro/report.md`, and for a repo retro's first run four weeks before its end."""
+    """The period's start, an ISO date or time, UTC where it names no offset; by default the end of the last run committed to the report, and for a repo retro's first run four weeks before its end."""
     seed: list[Path] = field(default_factory=list)
     """Files the run's later stages read as earlier reports, beside those in git history; no two may share a name."""
     data: Path = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "retro"

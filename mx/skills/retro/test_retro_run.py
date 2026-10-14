@@ -105,6 +105,32 @@ def repo(tmp_path: Path) -> Path:
     return repo
 
 
+def plan_quartz(tmp_path: Path, code: Path) -> Path:
+    """A repo with no agent repo of its own, with a commit in the period, which the dotfiles' tracker
+    plans: its repo list calls it `quartz`, by a path from the project root, and its tickets of each
+    status name it in `repos:`, name another listed repo, or name none. One of quartz's has a worker
+    report."""
+    quartz = tmp_path / "quartz-knowledge-base"
+    quartz.mkdir()
+    git(quartz, "init", "-q", "-b", "v4")
+    commit(quartz, {"quartz.config.ts": "1"}, "quartz: dark mode", SINCE + timedelta(days=1))
+    commit(code / "agent", {"repos.toml": '[quartz]\npath = "../quartz-knowledge-base"\nintegration = "v4"\n\n'
+                                          '[secrets]\npath = "secrets"\n',
+                            "tickets/search-index.md": ticket("proposed", ("quartz",)),
+                            "tickets/theme-toggle.md": ticket("open", ("quartz",)),
+                            "tickets/graph-view.md": ticket("done", ("quartz",)),
+                            "tickets/rotate-keys.md": ticket("proposed", ("secrets",)),
+                            "tickets/backup-timer.md": ticket("claimed"),
+                            "show/theme-toggle/report.md": "## Comments\n\nTHEME-TOGGLE-REPORT\n"},
+           "plan quartz", SINCE + timedelta(days=1))
+    return quartz
+
+
+@pytest.fixture
+def quartz(tmp_path: Path, code: Path) -> Path:
+    return plan_quartz(tmp_path, code)
+
+
 def retro(tmp_path: Path, repo: Path, until: datetime, since: datetime | None = None) -> Path:
     projects = tmp_path / ".claude/projects"
     Transcript(projects, str(repo), until - timedelta(days=2)).says("why is the suite so slow").answers("Looking.")
@@ -491,28 +517,6 @@ def test_a_run_that_fails_before_its_stages_says_why_as_its_last_line(tmp_path: 
 # ── a repo planned from another project's tracker ────────────────────────────
 
 
-def plan_quartz(tmp_path: Path, code: Path) -> Path:
-    """A repo with no agent repo of its own, with a commit in the period, which the dotfiles' tracker
-    plans: its repo list calls it `quartz`, by a path from the project root, and its tickets of each
-    status either name it in `repos:` or do not."""
-    quartz = tmp_path / "quartz-knowledge-base"
-    quartz.mkdir()
-    git(quartz, "init", "-q", "-b", "v4")
-    commit(quartz, {"quartz.config.ts": "1"}, "quartz: dark mode", SINCE + timedelta(days=1))
-    commit(code / "agent", {"repos.toml": '[quartz]\npath = "../quartz-knowledge-base"\nintegration = "v4"\n',
-                            "tickets/search-index.md": ticket("proposed", ("quartz",)),
-                            "tickets/theme-toggle.md": ticket("open", ("quartz",)),
-                            "tickets/graph-view.md": ticket("done", ("quartz",)),
-                            "tickets/backup-timer.md": ticket("claimed")},
-           "plan quartz", SINCE + timedelta(days=1))
-    return quartz
-
-
-@pytest.fixture
-def quartz(tmp_path: Path, code: Path) -> Path:
-    return plan_quartz(tmp_path, code)
-
-
 def tickets(run: Path, kind: str) -> list[str]:
     """The slugs a run collected as `proposed` or `in-flight`, as its list names them and its directory holds them."""
     named = [line[2:].split(":")[0] for line in (run / f"{kind}.md").read_text().splitlines() if line.startswith("- ")]
@@ -529,13 +533,19 @@ def test_a_repo_planned_from_another_projects_tracker_gets_its_report_there_read
     run = retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
 
     assert (stub / "order").read_text().split("\n")[:-1] == ["follow up", "lens pass", "synthesize"]
-    assert "quartz: dark mode" in (run / "git/quartz-knowledge-base.md").read_text()
     assert tickets(run, "proposed") == ["search-index"] and tickets(run, "in-flight") == ["theme-toggle"]
+    assert "only the tickets whose `repos:` names `quartz`" in (run / "proposed.md").read_text(), \
+        "the stages are told the list is the planned repo's alone"
+    record = (run / "git/quartz-knowledge-base.md").read_text()
+    assert "quartz: dark mode" in record
+    filed = record.split("### Filed")[1].split("###")[0]
+    assert "- search-index (" in filed and "- theme-toggle (" in filed and "flaky-backup" not in filed and "rotate-keys" not in filed
+    assert "THEME-TOGGLE-REPORT" in record, "its tickets' worker reports are read with them"
     subject, _, *files = git(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")
     assert subject == f"retro(quartz): the repo retro of {SINCE.date()} to {FIRST.date()}"
     assert [f for f in files if f] == ["retro/quartz/report.html", "retro/quartz/report.md"]
     assert git(agent, "diff", "--cached", "--name-only").split() == ["tickets/backup-timer.md"], \
-        "the session's staged ticket is neither committed nor unstaged"
+        "nothing else is committed in the project's agent repo, nor unstaged"
     assert not (agent / "retro/report.md").exists() and not (quartz / "agent").exists()
     for stage in ("follow up", "lens pass", "synthesize"):
         args = (stub / f"{stage}.argv").read_text().splitlines()
@@ -552,21 +562,28 @@ def test_the_projects_own_repo_retro_leaves_the_tickets_of_a_repo_with_a_report_
 
     run = retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST + timedelta(hours=1))
 
-    assert tickets(run, "proposed") == ["flaky-backup"] and tickets(run, "in-flight") == ["backup-timer"]
+    assert tickets(run, "proposed") == ["flaky-backup", "rotate-keys"] and tickets(run, "in-flight") == ["backup-timer"]
+    assert "leaves out the tickets whose `repos:` names `quartz`" in (run / "in-flight.md").read_text()
+    record = (run / "git/dotfiles.md").read_text()
+    filed = record.split("### Filed")[1].split("###")[0]
+    assert "- rotate-keys (" in filed and "search-index" not in filed and "theme-toggle" not in filed
+    assert "THEME-TOGGLE-REPORT" not in record
     assert git(code / "agent", "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
 
 
-def test_a_planned_repos_retro_is_gated_on_a_commit_since_its_own_last_run(
+def test_a_planned_repos_retro_is_gated_on_its_own_last_run_and_reads_its_own_earlier_report(
         tmp_path: Path, stub: Path, code: Path, quartz: Path) -> None:
-    retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
+    first = retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
     commit(quartz, {"notes.md": "1"}, "quartz: a note", FIRST + timedelta(days=1))
     retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + timedelta(days=2))  # the project's own run, after it
 
-    retro_run.run_retro(quartz, tmp_path / "data", [], until=FIRST + WEEK, if_active=True, tracker=code)
+    second = retro_run.run_retro(quartz, tmp_path / "data", [], until=FIRST + WEEK, if_active=True, tracker=code)
     started = next(line for line in reversed((tmp_path / "data/quartz-knowledge-base/runs.log").read_text().splitlines())
                    if " started: " in line)
     assert f"{retro_run.stamp(FIRST)} to {retro_run.stamp(FIRST + WEEK)}" in started
     assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {quartz}" in started
+    assert (second / "previous/current.md").read_text() == (first / "report.md").read_text(), \
+        "the earlier report it reads is its own, not the project's"
 
     with pytest.raises(SystemExit) as stopped:
         retro_run.run_retro(quartz, tmp_path / "data", [], until=FIRST + 2 * WEEK, if_active=True, tracker=code)
@@ -574,19 +591,42 @@ def test_a_planned_repos_retro_is_gated_on_a_commit_since_its_own_last_run(
     assert last_logged(tmp_path, "quartz-knowledge-base") == f"skipped: no commit in {quartz} since {retro_run.stamp(FIRST + WEEK)}"
 
 
-@pytest.mark.parametrize("case", ["a repo the project does not list", "a repo with an agent repo of its own"])
+def test_a_planned_repos_run_is_resumed_only_for_the_report_it_started_for(
+        tmp_path: Path, stub: Path, code: Path, quartz: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    other = tmp_path / "notes-project"  # another project whose tracker also lists quartz
+    for r in (other, other / "agent"):
+        r.mkdir()
+        git(r, "init", "-q", "-b", "main")
+    commit(other / "agent", {"repos.toml": f'[kb]\npath = "{quartz}"\n', "tickets/x.md": ticket("open")}, "list kb", SINCE)
+    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
+    with pytest.raises(SystemExit):
+        retro_run.run_retro(quartz, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
+    run = tmp_path / "data/quartz-knowledge-base/runs" / retro_run.dirname(FIRST)
+    head = git(other / "agent", "rev-parse", "HEAD")
+
+    with pytest.raises(SystemExit, match=f"is a run for {code / 'agent/retro/quartz/report.md'}"):
+        retro_run.run_retro(quartz, tmp_path / "data", [], resume=run, tracker=other)
+
+    assert git(other / "agent", "rev-parse", "HEAD") == head and not (other / "agent/retro").exists()
+
+
+@pytest.mark.parametrize("case", ["a repo the project does not list", "a repo with an agent repo of its own",
+                                  "a name a file in retro/ holds"])
 def test_a_retro_given_a_tracker_that_cannot_hold_its_report_is_refused_with_the_reason(
-        tmp_path: Path, stub: Path, code: Path, quartz: Path, case: str) -> None:
+        tmp_path: Path, stub: Path, repo: Path, code: Path, quartz: Path, case: str) -> None:
     agent = code / "agent"
     if case == "a repo the project does not list":
-        repo, said = tmp_path / "jarvis", f"lists no repo at {tmp_path / 'jarvis'}"
-        repo.mkdir()
-        git(repo, "init", "-q")
+        target, said = tmp_path / "jarvis", f"lists no repo at {tmp_path / 'jarvis'}"
+        target.mkdir()
+        git(target, "init", "-q")
+    elif case == "a repo with an agent repo of its own":
+        target, said = repo, "has an agent repo of its own"
     else:
-        repo, said = code, "has an agent repo of its own"
+        commit(agent, {"retro/quartz": "a file\n"}, "a file where quartz's report would go", SINCE)
+        target, said = quartz, "is a file, where the report of the repo"
     head = git(agent, "rev-parse", "HEAD")
 
     with pytest.raises(SystemExit, match=said):
-        retro_run.run_retro(repo, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
+        retro_run.run_retro(target, tmp_path / "data", [], SINCE, until=FIRST, tracker=code)
 
     assert git(agent, "rev-parse", "HEAD") == head and not list(stub.glob("*.argv"))
