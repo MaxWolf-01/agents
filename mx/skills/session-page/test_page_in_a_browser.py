@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The session page running in a browser. Run: uv run test_page_in_a_browser.py
 

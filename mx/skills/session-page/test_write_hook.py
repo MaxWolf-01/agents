@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The write hook's properties. Run: uv run test_write_hook.py
 

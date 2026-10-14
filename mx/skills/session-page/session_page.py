@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
@@ -37,6 +37,9 @@ from typing import Literal, TypeVar
 
 import yaml
 from markdown_it import MarkdownIt
+from markdown_it.common.normalize_url import validateLink
+from markdown_it.rules_core import linkify
+from markdown_it.rules_inline import linkify as linkify_inline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
@@ -1259,7 +1262,29 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
-MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
+def links_in_text(state) -> None:
+    """A bare URL in the text made a link, short of text that sits inside a link of its own. Only
+    a URL with its scheme: fuzzy matching would take `session_page.py` for a domain in Paraguay.
+    markdown-it finds them twice, while it parses a line and after, so both of its rules ask."""
+    if state.env.get("paths", True):
+        linkify(state)
+
+
+def links_in_line(state, silent: bool) -> bool:
+    return state.env.get("paths", True) and linkify_inline(state, silent)
+
+
+def file_links_too(url: str) -> bool:
+    """markdown-it's check of a link's target, short of its ban on `file:`: a reply links a file on
+    this machine that way, the PDF in `~/Downloads` say, and the page is the reader's own."""
+    return url.strip().lower().startswith("file:") or validateLink(url)
+
+
+MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable(["table", "linkify"])
+MARKDOWN.linkify.set({"fuzzy_link": False, "fuzzy_email": False})
+MARKDOWN.core.ruler.at("linkify", links_in_text)
+MARKDOWN.inline.ruler.at("linkify", links_in_line)
+MARKDOWN.validateLink = file_links_too
 CODE_INLINE = MARKDOWN.renderer.rules["code_inline"]
 MARKDOWN.add_render_rule("link_open", link_open)
 MARKDOWN.add_render_rule("code_inline", code_inline)

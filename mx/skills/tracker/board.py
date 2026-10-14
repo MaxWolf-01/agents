@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["tyro", "pyyaml", "markdown", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown", "markdown-it-py[linkify]"]
 # ///
 """Render the tracker board: one HTML page for a tracker's whole agent/tickets tree.
 
