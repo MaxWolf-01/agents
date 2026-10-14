@@ -1,6 +1,6 @@
 
 /* The session page, on the house tokens read in before it. */
-:root { --size-body: 17px; --leading-body: 1.58; --rail: 2.75rem; --measure: 44rem; --column: 16rem; --pad: 1.75rem; --bar: 2.3rem; }
+:root { --size-body: 17px; --leading-body: 1.58; --rail: 2.75rem; --measure: 44rem; --column: 17.5rem; --pad: 1.75rem; --bar: 2.3rem; }
 
 code { font-size: 0.84em; background: var(--ground-2); padding: 0.08em 0.32em; border-radius: 3px; }
 kbd { display: inline-block; min-width: 1.35em; box-sizing: border-box; padding: 0 0.3em; border: 1px solid var(--edge); border-radius: 3px; background: var(--ground-2); font: 400 0.72rem/1.5 var(--font-mono); color: var(--muted); text-align: center; }
@@ -17,7 +17,9 @@ p, h1, h2, h3 { margin: 0; }
 html, body { height: 100%; }
 body { display: flex; flex-direction: column; overflow: hidden; }
 .bar { flex: none; display: flex; align-items: center; gap: 0.5rem; min-height: var(--bar); padding: 0 1.25rem; box-sizing: border-box; border-bottom: 1px solid var(--edge); }
-.bar .where { flex: 1; }
+.bar .where { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .where .sep { margin: 0 0.45em; opacity: 0.55; }
+.bar .where .name { color: var(--body); }
 .icon { display: inline-flex; align-items: center; padding: 0.3rem; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color 150ms; }
 .icon:hover { color: var(--accent); }
 .icon kbd { font-size: 0.78rem; }
@@ -57,22 +59,26 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .fade-b { mask-image: linear-gradient(to top, #0002 0, #000 var(--fade)); }
 .fade-t.fade-b { mask-image: linear-gradient(to bottom, #000 0 var(--head), #0002 var(--head), #000 calc(var(--head) + var(--fade)), #000 calc(100% - var(--fade)), #0002 100%); }
 
-/* the timeline: every numbered turn, its artefacts under its number, or its headline where it has none */
+/* the timeline: a spine down the turns, each turn's number left of it, a dot on it at the turn's headline, and
+   the artefacts the turn linked under the headline */
 .column { position: relative; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: 0 1rem 2rem 1.1rem; border-left: 1px solid var(--edge); background: var(--ground); --head: 2.75rem; }
-.column-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 2.75rem; background: var(--ground); }
-.column .group { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: baseline; padding: 0.1rem 0; }
-.column .group + .group { margin-top: 0.75rem; }
-.column .group.bare + .group.bare { margin-top: 0.3rem; }
-.column .turn-ref { color: var(--muted); }
+.column-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 2.75rem; margin-bottom: 0.35rem; background: var(--ground); }
+.column .group { display: grid; grid-template-columns: 1.9rem minmax(0, 1fr); align-items: baseline; }
+.column .turn-ref { color: var(--muted); font-size: 0.78rem; text-decoration: none; }
 .column .turn-ref:hover, .column .group.cur .turn-ref { color: var(--accent); }
-.column .group.cur .hl { color: var(--body); }
-.column ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
-.column li { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); align-items: baseline; font-size: 0.82rem; line-height: 1.45; }
+.column .tl { position: relative; min-width: 0; padding: 0 0 0.95rem 0.95rem; border-left: 1px solid var(--edge); }
+.column .group:last-child .tl { border-left-color: transparent; }
+.column .tl::before { content: ""; position: absolute; left: -4px; top: 0.42em; width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--edge); background: var(--ground); }
+.column .group.cur .tl::before { border-color: var(--accent); background: var(--accent); }
+.column .hl { display: block; font-size: 0.86rem; line-height: 1.4; color: var(--body); text-decoration: none; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; transition: color 150ms; }
+.column .group.bare .hl { color: var(--muted); }
+.column .hl:hover { color: var(--accent); }
+.column .group.cur .hl { color: var(--strong); }
+.column ol { list-style: none; margin: 0.35rem 0 0; padding: 0; display: grid; gap: 0.2rem; }
+.column li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); align-items: baseline; font-size: 0.8rem; line-height: 1.45; }
 .column .n { justify-self: start; }
 .column a.artefact { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .column a.artefact:hover { text-decoration: underline; text-underline-offset: 3px; }
-.column .hl { min-width: 0; font-size: 0.78rem; line-height: 1.45; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.column .hl:hover { color: var(--accent); }
 
 /* the control to the newest turn, marked while a turn has arrived that the reader has not reached */
 .newest { display: inline-flex; align-items: center; gap: 0.35rem; height: 1.6rem; padding: 0 0.45rem; border: 1px solid var(--edge); border-radius: var(--radius); background: none; color: var(--muted); font: 400 0.72rem/1 var(--font-mono); white-space: nowrap; cursor: pointer; transition: color 150ms, border-color 150ms; }
@@ -89,7 +95,11 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .intro > .v-meta { margin-top: 0.4rem; }
 .intro:not(.unfolded) :is(.brief, .actions) { display: none; }
 .intro .nowrap { white-space: nowrap; }
+/* where the session came from and went: a line under the title, each session by its title */
+.handoffs { margin-top: 0.35rem; font-size: 0.92rem; line-height: 1.5; color: var(--body); }
+.handoffs > .v-meta { margin-right: 0.35rem; }
 .handoffs a { color: var(--accent); text-decoration: none; }
+.handoffs a .v-meta { margin-left: 0.25rem; }
 .handoffs a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .unfold { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; }
 .unfold::after { content: " ▾"; }
@@ -100,7 +110,6 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 #resume.copied { border-color: var(--accent); color: var(--accent); }
 button.id { padding: 0; border: none; border-bottom: 1px dotted currentColor; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; transition: color 150ms; }
 button.id:hover { color: var(--accent); }
-.actions .name { color: var(--body); }
 
 .blk { position: relative; }
 .blk.cur::before { content: ""; position: absolute; left: -1rem; top: 0.35rem; bottom: 0.35rem; width: 2px; border-radius: 1px; background: var(--accent); }

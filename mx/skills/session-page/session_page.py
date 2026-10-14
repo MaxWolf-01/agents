@@ -152,7 +152,17 @@ def read_session(directory: Path, transcript: Path, pending: tuple[dict, ...] = 
         root=root,
         previous=previous if previous and (directory.parent / previous / PAGE).exists() else "",
         following=successors(directory),
+        titles={other: title_of(directory.parent / other) for other in (previous, *successors(directory)) if other},
     )
+
+
+def title_of(directory: Path) -> str:
+    """The H1 of another session's `session.md`, which names its subject; empty where it has none."""
+    try:
+        heading = re.search(r"^# (.+)$", (directory / "session.md").read_text(), re.M)
+    except OSError:
+        return ""
+    return heading[1].strip() if heading else ""
 
 
 def predecessor(directory: Path) -> str:
@@ -339,6 +349,7 @@ class Session:
     described: datetime | None = None  # when the transcript last shows session.md written
     previous: str = ""  # the session whose continuation handoff this one picked up, where that one has a page
     following: tuple[str, ...] = ()  # the sessions that picked up a continuation handoff of this one
+    titles: dict[str, str] = field(default_factory=dict)  # those sessions' titles, by id, where their session.md has one
 
 
 # ---- reading the records ----------------------------------------------------
@@ -948,7 +959,7 @@ def assemble(v: View, now: datetime) -> str:
     </section>""" if v.waiting else ""
     body = "".join(chat_row(r) if isinstance(r.turn, Chat) else turn_section(r, session.settled) for r in v.rows)
     title = inline(session.title)
-    name = (f'\n      <span class="v-meta name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
+    name = (f'<span class="sep">·</span><span class="name" id="session-name" title="the session\'s short name">{esc(session.name)}</span>'
             if session.name else "")
     turns = len(v.rows)
     return f"""<!doctype html>
@@ -965,7 +976,7 @@ def assemble(v: View, now: datetime) -> str:
 </head>
 <body>
 <header class="bar">
-  <span class="v-meta where">session page · {esc(session.repo.name)}</span>{newest_control(v.column)}
+  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.column)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
@@ -976,11 +987,11 @@ def assemble(v: View, now: datetime) -> str:
 <main class="panes">
   <div class="left">
     <section class="intro">
-      <h1 class="v-title">{title}</h1>
-      <p class="v-meta">session <button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{handoffs(session)} · {turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
+      <h1 class="v-title">{title}</h1>{handoffs(session)}
+      <p class="v-meta">{turns} turn{'s' * (turns != 1)} · {f"{esc(v.span)} · " if v.span else ""}<span class="nowrap">rendered {f"{now:%H:%M}" if v.span.endswith(f"{now:%Y-%m-%d}") else f"{now:%Y-%m-%d %H:%M}"}</span> · <button class="unfold" id="unfold" aria-expanded="false">brief</button></p>
       <div class="prose brief">{block(session.brief)}</div>
       <div class="actions">
-        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>{name}
+        <button class="button" id="resume" data-cmd="{esc(v.resume)}" title="{esc(v.resume)}"><span>copy resume command</span><kbd>y</kbd></button>
       </div>
     </section>{top}
     <div class="pane" id="turns-pane">
@@ -1001,21 +1012,23 @@ def assemble(v: View, now: datetime) -> str:
 def handoffs(session: Session) -> str:
     """The links to the page of the session this one continued from and to each that continued
     from it, as paths from this page to theirs, which resolve on disk and wherever the hub serves the
-    sessions directory: a part of the meta line, after the session's own id, so they show with the
-    brief folded. Nothing where neither is there."""
+    sessions directory: a line under the title, each by its session's title where it has one, so
+    they show with the brief folded. Nothing where neither is there."""
     def to(other: str) -> str:
-        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{esc(other[:8])}</a>'
-    parts = ([f"continues {to(session.previous)}"] if session.previous else []) + (
-        [f"continued in {', '.join(to(s) for s in session.following)}"] if session.following else [])
-    return f' · <span class="handoffs" id="handoffs">{" · ".join(parts)}</span>' if parts else ""
+        named = session.titles.get(other)
+        text = f'{inline(named, paths=False)} <span class="v-meta">{esc(other[:8])}</span>' if named else esc(other[:8])
+        return f'<a href="../{esc(other)}/{PAGE}" title="{esc(other)}">{text}</a>'
+    parts = ([f'<span class="v-meta">continues</span> {to(session.previous)}'] if session.previous else []) + (
+        [f'<span class="v-meta">continued in</span> {", ".join(to(s) for s in session.following)}'] if session.following else [])
+    return f'\n      <p class="handoffs" id="handoffs">{"<br>".join(parts)}</p>' if parts else ""
 
 
 def column(rows: tuple[Row, ...]) -> str:
     """The timeline: every numbered turn in the order of the turns beside it, each under its
-    number, with the artefacts it linked, or its headline on one line where it linked none."""
+    number with its headline, and under that the artefacts it linked."""
     groups = "".join(f"""
     <section class="group{'' if r.artefacts else ' bare'}" id="a{r.key}">
-      <a class="v-num turn-ref" href="#t{r.key}" title="{esc(strip_tags(inline(r.turn.headline)))}">{r.key}</a>{timeline_row(r)}
+      <a class="v-num turn-ref" href="#t{r.key}">{r.key}</a><div class="tl">{timeline_row(r)}</div>
     </section>""" for r in rows)
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
@@ -1024,11 +1037,10 @@ def column(rows: tuple[Row, ...]) -> str:
 
 
 def timeline_row(r: Row) -> str:
-    """What follows a turn's number in the timeline: its artefacts, or its muted headline."""
-    if not r.artefacts:
-        return f'<a class="hl" href="#t{r.key}" tabindex="-1">{esc(strip_tags(inline(r.turn.headline)))}</a>'
+    """What follows a turn's number in the timeline: its headline, then its artefacts."""
+    headline = esc(strip_tags(inline(r.turn.headline)))
     items = "".join(f"<li>{opening_key(s)}{artefact(s, 'artefact')}</li>" for s in r.artefacts)
-    return f"<ol>{items}</ol>"
+    return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
 
 
 def newest_control(column: tuple[Row, ...]) -> str:
