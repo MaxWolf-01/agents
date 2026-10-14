@@ -1,7 +1,7 @@
-// `hv explore`: explore steps on the hypervisor's own profile, as `/explore` runs them in its TUI (`exploring.ts`). The run
-// lives in the TUI alone: with it open, the command is typed into its pane; with it closed, the command `hv` passes
-// after `--` starts it, with the command as pi's first message, which pi runs once every extension has started. `hv explore --found` prints what the
-// latest run found.
+// `hv explore`: explore steps on the hypervisor's own profile, as `/explore` runs them in its TUI (`exploring.ts`).
+// The run lives in the TUI alone: with it open, the command is typed into its pane; with it closed, what `hv` passes
+// after `--` starts it, with the command as pi's first message, which pi runs once every extension has started.
+// `hv explore --found` prints what the latest run found.
 
 import { execFileSync } from "node:child_process";
 import { parse, USAGE as COMMAND } from "./exploring.ts";
@@ -94,5 +94,5 @@ if (import.meta.main) {
 		process.exit(2);
 	}
 	execFileSync(start[0]!, [...start.slice(1), command], { stdio: "inherit" });
-	console.log("The hypervisor's TUI started, with /explore as its first message: the run goes on there (tmux attach -t hypervisor).");
+	console.log("The hypervisor's TUI was started with /explore as its first message: see there that the run started (tmux attach -t hypervisor).");
 }

@@ -49,7 +49,7 @@ async function runsEnded(n: number) {
 }
 
 test("hv explore starts the closed TUI with the run, then types the next run into the open TUI, and --found reads it back", async () => {
-	assert.match(hvExplore("2", "papers", "on", "ALife"), /TUI started/);
+	assert.match(hvExplore("2", "papers", "on", "ALife"), /TUI was started/);
 	await runsEnded(1);
 	assert.match(hvExplore("1", "the", "news"), /typed into its pane/);
 	await runsEnded(2);

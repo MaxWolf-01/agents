@@ -39,6 +39,7 @@ mkdir -p "$PI_CODING_AGENT_DIR"
 if [[ ! -d $profiles/$profile ]]; then
 	mkdir -p -m 700 "$profiles/$profile"
 	cp "$here/live/config.json" "$profiles/$profile/"
+	echo "hv: no profile $profile in $profiles yet; it starts empty, with live/'s config" >&2
 fi
 # pi reads the profile's instructions on every request, so a link makes an edit to live/ apply on the next turn.
 ln -sfn "$here/live/AGENTS.md" "$profiles/$profile/AGENTS.md"
