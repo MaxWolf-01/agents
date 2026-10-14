@@ -3,9 +3,9 @@
 # requires-python = ">=3.11"
 # dependencies = ["tyro", "pyyaml", "markdown-it-py"]
 # ///
-"""Gather what a workflow retro reads, for the period since a given start, into a run directory.
+"""Gather what a retro reads, for the period since a given start, into a run directory.
 
-`sessions` writes, into the run directory:
+`sessions`, what a workflow retro reads, writes into the run directory:
 
 - `sessions/<id>.md`: a digest of every interactive session with an entry in the period, from
   every Claude Code profile given, holding the period's days alone. A digest keeps the user's
@@ -29,6 +29,9 @@
 `git` writes `git/<repo>.md` alone, for each repo given: its commits in the period with their
 messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
 change, the tickets deleted, and the worker reports committed in the period.
+
+A repo retro reads no session: its run gets the repo's `git/<repo>.md` and `proposed.md` alone,
+and, as a workflow retro's does, `touched.md`, the files the period's commits touched.
 
 Digests are cached per session in the cache directory and digested again only once the
 transcript or its session page changed. Neither the run directory nor the cache may be inside a git work tree.
@@ -99,6 +102,36 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
     collect_permissions(since, run, projects)
     if agent:
         collect_proposed(run, agent)
+
+
+def collect_repo(since: datetime, until: datetime, run: Path, repo: Path, agent: Path) -> None:
+    """`git/<repo>.md` and `proposed.md`, what a repo retro reads beside `touched.md` and the code; no session."""
+    refuse_inside_git(run)
+    collect_git(since, run, [repo], until)
+    collect_proposed(run, agent)
+
+
+def collect_touched(since: datetime, until: datetime, run: Path, repo: Path) -> None:
+    """`touched.md`: the files of `repo` the period's commits touched that it still tracks, by how
+    many of those commits touched each, most first."""
+    refuse_inside_git(run)
+    out = git(repo, "log", "--branches", f"--since-as-filter={since.isoformat()}", f"--until={until.isoformat()}",
+              "--format=", "--name-only")
+    tracked = set(git(repo, "ls-files").splitlines())
+    counts = Counter(path for path in out.splitlines() if path in tracked)
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "touched.md").write_text("\n".join([
+        f"# Files the period's commits touched in {repo.resolve()}", "",
+        f"From {stamp(since)} to {stamp(until)}, on any local branch; each file the repo still tracks, with how many "
+        f"of the period's commits touched it.", "",
+        *(f"- {n} {path}" for path, n in sorted(counts.items(), key=lambda pn: (-pn[1], pn[0])))]) + "\n")
+
+
+def latest_commit(repo: Path, since: datetime) -> str:
+    """The repo's newest commit on any local branch since `since`, or "" when there is none."""
+    if rows := commits(repo, since):
+        return f"a commit at {stamp(parse_time(rows[0]['date']))} in {repo.resolve()} ({rows[0]['sha'][:7]})"
+    return ""
 
 
 def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
@@ -204,17 +237,21 @@ def auto_mode(profile: Path, cwd: Path) -> tuple[str, str]:
 
 
 def collect_proposed(run: Path, agent: Path) -> None:
-    """`proposed.md`: the agent repo's commit now and the tickets proposed at it, by slug."""
+    """`proposed.md`, the agent repo's commit now and the tickets proposed at it, by slug, and
+    `proposed/<slug>.md`, each such ticket as it stands at that commit."""
     sha = git(agent, "rev-parse", "HEAD").strip()
     found = subprocess.run(["git", "-C", str(agent), "grep", "-l", "-E", "^status: *proposed *$", sha, "--", "tickets/*.md"],
                            capture_output=True, text=True)
     if found.returncode > 1:  # 1 is git grep finding nothing
         raise subprocess.CalledProcessError(found.returncode, found.args, found.stdout, found.stderr)
     slugs = sorted(Path(line.split(":", 1)[1]).stem for line in found.stdout.splitlines())
+    (run / "proposed").mkdir(parents=True, exist_ok=True)
+    for slug in slugs:
+        (run / "proposed" / f"{slug}.md").write_text(git(agent, "show", f"{sha}:tickets/{slug}.md"))
     (run / "proposed.md").write_text("\n".join([
         f"# Proposed tickets ({len(slugs)})", "",
-        f"The agent repo `{agent}` at {sha}, when the run collected. A ticket there reads as "
-        f"`git -C {agent} show {sha}:tickets/<slug>.md`.", "",
+        f"The agent repo `{agent}` at {sha}, when the run collected. Each ticket, as it stood then, is "
+        f"`proposed/<slug>.md`.", "",
         *(f"- {slug}" for slug in slugs)]) + "\n")
 
 

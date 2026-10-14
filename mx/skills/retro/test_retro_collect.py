@@ -374,6 +374,7 @@ def test_proposed_names_the_agent_repos_commit_and_the_tickets_proposed_at_it(tm
 
     assert head in proposed
     assert re.findall(r"^- (.+)$", proposed, re.M) == ["hook-noise", "slow-suite"]
+    assert (run / "proposed/hook-noise.md").read_text() == ticket("proposed"), "each as it stood at the commit, not as a session left it"
 
 
 def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_path: Path) -> None:
@@ -388,3 +389,20 @@ def test_the_versions_name_each_mx_release_of_the_period_with_its_commit(tmp_pat
 
     assert f"- 1.0.1 {sha} (" in versions and "mx v1.0.1" in versions
     assert "1.0.0" not in versions
+
+
+def test_touched_names_the_files_the_periods_commits_touched_that_the_repo_still_tracks_most_touched_first(
+        tmp_path: Path) -> None:
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, {"old.py": "1"}, "before the period", SINCE - timedelta(days=1))
+    commit(repo, {"a.py": "1", "b.py": "1"}, "one", SINCE + timedelta(days=1))
+    commit(repo, {"a.py": "2", "gone.py": "1"}, "two", SINCE + timedelta(days=2))
+    commit(repo, {"gone.py": None}, "three", SINCE + timedelta(days=3))
+    commit(repo, {"b.py": "2", "late.py": "1"}, "after the period", UNTIL + timedelta(days=1))
+    run = tmp_path / "data" / "runs" / "1"
+
+    retro_collect.collect_touched(SINCE, UNTIL, run, repo)
+
+    assert re.findall(r"^- (.+)$", (run / "touched.md").read_text(), re.M) == ["2 a.py", "1 b.py"]

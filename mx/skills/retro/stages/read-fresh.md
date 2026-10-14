@@ -1,6 +1,6 @@
-# Workflow retro, stage 2 of 5: read fresh
+# A workflow retro: read fresh
 
-You run stage 2 of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}. Its job is to read the period with fresh eyes: what went wrong for max and for the agents, quoted and dated, before anyone looks at what earlier retros found. The later stages compare your notes with the standing findings; your notes are worth most when they come from the sessions alone.
+You run the read-fresh stage of a workflow retro over max's Claude Code sessions from {{since}} to {{until}}. Its job is to read the period with fresh eyes: what went wrong for max and for the agents, quoted and dated, before anyone looks at what earlier retros found. The later stages compare your notes with the standing findings; your notes are worth most when they come from the sessions alone.
 
 Everything you read and write is in the run directory, `{{run}}`, your working directory:
 
