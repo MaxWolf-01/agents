@@ -63,8 +63,8 @@ Every ticket file is written and committed in the agent repo's main checkout, on
 
 Which status may follow which is `tracker`'s, refused by the rule it names. What they mean:
 
-- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It is on the frontier and built like an open ticket, so what waits is the ruling and not the build; its brief says what it was cut from.
-- **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already; silence is not a ruling.
+- **proposed**: an agent filed it on its own reading (a worker's friction, a review finding, a punt) and the user has not ruled. It waits off the frontier for a **triage** (`/mx:triage`), which drops it, merges it into another ticket, or promotes it to open; the user's own "build this" makes it open at once. Its brief says what it was cut from.
+- **open**: ruled, and not yet built. A ticket the user asked for in conversation is ruled already, and so is a slice of a ticket being cut (SLICING.md); silence is not a ruling.
 - **claimed**: a session holds it, a worker resumed to revise included. Where several run at once, one agent is the sole claim-writer.
 - **review**: the work is finished and waits for the user's **ruling**, made on the calls the landing shows them, or as a line in chat. Which tickets in review unblock their dependents is `tracker frontier --help`'s.
 - **done**: the user's accept, given or standing, and nothing less: the ticket's work has reached the branch the user's accept merges it into, its parent's branch for a hinge, the branch above its parent for any other child, which the parent's accept brings it to. A listed repo is read the same way, its integration branch standing in for the branch the work lands on. A ticket with no code (no range in `diff:` and no branch in any of its repos) is done on the user's ruling once every child ticket is; a ticket the user is in the loop for (`needs-user`), with no branch to merge, at the ruling itself. Each travels the same statuses to get there.

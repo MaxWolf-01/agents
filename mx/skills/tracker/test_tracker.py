@@ -37,11 +37,11 @@ import tracker as tr
 
 CORPUS = Path(__file__).parent / "corpus"
 
-# The transitions /mx:tracker's Ticket state defines: claim takes an open, proposed or review
-# ticket; the worker flips its claim to review; the accept writes done; a ruling before the build,
+# The transitions /mx:tracker's Ticket state defines: claim takes an open or review ticket, and a
+# proposal is made open first, at a triage or on the user's word; the worker flips its claim to review; the accept writes done; a ruling before the build,
 # the redo ruling and a claim whose session is lost write open.
 DEFINED = {
-    ("proposed", "claimed"), ("open", "claimed"), ("review", "claimed"),
+    ("open", "claimed"), ("review", "claimed"),
     ("claimed", "review"), ("review", "done"), ("proposed", "open"), ("review", "open"),
     ("claimed", "open"),
 }
@@ -450,9 +450,10 @@ def test_the_frontier_is_what_can_be_started_now_in_the_order_it_matters(tickets
     ticket(tickets, "flaky-upload", status="review", priority=1)
     ticket(tickets, "retire-exporter", status="done", priority=1)
     ready, _, waiting = run(repo, "frontier").out.partition("waiting\n")
-    assert [line.split()[0] for line in ready.splitlines()] == ["map-columns", "one-flow", "saved-views"], "by priority"
+    assert [line.split()[0] for line in ready.splitlines()] == ["one-flow", "saved-views"], "by priority"
     held = dict(line.split(maxsplit=1) for line in waiting.splitlines())
-    assert held.keys() == {"pick-a-date-library", "speed-up-tests", "flaky-upload"}
+    assert held.keys() == {"map-columns", "pick-a-date-library", "speed-up-tests", "flaky-upload"}
+    assert "waiting for a triage" in held["map-columns"], "a proposal is built once a triage promotes it"
     assert "on the user, who is in the loop for it" in held["pick-a-date-library"]
     assert "claimed, not the frontier's" in held["speed-up-tests"]
     assert "review, not the frontier's" in held["flaky-upload"], "a build waiting on a ruling is nobody's to take up"

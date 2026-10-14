@@ -37,12 +37,12 @@ A property no single slice can make hold means the cut is wrong: merge the slice
 
 ## 3. File them
 
-`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, `--hinge` on a hinge, in dependency order, each `proposed`: its ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
+`tracker new <slug> --parent <the ticket being cut> --priority <1 to 5> --size <XS to XL>` per slice, `--hinge` on a hinge, in dependency order, each `--status open`, so it builds without a triage: how a ticket is cut is the cutting agent's call, and a slice's ruling comes from what it built. The **priority** comes from what the user has said about the work and the slice's place in it; the **size** is the user's own time on the slice, which for most of them is reading the closing comment and the show.
 
 Write each body per the ticket file's shape (`/mx:tracker`, The ticket file). The brief names the calls of the parent ticket this slice rests on, by their call marks, so its worker knows what it builds on; they reach the user when the parent ticket is ruled, and the slice's worker files none of them again.
 
-## 4. Show the breakdown, then dispatch
+## 4. Report the breakdown, then dispatch
 
-Render the board (`/mx:tracker`) and present the breakdown on [the session page](../session-page/RULES.md) as a numbered list: slug, blocked by, what it delivers, with the granularity and the edges you are least sure of named, so the user knows where to look. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
+Check the breakdown's shape yourself against the vertical-slice rules: the cut is yours, and the user judges the built tree at its close-out, not the cut. Render the board (`/mx:tracker`) and report the breakdown on [the session page](../session-page/RULES.md) as a numbered list: slug, blocked by, what it delivers. The step is done when the board is on disk and `/mx:dispatch` holds the frontier.
 
 `/mx:dispatch` takes it straight away, at any size: a fresh worker per ticket, one at a time or in waves.
