@@ -3,7 +3,7 @@
 // one a bare "continue". A run stops before the next step at the first of: N steps taken, its token cap spent, the
 // week's quota used to its share, a step that failed, or a message from max, who is back and whose turn comes first.
 // The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in flight, the
-// hypervisor reads and delegates, and starts or messages no session. `hv offer` asks it to offer max a run.
+// hypervisor reads and delegates, and starts or messages no session.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -40,14 +40,14 @@ export interface Request {
 
 /** Where a run reads what it costs. */
 export interface RunConfig {
-	/** The hypervisor's store: `explore.jsonl` keeps each step's finding and each run's end, beside `hv offer`'s offers. */
+	/** The hypervisor's store: `explore.jsonl` keeps each step's finding and each run's end. */
 	store: string;
 	/** OptChat's usage log for the profile, a line per model call with its cost; without it, a run takes no token cap. */
 	usage?: string;
 }
 
-/** A line of `explore.jsonl`, the journal of explore runs: a step's finding, a run's end, or an offer `hv offer` made. */
-export type JournalLine = { at: string } & (StepLine | EndLine | OfferLine);
+/** A line of `explore.jsonl`, the journal of explore runs: a step's finding or a run's end. */
+export type JournalLine = { at: string } & (StepLine | EndLine);
 export interface StepLine {
 	/** The run's start, which names it. */
 	run: string;
@@ -66,12 +66,6 @@ export interface EndLine {
 	tokens: number;
 	/** The week's use in percent as the run ended, or `unread` when --until-week was asked for and the week never read. */
 	week?: number | "unread";
-}
-export interface OfferLine {
-	/** When the offered week resets, in ms since the epoch. */
-	offer: number;
-	/** Percent of that week used when it was offered. */
-	used: number;
 }
 
 /** A run's state between steps. */

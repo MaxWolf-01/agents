@@ -164,11 +164,13 @@ test("hv starts pi in tmux with the fork's OptChat and this extension, on the pr
 		assert.deepEqual(exploring, [...started, "/explore 3 papers"]);
 		assert.equal(readFileSync(path.join(hvStore, "optchat", "profiles", "hv", "config.json"), "utf8"), readFileSync(path.resolve(import.meta.dirname, "../../live/config.json"), "utf8"));
 
-		// A command hv does not have, as a timer of a newer hv would run on this one, starts nothing.
+		// A command hv does not have, as a timer of a newer hv would run on this one, or a timer left from hv offer, starts nothing.
 		rmSync(calls);
-		const unknown = spawnSync(path.resolve(import.meta.dirname, "../../hv"), ["summarize"], { env, encoding: "utf8" });
-		assert.equal(unknown.status, 2, unknown.stderr);
-		assert.match(unknown.stderr, /^hv: no command summarize;/);
+		for (const command of ["summarize", "offer"]) {
+			const unknown = spawnSync(path.resolve(import.meta.dirname, "../../hv"), [command], { env, encoding: "utf8" });
+			assert.equal(unknown.status, 2, unknown.stderr);
+			assert.match(unknown.stderr, new RegExp(`^hv: no command ${command};`));
+		}
 		assert.equal(existsSync(calls), false, "no tmux call");
 	} finally {
 		rmSync(at, { recursive: true, force: true });

@@ -21,6 +21,7 @@ const PANE = `${SESSION}:`;
 
 /** What the latest run in the store's journal found, step by step, and how it ended, as text; or that no run is there. */
 export async function found(store: string): Promise<string> {
+	// A journal an older hv wrote may hold lines of another kind, which name no run.
 	const all = (await lines<JournalLine>(store, "explore.jsonl")).filter((line): line is JournalLine & (StepLine | EndLine) => "run" in line);
 	const run = all.at(-1)?.run;
 	if (!run) return "No explore run yet.";
