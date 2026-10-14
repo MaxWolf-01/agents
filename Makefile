@@ -67,4 +67,5 @@ release-patch release-minor release-major: check test-all test-full-path
 	  [ ! -f $(CHANGELOG) ] || cat $(CHANGELOG); } >$$tmp; mv $$tmp $(CHANGELOG); \
 	git add $(CHANGELOG); \
 	git commit -q -m "mx v$$NEW" -- $(PLUGIN) $(CHANGELOG); \
+	git tag -a "mx-v$$NEW" -m "mx v$$NEW"; \
 	echo "$$V -> $$NEW"
