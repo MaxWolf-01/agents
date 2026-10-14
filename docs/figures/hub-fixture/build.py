@@ -9,8 +9,8 @@ The README's hub figure is the real hub tab, not a mockup: this builds a throwaw
 ledger app, its tracker, and the session pages of five sessions on it (`fixture.py`), each rendered by this
 checkout's session-page renderer, registers the sessions as running (one in a pane of a tmux server of the run's
 own, a `sleep` standing in for its process, so its box offers to hand off), starts the container hub on that HOME,
-opens each session's pages through it, and screenshots the tab at the selected session in both schemes, to
-mx/assets/hub.png (night, the README's) and mx/assets/hub-light.png (day). Nothing reaches the real ~/.claude, a
+opens each session's pages through it, and screenshots the tab at the selected session in the night scheme, the one
+the README shows, to mx/assets/hub.png. Nothing reaches the real ~/.claude, a
 running hub, or the user's tmux server, and the HOME and the run's tmux server go when the shot is taken. Re-run it
 whenever the hub tab or the session page changes how it looks.
 
@@ -51,7 +51,7 @@ sys.path.insert(0, str(MX / "skills" / "session-page"))
 import fixture  # noqa: E402
 import session_page  # noqa: E402  this checkout's renderer, not the installed plugin's
 
-SCHEMES = {"dark": "hub", "light": "hub-light"}  # the suffixes render.py gives the other figures
+SCHEMES = {"dark": "hub"}  # the README shows the hub at night only
 WIDTH, HEIGHT = 1600, 1000
 GIT = {"GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "demo@example.com", "GIT_COMMITTER_NAME": "demo",
        "GIT_COMMITTER_EMAIL": "demo@example.com", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}

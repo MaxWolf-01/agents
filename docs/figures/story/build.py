@@ -9,7 +9,6 @@ story.md holds the text: an H1 title, a lead paragraph and an intro, then one `#
 picture. A section opens with `key: value` lines:
 - image: the picture's name in mx/assets, `<name>.png` the night render and `<name>-light.png` the
   day render; a picture with one render shows it in both schemes
-- pin: night, to show the night render in both schemes
 - source: the repo path of what draws or shoots the picture; defaults to docs/figures/<name>.html
 
 The output folder gets index.html, the pictures it uses, the stylesheets, the scripts and the fonts,
@@ -41,7 +40,7 @@ ASSETS = REPO / "mx" / "assets"
 TOKENS = REPO / "mx" / "skills" / "house-style" / "tokens.css"
 PLUGIN = REPO / "mx" / ".claude-plugin" / "plugin.json"
 GENERATOR = "docs/figures/story/build.py"
-META_KEYS = ("image", "pin", "source")
+META_KEYS = ("image", "source")
 
 
 @dataclass
@@ -54,7 +53,6 @@ class Args:
 class Section:
     heading: str
     image: str
-    pin: str | None
     source: str
     body: str  # markdown
 
@@ -92,10 +90,8 @@ def parse(text: str) -> Story:
                 meta[key] = value.strip()
         if "image" not in meta:
             fail(f"section {heading!r} names no image")
-        if meta.get("pin") not in (None, "night"):
-            fail(f"section {heading!r}: pin takes only night, got {meta['pin']!r}")
         name = meta["image"]
-        sections.append(Section(heading.strip(), name, meta.get("pin"),
+        sections.append(Section(heading.strip(), name,
                                 meta.get("source", f"docs/figures/{name}.html"), "\n".join(lines).strip()))
     return Story(m.group(1).strip(), paragraphs[0], "\n\n".join(paragraphs[1:]), sections)
 
@@ -108,15 +104,11 @@ def png_size(path: Path) -> tuple[int, int]:
 
 
 def renders(section: Section) -> dict[str, Path]:
-    """The scheme -> file map a section shows: both renders, or the one it has (or is pinned to)."""
+    """The scheme -> file map a section shows: both renders, or the one it has."""
     night, day = ASSETS / f"{section.image}.png", ASSETS / f"{section.image}-light.png"
     have = {k: p for k, p in (("night", night), ("day", day)) if p.exists()}
     if not have:
         fail(f"no render of {section.image!r} in {ASSETS} (looked for {night.name} and {day.name})")
-    if section.pin == "night":
-        if "night" not in have:
-            fail(f"{section.image!r} is pinned to night but {night.name} is missing")
-        return {"night": night}
     return have
 
 

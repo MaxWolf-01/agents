@@ -28,7 +28,7 @@ A foggy intent is grilled in rounds. Each round is one turn on the session page 
 
 image: ticket-state
 
-A ticket is one markdown file in the agent repo, and a `parent:` line makes it the child of another, so tickets form trees. Its status is one of five: proposed (an agent filed it and you have not ruled on it, so it is built while your ruling waits), open, claimed, review and done. A worker never writes a ticket file; the orchestrator, the one agent that hands tickets to workers and merges what they build, imports the report each worker commits. A build in review waits for your ruling: accept, amend, redo or reject.
+A ticket is one markdown file in the agent repo, and a `parent:` line makes it the child of another, so tickets form trees. Its status is one of five: proposed (an agent filed it and you have not ruled on it yet; it is built while your ruling waits), open, claimed, review and done. A worker never writes a ticket file; the orchestrator, the one agent that hands tickets to workers and merges what they build, imports the report each worker commits. A build in review waits for your ruling: accept, amend, redo or reject.
 
 ## Where each status is written
 
@@ -66,7 +66,6 @@ Every landed ticket gets a review page, rendered by `dispatch review` and linked
 ## The session page, in the hub
 
 image: hub
-pin: night
 source: docs/figures/hub-fixture/build.py
 
 Every session you sit at answers on its session page: the questions waiting on you at the top, then its turns, newest first, each linking what it made. The [container hub](https://github.com/MaxWolf-01/dotfiles/blob/master/bin/container-hub), a local server in the author's dotfiles and not part of mx, gathers every session's page in one browser tab; the sessions in this screenshot are made up. On the left is a rail with one entry per session, showing its state and the headline of its newest turn. Beside it is the selected session's page, with a box that types into that session's terminal and hands it off to a fresh session once its handoff is committed; the panes on the right hold the pages its turns opened.

@@ -18,7 +18,7 @@
   const zoomLabel = viewer.querySelector(".zoom")
   const root = document.documentElement
 
-  const MAX = 2 // in image pixels per CSS pixel; the renders are at 2x
+  const MAX = 2 // CSS pixels per image pixel: each pixel of a 2x render drawn two wide, 4x its size on the page
   const PAD = 16
   let trigger = null // the button that opened the viewer, focused again on close
   let s = 1 // scale

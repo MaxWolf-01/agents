@@ -561,12 +561,12 @@ LINK_RESOLVES = SHOW_HEAD.format(title="How a shared link resolves", tokens="__T
 <p class="meta">share-a-view-by-link · Q3, the two answers side by side</p>
 <svg viewBox="0 0 520 430" role="img" aria-label="Two flows from the sender's share to what the reader sees">
 """ + lane(2, "(a)", "the link names the view", [
-    ["Sam shares the view", "“groceries, last 90 days”"],
+    ["Sam shares the view", '"groceries, last 90 days"'],
     ["the link: /v/k3f9q2", "names the saved view"],
     ["opened, the server reads", "the view as Sam left it:", "filters, sort, columns"],
     ["Alex sees today's rows:", "41, through Sam's filters,", "and every later edit"],
 ], pick=True) + lane(272, "(b)", "the link carries rows", [
-    ["Sam shares the view", "“groceries, last 90 days”"],
+    ["Sam shares the view", '"groceries, last 90 days"'],
     ["the rows are copied:", "38 rows, as of Oct 6"],
     ["the link: /s/7hd2w1", "names the copy, which", "needs storage, an expiry"],
     ["Alex sees Oct 6's rows:", "38, however the ledger", "has moved since"],
