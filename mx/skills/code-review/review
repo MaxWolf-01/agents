@@ -59,7 +59,8 @@ tracker=$skill/../tracker/tracker.py
 # Every reviewer runs through it, one line per axis in the run log.
 run_log=$skill/../run-log/run-log
 # Reading history is every reviewer's, by the subcommand and never by the tool,
-# which is the bar `/mx:permissions-review` holds an allowlist to.
+# which is the bar the workflow retro holds a proposed allowlist rule to
+# (`mx/skills/retro/PERMISSIONS.md`).
 # Both forms of anything anyone types bare, since a trailing glob wants an
 # argument. Searching a tree is the Grep tool's, not `git grep`'s, whose -O
 # hands a pager of your choosing to a shell.

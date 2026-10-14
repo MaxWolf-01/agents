@@ -104,7 +104,7 @@ class Args:
     """Claude sessions directory, scanned recursively. Default: the Claude config directory's projects/, every project."""
 
     days: int = 30
-    """Scan sessions modified within the last N days."""
+    """Scan the Bash calls of the last N days."""
 
     show_auto_approved: bool = False
     """Report the segments dropped as built-in read-only instead of the ones that would prompt."""
@@ -117,13 +117,33 @@ def main(args: Args) -> None:
         config_dir / "settings.json",
         *([project_settings] if project_settings.is_file() else []),
     ]
-    patterns = load_allowlist(*settings)
     cutoff = (datetime.now() - timedelta(days=args.days)).timestamp()
-    commands = scan_sessions(args.sessions_dir or config_dir / "projects", cutoff)
+    found = scan(load_allowlist(*settings), scan_sessions(args.sessions_dir or config_dir / "projects", cutoff))
+    json.dump(found["auto_approved" if args.show_auto_approved else "would_prompt"], sys.stdout, indent=2)
 
-    blocked: Counter[str] = Counter()
-    auto_approved: Counter[str] = Counter()
-    examples: dict[str, dict[str, str]] = {"blocked": {}, "auto": {}}
+    blocked, auto = found["would_prompt"], found["auto_approved"]
+    print(
+        f"\nScanned: {found['calls']} Bash calls -> {found['segments']} segments "
+        f"from the last {args.days} days",
+        file=sys.stderr,
+    )
+    print(
+        f"Would prompt: {sum(r['count'] for r in blocked)} segments, {len(blocked)} distinct",
+        file=sys.stderr,
+    )
+    print(
+        f"Auto-approved by Claude Code's built-in read-only set: {sum(r['count'] for r in auto)} segments"
+        f" ({len(auto)} distinct; --show-auto-approved to inspect)",
+        file=sys.stderr,
+    )
+
+
+def scan(patterns: list[str], commands: list[str]) -> dict:
+    """The segments of `commands` no pattern covers, split into those that would prompt and those
+    the built-in read-only set approves, each a list of signatures by count with their shortest
+    example; with how many calls and segments were read."""
+    tallies: dict[str, Counter[str]] = {"would_prompt": Counter(), "auto_approved": Counter()}
+    examples: dict[str, dict[str, str]] = {"would_prompt": {}, "auto_approved": {}}
     total_segments = 0
 
     for raw in commands:
@@ -134,41 +154,20 @@ def main(args: Args) -> None:
             total_segments += 1
             if is_allowed(command, patterns):
                 continue
-            bucket, store = (
-                (auto_approved, examples["auto"])
-                if internally_approved(command)
-                else (blocked, examples["blocked"])
-            )
+            kind = "auto_approved" if internally_approved(command) else "would_prompt"
             sig = signature(command)
-            bucket[sig] += 1
-            if sig not in store or len(command) < len(store[sig]):
-                store[sig] = command[:200]
+            tallies[kind][sig] += 1
+            if sig not in examples[kind] or len(command) < len(examples[kind][sig]):
+                examples[kind][sig] = command[:200]
 
-    reported, store = (
-        (auto_approved, examples["auto"])
-        if args.show_auto_approved
-        else (blocked, examples["blocked"])
-    )
-    results = [
-        {"signature": sig, "count": count, "example": store[sig]}
-        for sig, count in reported.most_common()
-    ]
-    json.dump(results, sys.stdout, indent=2)
-
-    print(
-        f"\nScanned: {len(commands)} Bash calls -> {total_segments} segments "
-        f"from sessions modified in last {args.days} days",
-        file=sys.stderr,
-    )
-    print(
-        f"Would prompt: {sum(blocked.values())} segments, {len(blocked)} distinct",
-        file=sys.stderr,
-    )
-    print(
-        f"Auto-approved by Claude Code's built-in read-only set: {sum(auto_approved.values())} segments"
-        f" ({len(auto_approved)} distinct; --show-auto-approved to inspect)",
-        file=sys.stderr,
-    )
+    return {
+        "calls": len(commands),
+        "segments": total_segments,
+        **{
+            kind: [{"signature": sig, "count": count, "example": examples[kind][sig]} for sig, count in tally.most_common()]
+            for kind, tally in tallies.items()
+        },
+    }
 
 
 def load_allowlist(*settings_paths: Path) -> list[str]:
@@ -187,7 +186,7 @@ def load_allowlist(*settings_paths: Path) -> list[str]:
 
 
 def scan_sessions(sessions_dir: Path, cutoff_ts: float) -> list[str]:
-    """Return every Bash command from sessions under sessions_dir modified after cutoff."""
+    """Return every Bash command from sessions under sessions_dir called after cutoff."""
     commands = []
     for path in sessions_dir.rglob("*.jsonl"):
         if path.name.endswith(".wakatime") or path.stat().st_mtime < cutoff_ts:
@@ -201,10 +200,19 @@ def scan_sessions(sessions_dir: Path, cutoff_ts: float) -> list[str]:
                         entry = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    commands.extend(bash_commands(entry))
+                    if called_after(entry, cutoff_ts):
+                        commands.extend(bash_commands(entry))
         except OSError:
             continue
     return commands
+
+
+def called_after(entry: dict, cutoff_ts: float) -> bool:
+    """Whether a transcript line is timed after cutoff; a line with no time counts as after."""
+    stamp = entry.get("timestamp")
+    if not isinstance(stamp, str):
+        return True
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() >= cutoff_ts
 
 
 def bash_commands(entry: dict) -> list[str]:

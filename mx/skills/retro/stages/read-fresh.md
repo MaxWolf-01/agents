@@ -21,7 +21,7 @@ You read part of a workflow retro's period, from {{since}} to {{until}}, to find
 
 ### What to look for
 
-{{lenses}}
+Two sides, alike in weight. What cost max time, attention or nerves, read from his own messages and from what he was shown. What made an agent slower, costlier or less successful.
 
 ### The digest
 
@@ -44,7 +44,7 @@ A git record lists commits with their messages, reverts, ticket changes and work
 
 Outcome: done | partial | abandoned | unclear, and what came out, in one clause.
 
-- **[max|agents|mechanism] <category, a word or two>** (low|med|high) What happened and what it cost, in one or two sentences. Evidence: "<verbatim quote>" (<session id, 8 characters>, <date>). Cause: <the skill line, script, config or habit that produced it, where you can tell>.
+- **[max|agents] <what happened, in a few words of the session's own>** (low|med|high) What happened and what it cost, in one or two sentences. Evidence: "<verbatim quote>" (<session id, 8 characters>, <date>). Cause: <the skill line, script, config or habit that produced it, where you can tell>.
 - **[works]** Something that clearly worked and is worth keeping, with its quote. At most two per session.
 
 ## Patterns in this batch

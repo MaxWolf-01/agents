@@ -18,6 +18,13 @@
 - `sessions.jsonl`: one row per digest above: id, profile, project, start, end, the user's
   messages, and which of the two it is in.
 - `git/<repo>.md` and `versions.md`, as `git` writes them.
+- `permissions/<profile>/`, for each profile: `scan.json`, the Bash calls of the period no
+  allowlist rule covers, as `scan_unapproved.py` buckets them; `rules.json`, the permission rules
+  and auto mode settings of the profile's own settings files; and `auto-mode.json`, the effective
+  auto mode config `claude auto-mode config` prints for it, or `auto-mode.failed` saying why there
+  is none.
+- `proposed.md`, given an agent repo: its commit at collect time and the slugs of the tickets
+  proposed at that commit, which later stages read there, as they stood.
 
 `git` writes `git/<repo>.md` alone, for each repo given: its commits in the period with their
 messages, its reverts, and, where the repo holds an agent repo, the tickets filed, every status
@@ -52,6 +59,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "session-page"))
 import session_page  # noqa: E402  what counts as the user's own message, as the session page reads it
+import scan_unapproved  # noqa: E402
 
 SAMPLE_SIZE = 20
 SAMPLE_WINDOW = (timedelta(weeks=2), timedelta(weeks=8))  # how far before the period's end
@@ -65,10 +73,10 @@ PASTED = re.compile(r"(<pasted_content\b[^>]*>)(.*?)(</pasted_content>)", re.S)
 
 
 def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, projects: list[Path],
-                     repos: list[Path], seed: int | None = None) -> None:
+                     repos: list[Path], seed: int | None = None, agent: Path | None = None) -> None:
     """Everything a workflow retro's later stages read, written into `run`."""
     refuse_inside_git(run, cache)
-    refuse_unless_git(repos)
+    refuse_unless_git(repos + ([agent] if agent else []))
     oldest = until - SAMPLE_WINDOW[1]
     transcripts = [t for t in find_transcripts(projects) if t.stat().st_mtime >= min(since, oldest).timestamp()]
     digests = [d for d in digest_all(transcripts, cache, repos) if d.interactive and d.text]
@@ -88,6 +96,9 @@ def collect_sessions(since: datetime, until: datetime, run: Path, cache: Path, p
     (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     collect_git(since, run, repos, until)
     (run / "versions.md").write_text(versions(since, until, period, repos))
+    collect_permissions(since, run, projects)
+    if agent:
+        collect_proposed(run, agent)
 
 
 def collect_git(since: datetime, run: Path, repos: list[Path], until: datetime | None = None) -> None:
@@ -119,6 +130,68 @@ def refuse_unless_git(repos: list[Path]) -> None:
     for repo in repos:
         if subprocess.run(["git", "-C", str(repo), "rev-parse"], capture_output=True).returncode != 0:
             sys.exit(f"{repo} is no git repo")
+
+
+# ── permissions ──────────────────────────────────────────────────────────────
+
+SETTINGS = ("settings.json", "settings.local.json")  # a profile's own settings files
+
+
+def collect_permissions(since: datetime, run: Path, projects: list[Path]) -> None:
+    """`permissions/<profile>/` for each profile's directory of transcripts in `projects`."""
+    for root in projects:
+        profile = root.parent
+        out = run / "permissions" / profile.name.lstrip(".")
+        out.mkdir(parents=True, exist_ok=True)
+        settings = [profile / name for name in SETTINGS if (profile / name).is_file()]
+        (out / "rules.json").write_text(json.dumps({p.name: rules(p) for p in settings}, indent=1) + "\n")
+        commands = scan_unapproved.scan_sessions(root, since.timestamp()) if root.is_dir() else []
+        found = scan_unapproved.scan(scan_unapproved.load_allowlist(*settings), commands)
+        (out / "scan.json").write_text(json.dumps(found, indent=1) + "\n")
+        for stale in ("auto-mode.json", "auto-mode.failed"):
+            (out / stale).unlink(missing_ok=True)
+        name, text = auto_mode(profile)
+        (out / name).write_text(text)
+
+
+def rules(settings: Path) -> dict:
+    """A settings file's permission rules and auto mode settings."""
+    try:
+        data = json.loads(settings.read_text())
+    except json.JSONDecodeError as e:
+        return {"unreadable": str(e)}
+    return {key: data[key] for key in ("permissions", "autoMode") if key in data}
+
+
+def auto_mode(profile: Path) -> tuple[str, str]:
+    """The profile's effective auto mode config: the file to write, `auto-mode.json` or
+    `auto-mode.failed`, and what it holds."""
+    try:
+        done = subprocess.run(["claude", "auto-mode", "config"], capture_output=True, text=True, timeout=120,
+                              stdin=subprocess.DEVNULL, env={**os.environ, "CLAUDE_CONFIG_DIR": str(profile)})
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return "auto-mode.failed", f"claude auto-mode config failed: {e}\n"
+    if done.returncode != 0:
+        return "auto-mode.failed", f"claude auto-mode config exited {done.returncode}: {done.stderr.strip()}\n"
+    return "auto-mode.json", done.stdout
+
+
+# ── proposed tickets ─────────────────────────────────────────────────────────
+
+
+def collect_proposed(run: Path, agent: Path) -> None:
+    """`proposed.md`: the agent repo's commit now and the tickets proposed at it, by slug."""
+    sha = git(agent, "rev-parse", "HEAD").strip()
+    found = subprocess.run(["git", "-C", str(agent), "grep", "-l", "-E", "^status: *proposed *$", sha, "--", "tickets/*.md"],
+                           capture_output=True, text=True)
+    if found.returncode > 1:  # 1 is git grep finding nothing
+        raise subprocess.CalledProcessError(found.returncode, found.args, found.stdout, found.stderr)
+    slugs = sorted(Path(line.split(":", 1)[1]).stem for line in found.stdout.splitlines())
+    (run / "proposed.md").write_text("\n".join([
+        f"# Proposed tickets ({len(slugs)})", "",
+        f"The agent repo `{agent}` at {sha}, when the run collected. A ticket there reads as "
+        f"`git -C {agent} show {sha}:tickets/<slug>.md`.", "",
+        *(f"- {slug}" for slug in slugs)]) + "\n")
 
 
 # ── which sessions ───────────────────────────────────────────────────────────
@@ -528,6 +601,8 @@ class Sessions:
     """Each profile's directory of transcripts; by default every `~/.claude*/projects`."""
     cache: Path | None = None
     """Where digests are cached; by default `digest-cache` beside the run directory."""
+    agent: Path | None = None
+    """The agent repo whose proposed tickets `proposed.md` names; none by default."""
 
 
 @dataclass
@@ -548,7 +623,7 @@ def main(command: Sessions | Git) -> None:
         collect_git(since, command.run, command.repos)
         return
     collect_sessions(since, datetime.now(UTC), command.run, command.cache or command.run.parent / "digest-cache",
-                     command.projects, command.repos)
+                     command.projects, command.repos, agent=command.agent)
 
 
 if __name__ == "__main__":
