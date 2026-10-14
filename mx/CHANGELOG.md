@@ -1,3 +1,7 @@
+## 1.0.59
+
+- feat(tracker): proposed tickets wait off the frontier for a triage the user starts
+
 ## 1.0.58
 
 - docs(git): commit subjects are conventional commits, the outcome sentence opens the body
