@@ -14,7 +14,7 @@ The report's shape and rules are `{{skills}}/retro/REPORT.md`; read it first. Yo
 
 ## Steps
 
-1. Read `previous/` and list each finding and candidate in it that is not dismissed, with its id, its state and its evidence. A seed report without ids gives its findings none yet: list each under its own name, with max's verdict on it where the seed carries one.
+1. Read `previous/` and list each finding and candidate in it that is not dismissed, with its id, its state and its evidence. Where `current.md` differs from the last run's report, the difference is max's verdict and holds: what he dismissed there is dismissed, what he amended reads as amended, what he took up is taken up. A seed report without ids gives its findings none yet: list each under its own name, with max's verdict on it where the seed carries one.
 2. Check each against the period, searching the digests and the git records for its pattern rather than relying on the notes alone. What you find names its state in the report, REPORT.md's **State** field:
    - it happened again in the period: **live**;
    - a ticket cites it and no fix has landed: **taken up as <ticket>**;
