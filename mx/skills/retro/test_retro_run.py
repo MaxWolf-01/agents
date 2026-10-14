@@ -32,7 +32,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import retro_run  # noqa: E402
-from test_retro_collect import IDENTITY, SINCE, Transcript, git  # noqa: E402
+from test_retro_collect import IDENTITY, SINCE, Transcript, commit, git, ticket  # noqa: E402
 
 FIRST = datetime(2026, 10, 12, 2, tzinfo=UTC)
 WEEK = timedelta(weeks=1)
@@ -54,7 +54,8 @@ if [ -n "${STUB_HANG:-}" ]; then trap "sleep 1; exit 143" TERM; sleep 300 & echo
 case $stage in
     "read fresh") mkdir -p notes && echo "notes" > notes/git.md && for b in $(jq -r '.[].name' batches.json); do echo notes > "notes/$b.md"; done ;;
     "follow up") echo "follow-up" > follow-up.md ;;
-    "go deep") mkdir -p deep && for f in architecture lenses permissions; do echo "deep" > "deep/$f.md"; done ;;
+    "go deep") mkdir -p deep && for f in leading-words permissions; do echo "deep" > "deep/$f.md"; done ;;
+    "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
     synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && exit 0; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
 """
@@ -106,9 +107,9 @@ def out(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout
 
 
-def last_logged(tmp_path: Path) -> str:
+def last_logged(tmp_path: Path, repo: str = "agents") -> str:
     """The message of the run log's last line, after its time and run."""
-    return (tmp_path / "data/agents/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
+    return (tmp_path / f"data/{repo}/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
 
 
 def alive(pid: int) -> bool:
@@ -345,5 +346,89 @@ def test_a_week_with_a_message_or_a_commit_of_maxs_runs(tmp_path: Path, stub: Pa
     retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
 
     started = (tmp_path / "data/agents/runs.log").read_text().splitlines()[0]
-    assert f"a sign of max: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
+    assert f"new since: {sign} of max's at {retro_run.stamp(SINCE + timedelta(days=3, minutes=1 if sign == 'a message' else 0))}" in started
     assert last_logged(tmp_path).startswith("committed ")
+
+
+# ── a repo retro ─────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def code(tmp_path: Path) -> Path:
+    """A repo other than the agents repo, with a commit either side of the period's start, and its
+    agent repo with a proposed ticket and a session page."""
+    code, agent = tmp_path / "dotfiles", tmp_path / "dotfiles" / "agent"
+    for r in (code, agent):
+        r.mkdir(parents=True)
+        git(r, "init", "-q", "-b", "main")
+    (code / ".gitignore").write_text("agent/\n")
+    commit(code, {".gitignore": "agent/\n", "old.sh": "1"}, "before the period", SINCE - timedelta(days=1))
+    commit(code, {"backup.sh": "1"}, "backup: retry once", SINCE + timedelta(days=1))
+    commit(agent, {"tickets/flaky-backup.md": ticket("proposed")}, "file flaky-backup", SINCE + timedelta(days=1))
+    (agent / "sessions/0123abcd/turns").mkdir(parents=True)
+    (agent / "sessions/0123abcd/session.md").write_text("what max was shown\n")
+    return code
+
+
+def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_session(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    projects = tmp_path / ".claude/projects"
+    Transcript(projects, str(code), SINCE + timedelta(days=2)).says("the backup failed again")
+
+    run = retro_run.run_retro(code, tmp_path / "data", [projects], SINCE, until=FIRST)
+
+    assert sorted(p.stem for p in stub.glob("*.argv")) == ["follow up", "lens pass", "synthesize"]
+    assert not any((run / d).exists() for d in ("sessions", "sample", "sessions.jsonl", "batches.json")), \
+        "no session was digested (retro-semi-automated#P10)"
+    assert not (tmp_path / "data/dotfiles/digest-cache").exists()
+    assert "backup: retry once" in (run / "git/dotfiles.md").read_text()
+    assert "- 1 backup.sh" in (run / "touched.md").read_text() and "old.sh" not in (run / "touched.md").read_text()
+    assert "- flaky-backup" in (run / "proposed.md").read_text()
+    for stage in ("follow up", "lens pass", "synthesize"):
+        args = (stub / f"{stage}.argv").read_text().splitlines()
+        assert f"Read(/{code / 'agent/sessions'}/**)" in args, "no stage may read the agent repo's session pages"
+    agent = code / "agent"
+    assert out(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")[0] == \
+        f"retro: the repo retro of {SINCE.date()} to {FIRST.date()}"
+    assert (agent / "retro/report.md").is_file()
+    assert out(agent, "show", "HEAD:tickets/flaky-backup.md") == ticket("proposed"), \
+        "the proposed ticket is untouched (retro-semi-automated#P5)"
+
+
+def test_a_repo_whose_agent_directory_is_no_repo_of_its_own_is_refused_with_the_reason(
+        tmp_path: Path, stub: Path) -> None:
+    code = tmp_path / "quartz-knowledge-base"
+    code.mkdir()
+    git(code, "init", "-q", "-b", "main")
+    commit(code, {"agent/tickets/a.md": ticket("open"), "note.md": "1"}, "notes", SINCE + timedelta(days=1))
+    head = out(code, "rev-parse", "HEAD")
+
+    with pytest.raises(SystemExit, match=f"{code / 'agent'} is no agent repo"):
+        retro_run.run_retro(code, tmp_path / "data", [tmp_path / ".claude/projects"], SINCE, until=FIRST)
+
+    assert out(code, "rev-parse", "HEAD") == head, "nothing was committed in the code repo"
+    assert not (code / "agent/retro").exists() and not list(stub.glob("*.argv"))
+
+
+def test_a_repo_retros_first_run_takes_the_four_weeks_before_it(tmp_path: Path, stub: Path, code: Path) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST)
+
+    message = out(code / "agent", "log", "-1", "--format=%B")
+    assert f"Retro-since: {retro_run.stamp(FIRST - timedelta(weeks=4))}" in message
+
+
+def test_a_repo_retro_with_no_commit_since_its_last_run_is_skipped_and_one_with_a_commit_runs(
+        tmp_path: Path, stub: Path, code: Path) -> None:
+    retro_run.run_retro(code, tmp_path / "data", [], SINCE, until=FIRST)
+    for argv in stub.glob("*.argv"):
+        argv.unlink()
+
+    with pytest.raises(SystemExit) as stopped:
+        retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
+    assert stopped.value.code == retro_run.SKIPPED
+    assert last_logged(tmp_path, "dotfiles") == f"skipped: no commit in {code} since {retro_run.stamp(FIRST)}"
+    assert not list(stub.glob("*.argv"))
+
+    commit(code, {"backup.sh": "2"}, "backup: retry twice", FIRST + timedelta(days=1))
+    retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
+    assert last_logged(tmp_path, "dotfiles").startswith("committed ")

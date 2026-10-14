@@ -6,7 +6,7 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 - **Every finding quotes its evidence**: the session (its id's first 8 characters), the commit (its short sha) or the report it comes from, with an absolute date, `2026-10-07`. Never "last week", never a session's offset.
 - **Every proposal names what it deletes or narrows.** One that adds a mechanism also names the recurrence behind it and what keeping it costs.
-- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for an architecture candidate. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
+- **An id lives as long as its finding**: `F<n>` for a finding, `A<n>` for a candidate, of any lens. A finding keeps the id the run that raised it gave it; a new one takes the next number after the highest the `ids:` line records, and an id is never given twice, a dropped one included.
 - **A dismissal holds**: a finding or candidate max dismissed stays under Dismissed, with his verdict and its date, and returns only on evidence dated after his verdict, which it names.
 - **The report proposes; it files nothing and changes no ticket.** What max rules on a finding, in a session, becomes tickets there.
 
@@ -14,7 +14,7 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
 
-- **Dismissed**: the finding leaves Findings, or the candidate Architecture candidates, for a line under Dismissed.
+- **Dismissed**: the finding leaves Findings, or the candidate Candidates, for a line under Dismissed.
 - **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
 - **A candidate the report lacks**, ruled in a session's own architecture review, enters it with its verdict under the next id: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
@@ -23,7 +23,7 @@ What changed is the next run's to write. A verdict's commit carries no `Retro-un
 
 ## The weighing
 
-What orders the findings and decides what a run reports, loosely, on four things together:
+What orders the findings and decides what a run reports, loosely, on four things together; a candidate outside the architecture lens is weighed the same way, and its weighing is its impact:
 
 1. **What the friction costs**: time and energy, max's first.
 2. **What preventing it costs to keep**: code, prose and workflow machinery carry upkeep for as long as they live; a one-time cost amortizes.
@@ -34,8 +34,10 @@ Deletions and narrowings come first. A defect class that recurs and that a tool 
 
 ## Shape, in this order
 
+A repo retro's report has no Findings and no Versions, its `ids:` line names the highest `A<n>` alone, and its top recommendation is a candidate.
+
 ```markdown
-# Workflow retro: <repo>
+# <Workflow retro | Repo retro>: <repo>
 
 Run <date of the period's end>, over <start> to <end>. ids: F<highest>, A<highest>
 
@@ -61,13 +63,18 @@ In order of the weighing.
 - **Weighing**: cost of the friction, upkeep of the fix, how often, how robust
 - **History**: first seen <date>; held in the runs of <dates>; taken up as <ticket> <date>; landed <sha> <date>; held or back
 
-## Architecture candidates
+## Candidates
 
-In order of impact. Each `### A<n> <the deepening it proposes>`, with `/mx:improve-codebase-architecture`'s fields (files, problem, solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates), the friction that pointed at it with its date, its state and its history as a finding's.
+What the lens pass proposes for the code, every lens's together, in order of impact. Each `### A<n> <the change it proposes>`:
+
+- **Lens**: architecture | bloat | tests | footguns | escaped defects
+- An architecture candidate carries `/mx:improve-codebase-architecture`'s fields (files, problem, solution, benefits, invariant, dependency category, strength, impact, ADR conflict, related candidates); any other, **Files**, **Problem** with its evidence, **Proposal** and **Weighing**, as a finding's
+- **Pointed at by**: the commits, proposed tickets or friction that pointed the pass at it, each with its date
+- **State** and **History**, as a finding's
 
 ## Proposed tickets
 
-The agents repo's proposed tickets, as `proposed.md` names them, grouped by the cause they share. Each group: its slugs, the cause in a sentence, and the finding or candidate it is (`F<n>`, `A<n>`), or "no finding". A ticket that shares its cause with no other stays out.
+The repo's proposed tickets, as `proposed.md` names them, grouped by the cause they share. Each group: its slugs, the cause in a sentence, and the finding or candidate it is (`F<n>`, `A<n>`), or "no finding". A ticket that shares its cause with no other stays out.
 
 ## Versions
 
