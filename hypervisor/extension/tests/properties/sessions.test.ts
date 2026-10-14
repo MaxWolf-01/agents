@@ -40,8 +40,9 @@ after(() => {
 });
 const { sessionTools } = await import("../../src/tools.ts");
 const { background, waitTool } = await import("../../src/pace.ts");
+const { inbox: inboxOf } = await import("../../src/inbox.ts");
 /** Where wait and a background delegate run; each check stops it, so what they post lands within the check. */
-const work = background(store);
+const work = background(inboxOf(store));
 
 const DIRS = fc.constantFrom("", "~", home, ...NAMED, ...NAMED.map((name) => `~/${name}`), ...NAMED.map((name) => path.join(home, name)));
 const SESSIONS = fc.oneof(HOSTILE, fc.constantFrom("orch", String(process.pid), "#(touch pwned)"));

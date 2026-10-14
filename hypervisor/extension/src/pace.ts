@@ -4,7 +4,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { post } from "./inbox.ts";
+import type { Inbox } from "./inbox.ts";
 import { run } from "./run.ts";
 
 /** Work running in the background, each piece ending in a ping. */
@@ -18,8 +18,8 @@ export interface Background {
 /** The ping a piece of work posts when the hypervisor's session ends before it does. */
 export const STOPPED = "stopped: the hypervisor's session ended before it finished";
 
-/** Background work whose pings go to the inbox of `store`, which the watch delivers at once. */
-export function background(store: string): Background {
+/** Background work whose pings go to `inbox`, which the watch delivers at once. */
+export function background(inbox: Inbox): Background {
 	let stopping = new AbortController();
 	const running = new Set<Promise<void>>();
 	return {
@@ -29,7 +29,7 @@ export function background(store: string): Background {
 				.then(() => work(signal))
 				.catch((error) => (signal.aborted ? STOPPED : `failed: ${error instanceof Error ? error.message : String(error)}`))
 				.then((text) => [text.trim() || "(nothing)", ...(note?.trim() ? [`Your note: ${note.trim()}`] : [])].join("\n"))
-				.then((text) => post(store, { at: new Date().toISOString(), from, text, ping: true }))
+				.then((text) => inbox.post({ at: new Date().toISOString(), from, text, ping: true }))
 				.catch(() => {})
 				.finally(() => running.delete(done));
 			running.add(done);

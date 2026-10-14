@@ -11,7 +11,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exploreTools } from "./explore.ts";
 import { exploring, usageLog } from "./exploring.ts";
-import { unreadLine, waiting } from "./inbox.ts";
+import { inbox } from "./inbox.ts";
 import { append } from "./journal.ts";
 import { fromEnvironment, type SessionConfig } from "./sessions.ts";
 import { background, waitTool } from "./pace.ts";
@@ -25,20 +25,18 @@ export const MEMORY = ["zoom", "date"];
 const REPORT_CHANNEL = "optchat:report";
 /** Where OptChat asks other extensions for their status line (pi-optchat's `STATUS_CHANNEL`). */
 const STATUS_CHANNEL = "optchat:status";
-/** How often the spawned sessions and the inbox are looked at. */
+/** How often the watch takes the inbox's pings. */
 const WATCH_MS = 3000;
 
-/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each look that failed; `explore.jsonl`, what explore runs found. `config.usage` is OptChat's usage log for the profile, which an explore run's token cap reads. */
+/** Under `config.home`'s `.local/share/hypervisor-inputs/`: max's messages. Under `config.store`: `spawned.jsonl`, the windows start_session opened; `inbox/`, the messages that wait, and `inbox/read/` those read or delivered; `watch.jsonl`, a line for each take of the pings that failed; `explore.jsonl`, what explore runs found. `config.usage` is OptChat's usage log for the profile, which an explore run's token cap reads. */
 export function live(config: SessionConfig & { usage?: string }): (pi: ExtensionAPI) => void {
 	return (pi) => {
-		const work = background(config.store);
-		const tools = [...sessionTools(config, work), inboxTool(config.store), waitTool(work), ...exploreTools(config)];
+		const messages = inbox(config.store);
+		const work = background(messages);
+		const tools = [...sessionTools(config, work), inboxTool(messages), waitTool(work), ...exploreTools(config)];
 		for (const tool of tools) pi.registerTool(tool);
 		pi.events.on(STATUS_CHANNEL, (data) => {
-			const line = unreadLine(
-				waiting(config.store).filter((m) => !m.ping),
-				Date.now(),
-			);
+			const line = messages.statusLine();
 			if (line) (data as { lines: string[] }).lines.push(line);
 		});
 		pi.on("input", async (event) => {
@@ -50,10 +48,10 @@ export function live(config: SessionConfig & { usage?: string }): (pi: Extension
 		pi.on("session_start", () => {
 			pi.setActiveTools([...MEMORY, ...tools.map((tool) => tool.name)]);
 			watching ??= watch(
-				config,
+				messages,
 				WATCH_MS,
 				(pings) => {
-					// No profile open yet, or an import running: nothing takes the report, and the inbox keeps the pings for the next look.
+					// No profile open yet, or an import running: nothing takes the report, and the inbox keeps the pings for the next take.
 					const report: { text: string; taken?: boolean } = { text: pings.join("\n") };
 					pi.events.emit(REPORT_CHANNEL, report);
 					return report.taken === true;
