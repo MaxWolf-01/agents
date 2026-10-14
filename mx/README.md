@@ -1,6 +1,8 @@
 # mx: Agent Workflow Plugin
 
-File-based tickets, domain glossary + ADRs, research artefacts, and session continuity for multi-session work.
+A workflow for working with many agents at once and keeping the overview. Every piece of work goes through one flow: an intent becomes a ticket that a fresh worker builds, or, when the instruction is the change, a commit the session makes itself, and either way it reaches you as a review page and a show of what was built. What a machine can check, a script or a check enforces; what needs you is put in front of you as something to look at, at a few fixed stations. File-based tickets, a domain glossary and ADRs, and one page per session carry the overview between sessions.
+
+**[The mx workflow, told in its figures](https://share.mwolf.dev/cd2d28458796da026853498ac22481f3/)**: one page that walks through the figures below in order, each growing a step at a time.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/workflow-map.png">
