@@ -1,20 +1,17 @@
 // Explore runs on the live hypervisor, end to end: `/explore` sent to a real pi over RPC with the live extension,
 // against a stand-in for the Anthropic endpoint, runs until the first of its budgets stops it. The stand-in logs
-// each call's cost to the profile's usage log, as pi-optchat does. The offer before the week resets is checked on the
-// extension loaded into a stand-in for pi.
+// each call's cost to the profile's usage log, as pi-optchat does.
 
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { exploring, offerDue, parse, stopBefore } from "../src/exploring.ts";
+import { parse, stopBefore } from "../src/exploring.ts";
 import { found } from "../src/hv-explore.ts";
-import { inbox } from "../src/inbox.ts";
 import { lines } from "../src/journal.ts";
-import { weekFromHeaders, weekFromStatusline } from "../src/quota.ts";
-import { load, standIn } from "./properties/stand-in.ts";
+import { weekFromHeaders } from "../src/quota.ts";
 import { type Request, standInAnthropic, standInModels, textOf } from "./stand-in-anthropic.ts";
 
 /** The pi this package installs, which the test starts in place of the fork's that `hv` starts. */
@@ -138,14 +135,6 @@ before(async () => {
 	runs.set("steps", await explore(fixture("steps"), "3", "papers", "on", "open-ended", "ALife"));
 	runs.set("tokens", await explore(fixture("tokens"), "5", "--tokens", "1500"));
 	runs.set("headers", await explore(fixture("headers", { headers: { "anthropic-ratelimit-unified-7d-utilization": "0.96", "anthropic-ratelimit-unified-7d-reset": String(Math.round(now / 1000) + 86400) } }), "5", "--until-week", "95"));
-	const statusline = fixture("statusline");
-	const cache = path.join(statusline.home, ".cache", "claude-statusline");
-	mkdirSync(cache, { recursive: true });
-	const input = (account: string, used: number, at: number) => ({ session_id: "s", config_dir: path.join(statusline.home, account), written_at: at, rate_limits: { seven_day: { used_percentage: used, resets_at: now / 1000 + 86400 } } });
-	writeFileSync(path.join(cache, "a.json"), JSON.stringify(input(".claude", 97, now / 1000 - 60)));
-	// Another account's input, newer and nearly unused, does not count.
-	writeFileSync(path.join(cache, "b.json"), JSON.stringify(input(".claude-pro", 10, now / 1000)));
-	runs.set("statusline", await explore(statusline, "5", "--until-week", "95"));
 	runs.set("blocked", await explore(fixture("blocked", { tool: "start_session" }), "1"));
 	runs.set("unread", await explore(fixture("unread"), "1", "--until-week", "95"));
 	notes = await notified(fixture("interrupted"), ["5"], true);
@@ -183,12 +172,6 @@ test("a run stops at its token cap, counted from the profile's usage log, before
 test("a run stops once the week's quota reaches its share, read from the reply's rate-limit headers", () => {
 	const run = runs.get("headers")!;
 	assert.match(run, /^explore run ended after 1 step, 1000 tokens: stopped by the week at 96% used\. The week is at 96%\./m);
-});
-
-test("without a reply's headers, the week is read from the statusline's cache of max's own account", () => {
-	const run = runs.get("statusline")!;
-	assert.match(run, /^explore run ended after 0 steps, 0 tokens: stopped by the week at 97% used\./m);
-	assert.equal(fixtures.get("statusline")!.requests.length, 0);
 });
 
 test("a run starts no session: start_session is refused while it is in flight", () => {
@@ -230,40 +213,6 @@ test("a week whose reset has passed stops no run, since its quota has started ov
 test("the rate-limit headers read as a share in percent and a reset in ms; an API key's reply carries none", () => {
 	assert.deepEqual(weekFromHeaders({ "anthropic-ratelimit-unified-7d-utilization": "0.7370692663445869", "anthropic-ratelimit-unified-7d-reset": "1764615600" }, 5), { used: 73.70692663445869, resets: 1764615600000, at: 5 });
 	assert.equal(weekFromHeaders({ "anthropic-ratelimit-input-tokens-remaining": "1000" }, 5), undefined);
-	assert.equal(weekFromStatusline(path.join(dir, "nowhere"), "/x"), undefined);
-});
-
-test("an offer is due about 12 hours before the reset, with more than a fifth of the week unused", () => {
-	const hour = 3600_000;
-	assert.equal(offerDue({ used: 50, resets: now + 11 * hour, at: now }, now), true);
-	assert.equal(offerDue({ used: 50, resets: now + 13 * hour, at: now }, now), false, "too early");
-	assert.equal(offerDue({ used: 85, resets: now + 11 * hour, at: now }, now), false, "the week nearly used");
-	assert.equal(offerDue({ used: 50, resets: now - hour, at: now }, now), false, "the week already reset");
-});
-
-test("in the TUI, the hypervisor is asked once per week to offer max a run, with a desktop notification; nothing starts a run", async () => {
-	const f = fixture("offer");
-	const cache = path.join(f.home, "cache");
-	mkdirSync(cache);
-	const resets = now + 6 * 3600_000;
-	writeFileSync(path.join(cache, "s.json"), JSON.stringify({ config_dir: path.join(f.home, ".claude"), written_at: now / 1000, rate_limits: { seven_day: { used_percentage: 40, resets_at: resets / 1000 } } }));
-	const ran: string[][] = [];
-	const config = { store: f.store, statusline: cache, account: path.join(f.home, ".claude"), now: () => now };
-	for (let session = 0; session < 2; session++) {
-		const sent: string[] = [];
-		const extension = await load((pi) => exploring(new Proxy(pi, { get: (t, k) => (k === "exec" ? async (c: string, a: string[]) => (ran.push([c, ...a]), { code: 0 }) : k === "sendUserMessage" ? (m: string) => sent.push(m) : t[k as keyof typeof t]) }), config), f.home);
-		for (const handler of extension.handlers.get("session_start") ?? []) await handler(standIn({ type: "session_start" }), standIn({ mode: "tui" }));
-		await new Promise((r) => setTimeout(r, 200));
-		for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler(standIn({}), standIn({}));
-		assert.deepEqual(sent, [], "no step is sent without max's command");
-	}
-	let pings: string[] = [];
-	await inbox(f.store).takePings((offered) => void (pings = offered));
-	assert.equal(pings.length, 1, "one offer for the week, across sessions");
-	assert.match(pings[0]!, /^\[explore offer\] .*60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run\./);
-	assert.equal(ran.length, 1);
-	assert.equal(ran[0]![0], "notify-send");
-	assert.deepEqual(readdirSync(f.store).sort(), ["explore.jsonl", "inbox"]);
 });
 
 test("with the hypervisor's TUI open, hv explore types the command into its pane and starts nothing", async () => {

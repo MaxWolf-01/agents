@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-/** A message for the hypervisor: what `hv tell`, background work or an explore offer left. */
+/** A message for the hypervisor: what `hv tell` or background work left. */
 export interface Told {
 	at: string;
 	/** Where it came from: its tmux window as `session:window`, its directory, or the work that sent it. */
