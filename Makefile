@@ -29,7 +29,11 @@ UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest
 PYTEST = $(UV_PYTEST) -n $(JOBS)
 # The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
 # the command line. Never read from the environment, so an exported TESTS cannot narrow a release.
-TESTS = mx/
+TESTS = mx/ $(EXTENSION_FULL_PATH)
+
+EXTENSION := hypervisor/extension
+# The hypervisor extension's full-path checks, which drive real tmux and a real pi TUI.
+EXTENSION_FULL_PATH := $(wildcard $(EXTENSION)/tests/full-path/*.full.ts)
 
 # The test files this tree's changes since BASE reach (tools/affected_tests.py says how), less
 # their full-path checks. The recipe then prints the test-full-path command that runs those.
@@ -38,15 +42,28 @@ test:
 	@tests=$$(BASE=$(BASE) uv run --quiet tools/affected_tests.py) || exit 1; \
 	if [ -z "$$tests" ]; then echo "no test reaches what changed since $(BASE); make test-all runs every one"; exit 0; fi; \
 	echo "+ $$(echo $$tests | wc -w) test files reached from $(BASE)"; \
-	$(PYTEST) -m 'not full_path' $$tests || [ $$? -eq 5 ] || exit 1; \
-	full=$$($(UV_PYTEST) -q --co -m full_path $$tests 2>/dev/null | sed -n 's/::.*//p' | sort -u); \
-	[ -z "$$full" ] || echo "+ full-path checks reached: make test-full-path TESTS=\"$$(echo $$full)\""
+	py=$$(echo "$$tests" | grep '\.py$$'); ts=$$(echo "$$tests" | grep '\.ts$$'); full=; \
+	if [ -n "$$py" ]; then \
+	  $(PYTEST) -m 'not full_path' $$py || [ $$? -eq 5 ] || exit 1; \
+	  full=$$($(UV_PYTEST) -q --co -m full_path $$py 2>/dev/null | sed -n 's/::.*//p' | sort -u); fi; \
+	if [ -n "$$ts" ]; then \
+	  $(MAKE) -s $(EXTENSION)/node_modules && node --test $$ts || exit 1; \
+	  full="$$full $(EXTENSION_FULL_PATH)"; fi; \
+	[ -z "$$(echo $$full)" ] || echo "+ full-path checks reached: make test-full-path TESTS=\"$$(echo $$full)\""
 
-test-all:
+test-all: $(EXTENSION)/node_modules
 	$(PYTEST) -m 'not full_path' mx/
+	cd $(EXTENSION) && npm run -s typecheck
+	node --test "$(EXTENSION)/tests/**/*.test.ts"
 
-test-full-path:
-	$(PYTEST) -m full_path $(TESTS)
+# A .ts file in TESTS is one of the extension's full-path checks, which node runs; the rest go to pytest.
+test-full-path: $(EXTENSION)/node_modules
+	@py=$$(printf '%s\n' $(TESTS) | grep -v '\.ts$$'); ts=$$(printf '%s\n' $(TESTS) | grep '\.ts$$'); \
+	{ [ -z "$$py" ] || $(PYTEST) -m full_path $$py; } && { [ -z "$$ts" ] || node --test $$ts; }
+
+$(EXTENSION)/node_modules: $(EXTENSION)/package-lock.json
+	cd $(EXTENSION) && npm ci --no-audit --no-fund
+	@touch $@
 
 version:
 	@jq -r .version $(PLUGIN)
