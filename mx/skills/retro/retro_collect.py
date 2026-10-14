@@ -517,8 +517,10 @@ def git(repo: Path, *args: str) -> str:
 
 
 def commits(repo: Path, since: datetime, *paths: str, until: datetime | None = None) -> list[dict]:
-    """The commits on any local branch committed after `since` (and by `until`), newest first."""
-    out = git(repo, "log", "--branches", f"--since={since.isoformat()}", *([f"--until={until.isoformat()}"] if until else []),
+    """The commits on any local branch committed after `since` (and by `until`), newest first.
+    `--since` alone stops at the first commit dated before it, which skips a commit of the period
+    beneath one with an older date."""
+    out = git(repo, "log", "--branches", f"--since-as-filter={since.isoformat()}",*([f"--until={until.isoformat()}"] if until else []),
               f"--format=%H{SEP}%cI{SEP}%an{SEP}%s{SEP}%b{END}",
               "--", *paths)
     rows = []

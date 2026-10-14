@@ -300,6 +300,19 @@ def test_git_holds_only_the_periods_commits_and_its_tickets(tmp_path: Path, repo
     assert "file old" not in record
 
 
+def test_git_holds_a_commit_of_the_period_beneath_one_dated_before_it(tmp_path: Path) -> None:
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, {"a.py": "1"}, "IN-THE-PERIOD", SINCE + timedelta(hours=1))
+    commit(repo, {"a.py": "2"}, "DATED-BEFORE-IT", SINCE - timedelta(hours=1))  # another host's clock, a rebase
+
+    record = (collect(tmp_path, [repo]) / "git" / "proj.md").read_text()
+
+    assert "IN-THE-PERIOD" in record
+    assert "DATED-BEFORE-IT" not in record
+
+
 def test_nothing_is_written_inside_a_git_repository(tmp_path: Path, repo: Path) -> None:
     Transcript(tmp_path / ".claude" / "projects", "/home/u/repos/agents", SINCE + timedelta(days=1)).says("hi")
     with pytest.raises(SystemExit):
