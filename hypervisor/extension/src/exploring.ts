@@ -1,9 +1,9 @@
 // Explore runs on the live hypervisor: `/explore N [direction]` runs up to N explore steps as turns of its own
-// profile, so what they find lands in the memory max talks to. The first step's message is the direction, every later
-// one a bare "continue". A run stops before the next step at the first of: N steps taken, its token cap spent, the
-// week's quota used to its share, a step that failed, or a message from max, who is back and whose turn comes first.
-// The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in flight, the
-// hypervisor reads and delegates, and starts or messages no session.
+// profile, so what they find lands in the memory max talks to. Each step's message says it is one, toward what, and
+// where the run stands against what stops it. A run stops before the next step at the first of: N steps taken, its
+// token cap spent, the week's quota used to its share, a step that failed, or a message from max, who is back and whose
+// turn comes first. The week's quota is read from the rate-limit headers of the hypervisor's replies. While a run is in
+// flight, the hypervisor reads and delegates, and starts or messages no session.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -103,20 +103,37 @@ export function parse(args: string): Request | string {
 	return request;
 }
 
-/** The message that starts step `n` of a run toward `direction`. */
-export function stepMessage(n: number, direction: string | undefined): string {
-	if (n > 1) return "continue";
-	return direction ? `Explore: ${direction}` : "Explore.";
+/**
+ * The message that starts step `n` of a run, with `spent` of its tokens spent and the week as last read: what the step
+ * is, toward what, and where the run stands against each budget it was asked for.
+ */
+export function stepMessage(request: Request, n: number, spent: number, week: Week | undefined, now: number): string {
+	const stands: string[] = [];
+	if (request.tokens !== undefined) stands.push(`${spent} of ${request.tokens} tokens spent`);
+	if (request.untilWeek !== undefined) {
+		const live = current(week, now);
+		const used = live ? `at ${Math.round(live.used)}%` : "not read yet";
+		stands.push(`the week ${used}, the run stops at ${request.untilWeek}%`);
+	}
+	const head = `Explore step ${n} of at most ${request.steps}, toward ${request.direction ?? "the default goal"}.`;
+	const tail = stands.join("; ");
+	return tail ? `${head} ${tail[0]!.toUpperCase()}${tail.slice(1)}.` : head;
 }
 
-/** Why a run stops before its next step, or nothing while it goes on. A week whose reset has passed tells nothing. */
+/** Why a run stops before its next step, or nothing while it goes on. */
 export function stopBefore(run: Run, spent: number, week: Week | undefined, now: number): string | undefined {
 	const { request } = run;
+	const live = current(week, now);
 	if (run.interrupted) return "a message from max";
 	if (run.taken >= request.steps) return `${request.steps} ${request.steps === 1 ? "step" : "steps"}`;
 	if (request.tokens !== undefined && spent >= request.tokens) return `the cap of ${request.tokens} tokens`;
-	if (request.untilWeek !== undefined && week && week.resets > now && week.used >= request.untilWeek) return `the week at ${Math.round(week.used)}% used`;
+	if (request.untilWeek !== undefined && live && live.used >= request.untilWeek) return `the week at ${Math.round(live.used)}% used`;
 	return undefined;
+}
+
+/** The week as last read, unless its reset has passed: its quota has started over, and what was read tells nothing. */
+function current(week: Week | undefined, now: number): Week | undefined {
+	return week && week.resets > now ? week : undefined;
 }
 
 /** Registers `/explore` with pi. */
@@ -217,7 +234,7 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 				const before = spent(current.started) ?? 0;
 				stopped = stopBefore(current, before, replied, Date.now()) ?? "";
 				if (stopped) break;
-				const done = await step(ctx, stepMessage(current.taken + 1, request.direction));
+				const done = await step(ctx, stepMessage(request, current.taken + 1, before, replied, Date.now()));
 				current.taken++;
 				const after = spent(current.started);
 				const tokens = (after ?? before) - before;
