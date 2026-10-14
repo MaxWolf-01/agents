@@ -235,6 +235,9 @@ class Question:
     detail: str  # the rest of the item, as written
     options: tuple[Option, ...] = ()
     why: str = ""  # the `- Why:` sub-item under the options, where the question carries one
+    # A blind question's test page (`blind-test`), from the repo root or absolute: the page holds its
+    # options and the agent's pick, if any, so the question carries neither.
+    blind: str = ""
 
 
 @dataclass(frozen=True)
@@ -528,18 +531,21 @@ SUB_ITEM = re.compile(r"\s{2,}- (.*)")
 OPTION = re.compile(r"\(([a-z])\)\s+(.*)")
 PICK = re.compile(r"\s*\*my pick\*\s*")
 WHY = re.compile(r"Why:\s*(.*)")
+BLIND = re.compile(r"Blind:\s*(\S+)")
 
 
 def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
     """`- [Q7] **headline** detail` items, each with `(a) text` options, at least two and one marked `*my pick*`,
-    and at most one `Why: text`, as sub-items; a line indented under an item continues it."""
+    and at most one `Why: text`, as sub-items; a line indented under an item continues it. A blind
+    question carries one `Blind: path` sub-item, its test page, and nothing else."""
     items: list[dict] = []
     part: dict | None = None  # the item or sub-item a continuation line extends
     for n, line in enumerate(text.split("\n"), start=start):
         if not line.strip():
             continue
         if m := QUESTION_ITEM.fullmatch(line):
-            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None, "line": n}
+            part = {"tag": m.group(1), "headline": m.group(2), "text": m.group(3) or "", "options": [], "why": None,
+                    "blind": None, "line": n}
             items.append(part)
         elif line.startswith("- "):
             raise RecordError(path, n, "a question is `- [Q7] **headline** detail`")
@@ -554,14 +560,25 @@ def read_questions(path: Path, start: int, text: str) -> tuple[Question, ...]:
                 if item["why"] is not None:
                     raise RecordError(path, n, f"a second Why: under {item['tag']}")
                 part = item["why"] = {"text": w.group(1)}
+            elif b := BLIND.fullmatch(m.group(1)):
+                if item["blind"] is not None:
+                    raise RecordError(path, n, f"a second Blind: under {item['tag']}")
+                if b.group(1).startswith("../"):
+                    raise RecordError(path, n, f"{b.group(1)} is neither a path from the repo root nor an absolute one")
+                item["blind"], part = b.group(1), None
             else:
-                raise RecordError(path, n, "a question's sub-item is an option `(a) text` or `Why: text`")
+                raise RecordError(path, n, "a question's sub-item is an option `(a) text`, `Why: text` or `Blind: path`")
         elif line.startswith(" ") and part is not None:
             part["text"] = f"{part['text']} {line.strip()}".strip()
         else:
             raise RecordError(path, n, "unexpected text in ## Questions")
     questions = []
     for item in items:
+        if item["blind"] is not None:
+            if item["options"] or item["why"] is not None:
+                raise RecordError(path, item["line"], f"{item['tag']} is blind: its options, pick and why live in its test page, not here")
+            questions.append(Question(item["tag"], item["headline"], item["text"], blind=item["blind"]))
+            continue
         letters = [o["letter"] for o in item["options"]]
         if len(set(letters)) != len(letters):
             raise RecordError(path, item["line"], f"{item['tag']} repeats an option letter")
@@ -1046,6 +1063,10 @@ def open_question(turn: Turn, q: Question, folded: bool) -> str:
     why = f'<p class="why v-small"><span class="v-meta">why</span> {inline(q.why)}</p>' if q.why else ""
     pick = next((o for o in q.options if o.picked), None)
     pickline = f'<p class="pickline"><span class="v-num">{pick.letter}</span> · {esc(strip_tags(inline(pick.text)))}</p>' if pick else ""
+    if q.blind:
+        # The pick line's place on a folded question, so the test is one click from the band.
+        test = Shown(Link("open the blind test", q.blind, ""), href(q.blind), resolved(q.blind, ROOT.get() or Path.cwd()), None)
+        pickline = f'<p class="pickline blind">blind · {artefact(test, "link")}</p>'
     return f"""
 <article class="q{' folded' if folded else ''}" id="{q.tag.lower()}" tabindex="-1">
   <span class="rail v-num">{q.tag}</span>

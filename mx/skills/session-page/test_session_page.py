@@ -195,6 +195,24 @@ def test_the_top_of_the_worked_example_holds_the_one_question_still_open(
     assert waiting(view_of(worked_example, transcript)) == ["Q7"]
 
 
+def test_a_blind_question_waits_at_the_top_with_its_test_and_no_pick(tmp_path: Path) -> None:
+    """A blind question is one the user answers on its test page, which holds the options and the
+    agent's pick: the top shows it with a link to that page, and no option or pick of its own."""
+    directory = tmp_path / "agent" / "sessions" / DRAWN
+    (directory / "turns").mkdir(parents=True)
+    (directory / "turns" / "01.md").write_text(
+        "---\ndate: 2026-10-13\n---\n\n# Round 1\n\n## Questions\n\n"
+        "- [Q1] **How does a refusal read?** five refusals, written both ways\n"
+        "  - Blind: agent/show/refusals/blind-q1.html\n"
+    )
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("")
+    assert waiting(view_of(directory, transcript)) == ["Q1"]
+    top = elements(render_session(directory, transcript, now=NOW), QUESTIONS)[QUESTIONS]
+    assert 'href="../../../agent/show/refusals/blind-q1.html"' in top
+    assert "my pick" not in text_of(top)
+
+
 def test_the_turns_run_newest_first_with_only_the_newest_open(worked_example: Path, transcript: Path) -> None:
     """The Decisions' layout: the turns newest first, the newest open and the older ones
     collapsed."""

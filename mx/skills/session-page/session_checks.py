@@ -164,6 +164,9 @@ UNPARSEABLE = {
     "a second Why": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - (a) A light review. *my pick*\n  - (b) None.\n"
                  "  - Why: seconds.\n  - Why: again.\n", 13),
+    "a blind question that also offers options": (
+        "04.md", f"{ROUND_3}## Questions\n\n- [Q7] **What reviews the prose?**\n  - Blind: agent/show/r/blind-q7.html\n"
+                 "  - (a) A light review. *my pick*\n  - (b) None.\n", 9),
     "a question an earlier turn asked": (
         "04.md", f"{ROUND_3}## Questions\n\n- [Q1] **One feature or two?**\n  - (a) Two. *my pick*\n  - (b) One.\n", None),
     "a link that climbs out of the repo": ("04.md", f"{ROUND_3}## Links\n\n- [The round](../round.html): it\n", 9),
