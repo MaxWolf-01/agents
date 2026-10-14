@@ -56,8 +56,8 @@ function home() {
 	return { home: at, store: path.join(at, "store"), repo: path.join(at, "my.repo") };
 }
 
-// Claude Code 2.1.288's own reading of a cross-session message, transcribed from its bundle: the envelope's optional
-// attributes in their fixed order, then the body on the lines between the tags.
+// Claude Code's own reading of a cross-session message, transcribed from its bundle (2.1.288, unchanged in 2.1.299):
+// the envelope's optional attributes in their fixed order, then the body on the lines between the tags.
 const ENVELOPE =
 	/^<cross-session-message(?: from="([A-Za-z0-9%:_/.\\-]+)")?(?: from-session="([A-Za-z0-9_-]{1,80})")?(?: hop-chain="([0-9a-f,]+)")?(?: from-name="([^"<>\n\r]+)")?(?: from-mode="(bypass|prompting)")?(?: from-plugin="([^"<>\n\r]+)")?>\n([\s\S]*)\n<\/cross-session-message>$/;
 
@@ -73,7 +73,7 @@ test("a message to a session's inbox is one line, a user message Claude Code rea
 			assert.ok(parsed, "the envelope parses");
 			assert.equal(parsed[4], "hypervisor");
 			assert.equal(parsed[1], undefined, "no reply address");
-			assert.equal(parsed[5], undefined, "no permission class, so a prompting session delivers it");
+			assert.equal(parsed[5], "prompting", "the prompting class, so a session in auto mode delivers it and one that bypasses permissions holds it");
 			assert.equal(parsed[7], text);
 		}),
 	);
