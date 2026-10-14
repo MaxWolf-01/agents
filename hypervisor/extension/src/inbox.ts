@@ -28,12 +28,15 @@ export interface Inbox {
 	read(which: { id?: string; from?: string }): Promise<string[]>;
 	/**
 	 * Hands every waiting ping to `deliver`, as the hypervisor gets them, and moves them to `read/` unless it returns
-	 * `false`, which leaves them for the next take. While one take runs, another takes nothing.
+	 * `false`, which leaves them for the next take. While one take of this process's on the store runs, another takes nothing.
 	 */
 	takePings(deliver: (pings: string[]) => boolean | void): Promise<void>;
 	/** While plain messages wait: per sender, how many, how many bytes, how old at `now`. Never their text. */
 	statusLine(now?: number): string | undefined;
 }
+
+/** The inbox directories a take of this process's runs on. */
+const taking = new Set<string>();
 
 /** The inbox of `store`. Synchronous where it lists, since pi asks for the status line while it builds a request. */
 export function inbox(store: string): Inbox {
@@ -44,7 +47,6 @@ export function inbox(store: string): Inbox {
 		await mkdir(readDir, { recursive: true });
 		await Promise.all(messages.map((m) => rename(m.file, path.join(readDir, path.basename(m.file)))));
 	};
-	let taking = false;
 	return {
 		async post(told) {
 			await mkdir(dir, { recursive: true });
@@ -62,8 +64,8 @@ export function inbox(store: string): Inbox {
 			return chosen.map((m) => `${shown(m)} (sent ${m.at.slice(0, 16)}Z)`);
 		},
 		async takePings(deliver) {
-			if (taking) return;
-			taking = true;
+			if (taking.has(dir)) return;
+			taking.add(dir);
 			try {
 				const pings = waiting(dir).filter((m) => m.ping);
 				if (!pings.length) return;
@@ -72,7 +74,7 @@ export function inbox(store: string): Inbox {
 				if (deliver(pings.map(shown)) === false) return;
 				await markRead(pings);
 			} finally {
-				taking = false;
+				taking.delete(dir);
 			}
 		},
 		statusLine(now = Date.now()) {

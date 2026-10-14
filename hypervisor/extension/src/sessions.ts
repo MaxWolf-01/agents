@@ -194,7 +194,7 @@ export function slug(text: string): string {
 }
 
 /** Whether a process runs. */
-export function alive(pid: number): boolean {
+function alive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
