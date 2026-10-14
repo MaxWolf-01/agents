@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """What the turn review reads its rules and the record's shape from. Run: uv run test_turn_review.py
 

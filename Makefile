@@ -25,7 +25,7 @@ check:
 JOBS ?= auto
 # What `make test` measures the change from: the merge-base of this tree with BASE.
 BASE ?= master
-UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with markdown-it-py pytest -p no:cacheprovider
+UV_PYTEST = PYTHONDONTWRITEBYTECODE=1 uv run --quiet --with pytest --with pytest-xdist --with hypothesis --with tyro --with pyyaml --with markdown --with 'markdown-it-py[linkify]' pytest -p no:cacheprovider
 PYTEST = $(UV_PYTEST) -n $(JOBS)
 # The full-path checks test-full-path runs: every one, or those in the test files TESTS names on
 # the command line. Never read from the environment, so an exported TESTS cannot narrow a release.

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Pick up a handoff: print it in full, retire it from the agent repo, and link this session's page to the page of the session that wrote it.
 
