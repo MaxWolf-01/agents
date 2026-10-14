@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The session page running in a browser. Run: uv run test_page_in_a_browser.py
 
@@ -21,12 +21,13 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from session_checks import SESSION
-from session_page import PAGE, render_session
+from session_page import PAGE, chat_path, chat_record, render_session
 
 # Every check here starts a browser.
 pytestmark = pytest.mark.full_path
@@ -165,6 +166,28 @@ with sync_playwright() as pw:
         settle(page)
         out["arrived"] = page.evaluate(PLACE)
 
+    elif scenario == "follow":
+        # Q1a: a reader inside the newest turn when turn 13 arrives follows it to the top; one
+        # reading further back when a chat turn arrives stays, the control marked until n
+        context, page = open_page(1280, 700)
+        wheel(page, 200)
+        out["caught_up"] = page.evaluate(PLACE)
+        shutil.copyfile(args["after"], args["file"])
+        page.reload()
+        page.evaluate("document.fonts.ready")
+        page.wait_for_timeout(300)
+        out["followed"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
+        wheel(page, 2500)
+        out["back"] = page.evaluate(PLACE)
+        shutil.copyfile(args["chatted"], args["file"])
+        page.reload()
+        page.evaluate("document.fonts.ready")
+        page.wait_for_timeout(300)
+        out["stayed"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
+        page.keyboard.press("n")
+        settle(page)
+        out["newest"] = {**page.evaluate(PLACE), "control": page.evaluate(CONTROL)}
+
     elif scenario == "number":
         # P6: t, then the digits a turn shows
         context, page = open_page(1280, 700)
@@ -279,6 +302,23 @@ def long_session(rendered: tuple[Path, Path], transcript: Path) -> tuple[Path, P
     return page, after
 
 
+@pytest.fixture
+def chatted(long_session: tuple[Path, Path], transcript: Path) -> Path:
+    """Beside the long session's page, the page rendered once turn 13 and then a chat turn have
+    arrived."""
+    page, _ = long_session
+    turns = page.parent / "turns"
+    now = datetime.now(UTC)
+    (turns / "13.md").write_text(filler(13))
+    chat = chat_path(turns, now)
+    chat.write_text(chat_record("A reply that ended a turn in the chat.", now))
+    rendered = page.parent / "chatted.html"
+    rendered.write_text(render_session(page.parent, transcript))
+    (turns / "13.md").unlink()
+    chat.unlink()
+    return rendered
+
+
 def probe(page: Path, scenario: str, **args: object) -> dict:
     for tool in ("uv", "chromium"):
         if not shutil.which(tool):
@@ -341,6 +381,28 @@ def test_a_reload_with_a_turn_added_keeps_the_readers_place(long_session: tuple[
     assert newest["control"]["fresh"] is False, "P3: turn 13 is in view and the control is still marked"
     arrived = seen["arrived"]
     assert arrived["anchor"] == "t03" and abs(arrived["into"]) <= 7 and "t03" in arrived["open"], f"P2: {arrived}"
+
+
+def test_a_reader_caught_up_follows_a_new_turn_and_one_reading_back_stays(
+    long_session: tuple[Path, Path], chatted: Path
+) -> None:
+    """A reader scrolled into the newest turn, turn 12, is caught up: a reload with turn 13 added
+    takes them to the top, onto turn 13, and leaves nothing marked. A reader further back when a
+    chat turn arrives stays on the block they were reading, the control marked and naming the chat
+    turn, and n takes them to it."""
+    page, after = long_session
+    seen = probe(page, "follow", file=str(page), after=str(after), chatted=str(chatted))
+    assert seen["caught_up"]["anchor"] == "t12" and seen["caught_up"]["scrollTop"] > 0, seen["caught_up"]
+    followed = seen["followed"]
+    assert followed["anchor"] == "t13" and followed["scrollTop"] <= 1, f"the caught-up reader stayed: {followed}"
+    assert followed["control"]["fresh"] is False, followed
+    back, stayed = seen["back"], seen["stayed"]
+    assert back["anchor"] not in ("t13", "t12"), f"the wheel left the newest turns in view: {back}"
+    assert stayed["anchor"] == back["anchor"] and abs(stayed["into"] - back["into"]) <= 3, f"{back} became {stayed}"
+    assert stayed["control"]["fresh"] is True and "chat" in stayed["control"]["text"], stayed["control"]
+    newest = seen["newest"]
+    assert newest["anchor"].startswith("chat-") and newest["scrollTop"] <= 1, f"n: {newest}"
+    assert newest["control"]["fresh"] is False, newest
 
 
 def test_t_and_a_turns_number_go_to_that_turn(long_session: tuple[Path, Path]) -> None:

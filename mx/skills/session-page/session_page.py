@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Render a session directory and its transcript into the session page, `index.html` in that directory.
 
@@ -37,6 +37,9 @@ from typing import Literal, TypeVar
 
 import yaml
 from markdown_it import MarkdownIt
+from markdown_it.common.normalize_url import validateLink
+from markdown_it.rules_core import linkify
+from markdown_it.rules_inline import linkify as linkify_inline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tracker"))
 import tracker  # noqa: E402  finds the agent repo a session's directory is in, as `tracker root` does
@@ -976,7 +979,7 @@ def assemble(v: View, now: datetime) -> str:
 </head>
 <body>
 <header class="bar">
-  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.column)}
+  <span class="v-meta where"><span title="the repo the session runs in">{esc(session.repo.name)}</span><span class="sep">/</span><button class="id" id="session-id" data-copy="{esc(session.id)}" title="copy the session id: {esc(session.id)}">{esc(session.id[:8])}</button>{name}</span>{newest_control(v.rows)}
   <button class="button sheet-toggle" id="sheet-toggle" aria-controls="{COLUMN}" aria-expanded="false">artefacts · {sum(len(r.artefacts) for r in v.column)}</button>
   <button class="icon" id="keys" aria-label="keyboard shortcuts" aria-keyshortcuts="?"><kbd>?</kbd></button>
   <button class="icon" id="scheme" aria-label="switch to night">
@@ -1027,7 +1030,6 @@ def column(rows: tuple[Row, ...], session: Session) -> str:
     number with its headline, and under that the artefacts it linked; a chat turn is a quiet row of
     its reply's first line. The session that continued this one is at its top, the one it continued
     at its bottom, each a link to that session's page."""
-    numbered = tuple(r for r in rows if isinstance(r.turn, Turn))
     groups = "".join(chat_group(r) if isinstance(r.turn, Chat) else f"""
     <section class="group{'' if r.artefacts else ' bare'}" id="a{r.key}">
       <a class="v-num turn-ref" href="#t{r.key}">{r.key}</a><div class="tl">{timeline_row(r)}</div>
@@ -1036,7 +1038,7 @@ def column(rows: tuple[Row, ...], session: Session) -> str:
     earlier = timeline_end(session, "previous", session.previous) if session.previous else ""
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(numbered)}</div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
+    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(rows)}</div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
   </aside>"""
 
 
@@ -1069,14 +1071,16 @@ def timeline_row(r: Row) -> str:
     return f'<a class="hl" href="#t{r.key}" tabindex="-1" title="{headline}">{headline}</a>' + (f"<ol>{items}</ol>" if items else "")
 
 
-def newest_control(column: tuple[Row, ...]) -> str:
-    """The control that takes the reader to the newest turn, showing its number, which the page
-    marks while a turn has arrived that the reader has not reached. It sits in the timeline's
-    head, and in the bar where the timeline is a sheet; nothing where there is no numbered turn."""
-    if not column:
+def newest_control(rows: tuple[Row, ...]) -> str:
+    """The control that takes the reader to the newest turn, showing its number, or `chat` for a
+    chat turn, which the page marks while a turn has arrived that the reader has not reached. It
+    sits in the timeline's head, and in the bar where the timeline is a sheet; nothing where there
+    is no turn."""
+    if not rows:
         return ""
+    label = rows[0].key if isinstance(rows[0].turn, Turn) else "chat"
     return (f'<button class="newest" data-newest aria-keyshortcuts="n" title="the newest turn">'
-            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{column[0].key}</span><kbd>n</kbd></button>')
+            f'<span class="dot" aria-hidden="true"></span>newest <span class="v-num">{label}</span><kbd>n</kbd></button>')
 
 
 def opening_key(s: Shown) -> str:
@@ -1303,7 +1307,29 @@ def code_inline(self, tokens, idx, options, env) -> str:
     return f'<a class="path" href="{esc(target)}" target="_blank" rel="noopener">{code}</a>' if target else code
 
 
-MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
+def links_in_text(state) -> None:
+    """A bare URL in the text made a link, short of text that sits inside a link of its own. Only
+    a URL with its scheme: fuzzy matching would take `session_page.py` for a domain in Paraguay.
+    markdown-it finds them twice, while it parses a line and after, so both of its rules ask."""
+    if state.env.get("paths", True):
+        linkify(state)
+
+
+def links_in_line(state, silent: bool) -> bool:
+    return state.env.get("paths", True) and linkify_inline(state, silent)
+
+
+def file_links_too(url: str) -> bool:
+    """markdown-it's check of a link's target, short of its ban on `file:`: a reply links a file on
+    this machine that way, the PDF in `~/Downloads` say, and the page is the reader's own."""
+    return url.strip().lower().startswith("file:") or validateLink(url)
+
+
+MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable(["table", "linkify"])
+MARKDOWN.linkify.set({"fuzzy_link": False, "fuzzy_email": False})
+MARKDOWN.core.ruler.at("linkify", links_in_text)
+MARKDOWN.inline.ruler.at("linkify", links_in_line)
+MARKDOWN.validateLink = file_links_too
 CODE_INLINE = MARKDOWN.renderer.rules["code_inline"]
 MARKDOWN.add_render_rule("link_open", link_open)
 MARKDOWN.add_render_rule("code_inline", code_inline)

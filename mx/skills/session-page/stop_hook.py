@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tyro", "pyyaml", "markdown-it-py"]
+# dependencies = ["tyro", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """Stop hook: what the end of a turn does to the session page.
 

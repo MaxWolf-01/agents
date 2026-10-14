@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "tyro", "hypothesis", "pyyaml", "markdown-it-py"]
+# dependencies = ["pytest", "tyro", "hypothesis", "pyyaml", "markdown-it-py[linkify]"]
 # ///
 """The session renderer's properties. Run: uv run test_session_page.py
 
@@ -33,7 +33,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from session_checks import SESSION, elements, rows_of, sections_of, text_of, turns_on, view_of
-from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, chat_path, chat_record, render_session
+from session_page import ARTEFACT, COLUMN, PAGE, QUESTIONS, Turn, View, block, chat_path, chat_record, inline, render_session
 
 NOW = datetime(2026, 9, 23, 2, 30)  # the clock the page is rendered against, so two renders compare
 DRAWN = "00000000-0000-0000-0000-000000000000"  # the session id a drawn session carries
@@ -342,6 +342,15 @@ def test_a_code_span_naming_a_file_on_this_machine_opens_it(
         ((home / "notes.md").as_uri(), "~/notes.md"),
     ]
     assert section.count('class="path"') == 3, "a code span inside a link of its own was linked again"
+
+
+def test_a_bare_url_and_a_file_url_are_links() -> None:
+    """A URL a reply writes bare is a link, and so is a markdown link to a `file:` URL, such as a
+    chat reply's PDF in `~/Downloads`. A file name that only looks like a domain stays text, a
+    `javascript:` link stays text, and text shown inside a link of its own gets no link."""
+    rendered = block("See https://example.com/a, [the PDF](file:///tmp/x.pdf), page.py and [no](javascript:alert(1)).")
+    assert re.findall(r'<a href="([^"]+)"', rendered) == ["https://example.com/a", "file:///tmp/x.pdf"]
+    assert "<a" not in inline("Stage at https://example.com/a", paths=False)
 
 
 # What the user said in each of the worked example's four turns, the last of them queued mid-turn,

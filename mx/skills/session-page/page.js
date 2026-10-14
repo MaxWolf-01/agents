@@ -92,7 +92,7 @@ document.addEventListener("focusin", (e) => {
   if (b) { cur = blocks.indexOf(b); mark() }
 })
 
-// ---- the control to the newest numbered turn: marked while it is one the reader has not reached
+// ---- the control to the newest turn, a chat turn too: marked while it is one the reader has not reached
 
 // the id of the newest block that has been in view in this tab; null until one has
 let seen = null
@@ -100,14 +100,14 @@ const rank = (id) => { const i = blocks.findIndex((b) => b.id === id); return i 
 const reach = () => {
   const b = inView()
   if (b && (seen === null || blocks.indexOf(b) < rank(seen))) seen = b.id
-  const fresh = seen !== null && turns.length > 0 && rank(seen) > rank(turns[0].id)
+  const fresh = seen !== null && rank(seen) > 0
   newest.forEach((n) => n.classList.toggle("fresh", fresh))
 }
 const toNewest = () => {
   sheet(false)
-  if (!turns.length) return
-  turns[0].open = true
-  focusBlock(blocks.indexOf(turns[0]))
+  if (!blocks.length) return
+  if (blocks[0].matches("details")) blocks[0].open = true
+  focusBlock(0)
 }
 newest.forEach((n) => n.addEventListener("click", toNewest))
 
@@ -217,8 +217,10 @@ document.addEventListener("click", (e) => {
 // ---- the reader's place, kept across a reload
 // The hub reloads the page each time a turn renders. Before it unloads, the page saves the block at
 // the top of the pane and the offset into it, the open turns and the rest of what the reader set,
-// and sets them again once reloaded. A reload never replays the fragment a link left in the
-// address; only a navigation that arrives with one reveals it.
+// and sets them again once reloaded. A reader who had the newest turn in view was caught up, and
+// follows a turn that arrived above it to the top; one reading further back stays where they
+// were. A reload never replays the fragment a link left in the address; only a navigation that
+// arrives with one reveals it.
 
 history.scrollRestoration = "manual"
 const KEY = "session-page:" + document.getElementById("session-id").dataset.copy
@@ -226,6 +228,8 @@ const place = () => {
   const b = atTop()
   return {
     top: pane.scrollTop <= 1,
+    newest: blocks.length ? blocks[0].id : null,
+    caughtUp: blocks.length > 0 && blocks[0].getBoundingClientRect().bottom > pane.getBoundingClientRect().top + MARGIN,
     anchor: b ? b.id : null,
     into: b ? pane.getBoundingClientRect().top - b.getBoundingClientRect().top : 0,
     turns: turns.map((t) => t.id),
@@ -245,7 +249,8 @@ const restore = (s) => {
   // a turn the save did not know is new, and stays as rendered
   const known = new Set(s.turns), open = new Set(s.open)
   turns.forEach((t) => { if (known.has(t.id)) t.open = open.has(t.id) })
-  cur = s.cur ? blocks.findIndex((b) => b.id === s.cur) : -1
+  const follows = s.caughtUp && blocks.length > 0 && blocks[0].id !== s.newest
+  cur = s.cur && !follows ? blocks.findIndex((b) => b.id === s.cur) : -1
   mark()
   if (waiting) {
     const q = questions.findIndex((x) => x.id === s.question)
@@ -254,7 +259,7 @@ const restore = (s) => {
   }
   brief(s.brief)
   const anchor = s.anchor && document.getElementById(s.anchor)
-  const go = () => { pane.scrollTop = s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
+  const go = () => { pane.scrollTop = follows || s.top || !anchor ? 0 : offsetIn(anchor) + s.into; reach() }
   go()
   // the web fonts land after the first layout and move every block: until the reader moves, the place is set again
   let moved = false

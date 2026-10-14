@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown", "markdown-it-py"]
+# dependencies = ["pytest", "hypothesis", "tyro", "pyyaml", "markdown", "markdown-it-py[linkify]"]
 # ///
 """Checks for the board's reading of a tracker. Run: uv run test_board.py
 
