@@ -44,7 +44,6 @@
       ch.regions = ch.steps.map((s) => (s.dataset.region ? s.dataset.region.split(" ").map(Number) : null))
     } else {
       ch.svg = ch.canvas.querySelector("svg")
-      ch.stepped = ch.stage.hasAttribute("data-stepped")
       ch.marked = [...ch.svg.querySelectorAll("[data-step]")]
     }
     return ch
@@ -132,7 +131,7 @@
 
   function figureView(ch, k) {
     const all = fitScale(ch, ch.W, ch.H)
-    if (!ch.stepped || !ch.boxes) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
+    if (!ch.boxes) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
     const drawn = union(ch.boxes.filter((b) => b.step <= k))
     if (!drawn) return aim(ch, Math.min(all, MAX_FIGURE), ch.W / 2, ch.H / 2)
     const pad = { x: drawn.x - PAD, y: drawn.y - PAD, w: drawn.w + 2 * PAD, h: drawn.h + 2 * PAD }
@@ -195,8 +194,6 @@
       ch.canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`
       ch.canvas.style.setProperty("--s", view.s)
     }
-    ch.el.dataset.shown = whole() ? "whole" : String(k)
-    ch.el.dataset.accent = active && (ch.kind === "screenshot" ? !!ch.regions[k - 1] : !!ch.stepped) ? String(k) : ""
   }
 
   const readingLine = () => innerHeight * (narrow.matches ? 0.72 : 0.5)
@@ -297,11 +294,11 @@
   for (const ch of chapters) if (ch.stage) resized.observe(ch.stage)
 
   const settle = () => {
-    for (const ch of chapters) if (ch.svg && ch.stepped) measure(ch)
+    for (const ch of chapters) if (ch.svg) measure(ch)
     relayout()
     requestAnimationFrame(() => requestAnimationFrame(() => {
       for (const ch of chapters) if (ch.canvas) ch.canvas.classList.add("ready")
-      root.dataset.story = "ready"
+      root.dataset.story = "ready" // what a headless check waits on before it steps the page
     }))
   }
   document.fonts.ready.then(settle, settle)

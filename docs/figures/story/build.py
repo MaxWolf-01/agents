@@ -10,8 +10,7 @@ picture. A section opens with one of two lines, then its intro, then its steps:
 - `figure: <name>`: the SVG of docs/figures/<name>.html, inlined with the part of the figure's CSS
   its SVG uses, scoped to it. Step k shows every element whose `data-step` (on itself or an
   ancestor) is at most k, and the elements of step k in the accent; an element with no
-  `data-step` shows at every step. A figure whose SVG carries no `data-step` is shown whole at
-  every step.
+  `data-step` shows at every step. Every figure carries steps.
 - `screenshot: <name>`: mx/assets/<name>.png (night) and <name>-light.png (day); one render serves
   both schemes. Each step may name a `region: x y w h`, fractions of the image, and the picture
   closes in on that region while the step is read.
@@ -86,10 +85,6 @@ def fail(message: str) -> None:
     sys.exit(f"build.py: {message}")
 
 
-def warn(message: str) -> None:
-    print(f"build.py: warning: {message}", file=sys.stderr)
-
-
 def parse_region(text: str, where: str) -> tuple[float, float, float, float]:
     try:
         x, y, w, h = (float(v) for v in text.split())
@@ -151,7 +146,7 @@ def parse(text: str) -> Story:
 
 
 def figure_svg(source: str, name: str) -> str:
-    """The figure's drawing: every top-level <svg> whose viewBox is wider than an icon, joined."""
+    """The figure's drawing: its one top-level <svg> whose viewBox is wider than an icon."""
     spans, depth, start = [], 0, 0
     for m in re.finditer(r"<svg\b|</svg\s*>", source):
         if m.group().startswith("<svg"):
@@ -167,9 +162,9 @@ def figure_svg(source: str, name: str) -> str:
         vb = re.search(r'viewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)', svg[:svg.index(">")])
         if vb and float(vb.group(1)) >= 200:
             drawings.append(svg)
-    if not drawings:
-        fail(f"figure {name!r}: no <svg> with a viewBox wider than 200 units")
-    return "\n".join(drawings)
+    if len(drawings) != 1:
+        fail(f"figure {name!r} has {len(drawings)} drawings wider than 200 units; the page inlines one")
+    return drawings[0]
 
 
 def namespace_ids(svg: str, prefix: str) -> tuple[str, dict[str, str]]:
@@ -280,7 +275,6 @@ class Drawing:
     css: str
     width: float
     height: float
-    stepped: bool
 
 
 def load_figure(section: Section, tokens: dict[str, str]) -> Drawing:
@@ -299,13 +293,11 @@ def load_figure(section: Section, tokens: dict[str, str]) -> Drawing:
     if re.search(r'\bdata-step="(?!\d+")', svg):
         fail(f"figure {section.name!r}: every data-step must be a whole number from 1")
     n = len(section.steps)
-    if marks and marks != set(range(1, n + 1)):
+    if marks != set(range(1, n + 1)):
         fail(f"figure {section.name!r} marks steps {sorted(marks)}, but its section in story.md has "
              f"steps 1 to {n}; every step needs its marks and every mark its step")
-    if not marks:
-        warn(f"figure {section.name!r} carries no data-step; it is shown whole at every step")
     vb = [float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).replace(",", " ").split()]
-    return Drawing(svg, scoped, vb[2], vb[3], bool(marks))
+    return Drawing(svg, scoped, vb[2], vb[3])
 
 
 # ---- screenshots ------------------------------------------------------------------------------
@@ -364,7 +356,7 @@ def stage(section: Section, drawing: Drawing | None, shots: dict[str, str], size
         head, rest = drawing.svg.split(">", 1)
         head = re.sub(r'\s(?:role|aria-label|aria-labelledby)="[^"]*"', "", head)
         svg = f'{head} role="img" aria-label="{label}">{rest}'
-        return f"""<div class="stage" data-kind="figure"{' data-stepped' if drawing.stepped else ''}>
+        return f"""<div class="stage" data-kind="figure">
           <div class="frame"><div class="canvas fig-{section.name}" {size_attrs(drawing.width, drawing.height, 1)}>
             {svg}
           </div></div>
@@ -474,12 +466,12 @@ def main(args: Args) -> None:
 
     out = args.out.resolve()
     prepare(out)
-    chapters, css, counts = [], [], {"stepped": 0, "whole": 0, "screenshots": 0}
+    chapters, css, counts = [], [], {"figures": 0, "screenshots": 0}
     for i, (section, thing) in enumerate(loaded, 1):
         if section.kind == "figure":
             stage_html = stage(section, thing, {}, (0, 0))
             css.append(f"/* {section.name}: from docs/figures/{section.name}.html */\n{thing.css}")
-            counts["stepped" if thing.stepped else "whole"] += 1
+            counts["figures"] += 1
         else:
             shots, size = {}, (0, 0)
             for scheme, path in thing.items():
@@ -496,8 +488,7 @@ def main(args: Args) -> None:
         shutil.copy2(HERE / name, out / name)
     for font in (HERE / "fonts").iterdir():
         shutil.copy2(font, out / "fonts" / font.name)
-    print(f"wrote {out / 'index.html'}: {len(story.sections)} sections; figures {counts['stepped']} "
-          f"stepped, {counts['whole']} whole; "
+    print(f"wrote {out / 'index.html'}: {len(story.sections)} sections; {counts['figures']} figures, "
           f"{counts['screenshots']} screenshots")
 
 
