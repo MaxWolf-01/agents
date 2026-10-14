@@ -216,7 +216,10 @@ export function exploring(pi: ExtensionAPI, config: RunConfig): void {
 				// A turn in flight, max's or a ping's, ends before the next step starts, so the step's turn is the step's alone.
 				// One in flight when the run was asked for is not the run's: the run begins once it ends.
 				while (!ctx.isIdle()) await sleep(IDLE_POLL_MS);
-				if (!current.begun) Object.assign(current, { begun: true, started: new Date().toISOString() });
+				if (!current.begun) {
+					current.begun = true;
+					current.started = new Date().toISOString();
+				}
 				const before = spent(current.started) ?? 0;
 				stopped = stopBefore(current, before, replied, Date.now()) ?? "";
 				if (stopped) break;
