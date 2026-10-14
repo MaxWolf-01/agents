@@ -1,7 +1,8 @@
-"""Checks for a workflow retro's run, at the seam "The run script's commit" (retro-semi-automated):
+"""Checks for a retro's run, at the seam "The run script's commit" (retro-semi-automated):
 given a scratch agent repo in which another change is staged, the commit holds the report's files
-alone and the other change is still staged after it; given one mid-rebase, nothing is committed
-and the run log says why (P9). The oracle is git's own record of the commit and the index.
+alone and the other change is still staged after it; given one mid-rebase or mid-merge, nothing
+is committed and the run log says why (P9). The commit lands in the agent repo's main checkout
+when the run starts from a worktree of it. The oracle is git's own record of the commit and the index.
 Run: make test, or pytest on this file with tyro, pyyaml and markdown-it-py[linkify].
 
 Each run goes through the whole command, its model runs a stub `claude` on PATH that records what
@@ -14,7 +15,8 @@ digests, the names and contents `batches.json` gets, the oracle being the batch 
 A run stopped or killed: the command run as a process of its own, sent a signal while its stage's
 stub runs, the oracle being whether the stub's processes still run, read from `/proc`. A resumed
 run: the oracle being the stub's record of which stages it ran and the period on the commit. A run
-in-process: the oracle being the signal handlers before it and after.
+in-process: the oracle being the signal handlers before it and after. Nothing a run writes lands
+in a git repository (retro-semi-automated#P2), the oracle being that repo's status.
 
 A repo retro runs through the same command, on a repo other than the agents repo: which stages
 run, in which order, what its run directory holds and what its stages may reach, the oracle being
@@ -44,7 +46,7 @@ WEEK = timedelta(weeks=1)
 # command line, one argument per line, the order the stages ran in, and what the run directory
 # held when it started; before
 # synthesis writes, it runs $STUB_BEFORE_SYNTHESIS, which stands for a session working meanwhile.
-# With $STUB_SYNTHESIS_FAILS set, synthesis writes nothing. With $STUB_HANG set it starts a child
+# With $STUB_SYNTHESIS_FAILS set, synthesis writes an empty report and no page. With $STUB_HANG set it starts a child
 # and waits on it instead, recording both pids, and takes a second to end on TERM, as a model run
 # ending its work does; the child ends only by its own TERM. Run as `claude auto-mode config`, as
 # collect runs it, it prints a config.
@@ -61,7 +63,7 @@ case $stage in
     "follow up") echo "follow-up" > follow-up.md ;;
     "go deep") mkdir -p deep && for f in leading-words permissions; do echo "deep" > "deep/$f.md"; done ;;
     "lens pass") mkdir -p lens-pass && for f in architecture bloat tests footguns escaped-defects; do echo "lens" > "lens-pass/$f.md"; done ;;
-    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && exit 0; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
+    synthesize) [ -n "${STUB_SYNTHESIS_FAILS:-}" ] && { : > report.md; exit 0; }; eval "${STUB_BEFORE_SYNTHESIS:-}"; echo "# Workflow retro: $(basename "$PWD")" > report.md && echo "<html>" > report.html ;;
 esac
 """
 
@@ -108,10 +110,6 @@ def retro(tmp_path: Path, repo: Path, until: datetime, since: datetime | None = 
     return retro_run.run_retro(repo, tmp_path / "data", [projects], since, until=until)
 
 
-def out(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout
-
-
 def last_logged(tmp_path: Path, repo: str = "agents") -> str:
     """The message of the run log's last line, after its time and run."""
     return (tmp_path / f"data/{repo}/runs.log").read_text().splitlines()[-1].split(" ", 2)[2]
@@ -134,33 +132,43 @@ def eventually(check: Callable[[], bool], seconds: float = 30) -> bool:
     return check()
 
 
+@pytest.mark.parametrize("start", ["the main checkout", "a worktree"])
 def test_the_commit_holds_the_reports_files_alone_and_another_staged_change_stays_staged(
-        tmp_path: Path, stub: Path, repo: Path) -> None:
-    run = retro(tmp_path, repo, FIRST, SINCE)
+        tmp_path: Path, stub: Path, repo: Path, start: str) -> None:
     agent = repo / "agent"
+    if start == "a worktree":  # a session's ticket worktree, whose agent/ is a worktree of the agent repo
+        repo, branch = tmp_path / "agents-ticket", "ticket/x"
+        git(tmp_path / "agents", "worktree", "add", "-q", "-b", branch, str(repo))
+        git(agent, "worktree", "add", "-q", "-b", branch, str(repo / "agent"))
+        ticket_branch = git(agent, "rev-parse", branch)
+    run = retro(tmp_path, repo, FIRST, SINCE)
     assert (stub / "order").read_text().split("\n")[:-1] == ["read fresh", "follow up", "go deep", "lens pass", "synthesize"]
     assert (run / "touched.md").is_file()
-    assert out(agent, "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
-    assert out(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], \
+    assert git(agent, "show", "--name-only", "--format=", "HEAD").split() == ["retro/report.html", "retro/report.md"]
+    assert git(agent, "diff", "--cached", "--name-only").split() == ["tickets/a.md"], \
         "the session's staged ticket is neither committed nor unstaged"
     assert (agent / "retro/report.md").read_text() == (run / "report.md").read_text()
-    assert last_logged(tmp_path).startswith("committed ")
+    assert last_logged(tmp_path, repo.name).startswith("committed ")
+    if start == "a worktree":
+        assert git(agent, "rev-parse", branch) == ticket_branch, "the report went to the main checkout, not the ticket's branch"
 
 
-def test_mid_rebase_nothing_is_committed_and_the_run_log_says_why(tmp_path: Path, stub: Path, repo: Path) -> None:
+@pytest.mark.parametrize("operation", ["rebase", "merge"])
+def test_mid_rebase_or_merge_nothing_is_committed_and_the_run_log_says_why(
+        tmp_path: Path, stub: Path, repo: Path, operation: str) -> None:
     agent = repo / "agent"
     git(agent, "commit", "-qm", "the staged ticket")
     git(agent, "checkout", "-qb", "side", "HEAD~")
     (agent / "tickets/a.md").write_text("status: done\n")
     git(agent, "commit", "-qam", "side")
     git(agent, "checkout", "-q", "-")
-    assert subprocess.run(["git", "-C", agent, "rebase", "side"], capture_output=True).returncode != 0, "a conflict stops the rebase"
-    head = out(agent, "rev-parse", "HEAD")
+    assert subprocess.run(["git", "-C", agent, operation, "side"], capture_output=True).returncode != 0, "a conflict stops it"
+    head = git(agent, "rev-parse", "HEAD")
     with pytest.raises(SystemExit):
         retro(tmp_path, repo, FIRST, SINCE)
-    assert out(agent, "rev-parse", "HEAD") == head
+    assert git(agent, "rev-parse", "HEAD") == head
     assert not (agent / "retro/report.md").exists()
-    assert last_logged(tmp_path).startswith(f"not committed: {agent} is mid-rebase; the report stays in {tmp_path}/data/agents/runs/")
+    assert last_logged(tmp_path).startswith(f"not committed: {agent} is mid-{operation}; the report stays in {tmp_path}/data/agents/runs/")
 
 
 @pytest.mark.parametrize("verdict", ["committed while the run ran", "staged"])
@@ -173,11 +181,11 @@ def test_a_verdict_written_into_the_report_is_never_overwritten(
         subprocess.run(edit, shell=True, check=True)
     else:
         monkeypatch.setenv("STUB_BEFORE_SYNTHESIS", f"{edit} && git -C {agent} commit -qm verdict -- retro/report.md")
-    head = out(agent, "rev-parse", "HEAD")
+    head = git(agent, "rev-parse", "HEAD")
     with pytest.raises(SystemExit):
         retro(tmp_path, repo, FIRST + WEEK)
     assert "F1 dismissed by max" in (agent / "retro/report.md").read_text()
-    assert out(agent, "rev-parse", "HEAD") == head if verdict == "staged" else out(agent, "log", "-1", "--format=%s") == "verdict\n"
+    assert git(agent, "rev-parse", "HEAD") == head if verdict == "staged" else git(agent, "log", "-1", "--format=%s") == "verdict\n"
     assert last_logged(tmp_path).startswith("not committed: ")
 
 
@@ -198,26 +206,29 @@ def test_read_fresh_sees_no_earlier_report_and_the_later_stages_read_the_last_th
         "each period starts where the last ended"
 
 
-def test_an_older_sample_bigger_than_a_batch_is_read_in_batches_of_its_own(tmp_path: Path) -> None:
+def test_the_periods_sessions_are_batched_a_project_together_and_the_older_samples_in_batches_of_their_own(
+        tmp_path: Path) -> None:
     run = tmp_path / "run"
     rows = []
-
-    def digest(where: str, sid: str, chars: int, start: str) -> None:
-        (run / where).mkdir(parents=True, exist_ok=True)
-        (run / where / f"{sid}.md").write_text("x" * chars)
-        rows.append(dict(id=sid, set=where, project="/home/u/repos/agents", start=start))
-
-    digest("sessions", "now", 1000, "2026-10-06T09:00:00Z")
     third = retro_run.BATCH_CHARS // 3 + 1  # two fit in a batch, three do not
+
+    def digest(where: str, sid: str, project: str, start: str) -> None:
+        (run / where).mkdir(parents=True, exist_ok=True)
+        (run / where / f"{sid}.md").write_text("x" * third)
+        rows.append(dict(id=sid, set=where, project=project, start=start))
+
+    for sid, project, hour in (("b2", "b", 12), ("a1", "a", 9), ("b1", "b", 10), ("a2", "a", 11)):
+        digest("sessions", sid, f"/home/u/repos/{project}", f"2026-10-06T{hour:02d}:00:00Z")
     for day in (5, 4, 3, 2, 1):
-        digest("sample", f"day{day}", third, f"2026-09-0{day}T09:00:00Z")
+        digest("sample", f"day{day}", "/home/u/repos/a", f"2026-09-0{day}T09:00:00Z")
     (run / "sessions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
 
     retro_run.write_batches(run)
 
     batches = json.loads((run / "batches.json").read_text())
     assert [(b["name"], b["digests"]) for b in batches] == [
-        ("batch-01", ["sessions/now.md"]),
+        ("batch-01", ["sessions/a1.md", "sessions/a2.md"]),
+        ("batch-02", ["sessions/b1.md", "sessions/b2.md"]),
         ("sample-01", ["sample/day1.md", "sample/day2.md"]),
         ("sample-02", ["sample/day3.md", "sample/day4.md"]),
         ("sample-03", ["sample/day5.md"]),
@@ -267,7 +278,7 @@ def test_a_resumed_run_keeps_its_period_and_runs_only_the_stages_that_left_out_a
     assert retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], resume=run) == run
 
     assert [p.stem for p in stub.glob("*.argv")] == ["synthesize"], "the stages that wrote what they owe ran once"
-    message = out(repo / "agent", "log", "-1", "--format=%B")
+    message = git(repo / "agent", "log", "-1", "--format=%B")
     assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
     assert last_logged(tmp_path, name).startswith("committed ")
 
@@ -279,43 +290,22 @@ def test_a_run_leaves_its_callers_signal_handlers_as_it_found_them(tmp_path: Pat
     assert {s: signal.getsignal(s) for s in retro_run.STOP} == found
 
 
-def test_a_run_directory_from_before_run_json_resumes_with_the_start_it_is_given(
+def test_a_run_is_not_resumed_over_a_verdict_committed_since_it_began(
         tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
     with pytest.raises(SystemExit):
         retro(tmp_path, repo, FIRST, SINCE)
     monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
     run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
-    (run / "run.json").unlink()
-    projects = [tmp_path / ".claude/projects"]
-
-    with pytest.raises(SystemExit, match="pass --since"):
-        retro_run.run_retro(repo, tmp_path / "data", projects, resume=run)
-    retro_run.run_retro(repo, tmp_path / "data", projects, SINCE, resume=run)
-
-    message = out(repo / "agent", "log", "-1", "--format=%B")
-    assert f"Retro-since: {retro_run.stamp(SINCE)}" in message and f"Retro-until: {retro_run.stamp(FIRST)}" in message
-
-
-@pytest.mark.parametrize("kept", [True, False], ids=["run.json", "before run.json"])
-def test_a_run_is_not_resumed_over_a_verdict_committed_since_it_began(
-        tmp_path: Path, stub: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, kept: bool) -> None:
-    monkeypatch.setenv("STUB_SYNTHESIS_FAILS", "1")
-    with pytest.raises(SystemExit):
-        retro(tmp_path, repo, FIRST, SINCE)
-    monkeypatch.delenv("STUB_SYNTHESIS_FAILS")
-    run = tmp_path / "data/agents/runs" / retro_run.dirname(FIRST)
-    if not kept:
-        (run / "run.json").unlink()
     agent = repo / "agent"
     (agent / "retro/report.md").write_text("F1 dismissed by max\n")
     git(agent, "add", "retro/report.md")
     git(agent, "commit", "-qm", "verdict", "--", "retro/report.md")
 
     with pytest.raises(SystemExit, match="was committed to since"):
-        retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], None if kept else SINCE, resume=run)
+        retro_run.run_retro(repo, tmp_path / "data", [tmp_path / ".claude/projects"], resume=run)
     assert (agent / "retro/report.md").read_text() == "F1 dismissed by max\n"
-    assert out(agent, "log", "-1", "--format=%s") == "verdict\n", "nothing was committed over it"
+    assert git(agent, "log", "-1", "--format=%s") == "verdict\n", "nothing was committed over it"
 
 
 def commit_by(repo: Path, author: str, when: datetime) -> None:
@@ -337,7 +327,7 @@ def test_a_week_with_no_session_or_commit_of_maxs_is_skipped_and_the_run_log_say
     with pytest.raises(SystemExit) as stopped:
         retro_run.run_retro(repo, tmp_path / "data", [projects], SINCE, until=FIRST, if_active=True)
 
-    assert stopped.value.code == retro_run.SKIPPED
+    assert stopped.value.code == 3, "the exit status the timer's wrapper logs as a skip (dotfiles bin/workflow-retro)"
     assert last_logged(tmp_path) == f"skipped: no session or commit of max's since {retro_run.stamp(SINCE)}"
     assert not list(stub.glob("*.argv")), "no stage ran"
     assert not (repo / "agent/retro/report.md").exists()
@@ -395,13 +385,17 @@ def test_a_repo_retro_reads_its_repos_commits_and_proposed_tickets_and_no_sessio
     assert (run / "proposed/flaky-backup.md").read_text() == ticket("proposed")
     for stage in ("follow up", "lens pass", "synthesize"):
         args = (stub / f"{stage}.argv").read_text().splitlines()
-        assert f"Read(/{code / 'agent/sessions'}/**)" in args, "no stage may read the agent repo's session pages"
-        assert not [a for a in args if a.startswith(f"Bash(git -C {code / 'agent'}")], \
+        denied = args[args.index("--disallowedTools") + 1:args.index("--allowedTools")]
+        allowed = args[args.index("--allowedTools") + 1:args.index("--tools")]
+        assert f"Read(/{code / 'agent/sessions'}/**)" in denied, "no stage may read the agent repo's session pages"
+        assert {f"Bash(git -C {code} * --no-index*)", f"Bash(git -C {code} * --contents*)"} <= set(denied), \
+            "nor print them through a git read of the code repo that takes a path outside it"
+        assert not [a for a in allowed if a.startswith(f"Bash(git -C {code / 'agent'}")], \
             "nor run git in the agent repo, which shows a committed page without naming it"
-        assert [a for a in args if a.startswith("Edit(")] == [f"Edit(/{run}/**)"], \
+        assert [a for a in allowed if a.startswith("Edit(")] == [f"Edit(/{run}/**)"], \
             "a stage writes in its run directory alone, a proposed ticket untouched (retro-semi-automated#P5)"
     agent = code / "agent"
-    assert out(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")[0] == \
+    assert git(agent, "show", "--name-only", "--format=%s", "HEAD").split("\n")[0] == \
         f"retro: the repo retro of {SINCE.date()} to {FIRST.date()}"
     assert (agent / "retro/report.md").is_file()
 
@@ -412,19 +406,19 @@ def test_a_repo_whose_agent_directory_is_no_repo_of_its_own_is_refused_with_the_
     code.mkdir()
     git(code, "init", "-q", "-b", "main")
     commit(code, {"agent/tickets/a.md": ticket("open"), "note.md": "1"}, "notes", SINCE + timedelta(days=1))
-    head = out(code, "rev-parse", "HEAD")
+    head = git(code, "rev-parse", "HEAD")
 
     with pytest.raises(SystemExit, match=f"{code / 'agent'} is no agent repo"):
         retro_run.run_retro(code, tmp_path / "data", [tmp_path / ".claude/projects"], SINCE, until=FIRST)
 
-    assert out(code, "rev-parse", "HEAD") == head, "nothing was committed in the code repo"
+    assert git(code, "rev-parse", "HEAD") == head, "nothing was committed in the code repo"
     assert not (code / "agent/retro").exists() and not list(stub.glob("*.argv"))
 
 
 def test_a_repo_retros_first_run_takes_the_four_weeks_before_it(tmp_path: Path, stub: Path, code: Path) -> None:
     retro_run.run_retro(code, tmp_path / "data", [], until=FIRST)
 
-    message = out(code / "agent", "log", "-1", "--format=%B")
+    message = git(code / "agent", "log", "-1", "--format=%B")
     assert f"Retro-since: {retro_run.stamp(FIRST - timedelta(weeks=4))}" in message
 
 
@@ -436,15 +430,39 @@ def test_a_repo_retro_with_no_commit_since_its_last_run_is_skipped_and_one_with_
 
     with pytest.raises(SystemExit) as stopped:
         retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
-    assert stopped.value.code == retro_run.SKIPPED
+    assert stopped.value.code == 3, "the exit status the timer's wrapper logs as a skip (dotfiles bin/workflow-retro)"
     assert last_logged(tmp_path, "dotfiles") == f"skipped: no commit in {code} since {retro_run.stamp(FIRST)}"
     assert not list(stub.glob("*.argv"))
 
     git(code, "checkout", "-qb", "worker")
     commit_by(code, "worker <worker@example.org>", FIRST + timedelta(days=1))
-    sha = out(code, "rev-parse", "--short=7", "HEAD").strip()
+    sha = git(code, "rev-parse", "--short=7", "HEAD").strip()
     git(code, "checkout", "-q", "main")
     retro_run.run_retro(code, tmp_path / "data", [], until=FIRST + WEEK, if_active=True)
-    started = (tmp_path / "data/dotfiles/runs.log").read_text().splitlines()[-5]
+    started = next(line for line in reversed((tmp_path / "data/dotfiles/runs.log").read_text().splitlines()) if " started: " in line)
     assert f"new since: a commit at {retro_run.stamp(FIRST + timedelta(days=1))} in {code} ({sha})" in started
     assert last_logged(tmp_path, "dotfiles").startswith("committed ")
+
+
+@pytest.mark.parametrize("kind", ["workflow retro", "repo retro"])
+def test_nothing_a_run_writes_lands_in_a_git_repository(
+        tmp_path: Path, stub: Path, repo: Path, code: Path, kind: str) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    git(scratch, "init", "-q")
+
+    with pytest.raises(SystemExit, match="inside a git work tree"):
+        retro_run.run_retro(repo if kind == "workflow retro" else code, scratch / "data", [], SINCE, until=FIRST)
+
+    assert git(scratch, "status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_a_run_that_fails_before_its_stages_says_why_as_its_last_line(tmp_path: Path, stub: Path, repo: Path) -> None:
+    (repo / "agent/retro/repos").write_text(f"{repo}\n{tmp_path / 'moved-away'}\n")
+
+    with pytest.raises(SystemExit) as failed:
+        retro(tmp_path, repo, FIRST, SINCE)
+
+    assert failed.value.code == 1
+    assert last_logged(tmp_path) == f"failed: the check for something new: {tmp_path / 'moved-away'} is no git repo"
+    assert not list(stub.glob("*.argv"))
