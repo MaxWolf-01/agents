@@ -11,7 +11,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { exploring, offerDue, parse, stopBefore } from "../src/exploring.ts";
 import { found } from "../src/hv-explore.ts";
-import { waiting } from "../src/inbox.ts";
+import { inbox } from "../src/inbox.ts";
 import { lines } from "../src/journal.ts";
 import { weekFromHeaders, weekFromStatusline } from "../src/quota.ts";
 import { load, standIn } from "./properties/stand-in.ts";
@@ -251,11 +251,10 @@ test("in the TUI, the hypervisor is asked once per week to offer max a run, with
 		for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler(standIn({}), standIn({}));
 		assert.deepEqual(sent, [], "no step is sent without max's command");
 	}
-	const pings = waiting(f.store);
+	let pings: string[] = [];
+	await inbox(f.store).takePings((offered) => void (pings = offered));
 	assert.equal(pings.length, 1, "one offer for the week, across sessions");
-	assert.equal(pings[0]!.from, "explore offer");
-	assert.ok(pings[0]!.ping);
-	assert.match(pings[0]!.text, /60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run\./);
+	assert.match(pings[0]!, /^\[explore offer\] .*60% of it unused\. Ask him whether you should explore for up to 50 steps until 95% of the week is used.*`\/explore 50 --until-week 95 <direction>`.*No answer means no run\./);
 	assert.equal(ran.length, 1);
 	assert.equal(ran[0]![0], "notify-send");
 	assert.deepEqual(readdirSync(f.store).sort(), ["explore.jsonl", "inbox"]);

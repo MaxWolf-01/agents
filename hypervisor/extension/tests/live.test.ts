@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { post, waiting } from "../src/inbox.ts";
+import { inbox } from "../src/inbox.ts";
 import { live, MEMORY } from "../src/live.ts";
 import { MODEL } from "../src/pi.ts";
 import { load } from "./properties/stand-in.ts";
@@ -23,6 +23,12 @@ function newStore() {
 after(() => {
 	for (const dir of [home, ...stores]) rmSync(dir, { recursive: true, force: true });
 });
+/** The pings that wait in `store`'s inbox, left there. */
+async function pings(store: string): Promise<string[]> {
+	let offered: string[] = [];
+	await inbox(store).takePings((taken) => ((offered = taken), false));
+	return offered;
+}
 
 /** pi-optchat's tools by name, as the fork registers them: `spawn` and `tell` start and steer pi subagents with pi's coding tools. */
 const OPTCHAT = ["zoom", "date", "spawn", "tell", "search"];
@@ -71,13 +77,13 @@ test("lifelong-hypervisor#P4: the live set is OptChat's zoom and date, the sessi
 test("a plain hv tell starts no turn and is listed on the status line; a ping goes to OptChat as a report, and stays in the inbox until OptChat takes it", async () => {
 	const store = newStore();
 	const at = new Date().toISOString();
-	await post(store, { at, from: "agents:board-fix", text: "done, see the ticket", via: "hv tell" });
-	await post(store, { at, from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
+	await inbox(store).post({ at, from: "agents:board-fix", text: "done, see the ticket", via: "hv tell" });
+	await inbox(store).post({ at, from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, status, stop } = await loaded(() => false, store);
 	try {
 		await new Promise((settle) => setTimeout(settle, 100));
 		assert.deepEqual(reports, [{ channel: "optchat:report", text: "[agents:board-fix] hv tell: the migration needs max" }]);
-		assert.equal(waiting(store).length, 2, "nothing took the ping: the inbox keeps it for the next look");
+		assert.deepEqual(await pings(store), ["[agents:board-fix] hv tell: the migration needs max"], "nothing took the ping: the inbox keeps it for the next take");
 		assert.deepEqual(status(), ["Unread in your inbox: agents:board-fix 1 message, 20 B, 0m old."], "the ping is not listed: it is on its way");
 	} finally {
 		await stop();
@@ -86,12 +92,12 @@ test("a plain hv tell starts no turn and is listed on the status line; a ping go
 
 test("a ping OptChat takes leaves the inbox for read/", async () => {
 	const store = newStore();
-	await post(store, { at: new Date().toISOString(), from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
+	await inbox(store).post({ at: new Date().toISOString(), from: "agents:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
 	const { reports, stop } = await loaded(() => true, store);
 	try {
 		await new Promise((settle) => setTimeout(settle, 100));
 		assert.equal(reports.length, 1);
-		assert.deepEqual(waiting(store), []);
+		assert.deepEqual(await pings(store), []);
 		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
 	} finally {
 		await stop();
@@ -102,20 +108,20 @@ test("the inbox tool lists what waits without its text, and reads one message or
 	const store = newStore();
 	const { tools, stop } = await loaded(() => false, store);
 	await stop();
-	const inbox = tools.get("inbox")!;
-	const call = (params: object) => inbox.execute("call", params as never, undefined, undefined, undefined as never);
+	const tool = tools.get("inbox")!;
+	const call = (params: object) => tool.execute("call", params as never, undefined, undefined, undefined as never);
 	const at = new Date().toISOString();
-	for (const [from, text] of [["agents:a", "a's first"], ["agents:b", "b's only"], ["agents:a", "a's second"]]) await post(store, { at, from, text, via: "hv tell" });
+	for (const [from, text] of [["agents:a", "a's first"], ["agents:b", "b's only"], ["agents:a", "a's second"]]) await inbox(store).post({ at, from, text, via: "hv tell" });
 	const listed = textOf(await call({}));
 	assert.doesNotMatch(listed, /first|only|second/, "the listing holds no message's text");
-	const ids = waiting(store).map((m) => m.id);
-	for (const id of ids) assert.match(listed, new RegExp(id));
+	const ids = listed.split("\n").map((line) => line.split("  ")[0]);
+	assert.equal(new Set(ids).size, 3, "each message its own id");
 	const one = await call({ id: ids[1] });
 	const sent = `(sent ${at.slice(0, 16)}Z)`;
 	assert.equal(textOf(one), `[agents:b] hv tell: b's only ${sent}`);
 	assert.deepEqual(one.details, { optchat: "work" }, "pi-optchat logs it as work");
 	assert.equal(textOf(await call({ from: "agents:a" })), `[agents:a] hv tell: a's first ${sent}\n\n[agents:a] hv tell: a's second ${sent}`);
-	assert.deepEqual(waiting(store), []);
+	assert.equal(textOf(await call({})), "The inbox is empty.");
 	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 3);
 	assert.match(textOf(await call({ id: ids[1] })), /No unread message with id/);
 	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 3, "a message is read once");

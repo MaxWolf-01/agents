@@ -157,7 +157,7 @@ export async function registry(home: string): Promise<Session[]> {
 	return read.filter((s): s is Session => s !== undefined && alive(s.pid));
 }
 
-/** The windows spawn opened, from the store, oldest first. A line that does not parse names no window, and the watch does not follow it. */
+/** The windows spawn opened, from the store, oldest first. A line that does not parse names no window. */
 export function spawnedWindows(store: string): Promise<Spawned[]> {
 	return lines<Spawned>(store, SPAWNED);
 }

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { age, markRead, shown, size, waiting } from "./inbox.ts";
+import type { Inbox } from "./inbox.ts";
 import { delegation, look, type SessionConfig, spawn, tell } from "./sessions.ts";
 import type { Background } from "./pace.ts";
 
@@ -11,27 +11,22 @@ export const answer = (text: string) => ({ content: [{ type: "text" as const, te
 /** The details that have pi-optchat log a tool's result as `work` in memory, not as its echo (pi-optchat's `WORK_RESULT`). */
 const WORK_RESULT = { optchat: "work" };
 
-/** The inbox tool: what waits in the store's inbox, listed without its text, or read and so moved to `inbox/read/`. */
-export function inboxTool(store: string): ToolDefinition {
+/** The inbox tool: the plain messages that wait in `inbox`, listed without their text, or read and so out of it. */
+export function inboxTool(inbox: Inbox): ToolDefinition {
 	return defineTool({
 		name: "inbox",
 		label: "Inbox",
 		description:
-			"Your inbox: the messages that wait for you, from orchestrators' hv tell and from spawned sessions' turns ending. Without arguments, list them: id, sender, size and age. With an id, read that message; with a sender, read every message from it. A message you read leaves the inbox and stays in your memory.",
+			"Your inbox: the messages orchestrators left you with hv tell, which wait for you. Without arguments, list them: id, sender, size and age. With an id, read that message; with a sender, read every message from it. A message you read leaves the inbox and stays in your memory.",
 		parameters: Type.Object({
 			id: Type.Optional(Type.String({ description: "A message's id, as the listing gives it." })),
 			from: Type.Optional(Type.String({ description: "A sender, as the listing or the status line names it." })),
 		}),
 		execute: async (_id, { id, from }) => {
-			const all = waiting(store).filter((m) => !m.ping);
-			if (id === undefined && from === undefined) {
-				const now = Date.now();
-				return answer(all.map((m) => `${m.id}  ${m.from}  ${size(m.bytes)}  ${age(now - Date.parse(m.at))} old`).join("\n") || "The inbox is empty.");
-			}
-			const chosen = all.filter((m) => (id === undefined || m.id === id) && (from === undefined || m.from === from));
-			if (!chosen.length) return answer(`No unread message ${[id && `with id ${id}`, from && `from ${from}`].filter(Boolean).join(" ")}; inbox lists what waits.`);
-			await markRead(store, chosen);
-			return { ...answer(chosen.map((m) => `${shown(m)} (sent ${m.at.slice(0, 16)}Z)`).join("\n\n")), details: WORK_RESULT };
+			if (id === undefined && from === undefined) return answer(inbox.list().join("\n") || "The inbox is empty.");
+			const read = await inbox.read({ id, from });
+			if (!read.length) return answer(`No unread message ${[id && `with id ${id}`, from && `from ${from}`].filter(Boolean).join(" ")}; inbox lists what waits.`);
+			return { ...answer(read.join("\n\n")), details: WORK_RESULT };
 		},
 	}) as ToolDefinition;
 }
@@ -48,7 +43,7 @@ export function sessionTools(config: SessionConfig, work: Background): ToolDefin
 			name: "start_session",
 			label: "Start session",
 			description:
-				"Start an orchestrator: interactive Claude Code in auto mode, in a new tmux window of the repo's tmux session, with the brief as its first prompt. Its reports and its turns ending wait in your inbox; it pings you when it needs max.",
+				"Start an orchestrator: interactive Claude Code in auto mode, in a new tmux window of the repo's tmux session, with the brief as its first prompt. Its reports wait in your inbox; it pings you when it needs max. look shows what it is doing.",
 			parameters: Type.Object({
 				dir: dir("The repo's directory"),
 				name: Type.String({ description: "The window's name: the ticket's slug, or a few words for the activity." }),

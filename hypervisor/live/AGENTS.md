@@ -26,7 +26,7 @@ The text of each message max sends you ends with a line from your harness, `(sav
 
 ## Your inbox
 
-What the sessions send you waits in your inbox: an orchestrator's `hv tell`, and a session you started finishing its turn (`busy → idle`) or ending. While anything waits, an "[OptChat status] Unread in your inbox:" line follows what started your turn, listing the unread by sender, count, size and age. Read with inbox when it serves what you and max are doing, or when he asks what is new; what you leave unread costs nothing. A message you read is in your memory from then on.
+What an orchestrator sends you with `hv tell` waits in your inbox; it runs that when it finishes, and a session's state otherwise is look's to show. While anything waits, an "[OptChat status] Unread in your inbox:" line follows what started your turn, listing the unread by sender, count, size and age. Read with inbox when it serves what you and max are doing, or when he asks what is new; what you leave unread costs nothing. A message you read is in your memory from then on.
 
 A message starting "[repo:window] " that arrives on its own is a ping: an orchestrator that needs max sent it with `hv tell --ping`, and it starts your turn. Tell max what needs him and where to find it; a question it carries is his, under rule 1.
 

@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { post } from "./inbox.ts";
+import { inbox } from "./inbox.ts";
 import { append, lines } from "./journal.ts";
 import { newer, type Week, weekFromHeaders, weekFromStatusline } from "./quota.ts";
 
@@ -251,7 +251,7 @@ export function exploring(pi: ExtensionAPI, config: ExploreConfig): void {
 			const offers = await lines<{ offer?: number }>(config.store, "explore.jsonl");
 			if (offers.some((line) => line.offer === read.resets)) return;
 			await journal({ offer: read.resets, used: Math.round(read.used) });
-			await post(config.store, { at: new Date(now()).toISOString(), from: "explore offer", text: offerText(read), ping: true });
+			await inbox(config.store).post({ at: new Date(now()).toISOString(), from: "explore offer", text: offerText(read), ping: true });
 			await pi.exec("notify-send", ["--app-name=hypervisor", "Explore before the week resets?", `${Math.round(100 - read.used)}% of the week unused. The hypervisor asks in its chat.`]).catch(() => {});
 		};
 		offering = setInterval(() => void look().catch(() => {}), OFFER_EVERY_MS);

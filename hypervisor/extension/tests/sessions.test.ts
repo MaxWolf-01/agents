@@ -1,18 +1,16 @@
 // The session layer: what a message to a session's inbox looks like on the wire, how a session is found, what spawn,
-// look and delegate start, what the watch makes of the registry, and the inbox that `hv tell` and the watch leave
-// messages in. tmux and claude are stand-ins on PATH that record how they were called and answer as this file says.
+// look and delegate start, and what `hv tell` leaves in the hypervisor's inbox. tmux and claude are stand-ins on PATH that record how they were called and answer as this file says.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import fc from "fast-check";
-import { markRead, post, type Told, unreadLine, waiting } from "../src/inbox.ts";
+import { inbox } from "../src/inbox.ts";
 import { delegate, find, frame, look, registry, reportBack, type Session, slug, spawn, spawnedWindows, tell } from "../src/sessions.ts";
-import { changes, type Seen, watch, watched } from "../src/watch.ts";
 
 const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "hv-sessions-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -243,186 +241,14 @@ test("hv tell leaves its words in the store's inbox, a ping with --ping, from th
 		const ran = spawnSync(process.execPath, [script, ...args], { cwd: repo, env: { ...env, HV_STORE: store }, encoding: "utf8" });
 		assert.equal(ran.status, 0, ran.stderr);
 	}
+	const pings: string[][] = [];
+	await inbox(store).takePings((taken) => void pings.push(taken));
+	assert.deepEqual(pings, [[`[${repo}] hv tell: the migration needs max`]]);
 	assert.deepEqual(
-		waiting(store).map(({ from, text, ping }) => ({ from, text, ping })),
-		[
-			{ from: repo, text: "done, see the ticket", ping: undefined },
-			{ from: repo, text: "the migration needs max", ping: true },
-		],
+		(await inbox(store).read({ from: repo })).map((read) => read.replace(/ \(sent .*\)$/, "")),
+		[`[${repo}] hv tell: done, see the ticket`],
 	);
 	const unset = spawnSync(process.execPath, [script, "hello"], { cwd: repo, env, encoding: "utf8" });
 	assert.equal(unset.status, 2);
 	assert.match(unset.stderr, /HV_STORE is not set/);
-});
-
-const seen = (status: string, window = "agents:board"): Seen => ({ status, window });
-
-test("a watched session's turn ending, or the session going, is a message from its window; any other change is not", () => {
-	const before = new Map([
-		[1, seen("busy")],
-		[2, seen("idle", "agents:x")],
-		[3, seen("busy", "agents:y")],
-		[4, seen("busy", "agents:z")],
-		[5, seen("idle", "agents:w")],
-		[7, seen("idle", "agents:v")],
-		[8, seen("busy", "agents:u")],
-	]);
-	const now = new Map([
-		[1, seen("idle")],
-		[2, seen("busy", "agents:x")],
-		[4, seen("busy", "agents:z")],
-		[5, seen("idle", "agents:w")],
-		[6, seen("idle", "agents:new")],
-		[8, seen("waiting", "agents:u")],
-	]);
-	assert.deepEqual(changes(before, now), [
-		{ from: "agents:board", text: "busy → idle" },
-		{ from: "agents:y", text: "busy → ended" },
-		{ from: "agents:v", text: "idle → ended" },
-		{ from: "agents:u", text: "busy → waiting" },
-	]);
-});
-
-test("a session is watched when it is the claude a spawned window was opened running, and no other in its pane", () => {
-	const spawned = [
-		{ at: "t", pane: "%5", pid: 1, window: "agents:board", dir: "/r" },
-		{ at: "t", pane: "%6", pid: 9, window: "agents:gone", dir: "/r" },
-	];
-	const live = [
-		{ pid: 1, status: "busy" },
-		{ pid: 2, status: "busy" }, // a claude -p the orchestrator started, in the same pane
-		{ pid: 3, status: "idle" },
-	];
-	assert.deepEqual([...watched(live, spawned)], [[1, seen("busy")]]);
-});
-
-test("the inbox lists what waits oldest first, leaves out a file that does not parse, and a message read leaves it for read/", async () => {
-	const { store } = home();
-	for (const text of ["first", "second", "third"]) await post(store, { at: "t", from: "agents:board", text });
-	writeFileSync(path.join(store, "inbox", "0-broken.json"), "{");
-	const listed = waiting(store);
-	assert.deepEqual(listed.map((m) => m.text), ["first", "second", "third"]);
-	assert.equal(new Set(listed.map((m) => m.id)).size, 3, "each its own id");
-	await markRead(store, [listed[1]]);
-	assert.deepEqual(waiting(store).map((m) => [m.id, m.text]), [[listed[0].id, "first"], [listed[2].id, "third"]], "ids stay as they were");
-	assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
-});
-
-test("the status line lists the unread by sender, with count, size and age, and never their text", () => {
-	const now = Date.parse("2026-10-13T15:00:00Z");
-	const unread: Told[] = [
-		{ at: "2026-10-13T12:00:00Z", from: "agents:board", text: "the board renders, see the PR" },
-		{ at: "2026-10-13T14:55:00Z", from: "~/repos/notes", text: "x".repeat(1500) },
-		{ at: "2026-10-13T14:58:30Z", from: "agents:board", text: "busy → idle" },
-	];
-	assert.equal(
-		unreadLine(unread, now),
-		"Unread in your inbox: agents:board 2 messages, 42 B, 3h to 1m old; ~/repos/notes 1 message, 1.5 kB, 5m old.",
-	);
-	assert.equal(unreadLine([], now), undefined);
-});
-
-/** A watch over `home`'s registry and store whose looks are this test's to start, delivering into `delivered`. */
-function watching(at: string, store: string) {
-	const delivered: string[][] = [];
-	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (pings) => void delivered.push(pings), (error) => failures.push(error));
-	return { ...w, delivered, failures };
-}
-
-/** A home whose registry holds this process as the claude a spawned window runs, in `status`. */
-function spawnedHere(status: string) {
-	const { home: at, store } = home();
-	registered(at, process.pid, { name: "orch-1", status });
-	mkdirSync(store);
-	writeFileSync(path.join(store, "spawned.jsonl"), `${JSON.stringify({ at: "t", pane: "%5", pid: process.pid, window: "my-repo:board-fix", dir: at })}\n`);
-	return { home: at, store, entry: path.join(at, ".claude", "sessions", `${process.pid}.json`) };
-}
-
-const AT = "2026-10-13T14:07:00.000Z";
-
-test("a session's turn ending waits in the inbox and starts no turn; a registry file caught mid-write is no change", async () => {
-	const { home: at, store, entry } = spawnedHere("busy");
-	const w = watching(at, store);
-	try {
-		await w.started;
-		writeFileSync(entry, "{");
-		await w.look();
-		assert.deepEqual(waiting(store), [], "the session's process lives, so it has not ended");
-		registered(at, process.pid, { name: "orch-1", status: "idle" });
-		await w.look();
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "done, see the ticket" });
-		await w.look();
-		assert.deepEqual(w.delivered, []);
-		assert.deepEqual(waiting(store).map(({ from, text }) => `[${from}] ${text}`), ["[my-repo:board-fix] busy → idle", "[my-repo:board-fix] done, see the ticket"]);
-	} finally {
-		w.stop();
-	}
-});
-
-test("a ping starts a turn: the watch hands it over, once, and moves it to read/, while the plain message beside it waits", async () => {
-	const { home: at, store } = spawnedHere("busy");
-	const w = watching(at, store);
-	try {
-		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "done" });
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "the migration needs max", ping: true, via: "hv tell" });
-		await w.look();
-		await w.look();
-		assert.deepEqual(w.delivered, [["[my-repo:board-fix] hv tell: the migration needs max"]]);
-		assert.deepEqual(waiting(store).map((m) => m.text), ["done"]);
-		assert.equal(readdirSync(path.join(store, "inbox", "read")).length, 1);
-	} finally {
-		w.stop();
-	}
-});
-
-test("a look whose delivery fails leaves its pings for the next look, and two looks at once deliver once", async () => {
-	const { home: at, store } = spawnedHere("busy");
-	const delivered: string[][] = [];
-	let refuse = true;
-	const failures: unknown[] = [];
-	const w = watch(
-		{ home: at, store },
-		2 ** 30,
-		(pings) => {
-			if (refuse) throw new Error("not now");
-			delivered.push(pings);
-		},
-		(error) => failures.push(error),
-	);
-	try {
-		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
-		await w.look();
-		assert.equal(failures.length, 1);
-		refuse = false;
-		await Promise.all([w.look(), w.look()]);
-		assert.deepEqual(delivered, [["[my-repo:board-fix] hv tell: needs max"]]);
-	} finally {
-		w.stop();
-	}
-});
-
-test("a delivery that returns false is held: no failure, the ping still waiting, offered again next look", async () => {
-	const { home: at, store } = spawnedHere("busy");
-	const offered: string[][] = [];
-	let taken = false;
-	const failures: unknown[] = [];
-	const w = watch({ home: at, store }, 2 ** 30, (pings) => (offered.push(pings), taken), (error) => failures.push(error));
-	try {
-		await w.started;
-		await post(store, { at: AT, from: "my-repo:board-fix", text: "needs max", ping: true, via: "hv tell" });
-		await w.look();
-		assert.equal(waiting(store).length, 1);
-		assert.deepEqual(failures, []);
-		taken = true;
-		await w.look();
-		await w.look();
-		const ping = ["[my-repo:board-fix] hv tell: needs max"];
-		assert.deepEqual(offered, [ping, ping], "offered again after the refusal, then not again once taken");
-		assert.deepEqual(waiting(store), []);
-	} finally {
-		w.stop();
-	}
 });
