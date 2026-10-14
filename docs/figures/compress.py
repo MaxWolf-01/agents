@@ -10,7 +10,7 @@ because pyoxipng ships no wheel for 3.14 yet, and building one needs a Rust tool
 
 Examples:
 
-    compress.py mx/assets/one-flow.png mx/assets/one-flow-light.png
+    compress.py mx/assets/workflow-map.png mx/assets/workflow-map-light.png
     compress.py mx/assets/*.png
 """
 

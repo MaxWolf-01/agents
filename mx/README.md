@@ -3,29 +3,9 @@
 File-based tickets, domain glossary + ADRs, research artefacts, and session continuity for multi-session work.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/one-flow.png">
-  <img alt="One flow in five columns (chat, brief, worker, review, land) and three rows, by how much of the design lands on disk: the gate drafts the ticket first and sends fog to grilling, rival shapes to a prototype or a drawing, and one sensible shape to the build; one question, whether a stranger would need a brief, picks the row; a loose change has no brief, no worker and no agent review, the session committing it with the loose trailer and landing it over a review page and a show; a ticket is filed open and dispatched at once to a fresh worker that builds, tests, commits a report and reviews its own branch, light or on the full axes, before your ruling and QA; work bigger than one worker is cut into child tickets, built a worker per child on the parent's branch, reviewed per worker and once more one level up, and ruled whole at its close-out, a hinge alone; one orchestrator claims, spawns, reads and merges, and sorts each build's calls so only those yours to make reach the board's needs-me group; a strip of four dials (grilling, on disk, worker, review) sits underneath, and moss cards mark your only stations" src="assets/one-flow-light.png">
-</picture>
-
-<details>
-<summary><b>The whole workflow as one map: the main line every piece of work rides, its branches, and the stops that are yours</b></summary>
-
-<picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/workflow-map.png">
-  <img alt="The mx workflow as a transit map: one main line runs left to right from an intent through the gate, where the draft picks the route, to the ticket, filed and dispatched at once, then dispatch, workers, one per ticket, and the landing, where the calls are sorted, to your ruling and merged. Three branches leave at the gate: fog goes through grilling rounds and rival shapes through a prototype or a figure per rival judged side by side, and both rejoin at the ticket; loose runs along the top, the session committing with no ticket and no worker, to the review page and on to merged. Work bigger than one worker runs as a child-tickets track beside the main line: the cut into child tickets, the shared dispatch, workers and landing, then a hinge ruled alone, the close-out with the suite, the review one level up and the debrief, and your ruling on the whole tree before it merges. A loop under the build runs from the landing through QA and the review session back into dispatch, where findings become tickets. Eight numbered stops in the accent colour are the only places you are asked, the hinge drawn as a ring because it asks only when a call is yours, and a key under the map says what each asks of you and that every open ticket question and every build in review waits in the board's needs-me group" src="assets/workflow-map-light.png">
+  <img alt="The mx workflow as a transit map: one main line runs left to right from an intent in chat through the gate, where the draft picks the route, to the ticket, dispatched at once, then dispatch with one orchestrator, workers, one per ticket, and the landing, where the calls are sorted, to your ruling and merged. Three branches leave at the gate: loose runs along the top, the session committing with no ticket and no worker, to the review page and on to merged; rival shapes go through a prototype or a figure per rival, judged side by side; fog dips below the line through grilling rounds; both rejoin at the ticket. Work bigger than one worker leaves the ticket as child tickets, cut and filed open by the agent, and returns through a hinge ruled alone only when a call is yours, the close-out's suite, review and debrief, and your ruling on the whole tree. After a landing a loop runs through QA and the review session: your findings go back to dispatch filed open, and a reopened decision goes back to grilling. What agents file on their own reading, a worker's punt or a review's finding, runs dashed and proposed, off the frontier, to a triage you start, and rejoins at the ticket once promoted to open. A strip along the bottom holds what outlives every session: the tickets, the glossary, the decisions, and the board's needs-me group, where everything waiting on you sits. The ten numbered stops in moss are the only places the workflow asks for you" src="assets/workflow-map-light.png">
 </picture>
-
-</details>
-
-<details>
-<summary><b>The whole cycle, from an intent to shipped work</b></summary>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/full-cycle.png">
-  <img alt="The full mx cycle: an intent, a brief or a bug report is grilled, each round showing the design and putting your questions to you, and rewriting the ticket; once the frontier is empty the ticket is cut into child tickets (one slice means no cut, the ticket itself is built); dispatch hands a fresh worker each frontier ticket; each landed slice shows you its calls, with a review page and one show, then your QA, and the close-out runs the full suite, the review and the debrief and has you rule the tree whole; the review session starts at the first drivable slice, where you drive it and grilling follows, and sends new tickets to the board and reopened calls back to grilling, while a codebase-health survey feeds grilling its candidates; along the bottom sit the glossary, the decisions and the board with its needs-me group, and moss marks your only stations" src="assets/full-cycle-light.png">
-</picture>
-
-</details>
 
 <details>
 <summary><b>A ticket's status, and the board that shows it</b></summary>
