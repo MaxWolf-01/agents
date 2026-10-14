@@ -999,7 +999,7 @@ def assemble(v: View, now: datetime) -> str:
         {body}
       </section>
     </div>
-  </div>{column(v.column)}
+  </div>{column(v.rows, session)}
 </main>
 {help_dialog()}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1022,17 +1022,44 @@ def handoffs(session: Session) -> str:
     return f'\n      <p class="handoffs" id="handoffs">{"".join(lines)}</p>' if lines else ""
 
 
-def column(rows: tuple[Row, ...]) -> str:
-    """The timeline: every numbered turn in the order of the turns beside it, each under its
-    number with its headline, and under that the artefacts it linked."""
-    groups = "".join(f"""
+def column(rows: tuple[Row, ...], session: Session) -> str:
+    """The timeline: every turn in the order of the turns beside it. A numbered turn sits under its
+    number with its headline, and under that the artefacts it linked; a chat turn is a quiet row of
+    its reply's first line. The session that continued this one is at its top, the one it continued
+    at its bottom, each a link to that session's page."""
+    numbered = tuple(r for r in rows if isinstance(r.turn, Turn))
+    groups = "".join(chat_group(r) if isinstance(r.turn, Chat) else f"""
     <section class="group{'' if r.artefacts else ' bare'}" id="a{r.key}">
       <a class="v-num turn-ref" href="#t{r.key}">{r.key}</a><div class="tl">{timeline_row(r)}</div>
     </section>""" for r in rows)
+    later = "".join(timeline_end(session, "next", s) for s in session.following)
+    earlier = timeline_end(session, "previous", session.previous) if session.previous else ""
     return f"""
   <aside class="column" id="{COLUMN}" aria-labelledby="column-title">
-    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(rows)}</div>{groups or '<p class="v-meta">no turn yet</p>'}
+    <div class="column-head"><h2 class="v-meta" id="column-title">timeline</h2>{newest_control(numbered)}</div>{later}{groups or '<p class="v-meta">no turn yet</p>'}{earlier}
   </aside>"""
+
+
+CHEVRONS = {"next": "M3 8.5 7 4.5l4 4", "previous": "M3 5.5l4 4 4-4"}
+
+
+def timeline_end(session: Session, label: str, other: str) -> str:
+    """A link at an end of the timeline to the page of a session this one continued or was continued in."""
+    title = session.titles.get(other) or other[:8]
+    return (f'\n    <a class="tl-end {label}" href="../{esc(other)}/{PAGE}" title="{esc(strip_tags(inline(title)))} · {esc(other)}">'
+            f'<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
+            f'stroke-linejoin="round" aria-hidden="true"><path d="{CHEVRONS[label]}"/></svg>'
+            f'<span class="v-meta">{label}</span> <span class="title">{esc(strip_tags(inline(title)))}</span></a>')
+
+
+def chat_group(r: Row) -> str:
+    """A chat turn in the timeline: its reply's first line, quiet, with no number."""
+    first = next((line for line in r.turn.reply.splitlines() if line.strip()), "")
+    text = esc(strip_tags(inline(first.strip().lstrip("#-*> ").strip())))
+    return f"""
+    <section class="group chat" id="a-{r.key}">
+      <span class="turn-ref"></span><div class="tl"><a class="hl" href="#{r.key}" tabindex="-1" title="{text}">{text}</a></div>
+    </section>"""
 
 
 def timeline_row(r: Row) -> str:

@@ -75,6 +75,17 @@ main.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minma
 .column .hl:hover { color: var(--accent); }
 .column .group.cur .hl { color: var(--strong); }
 .column ol { list-style: none; margin: 0.35rem 0 0; padding: 0; display: grid; gap: 0.2rem; }
+/* a chat turn: a smaller hollow dot, its reply's first line on one line */
+.column .group.chat .tl { padding-bottom: 0.7rem; }
+.column .group.chat .tl::before { left: -3px; width: 5px; height: 5px; top: 0.5em; }
+.column .group.chat .hl { font-size: 0.8rem; color: var(--muted); -webkit-line-clamp: 1; }
+.column .group.chat.cur .hl { color: var(--body); }
+/* the sessions this one continued and was continued in, at the timeline's ends */
+.column .tl-end { display: flex; align-items: baseline; gap: 0.4rem; margin: 0 0 0.9rem 0.15rem; color: var(--muted); font-size: 0.8rem; line-height: 1.4; text-decoration: none; transition: color 150ms; }
+.column .tl-end.previous { margin: 0.2rem 0 0 0.15rem; }
+.column .tl-end svg { flex: none; align-self: center; }
+.column .tl-end .title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.column .tl-end:hover { color: var(--accent); }
 .column li { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); align-items: baseline; font-size: 0.8rem; line-height: 1.4; }
 .column .n { justify-self: start; }
 /* an artefact's name on up to two lines, cut after that */

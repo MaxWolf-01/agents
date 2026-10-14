@@ -71,7 +71,7 @@ const keepInView = (box, el, head = 0) => {
 
 let cur = -1
 // the cursor's turn is marked in the timeline too, and kept in the timeline's view
-const group = (b) => (b && b.matches("details.turn") ? document.getElementById("a" + b.id.slice(1)) : null)
+const group = (b) => (!b ? null : b.matches("details.turn") ? document.getElementById("a" + b.id.slice(1)) : document.getElementById("a-" + b.id))
 const columnHead = column.querySelector(".column-head")
 const mark = () => {
   blocks.forEach((b, n) => b.classList.toggle("cur", n === cur))
