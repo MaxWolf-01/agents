@@ -12,12 +12,12 @@ One report per repo, `retro/report.md` in that repo's agent repo, rewritten whol
 
 ## max's verdicts
 
-A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits `retro/report.md` alone. The page is left as it is; the next run rebuilds it.
+A session that hears max rule on a finding or candidate writes the verdict into the report, quoting him with the date, and commits it in the agent repo's main checkout, where runs read it, with `git commit -- retro/report.md`: the pathspec commits that file alone and leaves whatever else is staged there. The page is left as it is; the next run rebuilds it.
 
 - **Dismissed**: the finding leaves Findings, or the candidate Architecture candidates, for a line under Dismissed.
 - **Amended**: the finding is rewritten as he said, and its History gains `amended by max <date>: "<his words>"`.
 - **Taken up**: its State becomes `taken up as <ticket>`, and its History gains `taken up as <ticket> <date>`, one entry per ticket filed.
-- **A candidate the report lacks**, ruled in a session's own architecture review, enters it with its verdict, under the next id after the `ids:` line's, which the session raises.
+- **A candidate the report lacks**, ruled in a session's own architecture review, enters it with its verdict under the next id: `A<n+1>` for the `ids:` line's `A<n>`. The session raises the `ids:` line to that id.
 
 What changed is the next run's to write. A verdict's commit carries no `Retro-until:` trailer: that trailer marks a run's commit, and the next run's period starts where the last such commit's ended.
 

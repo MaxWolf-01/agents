@@ -10,14 +10,12 @@ A retro reads a repo for the friction that recurs, traces it to what produces it
 
 ## Working the report
 
-`/mx:retro` in a session opens the report of the repo the session is in. A repo with no `retro/report.md` has no retro yet: say so and offer a run by hand.
+`/mx:retro` in a session opens the report of the repo the session is in. A repo with no `retro/report.md` has no retro yet: say so, and offer a run by hand where `retro --help` takes the repo.
 
-1. **Show max where the report stands**: its What changed section, its top recommendation, then one line per live finding and candidate, its id, title and state. Done when max has picked the ones to work, in his order, or given verdicts on them outright.
+1. **Show max where the report stands**: its What changed section, its top recommendation, then one line per finding and candidate outside Dismissed, its id, title and state. Done when max has picked the ones to work, in his order, or given verdicts on them outright.
 2. **Work each pick**, one at a time. A finding (`F<n>`) gets a design round, `/mx:grilling`, on its proposal: its evidence and cause are the brief, and its proposal is the default the round tests, not a frame max has accepted. A candidate (`A<n>`) gets `/mx:improve-codebase-architecture`'s grilling loop, its step 3, with the report's fields standing in for the scan. Done when max has ruled on it: taken up, amended, dismissed, or left as it is.
 3. **What he rules becomes tickets**, filed per `/mx:tracker` in the session's repo. Each brief opens by naming the id it was cut from ("From the retro's F3, `retro/report.md` of 2026-10-11."), so later runs follow the fix to its ticket.
-4. **Write each verdict into the report**, as REPORT.md's max's verdicts says, and commit `retro/report.md` alone. Done when every ruling of the session is in a commit.
-
-A run in flight (`pgrep -af '[r]etro_run'`) read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts, wait for it to end, and write them into the report it committed.
+4. **Write each verdict into the report**, as REPORT.md's max's verdicts says. Just before the commit, look for a run in flight, `pgrep -af '[r]etro_run'`: it read the report when it began, and leaves its own uncommitted when the report changes under it. While one runs, hold the verdicts and wait for it to end, then write them into the report as it stands. Done when every ruling of the session is in a commit.
 
 ## A run by hand
 
