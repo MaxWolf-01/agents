@@ -23,7 +23,7 @@ A retro reads a repo's code through every code lens, and its proposed tickets, a
 
 ## The weekly run
 
-Two timers in max's dotfiles run them on his laptop: `workflow-retro` runs `retro <agents repo> --if-active` early every Monday, and `repo-retros` the same for each repo on its list of repo retros early every Tuesday. Each run's outcome goes to a job run log; `workflow-retro --help` there names the list and the logs.
+Two timers in max's dotfiles run the retros on his laptop: `workflow-retro` runs `retro <agents repo> --if-active` early every Monday, and `repo-retros` runs `retro <repo> --if-active` for each repo on its list of repo retros, early every Tuesday. Each run's outcome goes to a job run log; `workflow-retro --help` there names the list and the logs.
 
 ## The parts
 
