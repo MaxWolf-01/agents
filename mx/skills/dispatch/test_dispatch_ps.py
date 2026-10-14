@@ -325,6 +325,15 @@ def test_the_running_workers_come_first_and_the_exited_ones_last(home: Path, tmu
     assert states == ["running", "unreachable", "exited"], out.stdout
 
 
+def test_within_a_state_the_youngest_worker_comes_first(home: Path, tmux: dict[str, str]):
+    """By age, then by idle time, whatever their host, base or ticket."""
+    def row(slug: str, age: int, idle: int) -> str:
+        return f"aa/master\t{slug}\trunning\t{age}\t{idle}\tdispatch-aa-{slug}\ty\tworking"
+    far = {"zz@far": ("\n".join([row("aaa-old", 9000, 5), row("bbb-quiet", 60, 50), row("zzz-new", 60, 5)]), 0)}
+    out = dispatch(tmux, home, "ps", hosts="zz@far", answers=far)
+    assert [line.split()[2] for line in out.stdout.splitlines()[1:-2]] == ["zzz-new", "bbb-quiet", "aaa-old"]
+
+
 def test_the_hosts_are_the_registers_and_the_repos_runs_from_anywhere_in_it(home: Path, tmux: dict[str, str]):
     """The register names one host, the repo's runs another, and ps is run from a subdirectory on a
     branch no run was spawned from: both hosts are read."""
@@ -917,7 +926,7 @@ def test_a_table_taller_than_the_screen_folds_its_exited_workers_first(tmp_path:
         assert drawn[3].split() == ["exited,", "each", "beside", "its", "IDLE"]
         ticket = drawn[3].index("exited")
         assert drawn[4][:ticket].split() == ["local", "agents/master"] and not drawn[5][:ticket].strip()
-        assert re.findall(r"ticket-\d 2h", drawn[4] + drawn[5]) == [f"ticket-{n} 2h" for n in range(10)]
+        assert sorted(re.findall(r"ticket-\d 2h", drawn[4] + drawn[5])) == [f"ticket-{n} 2h" for n in range(10)]
         assert drawn[-2:] == ["", "1 running  11 exited"]
     finally:
         live.kill()
