@@ -128,7 +128,7 @@ def alive(pid: int) -> bool:
     """Whether a process runs: it exists and is not a zombie waiting to be reaped."""
     try:
         return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
-    except (FileNotFoundError, IndexError):
+    except (FileNotFoundError, ProcessLookupError, IndexError):  # a process exiting mid-read raises the second
         return False
 
 
